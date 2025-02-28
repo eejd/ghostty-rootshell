@@ -897,6 +897,13 @@ pub fn getSize(self: *const Surface) !apprt.SurfaceSize {
 }
 
 pub fn setInitialWindowSize(self: *const Surface, width: u32, height: u32) !void {
+    // If we've already become realized once then we ignore this
+    // request. The apprt initial_size action should only modify
+    // the physical size of the window during initialization.
+    // Subsequent actions are only informative in case we want to
+    // implement a "return to default size" action later.
+    if (self.realized) return;
+
     // If we are within a split, do not set the size.
     if (self.container.split() != null) return;
 

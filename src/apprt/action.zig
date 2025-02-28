@@ -140,9 +140,16 @@ pub const Action = union(Key) {
     /// Sets a size limit (in pixels) for the target terminal.
     size_limit: SizeLimit,
 
-    /// Specifies the initial size of the target terminal. This will be
-    /// sent only during the initialization of a surface. If it is received
-    /// after the surface is initialized it should be ignored.
+    /// Specifies the initial size of the target terminal.
+    ///
+    /// This may be sent once during the initialization of a surface
+    /// (as part of the init call) to indicate the initial size requested
+    /// for the window if it is not maximized or fullscreen.
+    ///
+    /// This may also be sent at any time after the surface is initialized
+    /// to note the new "default size" of the window. This should in general
+    /// be ignored, but may be useful if the apprt wants to support
+    /// a "return to default size" action.
     initial_size: InitialSize,
 
     /// The cell size has changed to the given dimensions in pixels.
