@@ -18,6 +18,8 @@ RUN DEBIAN_FRONTEND="noninteractive" apt-get -qq update && \
     # Ghostty Dependencies
     libadwaita-1-dev \
     libgtk-4-dev && \
+    # TODO: Add when this is updated to Debian 13++
+    # gtk4-layer-shell
     # Clean up for better caching
     rm -rf /var/lib/apt/lists/*
 

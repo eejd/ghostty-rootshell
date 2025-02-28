@@ -1,7 +1,10 @@
 //! Wayland protocol implementation for the Ghostty GTK apprt.
 const std = @import("std");
-const wayland = @import("wayland");
 const Allocator = std.mem.Allocator;
+
+const build_options = @import("build_options");
+const wayland = @import("wayland");
+
 const c = @import("../c.zig").c;
 const Config = @import("../../../config.zig").Config;
 const input = @import("../../../input.zig");
@@ -84,6 +87,20 @@ pub const App = struct {
         return null;
     }
 
+    pub fn supportsQuickTerminal(_: App) bool {
+        if (comptime !build_options.layer_shell) return false;
+
+        return c.gtk_layer_is_supported() != 0;
+    }
+
+    pub fn initQuickTerminal(_: *App, apprt_window: *ApprtWindow) !void {
+        if (comptime !build_options.layer_shell) unreachable;
+
+        c.gtk_layer_init_for_window(apprt_window.window);
+        c.gtk_layer_set_layer(apprt_window.window, c.GTK_LAYER_SHELL_LAYER_TOP);
+        c.gtk_layer_set_keyboard_mode(apprt_window.window, c.GTK_LAYER_SHELL_KEYBOARD_MODE_ON_DEMAND);
+    }
+
     fn registryListener(
         registry: *wl.Registry,
         event: wl.Registry.Event,
@@ -156,7 +173,7 @@ pub const App = struct {
 
 /// Per-window (wl_surface) state for the Wayland protocol.
 pub const Window = struct {
-    config: *const ApprtWindow.DerivedConfig,
+    apprt_window: *ApprtWindow,
 
     /// The Wayland surface for this window.
     surface: *wl.Surface,
@@ -210,7 +227,7 @@ pub const Window = struct {
         };
 
         return .{
-            .config = &apprt_window.config,
+            .apprt_window = apprt_window,
             .surface = wl_surface,
             .app_context = app.context,
             .blur_token = null,
@@ -255,7 +272,7 @@ pub const Window = struct {
     /// Update the blur state of the window.
     fn syncBlur(self: *Window) !void {
         const manager = self.app_context.kde_blur_manager orelse return;
-        const blur = self.config.background_blur;
+        const blur = self.apprt_window.config.background_blur;
 
         if (self.blur_token) |tok| {
             // Only release token when transitioning from blurred -> not blurred
@@ -283,11 +300,51 @@ pub const Window = struct {
     }
 
     fn getDecorationMode(self: Window) org.KdeKwinServerDecorationManager.Mode {
-        return switch (self.config.window_decoration) {
+        return switch (self.apprt_window.config.window_decoration) {
             .auto => self.app_context.default_deco_mode orelse .Client,
             .client => .Client,
             .server => .Server,
             .none => .None,
         };
     }
+
+    pub fn syncQuickTerminal(self: *Window) !void {
+        if (comptime !build_options.layer_shell) return;
+
+        const window = self.apprt_window.window;
+
+        const anchored_edge: ?LayerShellEdge = switch (self.apprt_window.config.quick_terminal_position) {
+            .left => .left,
+            .right => .right,
+            .top => .top,
+            .bottom => .bottom,
+            .center => null,
+        };
+
+        for (std.meta.tags(LayerShellEdge)) |edge| {
+            if (anchored_edge) |anchored| {
+                if (edge == anchored) {
+                    c.gtk_layer_set_margin(window, @intFromEnum(edge), 0);
+                    c.gtk_layer_set_anchor(window, @intFromEnum(edge), @intFromBool(true));
+                    continue;
+                }
+            }
+
+            // Arbitrary margin - could be made customizable?
+            c.gtk_layer_set_margin(window, @intFromEnum(edge), 20);
+            c.gtk_layer_set_anchor(window, @intFromEnum(edge), @intFromBool(false));
+        }
+
+        switch (self.apprt_window.config.quick_terminal_position) {
+            .top, .bottom, .center => c.gtk_window_set_default_size(window, 800, 400),
+            .left, .right => c.gtk_window_set_default_size(window, 400, 800),
+        }
+    }
+};
+
+const LayerShellEdge = enum(c_uint) {
+    left = c.GTK_LAYER_SHELL_EDGE_LEFT,
+    right = c.GTK_LAYER_SHELL_EDGE_RIGHT,
+    top = c.GTK_LAYER_SHELL_EDGE_TOP,
+    bottom = c.GTK_LAYER_SHELL_EDGE_BOTTOM,
 };

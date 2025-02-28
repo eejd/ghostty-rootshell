@@ -79,6 +79,8 @@ pub const DerivedConfig = struct {
     gtk_wide_tabs: bool,
     gtk_toolbar_style: configpkg.Config.GtkToolbarStyle,
 
+    quick_terminal_position: configpkg.Config.QuickTerminalPosition,
+
     maximize: bool,
     fullscreen: bool,
     window_decoration: configpkg.Config.WindowDecoration,
@@ -93,6 +95,8 @@ pub const DerivedConfig = struct {
             .gtk_tabs_location = config.@"gtk-tabs-location",
             .gtk_wide_tabs = config.@"gtk-wide-tabs",
             .gtk_toolbar_style = config.@"gtk-toolbar-style",
+
+            .quick_terminal_position = config.@"quick-terminal-position",
 
             .maximize = config.maximize,
             .fullscreen = config.fullscreen,
@@ -364,9 +368,16 @@ pub fn init(self: *Window, app: *App) !void {
 
     // If we are in fullscreen mode, new windows start fullscreen.
     if (self.config.fullscreen) c.gtk_window_fullscreen(self.window);
+}
 
-    // Show the window
-    c.gtk_widget_show(gtk_widget);
+pub fn present(self: *Window) void {
+    const window: *gtk.Window = @ptrCast(self.window);
+    window.present();
+}
+
+pub fn toggleVisibility(self: *Window) void {
+    const window: *gtk.Widget = @ptrCast(self.window);
+    window.setVisible(@intFromBool(window.isVisible() == 0));
 }
 
 pub fn updateConfig(
@@ -407,6 +418,9 @@ pub fn syncAppearance(self: *Window) !void {
     self.headerbar.setVisible(visible: {
         // Never display the header bar when CSDs are disabled.
         if (!csd_enabled) break :visible false;
+
+        // Never display the header bar as a quick terminal.
+        if (self.app.quick_terminal == self) break :visible false;
 
         // Unconditionally disable the header bar when fullscreened.
         if (self.config.fullscreen) break :visible false;
@@ -458,11 +472,11 @@ pub fn syncAppearance(self: *Window) !void {
         log.warn("failed to sync winproto appearance error={}", .{err});
     };
 
-    toggleCssClass(
-        @ptrCast(self.window),
-        "background",
-        self.config.background_opacity >= 1,
-    );
+    if (self.app.quick_terminal == self) {
+        self.winproto.syncQuickTerminal() catch |err| {
+            log.warn("failed to sync quick terminal appearance error={}", .{err});
+        };
+    }
 }
 
 fn toggleCssClass(
@@ -780,10 +794,22 @@ fn adwTabOverviewFocusTimer(
     return 0;
 }
 
+pub fn close(self: *Window) void {
+    const window: *gtk.Window = @ptrCast(self.window);
+
+    // Unset the quick terminal on the app level
+    if (self.app.quick_terminal == self) self.app.quick_terminal = null;
+
+    window.destroy();
+}
+
 fn gtkCloseRequest(v: *c.GtkWindow, ud: ?*anyopaque) callconv(.C) bool {
     _ = v;
     log.debug("window close request", .{});
     const self = userdataSelf(ud.?);
+
+    // This path should never occur, but this is here as a safety measure.
+    if (self.app.quick_terminal == self) return true;
 
     // If none of our surfaces need confirmation, we can just exit.
     for (self.app.core_app.surfaces.items) |surface| {
@@ -792,7 +818,7 @@ fn gtkCloseRequest(v: *c.GtkWindow, ud: ?*anyopaque) callconv(.C) bool {
                 surface.core_surface.needsConfirmQuit()) break;
         }
     } else {
-        c.gtk_window_destroy(self.window);
+        self.close();
         return true;
     }
 
@@ -836,7 +862,7 @@ fn gtkCloseConfirmation(
     c.gtk_window_destroy(@ptrCast(alert));
     if (response == c.GTK_RESPONSE_YES) {
         const self = userdataSelf(ud.?);
-        c.gtk_window_destroy(self.window);
+        self.close();
     }
 }
 
@@ -934,7 +960,7 @@ fn gtkActionClose(
     _: ?*glib.Variant,
     self: *Window,
 ) callconv(.C) void {
-    c.gtk_window_destroy(self.window);
+    self.close();
 }
 
 fn gtkActionNewWindow(

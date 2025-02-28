@@ -73,6 +73,8 @@ parts:
       - blueprint-compiler
       - libgtk-4-dev
       - libadwaita-1-dev
+      # TODO: Add when the Snap is updated to Ubuntu 24.10+
+      # - gtk4-layer-shell
       - libxml2-utils
       - git
       - patchelf

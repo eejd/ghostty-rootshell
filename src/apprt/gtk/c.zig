@@ -15,6 +15,7 @@ pub const c = @cImport({
         @cInclude("X11/XKBlib.h");
     }
     if (build_options.wayland) {
+        if (build_options.layer_shell) @cInclude("gtk4-layer-shell/gtk4-layer-shell.h");
         @cInclude("gdk/wayland/gdkwayland.h");
     }
 

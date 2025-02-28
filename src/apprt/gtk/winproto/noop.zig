@@ -29,6 +29,11 @@ pub const App = struct {
     ) ?input.Mods {
         return null;
     }
+
+    pub fn supportsQuickTerminal(_: App) bool {
+        return false;
+    }
+    pub fn initQuickTerminal(_: *App, _: *ApprtWindow) !void {}
 };
 
 pub const Window = struct {
@@ -53,6 +58,8 @@ pub const Window = struct {
     pub fn resizeEvent(_: *Window) !void {}
 
     pub fn syncAppearance(_: *Window) !void {}
+
+    pub fn syncQuickTerminal(_: *Window) !void {}
 
     /// This returns true if CSD is enabled for this window. This
     /// should be the actual present state of the window, not the

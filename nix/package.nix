@@ -13,6 +13,7 @@
   libGL,
   glib,
   gtk4,
+  gtk4-layer-shell,
   gobject-introspection,
   libadwaita,
   blueprint-compiler,
@@ -118,6 +119,7 @@ in
         libXrandr
       ]
       ++ lib.optionals enableWayland [
+        gtk4-layer-shell
         wayland
       ];
 

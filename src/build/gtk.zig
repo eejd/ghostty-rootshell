@@ -3,6 +3,7 @@ const std = @import("std");
 pub const Targets = packed struct {
     x11: bool = false,
     wayland: bool = false,
+    layer_shell: bool = false,
 };
 
 /// Returns the targets that GTK4 was compiled with.
@@ -17,8 +18,24 @@ pub fn targets(b: *std.Build) Targets {
         .Ignore,
     ) catch return .{};
 
+    const x11 = std.mem.indexOf(u8, output, "x11") != null;
+    const wayland = std.mem.indexOf(u8, output, "wayland") != null;
+
+    const layer_shell = layer_shell: {
+        if (!wayland) break :layer_shell false;
+
+        _ = b.runAllowFail(
+            &.{ "pkg-config", "--exists", "gtk4-layer-shell-0" },
+            &code,
+            .Ignore,
+        ) catch break :layer_shell false;
+
+        break :layer_shell true;
+    };
+
     return .{
-        .x11 = std.mem.indexOf(u8, output, "x11") != null,
-        .wayland = std.mem.indexOf(u8, output, "wayland") != null,
+        .x11 = x11,
+        .wayland = wayland,
+        .layer_shell = layer_shell,
     };
 }
