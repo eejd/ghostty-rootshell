@@ -140,7 +140,7 @@ extension Ghostty {
             guard let ptr = v else { return "" }
             return String(cString: ptr)
         }
-        
+
         var windowPositionX: Int16? {
             guard let config = self.config else { return nil }
             var v: Int16 = 0
