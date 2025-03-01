@@ -4,6 +4,7 @@
 const Surface = @This();
 
 const std = @import("std");
+
 const adw = @import("adw");
 const gtk = @import("gtk");
 const gio = @import("gio");
@@ -28,6 +29,7 @@ const Window = @import("Window.zig");
 const Menu = @import("menu.zig").Menu;
 const ClipboardConfirmationWindow = @import("ClipboardConfirmationWindow.zig");
 const ResizeOverlay = @import("ResizeOverlay.zig");
+const URLWidget = @import("URLWidget.zig");
 const inspector = @import("inspector.zig");
 const gtk_key = @import("key.zig");
 const c = @import("c.zig").c;
@@ -216,99 +218,6 @@ pub const Container = union(enum) {
             .split_tl => self.split().?.removeTopLeft(),
             .split_br => self.split().?.removeBottomRight(),
         }
-    }
-};
-
-/// Represents the URL hover widgets that show the hovered URL.
-/// To explain a bit how this all works since its split across a few places:
-/// We create a left/right pair of labels. The left label is shown by default,
-/// and the right label is hidden. When the mouse enters the left label, we
-/// show the right label. When the mouse leaves the left label, we hide the
-/// right label.
-///
-/// The hover and styling is done with a combination of GTK event controllers
-/// and CSS in style.css.
-pub const URLWidget = struct {
-    left: *c.GtkWidget,
-    right: *c.GtkWidget,
-
-    pub fn init(surface: *const Surface, str: [:0]const u8) URLWidget {
-        // Create the left
-        const left = c.gtk_label_new(str.ptr);
-        c.gtk_label_set_ellipsize(@ptrCast(left), c.PANGO_ELLIPSIZE_MIDDLE);
-        c.gtk_widget_add_css_class(@ptrCast(left), "view");
-        c.gtk_widget_add_css_class(@ptrCast(left), "url-overlay");
-        c.gtk_widget_add_css_class(@ptrCast(left), "left");
-        c.gtk_widget_set_halign(left, c.GTK_ALIGN_START);
-        c.gtk_widget_set_valign(left, c.GTK_ALIGN_END);
-
-        // Create the right
-        const right = c.gtk_label_new(str.ptr);
-        c.gtk_label_set_ellipsize(@ptrCast(right), c.PANGO_ELLIPSIZE_MIDDLE);
-        c.gtk_widget_add_css_class(@ptrCast(right), "hidden");
-        c.gtk_widget_add_css_class(@ptrCast(right), "view");
-        c.gtk_widget_add_css_class(@ptrCast(right), "url-overlay");
-        c.gtk_widget_add_css_class(@ptrCast(right), "right");
-        c.gtk_widget_set_halign(right, c.GTK_ALIGN_END);
-        c.gtk_widget_set_valign(right, c.GTK_ALIGN_END);
-
-        // Setup our mouse hover event for the left
-        const ec_motion = c.gtk_event_controller_motion_new();
-        errdefer c.g_object_unref(ec_motion);
-        c.gtk_widget_add_controller(@ptrCast(left), ec_motion);
-        _ = c.g_signal_connect_data(
-            ec_motion,
-            "enter",
-            c.G_CALLBACK(&gtkLeftEnter),
-            right,
-            null,
-            c.G_CONNECT_DEFAULT,
-        );
-        _ = c.g_signal_connect_data(
-            ec_motion,
-            "leave",
-            c.G_CALLBACK(&gtkLeftLeave),
-            right,
-            null,
-            c.G_CONNECT_DEFAULT,
-        );
-
-        // Show it
-        c.gtk_overlay_add_overlay(surface.overlay, left);
-        c.gtk_overlay_add_overlay(surface.overlay, right);
-
-        return .{
-            .left = left,
-            .right = right,
-        };
-    }
-
-    pub fn deinit(self: *URLWidget, overlay: *c.GtkOverlay) void {
-        c.gtk_overlay_remove_overlay(overlay, @ptrCast(self.left));
-        c.gtk_overlay_remove_overlay(overlay, @ptrCast(self.right));
-    }
-
-    pub fn setText(self: *const URLWidget, str: [:0]const u8) void {
-        c.gtk_label_set_text(@ptrCast(self.left), str.ptr);
-        c.gtk_label_set_text(@ptrCast(self.right), str.ptr);
-    }
-
-    fn gtkLeftEnter(
-        _: *c.GtkEventControllerMotion,
-        _: c.gdouble,
-        _: c.gdouble,
-        ud: ?*anyopaque,
-    ) callconv(.C) void {
-        const right: *c.GtkWidget = @ptrCast(@alignCast(ud orelse return));
-        c.gtk_widget_remove_css_class(@ptrCast(right), "hidden");
-    }
-
-    fn gtkLeftLeave(
-        _: *c.GtkEventControllerMotion,
-        ud: ?*anyopaque,
-    ) callconv(.C) void {
-        const right: *c.GtkWidget = @ptrCast(@alignCast(ud orelse return));
-        c.gtk_widget_add_css_class(@ptrCast(right), "hidden");
     }
 };
 
@@ -1169,7 +1078,8 @@ pub fn setMouseVisibility(self: *Surface, visible: bool) void {
 pub fn mouseOverLink(self: *Surface, uri_: ?[]const u8) void {
     const uri = uri_ orelse {
         if (self.url_widget) |*widget| {
-            widget.deinit(self.overlay);
+            // FIXME: when Surface gets converted to zig-gobject
+            widget.deinit(@ptrCast(@alignCast(self.overlay)));
             self.url_widget = null;
         }
 
@@ -1187,7 +1097,8 @@ pub fn mouseOverLink(self: *Surface, uri_: ?[]const u8) void {
         return;
     }
 
-    self.url_widget = URLWidget.init(self, uriZ);
+    // FIXME: when Surface gets converted to zig-gobject
+    self.url_widget = URLWidget.init(@ptrCast(@alignCast(self.overlay)), uriZ);
 }
 
 pub fn supportsClipboard(
