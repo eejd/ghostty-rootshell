@@ -667,6 +667,10 @@ pub fn focusCurrentTab(self: *Window) void {
     const surface = tab.focus_child orelse return;
     const gl_area = @as(*c.GtkWidget, @ptrCast(surface.gl_area));
     _ = c.gtk_widget_grab_focus(gl_area);
+
+    if (surface.getTitle()) |title| {
+        self.setTitle(title);
+    }
 }
 
 pub fn onConfigReloaded(self: *Window) void {
