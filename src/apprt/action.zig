@@ -140,6 +140,10 @@ pub const Action = union(Key) {
     /// Sets a size limit (in pixels) for the target terminal.
     size_limit: SizeLimit,
 
+    /// Resets the window size to the default size. See the
+    /// `reset_window_size` keybinding for more information.
+    reset_window_size,
+
     /// Specifies the initial size of the target terminal.
     ///
     /// This may be sent once during the initialization of a surface
@@ -259,6 +263,7 @@ pub const Action = union(Key) {
         toggle_split_zoom,
         present_terminal,
         size_limit,
+        reset_window_size,
         initial_size,
         cell_size,
         inspector,

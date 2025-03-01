@@ -4228,6 +4228,12 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             {},
         ),
 
+        .reset_window_size => return try self.rt_app.performAction(
+            .{ .surface = self },
+            .reset_window_size,
+            {},
+        ),
+
         .toggle_maximize => return try self.rt_app.performAction(
             .{ .surface = self },
             .toggle_maximize,
