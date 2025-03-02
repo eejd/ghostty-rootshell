@@ -145,6 +145,7 @@
 
 # Terminal
 /src/simd/ @ghostty-org/terminal
+/src/input/KeyEncoder.zig @ghostty-org/terminal
 /src/terminal/ @ghostty-org/terminal
 /src/terminfo/ @ghostty-org/terminal
 /src/unicode/ @ghostty-org/terminal
