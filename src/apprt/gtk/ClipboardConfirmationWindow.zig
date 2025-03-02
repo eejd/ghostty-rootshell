@@ -25,7 +25,8 @@ dialog: *DialogType,
 data: [:0]u8,
 core_surface: *CoreSurface,
 pending_req: apprt.ClipboardRequest,
-content_revealer: *gtk.Revealer,
+text_view: *gtk.TextView,
+text_view_scroll: *gtk.ScrolledWindow,
 reveal_button_widget: *gtk.Widget,
 hide_button_widget: *gtk.Widget,
 
@@ -85,9 +86,10 @@ fn init(
     defer builder.deinit();
 
     const dialog = builder.getObject(DialogType, "clipboard_confirmation_window").?;
-    const content_revealer = builder.getObject(gtk.Revealer, "content_revealer").?;
-    const reveal_button: *gtk.Button = builder.getObject(gtk.Button, "reveal_button").?;
-    const hide_button: *gtk.Button = builder.getObject(gtk.Button, "hide_button").?;
+    const text_view = builder.getObject(gtk.TextView, "text_view").?;
+    const reveal_button = builder.getObject(gtk.Button, "reveal_button").?;
+    const hide_button = builder.getObject(gtk.Button, "hide_button").?;
+    const text_view_scroll = builder.getObject(gtk.ScrolledWindow, "text_view_scroll").?;
 
     const copy = try app.core_app.alloc.dupeZ(u8, data);
     errdefer app.core_app.alloc.free(copy);
@@ -97,22 +99,37 @@ fn init(
         .data = copy,
         .core_surface = core_surface,
         .pending_req = request,
-        .content_revealer = content_revealer,
+        .text_view = text_view,
+        .text_view_scroll = text_view_scroll,
         .reveal_button_widget = gobject.ext.cast(gtk.Widget, reveal_button).?,
         .hide_button_widget = gobject.ext.cast(gtk.Widget, hide_button).?,
     };
 
-    const text_view = builder.getObject(gtk.TextView, "text_view").?;
     const buffer = gtk.TextBuffer.new(null);
     errdefer buffer.unref();
     buffer.insertAtCursor(copy.ptr, @intCast(copy.len));
     text_view.setBuffer(buffer);
 
     if (is_secure_input) {
-        content_revealer.setRevealChild(@intFromBool(false));
+        gobject.ext.as(gtk.Widget, text_view_scroll).setSensitive(@intFromBool(false));
+        gobject.ext.as(gtk.Widget, self.text_view).addCssClass("blurred");
+
         self.reveal_button_widget.setVisible(@intFromBool(true));
-        _ = gtk.Button.signals.clicked.connect(reveal_button, *ClipboardConfirmation, gtkRevealButtonClicked, self, .{});
-        _ = gtk.Button.signals.clicked.connect(hide_button, *ClipboardConfirmation, gtkHideButtonClicked, self, .{});
+
+        _ = gtk.Button.signals.clicked.connect(
+            reveal_button,
+            *ClipboardConfirmation,
+            gtkRevealButtonClicked,
+            self,
+            .{},
+        );
+        _ = gtk.Button.signals.clicked.connect(
+            hide_button,
+            *ClipboardConfirmation,
+            gtkHideButtonClicked,
+            self,
+            .{},
+        );
     }
 
     switch (DialogType) {
@@ -172,13 +189,17 @@ fn gtkResponse(_: *DialogType, response: [*:0]u8, self: *ClipboardConfirmation) 
 }
 
 fn gtkRevealButtonClicked(_: *gtk.Button, self: *ClipboardConfirmation) callconv(.C) void {
-    self.content_revealer.setRevealChild(@intFromBool(true));
+    gobject.ext.as(gtk.Widget, self.text_view_scroll).setSensitive(@intFromBool(true));
+    gobject.ext.as(gtk.Widget, self.text_view).removeCssClass("blurred");
+
     self.hide_button_widget.setVisible(@intFromBool(true));
     self.reveal_button_widget.setVisible(@intFromBool(false));
 }
 
 fn gtkHideButtonClicked(_: *gtk.Button, self: *ClipboardConfirmation) callconv(.C) void {
-    self.content_revealer.setRevealChild(@intFromBool(false));
+    gobject.ext.as(gtk.Widget, self.text_view_scroll).setSensitive(@intFromBool(false));
+    gobject.ext.as(gtk.Widget, self.text_view).addCssClass("blurred");
+
     self.hide_button_widget.setVisible(@intFromBool(false));
     self.reveal_button_widget.setVisible(@intFromBool(true));
 }

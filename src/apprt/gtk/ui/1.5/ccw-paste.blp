@@ -36,23 +36,22 @@ Adw.AlertDialog clipboard_confirmation_window {
       label: _("Hide Potentially Sensitive Content");
     }
 
-    Revealer content_revealer {
-      reveal-child: true;
-      transition-type: slide_down;
+    ScrolledWindow text_view_scroll {
+      width-request: 500;
+      height-request: 250;
 
-      ScrolledWindow {
-        width-request: 500;
-        height-request: 250;
+      TextView text_view {
+        cursor-visible: false;
+        editable: false;
+        monospace: true;
+        top-margin: 8;
+        left-margin: 8;
+        bottom-margin: 8;
+        right-margin: 8;
 
-        TextView text_view {
-          cursor-visible: false;
-          editable: false;
-          monospace: true;
-          top-margin: 8;
-          left-margin: 8;
-          bottom-margin: 8;
-          right-margin: 8;
-        }
+        styles [
+          "clipboard-content-view"
+        ]
       }
     }
   };
