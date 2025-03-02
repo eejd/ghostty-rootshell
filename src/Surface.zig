@@ -2432,6 +2432,12 @@ pub fn scrollCallback(
             try self.setSelection(null);
         }
 
+        // We never use a multiplier for precision scrolls.
+        const multiplier: f64 = if (scroll_mods.precision)
+            1.0
+        else
+            self.config.mouse_scroll_multiplier;
+
         // If we're in alternate screen with alternate scroll enabled, then
         // we convert to cursor keys. This only happens if we're:
         // (1) alt screen (2) no explicit mouse reporting and (3) alt
@@ -2459,7 +2465,7 @@ pub fn scrollCallback(
                     };
                 };
                 // We multiple by the scroll multiplier when reporting arrows
-                const multiplied = y.multiplied(self.config.mouse_scroll_multiplier);
+                const multiplied = y.multiplied(multiplier);
                 for (0..multiplied.magnitude()) |_| {
                     self.io.queueMessage(.{ .write_stable = seq }, .locked);
                 }
@@ -2497,7 +2503,7 @@ pub fn scrollCallback(
 
         if (y.delta != 0) {
             // We multiply by the multiplier when scrolling the viewport
-            const multiplied = y.multiplied(self.config.mouse_scroll_multiplier);
+            const multiplied = y.multiplied(multiplier);
             // Modify our viewport, this requires a lock since it affects
             // rendering. We have to switch signs here because our delta
             // is negative down but our viewport is positive down.
