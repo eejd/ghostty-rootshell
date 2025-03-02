@@ -304,6 +304,9 @@ cgroup_path: ?[]const u8 = null,
 /// Our context menu.
 context_menu: Menu(Surface, "context_menu", false),
 
+/// True when we have a precision scroll in progress
+precision_scroll: bool = false,
+
 /// The state of the key event while we're doing IM composition.
 /// See gtkKeyPressed for detailed descriptions.
 pub const IMKeyEvent = enum {
@@ -418,10 +421,7 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
     c.gtk_widget_add_controller(@ptrCast(@alignCast(overlay)), ec_motion);
 
     // Scroll events
-    const ec_scroll = c.gtk_event_controller_scroll_new(
-        c.GTK_EVENT_CONTROLLER_SCROLL_BOTH_AXES |
-            c.GTK_EVENT_CONTROLLER_SCROLL_DISCRETE,
-    );
+    const ec_scroll = c.gtk_event_controller_scroll_new(c.GTK_EVENT_CONTROLLER_SCROLL_BOTH_AXES);
     errdefer c.g_object_unref(ec_scroll);
     c.gtk_widget_add_controller(@ptrCast(overlay), ec_scroll);
 
@@ -532,6 +532,8 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
     _ = c.g_signal_connect_data(ec_motion, "motion", c.G_CALLBACK(&gtkMouseMotion), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(ec_motion, "leave", c.G_CALLBACK(&gtkMouseLeave), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(ec_scroll, "scroll", c.G_CALLBACK(&gtkMouseScroll), self, null, c.G_CONNECT_DEFAULT);
+    _ = c.g_signal_connect_data(ec_scroll, "scroll-begin", c.G_CALLBACK(&gtkMouseScrollPrecisionBegin), self, null, c.G_CONNECT_DEFAULT);
+    _ = c.g_signal_connect_data(ec_scroll, "scroll-end", c.G_CALLBACK(&gtkMouseScrollPrecisionEnd), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(im_context, "preedit-start", c.G_CALLBACK(&gtkInputPreeditStart), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(im_context, "preedit-changed", c.G_CALLBACK(&gtkInputPreeditChanged), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(im_context, "preedit-end", c.G_CALLBACK(&gtkInputPreeditEnd), self, null, c.G_CONNECT_DEFAULT);
@@ -1523,6 +1525,22 @@ fn gtkMouseLeave(
     };
 }
 
+fn gtkMouseScrollPrecisionBegin(
+    _: *c.GtkEventControllerScroll,
+    ud: ?*anyopaque,
+) callconv(.C) void {
+    const self = userdataSelf(ud.?);
+    self.precision_scroll = true;
+}
+
+fn gtkMouseScrollPrecisionEnd(
+    _: *c.GtkEventControllerScroll,
+    ud: ?*anyopaque,
+) callconv(.C) void {
+    const self = userdataSelf(ud.?);
+    self.precision_scroll = false;
+}
+
 fn gtkMouseScroll(
     _: *c.GtkEventControllerScroll,
     x: c.gdouble,
@@ -1533,15 +1551,17 @@ fn gtkMouseScroll(
     const scaled = self.scaledCoordinates(x, y);
 
     // GTK doesn't support any of the scroll mods.
-    const scroll_mods: input.ScrollMods = .{};
+    const scroll_mods: input.ScrollMods = .{ .precision = self.precision_scroll };
+    // Multiply precision scrolls by 10 to get a better response from touchpad scrolling
+    const multiplier: f64 = if (self.precision_scroll) 10 else 1;
 
     self.core_surface.scrollCallback(
         // We invert because we apply natural scrolling to the values.
         // This behavior has existed for years without Linux users complaining
         // but I suspect we'll have to make this configurable in the future
         // or read a system setting.
-        scaled.x * -1,
-        scaled.y * -1,
+        scaled.x * -1 * multiplier,
+        scaled.y * -1 * multiplier,
         scroll_mods,
     ) catch |err| {
         log.err("error in scroll callback err={}", .{err});
