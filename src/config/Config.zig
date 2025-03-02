@@ -612,7 +612,7 @@ palette: Palette = .{},
 /// A value of "1" (default) scrolls the default amount. A value of "2" scrolls
 /// double the default amount. A value of "0.5" scrolls half the default amount.
 /// Et cetera.
-@"mouse-scroll-multiplier": f64 = 1.0,
+@"mouse-scroll-multiplier": f64 = 3.0,
 
 /// The opacity level (opposite of transparency) of the background. A value of
 /// 1 is fully opaque and a value of 0 is fully transparent. A value less than 0
