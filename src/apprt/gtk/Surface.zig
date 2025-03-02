@@ -307,6 +307,9 @@ context_menu: Menu(Surface, "context_menu", false),
 /// True when we have a precision scroll in progress
 precision_scroll: bool = false,
 
+/// Flag indicating whether the surface is in secure input mode.
+is_secure_input: bool = false,
+
 /// The state of the key event while we're doing IM composition.
 /// See gtkKeyPressed for detailed descriptions.
 pub const IMKeyEvent = enum {
@@ -1162,6 +1165,7 @@ pub fn setClipboardString(
         val,
         &self.core_surface,
         .{ .osc_52_write = clipboard_type },
+        self.is_secure_input,
     ) catch |window_err| {
         log.err("failed to create clipboard confirmation window err={}", .{window_err});
     };
@@ -1205,12 +1209,7 @@ fn gtkClipboardRead(
         error.UnauthorizedPaste,
         => {
             // Create a dialog and ask the user if they want to paste anyway.
-            ClipboardConfirmationWindow.create(
-                self.app,
-                str,
-                &self.core_surface,
-                req.state,
-            ) catch |window_err| {
+            ClipboardConfirmationWindow.create(self.app, str, &self.core_surface, req.state, self.is_secure_input) catch |window_err| {
                 log.err("failed to create clipboard confirmation window err={}", .{window_err});
             };
             return;
@@ -2225,12 +2224,7 @@ fn doPaste(self: *Surface, data: [:0]const u8) void {
         error.UnsafePaste,
         error.UnauthorizedPaste,
         => {
-            ClipboardConfirmationWindow.create(
-                self.app,
-                data,
-                &self.core_surface,
-                .paste,
-            ) catch |window_err| {
+            ClipboardConfirmationWindow.create(self.app, data, &self.core_surface, .paste, self.is_secure_input) catch |window_err| {
                 log.err("failed to create clipboard confirmation window err={}", .{window_err});
             };
         },
@@ -2319,5 +2313,13 @@ fn gtkPromptTitleResponse(source_object: ?*gobject.Object, result: *gio.AsyncRes
                 log.err("failed to set title={}", .{err});
             };
         }
+    }
+}
+
+pub fn setSecureInput(self: *Surface, value: apprt.action.SecureInput) void {
+    switch (value) {
+        .on => self.is_secure_input = true,
+        .off => self.is_secure_input = false,
+        .toggle => self.is_secure_input = !self.is_secure_input,
     }
 }

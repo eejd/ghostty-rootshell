@@ -25,12 +25,16 @@ dialog: *DialogType,
 data: [:0]u8,
 core_surface: *CoreSurface,
 pending_req: apprt.ClipboardRequest,
+content_revealer: *gtk.Revealer,
+reveal_button_widget: *gtk.Widget,
+hide_button_widget: *gtk.Widget,
 
 pub fn create(
     app: *App,
     data: []const u8,
     core_surface: *CoreSurface,
     request: apprt.ClipboardRequest,
+    is_secure_input: bool,
 ) !void {
     if (app.clipboard_confirmation_window != null) return error.WindowAlreadyExists;
 
@@ -43,6 +47,7 @@ pub fn create(
         data,
         core_surface,
         request,
+        is_secure_input,
     );
 
     app.clipboard_confirmation_window = self;
@@ -62,6 +67,7 @@ fn init(
     data: []const u8,
     core_surface: *CoreSurface,
     request: apprt.ClipboardRequest,
+    is_secure_input: bool,
 ) !void {
     var builder = switch (DialogType) {
         adw.AlertDialog => switch (request) {
@@ -79,6 +85,9 @@ fn init(
     defer builder.deinit();
 
     const dialog = builder.getObject(DialogType, "clipboard_confirmation_window").?;
+    const content_revealer = builder.getObject(gtk.Revealer, "content_revealer").?;
+    const reveal_button: *gtk.Button = builder.getObject(gtk.Button, "reveal_button").?;
+    const hide_button: *gtk.Button = builder.getObject(gtk.Button, "hide_button").?;
 
     const copy = try app.core_app.alloc.dupeZ(u8, data);
     errdefer app.core_app.alloc.free(copy);
@@ -88,14 +97,23 @@ fn init(
         .data = copy,
         .core_surface = core_surface,
         .pending_req = request,
+        .content_revealer = content_revealer,
+        .reveal_button_widget = gobject.ext.cast(gtk.Widget, reveal_button).?,
+        .hide_button_widget = gobject.ext.cast(gtk.Widget, hide_button).?,
     };
 
     const text_view = builder.getObject(gtk.TextView, "text_view").?;
-
     const buffer = gtk.TextBuffer.new(null);
     errdefer buffer.unref();
     buffer.insertAtCursor(copy.ptr, @intCast(copy.len));
     text_view.setBuffer(buffer);
+
+    if (is_secure_input) {
+        content_revealer.setRevealChild(@intFromBool(false));
+        self.reveal_button_widget.setVisible(@intFromBool(true));
+        _ = gtk.Button.signals.clicked.connect(reveal_button, *ClipboardConfirmation, gtkRevealButtonClicked, self, .{});
+        _ = gtk.Button.signals.clicked.connect(hide_button, *ClipboardConfirmation, gtkHideButtonClicked, self, .{});
+    }
 
     switch (DialogType) {
         adw.AlertDialog => {
@@ -151,4 +169,16 @@ fn gtkResponse(_: *DialogType, response: [*:0]u8, self: *ClipboardConfirmation) 
         };
     }
     self.destroy();
+}
+
+fn gtkRevealButtonClicked(_: *gtk.Button, self: *ClipboardConfirmation) callconv(.C) void {
+    self.content_revealer.setRevealChild(@intFromBool(true));
+    self.hide_button_widget.setVisible(@intFromBool(true));
+    self.reveal_button_widget.setVisible(@intFromBool(false));
+}
+
+fn gtkHideButtonClicked(_: *gtk.Button, self: *ClipboardConfirmation) callconv(.C) void {
+    self.content_revealer.setRevealChild(@intFromBool(false));
+    self.hide_button_widget.setVisible(@intFromBool(false));
+    self.reveal_button_widget.setVisible(@intFromBool(true));
 }

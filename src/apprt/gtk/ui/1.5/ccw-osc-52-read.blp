@@ -14,18 +14,46 @@ Adw.AlertDialog clipboard_confirmation_window {
   default-response: "cancel";
   close-response: "cancel";
 
-  extra-child: ScrolledWindow {
-    width-request: 500;
-    height-request: 250;
+  extra-child: Box {
+    orientation: vertical;
+    spacing: 12;
 
-    TextView text_view {
-      cursor-visible: false;
-      editable: false;
-      monospace: true;
-      top-margin: 8;
-      left-margin: 8;
-      bottom-margin: 8;
-      right-margin: 8;
+    Button reveal_button {
+      visible: false;
+
+      styles [
+        "destructive-action"
+      ]
+
+      Adw.ButtonContent {
+        label: _("Reveal Potentially Sensitive Content");
+        icon-name: "dialog-warning-symbolic";
+      }
+    }
+
+    Button hide_button {
+      visible: false;
+      label: _("Hide Potentially Sensitive Content");
+    }
+
+    Revealer content_revealer {
+      reveal-child: true;
+      transition-type: slide_down;
+
+      ScrolledWindow {
+        width-request: 500;
+        height-request: 250;
+
+        TextView text_view {
+          cursor-visible: false;
+          editable: false;
+          monospace: true;
+          top-margin: 8;
+          left-margin: 8;
+          bottom-margin: 8;
+          right-margin: 8;
+        }
+      }
     }
   };
 }
