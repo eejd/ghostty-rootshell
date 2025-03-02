@@ -2325,6 +2325,13 @@ const ScrollAmount = struct {
     pub fn magnitude(self: ScrollAmount) usize {
         return @abs(self.delta);
     }
+
+    pub fn multiplied(self: ScrollAmount, multiplier: f64) ScrollAmount {
+        const delta_f64: f64 = @floatFromInt(self.delta);
+        const delta_adjusted: f64 = delta_f64 * multiplier;
+        const delta_isize: isize = @intFromFloat(@round(delta_adjusted));
+        return .{ .delta = delta_isize };
+    }
 };
 
 /// Mouse scroll event. Negative is down, left. Positive is up, right.
@@ -2352,8 +2359,7 @@ pub fn scrollCallback(
         // it as the number of lines to scroll.
         if (!scroll_mods.precision) {
             // Calculate our magnitude of scroll. This is a direct multiple of yoff
-            const y_delta_f64: f64 = @round(yoff * self.config.mouse_scroll_multiplier);
-            const y_delta_isize: isize = @intFromFloat(y_delta_f64);
+            const y_delta_isize: isize = @intFromFloat(@round(yoff));
             break :y .{ .delta = y_delta_isize };
         }
 
@@ -2362,7 +2368,7 @@ pub fn scrollCallback(
         // tiny amount so that we can scroll by a full row when we have enough.
 
         // Adjust our offset by the multiplier
-        const yoff_adjusted: f64 = yoff * self.config.mouse_scroll_multiplier;
+        const yoff_adjusted: f64 = yoff;
 
         // Add our previously saved pending amount to the offset to get the
         // new offset value. The signs of the pending and yoff should match
@@ -2394,13 +2400,11 @@ pub fn scrollCallback(
     // For detailed comments see the y calculation above.
     const x: ScrollAmount = if (xoff == 0) .{} else x: {
         if (!scroll_mods.precision) {
-            const x_delta_f64: f64 = @round(xoff * self.config.mouse_scroll_multiplier);
-            const x_delta_isize: isize = @intFromFloat(x_delta_f64);
+            const x_delta_isize: isize = @intFromFloat(@round(xoff));
             break :x .{ .delta = x_delta_isize };
         }
 
-        const xoff_adjusted: f64 = xoff * self.config.mouse_scroll_multiplier;
-        const poff: f64 = self.mouse.pending_scroll_x + xoff_adjusted;
+        const poff: f64 = self.mouse.pending_scroll_x + xoff;
         const cell_size: f64 = @floatFromInt(self.size.cell.width);
         if (@abs(poff) < cell_size) {
             self.mouse.pending_scroll_x = poff;
@@ -2454,7 +2458,9 @@ pub fn scrollCallback(
                         .down_left => "\x1b[B",
                     };
                 };
-                for (0..y.magnitude()) |_| {
+                // We multiple by the scroll multiplier when reporting arrows
+                const multiplied = y.multiplied(self.config.mouse_scroll_multiplier);
+                for (0..multiplied.magnitude()) |_| {
                     self.io.queueMessage(.{ .write_stable = seq }, .locked);
                 }
             }
@@ -2490,10 +2496,12 @@ pub fn scrollCallback(
         }
 
         if (y.delta != 0) {
+            // We multiply by the multiplier when scrolling the viewport
+            const multiplied = y.multiplied(self.config.mouse_scroll_multiplier);
             // Modify our viewport, this requires a lock since it affects
             // rendering. We have to switch signs here because our delta
             // is negative down but our viewport is positive down.
-            try self.io.terminal.scrollViewport(.{ .delta = y.delta * -1 });
+            try self.io.terminal.scrollViewport(.{ .delta = multiplied.delta * -1 });
         }
     }
 
