@@ -609,9 +609,7 @@ palette: Palette = .{},
 /// than 0.01 or greater than 10,000 will be clamped to the nearest valid
 /// value.
 ///
-/// A value of "1" (default) scrolls the default amount. A value of "2" scrolls
-/// double the default amount. A value of "0.5" scrolls half the default amount.
-/// Et cetera.
+/// A value of "3" (default) scrolls 3 lines per tick.
 @"mouse-scroll-multiplier": f64 = 3.0,
 
 /// The opacity level (opposite of transparency) of the background. A value of
