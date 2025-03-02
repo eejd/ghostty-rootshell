@@ -35,6 +35,7 @@ pub fn encode(
     self: *const KeyEncoder,
     buf: []u8,
 ) ![]const u8 {
+    // log.warn("KEYENCODER self={}", .{self.j});
     if (self.kitty_flags.int() != 0) return try self.kitty(buf);
     return try self.legacy(buf);
 }
@@ -411,6 +412,19 @@ fn legacy(
     // we need to prefix the utf8 sequence with an esc.
     if (try self.legacyAltPrefix(binding_mods, all_mods)) |byte| {
         return try std.fmt.bufPrint(buf, "\x1B{c}", .{byte});
+    }
+
+    // If we are on macOS, command+keys do not encode text. It isn't
+    // typical for command+keys on macOS to ever encode text. They
+    // don't in native text inputs (i.e. TextEdit) and they also don't
+    // in other native terminals (Terminal.app officially but also
+    // iTerm2).
+    //
+    // For Linux, we continue to encode text because it is typical.
+    // For example on Gnome Console Super+b will encode a "b" character
+    // with legacy encoding.
+    if ((comptime builtin.os.tag == .macos) and all_mods.super) {
+        return "";
     }
 
     return try copyToBuf(buf, utf8);
@@ -2161,6 +2175,38 @@ test "legacy: hu layout ctrl+ő sends proper codepoint" {
 
     const actual = try enc.legacy(&buf);
     try testing.expectEqualStrings("[337;5u", actual[1..]);
+}
+
+test "legacy: super-only on macOS with text" {
+    if (comptime builtin.os.tag != .macos) return error.SkipZigTest;
+
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .b,
+            .utf8 = "b",
+            .mods = .{ .super = true },
+        },
+    };
+
+    const actual = try enc.legacy(&buf);
+    try testing.expectEqualStrings("", actual);
+}
+
+test "legacy: super and other mods on macOS with text" {
+    if (comptime builtin.os.tag != .macos) return error.SkipZigTest;
+
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .b,
+            .utf8 = "B",
+            .mods = .{ .super = true, .shift = true },
+        },
+    };
+
+    const actual = try enc.legacy(&buf);
+    try testing.expectEqualStrings("", actual);
 }
 
 test "ctrlseq: normal ctrl c" {
