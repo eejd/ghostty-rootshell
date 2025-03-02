@@ -2348,22 +2348,12 @@ pub fn scrollCallback(
     if (self.mouse.hidden) self.showMouse();
 
     const y: ScrollAmount = if (yoff == 0) .{} else y: {
-        // Non-precision scrolling is easy to calculate. We don't use
-        // the given offset at all and instead just treat a positive
-        // as a scroll up and a negative as a scroll down and scroll in
-        // steps.
+        // Non-precision scrolls don't accumulate. We cast that raw yoff to an isize and interpret
+        // it as the number of lines to scroll.
         if (!scroll_mods.precision) {
-            // Calculate our magnitude of scroll. This is constant (not
-            // dependent on yoff).
-            const grid_size = self.size.grid();
-            const grid_rows_f64: f64 = @floatFromInt(grid_size.rows);
-            const y_delta_f64: f64 = @round((grid_rows_f64 * self.config.mouse_scroll_multiplier) / 15.0);
-            const y_delta_usize: usize = @max(1, @as(usize, @intFromFloat(y_delta_f64)));
-
-            // Calculate our direction of scroll based on the sign of yoff.
-            const y_sign: isize = if (yoff >= 0) 1 else -1;
-            const y_delta_isize: isize = y_sign * @as(isize, @intCast(y_delta_usize));
-
+            // Calculate our magnitude of scroll. This is a direct multiple of yoff
+            const y_delta_f64: f64 = @round(yoff * self.config.mouse_scroll_multiplier);
+            const y_delta_isize: isize = @intFromFloat(y_delta_f64);
             break :y .{ .delta = y_delta_isize };
         }
 
@@ -2404,10 +2394,8 @@ pub fn scrollCallback(
     // For detailed comments see the y calculation above.
     const x: ScrollAmount = if (xoff == 0) .{} else x: {
         if (!scroll_mods.precision) {
-            const x_delta_f64: f64 = @round(1 * self.config.mouse_scroll_multiplier);
-            const x_delta_usize: usize = @max(1, @as(usize, @intFromFloat(x_delta_f64)));
-            const x_sign: isize = if (xoff >= 0) 1 else -1;
-            const x_delta_isize: isize = x_sign * @as(isize, @intCast(x_delta_usize));
+            const x_delta_f64: f64 = @round(xoff * self.config.mouse_scroll_multiplier);
+            const x_delta_isize: isize = @intFromFloat(x_delta_f64);
             break :x .{ .delta = x_delta_isize };
         }
 
