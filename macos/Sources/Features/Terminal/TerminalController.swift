@@ -85,6 +85,12 @@ class TerminalController: BaseTerminalController {
             selector: #selector(onFrameDidChange),
             name: NSView.frameDidChangeNotification,
             object: nil)
+        center.addObserver(
+            self,
+            selector: #selector(onEqualizeSplits),
+            name: Ghostty.Notification.didEqualizeSplits,
+            object: nil
+        )
     }
 
     required init?(coder: NSCoder) {
@@ -857,6 +863,17 @@ class TerminalController: BaseTerminalController {
         }
 
         toggleFullscreen(mode: fullscreenMode)
+    }
+
+    @objc private func onEqualizeSplits(_ notification: Notification) {
+        guard let target = notification.object as? Ghostty.SurfaceView else { return }
+
+        // Check if target surface is in current controller's tree
+        guard surfaceTree?.contains(view: target) ?? false else { return }
+
+        if case .split(let container) = surfaceTree {
+            _ = container.equalize()
+        }
     }
 
     struct DerivedConfig {
