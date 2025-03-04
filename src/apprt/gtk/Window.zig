@@ -377,7 +377,12 @@ pub fn present(self: *Window) void {
 
 pub fn toggleVisibility(self: *Window) void {
     const window: *gtk.Widget = @ptrCast(self.window);
+
     window.setVisible(@intFromBool(window.isVisible() == 0));
+}
+
+pub fn isQuickTerminal(self: *Window) bool {
+    return self.app.quick_terminal == self;
 }
 
 pub fn updateConfig(
@@ -420,7 +425,7 @@ pub fn syncAppearance(self: *Window) !void {
         if (!csd_enabled) break :visible false;
 
         // Never display the header bar as a quick terminal.
-        if (self.app.quick_terminal == self) break :visible false;
+        if (self.isQuickTerminal()) break :visible false;
 
         // Unconditionally disable the header bar when fullscreened.
         if (self.config.fullscreen) break :visible false;
@@ -471,12 +476,6 @@ pub fn syncAppearance(self: *Window) !void {
     self.winproto.syncAppearance() catch |err| {
         log.warn("failed to sync winproto appearance error={}", .{err});
     };
-
-    if (self.app.quick_terminal == self) {
-        self.winproto.syncQuickTerminal() catch |err| {
-            log.warn("failed to sync quick terminal appearance error={}", .{err});
-        };
-    }
 }
 
 fn toggleCssClass(
@@ -802,7 +801,7 @@ pub fn close(self: *Window) void {
     const window: *gtk.Window = @ptrCast(self.window);
 
     // Unset the quick terminal on the app level
-    if (self.app.quick_terminal == self) self.app.quick_terminal = null;
+    if (self.isQuickTerminal()) self.app.quick_terminal = null;
 
     window.destroy();
 }
@@ -811,9 +810,6 @@ fn gtkCloseRequest(v: *c.GtkWindow, ud: ?*anyopaque) callconv(.C) bool {
     _ = v;
     log.debug("window close request", .{});
     const self = userdataSelf(ud.?);
-
-    // This path should never occur, but this is here as a safety measure.
-    if (self.app.quick_terminal == self) return true;
 
     // If none of our surfaces need confirmation, we can just exit.
     for (self.app.core_app.surfaces.items) |surface| {

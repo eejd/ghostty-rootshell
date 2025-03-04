@@ -228,8 +228,6 @@ pub const Window = struct {
         };
     }
 
-    pub fn syncQuickTerminal(_: *Window) !void {}
-
     pub fn clientSideDecorationEnabled(self: Window) bool {
         return switch (self.config.window_decoration) {
             .auto, .client => true,

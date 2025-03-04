@@ -27,6 +27,8 @@ pub const App = struct {
         // https://gitlab.gnome.org/GNOME/gtk/-/merge_requests/6398
         kde_decoration_manager: ?*org.KdeKwinServerDecorationManager = null,
 
+        kde_slide_manager: ?*org.KdeKwinSlideManager = null,
+
         default_deco_mode: ?org.KdeKwinServerDecorationManager.Mode = null,
     };
 
@@ -117,13 +119,26 @@ pub const App = struct {
                     global,
                 )) |blur_manager| {
                     context.kde_blur_manager = blur_manager;
-                } else if (registryBind(
+                    return;
+                }
+
+                if (registryBind(
                     org.KdeKwinServerDecorationManager,
                     registry,
                     global,
                 )) |deco_manager| {
                     context.kde_decoration_manager = deco_manager;
                     deco_manager.setListener(*Context, decoManagerListener, context);
+                    return;
+                }
+
+                if (registryBind(
+                    org.KdeKwinSlideManager,
+                    registry,
+                    global,
+                )) |slide_manager| {
+                    context.kde_slide_manager = slide_manager;
+                    return;
                 }
             },
 
@@ -188,6 +203,10 @@ pub const Window = struct {
     /// of the window.
     decoration: ?*org.KdeKwinServerDecoration,
 
+    /// Object that controls the slide-in/slide-out animations of the
+    /// quick terminal. Always null for windows other than the quick terminal.
+    slide: ?*org.KdeKwinSlide,
+
     pub fn init(
         alloc: Allocator,
         app: *App,
@@ -232,6 +251,7 @@ pub const Window = struct {
             .app_context = app.context,
             .blur_token = null,
             .decoration = deco,
+            .slide = null,
         };
     }
 
@@ -239,6 +259,7 @@ pub const Window = struct {
         _ = alloc;
         if (self.blur_token) |blur| blur.release();
         if (self.decoration) |deco| deco.release();
+        if (self.slide) |slide| slide.release();
     }
 
     pub fn resizeEvent(_: *Window) !void {}
@@ -250,6 +271,12 @@ pub const Window = struct {
         self.syncDecoration() catch |err| {
             log.err("failed to sync blur={}", .{err});
         };
+
+        if (self.apprt_window.isQuickTerminal()) {
+            self.syncQuickTerminal() catch |err| {
+                log.warn("failed to sync quick terminal appearance={}", .{err});
+            };
+        }
     }
 
     pub fn clientSideDecorationEnabled(self: Window) bool {
@@ -308,7 +335,7 @@ pub const Window = struct {
         };
     }
 
-    pub fn syncQuickTerminal(self: *Window) !void {
+    fn syncQuickTerminal(self: *Window) !void {
         if (comptime !build_options.layer_shell) return;
 
         const window = self.apprt_window.window;
@@ -339,6 +366,22 @@ pub const Window = struct {
             .top, .bottom, .center => c.gtk_window_set_default_size(window, 800, 400),
             .left, .right => c.gtk_window_set_default_size(window, 400, 800),
         }
+
+        if (self.apprt_window.isQuickTerminal()) {
+            if (self.slide) |slide| slide.release();
+
+            self.slide = if (anchored_edge) |anchored| slide: {
+                const mgr = self.app_context.kde_slide_manager orelse break :slide null;
+
+                const slide = mgr.create(self.surface) catch |err| {
+                    log.warn("could not create slide object={}", .{err});
+                    break :slide null;
+                };
+                slide.setLocation(@intCast(@intFromEnum(anchored.toKdeSlideLocation())));
+                slide.commit();
+                break :slide slide;
+            } else null;
+        }
     }
 };
 
@@ -347,4 +390,13 @@ const LayerShellEdge = enum(c_uint) {
     right = c.GTK_LAYER_SHELL_EDGE_RIGHT,
     top = c.GTK_LAYER_SHELL_EDGE_TOP,
     bottom = c.GTK_LAYER_SHELL_EDGE_BOTTOM,
+
+    fn toKdeSlideLocation(self: LayerShellEdge) org.KdeKwinSlide.Location {
+        return switch (self) {
+            .left => .left,
+            .top => .top,
+            .right => .right,
+            .bottom => .bottom,
+        };
+    }
 };
