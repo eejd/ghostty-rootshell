@@ -101,6 +101,8 @@ parts:
       - libllvm17
       - libunistring5
       - librsvg2-2
+      - librsvg2-common
+      - libgdk-pixbuf-2.0-0
       - on amd64:
           [
             i965-va-driver,
@@ -127,6 +129,7 @@ parts:
       # The libraries in dri need no-patchelf, so they come from the mesa-unpatched part
       - usr/lib/*/*.so*
       - usr/lib/*/dri/libdril_dri.so
+      - -usr/lib/*/libxml2.so.*
       - -usr/lib/*/libgallium*so
       - -usr/lib/*/dri
 
