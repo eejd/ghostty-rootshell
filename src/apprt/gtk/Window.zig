@@ -81,6 +81,7 @@ pub const DerivedConfig = struct {
     gtk_toolbar_style: configpkg.Config.GtkToolbarStyle,
 
     quick_terminal_position: configpkg.Config.QuickTerminalPosition,
+    quick_terminal_autohide: bool,
 
     maximize: bool,
     fullscreen: bool,
@@ -98,6 +99,7 @@ pub const DerivedConfig = struct {
             .gtk_toolbar_style = config.@"gtk-toolbar-style",
 
             .quick_terminal_position = config.@"quick-terminal-position",
+            .quick_terminal_autohide = config.@"quick-terminal-autohide",
 
             .maximize = config.maximize,
             .fullscreen = config.fullscreen,
@@ -247,6 +249,7 @@ pub fn init(self: *Window, app: *App) !void {
 
     _ = c.g_signal_connect_data(self.window, "notify::maximized", c.G_CALLBACK(&gtkWindowNotifyMaximized), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(self.window, "notify::fullscreened", c.G_CALLBACK(&gtkWindowNotifyFullscreened), self, null, c.G_CONNECT_DEFAULT);
+    _ = c.g_signal_connect_data(self.window, "notify::is-active", c.G_CALLBACK(&gtkWindowNotifyIsActive), self, null, c.G_CONNECT_DEFAULT);
 
     // If Adwaita is enabled and is older than 1.4.0 we don't have the tab overview and so we
     // need to stick the headerbar into the content box.
@@ -378,7 +381,12 @@ pub fn present(self: *Window) void {
 
 pub fn toggleVisibility(self: *Window) void {
     const window: *gtk.Widget = @ptrCast(self.window);
+
     window.setVisible(@intFromBool(window.isVisible() == 0));
+}
+
+pub fn isQuickTerminal(self: *Window) bool {
+    return self.app.quick_terminal == self;
 }
 
 pub fn updateConfig(
@@ -421,7 +429,7 @@ pub fn syncAppearance(self: *Window) !void {
         if (!csd_enabled) break :visible false;
 
         // Never display the header bar as a quick terminal.
-        if (self.app.quick_terminal == self) break :visible false;
+        if (self.isQuickTerminal()) break :visible false;
 
         // Unconditionally disable the header bar when fullscreened.
         if (self.config.fullscreen) break :visible false;
@@ -472,12 +480,6 @@ pub fn syncAppearance(self: *Window) !void {
     self.winproto.syncAppearance() catch |err| {
         log.warn("failed to sync winproto appearance error={}", .{err});
     };
-
-    if (self.app.quick_terminal == self) {
-        self.winproto.syncQuickTerminal() catch |err| {
-            log.warn("failed to sync quick terminal appearance error={}", .{err});
-        };
-    }
 }
 
 fn toggleCssClass(
@@ -730,6 +732,20 @@ fn gtkWindowNotifyFullscreened(
     };
 }
 
+fn gtkWindowNotifyIsActive(
+    _: *c.GObject,
+    _: *c.GParamSpec,
+    ud: ?*anyopaque,
+) callconv(.C) void {
+    const self = userdataSelf(ud orelse return);
+    if (!self.isQuickTerminal()) return;
+
+    // Hide when we're unfocused
+    if (self.config.quick_terminal_autohide and c.gtk_window_is_active(self.window) == 0) {
+        self.toggleVisibility();
+    }
+}
+
 // Note: we MUST NOT use the GtkButton parameter because gtkActionNewTab
 // sends an undefined value.
 fn gtkTabNewClick(_: *c.GtkButton, ud: ?*anyopaque) callconv(.C) void {
@@ -803,7 +819,7 @@ pub fn close(self: *Window) void {
     const window: *gtk.Window = @ptrCast(self.window);
 
     // Unset the quick terminal on the app level
-    if (self.app.quick_terminal == self) self.app.quick_terminal = null;
+    if (self.isQuickTerminal()) self.app.quick_terminal = null;
 
     window.destroy();
 }
@@ -812,9 +828,6 @@ fn gtkCloseRequest(v: *c.GtkWindow, ud: ?*anyopaque) callconv(.C) bool {
     _ = v;
     log.debug("window close request", .{});
     const self = userdataSelf(ud.?);
-
-    // This path should never occur, but this is here as a safety measure.
-    if (self.app.quick_terminal == self) return true;
 
     // If none of our surfaces need confirmation, we can just exit.
     for (self.app.core_app.surfaces.items) |surface| {

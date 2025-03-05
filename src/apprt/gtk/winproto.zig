@@ -133,12 +133,6 @@ pub const Window = union(Protocol) {
         }
     }
 
-    pub fn syncQuickTerminal(self: *Window) !void {
-        switch (self.*) {
-            inline else => |*v| try v.syncQuickTerminal(),
-        }
-    }
-
     pub fn clientSideDecorationEnabled(self: Window) bool {
         return switch (self) {
             inline else => |v| v.clientSideDecorationEnabled(),

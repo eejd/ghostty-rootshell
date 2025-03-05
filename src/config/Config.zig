@@ -1637,7 +1637,8 @@ keybind: Keybinds = .{},
 ///   * `right` - Terminal appears at the right of the screen.
 ///   * `center` - Terminal appears at the center of the screen.
 ///
-/// Changing this configuration requires restarting Ghostty completely.
+/// On macOS, changing this configuration requires restarting Ghostty
+/// completely.
 ///
 /// Note: There is no default keybind for toggling the quick terminal.
 /// To enable this feature, bind the `toggle_quick_terminal` action to a key.
@@ -1661,11 +1662,15 @@ keybind: Keybinds = .{},
 ///
 /// The default value is `main` because this is the recommended screen
 /// by the operating system.
+///
+/// Only implemented on macOS.
 @"quick-terminal-screen": QuickTerminalScreen = .main,
 
 /// Duration (in seconds) of the quick terminal enter and exit animation.
 /// Set it to 0 to disable animation completely. This can be changed at
 /// runtime.
+///
+/// Only implemented on macOS.
 @"quick-terminal-animation-duration": f64 = 0.2,
 
 /// Automatically hide the quick terminal when focus shifts to another window.
@@ -1687,6 +1692,9 @@ keybind: Keybinds = .{},
 ///    space.
 ///
 /// The default value is `move`.
+///
+/// Only implemented on macOS.
+/// On Linux the behavior is always equivalent to `move`.
 @"quick-terminal-space-behavior": QuickTerminalSpaceBehavior = .move,
 
 /// Whether to enable shell integration auto-injection or not. Shell integration

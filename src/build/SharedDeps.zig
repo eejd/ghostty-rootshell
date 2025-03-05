@@ -474,10 +474,12 @@ pub fn add(
                     // FIXME: replace with `zxdg_decoration_v1` once GTK merges https://gitlab.gnome.org/GNOME/gtk/-/merge_requests/6398
                     scanner.addCustomProtocol(plasma_wayland_protocols.path("src/protocols/blur.xml"));
                     scanner.addCustomProtocol(plasma_wayland_protocols.path("src/protocols/server-decoration.xml"));
+                    scanner.addCustomProtocol(plasma_wayland_protocols.path("src/protocols/slide.xml"));
 
                     scanner.generate("wl_compositor", 1);
                     scanner.generate("org_kde_kwin_blur_manager", 1);
                     scanner.generate("org_kde_kwin_server_decoration_manager", 1);
+                    scanner.generate("org_kde_kwin_slide_manager", 1);
 
                     step.root_module.addImport("wayland", wayland);
                     step.root_module.addImport("gdk_wayland", gobject.module("gdkwayland4"));
