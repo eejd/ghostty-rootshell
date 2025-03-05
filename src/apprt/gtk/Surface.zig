@@ -35,6 +35,7 @@ const gtk_key = @import("key.zig");
 const c = @import("c.zig").c;
 const Builder = @import("Builder.zig");
 const adwaita = @import("adwaita.zig");
+const i18n = @import("i18n.zig");
 
 const log = std.log.scoped(.gtk_surface);
 
@@ -1152,7 +1153,7 @@ pub fn setClipboardString(
             self.app.config.@"app-notifications".@"clipboard-copy")
         {
             if (self.container.window()) |window|
-                window.sendToast("Copied to clipboard");
+                window.sendToast(i18n._("Copied to clipboard"));
         }
         return;
     }

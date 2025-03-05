@@ -40,6 +40,7 @@ COPY ./dist/linux /src/dist/linux
 COPY ./images /src/images
 COPY ./include /src/include
 COPY ./pkg /src/pkg
+COPY ./po /src/po
 COPY ./nix /src/nix
 COPY ./vendor /src/vendor
 COPY ./build.zig /src/build.zig

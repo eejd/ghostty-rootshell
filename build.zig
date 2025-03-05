@@ -11,6 +11,7 @@ pub fn build(b: *std.Build) !void {
 
     // Ghostty resources like terminfo, shell integration, themes, etc.
     const resources = try buildpkg.GhosttyResources.init(b, &config);
+    const i18n = try buildpkg.GhosttyI18n.init(b, &config);
 
     // Ghostty dependencies used by many artifacts.
     const deps = try buildpkg.SharedDeps.init(b, &config);
@@ -39,6 +40,7 @@ pub fn build(b: *std.Build) !void {
     if (config.app_runtime != .none) {
         exe.install();
         resources.install();
+        i18n.install();
     }
 
     // Libghostty
@@ -102,5 +104,12 @@ pub fn build(b: *std.Build) !void {
             const test_run = b.addRunArtifact(test_exe);
             test_step.dependOn(&test_run.step);
         }
+    }
+
+    // update-translations does what it sounds like and updates the "pot"
+    // files. These should be committed to the repo.
+    {
+        const step = b.step("update-translations", "Update translation files");
+        step.dependOn(i18n.update_step);
     }
 }

@@ -78,6 +78,7 @@ parts:
       - libxml2-utils
       - git
       - patchelf
+      - gettext
     override-build: |
       craftctl set version=$(git describe --abbrev=8)
       $CRAFT_PART_SRC/../../zig/src/zig build -Dpatch-rpath=\$ORIGIN/../usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR:/snap/core24/current/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR -Doptimize=ReleaseFast

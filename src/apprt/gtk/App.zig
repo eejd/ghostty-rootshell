@@ -39,6 +39,7 @@ const ConfigErrorsWindow = @import("ConfigErrorsWindow.zig");
 const ClipboardConfirmationWindow = @import("ClipboardConfirmationWindow.zig");
 const Split = @import("Split.zig");
 const c = @import("c.zig").c;
+const i18n = @import("i18n.zig");
 const version = @import("version.zig");
 const inspector = @import("inspector.zig");
 const key = @import("key.zig");
@@ -97,6 +98,11 @@ quit_timer: union(enum) {
 
 pub fn init(core_app: *CoreApp, opts: Options) !App {
     _ = opts;
+
+    // This can technically be placed *anywhere* because we don't have any
+    // localized log messages. It just has to be placed before any localized
+    // widgets are drawn.
+    try i18n.init(core_app.alloc);
 
     // Log our GTK version
     log.info("GTK version build={d}.{d}.{d} runtime={d}.{d}.{d}", .{
