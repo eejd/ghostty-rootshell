@@ -1209,7 +1209,13 @@ fn gtkClipboardRead(
         error.UnauthorizedPaste,
         => {
             // Create a dialog and ask the user if they want to paste anyway.
-            ClipboardConfirmationWindow.create(self.app, str, &self.core_surface, req.state, self.is_secure_input) catch |window_err| {
+            ClipboardConfirmationWindow.create(
+                self.app,
+                str,
+                &self.core_surface,
+                req.state,
+                self.is_secure_input,
+            ) catch |window_err| {
                 log.err("failed to create clipboard confirmation window err={}", .{window_err});
             };
             return;
@@ -2224,7 +2230,13 @@ fn doPaste(self: *Surface, data: [:0]const u8) void {
         error.UnsafePaste,
         error.UnauthorizedPaste,
         => {
-            ClipboardConfirmationWindow.create(self.app, data, &self.core_surface, .paste, self.is_secure_input) catch |window_err| {
+            ClipboardConfirmationWindow.create(
+                self.app,
+                data,
+                &self.core_surface,
+                .paste,
+                self.is_secure_input,
+            ) catch |window_err| {
                 log.err("failed to create clipboard confirmation window err={}", .{window_err});
             };
         },

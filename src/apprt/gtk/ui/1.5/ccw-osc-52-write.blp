@@ -15,6 +15,10 @@ Adw.AlertDialog clipboard_confirmation_window {
   close-response: "cancel";
 
   extra-child: Overlay {
+    styles [
+      "osd"
+    ]
+
     ScrolledWindow text_view_scroll {
       width-request: 500;
       height-request: 250;
@@ -42,10 +46,6 @@ Adw.AlertDialog clipboard_confirmation_window {
       margin-end: 12;
       margin-top: 12;
 
-      styles [
-        "destructive-action",
-      ]
-
       Image {
         icon-name: "view-reveal-symbolic";
       }
@@ -60,7 +60,7 @@ Adw.AlertDialog clipboard_confirmation_window {
       margin-top: 12;
 
       styles [
-        "suggested-action",
+        "opaque"
       ]
 
       Image {

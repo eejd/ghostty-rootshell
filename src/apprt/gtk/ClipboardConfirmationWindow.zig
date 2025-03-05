@@ -27,8 +27,8 @@ core_surface: *CoreSurface,
 pending_req: apprt.ClipboardRequest,
 text_view: *gtk.TextView,
 text_view_scroll: *gtk.ScrolledWindow,
-reveal_button_widget: *gtk.Widget,
-hide_button_widget: *gtk.Widget,
+reveal_button: *gtk.Button,
+hide_button: *gtk.Button,
 
 pub fn create(
     app: *App,
@@ -101,8 +101,8 @@ fn init(
         .pending_req = request,
         .text_view = text_view,
         .text_view_scroll = text_view_scroll,
-        .reveal_button_widget = gobject.ext.cast(gtk.Widget, reveal_button).?,
-        .hide_button_widget = gobject.ext.cast(gtk.Widget, hide_button).?,
+        .reveal_button = reveal_button,
+        .hide_button = hide_button,
     };
 
     const buffer = gtk.TextBuffer.new(null);
@@ -111,10 +111,10 @@ fn init(
     text_view.setBuffer(buffer);
 
     if (is_secure_input) {
-        gobject.ext.as(gtk.Widget, text_view_scroll).setSensitive(@intFromBool(false));
-        gobject.ext.as(gtk.Widget, self.text_view).addCssClass("blurred");
+        text_view_scroll.as(gtk.Widget).setSensitive(@intFromBool(false));
+        self.text_view.as(gtk.Widget).addCssClass("blurred");
 
-        self.reveal_button_widget.setVisible(@intFromBool(true));
+        self.reveal_button.as(gtk.Widget).setVisible(@intFromBool(true));
 
         _ = gtk.Button.signals.clicked.connect(
             reveal_button,
@@ -189,17 +189,17 @@ fn gtkResponse(_: *DialogType, response: [*:0]u8, self: *ClipboardConfirmation) 
 }
 
 fn gtkRevealButtonClicked(_: *gtk.Button, self: *ClipboardConfirmation) callconv(.C) void {
-    gobject.ext.as(gtk.Widget, self.text_view_scroll).setSensitive(@intFromBool(true));
-    gobject.ext.as(gtk.Widget, self.text_view).removeCssClass("blurred");
+    self.text_view_scroll.as(gtk.Widget).setSensitive(@intFromBool(true));
+    self.text_view.as(gtk.Widget).removeCssClass("blurred");
 
-    self.hide_button_widget.setVisible(@intFromBool(true));
-    self.reveal_button_widget.setVisible(@intFromBool(false));
+    self.hide_button.as(gtk.Widget).setVisible(@intFromBool(true));
+    self.reveal_button.as(gtk.Widget).setVisible(@intFromBool(false));
 }
 
 fn gtkHideButtonClicked(_: *gtk.Button, self: *ClipboardConfirmation) callconv(.C) void {
-    gobject.ext.as(gtk.Widget, self.text_view_scroll).setSensitive(@intFromBool(false));
-    gobject.ext.as(gtk.Widget, self.text_view).addCssClass("blurred");
+    self.text_view_scroll.as(gtk.Widget).setSensitive(@intFromBool(false));
+    self.text_view.as(gtk.Widget).addCssClass("blurred");
 
-    self.hide_button_widget.setVisible(@intFromBool(false));
-    self.reveal_button_widget.setVisible(@intFromBool(true));
+    self.hide_button.as(gtk.Widget).setVisible(@intFromBool(false));
+    self.reveal_button.as(gtk.Widget).setVisible(@intFromBool(true));
 }
