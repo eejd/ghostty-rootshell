@@ -508,12 +508,12 @@ pub fn performAction(
         .quit_timer => self.quitTimer(value),
         .prompt_title => try self.promptTitle(target),
         .toggle_quick_terminal => return try self.toggleQuickTerminal(),
+        .secure_input => self.setSecureInput(target, value),
 
         // Unimplemented
         .close_all_windows,
         .toggle_visibility,
         .cell_size,
-        .secure_input,
         .key_sequence,
         .render_inspector,
         .renderer_health,
@@ -1413,6 +1413,15 @@ fn newWindow(self: *App, parent_: ?*CoreSurface) !void {
 
     // Show the new window
     window.present();
+}
+
+fn setSecureInput(_: *App, target: apprt.Target, value: apprt.action.SecureInput) void {
+    switch (target) {
+        .app => {},
+        .surface => |surface| {
+            surface.rt_surface.setSecureInput(value);
+        },
+    }
 }
 
 fn quit(self: *App) void {
