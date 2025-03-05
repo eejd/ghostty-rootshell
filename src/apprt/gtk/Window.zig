@@ -80,6 +80,7 @@ pub const DerivedConfig = struct {
     gtk_toolbar_style: configpkg.Config.GtkToolbarStyle,
 
     quick_terminal_position: configpkg.Config.QuickTerminalPosition,
+    quick_terminal_autohide: bool,
 
     maximize: bool,
     fullscreen: bool,
@@ -97,6 +98,7 @@ pub const DerivedConfig = struct {
             .gtk_toolbar_style = config.@"gtk-toolbar-style",
 
             .quick_terminal_position = config.@"quick-terminal-position",
+            .quick_terminal_autohide = config.@"quick-terminal-autohide",
 
             .maximize = config.maximize,
             .fullscreen = config.fullscreen,
@@ -246,6 +248,7 @@ pub fn init(self: *Window, app: *App) !void {
 
     _ = c.g_signal_connect_data(self.window, "notify::maximized", c.G_CALLBACK(&gtkWindowNotifyMaximized), self, null, c.G_CONNECT_DEFAULT);
     _ = c.g_signal_connect_data(self.window, "notify::fullscreened", c.G_CALLBACK(&gtkWindowNotifyFullscreened), self, null, c.G_CONNECT_DEFAULT);
+    _ = c.g_signal_connect_data(self.window, "notify::is-active", c.G_CALLBACK(&gtkWindowNotifyIsActive), self, null, c.G_CONNECT_DEFAULT);
 
     // If Adwaita is enabled and is older than 1.4.0 we don't have the tab overview and so we
     // need to stick the headerbar into the content box.
@@ -726,6 +729,20 @@ fn gtkWindowNotifyFullscreened(
     self.syncAppearance() catch |err| {
         log.err("failed to sync appearance={}", .{err});
     };
+}
+
+fn gtkWindowNotifyIsActive(
+    _: *c.GObject,
+    _: *c.GParamSpec,
+    ud: ?*anyopaque,
+) callconv(.C) void {
+    const self = userdataSelf(ud orelse return);
+    if (!self.isQuickTerminal()) return;
+
+    // Hide when we're unfocused
+    if (self.config.quick_terminal_autohide and c.gtk_window_is_active(self.window) == 0) {
+        self.toggleVisibility();
+    }
 }
 
 // Note: we MUST NOT use the GtkButton parameter because gtkActionNewTab

@@ -1677,8 +1677,6 @@ keybind: Keybinds = .{},
 
 /// Automatically hide the quick terminal when focus shifts to another window.
 /// Set it to false for the quick terminal to remain open even when it loses focus.
-///
-/// Only implemented on macOS.
 @"quick-terminal-autohide": bool = true,
 
 /// This configuration option determines the behavior of the quick terminal
