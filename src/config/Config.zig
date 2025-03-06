@@ -1675,7 +1675,17 @@ keybind: Keybinds = .{},
 
 /// Automatically hide the quick terminal when focus shifts to another window.
 /// Set it to false for the quick terminal to remain open even when it loses focus.
-@"quick-terminal-autohide": bool = true,
+///
+/// Defaults to true on macOS and on false on Linux. This is because global
+/// shortcuts on Linux require system configuration and are considerably less
+/// accessible than on macOS, meaning that it is more preferable to keep the
+/// quick terminal open until the user has completed their task.
+/// This default may change in the future.
+@"quick-terminal-autohide": bool = switch (builtin.os.tag) {
+    .linux => false,
+    .macos => true,
+    else => false,
+},
 
 /// This configuration option determines the behavior of the quick terminal
 /// when switching between macOS spaces. macOS spaces are virtual desktops
