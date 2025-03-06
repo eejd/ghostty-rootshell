@@ -197,7 +197,7 @@ msgstr "Offene Tabs einblenden"
 msgid ""
 "⚠️ You're running a debug build of Ghostty! Performance will be degraded."
 msgstr ""
-"  Du verwendest einen Debug Build von Ghostty! Die Leistung wird reduziert sein."
+"⚠️ Du verwendest einen Debug Build von Ghostty! Die Leistung wird reduziert sein."
 
 #: src/apprt/gtk/Window.zig:660
 msgid "Reloaded the configuration"
