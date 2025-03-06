@@ -2105,6 +2105,7 @@ fn addGlyph(
         shaper_run.font_index,
         shaper_cell.glyph_index,
         .{
+            .cell_width = if (cell.wide == .wide) 2 else 1,
             .grid_metrics = self.grid_metrics,
             .thicken = self.config.font_thicken,
             .thicken_strength = self.config.font_thicken_strength,
