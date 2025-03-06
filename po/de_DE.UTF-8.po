@@ -24,7 +24,7 @@ msgstr "Terminal-Titel bearbeiten"
 
 #: src/apprt/gtk/ui/1.5/prompt-title-dialog.blp:6
 msgid "Leave blank to restore the default title."
-msgstr "Leer lassen, um den Standardtitel wiederherzustellen"
+msgstr "Leer lassen, um den Standardtitel wiederherzustellen."
 
 #: src/apprt/gtk/ui/1.5/prompt-title-dialog.blp:9
 #: src/apprt/gtk/ui/1.5/ccw-paste.blp:10
@@ -209,4 +209,4 @@ msgstr "Ghostty-Entwickler"
 
 #: src/apprt/gtk/Surface.zig:1236
 msgid "Copied to clipboard"
-msgstr "In die Zwischenablage kopiert."
+msgstr "In die Zwischenablage kopiert"
