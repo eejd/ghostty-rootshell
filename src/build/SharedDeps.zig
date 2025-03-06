@@ -381,6 +381,17 @@ pub fn add(
         if (self.config.renderer == .opengl) {
             step.linkFramework("OpenGL");
         }
+
+        // Apple platforms do not include libc libintl so we bundle it.
+        // This is LGPL but since our source code is open source we are
+        // in compliance with the LGPL since end users can modify this
+        // build script to replace the bundled libintl with their own.
+        const libintl_dep = b.dependency("libintl", .{
+            .target = target,
+            .optimize = optimize,
+        });
+        step.linkLibrary(libintl_dep.artifact("intl"));
+        try static_libs.append(libintl_dep.artifact("intl").getEmittedBin());
     }
 
     // cimgui

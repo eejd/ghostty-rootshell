@@ -359,6 +359,12 @@ pub fn build(b: *std.Build) !void {
         lib.addIncludePath(b.path(""));
         lib.addIncludePath(upstream.path("gettext-runtime/intl"));
         lib.addIncludePath(upstream.path("gettext-runtime/intl/gnulib-lib"));
+
+        if (target.result.isDarwin()) {
+            const apple_sdk = @import("apple_sdk");
+            try apple_sdk.addPaths(b, &lib.root_module);
+        }
+
         lib.addConfigHeader(config);
         lib.addCSourceFiles(.{
             .root = upstream.path("gettext-runtime/intl"),
@@ -389,12 +395,16 @@ const srcs: []const []const u8 = &.{
     "localealias.c",
     "log.c",
     "ngettext.c",
-    "osdep.c",
     "plural-exp.c",
     "plural.c",
-    "printf.c",
     "setlocale.c",
     "textdomain.c",
     "version.c",
     "compat.c",
+
+    // Not needed for macOS, but we might need them for other platforms.
+    // If we expand this to support other platforms, we should uncomment
+    // these.
+    // "osdep.c",
+    // "printf.c",
 };
