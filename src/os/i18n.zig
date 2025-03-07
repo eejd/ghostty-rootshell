@@ -63,6 +63,15 @@ pub fn init(resources_dir: []const u8) InitError!void {
         return error.OutOfMemory;
 }
 
+/// Set the global gettext domain to our bundle ID, allowing unqualified
+/// `gettext` (`_`) calls to look up translations for our application.
+///
+/// This should only be called for apprts that are fully owning the
+/// Ghostty application. This should not be called for libghostty users.
+pub fn initGlobalDomain() error{OutOfMemory}!void {
+    _ = textdomain(build_config.bundle_id) orelse return error.OutOfMemory;
+}
+
 /// Finds the closest matching locale for a given language code.
 pub fn closestLocaleForLanguage(lang: []const u8) ?[:0]const u8 {
     for (locales) |locale| {

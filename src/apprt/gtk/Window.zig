@@ -18,6 +18,7 @@ const gtk = @import("gtk");
 const build_config = @import("../../build_config.zig");
 const configpkg = @import("../../config.zig");
 const font = @import("../../font/main.zig");
+const i18n = @import("../../os/main.zig").i18n;
 const input = @import("../../input.zig");
 const CoreSurface = @import("../../Surface.zig");
 
@@ -34,7 +35,6 @@ const HeaderBar = @import("headerbar.zig");
 const CloseDialog = @import("CloseDialog.zig");
 const version = @import("version.zig");
 const winproto = @import("winproto.zig");
-const i18n = @import("i18n.zig");
 
 const log = std.log.scoped(.gtk);
 

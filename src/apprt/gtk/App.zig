@@ -40,7 +40,6 @@ const ClipboardConfirmationWindow = @import("ClipboardConfirmationWindow.zig");
 const CloseDialog = @import("CloseDialog.zig");
 const Split = @import("Split.zig");
 const c = @import("c.zig").c;
-const i18n = @import("i18n.zig");
 const version = @import("version.zig");
 const inspector = @import("inspector.zig");
 const key = @import("key.zig");
@@ -101,11 +100,6 @@ quit_timer: union(enum) {
 pub fn init(core_app: *CoreApp, opts: Options) !App {
     _ = opts;
 
-    // This can technically be placed *anywhere* because we don't have any
-    // localized log messages. It just has to be placed before any localized
-    // widgets are drawn.
-    try i18n.init(core_app.alloc);
-
     // Log our GTK version
     log.info("GTK version build={d}.{d}.{d} runtime={d}.{d}.{d}", .{
         c.GTK_MAJOR_VERSION,
@@ -123,6 +117,10 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         c.adw_get_minor_version(),
         c.adw_get_micro_version(),
     });
+
+    // Set gettext global domain to be our app so that our unqualified
+    // translations map to our translations.
+    try internal_os.i18n.initGlobalDomain();
 
     // Load our configuration
     var config = try Config.load(core_app.alloc);
