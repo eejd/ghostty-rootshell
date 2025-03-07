@@ -60,6 +60,7 @@ pub fn build(b: *std.Build) !void {
             // The xcframework build always installs resources because our
             // macOS xcode project contains references to them.
             resources.install();
+            i18n.install();
 
             // If we aren't emitting docs we need to emit a placeholder so
             // our macOS xcodeproject builds.
