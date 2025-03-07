@@ -131,7 +131,7 @@ which should be filled in accordingly. You can then add your translations
 within the newly created translation file.
 
 Afterwards, you need to update the list of known locales within Ghostty's
-build system. To do so, open `src/os/i81n.zig` and find the list
+build system. To do so, open `src/os/i18n.zig` and find the list
 of locales under the `locales` variable, then add the full locale name
 into the list.
 
