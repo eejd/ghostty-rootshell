@@ -1,10 +1,12 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const assert = std.debug.assert;
+const macos = @import("macos");
 const objc = @import("objc");
 const internal_os = @import("main.zig");
+const i18n = internal_os.i18n;
 
-const log = std.log.scoped(.os);
+const log = std.log.scoped(.os_locale);
 
 /// Ensure that the locale is set.
 pub fn ensureLocale(alloc: std.mem.Allocator) !void {
@@ -60,7 +62,7 @@ pub fn ensureLocale(alloc: std.mem.Allocator) !void {
         _ = internal_os.setenv("LANG", "en_US.UTF-8");
         log.info("setlocale default result={s}", .{v});
         return;
-    } else log.err("setlocale failed even with the fallback, uncertain results", .{});
+    } else log.warn("setlocale failed even with the fallback, uncertain results", .{});
 }
 
 /// This sets the LANG environment variable based on the macOS system
@@ -71,7 +73,7 @@ fn setLangFromCocoa() void {
 
     // The classes we're going to need.
     const NSLocale = objc.getClass("NSLocale") orelse {
-        log.err("NSLocale class not found. Locale may be incorrect.", .{});
+        log.warn("NSLocale class not found. Locale may be incorrect.", .{});
         return;
     };
 
@@ -92,14 +94,14 @@ fn setLangFromCocoa() void {
     // Format them into a buffer
     var buf: [128]u8 = undefined;
     const env_value = std.fmt.bufPrintZ(&buf, "{s}_{s}.UTF-8", .{ z_lang, z_country }) catch |err| {
-        log.err("error setting locale from system. err={}", .{err});
+        log.warn("error setting locale from system. err={}", .{err});
         return;
     };
     log.info("detected system locale={s}", .{env_value});
 
     // Set it onto our environment
     if (internal_os.setenv("LANG", env_value) < 0) {
-        log.err("error setting locale env var", .{});
+        log.warn("error setting locale env var", .{});
         return;
     }
 }

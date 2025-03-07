@@ -16,6 +16,7 @@ const build_options = @import("build_options");
 const configpkg = @import("../../config.zig");
 const apprt = @import("../../apprt.zig");
 const font = @import("../../font/main.zig");
+const i18n = @import("../../os/main.zig").i18n;
 const input = @import("../../input.zig");
 const renderer = @import("../../renderer.zig");
 const terminal = @import("../../terminal/main.zig");
@@ -36,7 +37,6 @@ const gtk_key = @import("key.zig");
 const c = @import("c.zig").c;
 const Builder = @import("Builder.zig");
 const adwaita = @import("adwaita.zig");
-const i18n = @import("i18n.zig");
 
 const log = std.log.scoped(.gtk_surface);
 

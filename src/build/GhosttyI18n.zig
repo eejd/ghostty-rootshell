@@ -3,12 +3,9 @@ const GhosttyI18n = @This();
 const std = @import("std");
 const Config = @import("Config.zig");
 const gresource = @import("../apprt/gtk/gresource.zig");
+const internal_os = @import("../os/main.zig");
 
 const domain = "com.mitchellh.ghostty";
-
-const locales = [_][]const u8{
-    "zh_CN.UTF-8",
-};
 
 owner: *std.Build,
 steps: []*std.Build.Step,
@@ -18,23 +15,22 @@ steps: []*std.Build.Step,
 update_step: *std.Build.Step,
 
 pub fn init(b: *std.Build, cfg: *const Config) !GhosttyI18n {
+    _ = cfg;
+
     var steps = std.ArrayList(*std.Build.Step).init(b.allocator);
     defer steps.deinit();
 
-    if (cfg.app_runtime == .gtk) {
-        // Output the .mo files used by the GTK apprt
-        inline for (locales) |locale| {
-            const msgfmt = b.addSystemCommand(&.{ "msgfmt", "-o", "-" });
-            msgfmt.addFileArg(b.path("po/" ++ locale ++ ".po"));
+    inline for (internal_os.i18n.locales) |locale| {
+        const msgfmt = b.addSystemCommand(&.{ "msgfmt", "-o", "-" });
+        msgfmt.addFileArg(b.path("po/" ++ locale ++ ".po"));
 
-            try steps.append(&b.addInstallFile(
-                msgfmt.captureStdOut(),
-                std.fmt.comptimePrint(
-                    "share/locale/{s}/LC_MESSAGES/{s}.mo",
-                    .{ locale, domain },
-                ),
-            ).step);
-        }
+        try steps.append(&b.addInstallFile(
+            msgfmt.captureStdOut(),
+            std.fmt.comptimePrint(
+                "share/locale/{s}/LC_MESSAGES/{s}.mo",
+                .{ locale, domain },
+            ),
+        ).step);
     }
 
     return .{
@@ -107,7 +103,7 @@ fn createUpdateStep(b: *std.Build) !*std.Build.Step {
         "po/" ++ domain ++ ".pot",
     );
 
-    inline for (locales) |locale| {
+    inline for (internal_os.i18n.locales) |locale| {
         const msgmerge = b.addSystemCommand(&.{ "msgmerge", "-q" });
         msgmerge.addFileArg(b.path("po/" ++ locale ++ ".po"));
         msgmerge.addFileArg(xgettext.captureStdOut());

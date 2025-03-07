@@ -131,14 +131,18 @@ which should be filled in accordingly. You can then add your translations
 within the newly created translation file.
 
 Afterwards, you need to update the list of known locales within Ghostty's
-build system. To do so, open `src/build/GhosttyI18n.zig` and find the list
-of locales under the `locale` variable, then append the full locale name
+build system. To do so, open `src/os/i18n.zig` and find the list
+of locales under the `locales` variable, then add the full locale name
 into the list.
+
+The order matters, so make sure to place your locale in the correct position.
+Read the comment above the variable for more details on the order. If you're
+unsure, place it at the end of the list.
 
 ```zig
 const locales = [_][]const u8{
     "zh_CN.UTF-8",
-    // <- Add your locale here
+    // <- Add your locale here (probably)
 }
 ```
 

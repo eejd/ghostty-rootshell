@@ -332,6 +332,14 @@ in
       };
     }
     {
+      name = "1220f870c853529233ea64a108acaaa81f8d06d7ff4b66c76930be7d78d508aff7a2";
+      path = fetchZigArtifact {
+        name = "gettext";
+        url = "https://deps.files.ghostty.org/gettext-0.24.tar.gz";
+        hash = "sha256-yRhQPVk9cNr0hE0XWhPYFq+stmfAb7oeydzVACwVGLc=";
+      };
+    }
+    {
       name = "1220c15e72eadd0d9085a8af134904d9a0f5dfcbed5f606ad60edc60ebeccd9706bb";
       path = fetchZigArtifact {
         name = "oniguruma";
