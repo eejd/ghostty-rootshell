@@ -4,6 +4,7 @@ const assert = std.debug.assert;
 const macos = @import("macos");
 const objc = @import("objc");
 const internal_os = @import("main.zig");
+const i18n = internal_os.i18n;
 
 const log = std.log.scoped(.os_locale);
 
@@ -102,66 +103,6 @@ fn setLangFromCocoa() void {
     if (internal_os.setenv("LANG", env_value) < 0) {
         log.warn("error setting locale env var", .{});
         return;
-    }
-
-    // We also want to set our LANGUAGE for translations. We do this using
-    // NSLocale.preferredLanguages over our system locale since we want to
-    // match our app's preferred languages.
-    language: {
-        const i18n = internal_os.i18n;
-
-        // We need to get our app's preferred languages. These may not
-        // match the system locale (NSLocale.currentLocale).
-        const preferred: *macos.foundation.Array = array: {
-            const ns = NSLocale.msgSend(
-                objc.Object,
-                objc.sel("preferredLanguages"),
-                .{},
-            );
-            break :array @ptrCast(ns.value);
-        };
-        for (0..preferred.getCount()) |i| {
-            const str = preferred.getValueAtIndex(macos.foundation.String, i);
-            const c_str = c_str: {
-                const raw = str.cstring(&buf, .utf8) orelse {
-                    // I don't think this can happen but if it does then I want
-                    // to know about it if a user has translation issues.
-                    log.warn("failed to convert a preferred language to UTF-8", .{});
-                    continue;
-                };
-
-                // We want to strip at "-" since we only care about the language
-                // code, not the region code. i.e. "zh-Hans" -> "zh"
-                const idx = std.mem.indexOfScalar(u8, raw, '-') orelse raw.len;
-                break :c_str raw[0..idx];
-            };
-
-            // If our preferred language is equal to our system language
-            // then we can be done, since the locale above we set everything.
-            if (std.mem.eql(u8, c_str, z_lang)) {
-                log.debug("preferred language matches system locale={s}", .{c_str});
-                break :language;
-            }
-
-            // Note: there are many improvements that can be made here to make
-            // this more and more robust. For example, we can try to search for
-            // the MOST matching supported locale for translations. Right now
-            // we fall directly back to language code.
-            log.debug("searching for closest matching locale preferred={s}", .{c_str});
-            if (i18n.closestLocaleForLanguage(c_str)) |i18n_locale| {
-                log.info("setting LANGUAGE to closest matching locale={s}", .{i18n_locale});
-                _ = internal_os.setenv("LANGUAGE", i18n_locale);
-                break :language;
-            }
-        }
-
-        // No matches or our preferred languages are empty. As a final
-        // try we try to match our system locale.
-        if (i18n.closestLocaleForLanguage(z_lang)) |i18n_locale| {
-            log.info("setting LANGUAGE to closest matching locale={s}", .{i18n_locale});
-            _ = internal_os.setenv("LANGUAGE", i18n_locale);
-            break :language;
-        }
     }
 }
 

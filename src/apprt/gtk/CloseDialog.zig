@@ -6,12 +6,12 @@ const gio = @import("gio");
 const adw = @import("adw");
 const gtk = @import("gtk");
 
+const i18n = @import("../../os/main.zig").i18n;
 const App = @import("App.zig");
 const Window = @import("Window.zig");
 const Tab = @import("Tab.zig");
 const Surface = @import("Surface.zig");
 const adwaita = @import("adwaita.zig");
-const i18n = @import("i18n.zig");
 
 const log = std.log.scoped(.close_dialog);
 

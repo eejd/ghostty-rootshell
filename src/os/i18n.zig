@@ -76,21 +76,23 @@ pub fn initGlobalDomain() error{OutOfMemory}!void {
     _ = textdomain(build_config.bundle_id) orelse return error.OutOfMemory;
 }
 
-/// Finds the closest matching locale for a given language code.
-pub fn closestLocaleForLanguage(lang: []const u8) ?[:0]const u8 {
-    for (locales) |locale| {
-        const idx = std.mem.indexOfScalar(u8, locale, '_') orelse continue;
-        if (std.mem.eql(u8, locale[0..idx], lang)) {
-            return locale;
-        }
-    }
-
-    return null;
-}
-
 /// Translate a message for the Ghostty domain.
 pub fn _(msgid: [*:0]const u8) [*:0]const u8 {
     return dgettext(build_config.bundle_id, msgid);
+}
+
+/// This can be called at any point a compile-time-known locale is
+/// available. This will use comptime to verify the locale is supported.
+pub fn staticLocale(comptime v: [*:0]const u8) [*:0]const u8 {
+    comptime {
+        for (locales) |locale| {
+            if (std.mem.eql(u8, locale, v)) {
+                return locale;
+            }
+        }
+
+        @compileError("unsupported locale");
+    }
 }
 
 // Manually include function definitions for the gettext functions
