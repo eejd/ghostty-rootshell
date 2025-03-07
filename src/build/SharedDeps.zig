@@ -484,7 +484,24 @@ pub fn add(
                     step.root_module.addImport("wayland", wayland);
                     step.root_module.addImport("gdk_wayland", gobject.module("gdkwayland4"));
 
-                    if (self.config.layer_shell) step.linkSystemLibrary2("gtk4-layer-shell", dynamic_link_opts);
+                    const gtk4_layer_shell = b.dependency("gtk4_layer_shell", .{
+                        .target = target,
+                        .optimize = optimize,
+                    });
+                    const layer_shell_module = gtk4_layer_shell.module("gtk4-layer-shell");
+                    layer_shell_module.addImport("gtk", gobject.module("gtk4"));
+                    step.root_module.addImport("gtk4-layer-shell", layer_shell_module);
+
+                    // IMPORTANT: gtk4-layer-shell must be linked BEFORE
+                    // wayland-client, as it relies on shimming libwayland's APIs.
+                    if (b.systemIntegrationOption("gtk4-layer-shell", .{})) {
+                        step.linkSystemLibrary2("gtk4-layer-shell", dynamic_link_opts);
+                    } else {
+                        // gtk4-layer-shell *must* be dynamically linked,
+                        // so we don't add it as a static library
+                        step.linkLibrary(gtk4_layer_shell.artifact("gtk4-layer-shell"));
+                    }
+
                     step.linkSystemLibrary2("wayland-client", dynamic_link_opts);
                 }
 

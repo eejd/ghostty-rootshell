@@ -1,0 +1,106 @@
+const std = @import("std");
+
+// TODO: Import this from build.zig.zon when possible
+const version: std.SemanticVersion = .{ .major = 1, .minor = 1, .patch = 0 };
+
+pub fn build(b: *std.Build) !void {
+    const target = b.standardTargetOptions(.{});
+    const optimize = b.standardOptimizeOption(.{});
+
+    const upstream = b.dependency("gtk4_layer_shell", .{});
+    const wayland_protocols = b.dependency("wayland_protocols", .{});
+
+    // Zig API
+    const module = b.addModule("gtk4-layer-shell", .{
+        .root_source_file = b.path("src/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    module.addIncludePath(upstream.path("include"));
+    // Needs the gtk.h header
+    module.linkSystemLibrary("gtk4", dynamic_link_opts);
+
+    // Shared library
+    const lib = b.addSharedLibrary(.{
+        .name = "gtk4-layer-shell",
+        .target = target,
+        .optimize = optimize,
+    });
+    lib.linkLibC();
+    lib.addIncludePath(upstream.path("include"));
+    lib.addIncludePath(upstream.path("src"));
+
+    // GTK
+    lib.linkSystemLibrary2("gtk4", dynamic_link_opts);
+
+    // Wayland headers and source files
+    {
+        const protocols = [_]struct { []const u8, std.Build.LazyPath }{
+            .{
+                "wlr-layer-shell-unstable-v1",
+                upstream.path("protocol/wlr-layer-shell-unstable-v1.xml"),
+            },
+            .{
+                "xdg-shell",
+                wayland_protocols.path("stable/xdg-shell/xdg-shell.xml"),
+            },
+            // Even though we don't use session lock, we still need its headers
+            .{
+                "ext-session-lock-v1",
+                wayland_protocols.path("staging/ext-session-lock/ext-session-lock-v1.xml"),
+            },
+        };
+
+        const wf = b.addWriteFiles();
+        for (protocols) |protocol| {
+            const name, const xml = protocol;
+
+            const header_scanner = b.addSystemCommand(&.{ "wayland-scanner", "client-header" });
+            header_scanner.addFileArg(xml);
+            _ = wf.addCopyFile(
+                header_scanner.addOutputFileArg(name),
+                b.fmt("{s}-client.h", .{name}),
+            );
+
+            const source_scanner = b.addSystemCommand(&.{ "wayland-scanner", "private-code" });
+            source_scanner.addFileArg(xml);
+            const source = source_scanner.addOutputFileArg(b.fmt("{s}.c", .{name}));
+            lib.addCSourceFile(.{ .file = source });
+        }
+        lib.addIncludePath(wf.getDirectory());
+    }
+
+    lib.installHeadersDirectory(
+        upstream.path("include"),
+        "",
+        .{ .include_extensions = &.{".h"} },
+    );
+
+    lib.addCSourceFiles(.{
+        .root = upstream.path("src"),
+        .files = srcs,
+        .flags = &.{
+            b.fmt("-DGTK_LAYER_SHELL_MAJOR={}", .{version.major}),
+            b.fmt("-DGTK_LAYER_SHELL_MINOR={}", .{version.minor}),
+            b.fmt("-DGTK_LAYER_SHELL_MICRO={}", .{version.patch}),
+        },
+    });
+
+    b.installArtifact(lib);
+}
+
+// Certain files relating to session lock were removed as we don't use them
+const srcs: []const []const u8 = &.{
+    "gtk4-layer-shell.c",
+    "layer-surface.c",
+    "libwayland-shim.c",
+    "registry.c",
+    "stolen-from-libwayland.c",
+    "stubbed-surface.c",
+    "xdg-surface-server.c",
+};
+
+const dynamic_link_opts: std.Build.Module.LinkSystemLibraryOptions = .{
+    .preferred_link_mode = .dynamic,
+    .search_strategy = .mode_first,
+};

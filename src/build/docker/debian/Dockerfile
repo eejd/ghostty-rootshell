@@ -51,5 +51,6 @@ RUN ZIG_GLOBAL_CACHE_DIR=/zig/global-cache ./nix/build-support/fetch-zig-cache.s
 
 COPY ./src /src/src
 
-RUN zig build -Doptimize=Debug -Dcpu=baseline -Dapp-runtime=gtk --system /zig/global-cache/p
+# Debian 12 doesn't have gtk4-layer-shell, so we have to manually compile it ourselves
+RUN zig build -Doptimize=Debug -Dcpu=baseline -Dapp-runtime=gtk -fno-sys=gtk4-layer-shell --system /zig/global-cache/p
 
