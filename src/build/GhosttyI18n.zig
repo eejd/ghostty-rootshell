@@ -18,23 +18,22 @@ steps: []*std.Build.Step,
 update_step: *std.Build.Step,
 
 pub fn init(b: *std.Build, cfg: *const Config) !GhosttyI18n {
+    _ = cfg;
+
     var steps = std.ArrayList(*std.Build.Step).init(b.allocator);
     defer steps.deinit();
 
-    if (cfg.app_runtime == .gtk) {
-        // Output the .mo files used by the GTK apprt
-        inline for (locales) |locale| {
-            const msgfmt = b.addSystemCommand(&.{ "msgfmt", "-o", "-" });
-            msgfmt.addFileArg(b.path("po/" ++ locale ++ ".po"));
+    inline for (locales) |locale| {
+        const msgfmt = b.addSystemCommand(&.{ "msgfmt", "-o", "-" });
+        msgfmt.addFileArg(b.path("po/" ++ locale ++ ".po"));
 
-            try steps.append(&b.addInstallFile(
-                msgfmt.captureStdOut(),
-                std.fmt.comptimePrint(
-                    "share/locale/{s}/LC_MESSAGES/{s}.mo",
-                    .{ locale, domain },
-                ),
-            ).step);
-        }
+        try steps.append(&b.addInstallFile(
+            msgfmt.captureStdOut(),
+            std.fmt.comptimePrint(
+                "share/locale/{s}/LC_MESSAGES/{s}.mo",
+                .{ locale, domain },
+            ),
+        ).step);
     }
 
     return .{

@@ -82,6 +82,16 @@ pub fn build(b: *std.Build) !void {
     {
         const run_cmd = b.addRunArtifact(exe.exe);
         if (b.args) |args| run_cmd.addArgs(args);
+
+        // Set the proper resources dir so things like shell integration
+        // work correctly. If we're running `zig build run` in Ghostty,
+        // this also ensures it overwrites the release one with our debug
+        // build.
+        run_cmd.setEnvironmentVariable(
+            "GHOSTTY_RESOURCES_DIR",
+            b.getInstallPath(.prefix, "share/ghostty"),
+        );
+
         const run_step = b.step("run", "Run the app");
         run_step.dependOn(&run_cmd.step);
     }

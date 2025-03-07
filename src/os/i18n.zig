@@ -1,6 +1,8 @@
 const std = @import("std");
 const build_config = @import("../build_config.zig");
 
+const log = std.log.scoped(.i18n);
+
 pub const InitError = error{
     InvalidResourcesDir,
     OutOfMemory,
@@ -26,6 +28,7 @@ pub fn init(resources_dir: []const u8) InitError!void {
         return error.OutOfMemory;
 
     // Bind our bundle ID to the given locale path
+    log.debug("binding domain={s} path={s}", .{ build_config.bundle_id, path });
     _ = bindtextdomain(build_config.bundle_id, path.ptr) orelse
         return error.OutOfMemory;
 }
