@@ -10,7 +10,7 @@ const log = std.log.scoped(.i18n);
 ///
 /// The order also matters. For incomplete locale information (i.e. only
 /// a language code available), the first match is used. For example, if
-/// we know the user requested `zh` but has no region code, then we'd pick
+/// we know the user requested `zh` but has no script code, then we'd pick
 /// the first locale that matches `zh`.
 ///
 /// For ordering, we prefer:
@@ -97,5 +97,4 @@ pub fn _(msgid: [*:0]const u8) [*:0]const u8 {
 // as libintl.h isn't always easily available (e.g. in musl)
 extern fn bindtextdomain(domainname: [*:0]const u8, dirname: [*:0]const u8) ?[*:0]const u8;
 extern fn textdomain(domainname: [*:0]const u8) ?[*:0]const u8;
-extern fn gettext(msgid: [*:0]const u8) [*:0]const u8;
 extern fn dgettext(domainname: [*:0]const u8, msgid: [*:0]const u8) [*:0]const u8;
