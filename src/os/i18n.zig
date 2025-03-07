@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const build_config = @import("../build_config.zig");
 
 const log = std.log.scoped(.i18n);
@@ -47,6 +48,9 @@ pub const InitError = error{
 /// want to set the domain for the entire application since this is also
 /// used by libghostty.
 pub fn init(resources_dir: []const u8) InitError!void {
+    // i18n is unsupported on Windows
+    if (builtin.os.tag == .windows) return;
+
     // Our resources dir is always nested below the share dir that
     // is standard for translations.
     const share_dir = std.fs.path.dirname(resources_dir) orelse
