@@ -11,6 +11,17 @@ const log = std.log.scoped(.i18n);
 /// a language code available), the first match is used. For example, if
 /// we know the user requested `zh` but has no region code, then we'd pick
 /// the first locale that matches `zh`.
+///
+/// For ordering, we prefer:
+///
+///   1. The most common locales first, since there are places in the code
+///      where we do linear searches for a locale and we want to minimize
+///      the number of iterations for the common case.
+///
+///   2. Alphabetical for otherwise equally common locales.
+///
+///   3. Most preferred locale for a language without a country code.
+///
 pub const locales = [_][:0]const u8{
     "zh_CN.UTF-8",
 };
