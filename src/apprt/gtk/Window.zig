@@ -31,6 +31,7 @@ const adwaita = @import("adwaita.zig");
 const gtk_key = @import("key.zig");
 const TabView = @import("TabView.zig");
 const HeaderBar = @import("headerbar.zig");
+const CloseDialog = @import("CloseDialog.zig");
 const version = @import("version.zig");
 const winproto = @import("winproto.zig");
 const i18n = @import("i18n.zig");
@@ -824,11 +825,7 @@ pub fn close(self: *Window) void {
     window.destroy();
 }
 
-fn gtkCloseRequest(v: *c.GtkWindow, ud: ?*anyopaque) callconv(.C) bool {
-    _ = v;
-    log.debug("window close request", .{});
-    const self = userdataSelf(ud.?);
-
+pub fn closeWithConfirmation(self: *Window) void {
     // If none of our surfaces need confirmation, we can just exit.
     for (self.app.core_app.surfaces.items) |surface| {
         if (surface.container.window()) |window| {
@@ -837,51 +834,21 @@ fn gtkCloseRequest(v: *c.GtkWindow, ud: ?*anyopaque) callconv(.C) bool {
         }
     } else {
         self.close();
-        return true;
+        return;
     }
 
-    // Setup our basic message
-    const alert = c.gtk_message_dialog_new(
-        self.window,
-        c.GTK_DIALOG_MODAL,
-        c.GTK_MESSAGE_QUESTION,
-        c.GTK_BUTTONS_YES_NO,
-        "Close this window?",
-    );
-    c.gtk_message_dialog_format_secondary_text(
-        @ptrCast(alert),
-        "All terminal sessions in this window will be terminated.",
-    );
-
-    // We want the "yes" to appear destructive.
-    const yes_widget = c.gtk_dialog_get_widget_for_response(
-        @ptrCast(alert),
-        c.GTK_RESPONSE_YES,
-    );
-    c.gtk_widget_add_css_class(yes_widget, "destructive-action");
-
-    // We want the "no" to be the default action
-    c.gtk_dialog_set_default_response(
-        @ptrCast(alert),
-        c.GTK_RESPONSE_NO,
-    );
-
-    _ = c.g_signal_connect_data(alert, "response", c.G_CALLBACK(&gtkCloseConfirmation), self, null, c.G_CONNECT_DEFAULT);
-
-    c.gtk_widget_show(alert);
-    return true;
+    CloseDialog.show(.{ .window = self }) catch |err| {
+        log.err("failed to open close dialog={}", .{err});
+    };
 }
 
-fn gtkCloseConfirmation(
-    alert: *c.GtkMessageDialog,
-    response: c.gint,
-    ud: ?*anyopaque,
-) callconv(.C) void {
-    c.gtk_window_destroy(@ptrCast(alert));
-    if (response == c.GTK_RESPONSE_YES) {
-        const self = userdataSelf(ud.?);
-        self.close();
-    }
+fn gtkCloseRequest(v: *c.GtkWindow, ud: ?*anyopaque) callconv(.C) bool {
+    _ = v;
+    log.debug("window close request", .{});
+    const self = userdataSelf(ud.?);
+
+    self.closeWithConfirmation();
+    return true;
 }
 
 /// "destroy" signal for the window
@@ -978,7 +945,7 @@ fn gtkActionClose(
     _: ?*glib.Variant,
     self: *Window,
 ) callconv(.C) void {
-    self.close();
+    self.closeWithConfirmation();
 }
 
 fn gtkActionNewWindow(

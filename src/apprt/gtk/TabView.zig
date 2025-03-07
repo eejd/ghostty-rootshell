@@ -252,6 +252,7 @@ fn adwClosePage(
     const tab: *Tab = @ptrCast(@alignCast(child.getData(Tab.GHOSTTY_TAB) orelse return 0));
     self.tab_view.closePageFinish(page, @intFromBool(self.forcing_close));
     if (!self.forcing_close) tab.closeWithConfirmation();
+
     return 1;
 }
 

@@ -13,6 +13,8 @@ const CoreSurface = @import("../../Surface.zig");
 const Surface = @import("Surface.zig");
 const Window = @import("Window.zig");
 const c = @import("c.zig").c;
+const adwaita = @import("adwaita.zig");
+const CloseDialog = @import("CloseDialog.zig");
 
 const log = std.log.scoped(.gtk);
 
@@ -132,52 +134,21 @@ fn needsConfirm(elem: Surface.Container.Elem) bool {
 /// Close the tab, asking for confirmation if any surface requests it.
 pub fn closeWithConfirmation(tab: *Tab) void {
     switch (tab.elem) {
-        .surface => |s| s.close(s.core_surface.needsConfirmQuit()),
+        .surface => |s| s.closeWithConfirmation(
+            s.core_surface.needsConfirmQuit(),
+            .{ .tab = tab },
+        ),
         .split => |s| {
-            if (needsConfirm(s.top_left) or needsConfirm(s.bottom_right)) {
-                const alert = c.gtk_message_dialog_new(
-                    tab.window.window,
-                    c.GTK_DIALOG_MODAL,
-                    c.GTK_MESSAGE_QUESTION,
-                    c.GTK_BUTTONS_YES_NO,
-                    "Close this tab?",
-                );
-                c.gtk_message_dialog_format_secondary_text(
-                    @ptrCast(alert),
-                    "All terminal sessions in this tab will be terminated.",
-                );
-
-                // We want the "yes" to appear destructive.
-                const yes_widget = c.gtk_dialog_get_widget_for_response(
-                    @ptrCast(alert),
-                    c.GTK_RESPONSE_YES,
-                );
-                c.gtk_widget_add_css_class(yes_widget, "destructive-action");
-
-                // We want the "no" to be the default action
-                c.gtk_dialog_set_default_response(
-                    @ptrCast(alert),
-                    c.GTK_RESPONSE_NO,
-                );
-
-                _ = c.g_signal_connect_data(alert, "response", c.G_CALLBACK(&gtkTabCloseConfirmation), tab, null, c.G_CONNECT_DEFAULT);
-                c.gtk_widget_show(alert);
+            if (!needsConfirm(s.top_left) and !needsConfirm(s.bottom_right)) {
+                tab.remove();
                 return;
             }
-            tab.remove();
+
+            CloseDialog.show(.{ .tab = tab }) catch |err| {
+                log.err("failed to open close dialog={}", .{err});
+            };
         },
     }
-}
-
-fn gtkTabCloseConfirmation(
-    alert: *c.GtkMessageDialog,
-    response: c.gint,
-    ud: ?*anyopaque,
-) callconv(.C) void {
-    const tab: *Tab = @ptrCast(@alignCast(ud));
-    c.gtk_window_destroy(@ptrCast(alert));
-    if (response != c.GTK_RESPONSE_YES) return;
-    tab.remove();
 }
 
 fn gtkDestroy(v: *c.GtkWidget, ud: ?*anyopaque) callconv(.C) void {
