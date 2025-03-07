@@ -3,6 +3,13 @@ const build_config = @import("../build_config.zig");
 
 const log = std.log.scoped(.i18n);
 
+/// Supported locales for the application. This must be kept up to date
+/// with the translations available in the `po/` directory; this is used
+/// by our build process as well runtime libghostty APIs.
+pub const locales = [_][]const u8{
+    "zh_CN.UTF-8",
+};
+
 pub const InitError = error{
     InvalidResourcesDir,
     OutOfMemory,
