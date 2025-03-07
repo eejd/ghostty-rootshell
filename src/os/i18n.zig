@@ -6,8 +6,20 @@ const log = std.log.scoped(.i18n);
 /// Supported locales for the application. This must be kept up to date
 /// with the translations available in the `po/` directory; this is used
 /// by our build process as well runtime libghostty APIs.
-pub const locales = [_][]const u8{
+///
+/// The order also matters. For incomplete locale information (i.e. only
+/// a language code available), the first match is used. For example, if
+/// we know the user requested `zh` but has no region code, then we'd pick
+/// the first locale that matches `zh`.
+pub const locales = [_][:0]const u8{
     "zh_CN.UTF-8",
+};
+
+/// Set for faster membership lookup of locales.
+pub const locales_map = map: {
+    var kvs: [locales.len]struct { []const u8 } = undefined;
+    for (locales, 0..) |locale, i| kvs[i] = .{locale};
+    break :map std.StaticStringMap(void).initComptime(kvs);
 };
 
 pub const InitError = error{
@@ -38,6 +50,18 @@ pub fn init(resources_dir: []const u8) InitError!void {
     log.debug("binding domain={s} path={s}", .{ build_config.bundle_id, path });
     _ = bindtextdomain(build_config.bundle_id, path.ptr) orelse
         return error.OutOfMemory;
+}
+
+/// Finds the closest matching locale for a given language code.
+pub fn closestLocaleForLanguage(lang: []const u8) ?[:0]const u8 {
+    for (locales) |locale| {
+        const idx = std.mem.indexOfScalar(u8, locale, '_') orelse continue;
+        if (std.mem.eql(u8, locale[0..idx], lang)) {
+            return locale;
+        }
+    }
+
+    return null;
 }
 
 /// Translate a message for the Ghostty domain.
