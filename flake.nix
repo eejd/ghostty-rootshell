@@ -26,7 +26,7 @@
     };
 
     zig2nix = {
-      url = "github:jcollie/zig2nix?ref=c311d8e77a6ee0d995f40a6e10a89a3a4ab04f9a";
+      url = "github:jcollie/zig2nix?ref=672971b5b6911de21446ad4fc76dee677922eda0";
       inputs = {
         nixpkgs.follows = "nixpkgs-stable";
         flake-utils.follows = "flake-utils";
