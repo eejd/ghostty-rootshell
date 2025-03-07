@@ -33,9 +33,14 @@ pub fn init(resources_dir: []const u8) InitError!void {
         return error.OutOfMemory;
 }
 
+/// Translate a message for the Ghostty domain.
+pub fn _(msgid: [*:0]const u8) [*:0]const u8 {
+    return dgettext(build_config.bundle_id, msgid);
+}
+
 // Manually include function definitions for the gettext functions
 // as libintl.h isn't always easily available (e.g. in musl)
 extern fn bindtextdomain(domainname: [*:0]const u8, dirname: [*:0]const u8) ?[*:0]const u8;
 extern fn textdomain(domainname: [*:0]const u8) ?[*:0]const u8;
-pub extern fn gettext(msgid: [*:0]const u8) [*:0]const u8;
-pub const _ = gettext;
+extern fn gettext(msgid: [*:0]const u8) [*:0]const u8;
+extern fn dgettext(domainname: [*:0]const u8, msgid: [*:0]const u8) [*:0]const u8;
