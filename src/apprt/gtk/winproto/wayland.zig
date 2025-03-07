@@ -4,6 +4,8 @@ const Allocator = std.mem.Allocator;
 
 const build_options = @import("build_options");
 const wayland = @import("wayland");
+const gtk = @import("gtk");
+const gtk4_layer_shell = @import("gtk4-layer-shell");
 
 const c = @import("../c.zig").c;
 const Config = @import("../../../config.zig").Config;
@@ -90,17 +92,19 @@ pub const App = struct {
     }
 
     pub fn supportsQuickTerminal(_: App) bool {
-        if (comptime !build_options.layer_shell) return false;
-
-        return c.gtk_layer_is_supported() != 0;
+        if (!gtk4_layer_shell.isSupported()) {
+            log.warn("your compositor does not support the wlr-layer-shell protocol; disabling quick terminal", .{});
+            return false;
+        }
+        return true;
     }
 
     pub fn initQuickTerminal(_: *App, apprt_window: *ApprtWindow) !void {
-        if (comptime !build_options.layer_shell) unreachable;
+        const window: *gtk.Window = @ptrCast(apprt_window.window);
 
-        c.gtk_layer_init_for_window(apprt_window.window);
-        c.gtk_layer_set_layer(apprt_window.window, c.GTK_LAYER_SHELL_LAYER_TOP);
-        c.gtk_layer_set_keyboard_mode(apprt_window.window, c.GTK_LAYER_SHELL_KEYBOARD_MODE_ON_DEMAND);
+        gtk4_layer_shell.initForWindow(window);
+        gtk4_layer_shell.setLayer(window, .top);
+        gtk4_layer_shell.setKeyboardMode(window, .on_demand);
     }
 
     fn registryListener(
@@ -336,11 +340,10 @@ pub const Window = struct {
     }
 
     fn syncQuickTerminal(self: *Window) !void {
-        if (comptime !build_options.layer_shell) return;
+        const window: *gtk.Window = @ptrCast(self.apprt_window.window);
+        const position = self.apprt_window.config.quick_terminal_position;
 
-        const window = self.apprt_window.window;
-
-        const anchored_edge: ?LayerShellEdge = switch (self.apprt_window.config.quick_terminal_position) {
+        const anchored_edge: ?gtk4_layer_shell.ShellEdge = switch (position) {
             .left => .left,
             .right => .right,
             .top => .top,
@@ -348,23 +351,23 @@ pub const Window = struct {
             .center => null,
         };
 
-        for (std.meta.tags(LayerShellEdge)) |edge| {
+        for (std.meta.tags(gtk4_layer_shell.ShellEdge)) |edge| {
             if (anchored_edge) |anchored| {
                 if (edge == anchored) {
-                    c.gtk_layer_set_margin(window, @intFromEnum(edge), 0);
-                    c.gtk_layer_set_anchor(window, @intFromEnum(edge), @intFromBool(true));
+                    gtk4_layer_shell.setMargin(window, edge, 0);
+                    gtk4_layer_shell.setAnchor(window, edge, true);
                     continue;
                 }
             }
 
             // Arbitrary margin - could be made customizable?
-            c.gtk_layer_set_margin(window, @intFromEnum(edge), 20);
-            c.gtk_layer_set_anchor(window, @intFromEnum(edge), @intFromBool(false));
+            gtk4_layer_shell.setMargin(window, edge, 20);
+            gtk4_layer_shell.setAnchor(window, edge, false);
         }
 
-        switch (self.apprt_window.config.quick_terminal_position) {
-            .top, .bottom, .center => c.gtk_window_set_default_size(window, 800, 400),
-            .left, .right => c.gtk_window_set_default_size(window, 400, 800),
+        switch (position) {
+            .top, .bottom, .center => window.setDefaultSize(800, 400),
+            .left, .right => window.setDefaultSize(400, 800),
         }
 
         if (self.apprt_window.isQuickTerminal()) {
@@ -377,26 +380,18 @@ pub const Window = struct {
                     log.warn("could not create slide object={}", .{err});
                     break :slide null;
                 };
-                slide.setLocation(@intCast(@intFromEnum(anchored.toKdeSlideLocation())));
+
+                const slide_location: org.KdeKwinSlide.Location = switch (anchored) {
+                    .top => .top,
+                    .bottom => .bottom,
+                    .left => .left,
+                    .right => .right,
+                };
+
+                slide.setLocation(@intCast(@intFromEnum(slide_location)));
                 slide.commit();
                 break :slide slide;
             } else null;
         }
-    }
-};
-
-const LayerShellEdge = enum(c_uint) {
-    left = c.GTK_LAYER_SHELL_EDGE_LEFT,
-    right = c.GTK_LAYER_SHELL_EDGE_RIGHT,
-    top = c.GTK_LAYER_SHELL_EDGE_TOP,
-    bottom = c.GTK_LAYER_SHELL_EDGE_BOTTOM,
-
-    fn toKdeSlideLocation(self: LayerShellEdge) org.KdeKwinSlide.Location {
-        return switch (self) {
-            .left => .left,
-            .top => .top,
-            .right => .right,
-            .bottom => .bottom,
-        };
     }
 };

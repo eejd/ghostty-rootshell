@@ -60,6 +60,7 @@
         .cimgui = .{ .path = "./pkg/cimgui" },
         .fontconfig = .{ .path = "./pkg/fontconfig" },
         .freetype = .{ .path = "./pkg/freetype" },
+        .gtk4_layer_shell = .{ .path = "./pkg/gtk4-layer-shell" },
         .harfbuzz = .{ .path = "./pkg/harfbuzz" },
         .highway = .{ .path = "./pkg/highway" },
         .libpng = .{ .path = "./pkg/libpng" },

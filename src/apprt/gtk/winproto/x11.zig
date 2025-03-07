@@ -150,6 +150,7 @@ pub const App = struct {
     }
 
     pub fn supportsQuickTerminal(_: App) bool {
+        log.warn("quick terminal is not yet supported on X11", .{});
         return false;
     }
 

@@ -308,6 +308,14 @@ in
       };
     }
     {
+      name = "12203eff4829ad8afdd828eb323d48e5ba8dbb44d224e9e314d4ab1533c2bec20f4b";
+      path = fetchZigArtifact {
+        name = "gtk4_layer_shell";
+        url = "https://github.com/wmww/gtk4-layer-shell/archive/refs/tags/v1.1.0.tar.gz";
+        hash = "sha256-mChCgSYKXu9bT2OlXxbEv2p4ihAgptsDfssPcfozaYg=";
+      };
+    }
+    {
       name = "1220b8588f106c996af10249bfa092c6fb2f35fbacb1505ef477a0b04a7dd1063122";
       path = fetchZigArtifact {
         name = "harfbuzz";

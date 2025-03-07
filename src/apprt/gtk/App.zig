@@ -781,10 +781,7 @@ fn toggleQuickTerminal(self: *App) !bool {
         return true;
     }
 
-    if (!self.winproto.supportsQuickTerminal()) {
-        log.err("quick terminal not supported on current platform", .{});
-        return false;
-    }
+    if (!self.winproto.supportsQuickTerminal()) return false;
 
     const qt = Window.create(self.core_app.alloc, self) catch |err| {
         log.err("failed to initialize quick terminal={}", .{err});
