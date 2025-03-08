@@ -209,22 +209,18 @@ msgid "Ghostty Developers"
 msgstr "Ghostty-Entwickler"
 
 #: src/apprt/gtk/CloseDialog.zig:47
-#, fuzzy
 msgid "Close"
 msgstr "Schließen"
 
 #: src/apprt/gtk/CloseDialog.zig:87
-#, fuzzy
 msgid "Quit Ghostty?"
-msgstr "Über Ghostty?"
+msgstr "Ghostty schließen?"
 
 #: src/apprt/gtk/CloseDialog.zig:88
-#, fuzzy
 msgid "Close Window?"
 msgstr "Fenster schließen?"
 
 #: src/apprt/gtk/CloseDialog.zig:89
-#, fuzzy
 msgid "Close Tab?"
 msgstr "Tab schließen?"
 
