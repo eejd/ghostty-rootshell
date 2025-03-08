@@ -2639,11 +2639,10 @@ pub fn loadCliArgs(self: *Config, alloc_gpa: Allocator) !void {
         }
     }
 
-    // Config files loaded from the CLI args are relative to pwd
-    if (self.@"config-file".value.items.len > 0) {
-        var buf: [std.fs.max_path_bytes]u8 = undefined;
-        try self.expandPaths(try std.fs.cwd().realpath(".", &buf));
-    }
+    // Any paths referenced from the CLI are relative to the current working
+    // directory.
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    try self.expandPaths(try std.fs.cwd().realpath(".", &buf));
 }
 
 /// Load and parse the config files that were added in the "config-file" key.
