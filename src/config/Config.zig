@@ -1644,6 +1644,27 @@ keybind: Keybinds = .{},
 /// To enable this feature, bind the `toggle_quick_terminal` action to a key.
 @"quick-terminal-position": QuickTerminalPosition = .top,
 
+/// The size of the quick terminal.
+///
+/// The size can be specified either as a percentage of the screen dimensions
+/// (height/width), or as an absolute size in pixels. Percentage values are
+/// suffixed with `%` (e.g. `20%`) while pixel values are suffixed with `px`
+/// (e.g. `300px`). A bare value without a suffix is a config error.
+///
+/// When only one size is specified, the size parameter affects the size of
+/// the quick terminal on its *primary axis*, which depends on its position:
+/// height for quick terminals placed on the top or bottom, and width for left
+/// or right. The primary axis of a centered quick terminal depends on the
+/// monitor's orientation: height when on a landscape monitor, and width when
+/// on a portrait monitor.
+///
+/// The *secondary axis* would be maximized for non-center positioned
+/// quick terminals unless another size parameter is specified, separated
+/// from the first by a comma (`,`). Percentage and pixel sizes can be mixed
+/// together: for instance, a size of `50%,500px` for a top-positioned quick
+/// terminal would be half a screen tall, and 500 pixels wide.
+@"quick-terminal-size": QuickTerminalSize = .{},
+
 /// The screen where the quick terminal should show up.
 ///
 /// Valid values are:
@@ -5971,6 +5992,251 @@ pub const QuickTerminalPosition = enum {
     left,
     right,
     center,
+};
+
+/// See quick-terminal-size
+pub const QuickTerminalSize = struct {
+    primary: ?Size = null,
+    secondary: ?Size = null,
+
+    pub const Size = union(enum) {
+        percentage: f32,
+        pixels: u32,
+
+        pub fn toPixels(self: Size, parent_dimensions: u32) u32 {
+            switch (self) {
+                .percentage => |v| {
+                    const dim: f32 = @floatFromInt(parent_dimensions);
+                    return @intFromFloat(v / 100.0 * dim);
+                },
+                .pixels => |v| return v,
+            }
+        }
+
+        pub fn parse(input: []const u8) !Size {
+            if (input.len == 0) return error.ValueRequired;
+
+            if (std.mem.endsWith(u8, input, "px")) {
+                return .{
+                    .pixels = std.fmt.parseInt(
+                        u32,
+                        input[0 .. input.len - "px".len],
+                        10,
+                    ) catch return error.InvalidValue,
+                };
+            }
+
+            if (std.mem.endsWith(u8, input, "%")) {
+                const percentage = std.fmt.parseFloat(
+                    f32,
+                    input[0 .. input.len - "%".len],
+                ) catch return error.InvalidValue;
+
+                if (percentage < 0) return error.InvalidValue;
+                return .{ .percentage = percentage };
+            }
+
+            return error.MissingUnit;
+        }
+
+        fn format(self: Size, writer: anytype) !void {
+            switch (self) {
+                .percentage => |v| try writer.print("{d}%", .{v}),
+                .pixels => |v| try writer.print("{}px", .{v}),
+            }
+        }
+    };
+
+    pub const Dimensions = struct {
+        width: u32,
+        height: u32,
+    };
+
+    pub fn calculate(
+        self: QuickTerminalSize,
+        position: QuickTerminalPosition,
+        dims: Dimensions,
+    ) Dimensions {
+        switch (position) {
+            .left, .right => return .{
+                .width = if (self.primary) |v| v.toPixels(dims.width) else 400,
+                .height = if (self.secondary) |v| v.toPixels(dims.height) else dims.height,
+            },
+            .top, .bottom => return .{
+                .width = if (self.secondary) |v| v.toPixels(dims.width) else dims.width,
+                .height = if (self.primary) |v| v.toPixels(dims.height) else 400,
+            },
+            .center => if (dims.width >= dims.height) {
+                return .{
+                    .width = if (self.primary) |v| v.toPixels(dims.width) else 800,
+                    .height = if (self.secondary) |v| v.toPixels(dims.height) else 400,
+                };
+            } else {
+                return .{
+                    .width = if (self.secondary) |v| v.toPixels(dims.width) else 400,
+                    .height = if (self.primary) |v| v.toPixels(dims.height) else 800,
+                };
+            },
+        }
+    }
+
+    pub fn parseCLI(self: *QuickTerminalSize, input: ?[]const u8) !void {
+        const input_ = input orelse return error.ValueRequired;
+        var it = std.mem.splitScalar(u8, input_, ',');
+
+        const primary = std.mem.trim(
+            u8,
+            it.next() orelse return error.ValueRequired,
+            cli.args.whitespace,
+        );
+        self.primary = try Size.parse(primary);
+
+        self.secondary = secondary: {
+            const secondary = std.mem.trim(
+                u8,
+                it.next() orelse break :secondary null,
+                cli.args.whitespace,
+            );
+            break :secondary try Size.parse(secondary);
+        };
+
+        if (it.next()) |_| return error.TooManyArguments;
+    }
+
+    pub fn clone(self: *const QuickTerminalSize, _: Allocator) Allocator.Error!QuickTerminalSize {
+        return .{
+            .primary = self.primary,
+            .secondary = self.secondary,
+        };
+    }
+
+    pub fn formatEntry(self: QuickTerminalSize, formatter: anytype) !void {
+        const primary = self.primary orelse return;
+
+        var buf: [4096]u8 = undefined;
+        var fbs = std.io.fixedBufferStream(&buf);
+        const writer = fbs.writer();
+
+        primary.format(writer) catch return error.OutOfMemory;
+        if (self.secondary) |secondary| {
+            writer.writeByte(',') catch return error.OutOfMemory;
+            secondary.format(writer) catch return error.OutOfMemory;
+        }
+
+        try formatter.formatEntry([]const u8, fbs.getWritten());
+    }
+    test "parse QuickTerminalSize" {
+        const testing = std.testing;
+        var v: QuickTerminalSize = undefined;
+
+        try v.parseCLI("50%");
+        try testing.expectEqual(50, v.primary.?.percentage);
+        try testing.expectEqual(null, v.secondary);
+
+        try v.parseCLI("200px");
+        try testing.expectEqual(200, v.primary.?.pixels);
+        try testing.expectEqual(null, v.secondary);
+
+        try v.parseCLI("50%,200px");
+        try testing.expectEqual(50, v.primary.?.percentage);
+        try testing.expectEqual(200, v.secondary.?.pixels);
+
+        try testing.expectError(error.ValueRequired, v.parseCLI(null));
+        try testing.expectError(error.ValueRequired, v.parseCLI(""));
+        try testing.expectError(error.ValueRequired, v.parseCLI("69px,"));
+        try testing.expectError(error.TooManyArguments, v.parseCLI("69px,42%,69px"));
+
+        try testing.expectError(error.MissingUnit, v.parseCLI("420"));
+        try testing.expectError(error.MissingUnit, v.parseCLI("bobr"));
+        try testing.expectError(error.InvalidValue, v.parseCLI("bobr%"));
+        try testing.expectError(error.InvalidValue, v.parseCLI("-32%"));
+        try testing.expectError(error.InvalidValue, v.parseCLI("-69px"));
+    }
+    test "calculate QuickTerminalSize" {
+        const testing = std.testing;
+        const dims_landscape: Dimensions = .{ .width = 2560, .height = 1600 };
+        const dims_portrait: Dimensions = .{ .width = 1600, .height = 2560 };
+
+        {
+            const size: QuickTerminalSize = .{};
+            try testing.expectEqual(
+                Dimensions{ .width = 2560, .height = 400 },
+                size.calculate(.top, dims_landscape),
+            );
+            try testing.expectEqual(
+                Dimensions{ .width = 400, .height = 1600 },
+                size.calculate(.left, dims_landscape),
+            );
+            try testing.expectEqual(
+                Dimensions{ .width = 800, .height = 400 },
+                size.calculate(.center, dims_landscape),
+            );
+            try testing.expectEqual(
+                Dimensions{ .width = 400, .height = 800 },
+                size.calculate(.center, dims_portrait),
+            );
+        }
+        {
+            const size: QuickTerminalSize = .{ .primary = .{ .percentage = 20 } };
+            try testing.expectEqual(
+                Dimensions{ .width = 2560, .height = 320 },
+                size.calculate(.top, dims_landscape),
+            );
+            try testing.expectEqual(
+                Dimensions{ .width = 512, .height = 1600 },
+                size.calculate(.left, dims_landscape),
+            );
+            try testing.expectEqual(
+                Dimensions{ .width = 512, .height = 400 },
+                size.calculate(.center, dims_landscape),
+            );
+            try testing.expectEqual(
+                Dimensions{ .width = 400, .height = 512 },
+                size.calculate(.center, dims_portrait),
+            );
+        }
+        {
+            const size: QuickTerminalSize = .{ .primary = .{ .pixels = 600 } };
+            try testing.expectEqual(
+                Dimensions{ .width = 2560, .height = 600 },
+                size.calculate(.top, dims_landscape),
+            );
+            try testing.expectEqual(
+                Dimensions{ .width = 600, .height = 1600 },
+                size.calculate(.left, dims_landscape),
+            );
+            try testing.expectEqual(
+                Dimensions{ .width = 600, .height = 400 },
+                size.calculate(.center, dims_landscape),
+            );
+            try testing.expectEqual(
+                Dimensions{ .width = 400, .height = 600 },
+                size.calculate(.center, dims_portrait),
+            );
+        }
+        {
+            const size: QuickTerminalSize = .{
+                .primary = .{ .percentage = 69 },
+                .secondary = .{ .pixels = 420 },
+            };
+            try testing.expectEqual(
+                Dimensions{ .width = 420, .height = 1104 },
+                size.calculate(.top, dims_landscape),
+            );
+            try testing.expectEqual(
+                Dimensions{ .width = 1766, .height = 420 },
+                size.calculate(.left, dims_landscape),
+            );
+            try testing.expectEqual(
+                Dimensions{ .width = 1766, .height = 420 },
+                size.calculate(.center, dims_landscape),
+            );
+            try testing.expectEqual(
+                Dimensions{ .width = 420, .height = 1766 },
+                size.calculate(.center, dims_portrait),
+            );
+        }
+    }
 };
 
 /// See quick-terminal-screen
