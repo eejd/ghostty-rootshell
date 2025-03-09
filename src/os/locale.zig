@@ -116,7 +116,11 @@ fn setLangFromCocoa() void {
                 "setting LANGUAGE from preferred languages value={s}",
                 .{pref},
             );
-            _ = internal_os.setenv("LANGUAGE", pref);
+
+            // TODO: Disabled until we can figure out why this is causing
+            // invalid translations:
+            // https://github.com/ghostty-org/ghostty/discussions/6633
+            // _ = internal_os.setenv("LANGUAGE", pref);
         }
     } else |err| {
         log.warn("error getting preferred languages. err={}", .{err});
