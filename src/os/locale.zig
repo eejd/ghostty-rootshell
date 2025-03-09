@@ -108,22 +108,26 @@ fn setLangFromCocoa() void {
     }
 
     // Get our preferred languages and set that to the LANGUAGE
-    // env var in case our language differs from our locale.
-    var buf: [1024]u8 = undefined;
-    if (preferredLanguageFromCocoa(&buf, NSLocale)) |pref_| {
-        if (pref_) |pref| {
-            log.debug(
-                "setting LANGUAGE from preferred languages value={s}",
-                .{pref},
-            );
+    // env var in case our language differs from our locale. We only
+    // do this when the app is launched from the desktop because then
+    // we're in an app bundle and we are expected to read from our
+    // Bundle's preferred languages.
+    if (internal_os.launchedFromDesktop()) language: {
+        var buf: [1024]u8 = undefined;
+        const pref_ = preferredLanguageFromCocoa(
+            &buf,
+            NSLocale,
+        ) catch |err| {
+            log.warn("error getting preferred languages. err={}", .{err});
+            break :language;
+        };
 
-            // TODO: Disabled until we can figure out why this is causing
-            // invalid translations:
-            // https://github.com/ghostty-org/ghostty/discussions/6633
-            // _ = internal_os.setenv("LANGUAGE", pref);
-        }
-    } else |err| {
-        log.warn("error getting preferred languages. err={}", .{err});
+        const pref = pref_ orelse break :language;
+        log.debug(
+            "setting LANGUAGE from preferred languages value={s}",
+            .{pref},
+        );
+        _ = internal_os.setenv("LANGUAGE", pref);
     }
 }
 
