@@ -1,35 +1,36 @@
 .{
-    .name = "ghostty",
+    .name = .ghostty,
     .version = "1.1.3",
     .paths = .{""},
+    .fingerprint = 0x64407a2a0b4147e5,
     .dependencies = .{
         // Zig libs
 
         .libxev = .{
             // mitchellh/libxev
-            .url = "https://github.com/mitchellh/libxev/archive/8943932a668f338cb2c500f6e1a7396bacd8b55d.tar.gz",
-            .hash = "1220a67b584c9499154de8c96851ed8e92315452cb2027c06e2d7d07a39c6f900d1a",
+            .url = "https://github.com/mitchellh/libxev/archive/3df9337a9e84450a58a2c4af434ec1a036f7b494.tar.gz",
+            .hash = "1220db2cfd2f8a1527d4c86cc4d298e0624481ae8112bee8c87a73baee0746797d66",
         },
         .mach_glfw = .{
             // mitchellh/mach-glfw
-            .url = "https://deps.files.ghostty.org/mach_glfw-12206ed982e709e565d536ce930701a8c07edfd2cfdce428683f3f2a601d37696a62.tar.gz",
-            .hash = "12206ed982e709e565d536ce930701a8c07edfd2cfdce428683f3f2a601d37696a62",
+            .url = "https://github.com/mitchellh/mach-glfw/archive/112fc46340f5c8527e072e442e0375004303e82b.zip",
+            .hash = "12206ed982e709e565d536ce930701a8c07edfd2cfdce428683f3f2a601d37696a63",
             .lazy = true,
         },
         .vaxis = .{
             // rockorager/libvaxis
-            .url = "git+https://github.com/rockorager/libvaxis#2237a7059eae99e9f132dd5acd1555e49d6c7d93",
-            .hash = "1220f5aec880d4f430cc1597ede88f1530da69e39a4986080e976b0c7b919c2ebfeb",
+            .url = "git+https://github.com/rockorager/libvaxis#1e24e0dfb509e974e1c8713bcd119d0ae032a8c7",
+            .hash = "vaxis-0.1.0-BWNV_MHyCAARemSCSwwc3sA1etNgv7ge0BCIXspX6CZv",
         },
         .z2d = .{
             // vancluever/z2d
-            .url = "https://deps.files.ghostty.org/z2d-12201f0d542e7541cf492a001d4d0d0155c92f58212fbcb0d224e95edeba06b5416a.tar.gz",
-            .hash = "12201f0d542e7541cf492a001d4d0d0155c92f58212fbcb0d224e95edeba06b5416a",
+            .url = "https://github.com/vancluever/z2d/archive/03f6ef642e696dce8c6019d4365234d9538eea5d.tar.gz",
+            .hash = "z2d-0.1.0-AAAAAMz7BwCFCN76WmSoRhlTe8ZOgPMmG44AyXxBEpHs",
         },
         .zig_objc = .{
             // mitchellh/zig-objc
-            .url = "https://deps.files.ghostty.org/zig_objc-1220e17e64ef0ef561b3e4b9f3a96a2494285f2ec31c097721bf8c8677ec4415c634.tar.gz",
-            .hash = "1220e17e64ef0ef561b3e4b9f3a96a2494285f2ec31c097721bf8c8677ec4415c634",
+            .url = "https://github.com/mitchellh/zig-objc/archive/2329503f692fd5c8ff4c0528b066a22c40dc58e8.tar.gz",
+            .hash = "1220458700f3a8319286715099ec64a787c77124da7c0f52fcbae13c40beeab8fe58",
         },
         .zig_js = .{
             // mitchellh/zig-js
@@ -42,13 +43,13 @@
         },
         .zig_wayland = .{
             // codeberg ifreund/zig-wayland
-            .url = "https://deps.files.ghostty.org/zig-wayland-fbfe3b4ac0b472a27b1f1a67405436c58cbee12d.tar.gz",
-            .hash = "12209ca054cb1919fa276e328967f10b253f7537c4136eb48f3332b0f7cf661cad38",
+            .url = "https://codeberg.org/ifreund/zig-wayland/archive/f3c5d503e540ada8cbcb056420de240af0c094f7.tar.gz",
+            .hash = "1220a686142edf1174287fbde3e4f378c5cea9f9cfd3e0e0e96cb2bcde0e9d5dcaa8",
         },
         .zf = .{
             // natecraddock/zf
-            .url = "https://deps.files.ghostty.org/zf-1220edc3b8d8bedbb50555947987e5e8e2f93871ca3c8e8d4cc8f1377c15b5dd35e8.tar.gz",
-            .hash = "1220edc3b8d8bedbb50555947987e5e8e2f93871ca3c8e8d4cc8f1377c15b5dd35e8",
+            .url = "https://github.com/natecraddock/zf/archive/03176fcf23fda543cc02a8675e92c1fe3b1ee2eb.tar.gz",
+            .hash = "zf-0.10.3-OIRy8bKIAACV6JaNNncXA68Nw2BUAD9JVfQdzjyoZQ-J",
         },
         .gobject = .{
             // ianprime0509/zig-gobject

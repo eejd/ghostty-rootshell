@@ -1,6 +1,7 @@
 .{
-    .name = "spirv-cross",
+    .name = .spirv_cross,
     .version = "13.1.1",
+    .fingerprint = 0x7ea1d8312b06cca,
     .paths = .{""},
     .dependencies = .{
         // KhronosGroup/SPIRV-Cross

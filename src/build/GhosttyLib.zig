@@ -30,7 +30,7 @@ pub fn initStatic(
     var lib_list = try deps.add(lib);
     try lib_list.append(lib.getEmittedBin());
 
-    if (!deps.config.target.result.isDarwin()) return .{
+    if (!deps.config.target.result.os.tag.isDarwin()) return .{
         .step = &lib.step,
         .output = lib.getEmittedBin(),
     };

@@ -320,8 +320,8 @@ pub fn add(
 
     // We always require the system SDK so that our system headers are available.
     // This makes things like `os/log.h` available for cross-compiling.
-    if (step.rootModuleTarget().isDarwin()) {
-        try @import("apple_sdk").addPaths(b, &step.root_module);
+    if (step.rootModuleTarget().os.tag.isDarwin()) {
+        try @import("apple_sdk").addPaths(b, step.root_module);
 
         const metallib = self.metallib.?;
         metallib.output.addStepDependencies(&step.step);
@@ -363,7 +363,7 @@ pub fn add(
     }).module("zf"));
 
     // Mac Stuff
-    if (step.rootModuleTarget().isDarwin()) {
+    if (step.rootModuleTarget().os.tag.isDarwin()) {
         const objc_dep = b.dependency("zig_objc", .{
             .target = target,
             .optimize = optimize,
@@ -470,7 +470,7 @@ pub fn add(
                 }
 
                 if (self.config.wayland) {
-                    const scanner = Scanner.create(b.dependency("zig_wayland", .{}), .{
+                    const scanner = Scanner.create(b.dependency("zig_wayland", .{}).builder, .{
                         .wayland_xml = b.dependency("wayland", .{}).path("protocol/wayland.xml"),
                         .wayland_protocols = b.dependency("wayland_protocols", .{}).path(""),
                     });
@@ -523,7 +523,7 @@ pub fn add(
                         const generate_gresource_xml = b.addExecutable(.{
                             .name = "generate_gresource_xml",
                             .root_source_file = b.path("src/apprt/gtk/gresource.zig"),
-                            .target = b.host,
+                            .target = b.graph.host,
                         });
 
                         const generate = b.addRunArtifact(generate_gresource_xml);
@@ -531,7 +531,7 @@ pub fn add(
                         const gtk_blueprint_compiler = b.addExecutable(.{
                             .name = "gtk_blueprint_compiler",
                             .root_source_file = b.path("src/apprt/gtk/blueprint_compiler.zig"),
-                            .target = b.host,
+                            .target = b.graph.host,
                         });
                         gtk_blueprint_compiler.linkSystemLibrary2("gtk4", dynamic_link_opts);
                         gtk_blueprint_compiler.linkSystemLibrary2("libadwaita-1", dynamic_link_opts);
@@ -569,7 +569,7 @@ pub fn add(
                         const gtk_builder_check = b.addExecutable(.{
                             .name = "gtk_builder_check",
                             .root_source_file = b.path("src/apprt/gtk/builder_check.zig"),
-                            .target = b.host,
+                            .target = b.graph.host,
                         });
                         gtk_builder_check.root_module.addOptions("build_options", self.options);
                         gtk_builder_check.root_module.addImport("gtk", gobject.module("gtk4"));
@@ -593,7 +593,6 @@ pub fn add(
                     });
                     const ghostty_resources_c = generate_resources_c.addOutputFileArg("ghostty_resources.c");
                     generate_resources_c.addFileArg(gresource_xml);
-                    generate_resources_c.extra_file_dependencies = &gresource.dependencies;
                     step.addCSourceFile(.{ .file = ghostty_resources_c, .flags = &.{} });
 
                     const generate_resources_h = b.addSystemCommand(&.{
@@ -605,7 +604,6 @@ pub fn add(
                     });
                     const ghostty_resources_h = generate_resources_h.addOutputFileArg("ghostty_resources.h");
                     generate_resources_h.addFileArg(gresource_xml);
-                    generate_resources_h.extra_file_dependencies = &gresource.dependencies;
                     step.addIncludePath(ghostty_resources_h.dirname());
                 }
             },
