@@ -14,7 +14,7 @@
         .mach_glfw = .{
             // mitchellh/mach-glfw
             .url = "https://github.com/mitchellh/mach-glfw/archive/112fc46340f5c8527e072e442e0375004303e82b.zip",
-            .hash = "12206ed982e709e565d536ce930701a8c07edfd2cfdce428683f3f2a601d37696a63",
+            .hash = "12209bd47e260a481f9c1b46ecae3cf3f62750caf6b73e39610e6e127974e50bb1a9",
             .lazy = true,
         },
         .vaxis = .{
