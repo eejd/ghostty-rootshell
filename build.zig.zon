@@ -9,7 +9,7 @@
         .libxev = .{
             // mitchellh/libxev
             .url = "https://github.com/mitchellh/libxev/archive/3df9337a9e84450a58a2c4af434ec1a036f7b494.tar.gz",
-            .hash = "1220db2cfd2f8a1527d4c86cc4d298e0624481ae8112bee8c87a73baee0746797d66",
+            .hash = "libxev-0.0.0-86vtc-ziEgDbLP0vihUn1MhsxNKY4GJEga6BEr7oyHpz",
         },
         .mach_glfw = .{
             // mitchellh/mach-glfw
@@ -82,22 +82,22 @@
         // Wayland
         .wayland = .{
             .url = "https://deps.files.ghostty.org/wayland-9cb3d7aa9dc995ffafdbdef7ab86a949d0fb0e7d.tar.gz",
-            .hash = "12202cdac858abc52413a6c6711d5026d2d3c8e13f95ca2c327eade0736298bb021f",
+            .hash = "N-V-__8AAKrHGAAs2shYq8UkE6bGcR1QJtLTyOE_lcosMn6t",
         },
         .wayland_protocols = .{
             .url = "https://deps.files.ghostty.org/wayland-protocols-258d8f88f2c8c25a830c6316f87d23ce1a0f12d9.tar.gz",
-            .hash = "12201a57c6ce0001aa034fa80fba3e1cd2253c560a45748f4f4dd21ff23b491cddef",
+            .hash = "N-V-__8AAKw-DAAaV8bOAAGqA0-oD7o-HNIlPFYKRXSPT03S",
         },
         .plasma_wayland_protocols = .{
             .url = "https://deps.files.ghostty.org/plasma_wayland_protocols-12207e0851c12acdeee0991e893e0132fc87bb763969a585dc16ecca33e88334c566.tar.gz",
-            .hash = "12207e0851c12acdeee0991e893e0132fc87bb763969a585dc16ecca33e88334c566",
+            .hash = "N-V-__8AAKYZBAB-CFHBKs3u4JkeiT4BMvyHu3Y5aaWF3Bbs",
         },
 
         // Other
         .apple_sdk = .{ .path = "./pkg/apple-sdk" },
         .iterm2_themes = .{
             .url = "https://github.com/mbadolato/iTerm2-Color-Schemes/archive/e21d5ffd19605741d0e3e19d7c5a8c6c25648673.tar.gz",
-            .hash = "122071ad56fd984afb4f94d441b6ea3e21f1741a0e026b02860d9a46110fac2cd109",
+            .hash = "N-V-__8AAABBKARxrVb9mEr7T5TUQbbqPiHxdBoOAmsChg2a",
         },
     },
 }
