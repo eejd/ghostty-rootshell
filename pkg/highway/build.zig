@@ -76,6 +76,7 @@ pub fn build(b: *std.Build) !void {
         .root = upstream.path(""),
         .flags = flags.items,
         .files = &.{
+            "hwy/abort.cc",
             "hwy/aligned_allocator.cc",
             "hwy/nanobenchmark.cc",
             "hwy/per_target.cc",

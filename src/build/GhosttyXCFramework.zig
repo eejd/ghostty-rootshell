@@ -29,6 +29,7 @@ pub fn init(b: *std.Build, deps: *const SharedDeps) !GhosttyXCFramework {
         b,
         b.resolveTargetQuery(.{
             .cpu_arch = .aarch64,
+            .cpu_model = .native,
             .os_tag = .ios,
             .os_version_min = Config.osVersionMin(.ios),
             .abi = .simulator,
