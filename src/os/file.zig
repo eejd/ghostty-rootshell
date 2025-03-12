@@ -10,7 +10,8 @@ pub const rlimit = if (@hasDecl(posix.system, "rlimit")) posix.rlimit else struc
 /// need to do this because each window consumes at least a handful of fds.
 /// This is extracted from the Zig compiler source code.
 pub fn fixMaxFiles() ?rlimit {
-    if (!@hasDecl(posix.system, "rlimit")) return null;
+    if (!@hasDecl(posix.system, "rlimit") or
+        posix.system.rlimit == void) return null;
 
     const old = posix.getrlimit(.NOFILE) catch {
         log.warn("failed to query file handle limit, may limit max windows", .{});

@@ -275,7 +275,7 @@ const WindowsPty = struct {
             &pipe_path_buf,
             "\\\\.\\pipe\\LOCAL\\ghostty-pty-{d}-{d}",
             .{
-                windows.kernel32.GetCurrentProcessId(),
+                windows.GetCurrentProcessId(),
                 pipe_name_counter.fetchAdd(1, .monotonic),
             },
         ) catch unreachable;
@@ -308,7 +308,7 @@ const WindowsPty = struct {
         if (pty.in_pipe == windows.INVALID_HANDLE_VALUE) {
             return windows.unexpectedError(windows.kernel32.GetLastError());
         }
-        errdefer _ = windows.kernel32.CloseHandle(pty.in_pipe);
+        errdefer _ = windows.CloseHandle(pty.in_pipe);
 
         var security_attributes_read = security_attributes;
         pty.in_pipe_pty = windows.kernel32.CreateFileW(
@@ -323,7 +323,7 @@ const WindowsPty = struct {
         if (pty.in_pipe_pty == windows.INVALID_HANDLE_VALUE) {
             return windows.unexpectedError(windows.kernel32.GetLastError());
         }
-        errdefer _ = windows.kernel32.CloseHandle(pty.in_pipe_pty);
+        errdefer _ = windows.CloseHandle(pty.in_pipe_pty);
 
         // The in_pipe needs to be created as a named pipe, since anonymous
         // pipes created with CreatePipe do not support overlapped operations,
@@ -336,16 +336,16 @@ const WindowsPty = struct {
         //     return windows.unexpectedError(windows.kernel32.GetLastError());
         // }
         // errdefer {
-        //     _ = windows.kernel32.CloseHandle(pty.in_pipe_pty);
-        //     _ = windows.kernel32.CloseHandle(pty.in_pipe);
+        //     _ = windows.CloseHandle(pty.in_pipe_pty);
+        //     _ = windows.CloseHandle(pty.in_pipe);
         // }
 
         if (windows.exp.kernel32.CreatePipe(&pty.out_pipe, &pty.out_pipe_pty, null, 0) == 0) {
             return windows.unexpectedError(windows.kernel32.GetLastError());
         }
         errdefer {
-            _ = windows.kernel32.CloseHandle(pty.out_pipe);
-            _ = windows.kernel32.CloseHandle(pty.out_pipe_pty);
+            _ = windows.CloseHandle(pty.out_pipe);
+            _ = windows.CloseHandle(pty.out_pipe_pty);
         }
 
         try windows.SetHandleInformation(pty.in_pipe, windows.HANDLE_FLAG_INHERIT, 0);
@@ -367,10 +367,10 @@ const WindowsPty = struct {
     }
 
     pub fn deinit(self: *Pty) void {
-        _ = windows.kernel32.CloseHandle(self.in_pipe_pty);
-        _ = windows.kernel32.CloseHandle(self.in_pipe);
-        _ = windows.kernel32.CloseHandle(self.out_pipe_pty);
-        _ = windows.kernel32.CloseHandle(self.out_pipe);
+        _ = windows.CloseHandle(self.in_pipe_pty);
+        _ = windows.CloseHandle(self.in_pipe);
+        _ = windows.CloseHandle(self.out_pipe_pty);
+        _ = windows.CloseHandle(self.out_pipe);
         _ = windows.exp.kernel32.ClosePseudoConsole(self.pseudo_console);
         self.* = undefined;
     }
