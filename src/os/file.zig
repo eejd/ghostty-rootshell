@@ -59,7 +59,7 @@ pub fn allocTmpDir(allocator: std.mem.Allocator) ?[]const u8 {
     if (builtin.os.tag == .windows) {
         // TODO: what is a good fallback path on windows?
         const v = std.process.getenvW(std.unicode.utf8ToUtf16LeStringLiteral("TMP")) orelse return null;
-        return std.unicode.utf16leToUtf8Alloc(allocator, v) catch |e| {
+        return std.unicode.utf16LeToUtf8Alloc(allocator, v) catch |e| {
             log.warn("failed to convert temp dir path from windows string: {}", .{e});
             return null;
         };

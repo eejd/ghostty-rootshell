@@ -21,7 +21,7 @@ pub fn build(b: *std.Build) !void {
     var flags = std.ArrayList([]const u8).init(b.allocator);
     defer flags.deinit();
     lib.addCSourceFile(.{
-        .file = b.path("os/log.c"),
+        .file = b.path("os/zig_log.c"),
         .flags = flags.items,
     });
     lib.addCSourceFile(.{
