@@ -51,7 +51,7 @@ pub const FlagStack = struct {
         // could send a huge number of pop commands to waste cpu.
         if (n >= self.flags.len) {
             self.idx = 0;
-            self.flags = .{.{}} ** len;
+            self.flags = .{Flags{}} ** len;
             return;
         }
 

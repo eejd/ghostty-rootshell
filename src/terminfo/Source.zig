@@ -233,10 +233,10 @@ test "encode" {
     try src.encode(buf_stream.writer());
 
     const expected =
-        "ghostty|xterm-ghostty|Ghostty\n" ++
+        "ghostty|xterm-ghostty|Ghostty,\n" ++
         "\tam,\n" ++
         "\tccc@,\n" ++
         "\tcolors#256,\n" ++
-        "\tbel=^G,\n\n";
+        "\tbel=^G,\n";
     try std.testing.expectEqualStrings(@as([]const u8, expected), buf_stream.getWritten());
 }

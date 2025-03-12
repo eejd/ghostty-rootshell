@@ -34,6 +34,8 @@ pub const Key = key: {
 /// Returns the value type for a key
 pub fn Value(comptime key: Key) type {
     const field = comptime field: {
+        @setEvalBranchQuota(100_000);
+
         const fields = std.meta.fields(Config);
         for (fields) |field| {
             if (@field(Key, field.name) == key) {
