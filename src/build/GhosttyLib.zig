@@ -22,8 +22,12 @@ pub fn initStatic(
         .target = deps.config.target,
         .optimize = deps.config.optimize,
     });
-    lib.bundle_compiler_rt = true;
     lib.linkLibC();
+
+    // These must be bundled since we're compiling into a static lib.
+    // Otherwise, you get undefined symbol errors.
+    lib.bundle_compiler_rt = true;
+    lib.bundle_ubsan_rt = true;
 
     // Add our dependencies. Get the list of all static deps so we can
     // build a combined archive if necessary.
