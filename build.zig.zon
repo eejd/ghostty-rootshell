@@ -13,8 +13,8 @@
         },
         .mach_glfw = .{
             // mitchellh/mach-glfw
-            .url = "https://github.com/mitchellh/mach-glfw/archive/112fc46340f5c8527e072e442e0375004303e82b.zip",
-            .hash = "mach_glfw-0.2.0-EJSQm1k9BQCb1H4mCkgfnBtG7K488_YnUMr2tz45YQ5u",
+            .url = "https://github.com/mitchellh/mach-glfw/archive/0e4bfc8b87ea5074d6f8c37f97dde282e877d0b0.zip",
+            .hash = "mach_glfw-0.2.0-EJSQm1k9BQA-5D0o_o6MszXdPy-aSlYp4j3HLEafE4Sh",
             .lazy = true,
         },
         .vaxis = .{
@@ -24,8 +24,8 @@
         },
         .z2d = .{
             // vancluever/z2d
-            .url = "https://github.com/vancluever/z2d/archive/03f6ef642e696dce8c6019d4365234d9538eea5d.tar.gz",
-            .hash = "z2d-0.1.0-AAAAAMz7BwCFCN76WmSoRhlTe8ZOgPMmG44AyXxBEpHs",
+            .url = "https://github.com/vancluever/z2d/archive/1e89605a624940c310c7a1d81b46a7c5c05919e3.tar.gz",
+            .hash = "z2d-0.6.0-j5P_HvLdCABu-dXpCeRM7Uk4m16vULg1980lMNCQj4_C",
         },
         .zig_objc = .{
             // mitchellh/zig-objc
