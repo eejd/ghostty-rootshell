@@ -25,7 +25,7 @@ const Config = @import("../config.zig").Config;
 
 // Get native API access on certain platforms so we can do more customization.
 const glfwNative = glfw.Native(.{
-    .cocoa = builtin.target.isDarwin(),
+    .cocoa = builtin.target.os.tag.isDarwin(),
     .x11 = builtin.os.tag == .linux,
 });
 
@@ -45,7 +45,7 @@ pub const App = struct {
     pub const Options = struct {};
 
     pub fn init(core_app: *CoreApp, _: Options) !App {
-        if (comptime builtin.target.isDarwin()) {
+        if (comptime builtin.target.os.tag.isDarwin()) {
             log.warn("WARNING WARNING WARNING: GLFW ON MAC HAS BUGS.", .{});
             log.warn("You should use the AppKit-based app instead. The official download", .{});
             log.warn("is properly built and available from GitHub. If you're building from", .{});
@@ -439,7 +439,7 @@ pub const App = struct {
     /// Mac and the artifact is a standalone exe. We don't target libs because
     /// the embedded API doesn't do windowing.
     const Darwin = struct {
-        const enabled = builtin.target.isDarwin() and build_config.artifact == .exe;
+        const enabled = builtin.target.os.tag.isDarwin() and build_config.artifact == .exe;
 
         tabbing_id: *macos.foundation.String,
 
@@ -767,7 +767,7 @@ pub const Surface = struct {
 
     /// Set the shape of the cursor.
     fn setMouseShape(self: *Surface, shape: terminal.MouseShape) !void {
-        if ((comptime builtin.target.isDarwin()) and
+        if ((comptime builtin.target.os.tag.isDarwin()) and
             !internal_os.macos.isAtLeastVersion(13, 0, 0))
         {
             // We only set our cursor if we're NOT on Mac, or if we are then the
@@ -925,7 +925,7 @@ pub const Surface = struct {
 
         // On macOS we need to also disable some modifiers because
         // alt+key consumes the alt.
-        if (comptime builtin.target.isDarwin()) {
+        if (comptime builtin.target.os.tag.isDarwin()) {
             // For GLFW, we say we always consume alt because
             // GLFW doesn't have a way to disable the alt key.
             key_event.consumed_mods.alt = true;

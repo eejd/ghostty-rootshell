@@ -215,19 +215,19 @@ const PosixPty = struct {
             .mask = posix.empty_sigset,
             .flags = 0,
         };
-        try posix.sigaction(posix.SIG.ABRT, &sa, null);
-        try posix.sigaction(posix.SIG.ALRM, &sa, null);
-        try posix.sigaction(posix.SIG.BUS, &sa, null);
-        try posix.sigaction(posix.SIG.CHLD, &sa, null);
-        try posix.sigaction(posix.SIG.FPE, &sa, null);
-        try posix.sigaction(posix.SIG.HUP, &sa, null);
-        try posix.sigaction(posix.SIG.ILL, &sa, null);
-        try posix.sigaction(posix.SIG.INT, &sa, null);
-        try posix.sigaction(posix.SIG.PIPE, &sa, null);
-        try posix.sigaction(posix.SIG.SEGV, &sa, null);
-        try posix.sigaction(posix.SIG.TRAP, &sa, null);
-        try posix.sigaction(posix.SIG.TERM, &sa, null);
-        try posix.sigaction(posix.SIG.QUIT, &sa, null);
+        posix.sigaction(posix.SIG.ABRT, &sa, null);
+        posix.sigaction(posix.SIG.ALRM, &sa, null);
+        posix.sigaction(posix.SIG.BUS, &sa, null);
+        posix.sigaction(posix.SIG.CHLD, &sa, null);
+        posix.sigaction(posix.SIG.FPE, &sa, null);
+        posix.sigaction(posix.SIG.HUP, &sa, null);
+        posix.sigaction(posix.SIG.ILL, &sa, null);
+        posix.sigaction(posix.SIG.INT, &sa, null);
+        posix.sigaction(posix.SIG.PIPE, &sa, null);
+        posix.sigaction(posix.SIG.SEGV, &sa, null);
+        posix.sigaction(posix.SIG.TRAP, &sa, null);
+        posix.sigaction(posix.SIG.TERM, &sa, null);
+        posix.sigaction(posix.SIG.QUIT, &sa, null);
 
         // Create a new process group
         if (setsid() < 0) return error.ProcessGroupFailed;

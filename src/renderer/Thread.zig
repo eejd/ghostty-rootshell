@@ -248,7 +248,7 @@ fn threadMain_(self: *Thread) !void {
 
 fn setQosClass(self: *const Thread) void {
     // Thread QoS classes are only relevant on macOS.
-    if (comptime !builtin.target.isDarwin()) return;
+    if (comptime !builtin.target.os.tag.isDarwin()) return;
 
     const class: internal_os.macos.QosClass = class: {
         // If we aren't visible (our view is fully occluded) then we

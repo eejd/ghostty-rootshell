@@ -226,7 +226,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         var fmt = std.io.fixedBufferStream(&buf);
         const writer = fmt.writer();
         var first: bool = true;
-        inline for (@typeInfo(@TypeOf(gdk_debug)).Struct.fields) |field| {
+        inline for (@typeInfo(@TypeOf(gdk_debug)).@"struct".fields) |field| {
             if (@field(gdk_debug, field.name)) {
                 if (!first) try writer.writeAll(",");
                 try writer.writeAll(field.name);
@@ -244,7 +244,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         var fmt = std.io.fixedBufferStream(&buf);
         const writer = fmt.writer();
         var first: bool = true;
-        inline for (@typeInfo(@TypeOf(gdk_disable)).Struct.fields) |field| {
+        inline for (@typeInfo(@TypeOf(gdk_disable)).@"struct".fields) |field| {
             if (@field(gdk_disable, field.name)) {
                 if (!first) try writer.writeAll(",");
                 try writer.writeAll(field.name);

@@ -22,7 +22,7 @@ pub const Key = key: {
 
     var decls = [_]std.builtin.Type.Declaration{};
     break :key @Type(.{
-        .Enum = .{
+        .@"enum" = .{
             .tag_type = std.math.IntFittingRange(0, field_infos.len - 1),
             .fields = enumFields[0..i],
             .decls = &decls,

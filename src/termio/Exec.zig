@@ -301,7 +301,7 @@ pub fn childExitedAbnormally(
 
     // We don't print this on macOS because the exit code is always 0
     // due to the way we launch the process.
-    if (comptime !builtin.target.isDarwin()) {
+    if (comptime !builtin.target.os.tag.isDarwin()) {
         const exit_code_str = try std.fmt.allocPrint(alloc, "{d}", .{exit_code});
         t.carriageReturn();
         try t.linefeed();
@@ -369,7 +369,7 @@ fn processExit(
     if (runtime_ms) |runtime| runtime: {
         // On macOS, our exit code detection doesn't work, possibly
         // because of our `login` wrapper. More investigation required.
-        if (comptime !builtin.target.isDarwin()) {
+        if (comptime !builtin.target.os.tag.isDarwin()) {
             // If our exit code is zero, then the command was successful
             // and we don't ever consider it abnormal.
             if (exit_code == 0) break :runtime;
@@ -751,7 +751,7 @@ const Subprocess = struct {
             });
             try env.put("TERMINFO", dir);
         } else {
-            if (comptime builtin.target.isDarwin()) {
+            if (comptime builtin.target.os.tag.isDarwin()) {
                 log.warn("ghostty terminfo not found, using xterm-256color", .{});
                 log.warn("the terminfo SHOULD exist on macos, please ensure", .{});
                 log.warn("you're using a valid app bundle.", .{});
@@ -797,7 +797,7 @@ const Subprocess = struct {
 
         // On macOS, export additional data directories from our
         // application bundle.
-        if (comptime builtin.target.isDarwin()) darwin: {
+        if (comptime builtin.target.os.tag.isDarwin()) darwin: {
             const resources_dir = cfg.resources_dir orelse break :darwin;
 
             var buf: [std.fs.max_path_bytes]u8 = undefined;
@@ -908,7 +908,7 @@ const Subprocess = struct {
             // If we're on macOS, we have to use `login(1)` to get all of
             // the proper environment variables set, a login shell, and proper
             // hushlogin behavior.
-            if (comptime builtin.target.isDarwin()) darwin: {
+            if (comptime builtin.target.os.tag.isDarwin()) darwin: {
                 const passwd = internal_os.passwd.get(alloc) catch |err| {
                     log.warn("failed to read passwd, not using a login shell err={}", .{err});
                     break :darwin;
@@ -1289,7 +1289,7 @@ const Subprocess = struct {
                         switch (posix.errno(c.killpg(pgid, c.SIGHUP))) {
                             .SUCCESS => log.debug("process group killed pgid={}", .{pgid}),
                             else => |err| killpg: {
-                                if ((comptime builtin.target.isDarwin()) and
+                                if ((comptime builtin.target.os.tag.isDarwin()) and
                                     err == .PERM)
                                 {
                                     log.debug("killpg failed with EPERM, expected on Darwin and ignoring", .{});

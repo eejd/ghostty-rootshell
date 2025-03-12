@@ -204,8 +204,8 @@ fn HashMapUnmanaged(
             }
 
             pub fn takeFingerprint(hash: Hash) FingerPrint {
-                const hash_bits = @typeInfo(Hash).Int.bits;
-                const fp_bits = @typeInfo(FingerPrint).Int.bits;
+                const hash_bits = @typeInfo(Hash).int.bits;
+                const fp_bits = @typeInfo(FingerPrint).int.bits;
                 return @as(FingerPrint, @truncate(hash >> (hash_bits - fp_bits)));
             }
 
@@ -688,8 +688,6 @@ fn HashMapUnmanaged(
             return result;
         }
         pub fn getOrPutAssumeCapacityAdapted(self: *Self, key: anytype, ctx: anytype) GetOrPutResult {
-            comptime std.hash_map.verifyContext(@TypeOf(ctx), @TypeOf(key), K, Hash, false);
-
             // If you get a compile error on this line, it means that your generic hash
             // function is invalid for these parameters.
             const hash = ctx.hash(key);

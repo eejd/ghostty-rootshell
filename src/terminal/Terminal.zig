@@ -77,7 +77,7 @@ default_palette: color.Palette = color.default,
 /// The color palette to use. The mask indicates which palette indices have been
 /// modified with OSC 4
 color_palette: struct {
-    const Mask = std.StaticBitSet(@typeInfo(color.Palette).Array.len);
+    const Mask = std.StaticBitSet(@typeInfo(color.Palette).array.len);
     colors: color.Palette = color.default,
     mask: Mask = Mask.initEmpty(),
 } = .{},
