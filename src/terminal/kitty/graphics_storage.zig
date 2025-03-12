@@ -1262,3 +1262,43 @@ test "storage: delete images by range 4" {
     try testing.expectEqual(@as(usize, 0), s.placements.count());
     try testing.expectEqual(tracked, t.screen.pages.countTrackedPins());
 }
+
+test "storage: aspect ratio calculation when only columns or rows specified" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var t = try terminal.Terminal.init(alloc, .{ .cols = 100, .rows = 100 });
+    defer t.deinit(alloc);
+    t.width_px = 100;
+    t.height_px = 100;
+
+    // Case 1: Only columns specified
+    {
+        const image = Image{ .id = 1, .width = 4, .height = 2 };
+        var placement = ImageStorage.Placement{
+            .location = .{ .virtual = {} },
+            .columns = 6,
+            .rows = 0,
+        };
+
+        const grid_size = placement.gridSize(image, &t);
+        // 6 columns * (2/4) = 3 rows
+        try testing.expectEqual(@as(u32, 6), grid_size.cols);
+        try testing.expectEqual(@as(u32, 3), grid_size.rows);
+    }
+
+    // Case 2: Only rows specified
+    {
+        const image = Image{ .id = 2, .width = 2, .height = 4 };
+        var placement = ImageStorage.Placement{
+            .location = .{ .virtual = {} },
+            .columns = 0,
+            .rows = 6,
+        };
+
+        const grid_size = placement.gridSize(image, &t);
+        // 6 rows * (2/4) = 3 columns
+        try testing.expectEqual(@as(u32, 3), grid_size.cols);
+        try testing.expectEqual(@as(u32, 6), grid_size.rows);
+    }
+}
