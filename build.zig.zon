@@ -13,8 +13,8 @@
         },
         .mach_glfw = .{
             // mitchellh/mach-glfw
-            .url = "https://github.com/mitchellh/mach-glfw/archive/0e4bfc8b87ea5074d6f8c37f97dde282e877d0b0.zip",
-            .hash = "mach_glfw-0.2.0-EJSQm1k9BQA-5D0o_o6MszXdPy-aSlYp4j3HLEafE4Sh",
+            .url = "https://github.com/mitchellh/mach-glfw/archive/d84bc11b0601cdad71035a0e9cf21572d76aa0d2.zip",
+            .hash = "mach_glfw-0.2.0-EJSQm2M9BQCiYGTd9VcKjg2DhSD7WT4kS-MfX68ORRT_",
             .lazy = true,
         },
         .vaxis = .{
