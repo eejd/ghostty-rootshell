@@ -687,6 +687,33 @@ pub const ImageStorage = struct {
             // Calculate our image size in grid cells
             const width_f64: f64 = @floatFromInt(width_px);
             const height_f64: f64 = @floatFromInt(height_px);
+
+            // If only columns is specified, calculate rows based on aspect ratio
+            if (self.columns > 0 and self.rows == 0) {
+                const cols_f64: f64 = @floatFromInt(self.columns);
+                const cols_px = cols_f64 * cell_width_f64;
+                const aspect_ratio = height_f64 / width_f64;
+                const rows_px = cols_px * aspect_ratio;
+                const rows_cells = rows_px / cell_height_f64;
+                return .{
+                    .cols = self.columns,
+                    .rows = @intFromFloat(@ceil(rows_cells)),
+                };
+            }
+
+            // If only rows is specified, calculate columns based on aspect ratio
+            if (self.rows > 0 and self.columns == 0) {
+                const rows_f64: f64 = @floatFromInt(self.rows);
+                const rows_px = rows_f64 * cell_height_f64;
+                const aspect_ratio = width_f64 / height_f64;
+                const cols_px = rows_px * aspect_ratio;
+                const cols_cells = cols_px / cell_width_f64;
+                return .{
+                    .cols = @intFromFloat(@ceil(cols_cells)),
+                    .rows = self.rows,
+                };
+            }
+
             const width_cells: u32 = @intFromFloat(@ceil(width_f64 / cell_width_f64));
             const height_cells: u32 = @intFromFloat(@ceil(height_f64 / cell_height_f64));
 
