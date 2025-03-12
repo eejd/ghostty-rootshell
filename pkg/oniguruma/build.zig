@@ -91,7 +91,7 @@ fn buildLib(b: *std.Build, module: *std.Build.Module, options: anytype) !*std.Bu
         .SIZEOF_INT = t.cTypeByteSize(.int),
         .SIZEOF_LONG = t.cTypeByteSize(.long),
         .SIZEOF_LONG_LONG = t.cTypeByteSize(.longlong),
-        .SIZEOF_VOIDP = t.ptrBitWidth() / t.cTypeByteSize(.char),
+        .SIZEOF_VOIDP = t.ptrBitWidth() / t.cTypeBitSize(.char),
     }));
 
     var flags = std.ArrayList([]const u8).init(b.allocator);
