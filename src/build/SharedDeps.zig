@@ -277,7 +277,10 @@ pub fn add(
     // on x86_64.
     if (step.rootModuleTarget().os.tag == .linux) {
         const triple = try step.rootModuleTarget().linuxTriple(b.allocator);
-        step.addLibraryPath(.{ .cwd_relative = b.fmt("/usr/lib/{s}", .{triple}) });
+        const path = b.fmt("/usr/lib/{s}", .{triple});
+        if (std.fs.accessAbsolute(path, .{})) {
+            step.addLibraryPath(.{ .cwd_relative = path });
+        } else |_| {}
     }
 
     // C files
