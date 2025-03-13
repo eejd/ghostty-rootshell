@@ -2,27 +2,7 @@ const std = @import("std");
 
 pub fn build(b: *std.Build) !void {
     const optimize = b.standardOptimizeOption(.{});
-    const target = target: {
-        var query = b.standardTargetOptionsQueryOnly(.{});
-
-        // This works around a Zig 0.14 bug where targeting an iOS
-        // simulator sets our CPU model to be "apple_a7" which is
-        // too outdated to support SIMD features and is also wrong.
-        // Simulator binaries run on the host CPU so target native.
-        //
-        // We can remove this when the following builds without
-        // issue without this line:
-        //
-        //   zig build -Dtarget=aarch64-ios.17.0-simulator
-        //
-        if (query.abi) |abi| {
-            if (abi == .simulator) {
-                query.cpu_model = .native;
-            }
-        }
-
-        break :target b.resolveTargetQuery(query);
-    };
+    const target = b.standardTargetOptions(.{});
 
     const lib = b.addStaticLibrary(.{
         .name = "simdutf",
