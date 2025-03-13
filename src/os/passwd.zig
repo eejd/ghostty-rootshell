@@ -10,7 +10,7 @@ const log = std.log.scoped(.passwd);
 
 // We want to be extra sure since this will force bad symbols into our import table
 comptime {
-    if (builtin.target.isWasm()) {
+    if (builtin.target.cpu.arch.isWasm()) {
         @compileError("passwd is not available for wasm");
     }
 }

@@ -342,7 +342,7 @@ pub const Window = struct {
             &actual_format_return,
             &nitems_return,
             &bytes_after_return,
-            &prop_return,
+            @ptrCast(&prop_return),
         );
         if (code != c.Success) return error.RequestFailed;
 

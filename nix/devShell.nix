@@ -200,5 +200,9 @@ in
         # and we need iOS too.
         unset SDKROOT
         unset DEVELOPER_DIR
+
+        # We need to remove "xcrun" from the PATH. It is injected by
+        # some dependency but we need to rely on system Xcode tools
+        export PATH=$(echo "$PATH" | awk -v RS=: -v ORS=: '$0 !~ /xcrun/ || $0 == "/usr/bin" {print}' | sed 's/:$//')
       '');
   }

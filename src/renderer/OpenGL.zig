@@ -41,7 +41,7 @@ pub const single_threaded_draw = if (@hasDecl(apprt.Surface, "opengl_single_thre
 else
     false;
 const DrawMutex = if (single_threaded_draw) std.Thread.Mutex else void;
-const drawMutexZero = if (DrawMutex == void) void{} else .{};
+const drawMutexZero: DrawMutex = if (DrawMutex == void) void{} else .{};
 
 alloc: std.mem.Allocator,
 
@@ -799,12 +799,12 @@ pub fn updateFrame(
         // the entire screen. This can be optimized in the future.
         const full_rebuild: bool = rebuild: {
             {
-                const Int = @typeInfo(terminal.Terminal.Dirty).Struct.backing_integer.?;
+                const Int = @typeInfo(terminal.Terminal.Dirty).@"struct".backing_integer.?;
                 const v: Int = @bitCast(state.terminal.flags.dirty);
                 if (v > 0) break :rebuild true;
             }
             {
-                const Int = @typeInfo(terminal.Screen.Dirty).Struct.backing_integer.?;
+                const Int = @typeInfo(terminal.Screen.Dirty).@"struct".backing_integer.?;
                 const v: Int = @bitCast(state.terminal.screen.dirty);
                 if (v > 0) break :rebuild true;
             }
@@ -2327,7 +2327,7 @@ pub fn drawFrame(self: *OpenGL, surface: *apprt.Surface) !void {
     // This locks the context and avoids crashes that can happen due to
     // races with the underlying Metal layer that Apple is using to
     // implement OpenGL.
-    const is_darwin = builtin.target.isDarwin();
+    const is_darwin = builtin.target.os.tag.isDarwin();
     const ogl = if (comptime is_darwin) @cImport({
         @cInclude("OpenGL/OpenGL.h");
     }) else {};

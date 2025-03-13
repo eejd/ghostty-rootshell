@@ -1,5 +1,9 @@
 [files]
 extend-exclude = [
+  # Build
+  "build.zig.zon",
+  "build.zig.zon.nix",
+  "build.zig.zon2json-lock",
   # vendored code
   "vendor/*",
   "pkg/*",

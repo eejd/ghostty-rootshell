@@ -21,7 +21,7 @@ pub fn build(b: *std.Build) !void {
     var flags = std.ArrayList([]const u8).init(b.allocator);
     defer flags.deinit();
     lib.addCSourceFile(.{
-        .file = b.path("os/log.c"),
+        .file = b.path("os/zig_log.c"),
         .flags = flags.items,
     });
     lib.addCSourceFile(.{
@@ -38,7 +38,7 @@ pub fn build(b: *std.Build) !void {
         module.linkFramework("Carbon", .{});
     }
 
-    if (target.result.isDarwin()) {
+    if (target.result.os.tag.isDarwin()) {
         module.linkFramework("CoreFoundation", .{});
         module.linkFramework("CoreGraphics", .{});
         module.linkFramework("CoreText", .{});
@@ -46,7 +46,7 @@ pub fn build(b: *std.Build) !void {
         module.linkFramework("QuartzCore", .{});
 
         if (!target.query.isNative()) {
-            try apple_sdk.addPaths(b, &lib.root_module);
+            try apple_sdk.addPaths(b, lib.root_module);
             try apple_sdk.addPaths(b, module);
         }
     }

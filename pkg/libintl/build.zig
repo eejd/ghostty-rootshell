@@ -42,9 +42,9 @@ pub fn build(b: *std.Build) !void {
         lib.addIncludePath(upstream.path("gettext-runtime/intl"));
         lib.addIncludePath(upstream.path("gettext-runtime/intl/gnulib-lib"));
 
-        if (target.result.isDarwin()) {
+        if (target.result.os.tag.isDarwin()) {
             const apple_sdk = @import("apple_sdk");
-            try apple_sdk.addPaths(b, &lib.root_module);
+            try apple_sdk.addPaths(b, lib.root_module);
         }
 
         lib.addCSourceFiles(.{

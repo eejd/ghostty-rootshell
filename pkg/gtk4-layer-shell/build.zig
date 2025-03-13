@@ -111,6 +111,16 @@ fn buildLib(b: *std.Build, module: *std.Build.Module, options: anytype) !*std.Bu
             b.fmt("-DGTK_LAYER_SHELL_MAJOR={}", .{version.major}),
             b.fmt("-DGTK_LAYER_SHELL_MINOR={}", .{version.minor}),
             b.fmt("-DGTK_LAYER_SHELL_MICRO={}", .{version.patch}),
+
+            // Zig 0.14 regression: this is required because building with
+            // ubsan results in unknown symbols. Bundling the ubsan/compiler
+            // RT doesn't help. I'm not sure what the root cause is but I
+            // suspect its related to this:
+            // https://github.com/ziglang/zig/issues/23052
+            //
+            // We can remove this in the future for Zig updates and see
+            // if our binaries run in debug on NixOS.
+            "-fno-sanitize=undefined",
         },
     });
 
