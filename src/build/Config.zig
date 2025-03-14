@@ -337,8 +337,8 @@ pub fn init(b: *std.Build) !Config {
         target.result.os.tag == .macos and
         config.app_runtime == .none and
         (!config.emit_bench and
-        !config.emit_test_exe and
-        !config.emit_helpgen);
+            !config.emit_test_exe and
+            !config.emit_helpgen);
 
     //---------------------------------------------------------------
     // System Packages
@@ -379,6 +379,11 @@ pub fn init(b: *std.Build) !Config {
             "glslang",
             "spirv-cross",
             "simdutf",
+
+            // This is default false because it is used for testing
+            // primarily and not official packaging. The packaging
+            // guide advises against building the GLFW backend.
+            "glfw3",
         }) |dep| {
             _ = b.systemIntegrationOption(dep, .{ .default = false });
         }

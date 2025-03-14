@@ -11,12 +11,6 @@
             .url = "https://github.com/mitchellh/libxev/archive/3df9337a9e84450a58a2c4af434ec1a036f7b494.tar.gz",
             .hash = "libxev-0.0.0-86vtc-ziEgDbLP0vihUn1MhsxNKY4GJEga6BEr7oyHpz",
         },
-        .mach_glfw = .{
-            // mitchellh/mach-glfw
-            .url = "https://github.com/mitchellh/mach-glfw/archive/d84bc11b0601cdad71035a0e9cf21572d76aa0d2.zip",
-            .hash = "mach_glfw-0.2.0-EJSQm2M9BQCiYGTd9VcKjg2DhSD7WT4kS-MfX68ORRT_",
-            .lazy = true,
-        },
         .vaxis = .{
             // rockorager/libvaxis
             .url = "git+https://github.com/rockorager/libvaxis#1e24e0dfb509e974e1c8713bcd119d0ae032a8c7",
@@ -62,6 +56,7 @@
         .cimgui = .{ .path = "./pkg/cimgui" },
         .fontconfig = .{ .path = "./pkg/fontconfig" },
         .freetype = .{ .path = "./pkg/freetype" },
+        .glfw = .{ .path = "./pkg/glfw" },
         .gtk4_layer_shell = .{ .path = "./pkg/gtk4-layer-shell" },
         .harfbuzz = .{ .path = "./pkg/harfbuzz" },
         .highway = .{ .path = "./pkg/highway" },
