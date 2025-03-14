@@ -95,6 +95,10 @@ pull request will be accepted with a high degree of certainty.
 > working on Ghostty.** If you're a user reporting an issue, you can
 > ignore the rest of this document.
 
+## Including and Updating Translations
+
+See the [Contributor's Guide](po/README_CONTRIBUTORS.md) for more details.
+
 ## Input Stack Testing
 
 The input stack is the part of the codebase that starts with a
