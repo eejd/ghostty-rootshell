@@ -92,54 +92,6 @@ in
       };
     }
     {
-      name = "mach_glfw-0.2.0-EJSQm2M9BQCiYGTd9VcKjg2DhSD7WT4kS-MfX68ORRT_";
-      path = fetchZigArtifact {
-        name = "mach_glfw";
-        url = "https://github.com/mitchellh/mach-glfw/archive/d84bc11b0601cdad71035a0e9cf21572d76aa0d2.zip";
-        hash = "sha256-Sh1DvCmawdN+a2JEhNP3wTX43/i5FDlDVOIx7Um/d0U=";
-      };
-    }
-    {
-      name = "glfw-0.0.0-bOgnngiqGQCt5HJK25zx1lf9emPYDNtEuQPYmrTCdOoN";
-      path = fetchZigArtifact {
-        name = "glfw";
-        url = "git+https://github.com/der-teufel-programming/glfw.git#206deaa2485703ac700d0f3020a8854282aecdbb";
-        hash = "sha256-GFeN4J4ZpKvQV8Gw6fxJ+KSpzzdjIYBbO/fTZ0Ooiuk=";
-      };
-    }
-    {
-      name = "N-V-__8AABHMqAWYuRdIlflwi8gksPnlUMQBiSxAqQAAZFms";
-      path = fetchZigArtifact {
-        name = "xcode_frameworks";
-        url = "https://pkg.machengine.org/xcode-frameworks/9a45f3ac977fd25dff77e58c6de1870b6808c4a7.tar.gz";
-        hash = "sha256-jWMT0p7klpkgX9GOUNAhrR2e6Ej7MobbqT5ZxJrNQoM=";
-      };
-    }
-    {
-      name = "N-V-__8AAAIGzwDju1iAEUEqIbBeI3K4JhQ0vBdNzmETnIRQ";
-      path = fetchZigArtifact {
-        name = "vulkan_headers";
-        url = "https://pkg.machengine.org/vulkan-headers/53e3ee66a78b97075863135b429956f225b149a5.tar.gz";
-        hash = "sha256-kXOn43ntsvxnufobQO0xfzg1cg0R97BmFOU3WRqFsH0=";
-      };
-    }
-    {
-      name = "N-V-__8AAJfbCQBWPD1WA6AuYSk8LAIj4Bo_KY-2Br8NEIKT";
-      path = fetchZigArtifact {
-        name = "wayland_headers";
-        url = "https://pkg.machengine.org/wayland-headers/7c53e7483c3cfb5c6780ae542c9f5cfa712a826a.tar.gz";
-        hash = "sha256-uGIvMyp+xR1jQXTDr6RqYl40Ukiw9l3fW1t6XpYztPY=";
-      };
-    }
-    {
-      name = "N-V-__8AACbnQQDnnaLV79Xp3YtkU_g6nseVNOLiA7MzF2a4";
-      path = fetchZigArtifact {
-        name = "x11_headers";
-        url = "https://pkg.machengine.org/x11-headers/29aefb525d5c08b05b0351e34b1623854a138c21.tar.gz";
-        hash = "sha256-UsbWkOmedS4ygY9C1g7OiPVnTcXzfGKdXImmztYAAiI=";
-      };
-    }
-    {
       name = "vaxis-0.1.0-BWNV_MHyCAARemSCSwwc3sA1etNgv7ge0BCIXspX6CZv";
       path = fetchZigArtifact {
         name = "vaxis";
@@ -305,6 +257,14 @@ in
         name = "libxml2";
         url = "https://deps.files.ghostty.org/libxml2-2.11.5.tar.gz";
         hash = "sha256-bCgFni4+60K1tLFkieORamNGwQladP7jvGXNxdiaYhU=";
+      };
+    }
+    {
+      name = "N-V-__8AADTkRwBjUvVwTLOnV96QhN0J5Nyg7YzvnISe-Eax";
+      path = fetchZigArtifact {
+        name = "glfw";
+        url = "https://github.com/glfw/glfw/archive/73948e6c0f15b1053cf74b7c4e6b04fd36e97e29.zip";
+        hash = "sha256-k7wBKiQpgxBhqHRwSEgZjmfncltlGG8BgY3FhyycM5E=";
       };
     }
     {

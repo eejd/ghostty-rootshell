@@ -41,6 +41,7 @@
   harfbuzz,
   libpng,
   libGL,
+  libxkbcommon,
   libX11,
   libXcursor,
   libXext,
@@ -83,6 +84,7 @@
       glslang
       spirv-cross
 
+      libxkbcommon
       libX11
       libXcursor
       libXi
@@ -162,6 +164,7 @@ in
         glslang
         spirv-cross
 
+        libxkbcommon
         libX11
         libXcursor
         libXext

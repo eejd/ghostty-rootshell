@@ -438,12 +438,15 @@ pub fn add(
         switch (self.config.app_runtime) {
             .none => {},
 
-            .glfw => glfw: {
-                const mach_glfw_dep = b.lazyDependency("mach_glfw", .{
+            .glfw => {
+                const glfw_dep = b.dependency("glfw", .{
                     .target = target,
                     .optimize = optimize,
-                }) orelse break :glfw;
-                step.root_module.addImport("glfw", mach_glfw_dep.module("mach-glfw"));
+                });
+                step.root_module.addImport(
+                    "glfw",
+                    glfw_dep.module("glfw"),
+                );
             },
 
             .gtk => {
