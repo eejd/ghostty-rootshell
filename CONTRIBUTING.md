@@ -23,11 +23,11 @@ friendly to new contributors are tagged with "contributor friendly".
 
 **I'd like to translate Ghostty to my language!**
 
-We have written a [Translator's Guide](po/README_CONTRIBUTORS.md) for
+We have written a [Translator's Guide](po/README_TRANSLATORS.md) for
 everyone interested in contributing translations to Ghostty.
 Translations usually do not need to go through the process of issue triage
 and you can submit pull requests directly, although please make sure that
-our [Style Guide](po/README_CONTRIBUTORS.md#style-guide) is followed before
+our [Style Guide](po/README_TRANSLATORS.md#style-guide) is followed before
 submission.
 
 **I have a bug!**
