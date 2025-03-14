@@ -35,14 +35,20 @@ fn buildLib(b: *std.Build, module: *std.Build.Module, options: anytype) !*std.Bu
     const target = options.target;
     const optimize = options.optimize;
 
-    const upstream = b.dependency("gtk4_layer_shell", .{});
-    const wayland_protocols = b.dependency("wayland_protocols", .{});
     // Shared library
     const lib = b.addSharedLibrary(.{
         .name = "gtk4-layer-shell",
         .target = target,
         .optimize = optimize,
     });
+    b.installArtifact(lib);
+
+    // We need to call both lazy dependencies to tell Zig we need both
+    const upstream_ = b.lazyDependency("gtk4_layer_shell", .{});
+    const wayland_protocols_ = b.lazyDependency("wayland_protocols", .{});
+    const upstream = upstream_ orelse return lib;
+    const wayland_protocols = wayland_protocols_ orelse return lib;
+
     lib.linkLibC();
     lib.addIncludePath(upstream.path("include"));
     lib.addIncludePath(upstream.path("src"));
@@ -124,6 +130,5 @@ fn buildLib(b: *std.Build, module: *std.Build.Module, options: anytype) !*std.Bu
         },
     });
 
-    b.installArtifact(lib);
     return lib;
 }

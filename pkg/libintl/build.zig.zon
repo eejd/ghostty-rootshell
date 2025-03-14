@@ -7,6 +7,7 @@
         .gettext = .{
             .url = "https://deps.files.ghostty.org/gettext-0.24.tar.gz",
             .hash = "N-V-__8AADcZkgn4cMhTUpIz6mShCKyqqB-NBtf_S2bHaTC-",
+            .lazy = true,
         },
 
         .apple_sdk = .{ .path = "../apple-sdk" },
