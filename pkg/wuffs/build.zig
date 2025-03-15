@@ -4,8 +4,6 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const wuffs = b.dependency("wuffs", .{});
-
     const module = b.addModule("wuffs", .{
         .root_source_file = b.path("src/main.zig"),
         .target = target,
@@ -18,6 +16,13 @@ pub fn build(b: *std.Build) !void {
         try apple_sdk.addPaths(b, module);
     }
 
+    const unit_tests = b.addTest(.{
+        .root_source_file = b.path("src/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    unit_tests.linkLibC();
+
     var flags = std.ArrayList([]const u8).init(b.allocator);
     defer flags.deinit();
     try flags.append("-DWUFFS_IMPLEMENTATION");
@@ -25,36 +30,31 @@ pub fn build(b: *std.Build) !void {
         try flags.append("-D" ++ key);
     }
 
-    module.addIncludePath(wuffs.path("release/c"));
-    module.addCSourceFile(.{
-        .file = wuffs.path("release/c/wuffs-v0.4.c"),
-        .flags = flags.items,
-    });
+    if (b.lazyDependency("wuffs", .{})) |wuffs_dep| {
+        module.addIncludePath(wuffs_dep.path("release/c"));
+        module.addCSourceFile(.{
+            .file = wuffs_dep.path("release/c/wuffs-v0.4.c"),
+            .flags = flags.items,
+        });
 
-    const unit_tests = b.addTest(.{
-        .root_source_file = b.path("src/main.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
+        unit_tests.addIncludePath(wuffs_dep.path("release/c"));
+        unit_tests.addCSourceFile(.{
+            .file = wuffs_dep.path("release/c/wuffs-v0.4.c"),
+            .flags = flags.items,
+        });
+    }
 
-    unit_tests.linkLibC();
-    unit_tests.addIncludePath(wuffs.path("release/c"));
-    unit_tests.addCSourceFile(.{
-        .file = wuffs.path("release/c/wuffs-v0.4.c"),
-        .flags = flags.items,
-    });
-
-    const pixels = b.dependency("pixels", .{});
-
-    inline for (.{ "000000", "FFFFFF" }) |color| {
-        inline for (.{ "gif", "jpg", "png", "ppm" }) |extension| {
-            const filename = std.fmt.comptimePrint("1x1#{s}.{s}", .{ color, extension });
-            unit_tests.root_module.addAnonymousImport(
-                filename,
-                .{
-                    .root_source_file = pixels.path(filename),
-                },
-            );
+    if (b.lazyDependency("pixels", .{})) |pixels_dep| {
+        inline for (.{ "000000", "FFFFFF" }) |color| {
+            inline for (.{ "gif", "jpg", "png", "ppm" }) |extension| {
+                const filename = std.fmt.comptimePrint(
+                    "1x1#{s}.{s}",
+                    .{ color, extension },
+                );
+                unit_tests.root_module.addAnonymousImport(filename, .{
+                    .root_source_file = pixels_dep.path(filename),
+                });
+            }
         }
     }
 

@@ -16,10 +16,14 @@ pub fn init(b: *std.Build) !UnicodeTables {
         .target = b.graph.host,
     });
 
-    const ziglyph_dep = b.dependency("ziglyph", .{
+    if (b.lazyDependency("ziglyph", .{
         .target = b.graph.host,
-    });
-    exe.root_module.addImport("ziglyph", ziglyph_dep.module("ziglyph"));
+    })) |ziglyph_dep| {
+        exe.root_module.addImport(
+            "ziglyph",
+            ziglyph_dep.module("ziglyph"),
+        );
+    }
 
     const run = b.addRunArtifact(exe);
     return .{

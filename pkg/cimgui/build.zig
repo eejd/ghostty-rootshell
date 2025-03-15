@@ -40,7 +40,13 @@ pub fn build(b: *std.Build) !void {
             .@"enable-libpng" = true,
         });
         lib.linkLibrary(freetype.artifact("freetype"));
-        module.addIncludePath(freetype.builder.dependency("freetype", .{}).path("include"));
+
+        if (freetype.builder.lazyDependency(
+            "freetype",
+            .{},
+        )) |freetype_dep| {
+            module.addIncludePath(freetype_dep.path("include"));
+        }
     }
 
     lib.addIncludePath(imgui.path(""));

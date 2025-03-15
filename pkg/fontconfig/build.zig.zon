@@ -7,9 +7,10 @@
         .fontconfig = .{
             .url = "https://deps.files.ghostty.org/fontconfig-2.14.2.tar.gz",
             .hash = "N-V-__8AAIrfdwARSa-zMmxWwFuwpXf1T3asIN7s5jqi9c1v",
+            .lazy = true,
         },
 
-        .freetype = .{ .path = "../freetype" },
-        .libxml2 = .{ .path = "../libxml2" },
+        .freetype = .{ .path = "../freetype", .lazy = true },
+        .libxml2 = .{ .path = "../libxml2", .lazy = true },
     },
 }
