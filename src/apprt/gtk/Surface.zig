@@ -920,8 +920,7 @@ pub fn setInitialWindowSize(self: *const Surface, width: u32, height: u32) !void
     const window = self.container.window() orelse return;
     if (window.notebook.nPages() > 1) return;
 
-    // FIXME: when Window is converted to zig-gobject
-    const gtk_window: *gtk.Window = @ptrCast(@alignCast(window.window));
+    const gtk_window = window.window.as(gtk.Window);
 
     // Note: this doesn't properly take into account the window decorations.
     // I'm not currently sure how to do that.
@@ -941,8 +940,7 @@ pub fn setSizeLimits(self: *const Surface, min: apprt.SurfaceSize, max_: ?apprt.
     const window = self.container.window() orelse return;
     if (window.notebook.nPages() > 1) return;
 
-    // FIXME: when Window is converted to zig-gobject
-    const widget: *gtk.Widget = @ptrCast(@alignCast(window.window));
+    const widget = window.window.as(gtk.Widget);
 
     // Note: this doesn't properly take into account the window decorations.
     // I'm not currently sure how to do that.
@@ -1167,9 +1165,8 @@ pub fn setMouseVisibility(self: *Surface, visible: bool) void {
         return;
     }
 
-    // FIXME: when App is converted to zig-gobject
     // Set our new cursor to the app "none" cursor
-    widget.setCursor(@ptrCast(@alignCast(self.app.cursor_none)));
+    widget.setCursor(self.app.cursor_none);
 }
 
 pub fn mouseOverLink(self: *Surface, uri_: ?[]const u8) void {
@@ -1409,8 +1406,7 @@ fn gtkResize(gl_area: *gtk.GLArea, width: c_int, height: c_int, self: *Surface) 
 
         const window_scale_factor = scale: {
             const window = self.container.window() orelse break :scale 0;
-            // FIXME: when Window.zig is converted to zig-gobject
-            const gtk_window: *gtk.Window = @ptrCast(@alignCast(window.window));
+            const gtk_window = window.window.as(gtk.Window);
             const gtk_native = gtk_window.as(gtk.Native);
             const gdk_surface = gtk_native.getSurface() orelse break :scale 0;
             break :scale gdk_surface.getScaleFactor();
@@ -2173,9 +2169,7 @@ pub fn present(self: *Surface) void {
             if (window.notebook.getTabPosition(tab)) |position|
                 _ = window.notebook.gotoNthTab(position);
         }
-        // FIXME: when Window.zig is converted to zig-gobject
-        const gtk_window: *gtk.Window = @ptrCast(@alignCast(window.window));
-        gtk_window.present();
+        window.window.as(gtk.Window).present();
     }
 
     self.grabFocus();
@@ -2201,16 +2195,14 @@ pub fn setSplitZoom(self: *Surface, new_split_zoom: bool) void {
     const tab_widget = tab.elem.widget();
     const surface_widget = self.primaryWidget();
 
-    // FIXME: when Tab.zig is converted to zig-gobject
-    const box: *gtk.Box = @ptrCast(@alignCast(tab.box));
     if (new_split_zoom) {
         self.detachFromSplit();
-        box.remove(tab_widget);
-        box.append(surface_widget);
+        tab.box.remove(tab_widget);
+        tab.box.append(surface_widget);
     } else {
-        box.remove(surface_widget);
+        tab.box.remove(surface_widget);
         self.attachToSplit();
-        box.append(tab_widget);
+        tab.box.append(tab_widget);
     }
 
     self.zoomed_in = new_split_zoom;

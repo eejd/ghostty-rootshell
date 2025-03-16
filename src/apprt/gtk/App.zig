@@ -401,10 +401,11 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         return error.GtkApplicationRegisterFailed;
     }
 
+    // FIXME: when App.zig is converted to zig-gobject
     // Setup our windowing protocol logic
     var winproto_app = try winprotopkg.App.init(
         core_app.alloc,
-        display,
+        @ptrCast(@alignCast(display)),
         app_id,
         &config,
     );
