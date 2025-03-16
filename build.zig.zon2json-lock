@@ -4,15 +4,15 @@
     "url": "https://github.com/mitchellh/libxev/archive/3df9337a9e84450a58a2c4af434ec1a036f7b494.tar.gz",
     "hash": "sha256-oKZqA9d79jHnp/HsqJWQE33Ffn5Ee5G4VnlQepQuY4o="
   },
-  "vaxis-0.1.0-BWNV_MHyCAARemSCSwwc3sA1etNgv7ge0BCIXspX6CZv": {
+  "vaxis-0.1.0-BWNV_MHyCAA0rNbPTr50Z44PyEdNP9zQSnHcXBXoo3Ti": {
     "name": "vaxis",
-    "url": "git+https://github.com/rockorager/libvaxis#1e24e0dfb509e974e1c8713bcd119d0ae032a8c7",
-    "hash": "sha256-6p9aSklLTPV9epzGkXBg5SQfjxfTT+/SYLFPiM04VF0="
+    "url": "git+https://github.com/rockorager/libvaxis#4182b7fa42f27cf14a71dbdb54cfd82c5c6e3447",
+    "hash": "sha256-iONEySjPeD0WYJ93fw5mxT+0pVfUO/m6008J/LXjQkA="
   },
-  "zigimg-0.1.0-lly-O-NTEABwkjg9_WM4uLQr_TtL-7jp375PsZJyugGN": {
+  "zigimg-0.1.0-lly-O4heEADSRxoTwJwrD3TBfUob9052sIgb9SL8Iz-A": {
     "name": "zigimg",
-    "url": "git+https://github.com/TUSF/zigimg#5102e09be233d372e9e05f4cb2ffbefba30bc1c0",
-    "hash": "sha256-0HYK5A8Jlx1WD1hdU07r+m2AXl6UuazFiZd7P3uh/wY="
+    "url": "git+https://github.com/TUSF/zigimg#0ce4eca3560d5553b13263d6b6bb72e146dd43d0",
+    "hash": "sha256-Rr+mAfbLOoaxHOwCug+0cWCmW9gDhjhnaO2J/Oik9HI="
   },
   "zg-0.13.4-AAAAAGiZ7QLz4pvECFa_wG4O4TP4FLABHHbemH2KakWM": {
     "name": "zg",
@@ -44,15 +44,10 @@
     "url": "https://codeberg.org/ifreund/zig-wayland/archive/f3c5d503e540ada8cbcb056420de240af0c094f7.tar.gz",
     "hash": "sha256-E77GZ15APYbbO1WzmuJi8eG9/iQFbc2CgkNBxjCLUhk="
   },
-  "zf-0.10.3-OIRy8bKIAACV6JaNNncXA68Nw2BUAD9JVfQdzjyoZQ-J": {
+  "zf-0.10.3-OIRy8bKIAADhjqtdjVaDfONRuI7RVl5gMbhCoOwiBWV5": {
     "name": "zf",
-    "url": "https://github.com/natecraddock/zf/archive/03176fcf23fda543cc02a8675e92c1fe3b1ee2eb.tar.gz",
-    "hash": "sha256-HqS2NFUuTQkltFsQlZz4HYHgfhEUEkZY83NnCW2x5Sg="
-  },
-  "vaxis-0.1.0-BWNV_K3yCACrTy3A5cbZElLyICx5a2O2EzPxmgVRcbKJ": {
-    "name": "vaxis",
-    "url": "git+https://github.com/rockorager/libvaxis/?ref=main#6a37605dde55898dcca4769dd3eb1e333959c209",
-    "hash": "sha256-5DW2V2bVsHtSw7UMGvJ+P0FpXIf5kTNjrq2SMqU6FIk="
+    "url": "https://github.com/natecraddock/zf/archive/1039cf75447a8d5b8d481fedb914fe848d246276.tar.gz",
+    "hash": "sha256-xVva07TAYlVv4E4PKe2wUj86a6Ky2YC30YBgtbvNKvw="
   },
   "gobject-0.2.0-Skun7H6DlQDWCiNQtdE5TXYcCvx7MyjW01OQe5M_n_jV": {
     "name": "gobject",
