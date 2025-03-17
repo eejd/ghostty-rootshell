@@ -510,7 +510,11 @@ pub fn syncAppearance(self: *Window) !void {
 
         // Update toolbar view style
         toolbar_view: {
-            const toolbar_view = gobject.ext.cast(adw.ToolbarView, tab_overview.getChild() orelse break :toolbar_view) orelse break :toolbar_view;
+            const tab_overview_child = tab_overview.getChild() orelse break :toolbar_view;
+            const toolbar_view = gobject.ext.cast(
+                adw.ToolbarView,
+                tab_overview_child,
+            ) orelse break :toolbar_view;
             const toolbar_style: adw.ToolbarStyle = switch (self.config.gtk_toolbar_style) {
                 .flat => .flat,
                 .raised => .raised,

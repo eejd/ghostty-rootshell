@@ -12,8 +12,11 @@ const gobject = @import("gobject");
 const gtk = @import("gtk");
 const xlib = @import("xlib");
 
-// This needs to remain because of the legacy X11 API calls
-const c = @import("../c.zig").c;
+pub const c = @cImport({
+    @cInclude("X11/Xlib.h");
+    @cInclude("X11/Xatom.h");
+    @cInclude("X11/XKBlib.h");
+});
 
 const input = @import("../../../input.zig");
 const Config = @import("../../../config.zig").Config;
