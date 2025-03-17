@@ -1969,6 +1969,14 @@ fn gtkInputPreeditChanged(
     ctx: *gtk.IMMulticontext,
     self: *Surface,
 ) callconv(.C) void {
+    // Any preedit change should mark that we're composing. Its possible this
+    // is false using fcitx5-hangul and typing "dkssud<space>" ("안녕"). The
+    // second "s" results in a "commit" for "안" which sets composing to false,
+    // but then immediately sends a preedit change for the next symbol. With
+    // composing set to false we won't commit this text. Therefore, we must
+    // ensure it is set here.
+    self.im_composing = true;
+
     // Get our pre-edit string that we'll use to show the user.
     var buf: [*:0]u8 = undefined;
     ctx.as(gtk.IMContext).getPreeditString(&buf, null, null);
