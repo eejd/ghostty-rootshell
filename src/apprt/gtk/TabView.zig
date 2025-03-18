@@ -209,14 +209,11 @@ pub fn closeTab(self: *TabView, tab: *Tab) void {
 
     // If we have no more tabs we close the window
     if (self.nPages() == 0) {
-        // libadw versions <= 1.3.x leak the final page view
+        // libadw versions < 1.5.1 leak the final page view
         // which causes our surface to not properly cleanup. We
         // unref to force the cleanup. This will trigger a critical
         // warning from GTK, but I don't know any other workaround.
-        // Note: I'm not actually sure if 1.4.0 contains the fix,
-        // I just know that 1.3.x is broken and 1.5.1 is fixed.
-        // If we know that 1.4.0 is fixed, we can change this.
-        if (!adwaita.versionAtLeast(1, 4, 0)) {
+        if (!adwaita.versionAtLeast(1, 5, 1)) {
             const box: *gtk.Box = @ptrCast(@alignCast(tab.box));
             box.as(gobject.Object).unref();
         }
