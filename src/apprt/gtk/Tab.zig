@@ -16,7 +16,6 @@ const CoreSurface = @import("../../Surface.zig");
 
 const Surface = @import("Surface.zig");
 const Window = @import("Window.zig");
-const adwaita = @import("adwaita.zig");
 const CloseDialog = @import("CloseDialog.zig");
 
 const log = std.log.scoped(.gtk);

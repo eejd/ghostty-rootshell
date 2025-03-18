@@ -19,6 +19,7 @@ const gtk = @import("gtk");
 
 const std = @import("std");
 const assert = std.debug.assert;
+const testing = std.testing;
 const Allocator = std.mem.Allocator;
 const builtin = @import("builtin");
 const build_config = @import("../../build_config.zig");
@@ -40,12 +41,11 @@ const ConfigErrorsDialog = @import("ConfigErrorsDialog.zig");
 const ClipboardConfirmationWindow = @import("ClipboardConfirmationWindow.zig");
 const CloseDialog = @import("CloseDialog.zig");
 const Split = @import("Split.zig");
-const version = @import("version.zig");
 const inspector = @import("inspector.zig");
 const key = @import("key.zig");
 const winprotopkg = @import("winproto.zig");
-const testing = std.testing;
-const adwaita = @import("adwaita.zig");
+const gtk_version = @import("gtk_version.zig");
+const adw_version = @import("adw_version.zig");
 
 pub const c = @cImport({
     // generated header files
@@ -103,10 +103,10 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
     _ = opts;
 
     // Log our GTK version
-    version.logVersion();
+    gtk_version.logVersion();
 
     // log the adwaita version
-    adwaita.logVersion();
+    adw_version.logVersion();
 
     // Set gettext global domain to be our app so that our unqualified
     // translations map to our translations.
@@ -181,11 +181,11 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
     } = .{};
 
     environment: {
-        if (version.runtimeAtLeast(4, 18, 0)) {
+        if (gtk_version.runtimeAtLeast(4, 18, 0)) {
             gdk_disable.@"color-mgmt" = false;
         }
 
-        if (version.runtimeAtLeast(4, 16, 0)) {
+        if (gtk_version.runtimeAtLeast(4, 16, 0)) {
             // From gtk 4.16, GDK_DEBUG is split into GDK_DEBUG and GDK_DISABLE.
             // For the remainder of "why" see the 4.14 comment below.
             gdk_disable.@"gles-api" = true;
@@ -193,7 +193,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
             gdk_debug.@"gl-no-fractional" = true;
             break :environment;
         }
-        if (version.runtimeAtLeast(4, 14, 0)) {
+        if (gtk_version.runtimeAtLeast(4, 14, 0)) {
             // We need to export GDK_DEBUG to run on Wayland after GTK 4.14.
             // Older versions of GTK do not support these values so it is safe
             // to always set this. Forwards versions are uncertain so we'll have
@@ -247,7 +247,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         _ = internal_os.setenv("GDK_DISABLE", value[0 .. value.len - 1 :0]);
     }
 
-    if (version.runtimeAtLeast(4, 14, 0)) {
+    if (gtk_version.runtimeAtLeast(4, 14, 0)) {
         switch (config.@"gtk-gsk-renderer") {
             .default => {},
             else => |renderer| {
@@ -1109,7 +1109,7 @@ fn loadRuntimeCss(
         , .{ .font_family = font_family });
     }
 
-    if (version.runtimeAtLeast(4, 16, 0)) {
+    if (gtk_version.runtimeAtLeast(4, 16, 0)) {
         switch (window_theme) {
             .ghostty => try writer.print(
                 \\:root {{
@@ -1224,7 +1224,7 @@ fn loadCustomCss(self: *App) !void {
 }
 
 fn loadCssProviderFromData(provider: *gtk.CssProvider, data: [:0]const u8) void {
-    if (version.atLeast(4, 12, 0)) {
+    if (gtk_version.atLeast(4, 12, 0)) {
         const g_bytes = glib.Bytes.new(data.ptr, data.len);
         defer g_bytes.unref();
 
