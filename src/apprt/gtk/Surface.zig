@@ -370,6 +370,7 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
 
     // Create an overlay so we can layer the GL area with other widgets.
     const overlay = gtk.Overlay.new();
+    errdefer overlay.unref();
     const overlay_widget = overlay.as(gtk.Widget);
     overlay.setChild(gl_area_widget);
 
