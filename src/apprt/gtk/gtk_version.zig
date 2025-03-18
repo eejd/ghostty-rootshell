@@ -11,20 +11,24 @@ const gtk = @import("gtk");
 
 const log = std.log.scoped(.gtk);
 
-pub const version: std.SemanticVersion = .{
+pub const comptime_version: std.SemanticVersion = .{
     .major = c.GTK_MAJOR_VERSION,
     .minor = c.GTK_MINOR_VERSION,
     .patch = c.GTK_MICRO_VERSION,
 };
 
+pub fn getRuntimeVersion() std.SemanticVersion {
+    return .{
+        .major = gtk.getMajorVersion(),
+        .minor = gtk.getMinorVersion(),
+        .patch = gtk.getMicroVersion(),
+    };
+}
+
 pub fn logVersion() void {
-    log.info("GTK version build={d}.{d}.{d} runtime={d}.{d}.{d}", .{
-        version.major,
-        version.minor,
-        version.patch,
-        gtk.getMajorVersion(),
-        gtk.getMinorVersion(),
-        gtk.getMicroVersion(),
+    log.info("GTK version build={} runtime={}", .{
+        comptime_version,
+        getRuntimeVersion(),
     });
 }
 
@@ -51,7 +55,7 @@ pub inline fn atLeast(
     // we can return false immediately. This prevents us from
     // compiling against unknown symbols and makes runtime checks
     // very slightly faster.
-    if (comptime version.order(.{
+    if (comptime comptime_version.order(.{
         .major = major,
         .minor = minor,
         .patch = micro,
@@ -75,15 +79,12 @@ pub inline fn runtimeAtLeast(
 ) bool {
     // We use the functions instead of the constants such as c.GTK_MINOR_VERSION
     // because the function gets the actual runtime version.
-    if (gtk.getMajorVersion() >= major) {
-        if (gtk.getMajorVersion() > major) return true;
-        if (gtk.getMinorVersion() >= minor) {
-            if (gtk.getMinorVersion() > minor) return true;
-            return gtk.getMicroVersion() >= micro;
-        }
-    }
-
-    return false;
+    const runtime_version = getRuntimeVersion();
+    return runtime_version.order(.{
+        .major = major,
+        .minor = minor,
+        .patch = micro,
+    }) != .lt;
 }
 
 test "atLeast" {

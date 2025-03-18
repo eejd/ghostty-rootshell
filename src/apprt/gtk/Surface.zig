@@ -37,7 +37,7 @@ const CloseDialog = @import("CloseDialog.zig");
 const inspectorpkg = @import("inspector.zig");
 const gtk_key = @import("key.zig");
 const Builder = @import("Builder.zig");
-const adwaita = @import("adwaita.zig");
+const adw_version = @import("adw_version.zig");
 
 const log = std.log.scoped(.gtk_surface);
 
@@ -1058,7 +1058,7 @@ fn resolveTitle(self: *Surface, title: [:0]const u8) [:0]const u8 {
 }
 
 pub fn promptTitle(self: *Surface) !void {
-    if (!adwaita.versionAtLeast(1, 5, 0)) return;
+    if (!adw_version.atLeast(1, 5, 0)) return;
     const window = self.container.window() orelse return;
 
     var builder = Builder.init("prompt-title-dialog", 1, 5, .blp);
@@ -2381,7 +2381,7 @@ fn g_value_holds(value_: ?*gobject.Value, g_type: gobject.Type) bool {
 }
 
 fn gtkPromptTitleResponse(source_object: ?*gobject.Object, result: *gio.AsyncResult, ud: ?*anyopaque) callconv(.C) void {
-    if (!adwaita.versionAtLeast(1, 5, 0)) return;
+    if (!adw_version.supportsDialogs()) return;
     const dialog = gobject.ext.cast(adw.AlertDialog, source_object.?).?;
     const self = userdataSelf(ud orelse return);
 

@@ -29,13 +29,13 @@ const Color = configpkg.Config.Color;
 const Surface = @import("Surface.zig");
 const Menu = @import("menu.zig").Menu;
 const Tab = @import("Tab.zig");
-const adwaita = @import("adwaita.zig");
 const gtk_key = @import("key.zig");
 const TabView = @import("TabView.zig");
 const HeaderBar = @import("headerbar.zig");
 const CloseDialog = @import("CloseDialog.zig");
-const version = @import("version.zig");
 const winprotopkg = @import("winproto.zig");
+const gtk_version = @import("gtk_version.zig");
+const adw_version = @import("adw_version.zig");
 
 const log = std.log.scoped(.gtk);
 
@@ -167,7 +167,7 @@ pub fn init(self: *Window, app: *App) !void {
     self.notebook.init(self);
 
     // If we are using Adwaita, then we can support the tab overview.
-    self.tab_overview = if (adwaita.versionAtLeast(1, 4, 0)) overview: {
+    self.tab_overview = if (adw_version.supportsTabOverview()) overview: {
         const tab_overview = adw.TabOverview.new();
         tab_overview.setView(self.notebook.tab_view);
         tab_overview.setEnableNewTab(1);
@@ -214,7 +214,7 @@ pub fn init(self: *Window, app: *App) !void {
 
     // If we're using an AdwWindow then we can support the tab overview.
     if (self.tab_overview) |tab_overview| {
-        if (!adwaita.versionAtLeast(1, 4, 0)) unreachable;
+        if (!adw_version.supportsTabOverview()) unreachable;
         const btn = switch (self.config.gtk_tabs_location) {
             .top, .bottom => btn: {
                 const btn = gtk.ToggleButton.new();
@@ -284,7 +284,7 @@ pub fn init(self: *Window, app: *App) !void {
 
     // If Adwaita is enabled and is older than 1.4.0 we don't have the tab overview and so we
     // need to stick the headerbar into the content box.
-    if (!adwaita.versionAtLeast(1, 4, 0)) {
+    if (!adw_version.supportsTabOverview()) {
         box.append(self.headerbar.asWidget());
     }
 
@@ -293,7 +293,7 @@ pub fn init(self: *Window, app: *App) !void {
     if (comptime std.debug.runtime_safety) {
         const warning_box = gtk.Box.new(.vertical, 0);
         const warning_text = i18n._("⚠️ You're running a debug build of Ghostty! Performance will be degraded.");
-        if (adwaita.versionAtLeast(1, 3, 0)) {
+        if (adw_version.supportsBanner()) {
             const banner = adw.Banner.new(warning_text);
             banner.setRevealed(1);
             warning_box.append(banner.as(gtk.Widget));
@@ -315,7 +315,7 @@ pub fn init(self: *Window, app: *App) !void {
 
     // If we have a tab overview then we can set it on our notebook.
     if (self.tab_overview) |tab_overview| {
-        if (!adwaita.versionAtLeast(1, 4, 0)) unreachable;
+        if (!adw_version.supportsTabOverview()) unreachable;
         tab_overview.setView(self.notebook.tab_view);
     }
 
@@ -359,7 +359,7 @@ pub fn init(self: *Window, app: *App) !void {
     // Our actions for the menu
     initActions(self);
 
-    if (adwaita.versionAtLeast(1, 4, 0)) {
+    if (adw_version.supportsToolbarView()) {
         const toolbar_view = adw.ToolbarView.new();
         toolbar_view.addTopBar(self.headerbar.asWidget());
 
@@ -495,11 +495,11 @@ pub fn syncAppearance(self: *Window) !void {
     toggleCssClass(
         gtk_widget,
         "window-theme-ghostty",
-        !version.atLeast(4, 16, 0) and self.config.window_theme == .ghostty,
+        !gtk_version.atLeast(4, 16, 0) and self.config.window_theme == .ghostty,
     );
 
     if (self.tab_overview) |tab_overview| {
-        if (!adwaita.versionAtLeast(1, 4, 0)) unreachable;
+        if (!adw_version.supportsTabOverview()) unreachable;
 
         // Disable the title buttons (close, maximize, minimize, ...)
         // *inside* the tab overview if CSDs are disabled.
@@ -664,7 +664,7 @@ pub fn gotoTab(self: *Window, n: usize) bool {
 /// Toggle tab overview (if present)
 pub fn toggleTabOverview(self: *Window) void {
     if (self.tab_overview) |tab_overview| {
-        if (!adwaita.versionAtLeast(1, 4, 0)) unreachable;
+        if (!adw_version.supportsTabOverview()) unreachable;
         const is_open = tab_overview.getOpen() != 0;
         tab_overview.setOpen(@intFromBool(!is_open));
     }
@@ -797,7 +797,7 @@ fn gtkTabNewClick(_: *gtk.Button, self: *Window) callconv(.c) void {
 /// Create a new tab from the AdwTabOverview. We can't copy gtkTabNewClick
 /// because we need to return an AdwTabPage from this function.
 fn gtkNewTabFromOverview(_: *adw.TabOverview, self: *Window) callconv(.c) *adw.TabPage {
-    if (!adwaita.versionAtLeast(1, 4, 0)) unreachable;
+    if (!adw_version.supportsTabOverview()) unreachable;
 
     const alloc = self.app.core_app.alloc;
     const surface = self.actionSurface();
@@ -810,6 +810,7 @@ fn adwTabOverviewOpen(
     _: *gobject.ParamSpec,
     self: *Window,
 ) callconv(.c) void {
+    if (!adw_version.supportsTabOverview()) unreachable;
 
     // We only care about when the tab overview is closed.
     if (tab_overview.getOpen() != 0) return;
@@ -840,6 +841,7 @@ fn adwTabOverviewOpen(
 fn adwTabOverviewFocusTimer(
     ud: ?*anyopaque,
 ) callconv(.C) c_int {
+    if (!adw_version.supportsTabOverview()) unreachable;
     const self: *Window = @ptrCast(@alignCast(ud orelse return 0));
     self.adw_tab_overview_focus_timer = null;
     self.focusCurrentTab();
@@ -905,7 +907,7 @@ fn gtkKeyPressed(
     //
     // If someone can confidently show or explain that this is not
     // necessary, please remove this check.
-    if (adwaita.versionAtLeast(1, 4, 0)) {
+    if (adw_version.supportsTabOverview()) {
         if (self.tab_overview) |tab_overview| {
             if (tab_overview.getOpen() == 0) return 0;
         }
@@ -930,7 +932,7 @@ fn gtkActionAbout(
     const icon = "com.mitchellh.ghostty";
     const website = "https://ghostty.org";
 
-    if (adwaita.versionAtLeast(1, 5, 0)) {
+    if (adw_version.supportsDialogs()) {
         adw.showAboutDialog(
             self.window.as(gtk.Widget),
             "application-name",
@@ -1139,7 +1141,7 @@ fn gtkTitlebarMenuActivate(
     self: *Window,
 ) callconv(.C) void {
     // debian 12 is stuck on GTK 4.8
-    if (!version.atLeast(4, 10, 0)) return;
+    if (!gtk_version.atLeast(4, 10, 0)) return;
     const active = btn.getActive() != 0;
     if (active) {
         self.titlebar_menu.refresh();

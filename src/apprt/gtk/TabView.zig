@@ -10,7 +10,7 @@ const gobject = @import("gobject");
 
 const Window = @import("Window.zig");
 const Tab = @import("Tab.zig");
-const adwaita = @import("adwaita.zig");
+const adw_version = @import("adw_version.zig");
 
 const log = std.log.scoped(.gtk);
 
@@ -35,7 +35,7 @@ pub fn init(self: *TabView, window: *Window) void {
     };
     self.tab_view.as(gtk.Widget).addCssClass("notebook");
 
-    if (adwaita.versionAtLeast(1, 2, 0)) {
+    if (adw_version.atLeast(1, 2, 0)) {
         // Adwaita enables all of the shortcuts by default.
         // We want to manage keybindings ourselves.
         self.tab_view.removeShortcuts(.{
@@ -213,7 +213,7 @@ pub fn closeTab(self: *TabView, tab: *Tab) void {
         // which causes our surface to not properly cleanup. We
         // unref to force the cleanup. This will trigger a critical
         // warning from GTK, but I don't know any other workaround.
-        if (!adwaita.versionAtLeast(1, 5, 1)) {
+        if (!adw_version.atLeast(1, 5, 1)) {
             const box: *gtk.Box = @ptrCast(@alignCast(tab.box));
             box.as(gobject.Object).unref();
         }
