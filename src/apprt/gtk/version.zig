@@ -11,11 +11,17 @@ const gtk = @import("gtk");
 
 const log = std.log.scoped(.gtk);
 
+pub const version: std.SemanticVersion = .{
+    .major = c.GTK_MAJOR_VERSION,
+    .minor = c.GTK_MINOR_VERSION,
+    .patch = c.GTK_MICRO_VERSION,
+};
+
 pub fn logVersion() void {
     log.info("GTK version build={d}.{d}.{d} runtime={d}.{d}.{d}", .{
-        c.GTK_MAJOR_VERSION,
-        c.GTK_MINOR_VERSION,
-        c.GTK_MICRO_VERSION,
+        version.major,
+        version.minor,
+        version.patch,
         gtk.getMajorVersion(),
         gtk.getMinorVersion(),
         gtk.getMicroVersion(),
@@ -45,10 +51,11 @@ pub inline fn atLeast(
     // we can return false immediately. This prevents us from
     // compiling against unknown symbols and makes runtime checks
     // very slightly faster.
-    if (comptime c.GTK_MAJOR_VERSION < major or
-        (c.GTK_MAJOR_VERSION == major and c.GTK_MINOR_VERSION < minor) or
-        (c.GTK_MAJOR_VERSION == major and c.GTK_MINOR_VERSION == minor and c.GTK_MICRO_VERSION < micro))
-        return false;
+    if (comptime version.order(.{
+        .major = major,
+        .minor = minor,
+        .patch = micro,
+    }) == .lt) return false;
 
     // If we're in comptime then we can't check the runtime version.
     if (@inComptime()) return true;
