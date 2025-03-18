@@ -12,7 +12,6 @@ const gio = @import("gio");
 const apprt = @import("../../apprt.zig");
 const CoreSurface = @import("../../Surface.zig");
 const App = @import("App.zig");
-const View = @import("View.zig");
 const Builder = @import("Builder.zig");
 const adwaita = @import("adwaita.zig");
 
