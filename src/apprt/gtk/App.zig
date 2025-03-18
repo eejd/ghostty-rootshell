@@ -40,13 +40,17 @@ const ConfigErrorsWindow = @import("ConfigErrorsWindow.zig");
 const ClipboardConfirmationWindow = @import("ClipboardConfirmationWindow.zig");
 const CloseDialog = @import("CloseDialog.zig");
 const Split = @import("Split.zig");
-const c = @import("c.zig").c;
 const version = @import("version.zig");
 const inspector = @import("inspector.zig");
 const key = @import("key.zig");
 const winprotopkg = @import("winproto.zig");
 const testing = std.testing;
 const adwaita = @import("adwaita.zig");
+
+pub const c = @cImport({
+    // generated header files
+    @cInclude("ghostty_resources.h");
+});
 
 const log = std.log.scoped(.gtk);
 
@@ -55,8 +59,8 @@ pub const Options = struct {};
 core_app: *CoreApp,
 config: Config,
 
-app: *c.GtkApplication,
-ctx: *c.GMainContext,
+app: *adw.Application,
+ctx: *glib.MainContext,
 
 /// State and logic for the underlying windowing protocol.
 winproto: winprotopkg.App,
@@ -86,15 +90,15 @@ running: bool = true,
 transient_cgroup_base: ?[]const u8 = null,
 
 /// CSS Provider for any styles based on ghostty configuration values
-css_provider: *c.GtkCssProvider,
+css_provider: *gtk.CssProvider,
 
 /// Providers for loading custom stylesheets defined by user
-custom_css_providers: std.ArrayListUnmanaged(*c.GtkCssProvider) = .{},
+custom_css_providers: std.ArrayListUnmanaged(*gtk.CssProvider) = .{},
 
 /// The timer used to quit the application after the last window is closed.
 quit_timer: union(enum) {
     off: void,
-    active: c.guint,
+    active: c_uint,
     expired: void,
 } = .{ .off = {} },
 
@@ -102,22 +106,10 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
     _ = opts;
 
     // Log our GTK version
-    log.info("GTK version build={d}.{d}.{d} runtime={d}.{d}.{d}", .{
-        c.GTK_MAJOR_VERSION,
-        c.GTK_MINOR_VERSION,
-        c.GTK_MICRO_VERSION,
-        c.gtk_get_major_version(),
-        c.gtk_get_minor_version(),
-        c.gtk_get_micro_version(),
-    });
+    version.logVersion();
 
     // log the adwaita version
-    log.info("libadwaita version build={s} runtime={}.{}.{}", .{
-        c.ADW_VERSION_S,
-        c.adw_get_major_version(),
-        c.adw_get_minor_version(),
-        c.adw_get_micro_version(),
-    });
+    adwaita.logVersion();
 
     // Set gettext global domain to be our app so that our unqualified
     // translations map to our translations.
@@ -271,9 +263,9 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         }
     }
 
-    c.adw_init();
+    adw.init();
 
-    const display: *c.GdkDisplay = c.gdk_display_get_default() orelse {
+    const display: *gdk.Display = gdk.Display.getDefault() orelse {
         // I'm unsure of any scenario where this happens. Because we don't
         // want to litter null checks everywhere, we just exit here.
         log.warn("gdk display is null, exiting", .{});
@@ -291,9 +283,9 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
     };
 
     // Setup the flags for our application.
-    const app_flags: c.GApplicationFlags = app_flags: {
-        var flags: c.GApplicationFlags = c.G_APPLICATION_DEFAULT_FLAGS;
-        if (!single_instance) flags |= c.G_APPLICATION_NON_UNIQUE;
+    const app_flags: gio.ApplicationFlags = app_flags: {
+        var flags: gio.ApplicationFlags = .flags_default_flags;
+        if (!single_instance) flags.non_unique = true;
         break :app_flags flags;
     };
 
@@ -321,91 +313,87 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
 
     // Using an AdwApplication lets us use Adwaita widgets and access things
     // such as the color scheme.
-    const adw_app = @as(?*c.AdwApplication, @ptrCast(c.adw_application_new(
+    const adw_app = adw.Application.new(
         app_id.ptr,
         app_flags,
-    ))) orelse return error.GtkInitFailed;
-    errdefer c.g_object_unref(adw_app);
+    );
+    errdefer adw_app.unref();
 
-    const style_manager = c.adw_application_get_style_manager(adw_app);
-    c.adw_style_manager_set_color_scheme(
-        style_manager,
+    const style_manager = adw_app.getStyleManager();
+    style_manager.setColorScheme(
         switch (config.@"window-theme") {
             .auto, .ghostty => auto: {
                 const lum = config.background.toTerminalRGB().perceivedLuminance();
                 break :auto if (lum > 0.5)
-                    c.ADW_COLOR_SCHEME_PREFER_LIGHT
+                    .prefer_light
                 else
-                    c.ADW_COLOR_SCHEME_PREFER_DARK;
+                    .prefer_dark;
             },
-            .system => c.ADW_COLOR_SCHEME_PREFER_LIGHT,
-            .dark => c.ADW_COLOR_SCHEME_FORCE_DARK,
-            .light => c.ADW_COLOR_SCHEME_FORCE_LIGHT,
+            .system => .prefer_light,
+            .dark => .prefer_dark,
+            .light => .force_dark,
         },
     );
 
-    const app: *c.GtkApplication = @ptrCast(adw_app);
-    const gapp: *c.GApplication = @ptrCast(app);
+    const gio_app = adw_app.as(gio.Application);
 
     // force the resource path to a known value so that it doesn't depend on
     // the app id and load in compiled resources
-    c.g_application_set_resource_base_path(gapp, "/com/mitchellh/ghostty");
-    c.g_resources_register(c.ghostty_get_resource());
+    gio_app.setResourceBasePath("/com/mitchellh/ghostty");
+    gio.resourcesRegister(@ptrCast(@alignCast(c.ghostty_get_resource() orelse {
+        log.err("unable to load resources", .{});
+        return error.GtkNoResources;
+    })));
 
     // The `activate` signal is used when Ghostty is first launched and when a
     // secondary Ghostty is launched and requests a new window.
-    _ = c.g_signal_connect_data(
-        app,
-        "activate",
-        c.G_CALLBACK(&gtkActivate),
+    _ = gio.Application.signals.activate.connect(
+        adw_app,
+        *CoreApp,
+        gtkActivate,
         core_app,
-        null,
-        c.G_CONNECT_DEFAULT,
+        .{},
     );
 
     // Other signals
-    _ = c.g_signal_connect_data(
-        app,
-        "window-added",
-        c.G_CALLBACK(&gtkWindowAdded),
+    _ = gtk.Application.signals.window_added.connect(
+        adw_app,
+        *CoreApp,
+        gtkWindowAdded,
         core_app,
-        null,
-        c.G_CONNECT_DEFAULT,
+        .{},
     );
-    _ = c.g_signal_connect_data(
-        app,
-        "window-removed",
-        c.G_CALLBACK(&gtkWindowRemoved),
+    _ = gtk.Application.signals.window_removed.connect(
+        adw_app,
+        *CoreApp,
+        gtkWindowRemoved,
         core_app,
-        null,
-        c.G_CONNECT_DEFAULT,
+        .{},
     );
 
     // We don't use g_application_run, we want to manually control the
     // loop so we have to do the same things the run function does:
     // https://github.com/GNOME/glib/blob/a8e8b742e7926e33eb635a8edceac74cf239d6ed/gio/gapplication.c#L2533
-    const ctx = c.g_main_context_default() orelse return error.GtkContextFailed;
-    if (c.g_main_context_acquire(ctx) == 0) return error.GtkContextAcquireFailed;
-    errdefer c.g_main_context_release(ctx);
+    const ctx = glib.MainContext.default();
+    if (glib.MainContext.acquire(ctx) == 0) return error.GtkContextAcquireFailed;
+    errdefer glib.MainContext.release(ctx);
 
-    var err_: ?*c.GError = null;
-    if (c.g_application_register(
-        gapp,
+    var err_: ?*glib.Error = null;
+    if (gio_app.register(
         null,
-        @ptrCast(&err_),
+        &err_,
     ) == 0) {
         if (err_) |err| {
-            log.warn("error registering application: {s}", .{err.message});
-            c.g_error_free(err);
+            log.warn("error registering application: {s}", .{err.f_message orelse "(unknown)"});
+            err.free();
         }
         return error.GtkApplicationRegisterFailed;
     }
 
-    // FIXME: when App.zig is converted to zig-gobject
     // Setup our windowing protocol logic
     var winproto_app = try winprotopkg.App.init(
         core_app.alloc,
-        @ptrCast(@alignCast(display)),
+        display,
         app_id,
         &config,
     );
@@ -419,20 +407,20 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
     //
     // https://gitlab.gnome.org/GNOME/glib/-/blob/bd2ccc2f69ecfd78ca3f34ab59e42e2b462bad65/gio/gapplication.c#L2302
     if (config.@"initial-window")
-        c.g_application_activate(gapp);
+        gio_app.activate();
 
     // Internally, GTK ensures that only one instance of this provider exists in the provider list
     // for the display.
-    const css_provider = c.gtk_css_provider_new();
-    c.gtk_style_context_add_provider_for_display(
+    const css_provider = gtk.CssProvider.new();
+    gtk.StyleContext.addProviderForDisplay(
         display,
-        @ptrCast(css_provider),
-        c.GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 3,
+        css_provider.as(gtk.StyleProvider),
+        gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 3,
     );
 
     return .{
         .core_app = core_app,
-        .app = app,
+        .app = adw_app,
         .config = config,
         .ctx = ctx,
         .cursor_none = cursor_none,
@@ -441,7 +429,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         // If we are NOT the primary instance, then we never want to run.
         // This means that another instance of the GTK app is running and
         // our "activate" call above will open a window.
-        .running = c.g_application_get_is_remote(gapp) == 0,
+        .running = gio_app.getIsRemote() == 0,
         .css_provider = css_provider,
     };
 }
@@ -449,16 +437,16 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
 // Terminate the application. The application will not be restarted after
 // this so all global state can be cleaned up.
 pub fn terminate(self: *App) void {
-    c.g_settings_sync();
-    while (c.g_main_context_iteration(self.ctx, 0) != 0) {}
-    c.g_main_context_release(self.ctx);
-    c.g_object_unref(self.app);
+    gio.Settings.sync();
+    while (glib.MainContext.iteration(self.ctx, 0) != 0) {}
+    glib.MainContext.release(self.ctx);
+    self.app.unref();
 
-    if (self.cursor_none) |cursor| c.g_object_unref(cursor);
+    if (self.cursor_none) |cursor| cursor.unref();
     if (self.transient_cgroup_base) |path| self.core_app.alloc.free(path);
 
     for (self.custom_css_providers.items) |provider| {
-        c.g_object_unref(provider);
+        provider.unref();
     }
     self.custom_css_providers.deinit(self.core_app.alloc);
 
@@ -922,29 +910,25 @@ fn showDesktopNotification(
         else => n.title,
     };
 
-    const notification = c.g_notification_new(t.ptr);
-    defer c.g_object_unref(notification);
-    c.g_notification_set_body(notification, n.body.ptr);
+    const notification = gio.Notification.new(t);
+    defer notification.unref();
+    notification.setBody(n.body);
 
-    const icon = c.g_themed_icon_new("com.mitchellh.ghostty");
-    defer c.g_object_unref(icon);
-    c.g_notification_set_icon(notification, icon);
+    const icon = gio.ThemedIcon.new("com.mitchellh.ghostty");
+    defer icon.unref();
+    notification.setIcon(icon.as(gio.Icon));
 
-    const pointer = c.g_variant_new_uint64(switch (target) {
+    const pointer = glib.Variant.newUint64(switch (target) {
         .app => 0,
         .surface => |v| @intFromPtr(v),
     });
-    c.g_notification_set_default_action_and_target_value(
-        notification,
-        "app.present-surface",
-        pointer,
-    );
+    notification.setDefaultActionAndTargetValue("app.present-surface", pointer);
 
-    const g_app: *c.GApplication = @ptrCast(self.app);
+    const gio_app = self.app.as(gio.Application);
 
     // We set the notification ID to the body content. If the content is the
     // same, this notification may replace a previous notification
-    c.g_application_send_notification(g_app, n.body.ptr, notification);
+    gio_app.sendNotification(n.body, notification);
 }
 
 fn configChange(
@@ -1076,29 +1060,29 @@ fn syncActionAccelerator(
     gtk_action: [:0]const u8,
     action: input.Binding.Action,
 ) !void {
+    const gtk_app = self.app.as(gtk.Application);
+
     // Reset it initially
-    const zero = [_]?[*:0]const u8{null};
-    c.gtk_application_set_accels_for_action(@ptrCast(self.app), gtk_action.ptr, &zero);
+    const zero = [_:null]?[*:0]const u8{};
+    gtk_app.setAccelsForAction(gtk_action, &zero);
 
     const trigger = self.config.keybind.set.getTrigger(action) orelse return;
     var buf: [256]u8 = undefined;
     const accel = try key.accelFromTrigger(&buf, trigger) orelse return;
-    const accels = [_]?[*:0]const u8{ accel, null };
+    const accels = [_:null]?[*:0]const u8{accel};
 
-    c.gtk_application_set_accels_for_action(
-        @ptrCast(self.app),
-        gtk_action.ptr,
-        &accels,
-    );
+    gtk_app.setAccelsForAction(gtk_action, &accels);
 }
 
 fn loadRuntimeCss(
     self: *const App,
 ) Allocator.Error!void {
-    var stack_alloc = std.heap.stackFallback(4096, self.core_app.alloc);
-    var buf = std.ArrayList(u8).init(stack_alloc.get());
-    defer buf.deinit();
-    const writer = buf.writer();
+    const alloc = self.core_app.alloc;
+
+    var buf: std.ArrayListUnmanaged(u8) = .empty;
+    defer buf.deinit(alloc);
+
+    const writer = buf.writer(alloc);
 
     const config: *const Config = &self.config;
     const window_theme = config.@"window-theme";
@@ -1190,20 +1174,28 @@ fn loadRuntimeCss(
         });
     }
 
+    const data = try alloc.dupeZ(u8, buf.items);
+    defer alloc.free(data);
+
     // Clears any previously loaded CSS from this provider
-    loadCssProviderFromData(self.css_provider, buf.items);
+    loadCssProviderFromData(self.css_provider, data);
 }
 
 fn loadCustomCss(self: *App) !void {
-    const display = c.gdk_display_get_default();
+    const alloc = self.core_app.alloc;
+
+    const display = gdk.Display.getDefault() orelse {
+        log.warn("unable to get display", .{});
+        return;
+    };
 
     // unload the previously loaded style providers
     for (self.custom_css_providers.items) |provider| {
-        c.gtk_style_context_remove_provider_for_display(
+        gtk.StyleContext.removeProviderForDisplay(
             display,
-            @ptrCast(provider),
+            provider.as(gtk.StyleProvider),
         );
-        c.g_object_unref(provider);
+        provider.unref();
     }
     self.custom_css_providers.clearRetainingCapacity();
 
@@ -1214,49 +1206,51 @@ fn loadCustomCss(self: *App) !void {
         };
         const file = std.fs.openFileAbsolute(path, .{}) catch |err| {
             if (err != error.FileNotFound or !optional) {
-                log.err("error opening gtk-custom-css file {s}: {}", .{ path, err });
+                log.err(
+                    "error opening gtk-custom-css file {s}: {}",
+                    .{ path, err },
+                );
             }
             continue;
         };
         defer file.close();
 
         log.info("loading gtk-custom-css path={s}", .{path});
-        const contents = try file.reader().readAllAlloc(self.core_app.alloc, 5 * 1024 * 1024 // 5MB
+        const contents = try file.reader().readAllAlloc(
+            self.core_app.alloc,
+            5 * 1024 * 1024, // 5MB,
         );
-        defer self.core_app.alloc.free(contents);
+        defer alloc.free(contents);
 
-        const provider = c.gtk_css_provider_new();
-        c.gtk_style_context_add_provider_for_display(
+        const data = try alloc.dupeZ(u8, contents);
+        defer alloc.free(data);
+
+        const provider = gtk.CssProvider.new();
+        loadCssProviderFromData(provider, data);
+        gtk.StyleContext.addProviderForDisplay(
             display,
-            @ptrCast(provider),
-            c.GTK_STYLE_PROVIDER_PRIORITY_USER,
+            provider.as(gtk.StyleProvider),
+            gtk.STYLE_PROVIDER_PRIORITY_USER,
         );
-
-        loadCssProviderFromData(provider, contents);
 
         try self.custom_css_providers.append(self.core_app.alloc, provider);
     }
 }
 
-fn loadCssProviderFromData(provider: *c.GtkCssProvider, data: []const u8) void {
+fn loadCssProviderFromData(provider: *gtk.CssProvider, data: [:0]const u8) void {
     if (version.atLeast(4, 12, 0)) {
-        const g_bytes = c.g_bytes_new(data.ptr, data.len);
-        defer c.g_bytes_unref(g_bytes);
+        const g_bytes = glib.Bytes.new(data.ptr, data.len);
+        defer g_bytes.unref();
 
-        c.gtk_css_provider_load_from_bytes(provider, g_bytes);
+        provider.loadFromBytes(g_bytes);
     } else {
-        c.gtk_css_provider_load_from_data(
-            provider,
-            data.ptr,
-            @intCast(data.len),
-        );
+        provider.loadFromData(data, @intCast(data.len));
     }
 }
 
 /// Called by CoreApp to wake up the event loop.
-pub fn wakeup(self: App) void {
-    _ = self;
-    c.g_main_context_wakeup(null);
+pub fn wakeup(_: App) void {
+    glib.MainContext.wakeup(null);
 }
 
 /// Run the event loop. This doesn't return until the app exits.
@@ -1297,8 +1291,7 @@ pub fn run(self: *App) !void {
     } else log.debug("cgroup isolation disabled config={}", .{self.config.@"linux-cgroup"});
 
     // Setup color scheme notifications
-    const adw_app: *adw.Application = @ptrCast(@alignCast(self.app));
-    const style_manager: *adw.StyleManager = adw_app.getStyleManager();
+    const style_manager: *adw.StyleManager = self.app.getStyleManager();
     _ = gobject.Object.signals.notify.connect(
         style_manager,
         *App,
@@ -1324,7 +1317,7 @@ pub fn run(self: *App) !void {
     };
 
     while (self.running) {
-        _ = c.g_main_context_iteration(self.ctx, 1);
+        _ = glib.MainContext.iteration(self.ctx, 1);
 
         // Tick the terminal app and see if we should quit.
         try self.core_app.tick(self);
@@ -1363,7 +1356,13 @@ fn startQuitTimer(self: *App) void {
 
     if (self.config.@"quit-after-last-window-closed-delay") |v| {
         // If a delay is configured, set a timeout function to quit after the delay.
-        self.quit_timer = .{ .active = c.g_timeout_add(v.asMilliseconds(), gtkQuitTimerExpired, self) };
+        self.quit_timer = .{
+            .active = glib.timeoutAdd(
+                v.asMilliseconds(),
+                gtkQuitTimerExpired,
+                self,
+            ),
+        };
     } else {
         // If no delay is configured, treat it as expired.
         self.quit_timer = .{ .expired = {} };
@@ -1453,14 +1452,13 @@ fn quit(self: *App) void {
 
 /// This immediately destroys all windows, forcing the application to quit.
 pub fn quitNow(self: *App) void {
-    const list = c.gtk_window_list_toplevels();
-    defer c.g_list_free(list);
-    c.g_list_foreach(list, struct {
-        fn callback(data: c.gpointer, _: c.gpointer) callconv(.C) void {
+    const list = gtk.Window.listToplevels();
+    defer list.free();
+    list.foreach(struct {
+        fn callback(data: ?*anyopaque, _: ?*anyopaque) callconv(.c) void {
             const ptr = data orelse return;
-            const widget: *c.GtkWidget = @ptrCast(@alignCast(ptr));
-            const window: *c.GtkWindow = @ptrCast(widget);
-            c.gtk_window_destroy(window);
+            const window: *gtk.Window = @ptrCast(@alignCast(ptr));
+            window.destroy();
         }
     }.callback, null);
 
@@ -1469,11 +1467,7 @@ pub fn quitNow(self: *App) void {
 
 /// This is called by the `activate` signal. This is sent on program startup and
 /// also when a secondary instance launches and requests a new window.
-fn gtkActivate(app: *c.GtkApplication, ud: ?*anyopaque) callconv(.C) void {
-    _ = app;
-
-    const core_app: *CoreApp = @ptrCast(@alignCast(ud orelse return));
-
+fn gtkActivate(_: *adw.Application, core_app: *CoreApp) callconv(.c) void {
     // Queue a new window
     _ = core_app.mailbox.push(.{
         .new_window = .{},
@@ -1481,46 +1475,41 @@ fn gtkActivate(app: *c.GtkApplication, ud: ?*anyopaque) callconv(.C) void {
 }
 
 fn gtkWindowAdded(
-    _: *c.GtkApplication,
-    window: *c.GtkWindow,
-    ud: ?*anyopaque,
-) callconv(.C) void {
-    const core_app: *CoreApp = @ptrCast(@alignCast(ud orelse return));
-
+    _: *adw.Application,
+    window: *gtk.Window,
+    core_app: *CoreApp,
+) callconv(.c) void {
     // Request the is-active property change so we can detect
     // when our app loses focus.
-    _ = c.g_signal_connect_data(
+    _ = gobject.Object.signals.notify.connect(
         window,
-        "notify::is-active",
-        c.G_CALLBACK(&gtkWindowIsActive),
+        *CoreApp,
+        gtkWindowIsActive,
         core_app,
-        null,
-        c.G_CONNECT_DEFAULT,
+        .{
+            .detail = "is-active",
+        },
     );
 }
 
 fn gtkWindowRemoved(
-    _: *c.GtkApplication,
-    _: *c.GtkWindow,
-    ud: ?*anyopaque,
-) callconv(.C) void {
-    const core_app: *CoreApp = @ptrCast(@alignCast(ud orelse return));
-
+    _: *adw.Application,
+    _: *gtk.Window,
+    core_app: *CoreApp,
+) callconv(.c) void {
     // Recheck if we are focused
     gtkWindowIsActive(null, undefined, core_app);
 }
 
 fn gtkWindowIsActive(
-    window: ?*c.GtkWindow,
-    _: *c.GParamSpec,
-    ud: ?*anyopaque,
-) callconv(.C) void {
-    const core_app: *CoreApp = @ptrCast(@alignCast(ud orelse return));
-
+    window: ?*gtk.Window,
+    _: *gobject.ParamSpec,
+    core_app: *CoreApp,
+) callconv(.c) void {
     // If our window is active, then we can tell the app
     // that we are focused.
     if (window) |w| {
-        if (c.gtk_window_is_active(w) == 1) {
+        if (w.isActive() != 0) {
             core_app.focusEvent(true);
             return;
         }
@@ -1529,16 +1518,17 @@ fn gtkWindowIsActive(
     // If the window becomes inactive, we need to check if any
     // other windows are active. If not, then we are no longer
     // focused.
-    if (c.gtk_window_list_toplevels()) |list| {
-        defer c.g_list_free(list);
-        var current: ?*c.GList = list;
-        while (current) |elem| : (current = elem.next) {
+    {
+        const list = gtk.Window.listToplevels();
+        defer list.free();
+        var current: ?*glib.List = list;
+        while (current) |elem| : (current = elem.f_next) {
             // If the window is active then we are still focused.
             // This is another window since we did our check above.
             // That window should trigger its own is-active
             // callback so we don't need to call it here.
-            const w: *c.GtkWindow = @alignCast(@ptrCast(elem.data));
-            if (c.gtk_window_is_active(w) == 1) return;
+            const w: *gtk.Window = @alignCast(@ptrCast(elem.f_data));
+            if (w.isActive() == 1) return;
         }
     }
 
@@ -1575,33 +1565,30 @@ fn colorSchemeEvent(
 }
 
 fn gtkActionOpenConfig(
-    _: *c.GSimpleAction,
-    _: *c.GVariant,
-    ud: ?*anyopaque,
-) callconv(.C) void {
-    const self: *App = @ptrCast(@alignCast(ud orelse return));
+    _: *gio.SimpleAction,
+    _: ?*glib.Variant,
+    self: *App,
+) callconv(.c) void {
     _ = self.core_app.mailbox.push(.{
         .open_config = {},
     }, .{ .forever = {} });
 }
 
 fn gtkActionReloadConfig(
-    _: *c.GSimpleAction,
-    _: *c.GVariant,
-    ud: ?*anyopaque,
-) callconv(.C) void {
-    const self: *App = @ptrCast(@alignCast(ud orelse return));
+    _: *gio.SimpleAction,
+    _: ?*glib.Variant,
+    self: *App,
+) callconv(.c) void {
     self.reloadConfig(.app, .{}) catch |err| {
         log.err("error reloading configuration: {}", .{err});
     };
 }
 
 fn gtkActionQuit(
-    _: *c.GSimpleAction,
-    _: *c.GVariant,
-    ud: ?*anyopaque,
-) callconv(.C) void {
-    const self: *App = @ptrCast(@alignCast(ud orelse return));
+    _: *gio.SimpleAction,
+    _: ?*glib.Variant,
+    self: *App,
+) callconv(.c) void {
     self.core_app.performAction(self, .quit) catch |err| {
         log.err("error quitting err={}", .{err});
     };
@@ -1610,21 +1597,24 @@ fn gtkActionQuit(
 /// Action sent by the window manager asking us to present a specific surface to
 /// the user. Usually because the user clicked on a desktop notification.
 fn gtkActionPresentSurface(
-    _: *c.GSimpleAction,
-    parameter: *c.GVariant,
-    ud: ?*anyopaque,
-) callconv(.C) void {
-    const self: *App = @ptrCast(@alignCast(ud orelse return));
+    _: *gio.SimpleAction,
+    parameter_: ?*glib.Variant,
+    self: *App,
+) callconv(.c) void {
+    const parameter = parameter_ orelse return;
+
+    const t = glib.ext.VariantType.newFor(u64);
+    defer glib.VariantType.free(t);
 
     // Make sure that we've receiived a u64 from the system.
-    if (c.g_variant_is_of_type(parameter, c.G_VARIANT_TYPE("t")) == 0) {
+    if (glib.Variant.isOfType(parameter, t) == 0) {
         return;
     }
 
     // Convert that u64 to pointer to a core surface. A value of zero
     // means that there was no target surface for the notification so
     // we don't focus any surface.
-    const ptr_int: u64 = c.g_variant_get_uint64(parameter);
+    const ptr_int = parameter.getUint64();
     if (ptr_int == 0) return;
     const surface: *CoreSurface = @ptrFromInt(ptr_int);
 
@@ -1654,25 +1644,27 @@ fn initActions(self: *App) void {
     //
     // For action names:
     // https://docs.gtk.org/gio/type_func.Action.name_is_valid.html
-    const actions = .{
-        .{ "quit", &gtkActionQuit, null },
-        .{ "open-config", &gtkActionOpenConfig, null },
-        .{ "reload-config", &gtkActionReloadConfig, null },
-        .{ "present-surface", &gtkActionPresentSurface, c.G_VARIANT_TYPE("t") },
-    };
+    const t = glib.ext.VariantType.newFor(u64);
+    defer glib.VariantType.free(t);
 
+    const actions = .{
+        .{ "quit", gtkActionQuit, null },
+        .{ "open-config", gtkActionOpenConfig, null },
+        .{ "reload-config", gtkActionReloadConfig, null },
+        .{ "present-surface", gtkActionPresentSurface, t },
+    };
     inline for (actions) |entry| {
-        const action = c.g_simple_action_new(entry[0], entry[2]);
-        defer c.g_object_unref(action);
-        _ = c.g_signal_connect_data(
+        const action = gio.SimpleAction.new(entry[0], entry[2]);
+        defer action.unref();
+        _ = gio.SimpleAction.signals.activate.connect(
             action,
-            "activate",
-            c.G_CALLBACK(entry[1]),
+            *App,
+            entry[1],
             self,
-            null,
-            c.G_CONNECT_DEFAULT,
+            .{},
         );
-        c.g_action_map_add_action(@ptrCast(self.app), @ptrCast(action));
+        const action_map = self.app.as(gio.ActionMap);
+        action_map.addAction(action.as(gio.Action));
     }
 }
 

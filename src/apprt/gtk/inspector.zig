@@ -136,7 +136,7 @@ const Window = struct {
         };
 
         // Create the window
-        const window = c.gtk_application_window_new(inspector.surface.app.app);
+        const window = c.gtk_application_window_new(@ptrCast(@alignCast(inspector.surface.app.app)));
         const gtk_window: *c.GtkWindow = @ptrCast(window);
         errdefer c.gtk_window_destroy(gtk_window);
         self.window = gtk_window;
