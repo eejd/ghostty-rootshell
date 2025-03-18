@@ -141,9 +141,8 @@ pub fn init(self: *Window, app: *App) !void {
         .winproto = .none,
     };
 
-    // FIXME: when App.zig is converted to zig-gobject
     // Create the window
-    self.window = adw.ApplicationWindow.new(@ptrCast(@alignCast(app.app)));
+    self.window = adw.ApplicationWindow.new(app.app.as(gtk.Application));
     const gtk_window = self.window.as(gtk.Window);
     const gtk_widget = self.window.as(gtk.Widget);
     errdefer gtk_window.destroy();

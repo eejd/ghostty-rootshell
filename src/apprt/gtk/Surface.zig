@@ -1341,8 +1341,7 @@ pub fn showDesktopNotification(
     const pointer = glib.Variant.newUint64(@intFromPtr(&self.core_surface));
     notification.setDefaultActionAndTargetValue("app.present-surface", pointer);
 
-    // FIXME: when App.zig gets converted to zig-gobject
-    const app: gio.Application = @ptrCast(@alignCast(self.app.app));
+    const app = self.app.app.as(gio.Application);
 
     // We set the notification ID to the body content. If the content is the
     // same, this notification may replace a previous notification
