@@ -248,7 +248,7 @@ pub fn init(self: *Window, app: *App) !void {
         btn.as(gtk.Widget).setTooltipText(i18n._("New Tab"));
         btn.setDropdownTooltip(i18n._("New Split"));
 
-        var builder = Builder.init("menu-headerbar-split_menu", 1, 0, .blp);
+        var builder = Builder.init("menu-headerbar-split_menu", 1, 0);
         defer builder.deinit();
         btn.setMenuModel(builder.getObject(gio.MenuModel, "menu"));
 
