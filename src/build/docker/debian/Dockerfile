@@ -5,7 +5,6 @@ FROM docker.io/library/debian:${DISTRO_VERSION}
 RUN DEBIAN_FRONTEND="noninteractive" apt-get -qq update && \
     apt-get -qq -y --no-install-recommends install \
     # Build Tools
-    blueprint-compiler \
     build-essential \
     curl \
     libbz2-dev \
@@ -37,25 +36,24 @@ RUN export ZIG_VERSION=$(sed -n -e 's/^.*requireZig("\(.*\)").*$/\1/p' /src/buil
     rm /tmp/zig.tar.xz && \
     ln -s "/opt/zig-linux-$(uname -m)-$ZIG_VERSION/zig" /usr/local/bin/zig
 
+# Extract our source tarball
+COPY ./ghostty-source.tar.gz /src
 WORKDIR /src
-
-COPY ./dist/linux /src/dist/linux
-COPY ./images /src/images
-COPY ./include /src/include
-COPY ./pkg /src/pkg
-COPY ./po /src/po
-COPY ./nix /src/nix
-COPY ./vendor /src/vendor
-COPY ./build.zig /src/build.zig
-COPY ./build.zig.zon /src/build.zig.zon
-COPY ./build.zig.zon.txt /src/build.zig.zon.txt
+RUN tar xvzf ghostty-source.tar.gz && \
+    rm ghostty-source.tar.gz && \
+    mv ghostty-* ghostty-source && \
+    mv ghostty-source/* . && \
+    rm -rf ghostty-source
 
 RUN ZIG_GLOBAL_CACHE_DIR=/zig/global-cache ./nix/build-support/fetch-zig-cache.sh
 
-COPY ./src /src/src
-
 # Debian 12 doesn't have gtk4-layer-shell, so we have to manually compile it ourselves
-RUN zig build -Doptimize=Debug -Dcpu=baseline -Dapp-runtime=gtk -fno-sys=gtk4-layer-shell --system /zig/global-cache/p
+RUN zig build \
+    -Doptimize=Debug \
+    -Dcpu=baseline \
+    -Dapp-runtime=gtk \
+    -fno-sys=gtk4-layer-shell \
+    --system /zig/global-cache/p
 
 RUN ./zig-out/bin/ghostty +version
 
