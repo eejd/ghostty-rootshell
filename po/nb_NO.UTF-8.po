@@ -3,14 +3,15 @@
 # This file is distributed under the same license as the com.mitchellh.ghostty package.
 # Hanna Rose <hanna@hanna.lol>, 2025.
 # Uzair Aftab <uzaaft@outlook.com>, 2025.
+# Christoffer Tønnessen <christoffer@cto.gg>, 2025.
 #
 msgid ""
 msgstr ""
 "Project-Id-Version: com.mitchellh.ghostty\n"
 "Report-Msgid-Bugs-To: m@mitchellh.com\n"
 "POT-Creation-Date: 2025-03-19 08:28-0700\n"
-"PO-Revision-Date: 2025-03-14 20:41-0400\n"
-"Last-Translator: Hanna Rose <hanna@hanna.lol>\n"
+"PO-Revision-Date: 2025-03-19 09:52+0100\n"
+"Last-Translator: Christoffer Tønnessen <christoffer@cto.gg>\n"
 "Language-Team: Norwegian Bokmal <l10n-no@lister.huftis.org>\n"
 "Language: nb\n"
 "MIME-Version: 1.0\n"
@@ -37,17 +38,19 @@ msgstr "OK"
 
 #: src/apprt/gtk/ui/1.5/config-errors-dialog.blp:5
 msgid "Configuration Errors"
-msgstr ""
+msgstr "Konfigurasjonsfeil"
 
 #: src/apprt/gtk/ui/1.5/config-errors-dialog.blp:6
 msgid ""
 "One or more configuration errors were found. Please review the errors below, "
 "and either reload your configuration or ignore these errors."
 msgstr ""
+"Én eller flere konfigurasjonsfeil ble funnet. Vennligst gjennomgå feilene under, "
+"og enten last konfigurasjonen din på nytt eller ignorer disse feilene."
 
 #: src/apprt/gtk/ui/1.5/config-errors-dialog.blp:9
 msgid "Ignore"
-msgstr ""
+msgstr "Ignorer"
 
 #: src/apprt/gtk/ui/1.5/config-errors-dialog.blp:10
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:97
@@ -114,7 +117,7 @@ msgstr "Fane"
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:30
 #: src/apprt/gtk/Window.zig:246
 msgid "New Tab"
-msgstr "Nytt fane"
+msgstr "Ny fane"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:67
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:35
@@ -190,7 +193,7 @@ msgstr ""
 
 #: src/apprt/gtk/ui/1.5/ccw-paste.blp:6
 msgid "Warning: Potentially Unsafe Paste"
-msgstr "Adarsel: lim-inn kan være utrygt"
+msgstr "Adarsel: Lim inn kan være utrygt"
 
 #: src/apprt/gtk/ui/1.5/ccw-paste.blp:7
 msgid ""
@@ -202,7 +205,7 @@ msgstr ""
 
 #: src/apprt/gtk/inspector.zig:144
 msgid "Ghostty: Terminal Inspector"
-msgstr ""
+msgstr "Ghostty: Terminalinspektør"
 
 #: src/apprt/gtk/Surface.zig:1243
 msgid "Copied to clipboard"
@@ -242,7 +245,7 @@ msgstr "Alle terminaløkter i denne fanen vil bli avsluttet."
 
 #: src/apprt/gtk/CloseDialog.zig:99
 msgid "The currently running process in this split will be terminated."
-msgstr "Kjørende prosess for denne splitten vil bli avsluttet."
+msgstr "Den kjørende prosessen for denne splitten vil bli avsluttet."
 
 #: src/apprt/gtk/Window.zig:200
 msgid "Main Menu"
@@ -250,17 +253,17 @@ msgstr "Hovedmeny"
 
 #: src/apprt/gtk/Window.zig:221
 msgid "View Open Tabs"
-msgstr "Se åpen faner"
+msgstr "Se åpne faner"
 
 #: src/apprt/gtk/Window.zig:295
 msgid ""
 "⚠️ You're running a debug build of Ghostty! Performance will be degraded."
-msgstr "⚠️ Du kjører en debug-bygg av Ghostty. Debug-bygg har redusert ytelse."
+msgstr "⚠️ Du kjører et debug-bygg av Ghostty. Debug-bygg har redusert ytelse."
 
 #: src/apprt/gtk/Window.zig:725
 msgid "Reloaded the configuration"
-msgstr "Konfigurasjon ble lastet på nytt"
+msgstr "Konfigurasjonen ble lastet på nytt"
 
 #: src/apprt/gtk/Window.zig:941
 msgid "Ghostty Developers"
-msgstr "Ghostty utviklere"
+msgstr "Ghostty-utviklere"
