@@ -278,7 +278,9 @@ pub const LoadFlags = packed struct {
     color: bool = false,
     compute_metrics: bool = false,
     bitmap_metrics_only: bool = false,
-    _padding2: u9 = 0,
+    _padding2: u1 = 0,
+    no_svg: bool = false,
+    _padding3: u7 = 0,
 
     test {
         // This must always be an i32 size so we can bitcast directly.
