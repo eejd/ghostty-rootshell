@@ -188,8 +188,11 @@ SENTRY_DSN=https://e914ee84fd895c4fe324afa3e53dac76@o4507352570920960.ingest.us.
 ## Developing Ghostty
 
 See the documentation on the Ghostty website for
-[building Ghostty from source](http://ghostty.org/docs/install/build).
-For development, omit the `-Doptimize` flag to build a debug build.
+[building Ghostty from a source tarball](http://ghostty.org/docs/install/build).
+Building Ghostty from a Git checkout is very similar, except you want to
+omit the `-Doptimize` flag to build a debug build, and you may require
+additional dependencies since the source tarball includes some processed
+files that are not in the Git repository.
 
 On Linux or macOS, you can use `zig build -Dapp-runtime=glfw run` for a quick
 GLFW-based app for a faster development cycle while developing core
@@ -205,6 +208,21 @@ Other useful commands:
   the `conformance` directory. The `name` is the name of the file. This runs
   in the current running terminal emulator so if you want to check the
   behavior of this project, you must run this command in Ghostty.
+
+### Extra Dependencies
+
+Building Ghostty from a Git checkout on Linux requires some additional
+dependencies:
+
+- `blueprint-compiler`
+
+macOS users don't require any additional dependencies.
+
+> [!NOTE]
+> This only applies to building from a _Git checkout_. This section does
+> not apply if you're building from a released _source tarball_. For
+> source tarballs, see the
+> [website](http://ghostty.org/docs/install/build).
 
 ### Linting
 
