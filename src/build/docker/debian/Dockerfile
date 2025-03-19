@@ -14,7 +14,6 @@ RUN DEBIAN_FRONTEND="noninteractive" apt-get -qq update && \
     lsb-release \
     libxml2-utils \
     pandoc \
-    wget \
     # Ghostty Dependencies
     libadwaita-1-dev \
     libgtk-4-dev && \
@@ -29,31 +28,21 @@ RUN . /etc/os-release; if [ $VERSION_ID -le 12 ]; then ln -s libbz2.so /usr/lib/
 # Install zig
 # https://ziglang.org/download/
 
-COPY ./build.zig /src/build.zig
+COPY . /src
 
-RUN export ZIG_VERSION=$(sed -n -e 's/^.*requireZig("\(.*\)").*$/\1/p' /src/build.zig) && curl -L -o /tmp/zig.tar.xz "https://ziglang.org/download/$ZIG_VERSION/zig-linux-$(uname -m)-$ZIG_VERSION.tar.xz" && \
+WORKDIR /src
+
+RUN export ZIG_VERSION=$(sed -n -e 's/^.*requireZig("\(.*\)").*$/\1/p' build.zig) && curl -L -o /tmp/zig.tar.xz "https://ziglang.org/download/$ZIG_VERSION/zig-linux-$(uname -m)-$ZIG_VERSION.tar.xz" && \
     tar -xf /tmp/zig.tar.xz -C /opt && \
     rm /tmp/zig.tar.xz && \
     ln -s "/opt/zig-linux-$(uname -m)-$ZIG_VERSION/zig" /usr/local/bin/zig
-
-# Extract our source tarball
-COPY ./ghostty-source.tar.gz /src
-WORKDIR /src
-RUN tar xvzf ghostty-source.tar.gz && \
-    rm ghostty-source.tar.gz && \
-    mv ghostty-* ghostty-source && \
-    mv ghostty-source/* . && \
-    rm -rf ghostty-source
-
-RUN ZIG_GLOBAL_CACHE_DIR=/zig/global-cache ./nix/build-support/fetch-zig-cache.sh
 
 # Debian 12 doesn't have gtk4-layer-shell, so we have to manually compile it ourselves
 RUN zig build \
     -Doptimize=Debug \
     -Dcpu=baseline \
     -Dapp-runtime=gtk \
-    -fno-sys=gtk4-layer-shell \
-    --system /zig/global-cache/p
+    -fno-sys=gtk4-layer-shell
 
 RUN ./zig-out/bin/ghostty +version
 
