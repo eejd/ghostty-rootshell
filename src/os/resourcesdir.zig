@@ -29,10 +29,10 @@ pub fn resourcesDir(alloc: std.mem.Allocator) !?[]const u8 {
 
     // This is the sentinel value we look for in the path to know
     // we've found the resources directory.
-    const sentinel = switch (comptime builtin.target.os.tag) {
-        .windows => "terminfo/ghostty.terminfo",
-        .macos => "terminfo/78/xterm-ghostty",
-        else => "terminfo/x/xterm-ghostty",
+    const sentinels = switch (comptime builtin.target.os.tag) {
+        .windows => .{"terminfo/ghostty.terminfo"},
+        .macos => .{"terminfo/78/xterm-ghostty"},
+        else => .{ "terminfo/g/ghostty", "terminfo/x/xterm-ghostty" },
     };
 
     // Get the path to our running binary
@@ -47,16 +47,20 @@ pub fn resourcesDir(alloc: std.mem.Allocator) !?[]const u8 {
 
         // On MacOS, we look for the app bundle path.
         if (comptime builtin.target.os.tag.isDarwin()) {
-            if (try maybeDir(&dir_buf, dir, "Contents/Resources", sentinel)) |v| {
-                return try std.fs.path.join(alloc, &.{ v, "ghostty" });
+            inline for (sentinels) |sentinel| {
+                if (try maybeDir(&dir_buf, dir, "Contents/Resources", sentinel)) |v| {
+                    return try std.fs.path.join(alloc, &.{ v, "ghostty" });
+                }
             }
         }
 
         // On all platforms, we look for a /usr/share style path. This
         // is valid even on Mac since there is nothing that requires
         // Ghostty to be in an app bundle.
-        if (try maybeDir(&dir_buf, dir, "share", sentinel)) |v| {
-            return try std.fs.path.join(alloc, &.{ v, "ghostty" });
+        inline for (sentinels) |sentinel| {
+            if (try maybeDir(&dir_buf, dir, "share", sentinel)) |v| {
+                return try std.fs.path.join(alloc, &.{ v, "ghostty" });
+            }
         }
     }
 
