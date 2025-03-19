@@ -101,11 +101,14 @@ fn kitty(
 
         // IME confirmation still sends an enter key so if we have enter
         // and UTF8 text we just send it directly since we assume that is
-        // whats happening.
-        if (self.event.key == .enter and
-            self.event.utf8.len > 0)
-        {
-            return try copyToBuf(buf, self.event.utf8);
+        // whats happening. See legacy()'s similar logic for more details
+        // on how to verify this.
+        if (self.event.utf8.len > 0) {
+            switch (self.event.key) {
+                .enter => return try copyToBuf(buf, self.event.utf8),
+                .backspace => return "",
+                else => {},
+            }
         }
 
         // If we're reporting all then we always send CSI sequences.
@@ -1721,6 +1724,27 @@ test "kitty: keypad number" {
     };
     const actual = try enc.kitty(&buf);
     try testing.expectEqualStrings("[57400;;49u", actual[1..]);
+}
+
+test "kitty: backspace with utf8 (dead key state)" {
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .backspace,
+            .utf8 = "A",
+            .unshifted_codepoint = 0x0D,
+        },
+        .kitty_flags = .{
+            .disambiguate = true,
+            .report_events = true,
+            .report_alternates = true,
+            .report_all = true,
+            .report_associated = true,
+        },
+    };
+
+    const actual = try enc.kitty(&buf);
+    try testing.expectEqualStrings("", actual);
 }
 
 test "legacy: backspace with utf8 (dead key state)" {
