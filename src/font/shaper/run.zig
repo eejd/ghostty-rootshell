@@ -360,11 +360,16 @@ pub const RunIterator = struct {
 
             // Find a font that supports this codepoint. If none support this
             // then the whole grapheme can't be rendered so we return null.
+            //
+            // We explicitly do not require the additional grapheme components
+            // to support the base presentation, since it is common for emoji
+            // fonts to support the base emoji with emoji presentation but not
+            // certain ZWJ-combined characters like the male and female signs.
             const idx = try self.grid.getIndex(
                 alloc,
                 cp,
                 style,
-                presentation,
+                null,
             ) orelse return null;
             candidates.appendAssumeCapacity(idx);
         }
@@ -375,7 +380,7 @@ pub const RunIterator = struct {
             for (cps) |cp| {
                 // Ignore Emoji ZWJs
                 if (cp == 0xFE0E or cp == 0xFE0F or cp == 0x200D) continue;
-                if (!self.grid.hasCodepoint(idx, cp, presentation)) break;
+                if (!self.grid.hasCodepoint(idx, cp, null)) break;
             } else {
                 // If the while completed, then we have a candidate that
                 // supports all of our codepoints.

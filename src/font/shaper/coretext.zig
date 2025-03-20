@@ -1015,25 +1015,35 @@ test "shape emoji width long" {
     var testdata = try testShaper(alloc);
     defer testdata.deinit();
 
-    var buf: [32]u8 = undefined;
-    var buf_idx: usize = 0;
-    buf_idx += try std.unicode.utf8Encode(0x1F9D4, buf[buf_idx..]); // man: beard
-    buf_idx += try std.unicode.utf8Encode(0x1F3FB, buf[buf_idx..]); // light skin tone (Fitz 1-2)
-    buf_idx += try std.unicode.utf8Encode(0x200D, buf[buf_idx..]); // ZWJ
-    buf_idx += try std.unicode.utf8Encode(0x2642, buf[buf_idx..]); // male sign
-    buf_idx += try std.unicode.utf8Encode(0xFE0F, buf[buf_idx..]); // emoji representation
-
-    // Make a screen with some data
+    // Make a screen and add a long emoji sequence to it.
     var screen = try terminal.Screen.init(alloc, 30, 3, 0);
     defer screen.deinit();
-    try screen.testWriteString(buf[0..buf_idx]);
+
+    var page = screen.pages.pages.first.?.data;
+    var row = page.getRow(1);
+    const cell = &row.cells.ptr(page.memory)[0];
+    cell.* = .{
+        .content_tag = .codepoint,
+        .content = .{ .codepoint = 0x1F9D4 }, // Person with beard
+    };
+    var graphemes = [_]u21{
+        0x1F3FB, // Light skin tone (Fitz 1-2)
+        0x200D, // ZWJ
+        0x2642, // Male sign
+        0xFE0F, // Emoji presentation selector
+    };
+    try page.setGraphemes(
+        row,
+        cell,
+        graphemes[0..],
+    );
 
     // Get our run iterator
     var shaper = &testdata.shaper;
     var it = shaper.runIterator(
         testdata.grid,
         &screen,
-        screen.pages.pin(.{ .screen = .{ .y = 0 } }).?,
+        screen.pages.pin(.{ .screen = .{ .y = 1 } }).?,
         null,
         null,
     );

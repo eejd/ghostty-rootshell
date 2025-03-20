@@ -270,25 +270,21 @@ pub const Face = struct {
 
     /// Returns true if the given glyph ID is colorized.
     pub fn isColorGlyph(self: *const Face, glyph_id: u32) bool {
-        // sbix table is always true for now
-        if (self.face.hasSBIX()) return true;
-
-        // CBDT/CBLC tables always imply colorized glyphs.
-        // These are used by Noto.
-        if (self.face.hasSfntTable(freetype.Tag.init("CBDT"))) return true;
-        if (self.face.hasSfntTable(freetype.Tag.init("CBLC"))) return true;
-
-        // Otherwise, load the glyph and see what format it is in.
+        // Load the glyph and see what pixel mode it renders with.
+        // All modes other than BGRA are non-color.
+        // If the glyph fails to load, just return false.
         self.face.loadGlyph(glyph_id, .{
             .render = true,
             .color = self.face.hasColor(),
+            // NO_SVG set to true because we don't currently support rendering
+            // SVG glyphs under FreeType, since that requires bundling another
+            // dependency to handle rendering the SVG.
+            .no_svg = true,
         }) catch return false;
 
-        // If the glyph is SVG we assume colorized
         const glyph = self.face.handle.*.glyph;
-        if (glyph.*.format == freetype.c.FT_GLYPH_FORMAT_SVG) return true;
 
-        return false;
+        return glyph.*.bitmap.pixel_mode == freetype.c.FT_PIXEL_MODE_BGRA;
     }
 
     /// Render a glyph using the glyph index. The rendered glyph is stored in the
@@ -321,6 +317,11 @@ pub const Face = struct {
             .force_autohint = !self.load_flags.@"force-autohint",
             .monochrome = !self.load_flags.monochrome,
             .no_autohint = !self.load_flags.autohint,
+
+            // NO_SVG set to true because we don't currently support rendering
+            // SVG glyphs under FreeType, since that requires bundling another
+            // dependency to handle rendering the SVG.
+            .no_svg = true,
         });
         const glyph = self.face.handle.*.glyph;
 
@@ -393,12 +394,13 @@ pub const Face = struct {
             const original_width = bitmap_original.width;
             const original_height = bitmap_original.rows;
             var result = bitmap_original;
-            // TODO: We are limiting this to only emoji. We can rework this after a future
-            // improvement (promised by Qwerasd) which implements more flexible resizing rules. For
-            // now, this will suffice
-            if (self.isColorGlyph(glyph_index) and opts.cell_width != null) {
+            // TODO: We are limiting this to only color glyphs, so mainly emoji.
+            // We can rework this after a future improvement (promised by Qwerasd)
+            // which implements more flexible resizing rules.
+            if (atlas.format != .grayscale and opts.cell_width != null) {
                 const cell_width = opts.cell_width orelse unreachable;
-                // If we have a cell_width, we constrain the glyph to fit within the cell
+                // If we have a cell_width, we constrain
+                // the glyph to fit within the cell(s).
                 result.width = metrics.cell_width * @as(u32, cell_width);
                 result.rows = (result.width * original_height) / original_width;
             } else {
@@ -743,7 +745,10 @@ pub const Face = struct {
             var c: u8 = ' ';
             while (c < 127) : (c += 1) {
                 if (face.getCharIndex(c)) |glyph_index| {
-                    if (face.loadGlyph(glyph_index, .{ .render = true })) {
+                    if (face.loadGlyph(glyph_index, .{
+                        .render = true,
+                        .no_svg = true,
+                    })) {
                         max = @max(
                             f26dot6ToF64(face.handle.*.glyph.*.advance.x),
                             max,
@@ -776,7 +781,10 @@ pub const Face = struct {
             break :heights .{
                 cap: {
                     if (face.getCharIndex('H')) |glyph_index| {
-                        if (face.loadGlyph(glyph_index, .{ .render = true })) {
+                        if (face.loadGlyph(glyph_index, .{
+                            .render = true,
+                            .no_svg = true,
+                        })) {
                             break :cap f26dot6ToF64(face.handle.*.glyph.*.metrics.height);
                         } else |_| {}
                     }
@@ -784,7 +792,10 @@ pub const Face = struct {
                 },
                 ex: {
                     if (face.getCharIndex('x')) |glyph_index| {
-                        if (face.loadGlyph(glyph_index, .{ .render = true })) {
+                        if (face.loadGlyph(glyph_index, .{
+                            .render = true,
+                            .no_svg = true,
+                        })) {
                             break :ex f26dot6ToF64(face.handle.*.glyph.*.metrics.height);
                         } else |_| {}
                     }
