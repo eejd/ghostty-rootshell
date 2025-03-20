@@ -149,8 +149,17 @@ pub const App = struct {
     }
 
     /// Convert a C key event into a Zig key event.
+    ///
+    /// The buffer is needed for possibly storing translated UTF-8 text.
+    /// This buffer may (or may not) be referenced by the resulting KeyEvent
+    /// so it should be valid for the lifetime of the KeyEvent.
+    ///
+    /// The size of the buffer doesn't need to be large, we always
+    /// used to hardcode 128 bytes and never ran into issues. If it isn't
+    /// large enough an error will be returned.
     fn coreKeyEvent(
         self: *App,
+        buf: []u8,
         target: KeyTarget,
         event: KeyEvent,
     ) !?input.KeyEvent {
@@ -217,7 +226,6 @@ pub const App = struct {
         // Translate our key using the keymap for our localized keyboard layout.
         // We only translate for keydown events. Otherwise, we only care about
         // the raw keycode.
-        var buf: [128]u8 = undefined;
         const result: input.Keymap.Translation = if (is_down) translate: {
             // If the event provided us with text, then we use this as a result
             // and do not do manual translation.
@@ -226,7 +234,7 @@ pub const App = struct {
                 .composing = event.composing,
                 .mods = translate_mods,
             } else try self.keymap.translate(
-                &buf,
+                buf,
                 switch (target) {
                     .app => &self.keymap_state,
                     .surface => |surface| &surface.keymap_state,
@@ -360,7 +368,9 @@ pub const App = struct {
         event: KeyEvent,
     ) !bool {
         // Convert our C key event into a Zig one.
+        var buf: [128]u8 = undefined;
         const input_event: input.KeyEvent = (try self.coreKeyEvent(
+            &buf,
             target,
             event,
         )) orelse return false;
@@ -1432,7 +1442,9 @@ pub const CAPI = struct {
         app: *App,
         event: KeyEvent,
     ) bool {
+        var buf: [128]u8 = undefined;
         const core_event = app.coreKeyEvent(
+            &buf,
             .app,
             event.keyEvent(),
         ) catch |err| {
@@ -1684,7 +1696,9 @@ pub const CAPI = struct {
         surface: *Surface,
         event: KeyEvent,
     ) bool {
+        var buf: [128]u8 = undefined;
         const core_event = surface.app.coreKeyEvent(
+            &buf,
             // Note: this "app" target here looks like a bug, but it is
             // intentional. coreKeyEvent uses the target only as a way to
             // trigger preedit callbacks for keymap translation and we don't

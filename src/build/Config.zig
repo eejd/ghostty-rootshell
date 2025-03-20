@@ -72,7 +72,7 @@ pub fn init(b: *std.Build) !Config {
         if (result.result.os.tag == .macos and
             builtin.target.os.tag.isDarwin())
         {
-            result = genericMacOSTarget(b, null);
+            result = genericMacOSTarget(b, result.query.cpu_arch);
         }
 
         // If we have no minimum OS version, we set the default based on

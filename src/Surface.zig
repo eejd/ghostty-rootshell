@@ -1727,7 +1727,7 @@ pub fn keyCallback(
     self: *Surface,
     event: input.KeyEvent,
 ) !InputEffect {
-    // log.debug("text keyCallback event={}", .{event});
+    // log.warn("text keyCallback event={}", .{event});
 
     // Crash metadata in case we crash in here
     crash.sentry.thread_state = self.crashThreadState();
