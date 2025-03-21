@@ -523,7 +523,7 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
 
     // initialize the context menu
     self.context_menu.init(self);
-    self.context_menu.setParent(@ptrCast(@alignCast(overlay)));
+    self.context_menu.setParent(overlay.as(gtk.Widget));
 
     // initialize the resize overlay
     self.resize_overlay.init(self, &app.config);
@@ -1068,7 +1068,7 @@ pub fn promptTitle(self: *Surface) !void {
     entry.getBuffer().setText(self.getTitle() orelse "", -1);
 
     const dialog = builder.getObject(adw.AlertDialog, "prompt_title_dialog").?;
-    dialog.choose(@ptrCast(window.window), null, gtkPromptTitleResponse, self);
+    dialog.choose(window.window.as(gtk.Widget), null, gtkPromptTitleResponse, self);
 }
 
 /// Set the current working directory of the surface.
@@ -1220,7 +1220,7 @@ pub fn clipboardRequest(
     ud_ptr.* = .{ .self = self, .state = state };
 
     // Start our async request
-    const clipboard = getClipboard(@ptrCast(self.gl_area), clipboard_type) orelse return;
+    const clipboard = getClipboard(self.gl_area.as(gtk.Widget), clipboard_type) orelse return;
 
     clipboard.readTextAsync(null, gtkClipboardRead, ud_ptr);
 }
@@ -1232,7 +1232,7 @@ pub fn setClipboardString(
     confirm: bool,
 ) !void {
     if (!confirm) {
-        const clipboard = getClipboard(@ptrCast(self.gl_area), clipboard_type) orelse return;
+        const clipboard = getClipboard(self.gl_area.as(gtk.Widget), clipboard_type) orelse return;
         clipboard.setText(val);
 
         // We only toast if we are copying to the standard clipboard.
@@ -2150,10 +2150,6 @@ pub fn dimSurface(self: *Surface) void {
     };
 }
 
-fn userdataSelf(ud: *anyopaque) *Surface {
-    return @ptrCast(@alignCast(ud));
-}
-
 fn translateMouseButton(button: c_uint) input.MouseButton {
     return switch (button) {
         1 => .left,
@@ -2383,7 +2379,7 @@ fn g_value_holds(value_: ?*gobject.Value, g_type: gobject.Type) bool {
 fn gtkPromptTitleResponse(source_object: ?*gobject.Object, result: *gio.AsyncResult, ud: ?*anyopaque) callconv(.C) void {
     if (!adw_version.supportsDialogs()) return;
     const dialog = gobject.ext.cast(adw.AlertDialog, source_object.?).?;
-    const self = userdataSelf(ud orelse return);
+    const self: *Surface = @ptrCast(@alignCast(ud));
 
     const response = dialog.chooseFinish(result);
     if (std.mem.orderZ(u8, "ok", response) == .eq) {

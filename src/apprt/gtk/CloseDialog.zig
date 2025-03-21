@@ -113,11 +113,11 @@ pub const Target = union(enum) {
                 const focused = list.findCustom(null, findActiveWindow);
                 return @ptrCast(@alignCast(focused.f_data));
             },
-            .window => |v| @ptrCast(v.window),
-            .tab => |v| @ptrCast(v.window.window),
-            .surface => |v| surface: {
+            .window => |v| v.window.as(gtk.Window),
+            .tab => |v| v.window.window.as(gtk.Window),
+            .surface => |v| {
                 const window_ = v.container.window() orelse return null;
-                break :surface @ptrCast(window_.window);
+                return window_.window.as(gtk.Window);
             },
         };
     }
@@ -134,7 +134,7 @@ pub const Target = union(enum) {
     fn close(self: Target) void {
         switch (self) {
             .app => |v| v.quitNow(),
-            .window => |v| gtk.Window.destroy(@ptrCast(v.window)),
+            .window => |v| v.window.as(gtk.Window).destroy(),
             .tab => |v| v.remove(),
             .surface => |v| v.container.remove(),
         }

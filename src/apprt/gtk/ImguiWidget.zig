@@ -179,8 +179,8 @@ pub fn init(self: *ImguiWidget) !void {
     );
 
     self.* = .{
-        .gl_area = @ptrCast(gl_area),
-        .im_context = @ptrCast(im_context),
+        .gl_area = gl_area,
+        .im_context = im_context.as(gtk.IMContext),
         .ig_ctx = ig_ctx,
     };
 }

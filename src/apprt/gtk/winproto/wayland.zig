@@ -106,7 +106,7 @@ pub const App = struct {
     }
 
     pub fn initQuickTerminal(_: *App, apprt_window: *ApprtWindow) !void {
-        const window: *gtk.Window = @ptrCast(apprt_window.window);
+        const window = apprt_window.window.as(gtk.Window);
 
         gtk4_layer_shell.initForWindow(window);
         gtk4_layer_shell.setLayer(window, .top);
@@ -229,16 +229,11 @@ pub const Window = struct {
 
         // This should never fail, because if we're being called at this point
         // then we've already asserted that our app state is Wayland.
-        if (gobject.typeCheckInstanceIsA(
-            gdk_surface.as(gobject.TypeInstance),
-            gdk_wayland.WaylandSurface.getGObjectType(),
-        ) == 0)
-            return error.NoWaylandSurface;
-
         const gdk_wl_surface = gobject.ext.cast(
             gdk_wayland.WaylandSurface,
             gdk_surface,
         ) orelse return error.NoWaylandSurface;
+
         const wl_surface: *wl.Surface = @ptrCast(@alignCast(
             gdk_wl_surface.getWlSurface() orelse return error.NoWaylandSurface,
         ));
@@ -260,9 +255,8 @@ pub const Window = struct {
         };
 
         if (apprt_window.isQuickTerminal()) {
-            const surface: *gdk.Surface = @ptrCast(gdk_surface);
             _ = gdk.Surface.signals.enter_monitor.connect(
-                surface,
+                gdk_surface,
                 *ApprtWindow,
                 enteredMonitor,
                 apprt_window,
@@ -361,7 +355,7 @@ pub const Window = struct {
     }
 
     fn syncQuickTerminal(self: *Window) !void {
-        const window: *gtk.Window = @ptrCast(self.apprt_window.window);
+        const window = self.apprt_window.window.as(gtk.Window);
         const position = self.apprt_window.config.quick_terminal_position;
 
         const anchored_edge: ?gtk4_layer_shell.ShellEdge = switch (position) {
@@ -417,7 +411,7 @@ pub const Window = struct {
         monitor: *gdk.Monitor,
         apprt_window: *ApprtWindow,
     ) callconv(.C) void {
-        const window: *gtk.Window = @ptrCast(apprt_window.window);
+        const window = apprt_window.window.as(gtk.Window);
         const size = apprt_window.config.quick_terminal_size;
         const position = apprt_window.config.quick_terminal_position;
 
