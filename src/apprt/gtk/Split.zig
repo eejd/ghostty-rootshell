@@ -287,8 +287,8 @@ pub fn updateChildren(self: *const Split) void {
     self.removeChildren();
 
     // Set our current children
-    self.paned.setStartChild(@ptrCast(@alignCast(self.top_left.widget())));
-    self.paned.setEndChild(@ptrCast(@alignCast(self.bottom_right.widget())));
+    self.paned.setStartChild(self.top_left.widget());
+    self.paned.setEndChild(self.bottom_right.widget());
 }
 
 /// A mapping of direction to the element (if any) in that direction.

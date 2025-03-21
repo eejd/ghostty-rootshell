@@ -115,7 +115,7 @@ pub fn gotoNthTab(self: *TabView, position: c_int) bool {
 }
 
 pub fn getTabPosition(self: *TabView, tab: *Tab) ?c_int {
-    const page = self.tab_view.getPage(@ptrCast(tab.box));
+    const page = self.tab_view.getPage(tab.box.as(gtk.Widget));
     return self.tab_view.getPagePosition(page);
 }
 
@@ -161,17 +161,17 @@ pub fn moveTab(self: *TabView, tab: *Tab, position: c_int) void {
 }
 
 pub fn reorderPage(self: *TabView, tab: *Tab, position: c_int) void {
-    const page = self.tab_view.getPage(@ptrCast(tab.box));
+    const page = self.tab_view.getPage(tab.box.as(gtk.Widget));
     _ = self.tab_view.reorderPage(page, position);
 }
 
 pub fn setTabTitle(self: *TabView, tab: *Tab, title: [:0]const u8) void {
-    const page = self.tab_view.getPage(@ptrCast(tab.box));
+    const page = self.tab_view.getPage(tab.box.as(gtk.Widget));
     page.setTitle(title.ptr);
 }
 
 pub fn setTabTooltip(self: *TabView, tab: *Tab, tooltip: [:0]const u8) void {
-    const page = self.tab_view.getPage(@ptrCast(tab.box));
+    const page = self.tab_view.getPage(tab.box.as(gtk.Widget));
     page.setTooltip(tooltip.ptr);
 }
 
@@ -186,8 +186,7 @@ fn newTabInsertPosition(self: *TabView, tab: *Tab) c_int {
 /// Adds a new tab with the given title to the notebook.
 pub fn addTab(self: *TabView, tab: *Tab, title: [:0]const u8) void {
     const position = self.newTabInsertPosition(tab);
-    const box_widget: *gtk.Widget = @ptrCast(tab.box);
-    const page = self.tab_view.insert(box_widget, position);
+    const page = self.tab_view.insert(tab.box.as(gtk.Widget), position);
     self.setTabTitle(tab, title);
     self.tab_view.setSelectedPage(page);
 }
@@ -204,7 +203,7 @@ pub fn closeTab(self: *TabView, tab: *Tab) void {
         if (n > 1) self.forcing_close = false;
     }
 
-    const page = self.tab_view.getPage(@ptrCast(tab.box));
+    const page = self.tab_view.getPage(tab.box.as(gtk.Widget));
     self.tab_view.closePage(page);
 
     // If we have no more tabs we close the window
@@ -214,22 +213,17 @@ pub fn closeTab(self: *TabView, tab: *Tab) void {
         // unref to force the cleanup. This will trigger a critical
         // warning from GTK, but I don't know any other workaround.
         if (!adw_version.atLeast(1, 5, 1)) {
-            const box: *gtk.Box = @ptrCast(@alignCast(tab.box));
-            box.as(gobject.Object).unref();
+            tab.box.unref();
         }
 
         self.window.close();
     }
 }
 
-pub fn createWindow(currentWindow: *Window) !*Window {
-    const alloc = currentWindow.app.core_app.alloc;
-    const app = currentWindow.app;
-
-    // Create a new window
-    const window = try Window.create(alloc, app);
-    window.present();
-    return window;
+pub fn createWindow(window: *Window) !*Window {
+    const new_window = try Window.create(window.app.core_app.alloc, window.app);
+    new_window.present();
+    return new_window;
 }
 
 fn adwPageAttached(_: *adw.TabView, page: *adw.TabPage, _: c_int, self: *TabView) callconv(.C) void {

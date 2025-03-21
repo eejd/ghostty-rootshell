@@ -131,47 +131,25 @@ fn init(
         );
     }
 
+    _ = DialogType.signals.response.connect(
+        dialog,
+        *ClipboardConfirmation,
+        gtkResponse,
+        self,
+        .{},
+    );
+
     switch (DialogType) {
         adw.AlertDialog => {
             const parent: ?*gtk.Widget = widget: {
                 const window = core_surface.rt_surface.container.window() orelse break :widget null;
-                break :widget @ptrCast(@alignCast(window.window));
+                break :widget window.window.as(gtk.Widget);
             };
-
-            dialog.choose(parent, null, gtkChoose, self);
+            dialog.as(adw.Dialog).present(parent);
         },
-        adw.MessageDialog => {
-            if (adw_version.atLeast(1, 3, 0)) {
-                dialog.choose(null, gtkChoose, self);
-            } else {
-                _ = adw.MessageDialog.signals.response.connect(
-                    dialog,
-                    *ClipboardConfirmation,
-                    gtkResponse,
-                    self,
-                    .{},
-                );
-                dialog.as(gtk.Widget).show();
-            }
-        },
+        adw.MessageDialog => dialog.as(gtk.Window).present(),
         else => unreachable,
     }
-}
-
-fn gtkChoose(dialog_: ?*gobject.Object, result: *gio.AsyncResult, ud: ?*anyopaque) callconv(.C) void {
-    const dialog = gobject.ext.cast(DialogType, dialog_.?).?;
-    const self: *ClipboardConfirmation = @ptrCast(@alignCast(ud.?));
-    const response = dialog.chooseFinish(result);
-    if (std.mem.orderZ(u8, response, "ok") == .eq) {
-        self.core_surface.completeClipboardRequest(
-            self.pending_req,
-            self.data,
-            true,
-        ) catch |err| {
-            log.err("Failed to requeue clipboard request: {}", .{err});
-        };
-    }
-    self.destroy();
 }
 
 fn gtkResponse(_: *DialogType, response: [*:0]u8, self: *ClipboardConfirmation) callconv(.C) void {

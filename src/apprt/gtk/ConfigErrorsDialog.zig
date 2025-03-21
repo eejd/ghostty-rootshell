@@ -58,7 +58,7 @@ pub fn maybePresent(app: *App, window: ?*Window) void {
 
     _ = DialogType.signals.response.connect(dialog, *App, onResponse, app, .{});
 
-    const parent: ?*gtk.Widget = if (window) |w| @ptrCast(w.window) else null;
+    const parent = if (window) |w| w.window.as(gtk.Widget) else null;
 
     switch (DialogType) {
         adw.AlertDialog => dialog.as(adw.Dialog).present(parent),
