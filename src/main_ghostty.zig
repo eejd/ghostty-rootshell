@@ -84,6 +84,9 @@ pub fn main() !MainReturn {
             \\(i.e. Ghostty.app on macOS). This CLI can be used to perform various
             \\actions such as inspecting the version, listing fonts, etc.
             \\
+            \\On macOS, the terminal can also be launched using `open -na Ghostty.app`,
+            \\or `open -na Ghostty.app --args --foo=bar --baz=qux` to pass arguments.
+            \\
             \\We don't have proper help output yet, sorry! Please refer to the
             \\source code or Discord community for help for now. We'll fix this in time.
             \\
