@@ -150,9 +150,18 @@ pub fn setupFeatures(
     env: *EnvMap,
     features: config.ShellIntegrationFeatures,
 ) !void {
-    if (!features.cursor) try env.put("GHOSTTY_SHELL_INTEGRATION_NO_CURSOR", "1");
-    if (!features.sudo) try env.put("GHOSTTY_SHELL_INTEGRATION_NO_SUDO", "1");
-    if (!features.title) try env.put("GHOSTTY_SHELL_INTEGRATION_NO_TITLE", "1");
+    var enabled = try std.BoundedArray(u8, 256).init(0);
+
+    inline for (@typeInfo(@TypeOf(features)).@"struct".fields) |f| {
+        if (@field(features, f.name)) {
+            if (enabled.len > 0) try enabled.append(',');
+            try enabled.appendSlice(f.name);
+        }
+    }
+
+    if (enabled.len > 0) {
+        try env.put("GHOSTTY_SHELL_FEATURES", enabled.slice());
+    }
 }
 
 test "setup features" {
@@ -162,15 +171,13 @@ test "setup features" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    // Test: all features enabled (no environment variables should be set)
+    // Test: all features enabled
     {
         var env = EnvMap.init(alloc);
         defer env.deinit();
 
         try setupFeatures(&env, .{ .cursor = true, .sudo = true, .title = true });
-        try testing.expect(env.get("GHOSTTY_SHELL_INTEGRATION_NO_CURSOR") == null);
-        try testing.expect(env.get("GHOSTTY_SHELL_INTEGRATION_NO_SUDO") == null);
-        try testing.expect(env.get("GHOSTTY_SHELL_INTEGRATION_NO_TITLE") == null);
+        try testing.expectEqualStrings("cursor,sudo,title", env.get("GHOSTTY_SHELL_FEATURES").?);
     }
 
     // Test: all features disabled
@@ -179,9 +186,7 @@ test "setup features" {
         defer env.deinit();
 
         try setupFeatures(&env, .{ .cursor = false, .sudo = false, .title = false });
-        try testing.expectEqualStrings("1", env.get("GHOSTTY_SHELL_INTEGRATION_NO_CURSOR").?);
-        try testing.expectEqualStrings("1", env.get("GHOSTTY_SHELL_INTEGRATION_NO_SUDO").?);
-        try testing.expectEqualStrings("1", env.get("GHOSTTY_SHELL_INTEGRATION_NO_TITLE").?);
+        try testing.expect(env.get("GHOSTTY_SHELL_FEATURES") == null);
     }
 
     // Test: mixed features
@@ -190,9 +195,7 @@ test "setup features" {
         defer env.deinit();
 
         try setupFeatures(&env, .{ .cursor = false, .sudo = true, .title = false });
-        try testing.expectEqualStrings("1", env.get("GHOSTTY_SHELL_INTEGRATION_NO_CURSOR").?);
-        try testing.expect(env.get("GHOSTTY_SHELL_INTEGRATION_NO_SUDO") == null);
-        try testing.expectEqualStrings("1", env.get("GHOSTTY_SHELL_INTEGRATION_NO_TITLE").?);
+        try testing.expectEqualStrings("sudo", env.get("GHOSTTY_SHELL_FEATURES").?);
     }
 }
 
