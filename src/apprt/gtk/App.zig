@@ -247,19 +247,6 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         _ = internal_os.setenv("GDK_DISABLE", value[0 .. value.len - 1 :0]);
     }
 
-    if (gtk_version.runtimeAtLeast(4, 14, 0)) {
-        switch (config.@"gtk-gsk-renderer") {
-            .default => {},
-            else => |renderer| {
-                // Force the GSK renderer to a specific value. After GTK 4.14 the
-                // `ngl` renderer is used by default which causes artifacts when
-                // used with Ghostty so it should be avoided.
-                log.warn("setting GSK_RENDERER={s}", .{@tagName(renderer)});
-                _ = internal_os.setenv("GSK_RENDERER", @tagName(renderer));
-            },
-        }
-    }
-
     adw.init();
 
     const display: *gdk.Display = gdk.Display.getDefault() orelse {
