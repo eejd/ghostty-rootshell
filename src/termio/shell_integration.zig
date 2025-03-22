@@ -150,17 +150,23 @@ pub fn setupFeatures(
     env: *EnvMap,
     features: config.ShellIntegrationFeatures,
 ) !void {
-    var enabled = try std.BoundedArray(u8, 256).init(0);
+    const fields = @typeInfo(@TypeOf(features)).@"struct".fields;
+    const capacity: usize = capacity: {
+        comptime var n: usize = fields.len - 1; // commas
+        inline for (fields) |field| n += field.name.len;
+        break :capacity n;
+    };
+    var buffer = try std.BoundedArray(u8, capacity).init(0);
 
-    inline for (@typeInfo(@TypeOf(features)).@"struct".fields) |f| {
-        if (@field(features, f.name)) {
-            if (enabled.len > 0) try enabled.append(',');
-            try enabled.appendSlice(f.name);
+    inline for (fields) |field| {
+        if (@field(features, field.name)) {
+            if (buffer.len > 0) try buffer.append(',');
+            try buffer.appendSlice(field.name);
         }
     }
 
-    if (enabled.len > 0) {
-        try env.put("GHOSTTY_SHELL_FEATURES", enabled.slice());
+    if (buffer.len > 0) {
+        try env.put("GHOSTTY_SHELL_FEATURES", buffer.slice());
     }
 }
 
