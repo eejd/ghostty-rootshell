@@ -106,20 +106,18 @@
   set edit:after-readline  = (conj $edit:after-readline $mark-output-start~)
   set edit:after-command   = (conj $edit:after-command $mark-output-end~)
 
-  var title  = (str:contains $E:GHOSTTY_SHELL_FEATURES "title")
-  var cursor = (str:contains $E:GHOSTTY_SHELL_FEATURES "cursor")
-  var sudo   = (str:contains $E:GHOSTTY_SHELL_FEATURES "sudo")
+  var features = [(str:split ',' $E:GHOSTTY_SHELL_FEATURES)]
 
-  if $title {
+  if (has-value $features title) {
     set after-chdir = (conj $after-chdir {|_| report-pwd })
   }
-  if $cursor {
+  if (has-value $features cursor) {
     fn beam  { printf "\e[5 q" }
     fn block { printf "\e[0 q" }
     set edit:before-readline = (conj $edit:before-readline $beam~)
     set edit:after-readline  = (conj $edit:after-readline {|_| block })
   }
-  if (and $sudo (not-eq "" $E:TERMINFO) (has-external sudo)) {
+  if (and (has-value $features sudo) (not-eq "" $E:TERMINFO) (has-external sudo)) {
     edit:add-var sudo~ $sudo-with-terminfo~
   }
 }
