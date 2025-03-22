@@ -30,7 +30,7 @@ pub const ShellIntegration = struct {
     command: []const u8,
 };
 
-/// Setup the command execution environment for automatic
+/// Set up the command execution environment for automatic
 /// integrated shell integration and return a ShellIntegration
 /// struct describing the integration.  If integration fails
 /// (shell type couldn't be detected, etc.), this will return null.
@@ -144,8 +144,7 @@ test "force shell" {
     }
 }
 
-/// Setup shell integration feature environment variables without
-/// performing full shell integration setup.
+/// Set up the shell integration features environment variable.
 pub fn setupFeatures(
     env: *EnvMap,
     features: config.ShellIntegrationFeatures,
