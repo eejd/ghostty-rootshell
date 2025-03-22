@@ -49,10 +49,9 @@ status --is-interactive || ghostty_exit
 function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
     functions -e __ghostty_setup
 
-    set --local cursor string match -q "*cursor*" "$GHOSTTY_SHELL_FEATURES"
-    set --local sudo string match -q "*sudo*" "$GHOSTTY_SHELL_FEATURES"
+    set --local features (string split , $GHOSTTY_SHELL_FEATURES)
 
-    if $cursor
+    if contains cursor $features
         # Change the cursor to a beam on prompt.
         function __ghostty_set_cursor_beam --on-event fish_prompt -d "Set cursor shape"
             echo -en "\e[5 q"
@@ -64,7 +63,7 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
 
     # When using sudo shell integration feature, ensure $TERMINFO is set
     # and `sudo` is not already a function or alias
-    if $sudo and test -n "$TERMINFO"; and test "file" = (type -t sudo 2> /dev/null; or echo "x")
+    if contains sudo $features and test -n "$TERMINFO"; and test "file" = (type -t sudo 2> /dev/null; or echo "x")
         # Wrap `sudo` command to ensure Ghostty terminfo is preserved
         function sudo -d "Wrap sudo to preserve terminfo"
             set --function sudo_has_sudoedit_flags "no"
@@ -121,7 +120,7 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
     set --global fish_handle_reflow 1
 
     # Initial calls for first prompt
-    if $cursor
+    if contains cursor $features
         __ghostty_set_cursor_beam
     end
     __ghostty_mark_prompt_start
