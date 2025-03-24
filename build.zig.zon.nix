@@ -114,11 +114,11 @@ in
       };
     }
     {
-      name = "N-V-__8AADTkRwBjUvVwTLOnV96QhN0J5Nyg7YzvnISe-Eax";
+      name = "N-V-__8AAMrJSwAUGb9-vTzkNR-5LXS81MR__ZRVfF3tWgG6";
       path = fetchZigArtifact {
         name = "glfw";
-        url = "https://github.com/glfw/glfw/archive/73948e6c0f15b1053cf74b7c4e6b04fd36e97e29.zip";
-        hash = "sha256-k7wBKiQpgxBhqHRwSEgZjmfncltlGG8BgY3FhyycM5E=";
+        url = "https://github.com/glfw/glfw/archive/e7ea71be039836da3a98cea55ae5569cb5eb885c.tar.gz";
+        hash = "sha256-M3N1XUAlMebBo5X1Py+9YxjKXgZ6eacqWRCbUmwLKQo=";
       };
     }
     {
