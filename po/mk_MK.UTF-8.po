@@ -251,7 +251,7 @@ msgstr "⚠️ Извршувате дебаг верзија на Ghostty! Пе
 
 #: src/apprt/gtk/Window.zig:725
 msgid "Reloaded the configuration"
-msgstr "Конфигурацијата е одново вчитана."
+msgstr "Конфигурацијата е одново вчитана"
 
 #: src/apprt/gtk/Window.zig:941
 msgid "Ghostty Developers"
