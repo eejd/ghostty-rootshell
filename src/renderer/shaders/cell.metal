@@ -499,7 +499,11 @@ fragment float4 cell_text_fragment(
   constexpr sampler textureSampler(
     coord::pixel,
     address::clamp_to_edge,
-    filter::nearest
+    // TODO(qwerasd): This can be changed back to filter::nearest when
+    //                we move the constraint logic out of the GPU code
+    //                which should once again guarantee pixel perfect
+    //                sizing.
+    filter::linear
   );
 
   switch (in.mode) {
