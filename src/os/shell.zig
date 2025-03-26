@@ -102,5 +102,5 @@ test "shell escape 7" {
     var shell: ShellEscapeWriter(@TypeOf(fmt).Writer) = .{ .child_writer = fmt.writer() };
     const writer = shell.writer();
     try writer.writeAll("a(1)");
-    try testing.expectEqualStrings("a\(1\)", fmt.getWritten());
+    try testing.expectEqualStrings("a\\(1\\)", fmt.getWritten());
 }
