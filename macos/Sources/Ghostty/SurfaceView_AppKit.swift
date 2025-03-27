@@ -884,6 +884,11 @@ extension Ghostty {
                 nil
             }
 
+            // If we are in a keyDown then we don't need to redispatch a command-modded
+            // key event (see docs for this field) so reset this to nil because
+            // `interpretKeyEvents` may dispach it.
+            self.lastCommandEvent = nil
+
             self.interpretKeyEvents([translationEvent])
 
             // If our keyboard changed from this we just assume an input method
