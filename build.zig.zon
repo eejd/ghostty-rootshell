@@ -14,8 +14,8 @@
         },
         .vaxis = .{
             // rockorager/libvaxis
-            .url = "git+https://github.com/rockorager/libvaxis#4182b7fa42f27cf14a71dbdb54cfd82c5c6e3447",
-            .hash = "vaxis-0.1.0-BWNV_MHyCAA0rNbPTr50Z44PyEdNP9zQSnHcXBXoo3Ti",
+            .url = "git+https://github.com/rockorager/libvaxis#1f41c121e8fc153d9ce8c6eb64b2bbab68ad7d23",
+            .hash = "vaxis-0.1.0-BWNV_FUICQAFZnTCL11TUvnUr1Y0_ZdqtXHhd51d76Rn",
             .lazy = true,
         },
         .z2d = .{
@@ -48,8 +48,8 @@
         },
         .zf = .{
             // natecraddock/zf
-            .url = "https://github.com/natecraddock/zf/archive/1039cf75447a8d5b8d481fedb914fe848d246276.tar.gz",
-            .hash = "zf-0.10.3-OIRy8bKIAADhjqtdjVaDfONRuI7RVl5gMbhCoOwiBWV5",
+            .url = "https://github.com/natecraddock/zf/archive/7aacbe6d155d64d15937ca95ca6c014905eb531f.tar.gz",
+            .hash = "zf-0.10.3-OIRy8aiIAACLrBllz0zjxaH0aOe5oNm3KtEMyCntST-9",
             .lazy = true,
         },
         .gobject = .{

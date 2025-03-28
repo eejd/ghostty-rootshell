@@ -250,11 +250,11 @@ in
       };
     }
     {
-      name = "vaxis-0.1.0-BWNV_MHyCAA0rNbPTr50Z44PyEdNP9zQSnHcXBXoo3Ti";
+      name = "vaxis-0.1.0-BWNV_FUICQAFZnTCL11TUvnUr1Y0_ZdqtXHhd51d76Rn";
       path = fetchZigArtifact {
         name = "vaxis";
-        url = "git+https://github.com/rockorager/libvaxis#4182b7fa42f27cf14a71dbdb54cfd82c5c6e3447";
-        hash = "sha256-iONEySjPeD0WYJ93fw5mxT+0pVfUO/m6008J/LXjQkA=";
+        url = "git+https://github.com/rockorager/libvaxis#1f41c121e8fc153d9ce8c6eb64b2bbab68ad7d23";
+        hash = "sha256-bNZ3oveT6vPChjimPJ/GGfcdivlAeJdl/xfWM+S/MHY=";
       };
     }
     {
@@ -290,11 +290,11 @@ in
       };
     }
     {
-      name = "zf-0.10.3-OIRy8bKIAADhjqtdjVaDfONRuI7RVl5gMbhCoOwiBWV5";
+      name = "zf-0.10.3-OIRy8aiIAACLrBllz0zjxaH0aOe5oNm3KtEMyCntST-9";
       path = fetchZigArtifact {
         name = "zf";
-        url = "https://github.com/natecraddock/zf/archive/1039cf75447a8d5b8d481fedb914fe848d246276.tar.gz";
-        hash = "sha256-xVva07TAYlVv4E4PKe2wUj86a6Ky2YC30YBgtbvNKvw=";
+        url = "https://github.com/natecraddock/zf/archive/7aacbe6d155d64d15937ca95ca6c014905eb531f.tar.gz";
+        hash = "sha256-3nulNQd/4rZ4paeXJYXwAliNNyRNsIOX/q3z1JB8C7I=";
       };
     }
     {
@@ -330,11 +330,11 @@ in
       };
     }
     {
-      name = "zigimg-0.1.0-lly-O4heEADSRxoTwJwrD3TBfUob9052sIgb9SL8Iz-A";
+      name = "zigimg-0.1.0-lly-O6N2EABOxke8dqyzCwhtUCAafqP35zC7wsZ4Ddxj";
       path = fetchZigArtifact {
         name = "zigimg";
-        url = "git+https://github.com/TUSF/zigimg#0ce4eca3560d5553b13263d6b6bb72e146dd43d0";
-        hash = "sha256-Rr+mAfbLOoaxHOwCug+0cWCmW9gDhjhnaO2J/Oik9HI=";
+        url = "git+https://github.com/TUSF/zigimg#31268548fe3276c0e95f318a6c0d2ab10565b58d";
+        hash = "sha256-oblfr2FIzuqq0FLo/RrzCwUX1NJJuT53EwD3nP3KwN0=";
       };
     }
     {

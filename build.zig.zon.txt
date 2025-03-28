@@ -1,6 +1,6 @@
 git+https://codeberg.org/atman/zg#4a002763419a34d61dcbb1f415821b83b9bf8ddc
-git+https://github.com/TUSF/zigimg#0ce4eca3560d5553b13263d6b6bb72e146dd43d0
-git+https://github.com/rockorager/libvaxis#4182b7fa42f27cf14a71dbdb54cfd82c5c6e3447
+git+https://github.com/TUSF/zigimg#31268548fe3276c0e95f318a6c0d2ab10565b58d
+git+https://github.com/rockorager/libvaxis#1f41c121e8fc153d9ce8c6eb64b2bbab68ad7d23
 https://codeberg.org/ifreund/zig-wayland/archive/f3c5d503e540ada8cbcb056420de240af0c094f7.tar.gz
 https://deps.files.ghostty.org/breakpad-b99f444ba5f6b98cac261cbb391d8766b34a5918.tar.gz
 https://deps.files.ghostty.org/fontconfig-2.14.2.tar.gz
@@ -30,5 +30,5 @@ https://github.com/jcollie/ghostty-gobject/releases/download/0.14.0-2025-03-18-2
 https://github.com/mbadolato/iTerm2-Color-Schemes/archive/8650079de477e80a5983646e3e4d24cda1dbaefa.tar.gz
 https://github.com/mitchellh/libxev/archive/3df9337a9e84450a58a2c4af434ec1a036f7b494.tar.gz
 https://github.com/mitchellh/zig-objc/archive/3ab0d37c7d6b933d6ded1b3a35b6b60f05590a98.tar.gz
-https://github.com/natecraddock/zf/archive/1039cf75447a8d5b8d481fedb914fe848d246276.tar.gz
+https://github.com/natecraddock/zf/archive/7aacbe6d155d64d15937ca95ca6c014905eb531f.tar.gz
 https://github.com/vancluever/z2d/archive/1e89605a624940c310c7a1d81b46a7c5c05919e3.tar.gz
