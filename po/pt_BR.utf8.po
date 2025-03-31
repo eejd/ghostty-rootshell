@@ -2,7 +2,7 @@
 # Traduções em português brasileiro para o pacote com.mitchellh.ghostty.
 # Copyright (C) 2025 Mitchell Hashimoto
 # This file is distributed under the same license as the com.mitchellh.ghostty package.
-# itz <a@a.com>, 2025.
+# Gustavo Peres <gsodevel@gmail.com>, 2025.
 #
 msgid ""
 msgstr ""
@@ -10,7 +10,7 @@ msgstr ""
 "Report-Msgid-Bugs-To: m@mitchellh.com\n"
 "POT-Creation-Date: 2025-03-19 08:54-0700\n"
 "PO-Revision-Date: 2025-03-28 11:04-0300\n"
-"Last-Translator: itz <a@a.com>\n"
+"Last-Translator: Gustavo Peres <gsodevel@gmail.com>\n"
 "Language-Team: Brazilian Portuguese <ldpbr-"
 "translation@lists.sourceforge.net>\n"
 "Language: pt_BR\n"
@@ -38,7 +38,7 @@ msgstr "OK"
 
 #: src/apprt/gtk/ui/1.5/config-errors-dialog.blp:5
 msgid "Configuration Errors"
-msgstr "Erros de configuração"
+msgstr "Erros de Configuração"
 
 #: src/apprt/gtk/ui/1.5/config-errors-dialog.blp:6
 msgid ""
