@@ -38,7 +38,7 @@ msgstr "OK"
 
 #: src/apprt/gtk/ui/1.5/config-errors-dialog.blp:5
 msgid "Configuration Errors"
-msgstr "Erros de Configuração"
+msgstr "Erros de configuração"
 
 #: src/apprt/gtk/ui/1.5/config-errors-dialog.blp:6
 msgid ""
@@ -87,27 +87,27 @@ msgstr "Dividir"
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:33
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:45
 msgid "Change Title…"
-msgstr "Mudar Título…"
+msgstr "Mudar título…"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:38
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:50
 msgid "Split Up"
-msgstr "Dividir Cima"
+msgstr "Dividir cima"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:43
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:55
 msgid "Split Down"
-msgstr "Dividir Baixo"
+msgstr "Dividir baixo"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:48
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:60
 msgid "Split Left"
-msgstr "Dividir Esquerda"
+msgstr "Dividir esquerda"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:53
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:65
 msgid "Split Right"
-msgstr "Dividir Direita"
+msgstr "Dividir direita"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:59
 msgid "Tab"
@@ -117,12 +117,12 @@ msgstr "Aba"
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:30
 #: src/apprt/gtk/Window.zig:246
 msgid "New Tab"
-msgstr "Nova Aba"
+msgstr "Nova aba"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:67
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:35
 msgid "Close Tab"
-msgstr "Fechar Aba"
+msgstr "Fechar aba"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:73
 msgid "Window"
@@ -131,12 +131,12 @@ msgstr "Janela"
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:76
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:18
 msgid "New Window"
-msgstr "Nova Janela"
+msgstr "Nova janela"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:81
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:23
 msgid "Close Window"
-msgstr "Fechar Janela"
+msgstr "Fechar janela"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:89
 msgid "Config"
@@ -145,11 +145,11 @@ msgstr "Configurar"
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:92
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:90
 msgid "Open Configuration"
-msgstr "Abrir Configuração"
+msgstr "Abrir configuração"
 
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:85
 msgid "Terminal Inspector"
-msgstr "Inspetor de Terminal"
+msgstr "Inspetor de terminal"
 
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:102
 #: src/apprt/gtk/Window.zig:960
@@ -163,7 +163,7 @@ msgstr "Sair"
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-read.blp:6
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-write.blp:6
 msgid "Authorize Clipboard Access"
-msgstr "Autorizar Acesso a Área de Transferência"
+msgstr "Autorizar acesso a área de transferência"
 
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-read.blp:7
 msgid ""
@@ -193,7 +193,7 @@ msgstr ""
 
 #: src/apprt/gtk/ui/1.5/ccw-paste.blp:6
 msgid "Warning: Potentially Unsafe Paste"
-msgstr "Aviso: Conteúdo Potencialmente Inseguro"
+msgstr "Aviso: Conteúdo potencialmente inseguro"
 
 #: src/apprt/gtk/ui/1.5/ccw-paste.blp:7
 msgid ""
@@ -205,7 +205,7 @@ msgstr ""
 
 #: src/apprt/gtk/inspector.zig:144
 msgid "Ghostty: Terminal Inspector"
-msgstr "Ghostty: Inspetor de Terminal"
+msgstr "Ghostty: Inspetor de terminal"
 
 #: src/apprt/gtk/Surface.zig:1243
 msgid "Copied to clipboard"
@@ -221,15 +221,15 @@ msgstr "Fechar Ghostty?"
 
 #: src/apprt/gtk/CloseDialog.zig:88
 msgid "Close Window?"
-msgstr "Fechar Janela?"
+msgstr "Fechar janela?"
 
 #: src/apprt/gtk/CloseDialog.zig:89
 msgid "Close Tab?"
-msgstr "Fechar Aba?"
+msgstr "Fechar aba?"
 
 #: src/apprt/gtk/CloseDialog.zig:90
 msgid "Close Split?"
-msgstr "Fechar Divisão?"
+msgstr "Fechar divisão?"
 
 #: src/apprt/gtk/CloseDialog.zig:96
 msgid "All terminal sessions will be terminated."
@@ -253,7 +253,7 @@ msgstr "Menu Principal"
 
 #: src/apprt/gtk/Window.zig:221
 msgid "View Open Tabs"
-msgstr "Visualizar Abas Abertas"
+msgstr "Visualizar abas abertas"
 
 #: src/apprt/gtk/Window.zig:295
 msgid ""
