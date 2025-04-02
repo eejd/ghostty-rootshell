@@ -281,6 +281,15 @@ pub fn init(self: *Window, app: *App) !void {
             .detail = "is-active",
         },
     );
+    _ = gobject.Object.signals.notify.connect(
+        self.window,
+        *Window,
+        gtkWindowUpdateScaleFactor,
+        self,
+        .{
+            .detail = "scale-factor",
+        },
+    );
 
     // If Adwaita is enabled and is older than 1.4.0 we don't have the tab overview and so we
     // need to stick the headerbar into the content box.
@@ -782,6 +791,24 @@ fn gtkWindowNotifyIsActive(
     if (self.config.quick_terminal_autohide and self.window.as(gtk.Window).isActive() == 0) {
         self.toggleVisibility();
     }
+}
+
+fn gtkWindowUpdateScaleFactor(
+    _: *adw.ApplicationWindow,
+    _: *gobject.ParamSpec,
+    self: *Window,
+) callconv(.c) void {
+    // On some platforms (namely X11) we need to refresh our appearance when
+    // the scale factor changes. In theory this could be more fine-grained as
+    // a full refresh could be expensive, but a) this *should* be rare, and
+    // b) quite noticeable visual bugs would occur if this is not present.
+    self.winproto.syncAppearance() catch |err| {
+        log.err(
+            "failed to sync appearance after scale factor has been updated={}",
+            .{err},
+        );
+        return;
+    };
 }
 
 // Note: we MUST NOT use the GtkButton parameter because gtkActionNewTab
