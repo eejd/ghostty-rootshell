@@ -826,7 +826,7 @@ env: RepeatableStringMap = .{},
 link: RepeatableLink = .{},
 
 /// Enable URL matching. URLs are matched on hover with control (Linux) or
-/// super (macOS) pressed and open using the default system application for
+/// command (macOS) pressed and open using the default system application for
 /// the linked URL.
 ///
 /// The URL matcher is always lowest priority of any configured links (see
