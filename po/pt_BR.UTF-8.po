@@ -45,8 +45,8 @@ msgid ""
 "One or more configuration errors were found. Please review the errors below, "
 "and either reload your configuration or ignore these errors."
 msgstr ""
-"Um ou mais erros de configurações encontrados. Por favor revise os erros abaixo, "
-"e ou recarregue as suas configurações, ou ignore esses erros."
+"Um ou mais erros de configuração encontrados. Por favor revise os erros abaixo, "
+"e ou recarregue sua configuração, ou ignore esses erros."
 
 #: src/apprt/gtk/ui/1.5/config-errors-dialog.blp:9
 msgid "Ignore"
@@ -56,7 +56,7 @@ msgstr "Ignorar"
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:97
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:95
 msgid "Reload Configuration"
-msgstr "Recarregar Configuração"
+msgstr "Recarregar configuração"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:6
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:6
@@ -92,22 +92,22 @@ msgstr "Mudar título…"
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:38
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:50
 msgid "Split Up"
-msgstr "Dividir cima"
+msgstr "Dividir para cima"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:43
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:55
 msgid "Split Down"
-msgstr "Dividir baixo"
+msgstr "Dividir para baixo"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:48
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:60
 msgid "Split Left"
-msgstr "Dividir esquerda"
+msgstr "Dividir à esquerda"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:53
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:65
 msgid "Split Right"
-msgstr "Dividir direita"
+msgstr "Dividir à direita"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:59
 msgid "Tab"
@@ -154,7 +154,7 @@ msgstr "Inspetor de terminal"
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:102
 #: src/apprt/gtk/Window.zig:960
 msgid "About Ghostty"
-msgstr "Sobre Ghostty"
+msgstr "Sobre o Ghostty"
 
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:107
 msgid "Quit"
@@ -163,7 +163,7 @@ msgstr "Sair"
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-read.blp:6
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-write.blp:6
 msgid "Authorize Clipboard Access"
-msgstr "Autorizar acesso a área de transferência"
+msgstr "Autorizar acesso à área de transferência"
 
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-read.blp:7
 msgid ""
@@ -171,7 +171,7 @@ msgid ""
 "clipboard contents are shown below."
 msgstr ""
 "Uma aplicação está tentando ler da área de transferência. O conteúdo "
-"atual da área de transferência está aparecendo abaixo."
+"atual da área de transferência está sendo exibido abaixo."
 
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-read.blp:10
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-write.blp:10
