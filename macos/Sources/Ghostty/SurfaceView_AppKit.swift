@@ -915,7 +915,7 @@ extension Ghostty {
             // If we are in a keyDown then we don't need to redispatch a command-modded
             // key event (see docs for this field) so reset this to nil because
             // `interpretKeyEvents` may dispach it.
-            self.lastCommandEvent = nil
+            self.lastPerformKeyEvent = nil
 
             self.interpretKeyEvents([translationEvent])
 
@@ -955,7 +955,8 @@ extension Ghostty {
             _ = keyAction(GHOSTTY_ACTION_RELEASE, event: event)
         }
 
-        /// Records the timestamp of the last event to performKeyEquivalent that had a command key active.
+        /// Records the timestamp of the last event to performKeyEquivalent that we need to save.
+        /// We currently save all commands with command or control set.
         ///
         /// For command+key inputs, the AppKit input stack calls performKeyEquivalent to give us a chance
         /// to handle them first. If we return "false" then it goes through the standard AppKit responder chain.
@@ -980,7 +981,7 @@ extension Ghostty {
         /// The best thing I could find was to store the event timestamp which has decent granularity
         /// and compare that. To further complicate things, some events are synthetic and have a zero
         /// timestamp so we have to protect against that. Fun!
-        var lastCommandEvent: TimeInterval?
+        var lastPerformKeyEvent: TimeInterval?
 
         /// Special case handling for some control keys
         override func performKeyEquivalent(with event: NSEvent) -> Bool {
@@ -1053,23 +1054,24 @@ extension Ghostty {
 
                 // Ignore all other non-command events. This lets the event continue
                 // through the AppKit event systems.
-                if (!event.modifierFlags.contains(.command)) {
+                if (!event.modifierFlags.contains(.command) &&
+                    !event.modifierFlags.contains(.control)) {
                     // Reset since we got a non-command event.
-                    lastCommandEvent = nil
+                    lastPerformKeyEvent = nil
                     return false
                 }
 
                 // If we have a prior command binding and the timestamp matches exactly
                 // then we pass it through to keyDown for encoding.
-                if let lastCommandEvent {
-                    self.lastCommandEvent = nil
-                    if lastCommandEvent == event.timestamp {
+                if let lastPerformKeyEvent {
+                    self.lastPerformKeyEvent = nil
+                    if lastPerformKeyEvent == event.timestamp {
                         equivalent = event.characters ?? ""
                         break
                     }
                 }
 
-                lastCommandEvent = event.timestamp
+                lastPerformKeyEvent = event.timestamp
                 return false
             }
 
@@ -1572,9 +1574,9 @@ extension Ghostty.SurfaceView: NSTextInputClient {
     override func doCommand(by selector: Selector) {
         // If we are being processed by performKeyEquivalent with a command binding,
         // we send it back through the event system so it can be encoded.
-        if let lastCommandEvent,
+        if let lastPerformKeyEvent,
            let current = NSApp.currentEvent,
-           lastCommandEvent == current.timestamp
+           lastPerformKeyEvent == current.timestamp
         {
             NSApp.sendEvent(current)
             return
