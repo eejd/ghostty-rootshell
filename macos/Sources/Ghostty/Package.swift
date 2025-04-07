@@ -248,6 +248,9 @@ extension Notification.Name {
     /// Close tab
     static let ghosttyCloseTab = Notification.Name("com.mitchellh.ghostty.closeTab")
 
+    /// Close window
+    static let ghosttyCloseWindow = Notification.Name("com.mitchellh.ghostty.closeWindow")
+
     /// Resize the window to a default size.
     static let ghosttyResetWindowSize = Notification.Name("com.mitchellh.ghostty.resetWindowSize")
 }

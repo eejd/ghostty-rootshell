@@ -91,6 +91,12 @@ class TerminalController: BaseTerminalController {
             name: Ghostty.Notification.didEqualizeSplits,
             object: nil
         )
+        center.addObserver(
+            self,
+            selector: #selector(onCloseWindow),
+            name: .ghosttyCloseWindow,
+            object: nil
+        )
     }
 
     required init?(coder: NSCoder) {
@@ -840,6 +846,12 @@ class TerminalController: BaseTerminalController {
         guard let target = notification.object as? Ghostty.SurfaceView else { return }
         guard surfaceTree?.contains(view: target) ?? false else { return }
         closeTab(self)
+    }
+
+    @objc private func onCloseWindow(notification: SwiftUI.Notification) {
+        guard let target = notification.object as? Ghostty.SurfaceView else { return }
+        guard surfaceTree?.contains(view: target) ?? false else { return }
+        closeWindow(self)
     }
 
     @objc private func onResetWindowSize(notification: SwiftUI.Notification) {
