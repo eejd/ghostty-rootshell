@@ -63,7 +63,7 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
 
     # When using sudo shell integration feature, ensure $TERMINFO is set
     # and `sudo` is not already a function or alias
-    if contains sudo $features and test -n "$TERMINFO"; and test "file" = (type -t sudo 2> /dev/null; or echo "x")
+    if contains sudo $features; and test -n "$TERMINFO"; and test "file" = (type -t sudo 2> /dev/null; or echo "x")
         # Wrap `sudo` command to ensure Ghostty terminfo is preserved
         function sudo -d "Wrap sudo to preserve terminfo"
             set --function sudo_has_sudoedit_flags "no"
