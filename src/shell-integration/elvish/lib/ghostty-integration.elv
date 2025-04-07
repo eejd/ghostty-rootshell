@@ -110,7 +110,7 @@
   var features = [(str:split ',' $E:GHOSTTY_SHELL_FEATURES)]
 
   if (has-value $features title) {
-    set after-chdir = (conj $after-chdir {|_| report- })
+    set after-chdir = (conj $after-chdir {|_| report-pwd })
   }
   if (has-value $features cursor) {
     fn beam  { printf "\e[5 q" }
