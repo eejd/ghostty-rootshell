@@ -75,7 +75,8 @@
   }
 
   fn report-pwd {
-    printf "\e]7;file://%s%s\a" (hostname) (pwd)
+    use platform
+    printf "\e]7;file://%s%s\a" (platform:hostname) ($pwd)
   }
 
   fn sudo-with-terminfo {|@args|
@@ -109,7 +110,7 @@
   var features = [(str:split ',' $E:GHOSTTY_SHELL_FEATURES)]
 
   if (has-value $features title) {
-    set after-chdir = (conj $after-chdir {|_| report-pwd })
+    set after-chdir = (conj $after-chdir {|_| report- })
   }
   if (has-value $features cursor) {
     fn beam  { printf "\e[5 q" }
