@@ -33,12 +33,13 @@ pub const locales = [_][:0]const u8{
     "zh_CN.UTF-8",
     "de_DE.UTF-8",
     "fr_FR.UTF-8",
+    "ja_JP.UTF-8",
     "nl_NL.UTF-8",
     "nb_NO.UTF-8",
     "ru_RU.UTF-8",
     "uk_UA.UTF-8",
     "pl_PL.UTF-8",
-    "ja_JP.UTF-8",
+    "tr_TR.UTF-8",
     "id_ID.UTF-8",
 };
 
