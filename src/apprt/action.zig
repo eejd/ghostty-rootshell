@@ -311,7 +311,7 @@ pub const Action = union(Key) {
 
         break :cvalue @Type(.{ .@"union" = .{
             .layout = .@"extern",
-            .tag_type = Key,
+            .tag_type = null,
             .fields = &union_fields,
             .decls = &.{},
         } });
@@ -322,6 +322,13 @@ pub const Action = union(Key) {
         key: Key,
         value: CValue,
     };
+
+    comptime {
+        // For ABI compatibility, we expect that this is our union size.
+        // At the time of writing, we don't promise ABI compatibility
+        // so we can change this but I want to be aware of it.
+        assert(@sizeOf(CValue) == 16);
+    }
 
     /// Returns the value type for the given key.
     pub fn Value(comptime key: Key) type {

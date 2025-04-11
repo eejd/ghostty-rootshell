@@ -314,8 +314,8 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
                     .prefer_dark;
             },
             .system => .prefer_light,
-            .dark => .prefer_dark,
-            .light => .force_dark,
+            .dark => .force_dark,
+            .light => .force_light,
         },
     );
 

@@ -518,7 +518,7 @@ pub fn init(
     };
 
     // The command we're going to execute
-    const command: ?[]const u8 = if (app.first)
+    const command: ?configpkg.Command = if (app.first)
         config.@"initial-command" orelse config.command
     else
         config.command;
@@ -650,21 +650,19 @@ pub fn init(
         // title to the command being executed. This allows window managers
         // to set custom styling based on the command being executed.
         const v = command orelse break :xdg;
-        if (v.len > 0) {
-            const title = alloc.dupeZ(u8, v) catch |err| {
-                log.warn(
-                    "error copying command for title, title will not be set err={}",
-                    .{err},
-                );
-                break :xdg;
-            };
-            defer alloc.free(title);
-            _ = try rt_app.performAction(
-                .{ .surface = self },
-                .set_title,
-                .{ .title = title },
+        const title = v.string(alloc) catch |err| {
+            log.warn(
+                "error copying command for title, title will not be set err={}",
+                .{err},
             );
-        }
+            break :xdg;
+        };
+        defer alloc.free(title);
+        _ = try rt_app.performAction(
+            .{ .surface = self },
+            .set_title,
+            .{ .title = title },
+        );
     }
 
     // We are no longer the first surface

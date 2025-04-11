@@ -281,6 +281,15 @@ pub fn init(self: *Window, app: *App) !void {
             .detail = "is-active",
         },
     );
+    _ = gobject.Object.signals.notify.connect(
+        self.window,
+        *Window,
+        gtkWindowUpdateScaleFactor,
+        self,
+        .{
+            .detail = "scale-factor",
+        },
+    );
 
     // If Adwaita is enabled and is older than 1.4.0 we don't have the tab overview and so we
     // need to stick the headerbar into the content box.
@@ -473,11 +482,13 @@ pub fn syncAppearance(self: *Window) !void {
         if (self.isQuickTerminal()) break :visible false;
 
         // Unconditionally disable the header bar when fullscreened.
-        if (self.config.fullscreen) break :visible false;
+        if (self.window.as(gtk.Window).isFullscreen() != 0)
+            break :visible false;
 
         // *Conditionally* disable the header bar when maximized,
         // and gtk-titlebar-hide-when-maximized is set
-        if (self.config.maximize and self.config.gtk_titlebar_hide_when_maximized)
+        if (self.window.as(gtk.Window).isMaximized() != 0 and
+            self.config.gtk_titlebar_hide_when_maximized)
             break :visible false;
 
         break :visible self.config.gtk_titlebar;
@@ -672,7 +683,7 @@ pub fn toggleTabOverview(self: *Window) void {
 
 /// Toggle the maximized state for this window.
 pub fn toggleMaximize(self: *Window) void {
-    if (self.config.maximize) {
+    if (self.window.as(gtk.Window).isMaximized() != 0) {
         self.window.as(gtk.Window).unmaximize();
     } else {
         self.window.as(gtk.Window).maximize();
@@ -683,7 +694,7 @@ pub fn toggleMaximize(self: *Window) void {
 
 /// Toggle fullscreen for this window.
 pub fn toggleFullscreen(self: *Window) void {
-    if (self.config.fullscreen) {
+    if (self.window.as(gtk.Window).isFullscreen() != 0) {
         self.window.as(gtk.Window).unfullscreen();
     } else {
         self.window.as(gtk.Window).fullscreen();
@@ -754,7 +765,6 @@ fn gtkWindowNotifyMaximized(
     _: *gobject.ParamSpec,
     self: *Window,
 ) callconv(.c) void {
-    self.config.maximize = self.window.as(gtk.Window).isMaximized() != 0;
     self.syncAppearance() catch |err| {
         log.err("failed to sync appearance={}", .{err});
     };
@@ -765,7 +775,6 @@ fn gtkWindowNotifyFullscreened(
     _: *gobject.ParamSpec,
     self: *Window,
 ) callconv(.c) void {
-    self.config.fullscreen = self.window.as(gtk.Window).isFullscreen() != 0;
     self.syncAppearance() catch |err| {
         log.err("failed to sync appearance={}", .{err});
     };
@@ -782,6 +791,24 @@ fn gtkWindowNotifyIsActive(
     if (self.config.quick_terminal_autohide and self.window.as(gtk.Window).isActive() == 0) {
         self.toggleVisibility();
     }
+}
+
+fn gtkWindowUpdateScaleFactor(
+    _: *adw.ApplicationWindow,
+    _: *gobject.ParamSpec,
+    self: *Window,
+) callconv(.c) void {
+    // On some platforms (namely X11) we need to refresh our appearance when
+    // the scale factor changes. In theory this could be more fine-grained as
+    // a full refresh could be expensive, but a) this *should* be rare, and
+    // b) quite noticeable visual bugs would occur if this is not present.
+    self.winproto.syncAppearance() catch |err| {
+        log.err(
+            "failed to sync appearance after scale factor has been updated={}",
+            .{err},
+        );
+        return;
+    };
 }
 
 // Note: we MUST NOT use the GtkButton parameter because gtkActionNewTab

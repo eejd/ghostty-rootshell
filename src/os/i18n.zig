@@ -23,13 +23,28 @@ const log = std.log.scoped(.i18n);
 ///
 ///   3. Most preferred locale for a language without a country code.
 ///
+/// Note for "most common" locales, this is subjective and based on
+/// the perceived userbase of Ghostty, which may not be representative
+/// of general populations or global language distribution. Also note
+/// that ordering may be weird when we first merge a new locale since
+/// we don't have a good way to determine this. We can always reorder
+/// with some data.
 pub const locales = [_][:0]const u8{
-    "de_DE.UTF-8",
     "zh_CN.UTF-8",
+    "de_DE.UTF-8",
+    "fr_FR.UTF-8",
+    "ja_JP.UTF-8",
+    "nl_NL.UTF-8",
     "nb_NO.UTF-8",
+    "ru_RU.UTF-8",
     "uk_UA.UTF-8",
     "pl_PL.UTF-8",
     "mk_MK.UTF-8",
+    "tr_TR.UTF-8",
+    "id_ID.UTF-8",
+    "es_BO.UTF-8",
+    "pt_BR.UTF-8",
+    "ca_ES.UTF-8",
 };
 
 /// Set for faster membership lookup of locales.
@@ -108,6 +123,9 @@ pub fn canonicalizeLocale(
     buf: []u8,
     locale: []const u8,
 ) error{NoSpaceLeft}![:0]const u8 {
+    // Fix zh locales for macOS
+    if (fixZhLocale(locale)) |fixed| return fixed;
+
     // Buffer must be 16 or at least as long as the locale and null term
     if (buf.len < @max(16, locale.len + 1)) return error.NoSpaceLeft;
 
@@ -124,6 +142,30 @@ pub fn canonicalizeLocale(
     // null.
     const slice = std.mem.sliceTo(buf, 0);
     return buf[0..slice.len :0];
+}
+
+/// Handles some zh locales canonicalization because internal libintl
+/// canonicalization function doesn't handle correctly in these cases.
+fn fixZhLocale(locale: []const u8) ?[:0]const u8 {
+    var it = std.mem.splitScalar(u8, locale, '-');
+    const name = it.next() orelse return null;
+    if (!std.mem.eql(u8, name, "zh")) return null;
+
+    const script = it.next() orelse return null;
+    const region = it.next() orelse return null;
+
+    if (std.mem.eql(u8, script, "Hans")) {
+        if (std.mem.eql(u8, region, "SG")) return "zh_SG";
+        return "zh_CN";
+    }
+
+    if (std.mem.eql(u8, script, "Hant")) {
+        if (std.mem.eql(u8, region, "MO")) return "zh_MO";
+        if (std.mem.eql(u8, region, "HK")) return "zh_HK";
+        return "zh_TW";
+    }
+
+    return null;
 }
 
 /// This can be called at any point a compile-time-known locale is
@@ -159,6 +201,12 @@ test "canonicalizeLocale darwin" {
     try testing.expectEqualStrings("en_US", try canonicalizeLocale(&buf, "en_US"));
     try testing.expectEqualStrings("zh_CN", try canonicalizeLocale(&buf, "zh-Hans"));
     try testing.expectEqualStrings("zh_TW", try canonicalizeLocale(&buf, "zh-Hant"));
+
+    try testing.expectEqualStrings("zh_CN", try canonicalizeLocale(&buf, "zh-Hans-CN"));
+    try testing.expectEqualStrings("zh_SG", try canonicalizeLocale(&buf, "zh-Hans-SG"));
+    try testing.expectEqualStrings("zh_TW", try canonicalizeLocale(&buf, "zh-Hant-TW"));
+    try testing.expectEqualStrings("zh_HK", try canonicalizeLocale(&buf, "zh-Hant-HK"));
+    try testing.expectEqualStrings("zh_MO", try canonicalizeLocale(&buf, "zh-Hant-MO"));
 
     // This is just an edge case I want to make sure we're aware of:
     // canonicalizeLocale does not handle encodings and will turn them into
