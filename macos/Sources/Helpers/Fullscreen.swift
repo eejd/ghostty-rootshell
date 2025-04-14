@@ -180,7 +180,7 @@ class NonNativeFullscreen: FullscreenBase, FullscreenStyle {
         }
 
         // Hide the menu if requested
-        if (properties.hideMenu) {
+        if (properties.hideMenu && savedState.menu) {
             hideMenu()
         }
 
@@ -224,7 +224,9 @@ class NonNativeFullscreen: FullscreenBase, FullscreenStyle {
         if savedState.dock {
             unhideDock()
         }
-        unhideMenu()
+        if (properties.hideMenu && savedState.menu) {
+            unhideMenu()
+        }
 
         // Restore our saved state
         window.styleMask = savedState.styleMask
@@ -340,6 +342,7 @@ class NonNativeFullscreen: FullscreenBase, FullscreenStyle {
         let contentFrame: NSRect
         let styleMask: NSWindow.StyleMask
         let dock: Bool
+        let menu: Bool
 
         init?(_ window: NSWindow) {
             guard let contentView = window.contentView else { return nil }
@@ -350,6 +353,12 @@ class NonNativeFullscreen: FullscreenBase, FullscreenStyle {
             self.contentFrame = window.convertToScreen(contentView.frame)
             self.styleMask = window.styleMask
             self.dock = window.screen?.hasDock ?? false
+
+            // We hide the menu only if this window is not on any fullscreen
+            // spaces. We do this because fullscreen spaces already hide the
+            // menu and if we insert/remove this presentation option we get
+            // issues (see #7075)
+            self.menu = CGSSpace.list(for: window.cgWindowId).allSatisfy { $0.type != .fullscreen }
         }
     }
 }

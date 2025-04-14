@@ -3,12 +3,6 @@ import Cocoa
 import SwiftUI
 import GhosttyKit
 
-// This is a Apple's private function that we need to call to get the active space.
-@_silgen_name("CGSGetActiveSpace")
-func CGSGetActiveSpace(_ cid: Int) -> size_t
-@_silgen_name("CGSMainConnectionID")
-func CGSMainConnectionID() -> Int
-
 /// Controller for the "quick" terminal.
 class QuickTerminalController: BaseTerminalController {
     override var windowNibName: NSNib.Name? { "QuickTerminal" }
@@ -25,7 +19,7 @@ class QuickTerminalController: BaseTerminalController {
     private var previousApp: NSRunningApplication? = nil
 
     // The active space when the quick terminal was last shown.
-    private var previousActiveSpace: size_t = 0
+    private var previousActiveSpace: CGSSpace? = nil
 
     /// Non-nil if we have hidden dock state.
     private var hiddenDock: HiddenDock? = nil
@@ -154,7 +148,7 @@ class QuickTerminalController: BaseTerminalController {
                 animateOut()
 
             case .move:
-                let currentActiveSpace = CGSGetActiveSpace(CGSMainConnectionID())
+                let currentActiveSpace = CGSSpace.active()
                 if previousActiveSpace == currentActiveSpace {
                     // We haven't moved spaces. We lost focus to another app on the
                     // current space. Animate out.
@@ -224,7 +218,7 @@ class QuickTerminalController: BaseTerminalController {
         }
 
         // Set previous active space
-        self.previousActiveSpace = CGSGetActiveSpace(CGSMainConnectionID())
+        self.previousActiveSpace = CGSSpace.active()
 
         // Animate the window in
         animateWindowIn(window: window, from: position)
