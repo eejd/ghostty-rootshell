@@ -2450,4 +2450,12 @@ pub fn ringBell(self: *Surface) !void {
     if (window.window.as(gtk.Native).getSurface()) |surface| {
         surface.beep();
     }
+
+    // Mark tab as needing attention
+    if (self.container.tab()) |tab| tab: {
+        const page = window.notebook.getTabPage(tab) orelse break :tab;
+
+        // Need attention if we're not the currently selected tab
+        if (page.getSelected() == 0) page.setNeedsAttention(@intFromBool(true));
+    }
 }
