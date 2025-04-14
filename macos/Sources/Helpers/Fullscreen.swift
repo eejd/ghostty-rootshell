@@ -275,7 +275,8 @@ class NonNativeFullscreen: FullscreenBase, FullscreenStyle {
         // calculate this ourselves.
         var frame = screen.frame
 
-        if (!properties.hideMenu) {
+        if (!NSApp.presentationOptions.contains(.autoHideMenuBar) &&
+            !NSApp.presentationOptions.contains(.hideMenuBar)) {
             // We need to subtract the menu height since we're still showing it.
             frame.size.height -= NSApp.mainMenu?.menuBarHeight ?? 0
 
@@ -358,7 +359,13 @@ class NonNativeFullscreen: FullscreenBase, FullscreenStyle {
             // spaces. We do this because fullscreen spaces already hide the
             // menu and if we insert/remove this presentation option we get
             // issues (see #7075)
-            self.menu = CGSSpace.list(for: window.cgWindowId).allSatisfy { $0.type != .fullscreen }
+            let activeSpace = CGSSpace.active()
+            let spaces = CGSSpace.list(for: window.cgWindowId)
+            if spaces.contains(activeSpace) {
+                self.menu = activeSpace.type != .fullscreen
+            } else {
+                self.menu = spaces.allSatisfy { $0.type != .fullscreen }
+            }
         }
     }
 }

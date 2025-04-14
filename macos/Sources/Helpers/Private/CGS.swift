@@ -54,7 +54,7 @@ struct CGSSpace: Hashable, CustomStringConvertible {
         return .init(rawValue: space)
     }
 
-    /// List the sapces for the given window.
+    /// List the spaces for the given window.
     static func list(for windowID: CGWindowID, mask: CGSSpaceMask = .allSpaces) -> [CGSSpace] {
         guard let spaces = CGSCopySpacesForWindows(
             CGSMainConnectionID(),

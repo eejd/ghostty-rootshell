@@ -45,7 +45,7 @@ class QuickTerminalController: BaseTerminalController {
             object: nil)
         center.addObserver(
             self,
-            selector: #selector(onToggleFullscreen),
+            selector: #selector(onToggleFullscreen(notification:)),
             name: Ghostty.Notification.ghosttyToggleFullscreen,
             object: nil)
         center.addObserver(
@@ -154,8 +154,18 @@ class QuickTerminalController: BaseTerminalController {
                     // current space. Animate out.
                     animateOut()
                 } else {
-                    // We've moved to a different space. Bring the quick terminal back
-                    // into view.
+                    // We've moved to a different space.
+
+                    // If we're fullscreen, we need to exit fullscreen because the visible
+                    // bounds may have changed causing a new behavior.
+                    if let fullscreenStyle, fullscreenStyle.isFullscreen {
+                        fullscreenStyle.exit()
+                        DispatchQueue.main.async {
+                            self.onToggleFullscreen()
+                        }
+                    }
+
+                    // Make the window visible again on this space
                     DispatchQueue.main.async {
                         self.window?.makeKeyAndOrderFront(nil)
                     }
@@ -479,9 +489,23 @@ class QuickTerminalController: BaseTerminalController {
     @objc private func onToggleFullscreen(notification: SwiftUI.Notification) {
         guard let target = notification.object as? Ghostty.SurfaceView else { return }
         guard target == self.focusedSurface else { return }
+        onToggleFullscreen()
+    }
 
-        // We ignore the requested mode and always use non-native for the quick terminal
-        toggleFullscreen(mode: .nonNative)
+    private func onToggleFullscreen() {
+        // We ignore the configured fullscreen style and always use non-native
+        // because the way the quick terminal works doesn't support native.
+        //
+        // An additional detail is that if the is NOT frontmost, then our
+        // NSApp.presentationOptions will not take effect so we must always
+        // do the visible menu mode since we can't get rid of the menu.
+        let mode: FullscreenMode = if (NSApp.isFrontmost) {
+            .nonNative
+        } else {
+            .nonNativeVisibleMenu
+        }
+
+        toggleFullscreen(mode: mode)
     }
 
     @objc private func ghosttyConfigDidChange(_ notification: Notification) {
