@@ -930,6 +930,16 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
         .present_surface => try self.presentSurface(),
 
         .password_input => |v| try self.passwordInput(v),
+
+        .ring_bell => {
+            _ = self.rt_app.performAction(
+                .{ .surface = self },
+                .ring_bell,
+                {},
+            ) catch |err| {
+                log.warn("apprt failed to ring bell={}", .{err});
+            };
+        },
     }
 }
 
