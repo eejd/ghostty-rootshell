@@ -2441,5 +2441,13 @@ pub fn setSecureInput(self: *Surface, value: apprt.action.SecureInput) void {
 }
 
 pub fn ringBell(self: *Surface) !void {
+    const window = self.container.window() orelse {
+        log.warn("failed to ring bell: surface is not attached to any window", .{});
+        return;
+    };
+
+    // System beep
+    if (window.window.as(gtk.Native).getSurface()) |surface| {
+        surface.beep();
     }
 }
