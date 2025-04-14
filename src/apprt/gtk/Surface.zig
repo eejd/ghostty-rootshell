@@ -2439,3 +2439,7 @@ pub fn setSecureInput(self: *Surface, value: apprt.action.SecureInput) void {
         .toggle => self.is_secure_input = !self.is_secure_input,
     }
 }
+
+pub fn ringBell(self: *Surface) !void {
+    }
+}
