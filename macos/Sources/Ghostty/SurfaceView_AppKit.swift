@@ -954,20 +954,7 @@ extension Ghostty {
             // If we have marked text, we're in a preedit state. The order we
             // do this and the key event callbacks below doesn't matter since
             // we control the preedit state only through the preedit API.
-            if markedText.length > 0 {
-                let str = markedText.string
-                let len = str.utf8CString.count
-                if len > 0 {
-                    markedText.string.withCString { ptr in
-                        // Subtract 1 for the null terminator
-                        ghostty_surface_preedit(surface, ptr, UInt(len - 1))
-                    }
-                }
-            } else if markedTextBefore {
-                // If we had marked text before but don't now, we're no longer
-                // in a preedit state so we can clear it.
-                ghostty_surface_preedit(surface, nil, 0)
-            }
+            syncPreedit(clearIfNeeded: markedTextBefore)
 
             if let list = keyTextAccumulator, list.count > 0 {
                 // If we have text, then we've composed a character, send that down.
@@ -1466,10 +1453,21 @@ extension Ghostty.SurfaceView: NSTextInputClient {
         default:
             print("unknown marked text: \(string)")
         }
+
+        // If we're not in a keyDown event, then we want to update our preedit
+        // text immediately. This can happen due to external events, for example
+        // changing keyboard layouts while composing: (1) set US intl (2) type '
+        // to enter dead key state (3)
+        if keyTextAccumulator == nil {
+            syncPreedit()
+        }
     }
 
     func unmarkText() {
-        self.markedText.mutableString.setString("")
+        if self.markedText.length > 0 {
+            self.markedText.mutableString.setString("")
+            syncPreedit()
+        }
     }
 
     func validAttributesForMarkedText() -> [NSAttributedString.Key] {
@@ -1607,6 +1605,26 @@ extension Ghostty.SurfaceView: NSTextInputClient {
         }
 
         print("SEL: \(selector)")
+    }
+
+    /// Sync the preedit state based on the markedText value to libghostty
+    private func syncPreedit(clearIfNeeded: Bool = true) {
+        guard let surface else { return }
+
+        if markedText.length > 0 {
+            let str = markedText.string
+            let len = str.utf8CString.count
+            if len > 0 {
+                markedText.string.withCString { ptr in
+                    // Subtract 1 for the null terminator
+                    ghostty_surface_preedit(surface, ptr, UInt(len - 1))
+                }
+            }
+        } else if clearIfNeeded {
+            // If we had marked text before but don't now, we're no longer
+            // in a preedit state so we can clear it.
+            ghostty_surface_preedit(surface, nil, 0)
+        }
     }
 }
 
