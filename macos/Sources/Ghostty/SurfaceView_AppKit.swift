@@ -951,29 +951,39 @@ extension Ghostty {
                 return
             }
 
-            // If we have text, then we've composed a character, send that down. We do this
-            // first because if we completed a preedit, the text will be available here
-            // AND we'll have a preedit.
-            var handled: Bool = false
-            if let list = keyTextAccumulator, list.count > 0 {
-                handled = true
-                for text in list {
-                    _ = keyAction(action, event: event, text: text)
+            // If we have marked text, we're in a preedit state. The order we
+            // do this and the key event callbacks below doesn't matter since
+            // we control the preedit state only through the preedit API.
+            if markedText.length > 0 {
+                let str = markedText.string
+                let len = str.utf8CString.count
+                if len > 0 {
+                    markedText.string.withCString { ptr in
+                        // Subtract 1 for the null terminator
+                        ghostty_surface_preedit(surface, ptr, UInt(len - 1))
+                    }
                 }
+            } else if markedTextBefore {
+                // If we had marked text before but don't now, we're no longer
+                // in a preedit state so we can clear it.
+                ghostty_surface_preedit(surface, nil, 0)
             }
 
-            // If we have marked text, we're in a preedit state. Send that down.
-            // If we don't have marked text but we had marked text before, then the preedit
-            // was cleared so we want to send down an empty string to ensure we've cleared
-            // the preedit.
-            if (markedText.length > 0 || markedTextBefore) {
-                handled = true
-                _ = keyAction(action, event: event, preedit: markedText.string)
-            }
-
-            if (!handled) {
-                // No text or anything, we want to handle this manually.
-                _ = keyAction(action, event: event)
+            if let list = keyTextAccumulator, list.count > 0 {
+                // If we have text, then we've composed a character, send that down.
+                // These never have "composing" set to true because these are the
+                // result of a composition.
+                for text in list {
+                    _ = keyAction(action, event: translationEvent, text: text)
+                }
+            } else {
+                // We have no accumulated text so this is a normal key event.
+                _ = keyAction(
+                    action,
+                    event: translationEvent,
+                    text: translationEvent.ghosttyCharacters,
+                    composing: markedText.length > 0
+                )
             }
         }
 
@@ -1165,34 +1175,22 @@ extension Ghostty {
             _ = keyAction(action, event: event)
         }
 
-        private func keyAction(_ action: ghostty_input_action_e, event: NSEvent) -> Bool {
-            guard let surface = self.surface else { return false }
-            return ghostty_surface_key(surface, event.ghosttyKeyEvent(action))
-        }
-
         private func keyAction(
             _ action: ghostty_input_action_e,
-            event: NSEvent, preedit: String
+            event: NSEvent,
+            text: String? = nil,
+            composing: Bool = false
         ) -> Bool {
             guard let surface = self.surface else { return false }
 
-            return preedit.withCString { ptr in
-                var key_ev = event.ghosttyKeyEvent(action)
-                key_ev.text = ptr
-                key_ev.composing = true
-                return ghostty_surface_key(surface, key_ev)
-            }
-        }
-
-        private func keyAction(
-            _ action: ghostty_input_action_e,
-            event: NSEvent, text: String
-        ) -> Bool {
-            guard let surface = self.surface else { return false }
-
-            return text.withCString { ptr in
-                var key_ev = event.ghosttyKeyEvent(action)
-                key_ev.text = ptr
+            var key_ev = event.ghosttyKeyEvent(action)
+            key_ev.composing = composing
+            if let text {
+                return text.withCString { ptr in
+                    key_ev.text = ptr
+                    return ghostty_surface_key(surface, key_ev)
+                }
+            } else {
                 return ghostty_surface_key(surface, key_ev)
             }
         }
