@@ -11,7 +11,7 @@ extension NSEvent {
     /// translation if available.
     func ghosttyKeyEvent(
         _ action: ghostty_input_action_e,
-        translationMods: NSEvent.ModifierFlags? = nil,
+        translationMods: NSEvent.ModifierFlags? = nil
     ) -> ghostty_input_key_s {
         var key_ev: ghostty_input_key_s = .init()
         key_ev.action = action

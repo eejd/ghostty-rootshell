@@ -1046,16 +1046,6 @@ extension Ghostty {
 
             let equivalent: String
             switch (event.charactersIgnoringModifiers) {
-            case "/":
-                // Treat C-/ as C-_. We do this because C-/ makes macOS make a beep
-                // sound and we don't like the beep sound.
-                if (!event.modifierFlags.contains(.control) ||
-                    !event.modifierFlags.isDisjoint(with: [.shift, .command, .option])) {
-                    return false
-                }
-
-                equivalent = "_"
-
             case "\r":
                 // Pass C-<return> through verbatim
                 // (prevent the default context menu equivalent)
