@@ -961,13 +961,19 @@ extension Ghostty {
                 // These never have "composing" set to true because these are the
                 // result of a composition.
                 for text in list {
-                    _ = keyAction(action, event: translationEvent, text: text)
+                    _ = keyAction(
+                        action,
+                        event: event,
+                        translationEvent: translationEvent,
+                        text: text
+                    )
                 }
             } else {
                 // We have no accumulated text so this is a normal key event.
                 _ = keyAction(
                     action,
-                    event: translationEvent,
+                    event: event,
+                    translationEvent: translationEvent,
                     text: translationEvent.ghosttyCharacters,
                     composing: markedText.length > 0
                 )
@@ -1040,16 +1046,6 @@ extension Ghostty {
 
             let equivalent: String
             switch (event.charactersIgnoringModifiers) {
-            case "/":
-                // Treat C-/ as C-_. We do this because C-/ makes macOS make a beep
-                // sound and we don't like the beep sound.
-                if (!event.modifierFlags.contains(.control) ||
-                    !event.modifierFlags.isDisjoint(with: [.shift, .command, .option])) {
-                    return false
-                }
-
-                equivalent = "_"
-
             case "\r":
                 // Pass C-<return> through verbatim
                 // (prevent the default context menu equivalent)
@@ -1165,12 +1161,13 @@ extension Ghostty {
         private func keyAction(
             _ action: ghostty_input_action_e,
             event: NSEvent,
+            translationEvent: NSEvent? = nil,
             text: String? = nil,
             composing: Bool = false
         ) -> Bool {
             guard let surface = self.surface else { return false }
 
-            var key_ev = event.ghosttyKeyEvent(action)
+            var key_ev = event.ghosttyKeyEvent(action, translationMods: translationEvent?.modifierFlags)
             key_ev.composing = composing
             if let text {
                 return text.withCString { ptr in
