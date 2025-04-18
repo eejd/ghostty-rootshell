@@ -35,10 +35,12 @@ extension NSEvent {
         // Our unshifted codepoint is the codepoint with no modifiers. We
         // ignore multi-codepoint values.
         key_ev.unshifted_codepoint = 0
-        if let charactersIgnoringModifiers,
-           let codepoint = charactersIgnoringModifiers.unicodeScalars.first
-        {
-            key_ev.unshifted_codepoint = codepoint.value
+        if type == .keyDown || type == .keyUp {
+            if let charactersIgnoringModifiers,
+               let codepoint = charactersIgnoringModifiers.unicodeScalars.first
+            {
+                key_ev.unshifted_codepoint = codepoint.value
+            }
         }
 
         return key_ev
