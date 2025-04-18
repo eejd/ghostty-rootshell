@@ -68,6 +68,8 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
         return URL(fileURLWithPath: surfacePwd)
     }
 
+    @State var showingCommandPalette = false
+
     var body: some View {
         switch ghostty.readiness {
         case .loading:
@@ -75,42 +77,77 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
         case .error:
             ErrorView()
         case .ready:
-            VStack(spacing: 0) {
-                // If we're running in debug mode we show a warning so that users
-                // know that performance will be degraded.
-                if (Ghostty.info.mode == GHOSTTY_BUILD_MODE_DEBUG || Ghostty.info.mode == GHOSTTY_BUILD_MODE_RELEASE_SAFE) {
-                    DebugBuildWarningView()
-                }
+            ZStack {
+                VStack(spacing: 0) {
+                    // If we're running in debug mode we show a warning so that users
+                    // know that performance will be degraded.
+                    if (Ghostty.info.mode == GHOSTTY_BUILD_MODE_DEBUG || Ghostty.info.mode == GHOSTTY_BUILD_MODE_RELEASE_SAFE) {
+                        DebugBuildWarningView()
+                    }
 
-                Ghostty.TerminalSplit(node: $viewModel.surfaceTree)
-                    .environmentObject(ghostty)
-                    .focused($focused)
-                    .onAppear { self.focused = true }
-                    .onChange(of: focusedSurface) { newValue in
-                        self.delegate?.focusedSurfaceDidChange(to: newValue)
+                    HStack {
+                        Spacer()
+                        Button("Command Palette") {
+                            showingCommandPalette.toggle()
+                        }
+                        Spacer()
                     }
-                    .onChange(of: title) { newValue in
-                        self.delegate?.titleDidChange(to: newValue)
+                    .background(Color(.windowBackgroundColor))
+                    .frame(maxWidth: .infinity)
+
+                    Ghostty.TerminalSplit(node: $viewModel.surfaceTree)
+                        .environmentObject(ghostty)
+                        .focused($focused)
+                        .onAppear { self.focused = true }
+                        .onChange(of: focusedSurface) { newValue in
+                            self.delegate?.focusedSurfaceDidChange(to: newValue)
+                        }
+                        .onChange(of: title) { newValue in
+                            self.delegate?.titleDidChange(to: newValue)
+                        }
+                        .onChange(of: pwdURL) { newValue in
+                            self.delegate?.pwdDidChange(to: newValue)
+                        }
+                        .onChange(of: cellSize) { newValue in
+                            guard let size = newValue else { return }
+                            self.delegate?.cellSizeDidChange(to: size)
+                        }
+                        .onChange(of: viewModel.surfaceTree?.hashValue) { _ in
+                            // This is funky, but its the best way I could think of to detect
+                            // ANY CHANGE within the deeply nested surface tree -- detecting a change
+                            // in the hash value.
+                            self.delegate?.surfaceTreeDidChange()
+                        }
+                        .onChange(of: zoomedSplit) { newValue in
+                            self.delegate?.zoomStateDidChange(to: newValue ?? false)
+                        }
+                }
+                // Ignore safe area to extend up in to the titlebar region if we have the "hidden" titlebar style
+                .ignoresSafeArea(.container, edges: ghostty.config.macosTitlebarStyle == "hidden" ? .top : [])
+
+                if showingCommandPalette {
+                    // The Palette View Itself
+                    GeometryReader { geometry in
+                        VStack {
+                            Spacer().frame(height: geometry.size.height * 0.1)
+
+                            CommandPaletteView(
+                                isPresented: $showingCommandPalette,
+                                backgroundColor: ghostty.config.backgroundColor
+                            )
+                            .transition(
+                                .move(edge: .top)
+                                .combined(with: .opacity)
+                                .animation(.spring(response: 0.4, dampingFraction: 0.8))
+                            ) // Spring animation
+                            .zIndex(1) // Ensure it's on top
+
+                            Spacer()
+                        }
+                        .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
                     }
-                    .onChange(of: pwdURL) { newValue in
-                        self.delegate?.pwdDidChange(to: newValue)
-                    }
-                    .onChange(of: cellSize) { newValue in
-                        guard let size = newValue else { return }
-                        self.delegate?.cellSizeDidChange(to: size)
-                    }
-                    .onChange(of: viewModel.surfaceTree?.hashValue) { _ in
-                        // This is funky, but its the best way I could think of to detect
-                        // ANY CHANGE within the deeply nested surface tree -- detecting a change
-                        // in the hash value.
-                        self.delegate?.surfaceTreeDidChange()
-                    }
-                    .onChange(of: zoomedSplit) { newValue in
-                        self.delegate?.zoomStateDidChange(to: newValue ?? false)
-                    }
+                }
             }
-            // Ignore safe area to extend up in to the titlebar region if we have the "hidden" titlebar style
-            .ignoresSafeArea(.container, edges: ghostty.config.macosTitlebarStyle == "hidden" ? .top : [])
         }
     }
 }
