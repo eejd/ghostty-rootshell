@@ -6,7 +6,13 @@ extension NSEvent {
     ///
     /// This will not set the "text" or "composing" fields since these can't safely be set
     /// with the information or lifetimes given.
-    func ghosttyKeyEvent(_ action: ghostty_input_action_e) -> ghostty_input_key_s {
+    ///
+    /// The translationMods should be set to the modifiers used for actual character
+    /// translation if available.
+    func ghosttyKeyEvent(
+        _ action: ghostty_input_action_e,
+        translationMods: NSEvent.ModifierFlags? = nil,
+    ) -> ghostty_input_key_s {
         var key_ev: ghostty_input_key_s = .init()
         key_ev.action = action
         key_ev.keycode = UInt32(keyCode)
@@ -22,7 +28,9 @@ extension NSEvent {
         // so far: control and command never contribute to the translation of text,
         // assume everything else did.
         key_ev.mods = Ghostty.ghosttyMods(modifierFlags)
-        key_ev.consumed_mods = Ghostty.ghosttyMods(modifierFlags.subtracting([.control, .command]))
+        key_ev.consumed_mods = Ghostty.ghosttyMods(
+            (translationMods ?? modifierFlags)
+                .subtracting([.control, .command]))
 
         // Our unshifted codepoint is the codepoint with no modifiers. We
         // ignore multi-codepoint values.
