@@ -44,6 +44,10 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
     // An optional delegate to receive information about terminal changes.
     weak var delegate: (any TerminalViewDelegate)? = nil
 
+    // The most recently focused surface, equal to focusedSurface when
+    // it is non-nil.
+    @State private var lastFocusedSurface: Weak<Ghostty.SurfaceView> = .init()
+
     // This seems like a crutch after switching from SwiftUI to AppKit lifecycle.
     @FocusState private var focused: Bool
 
@@ -66,6 +70,25 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
     private var pwdURL: URL? {
         guard let surfacePwd, surfacePwd != "" else { return nil }
         return URL(fileURLWithPath: surfacePwd)
+    }
+
+    // The commands available to the command palette.
+    private var commandOptions: [CommandOption] {
+        guard let surface = lastFocusedSurface.value?.surface else { return [] }
+
+        var ptr: UnsafeMutablePointer<ghostty_command_s>? = nil
+        var count: Int = 0
+        ghostty_surface_commands(surface, &ptr, &count)
+        guard let ptr else { return [] }
+
+        let buffer = UnsafeBufferPointer(start: ptr, count: count)
+        return Array(buffer).map { c in
+            let action = String(cString: c.action)
+            return CommandOption(
+                title: String(cString: c.title),
+                shortcut: ghostty.config.keyEquivalent(for: action)?.description
+            ) {}
+        }
     }
 
     @State var showingCommandPalette = false
@@ -100,6 +123,12 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                         .focused($focused)
                         .onAppear { self.focused = true }
                         .onChange(of: focusedSurface) { newValue in
+                            // We want to keep track of our last focused surface so even if
+                            // we lose focus we keep this set to the last non-nil value.
+                            if newValue != nil {
+                                lastFocusedSurface = .init(newValue)
+                            }
+
                             self.delegate?.focusedSurfaceDidChange(to: newValue)
                         }
                         .onChange(of: title) { newValue in
@@ -133,7 +162,8 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
 
                             CommandPaletteView(
                                 isPresented: $showingCommandPalette,
-                                backgroundColor: ghostty.config.backgroundColor
+                                backgroundColor: ghostty.config.backgroundColor,
+                                options: commandOptions
                             )
                             .transition(
                                 .move(edge: .top)

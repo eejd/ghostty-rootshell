@@ -76,6 +76,7 @@ struct CommandPaletteView: View {
                 .padding(.bottom, 4)
 
             CommandTable(
+                options: options,
                 query: $query,
                 selectedIndex: $selectedIndex,
                 hoveredOptionID: $hoveredOptionID)
@@ -197,7 +198,7 @@ fileprivate struct CommandRow: View {
     var body: some View {
         Button(action: option.action) {
             HStack {
-                Text(option.title)
+                Text(option.title.lowercased())
                 Spacer()
                 if let shortcut = option.shortcut {
                     Text(shortcut)
