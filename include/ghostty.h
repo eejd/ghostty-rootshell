@@ -279,6 +279,12 @@ typedef struct {
   ghostty_input_mods_e mods;
 } ghostty_input_trigger_s;
 
+typedef struct {
+  const char* action;
+  const char* title;
+  const char* description;
+} ghostty_command_s;
+
 typedef enum {
   GHOSTTY_BUILD_MODE_DEBUG,
   GHOSTTY_BUILD_MODE_RELEASE_SAFE,
