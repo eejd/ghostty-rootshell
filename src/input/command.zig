@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const Action = @import("binding.zig").Action;
@@ -219,11 +220,11 @@ fn actionCommands(action: Action.Key) []const Command {
             },
         },
 
-        .toggle_tab_overview => comptime &.{.{
+        .toggle_tab_overview => comptime if (builtin.os.tag == .linux) &.{.{
             .action = .toggle_tab_overview,
             .title = "Toggle Tab Overview",
             .description = "Toggle the tab overview.",
-        }},
+        }} else &.{},
 
         .prompt_surface_title => comptime &.{.{
             .action = .prompt_surface_title,
@@ -314,11 +315,11 @@ fn actionCommands(action: Action.Key) []const Command {
             .description = "Close all windows.",
         }},
 
-        .toggle_maximize => comptime &.{.{
+        .toggle_maximize => comptime if (!builtin.os.tag.isDarwin()) &.{.{
             .action = .toggle_maximize,
             .title = "Toggle Maximize",
             .description = "Toggle the maximized state of the current window.",
-        }},
+        }} else &.{},
 
         .toggle_fullscreen => comptime &.{.{
             .action = .toggle_fullscreen,
@@ -326,17 +327,17 @@ fn actionCommands(action: Action.Key) []const Command {
             .description = "Toggle the fullscreen state of the current window.",
         }},
 
-        .toggle_window_decorations => comptime &.{.{
+        .toggle_window_decorations => comptime if (!builtin.os.tag.isDarwin()) &.{.{
             .action = .toggle_window_decorations,
             .title = "Toggle Window Decorations",
             .description = "Toggle the window decorations.",
-        }},
+        }} else &.{},
 
-        .toggle_secure_input => comptime &.{.{
+        .toggle_secure_input => comptime if (builtin.os.tag.isDarwin()) &.{.{
             .action = .toggle_secure_input,
             .title = "Toggle Secure Input",
             .description = "Toggle secure input mode.",
-        }},
+        }} else &.{},
 
         .quit => comptime &.{.{
             .action = .quit,
