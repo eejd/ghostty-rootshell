@@ -441,6 +441,14 @@ pub const Action = union(enum) {
     /// This only works on macOS, since this is a system API on macOS.
     toggle_secure_input: void,
 
+    /// Toggle the command palette. The command palette is a UI element
+    /// that lets you see what actions you can perform, their associated
+    /// keybindings (if any), a search bar to filter the actions, and
+    /// the ability to then execute the action.
+    ///
+    /// This only works on macOS.
+    toggle_command_palette,
+
     /// Toggle the "quick" terminal. The quick terminal is a terminal that
     /// appears on demand from a keybinding, often sliding in from a screen
     /// edge such as the top. This is useful for quick access to a terminal
@@ -790,6 +798,7 @@ pub const Action = union(enum) {
             .toggle_fullscreen,
             .toggle_window_decorations,
             .toggle_secure_input,
+            .toggle_command_palette,
             .reset_window_size,
             .crash,
             => .surface,

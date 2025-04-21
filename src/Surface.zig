@@ -4295,6 +4295,12 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             .toggle,
         ),
 
+        .toggle_command_palette => return try self.rt_app.performAction(
+            .{ .surface = self },
+            .toggle_command_palette,
+            {},
+        ),
+
         .select_all => {
             const sel = self.io.terminal.screen.selectAll();
             if (sel) |s| {

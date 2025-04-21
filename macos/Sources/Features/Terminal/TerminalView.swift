@@ -93,16 +93,6 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                         DebugBuildWarningView()
                     }
 
-                    HStack {
-                        Spacer()
-                        Button("Command Palette") {
-                            viewModel.commandPaletteIsShowing.toggle()
-                        }
-                        Spacer()
-                    }
-                    .background(Color(.windowBackgroundColor))
-                    .frame(maxWidth: .infinity)
-
                     Ghostty.TerminalSplit(node: $viewModel.surfaceTree)
                         .environmentObject(ghostty)
                         .focused($focused)

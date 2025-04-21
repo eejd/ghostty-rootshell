@@ -107,6 +107,9 @@ pub const Action = union(Key) {
     /// Toggle the quick terminal in or out.
     toggle_quick_terminal,
 
+    /// Toggle the command palette. This currently only works on macOS.
+    toggle_command_palette,
+
     /// Toggle the visibility of all Ghostty terminal windows.
     toggle_visibility,
 
@@ -244,6 +247,8 @@ pub const Action = union(Key) {
     /// Closes the currently focused window.
     close_window,
 
+    /// Called when the bell character is seen. The apprt should do whatever
+    /// it needs to ring the bell. This is usually a sound or visual effect.
     ring_bell,
 
     /// Sync with: ghostty_action_tag_e
@@ -259,6 +264,7 @@ pub const Action = union(Key) {
         toggle_tab_overview,
         toggle_window_decorations,
         toggle_quick_terminal,
+        toggle_command_palette,
         toggle_visibility,
         move_tab,
         goto_tab,

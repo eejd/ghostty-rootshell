@@ -110,6 +110,11 @@ class BaseTerminalController: NSWindowController,
             selector: #selector(ghosttyConfigDidChangeBase(_:)),
             name: .ghosttyConfigDidChange,
             object: nil)
+        center.addObserver(
+            self,
+            selector: #selector(ghosttyCommandPaletteDidToggle(_:)),
+            name: .ghosttyCommandPaletteDidToggle,
+            object: nil)
 
         // Listen for local events that we need to know of outside of
         // single surface handlers.
@@ -220,6 +225,12 @@ class BaseTerminalController: NSWindowController,
 
         // Update our derived config
         self.derivedConfig = DerivedConfig(config)
+    }
+
+    @objc private func ghosttyCommandPaletteDidToggle(_ notification: Notification) {
+        guard let surfaceView = notification.object as? Ghostty.SurfaceView else { return }
+        guard surfaceTree?.contains(view: surfaceView) ?? false else { return }
+        toggleCommandPalette(nil)
     }
 
     // MARK: Local Events
@@ -629,6 +640,10 @@ class BaseTerminalController: NSWindowController,
     @IBAction func resetFontSize(_ sender: Any) {
         guard let surface = focusedSurface?.surface else { return }
         ghostty.changeFontSize(surface: surface, .reset)
+    }
+
+    @IBAction func toggleCommandPalette(_ sender: Any?) {
+        commandPaletteIsShowing.toggle()
     }
 
     @objc func resetTerminal(_ sender: Any) {

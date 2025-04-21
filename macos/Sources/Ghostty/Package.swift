@@ -256,6 +256,7 @@ extension Notification.Name {
 
     /// Ring the bell
     static let ghosttyBellDidRing = Notification.Name("com.mitchellh.ghostty.ghosttyBellDidRing")
+    static let ghosttyCommandPaletteDidToggle = Notification.Name("com.mitchellh.ghostty.commandPaletteDidToggle")
 }
 
 // NOTE: I am moving all of these to Notification.Name extensions over time. This
