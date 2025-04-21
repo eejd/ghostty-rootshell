@@ -45,6 +45,9 @@ class BaseTerminalController: NSWindowController,
         didSet { surfaceTreeDidChange(from: oldValue, to: surfaceTree) }
     }
 
+    /// This can be set to show/hide the command palette.
+    @Published var commandPaletteIsShowing: Bool = false
+
     /// Whether the terminal surface should focus when the mouse is over it.
     var focusFollowsMouse: Bool {
         self.derivedConfig.focusFollowsMouse
@@ -209,12 +212,12 @@ class BaseTerminalController: NSWindowController,
         // We only care if the configuration is a global configuration, not a
         // surface-specific one.
         guard notification.object == nil else { return }
-        
+
         // Get our managed configuration object out
         guard let config = notification.userInfo?[
             Notification.Name.GhosttyConfigChangeKey
         ] as? Ghostty.Config else { return }
-        
+
         // Update our derived config
         self.derivedConfig = DerivedConfig(config)
     }

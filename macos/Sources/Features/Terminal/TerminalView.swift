@@ -32,6 +32,9 @@ protocol TerminalViewModel: ObservableObject {
     /// The tree of terminal surfaces (splits) within the view. This is mutated by TerminalView
     /// and children. This should be @Published.
     var surfaceTree: Ghostty.SplitNode? { get set }
+
+    /// The command palette state.
+    var commandPaletteIsShowing: Bool { get set }
 }
 
 /// The main terminal view. This terminal view supports splits.
@@ -72,27 +75,6 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
         return URL(fileURLWithPath: surfacePwd)
     }
 
-    // The commands available to the command palette.
-    private var commandOptions: [CommandOption] {
-        guard let surface = lastFocusedSurface.value?.surface else { return [] }
-
-        var ptr: UnsafeMutablePointer<ghostty_command_s>? = nil
-        var count: Int = 0
-        ghostty_surface_commands(surface, &ptr, &count)
-        guard let ptr else { return [] }
-
-        let buffer = UnsafeBufferPointer(start: ptr, count: count)
-        return Array(buffer).map { c in
-            let action = String(cString: c.action)
-            return CommandOption(
-                title: String(cString: c.title),
-                shortcut: ghostty.config.keyEquivalent(for: action)?.description
-            ) {}
-        }
-    }
-
-    @State var showingCommandPalette = false
-
     var body: some View {
         switch ghostty.readiness {
         case .loading:
@@ -111,7 +93,7 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                     HStack {
                         Spacer()
                         Button("Command Palette") {
-                            showingCommandPalette.toggle()
+                            viewModel.commandPaletteIsShowing.toggle()
                         }
                         Spacer()
                     }
@@ -154,27 +136,12 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                 // Ignore safe area to extend up in to the titlebar region if we have the "hidden" titlebar style
                 .ignoresSafeArea(.container, edges: ghostty.config.macosTitlebarStyle == "hidden" ? .top : [])
 
-                if showingCommandPalette {
-                    // The Palette View Itself
-                    GeometryReader { geometry in
-                        VStack {
-                            Spacer().frame(height: geometry.size.height * 0.1)
-
-                            CommandPaletteView(
-                                isPresented: $showingCommandPalette,
-                                backgroundColor: ghostty.config.backgroundColor,
-                                options: commandOptions
-                            )
-                            .transition(
-                                .move(edge: .top)
-                                .combined(with: .opacity)
-                                .animation(.spring(response: 0.4, dampingFraction: 0.8))
-                            ) // Spring animation
-                            .zIndex(1) // Ensure it's on top
-
-                            Spacer()
-                        }
-                        .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
+                if let surfaceView = lastFocusedSurface.value {
+                    TerminalCommandPaletteView(
+                        surfaceView: surfaceView,
+                        isPresented: $viewModel.commandPaletteIsShowing,
+                        ghosttyConfig: ghostty.config) { action in
+                        print(action)
                     }
                 }
             }
