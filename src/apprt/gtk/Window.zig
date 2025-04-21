@@ -1058,7 +1058,7 @@ fn gtkActionSplitUp(
     _: ?*glib.Variant,
     self: *Window,
 ) callconv(.C) void {
-    self.performBindingAction(.{ .new_split = .right });
+    self.performBindingAction(.{ .new_split = .up });
 }
 
 fn gtkActionToggleInspector(
