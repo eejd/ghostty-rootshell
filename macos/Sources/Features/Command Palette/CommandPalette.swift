@@ -91,10 +91,16 @@ struct CommandPaletteView: View {
                     option.action()
             }
         }
-        .frame(width: 500)
-        .background(backgroundColor)
-        .cornerRadius(12)
-        .shadow(radius: 20)
+        .frame(maxWidth: 500)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(backgroundColor)
+                .shadow(color: .black.opacity(0.4), radius: 10, x: 0, y: 10)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.black.opacity(0.1), lineWidth: 1)
+                )
+        )
         .padding()
     }
 }
@@ -179,7 +185,7 @@ fileprivate struct CommandTable: View {
                         }
                     }
                 }
-                .frame(height: 200)
+                .frame(maxHeight: 200)
                 .onChange(of: selectedIndex) { _ in
                     guard selectedIndex < options.count else { return }
                     withAnimation {
@@ -207,8 +213,14 @@ fileprivate struct CommandRow: View {
                 Spacer()
                 if let shortcut = option.shortcut {
                     Text(shortcut)
-                        .foregroundStyle(.secondary)
-                        .font(.system(size: 12))
+                        .font(.system(.body, design: .monospaced))
+                        .kerning(1.5)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(Color.gray.opacity(0.2))
+                        )
                 }
             }
             .padding(.horizontal, 6)

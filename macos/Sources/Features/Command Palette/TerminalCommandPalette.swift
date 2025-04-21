@@ -41,7 +41,7 @@ struct TerminalCommandPaletteView: View {
             if isPresented {
                 GeometryReader { geometry in
                     VStack {
-                        Spacer().frame(height: geometry.size.height * 0.1)
+                        Spacer().frame(height: geometry.size.height * 0.05)
 
                         ResponderChainInjector(responder: surfaceView)
                             .frame(width: 0, height: 0)

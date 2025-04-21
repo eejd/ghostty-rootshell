@@ -29,7 +29,7 @@ extension KeyboardShortcut: @retroactive CustomStringConvertible {
         case .leftArrow: keyString = "←"
         case .rightArrow: keyString = "→"
         default:
-            keyString = String(key.character)
+            keyString = String(key.character.uppercased())
         }
 
         result.append(keyString)
