@@ -329,7 +329,7 @@ extension Ghostty {
                         Spacer()
                     }
 
-                    Text(verbatim: "\(size.columns)c ⨯ \(size.rows)r")
+                    Text(verbatim: "\(size.columns) ⨯ \(size.rows)")
                         .padding(.init(top: padding, leading: padding, bottom: padding, trailing: padding))
                         .background(
                             RoundedRectangle(cornerRadius: 4)
