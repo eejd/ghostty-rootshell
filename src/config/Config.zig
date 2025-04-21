@@ -1866,7 +1866,7 @@ keybind: Keybinds = .{},
 ///
 /// Valid values are:
 ///
-///  * `system` (default)
+///  * `system`
 ///
 ///    Instructs the system to notify the user using built-in system functions.
 ///    This could result in an audiovisual effect, a notification, or something
