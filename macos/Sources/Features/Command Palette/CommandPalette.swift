@@ -13,24 +13,12 @@ struct CommandOption: Identifiable, Hashable {
     func hash(into hasher: inout Hasher) {
         hasher.combine(id)
     }
-
-    // Sample data remains the same
-    static let sampleData: [CommandOption] = [
-        .init(title: "assistant: copy code", shortcut: nil, action: {}),
-        .init(title: "assistant: inline assist", shortcut: "⌃⏎", action: {}),
-        .init(title: "assistant: insert into editor", shortcut: "⌘<", action: {}),
-        .init(title: "assistant: new chat", shortcut: nil, action: {}),
-        .init(title: "assistant: open prompt library", shortcut: nil, action: {}),
-        .init(title: "assistant: quote selection", shortcut: "⌘>", action: {}),
-        .init(title: "assistant: show configuration", shortcut: nil, action: {}),
-        .init(title: "assistant: toggle focus", shortcut: "⌘?", action: {}),
-    ]
 }
 
 struct CommandPaletteView: View {
     @Binding var isPresented: Bool
     var backgroundColor: Color = Color(nsColor: .windowBackgroundColor)
-    var options: [CommandOption] = CommandOption.sampleData
+    var options: [CommandOption]
     @State private var query = ""
     @State private var selectedIndex: UInt = 0
     @State private var hoveredOptionID: UUID? = nil
@@ -158,7 +146,7 @@ fileprivate struct CommandPaletteQuery: View {
 }
 
 fileprivate struct CommandTable: View {
-    var options: [CommandOption] = CommandOption.sampleData
+    var options: [CommandOption]
     @Binding var selectedIndex: UInt
     @Binding var hoveredOptionID: UUID?
     var action: (CommandOption) -> Void

@@ -2,7 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
-const Action = @import("binding.zig").Action;
+const Action = @import("Binding.zig").Action;
 
 /// A command is a named binding action that can be executed from
 /// something like a command palette.
