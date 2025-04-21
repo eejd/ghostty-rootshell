@@ -55,6 +55,9 @@ struct CommandPaletteView: View {
 
                 case .submit:
                     isPresented = false
+                    if selectedIndex < filteredOptions.count {
+                        filteredOptions[Int(selectedIndex)].action()
+                    }
 
                 case .move(.up):
                     if selectedIndex > 0 {
@@ -79,7 +82,10 @@ struct CommandPaletteView: View {
                 options: options,
                 query: $query,
                 selectedIndex: $selectedIndex,
-                hoveredOptionID: $hoveredOptionID)
+                hoveredOptionID: $hoveredOptionID) { option in
+                    isPresented = false
+                    option.action()
+            }
         }
         .frame(width: 500)
         .background(backgroundColor)
@@ -146,6 +152,7 @@ fileprivate struct CommandTable: View {
     @Binding var query: String
     @Binding var selectedIndex: UInt
     @Binding var hoveredOptionID: UUID?
+    var action: (CommandOption) -> Void
 
     // The options that we should show, taking into account any filtering from
     // the query.
@@ -171,7 +178,9 @@ fileprivate struct CommandTable: View {
                                 option: option,
                                 isSelected: selectedIndex == index,
                                 hoveredID: $hoveredOptionID
-                            )
+                            ) {
+                                action(option)
+                            }
                         }
                     }
                 }
@@ -194,9 +203,10 @@ fileprivate struct CommandRow: View {
     let option: CommandOption
     var isSelected: Bool
     @Binding var hoveredID: UUID?
+    var action: () -> Void
 
     var body: some View {
-        Button(action: option.action) {
+        Button(action: action) {
             HStack {
                 Text(option.title.lowercased())
                 Spacer()
