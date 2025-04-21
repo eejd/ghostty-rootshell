@@ -23,6 +23,9 @@ protocol TerminalViewDelegate: AnyObject {
 
     /// This is called when a split is zoomed.
     func zoomStateDidChange(to: Bool)
+
+    /// Perform an action. At the time of writing this is only triggered by the command palette.
+    func performAction(_ action: String, on: Ghostty.SurfaceView)
 }
 
 /// The view model is a required implementation for TerminalView callers. This contains
@@ -141,7 +144,7 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                         surfaceView: surfaceView,
                         isPresented: $viewModel.commandPaletteIsShowing,
                         ghosttyConfig: ghostty.config) { action in
-                        print(action)
+                        self.delegate?.performAction(action, on: surfaceView)
                     }
                 }
             }

@@ -291,6 +291,15 @@ class BaseTerminalController: NSWindowController,
 
     func zoomStateDidChange(to: Bool) {}
 
+    func performAction(_ action: String, on surfaceView: Ghostty.SurfaceView) {
+        guard let surface = surfaceView.surface else { return }
+        let len = action.utf8CString.count
+        if (len == 0) { return }
+        _ = action.withCString { cString in
+            ghostty_surface_binding_action(surface, cString, UInt(len - 1))
+        }
+    }
+
     // MARK: Fullscreen
 
     /// Toggle fullscreen for the given mode.

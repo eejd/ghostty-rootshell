@@ -47,7 +47,6 @@ struct CommandPaletteView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Prompt Field
             CommandPaletteQuery(query: $query) { event in
                 switch (event) {
                 case .exit:
