@@ -43,6 +43,9 @@ struct TerminalCommandPaletteView: View {
                     VStack {
                         Spacer().frame(height: geometry.size.height * 0.1)
 
+                        ResponderChainInjector(responder: surfaceView)
+                            .frame(width: 0, height: 0)
+
                         CommandPaletteView(
                             isPresented: $isPresented,
                             backgroundColor: ghosttyConfig.backgroundColor,
@@ -74,4 +77,19 @@ struct TerminalCommandPaletteView: View {
             }
         }
     }
+}
+
+/// This is done to ensure that the given view is in the responder chain.
+fileprivate struct ResponderChainInjector: NSViewRepresentable {
+    let responder: NSResponder
+
+    func makeNSView(context: Context) -> NSView {
+        let dummy = NSView()
+        DispatchQueue.main.async {
+            dummy.nextResponder = responder
+        }
+        return dummy
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
 }

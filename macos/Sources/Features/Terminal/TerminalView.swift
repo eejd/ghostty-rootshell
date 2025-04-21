@@ -102,9 +102,8 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                             // we lose focus we keep this set to the last non-nil value.
                             if newValue != nil {
                                 lastFocusedSurface = .init(newValue)
+                                self.delegate?.focusedSurfaceDidChange(to: newValue)
                             }
-
-                            self.delegate?.focusedSurfaceDidChange(to: newValue)
                         }
                         .onChange(of: title) { newValue in
                             self.delegate?.titleDidChange(to: newValue)
