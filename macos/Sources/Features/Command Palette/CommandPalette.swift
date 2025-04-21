@@ -45,6 +45,14 @@ struct CommandPaletteView: View {
         }
     }
 
+    var selectedOption: CommandOption? {
+        if selectedIndex < filteredOptions.count {
+            filteredOptions[Int(selectedIndex)]
+        } else {
+            filteredOptions.last
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             CommandPaletteQuery(query: $query) { event in
@@ -54,9 +62,7 @@ struct CommandPaletteView: View {
 
                 case .submit:
                     isPresented = false
-                    if selectedIndex < filteredOptions.count {
-                        filteredOptions[Int(selectedIndex)].action()
-                    }
+                    selectedOption?.action()
 
                 case .move(.up):
                     if selectedIndex > 0 {
@@ -78,8 +84,7 @@ struct CommandPaletteView: View {
                 .padding(.bottom, 4)
 
             CommandTable(
-                options: options,
-                query: $query,
+                options: filteredOptions,
                 selectedIndex: $selectedIndex,
                 hoveredOptionID: $hoveredOptionID) { option in
                     isPresented = false
@@ -148,23 +153,12 @@ fileprivate struct CommandPaletteQuery: View {
 
 fileprivate struct CommandTable: View {
     var options: [CommandOption] = CommandOption.sampleData
-    @Binding var query: String
     @Binding var selectedIndex: UInt
     @Binding var hoveredOptionID: UUID?
     var action: (CommandOption) -> Void
 
-    // The options that we should show, taking into account any filtering from
-    // the query.
-    var filteredOptions: [CommandOption] {
-        if query.isEmpty {
-            return options
-        } else {
-            return options.filter { $0.title.localizedCaseInsensitiveContains(query) }
-        }
-    }
-
     var body: some View {
-        if filteredOptions.isEmpty {
+        if options.isEmpty {
             Text("No matches")
                 .foregroundStyle(.secondary)
                 .padding()
@@ -172,10 +166,12 @@ fileprivate struct CommandTable: View {
             ScrollViewReader { proxy in
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 0) {
-                        ForEach(Array(filteredOptions.enumerated()), id: \.1.id) { index, option in
+                        ForEach(Array(options.enumerated()), id: \.1.id) { index, option in
                             CommandRow(
                                 option: option,
-                                isSelected: selectedIndex == index,
+                                isSelected: selectedIndex == index ||
+                                    (selectedIndex >= options.count &&
+                                     index == options.count - 1),
                                 hoveredID: $hoveredOptionID
                             ) {
                                 action(option)
@@ -185,10 +181,10 @@ fileprivate struct CommandTable: View {
                 }
                 .frame(height: 200)
                 .onChange(of: selectedIndex) { _ in
-                    guard selectedIndex < filteredOptions.count else { return }
+                    guard selectedIndex < options.count else { return }
                     withAnimation {
                         proxy.scrollTo(
-                            filteredOptions[Int(selectedIndex)].id,
+                            options[Int(selectedIndex)].id,
                             anchor: .center)
                     }
                 }
