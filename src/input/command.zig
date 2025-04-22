@@ -1,5 +1,4 @@
 const std = @import("std");
-const builtin = @import("builtin");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const Action = @import("Binding.zig").Action;
@@ -23,6 +22,7 @@ pub const Command = struct {
 
     /// ghostty_command_s
     pub const C = extern struct {
+        action_key: [*:0]const u8,
         action: [*:0]const u8,
         title: [*:0]const u8,
         description: [*:0]const u8,
@@ -33,6 +33,7 @@ pub const Command = struct {
         assert(@inComptime());
 
         return .{
+            .action_key = @tagName(self.action),
             .action = std.fmt.comptimePrint("{s}", .{self.action}),
             .title = self.title,
             .description = self.description,
@@ -232,11 +233,11 @@ fn actionCommands(action: Action.Key) []const Command {
             },
         },
 
-        .toggle_tab_overview => comptime if (builtin.os.tag == .linux) &.{.{
+        .toggle_tab_overview => comptime &.{.{
             .action = .toggle_tab_overview,
             .title = "Toggle Tab Overview",
             .description = "Toggle the tab overview.",
-        }} else &.{},
+        }},
 
         .prompt_surface_title => comptime &.{.{
             .action = .prompt_surface_title,
@@ -327,11 +328,11 @@ fn actionCommands(action: Action.Key) []const Command {
             .description = "Close all windows.",
         }},
 
-        .toggle_maximize => comptime if (!builtin.os.tag.isDarwin()) &.{.{
+        .toggle_maximize => comptime &.{.{
             .action = .toggle_maximize,
             .title = "Toggle Maximize",
             .description = "Toggle the maximized state of the current window.",
-        }} else &.{},
+        }},
 
         .toggle_fullscreen => comptime &.{.{
             .action = .toggle_fullscreen,
@@ -339,17 +340,17 @@ fn actionCommands(action: Action.Key) []const Command {
             .description = "Toggle the fullscreen state of the current window.",
         }},
 
-        .toggle_window_decorations => comptime if (!builtin.os.tag.isDarwin()) &.{.{
+        .toggle_window_decorations => comptime &.{.{
             .action = .toggle_window_decorations,
             .title = "Toggle Window Decorations",
             .description = "Toggle the window decorations.",
-        }} else &.{},
+        }},
 
-        .toggle_secure_input => comptime if (builtin.os.tag.isDarwin()) &.{.{
+        .toggle_secure_input => comptime &.{.{
             .action = .toggle_secure_input,
             .title = "Toggle Secure Input",
             .description = "Toggle secure input mode.",
-        }} else &.{},
+        }},
 
         .quit => comptime &.{.{
             .action = .quit,

@@ -25,7 +25,17 @@ struct TerminalCommandPaletteView: View {
         guard let ptr else { return [] }
 
         let buffer = UnsafeBufferPointer(start: ptr, count: count)
-        return Array(buffer).map { c in
+        return Array(buffer).filter { c in
+            let key = String(cString: c.action_key)
+            switch (key) {
+            case "toggle_tab_overview",
+                 "toggle_maximize",
+                "toggle_window_decorations":
+                return false
+            default:
+                return true
+            }
+        }.map { c in
             let action = String(cString: c.action)
             return CommandOption(
                 title: String(cString: c.title),

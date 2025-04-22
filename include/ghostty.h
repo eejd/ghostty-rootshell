@@ -280,6 +280,7 @@ typedef struct {
 } ghostty_input_trigger_s;
 
 typedef struct {
+  const char* action_key;
   const char* action;
   const char* title;
   const char* description;
