@@ -492,11 +492,11 @@ pub fn performAction(
         .toggle_quick_terminal => return try self.toggleQuickTerminal(),
         .secure_input => self.setSecureInput(target, value),
         .ring_bell => try self.ringBell(target),
+        .toggle_command_palette => try self.toggleCommandPalette(target),
 
         // Unimplemented
         .close_all_windows,
         .float_window,
-        .toggle_command_palette,
         .toggle_visibility,
         .cell_size,
         .key_sequence,
@@ -750,7 +750,7 @@ fn toggleWindowDecorations(
         .surface => |v| {
             const window = v.rt_surface.container.window() orelse {
                 log.info(
-                    "toggleFullscreen invalid for container={s}",
+                    "toggleWindowDecorations invalid for container={s}",
                     .{@tagName(v.rt_surface.container)},
                 );
                 return;
@@ -789,6 +789,23 @@ fn ringBell(_: *App, target: apprt.Target) !void {
     switch (target) {
         .app => {},
         .surface => |surface| try surface.rt_surface.ringBell(),
+    }
+}
+
+fn toggleCommandPalette(_: *App, target: apprt.Target) !void {
+    switch (target) {
+        .app => {},
+        .surface => |surface| {
+            const window = surface.rt_surface.container.window() orelse {
+                log.info(
+                    "toggleCommandPalette invalid for container={s}",
+                    .{@tagName(surface.rt_surface.container)},
+                );
+                return;
+            };
+
+            window.toggleCommandPalette();
+        },
     }
 }
 
