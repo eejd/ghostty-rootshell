@@ -38,9 +38,19 @@ pub const Command = struct {
             .description = self.description,
         };
     }
+
+    /// Implements a comparison function for std.mem.sortUnstable
+    /// and similar functions. The sorting is defined by Ghostty
+    /// to be what we prefer. If a caller wants some other sorting,
+    /// they should do it themselves.
+    pub fn lessThan(_: void, lhs: Command, rhs: Command) bool {
+        return std.ascii.orderIgnoreCase(lhs.title, rhs.title) == .lt;
+    }
 };
 
 pub const defaults: []const Command = defaults: {
+    @setEvalBranchQuota(100_000);
+
     var count: usize = 0;
     for (@typeInfo(Action.Key).@"enum".fields) |field| {
         const action = @field(Action.Key, field.name);
@@ -57,6 +67,8 @@ pub const defaults: []const Command = defaults: {
             i += 1;
         }
     }
+
+    std.mem.sortUnstable(Command, &result, {}, Command.lessThan);
 
     assert(i == count);
     const final = result;

@@ -197,7 +197,7 @@ fileprivate struct CommandRow: View {
     var body: some View {
         Button(action: action) {
             HStack {
-                Text(option.title.lowercased())
+                Text(option.title)
                 Spacer()
                 if let shortcut = option.shortcut {
                     Text(shortcut)
