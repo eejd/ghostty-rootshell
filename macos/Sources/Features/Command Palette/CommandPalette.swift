@@ -3,6 +3,7 @@ import SwiftUI
 struct CommandOption: Identifiable, Hashable {
     let id = UUID()
     let title: String
+    let description: String?
     let shortcut: String?
     let action: () -> Void
 
@@ -222,6 +223,7 @@ fileprivate struct CommandRow: View {
             )
             .cornerRadius(6)
         }
+        .help(option.description ?? "")
         .buttonStyle(PlainButtonStyle())
         .onHover { hovering in
             hoveredID = hovering ? option.id : nil

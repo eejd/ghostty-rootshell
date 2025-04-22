@@ -39,6 +39,7 @@ struct TerminalCommandPaletteView: View {
             let action = String(cString: c.action)
             return CommandOption(
                 title: String(cString: c.title),
+                description: String(cString: c.description),
                 shortcut: ghosttyConfig.keyboardShortcut(for: action)?.description
             ) {
                 onAction(action)
