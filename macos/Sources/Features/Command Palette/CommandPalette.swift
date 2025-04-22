@@ -177,11 +177,8 @@ fileprivate struct CommandTable: View {
                 .frame(maxHeight: 200)
                 .onChange(of: selectedIndex) { _ in
                     guard selectedIndex < options.count else { return }
-                    withAnimation {
-                        proxy.scrollTo(
-                            options[Int(selectedIndex)].id,
-                            anchor: .center)
-                    }
+                    proxy.scrollTo(
+                        options[Int(selectedIndex)].id)
                 }
             }
         }
