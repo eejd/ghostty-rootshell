@@ -4866,6 +4866,13 @@ pub const Keybinds = struct {
                 .{ .jump_to_prompt = 1 },
             );
 
+            // Toggle command palette, matches VSCode
+            try self.set.put(
+                alloc,
+                .{ .key = .{ .translated = .p }, .mods = .{ .super = true, .shift = true } },
+                .{ .toggle_command_palette = {} },
+            );
+
             // Inspector, matching Chromium
             try self.set.put(
                 alloc,

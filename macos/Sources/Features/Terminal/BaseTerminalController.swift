@@ -45,6 +45,9 @@ class BaseTerminalController: NSWindowController,
         didSet { surfaceTreeDidChange(from: oldValue, to: surfaceTree) }
     }
 
+    /// This can be set to show/hide the command palette.
+    @Published var commandPaletteIsShowing: Bool = false
+
     /// Whether the terminal surface should focus when the mouse is over it.
     var focusFollowsMouse: Bool {
         self.derivedConfig.focusFollowsMouse
@@ -107,6 +110,11 @@ class BaseTerminalController: NSWindowController,
             selector: #selector(ghosttyConfigDidChangeBase(_:)),
             name: .ghosttyConfigDidChange,
             object: nil)
+        center.addObserver(
+            self,
+            selector: #selector(ghosttyCommandPaletteDidToggle(_:)),
+            name: .ghosttyCommandPaletteDidToggle,
+            object: nil)
 
         // Listen for local events that we need to know of outside of
         // single surface handlers.
@@ -144,6 +152,7 @@ class BaseTerminalController: NSWindowController,
             // Our focus state requires that this window is key and our currently
             // focused surface is the surface in this leaf.
             let focused: Bool = (window?.isKeyWindow ?? false) &&
+                !commandPaletteIsShowing &&
                 focusedSurface != nil &&
                 leaf.surface == focusedSurface!
             leaf.surface.focusDidChange(focused)
@@ -209,14 +218,20 @@ class BaseTerminalController: NSWindowController,
         // We only care if the configuration is a global configuration, not a
         // surface-specific one.
         guard notification.object == nil else { return }
-        
+
         // Get our managed configuration object out
         guard let config = notification.userInfo?[
             Notification.Name.GhosttyConfigChangeKey
         ] as? Ghostty.Config else { return }
-        
+
         // Update our derived config
         self.derivedConfig = DerivedConfig(config)
+    }
+
+    @objc private func ghosttyCommandPaletteDidToggle(_ notification: Notification) {
+        guard let surfaceView = notification.object as? Ghostty.SurfaceView else { return }
+        guard surfaceTree?.contains(view: surfaceView) ?? false else { return }
+        toggleCommandPalette(nil)
     }
 
     // MARK: Local Events
@@ -287,6 +302,15 @@ class BaseTerminalController: NSWindowController,
     }
 
     func zoomStateDidChange(to: Bool) {}
+
+    func performAction(_ action: String, on surfaceView: Ghostty.SurfaceView) {
+        guard let surface = surfaceView.surface else { return }
+        let len = action.utf8CString.count
+        if (len == 0) { return }
+        _ = action.withCString { cString in
+            ghostty_surface_binding_action(surface, cString, UInt(len - 1))
+        }
+    }
 
     // MARK: Fullscreen
 
@@ -617,6 +641,10 @@ class BaseTerminalController: NSWindowController,
     @IBAction func resetFontSize(_ sender: Any) {
         guard let surface = focusedSurface?.surface else { return }
         ghostty.changeFontSize(surface: surface, .reset)
+    }
+
+    @IBAction func toggleCommandPalette(_ sender: Any?) {
+        commandPaletteIsShowing.toggle()
     }
 
     @objc func resetTerminal(_ sender: Any) {

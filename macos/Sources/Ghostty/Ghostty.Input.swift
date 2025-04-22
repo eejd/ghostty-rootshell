@@ -11,7 +11,7 @@ extension Ghostty {
         return Self.keyToEquivalent[key]
     }
 
-    /// Return the keyboard shortcut for a trigger.
+    /// Return the key equivalent for the given trigger.
     ///
     /// Returns nil if the trigger doesn't have an equivalent KeyboardShortcut. This is possible
     /// because Ghostty input triggers are a superset of what can be represented by a macOS

@@ -23,6 +23,9 @@ protocol TerminalViewDelegate: AnyObject {
 
     /// This is called when a split is zoomed.
     func zoomStateDidChange(to: Bool)
+
+    /// Perform an action. At the time of writing this is only triggered by the command palette.
+    func performAction(_ action: String, on: Ghostty.SurfaceView)
 }
 
 /// The view model is a required implementation for TerminalView callers. This contains
@@ -32,6 +35,9 @@ protocol TerminalViewModel: ObservableObject {
     /// The tree of terminal surfaces (splits) within the view. This is mutated by TerminalView
     /// and children. This should be @Published.
     var surfaceTree: Ghostty.SplitNode? { get set }
+
+    /// The command palette state.
+    var commandPaletteIsShowing: Bool { get set }
 }
 
 /// The main terminal view. This terminal view supports splits.
@@ -43,6 +49,10 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
 
     // An optional delegate to receive information about terminal changes.
     weak var delegate: (any TerminalViewDelegate)? = nil
+
+    // The most recently focused surface, equal to focusedSurface when
+    // it is non-nil.
+    @State private var lastFocusedSurface: Weak<Ghostty.SurfaceView> = .init()
 
     // This seems like a crutch after switching from SwiftUI to AppKit lifecycle.
     @FocusState private var focused: Bool
@@ -75,42 +85,58 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
         case .error:
             ErrorView()
         case .ready:
-            VStack(spacing: 0) {
-                // If we're running in debug mode we show a warning so that users
-                // know that performance will be degraded.
-                if (Ghostty.info.mode == GHOSTTY_BUILD_MODE_DEBUG || Ghostty.info.mode == GHOSTTY_BUILD_MODE_RELEASE_SAFE) {
-                    DebugBuildWarningView()
-                }
+            ZStack {
+                VStack(spacing: 0) {
+                    // If we're running in debug mode we show a warning so that users
+                    // know that performance will be degraded.
+                    if (Ghostty.info.mode == GHOSTTY_BUILD_MODE_DEBUG || Ghostty.info.mode == GHOSTTY_BUILD_MODE_RELEASE_SAFE) {
+                        DebugBuildWarningView()
+                    }
 
-                Ghostty.TerminalSplit(node: $viewModel.surfaceTree)
-                    .environmentObject(ghostty)
-                    .focused($focused)
-                    .onAppear { self.focused = true }
-                    .onChange(of: focusedSurface) { newValue in
-                        self.delegate?.focusedSurfaceDidChange(to: newValue)
+                    Ghostty.TerminalSplit(node: $viewModel.surfaceTree)
+                        .environmentObject(ghostty)
+                        .focused($focused)
+                        .onAppear { self.focused = true }
+                        .onChange(of: focusedSurface) { newValue in
+                            // We want to keep track of our last focused surface so even if
+                            // we lose focus we keep this set to the last non-nil value.
+                            if newValue != nil {
+                                lastFocusedSurface = .init(newValue)
+                                self.delegate?.focusedSurfaceDidChange(to: newValue)
+                            }
+                        }
+                        .onChange(of: title) { newValue in
+                            self.delegate?.titleDidChange(to: newValue)
+                        }
+                        .onChange(of: pwdURL) { newValue in
+                            self.delegate?.pwdDidChange(to: newValue)
+                        }
+                        .onChange(of: cellSize) { newValue in
+                            guard let size = newValue else { return }
+                            self.delegate?.cellSizeDidChange(to: size)
+                        }
+                        .onChange(of: viewModel.surfaceTree?.hashValue) { _ in
+                            // This is funky, but its the best way I could think of to detect
+                            // ANY CHANGE within the deeply nested surface tree -- detecting a change
+                            // in the hash value.
+                            self.delegate?.surfaceTreeDidChange()
+                        }
+                        .onChange(of: zoomedSplit) { newValue in
+                            self.delegate?.zoomStateDidChange(to: newValue ?? false)
+                        }
+                }
+                // Ignore safe area to extend up in to the titlebar region if we have the "hidden" titlebar style
+                .ignoresSafeArea(.container, edges: ghostty.config.macosTitlebarStyle == "hidden" ? .top : [])
+
+                if let surfaceView = lastFocusedSurface.value {
+                    TerminalCommandPaletteView(
+                        surfaceView: surfaceView,
+                        isPresented: $viewModel.commandPaletteIsShowing,
+                        ghosttyConfig: ghostty.config) { action in
+                        self.delegate?.performAction(action, on: surfaceView)
                     }
-                    .onChange(of: title) { newValue in
-                        self.delegate?.titleDidChange(to: newValue)
-                    }
-                    .onChange(of: pwdURL) { newValue in
-                        self.delegate?.pwdDidChange(to: newValue)
-                    }
-                    .onChange(of: cellSize) { newValue in
-                        guard let size = newValue else { return }
-                        self.delegate?.cellSizeDidChange(to: size)
-                    }
-                    .onChange(of: viewModel.surfaceTree?.hashValue) { _ in
-                        // This is funky, but its the best way I could think of to detect
-                        // ANY CHANGE within the deeply nested surface tree -- detecting a change
-                        // in the hash value.
-                        self.delegate?.surfaceTreeDidChange()
-                    }
-                    .onChange(of: zoomedSplit) { newValue in
-                        self.delegate?.zoomStateDidChange(to: newValue ?? false)
-                    }
+                }
             }
-            // Ignore safe area to extend up in to the titlebar region if we have the "hidden" titlebar style
-            .ignoresSafeArea(.container, edges: ghostty.config.macosTitlebarStyle == "hidden" ? .top : [])
         }
     }
 }
