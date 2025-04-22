@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: com.mitchellh.ghostty\n"
 "Report-Msgid-Bugs-To: m@mitchellh.com\n"
-"POT-Creation-Date: 2025-04-21 13:01-0500\n"
+"POT-Creation-Date: 2025-04-22 08:57-0700\n"
 "PO-Revision-Date: 2025-03-20 08:07+0100\n"
 "Last-Translator: Francesc Arpi <francesc.arpi@gmail.com>\n"
 "Language-Team: \n"
@@ -205,9 +205,32 @@ msgstr ""
 "Enganxar aquest text al terminal pot ser perillós, ja que sembla que es "
 "podrien executar algunes ordres."
 
-#: src/apprt/gtk/inspector.zig:144
-msgid "Ghostty: Terminal Inspector"
-msgstr "Ghostty: Inspector de terminal"
+#: src/apprt/gtk/Window.zig:201
+msgid "Main Menu"
+msgstr "Menú principal"
+
+#: src/apprt/gtk/Window.zig:222
+msgid "View Open Tabs"
+msgstr "Mostra les pestanyes obertes"
+
+#: src/apprt/gtk/Window.zig:249
+msgid "New Split"
+msgstr ""
+
+#: src/apprt/gtk/Window.zig:312
+msgid ""
+"⚠️ You're running a debug build of Ghostty! Performance will be degraded."
+msgstr ""
+"⚠️ Estàs executant una versió de depuració de Ghostty! El rendiment es veurà "
+"afectat."
+
+#: src/apprt/gtk/Window.zig:744
+msgid "Reloaded the configuration"
+msgstr "S'ha tornat a carregar la configuració"
+
+#: src/apprt/gtk/Window.zig:984
+msgid "Ghostty Developers"
+msgstr "Desenvolupadors de Ghostty"
 
 #: src/apprt/gtk/CloseDialog.zig:47
 msgid "Close"
@@ -249,30 +272,6 @@ msgstr "El procés actualment en execució en aquesta divisió es tancarà."
 msgid "Copied to clipboard"
 msgstr "Copiat al porta-retalls"
 
-#: src/apprt/gtk/Window.zig:201
-msgid "Main Menu"
-msgstr "Menú principal"
-
-#: src/apprt/gtk/Window.zig:222
-msgid "View Open Tabs"
-msgstr "Mostra les pestanyes obertes"
-
-#: src/apprt/gtk/Window.zig:249
-#, fuzzy
-msgid "New Split"
-msgstr "Divideix"
-
-#: src/apprt/gtk/Window.zig:312
-msgid ""
-"⚠️ You're running a debug build of Ghostty! Performance will be degraded."
-msgstr ""
-"⚠️ Estàs executant una versió de depuració de Ghostty! El rendiment es veurà "
-"afectat."
-
-#: src/apprt/gtk/Window.zig:744
-msgid "Reloaded the configuration"
-msgstr "S'ha tornat a carregar la configuració"
-
-#: src/apprt/gtk/Window.zig:984
-msgid "Ghostty Developers"
-msgstr "Desenvolupadors de Ghostty"
+#: src/apprt/gtk/inspector.zig:144
+msgid "Ghostty: Terminal Inspector"
+msgstr "Ghostty: Inspector de terminal"

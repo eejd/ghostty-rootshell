@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: com.mitchellh.ghostty\n"
 "Report-Msgid-Bugs-To: m@mitchellh.com\n"
-"POT-Creation-Date: 2025-04-21 13:01-0500\n"
+"POT-Creation-Date: 2025-04-22 08:57-0700\n"
 "PO-Revision-Date: 2025-03-23 14:17+0100\n"
 "Last-Translator: Andrej Daskalov <andrej.daskalov@gmail.com>\n"
 "Language-Team: Macedonian\n"
@@ -205,9 +205,31 @@ msgstr ""
 "Вметнувањето на овој текст во терминалот може да биде опасно, бидејќи "
 "изгледа како да ќе се извршат одредени команди."
 
-#: src/apprt/gtk/inspector.zig:144
-msgid "Ghostty: Terminal Inspector"
-msgstr "Ghostty: Инспектор на терминал"
+#: src/apprt/gtk/Window.zig:201
+msgid "Main Menu"
+msgstr "Главно мени"
+
+#: src/apprt/gtk/Window.zig:222
+msgid "View Open Tabs"
+msgstr "Прегледај отворени јазичиња"
+
+#: src/apprt/gtk/Window.zig:249
+msgid "New Split"
+msgstr ""
+
+#: src/apprt/gtk/Window.zig:312
+msgid ""
+"⚠️ You're running a debug build of Ghostty! Performance will be degraded."
+msgstr ""
+"⚠️ Извршувате дебаг верзија на Ghostty! Перформансите ќе бидат намалени."
+
+#: src/apprt/gtk/Window.zig:744
+msgid "Reloaded the configuration"
+msgstr "Конфигурацијата е одново вчитана"
+
+#: src/apprt/gtk/Window.zig:984
+msgid "Ghostty Developers"
+msgstr "Развивачи на Ghostty"
 
 #: src/apprt/gtk/CloseDialog.zig:47
 msgid "Close"
@@ -249,29 +271,6 @@ msgstr "Процесот кој моментално се извршува во 
 msgid "Copied to clipboard"
 msgstr "Копирано во привремена меморија"
 
-#: src/apprt/gtk/Window.zig:201
-msgid "Main Menu"
-msgstr "Главно мени"
-
-#: src/apprt/gtk/Window.zig:222
-msgid "View Open Tabs"
-msgstr "Прегледај отворени јазичиња"
-
-#: src/apprt/gtk/Window.zig:249
-#, fuzzy
-msgid "New Split"
-msgstr "Подели"
-
-#: src/apprt/gtk/Window.zig:312
-msgid ""
-"⚠️ You're running a debug build of Ghostty! Performance will be degraded."
-msgstr ""
-"⚠️ Извршувате дебаг верзија на Ghostty! Перформансите ќе бидат намалени."
-
-#: src/apprt/gtk/Window.zig:744
-msgid "Reloaded the configuration"
-msgstr "Конфигурацијата е одново вчитана"
-
-#: src/apprt/gtk/Window.zig:984
-msgid "Ghostty Developers"
-msgstr "Развивачи на Ghostty"
+#: src/apprt/gtk/inspector.zig:144
+msgid "Ghostty: Terminal Inspector"
+msgstr "Ghostty: Инспектор на терминал"
