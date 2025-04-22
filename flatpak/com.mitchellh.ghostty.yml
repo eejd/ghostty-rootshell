@@ -24,9 +24,9 @@ cleanup:
   - /share/gir-1.0
   - /share/pkgconfig
   - /share/vala
-  - '*.la'
-  - '*.a'
-  - '*.so'
+  - "*.la"
+  - "*.a"
+  - "*.so"
 
 modules:
   - dependencies.yml

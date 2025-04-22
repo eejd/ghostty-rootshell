@@ -15,7 +15,7 @@ modules:
   - name: blueprint-compiler
     buildsystem: meson
     cleanup:
-      - '*'
+      - "*"
     sources:
       - type: git
         url: https://gitlab.gnome.org/jwestman/blueprint-compiler.git
@@ -38,7 +38,7 @@ modules:
   - name: pandoc
     buildsystem: simple
     cleanup:
-      - '*'
+      - "*"
     build-commands:
       - install -Dm755 bin/pandoc /app/bin/pandoc
     sources:
@@ -49,7 +49,8 @@ modules:
         x-checker-data:
           type: json
           url: https://api.github.com/repos/jgm/pandoc/releases/latest
-          url-query: .assets[] | select(.name=="pandoc-" + $version + "-linux-amd64.tar.gz")
+          url-query:
+            .assets[] | select(.name=="pandoc-" + $version + "-linux-amd64.tar.gz")
             | .browser_download_url
           version-query: .tag_name
       - type: archive
@@ -59,7 +60,7 @@ modules:
         x-checker-data:
           type: json
           url: https://api.github.com/repos/jgm/pandoc/releases/latest
-          url-query: .assets[] | select(.name=="pandoc-" + $version + "-linux-arm64.tar.gz")
+          url-query:
+            .assets[] | select(.name=="pandoc-" + $version + "-linux-arm64.tar.gz")
             | .browser_download_url
           version-query: .tag_name
-
