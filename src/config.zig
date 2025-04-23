@@ -14,6 +14,7 @@ pub const entryFormatter = formatter.entryFormatter;
 pub const formatEntry = formatter.formatEntry;
 
 // Field types
+pub const BoldColor = Config.BoldColor;
 pub const ClipboardAccess = Config.ClipboardAccess;
 pub const Command = Config.Command;
 pub const ConfirmCloseSurface = Config.ConfirmCloseSurface;
