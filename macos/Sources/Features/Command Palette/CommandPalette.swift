@@ -21,8 +21,8 @@ struct CommandPaletteView: View {
     var backgroundColor: Color = Color(nsColor: .windowBackgroundColor)
     var options: [CommandOption]
     @State private var query = ""
-    @State private var selectedIndex: UInt = 0
-    @State private var hoveredOptionID: UUID? = nil
+    @State private var selectedIndex: UInt?
+    @State private var hoveredOptionID: UUID?
 
     // The options that we should show, taking into account any filtering from
     // the query.
@@ -35,7 +35,8 @@ struct CommandPaletteView: View {
     }
 
     var selectedOption: CommandOption? {
-        if selectedIndex < filteredOptions.count {
+        guard let selectedIndex else { return nil }
+        return if selectedIndex < filteredOptions.count {
             filteredOptions[Int(selectedIndex)]
         } else {
             filteredOptions.last
@@ -54,18 +55,36 @@ struct CommandPaletteView: View {
                     selectedOption?.action()
 
                 case .move(.up):
-                    if selectedIndex > 0 {
-                        selectedIndex -= 1
-                    }
+                    if filteredOptions.isEmpty { break }
+                    let current = selectedIndex ?? UInt(filteredOptions.count)
+                    selectedIndex = (current == 0)
+                        ? UInt(filteredOptions.count - 1)
+                        : current - 1
 
                 case .move(.down):
-                    if selectedIndex < filteredOptions.count - 1 {
-                        selectedIndex += 1
-                    }
+                    if filteredOptions.isEmpty { break }
+                    let current = selectedIndex ?? UInt.max
+                    selectedIndex = (current >= UInt(filteredOptions.count - 1))
+                        ? 0
+                        : current + 1
 
                 case .move(_):
                     // Unknown, ignore
                     break
+                }
+            }
+            .onChange(of: query) { newValue in
+                // If the user types a query then we want to make sure the first
+                // value is selected. If the user clears the query and we were selecting
+                // the first, we unset any selection.
+                if !newValue.isEmpty {
+                    if selectedIndex == nil {
+                        selectedIndex = 0
+                    }
+                } else {
+                    if let selectedIndex, selectedIndex == 0 {
+                        self.selectedIndex = nil
+                    }
                 }
             }
 
@@ -148,7 +167,7 @@ fileprivate struct CommandPaletteQuery: View {
 
 fileprivate struct CommandTable: View {
     var options: [CommandOption]
-    @Binding var selectedIndex: UInt
+    @Binding var selectedIndex: UInt?
     @Binding var hoveredOptionID: UUID?
     var action: (CommandOption) -> Void
 
@@ -164,9 +183,15 @@ fileprivate struct CommandTable: View {
                         ForEach(Array(options.enumerated()), id: \.1.id) { index, option in
                             CommandRow(
                                 option: option,
-                                isSelected: selectedIndex == index ||
-                                    (selectedIndex >= options.count &&
-                                     index == options.count - 1),
+                                isSelected: {
+                                    if let selected = selectedIndex {
+                                        return selected == index ||
+                                            (selected >= options.count &&
+                                                index == options.count - 1)
+                                    } else {
+                                        return false
+                                    }
+                                }(),
                                 hoveredID: $hoveredOptionID
                             ) {
                                 action(option)
@@ -176,7 +201,8 @@ fileprivate struct CommandTable: View {
                 }
                 .frame(maxHeight: 200)
                 .onChange(of: selectedIndex) { _ in
-                    guard selectedIndex < options.count else { return }
+                    guard let selectedIndex,
+                          selectedIndex < options.count else { return }
                     proxy.scrollTo(
                         options[Int(selectedIndex)].id)
                 }
