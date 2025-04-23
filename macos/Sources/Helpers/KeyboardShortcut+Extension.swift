@@ -28,6 +28,10 @@ extension KeyboardShortcut: @retroactive CustomStringConvertible {
         case .downArrow: keyString = "↓"
         case .leftArrow: keyString = "←"
         case .rightArrow: keyString = "→"
+        case .pageUp: keyString = "PgUp"
+        case .pageDown: keyString = "PgDown"
+        case .end: keyString = "End"
+        case .home: keyString = "Home"
         default:
             keyString = String(key.character.uppercased())
         }
