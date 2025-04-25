@@ -1,12 +1,9 @@
 import SwiftUI
 
 extension KeyboardShortcut: @retroactive CustomStringConvertible {
-    public var description: String {
-        var result = ""
+    public var keyList: [String] {
+        var result: [String] = []
 
-        if modifiers.contains(.command) {
-            result.append("⌘")
-        }
         if modifiers.contains(.control) {
             result.append("⌃")
         }
@@ -16,6 +13,9 @@ extension KeyboardShortcut: @retroactive CustomStringConvertible {
         if modifiers.contains(.shift) {
             result.append("⇧")
         }
+        if modifiers.contains(.command) {
+            result.append("⌘")
+        }
 
         let keyString: String
         switch key {
@@ -24,20 +24,24 @@ extension KeyboardShortcut: @retroactive CustomStringConvertible {
         case .delete: keyString = "⌫"
         case .space: keyString = "␣"
         case .tab: keyString = "⇥"
-        case .upArrow: keyString = "↑"
-        case .downArrow: keyString = "↓"
-        case .leftArrow: keyString = "←"
-        case .rightArrow: keyString = "→"
-        case .pageUp: keyString = "PgUp"
-        case .pageDown: keyString = "PgDown"
-        case .end: keyString = "End"
-        case .home: keyString = "Home"
+        case .upArrow: keyString = "▲"
+        case .downArrow: keyString = "▼"
+        case .leftArrow: keyString = "◀"
+        case .rightArrow: keyString = "▶"
+        case .pageUp: keyString = "↑"
+        case .pageDown: keyString = "↓"
+        case .home: keyString = "⤒"
+        case .end: keyString = "⤓"
         default:
             keyString = String(key.character.uppercased())
         }
 
         result.append(keyString)
         return result
+    }
+
+    public var description: String {
+        return self.keyList.joined()
     }
 }
 

@@ -4,7 +4,7 @@ struct CommandOption: Identifiable, Hashable {
     let id = UUID()
     let title: String
     let description: String?
-    let shortcut: String?
+    let symbols: [String]?
     let action: () -> Void
 
     static func == (lhs: CommandOption, rhs: CommandOption) -> Bool {
@@ -44,6 +44,12 @@ struct CommandPaletteView: View {
     }
 
     var body: some View {
+        let scheme: ColorScheme = if OSColor(backgroundColor).isLightColor {
+            .light
+        } else {
+            .dark
+        }
+
         VStack(alignment: .leading, spacing: 0) {
             CommandPaletteQuery(query: $query) { event in
                 switch (event) {
@@ -89,7 +95,6 @@ struct CommandPaletteView: View {
             }
 
             Divider()
-                .padding(.bottom, 4)
 
             CommandTable(
                 options: filteredOptions,
@@ -101,15 +106,23 @@ struct CommandPaletteView: View {
         }
         .frame(maxWidth: 500)
         .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(backgroundColor)
-                .shadow(color: .black.opacity(0.4), radius: 10, x: 0, y: 10)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color.black.opacity(0.1), lineWidth: 1)
-                )
+            ZStack {
+                Rectangle()
+                    .fill(.ultraThinMaterial)
+                Rectangle()
+                    .fill(backgroundColor)
+                    .blendMode(.color)
+            }
+                .compositingGroup()
         )
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Color(nsColor: .tertiaryLabelColor).opacity(0.75))
+        )
+        .shadow(radius: 32, x: 0, y: 12)
         .padding()
+        .environment(\.colorScheme, scheme)
     }
 }
 
@@ -147,8 +160,9 @@ fileprivate struct CommandPaletteQuery: View {
 
             TextField("Execute a command…", text: $query)
                 .padding()
-                .font(.system(size: 14))
-                .textFieldStyle(PlainTextFieldStyle())
+                .font(.system(size: 20, weight: .light))
+                .frame(height: 48)
+                .textFieldStyle(.plain)
                 .focused($isTextFieldFocused)
                 .onAppear {
                     isTextFieldFocused = true
@@ -178,7 +192,7 @@ fileprivate struct CommandTable: View {
                 .padding()
         } else {
             ScrollViewReader { proxy in
-                ScrollView(showsIndicators: false) {
+                ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(Array(options.enumerated()), id: \.1.id) { index, option in
                             CommandRow(
@@ -198,6 +212,7 @@ fileprivate struct CommandTable: View {
                             }
                         }
                     }
+                    .padding(10)
                 }
                 .frame(maxHeight: 200)
                 .onChange(of: selectedIndex) { _ in
@@ -223,20 +238,12 @@ fileprivate struct CommandRow: View {
             HStack {
                 Text(option.title)
                 Spacer()
-                if let shortcut = option.shortcut {
-                    Text(shortcut)
-                        .font(.system(.body, design: .monospaced))
-                        .kerning(1.5)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(Color.gray.opacity(0.2))
-                        )
+                if let symbols = option.symbols {
+                    ShortcutSymbolsView(symbols: symbols)
+                        .foregroundStyle(.secondary)
                 }
             }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 8)
+            .padding(8)
             .background(
                 isSelected
                     ? Color.accentColor.opacity(0.2)
@@ -244,14 +251,26 @@ fileprivate struct CommandRow: View {
                        ? Color.secondary.opacity(0.2)
                        : Color.clear)
             )
-            .cornerRadius(6)
+            .cornerRadius(5)
         }
         .help(option.description ?? "")
-        .buttonStyle(PlainButtonStyle())
+        .buttonStyle(.plain)
         .onHover { hovering in
             hoveredID = hovering ? option.id : nil
         }
-        .padding(.horizontal, 4)
-        .padding(.vertical, 1)
+    }
+}
+
+/// A row of Text representing a shortcut.
+fileprivate struct ShortcutSymbolsView: View {
+    let symbols: [String]
+
+    var body: some View {
+        HStack(spacing: 1) {
+            ForEach(symbols, id: \.self) { symbol in
+                Text(symbol)
+                    .frame(minWidth: 13)
+            }
+        }
     }
 }
