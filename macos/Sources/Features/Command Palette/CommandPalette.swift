@@ -44,7 +44,7 @@ struct CommandPaletteView: View {
     }
 
     var body: some View {
-        @State var scheme: ColorScheme = if OSColor(backgroundColor).isLightColor {
+        let scheme: ColorScheme = if OSColor(backgroundColor).isLightColor {
             .light
         } else {
             .dark
