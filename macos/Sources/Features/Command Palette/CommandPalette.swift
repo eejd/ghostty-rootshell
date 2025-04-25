@@ -18,6 +18,7 @@ struct CommandOption: Identifiable, Hashable {
 
 struct CommandPaletteView: View {
     @Binding var isPresented: Bool
+    var backgroundColor: Color = Color(nsColor: .windowBackgroundColor)
     var options: [CommandOption]
     @State private var query = ""
     @State private var selectedIndex: UInt?
@@ -43,6 +44,12 @@ struct CommandPaletteView: View {
     }
 
     var body: some View {
+        @State var scheme: ColorScheme = if OSColor(backgroundColor).isLightColor {
+            .light
+        } else {
+            .dark
+        }
+
         VStack(alignment: .leading, spacing: 0) {
             CommandPaletteQuery(query: $query) { event in
                 switch (event) {
@@ -98,7 +105,16 @@ struct CommandPaletteView: View {
             }
         }
         .frame(maxWidth: 500)
-        .background(BackgroundVisualEffectView())
+        .background(
+            ZStack {
+                Rectangle()
+                    .fill(.ultraThinMaterial)
+                Rectangle()
+                    .fill(backgroundColor)
+                    .blendMode(.color)
+            }
+                .compositingGroup()
+        )
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .overlay(
             RoundedRectangle(cornerRadius: 10)
@@ -106,6 +122,7 @@ struct CommandPaletteView: View {
         )
         .shadow(radius: 32, x: 0, y: 12)
         .padding()
+        .environment(\.colorScheme, scheme)
     }
 }
 
@@ -241,23 +258,6 @@ fileprivate struct CommandRow: View {
         .onHover { hovering in
             hoveredID = hovering ? option.id : nil
         }
-    }
-}
-
-/// A view that creates a semi-transparent blurry background.
-fileprivate struct BackgroundVisualEffectView: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let view = NSVisualEffectView()
-
-        view.blendingMode = .withinWindow
-        view.state = .active
-        view.material = .sidebar
-
-        return view
-    }
-
-    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
-        //
     }
 }
 

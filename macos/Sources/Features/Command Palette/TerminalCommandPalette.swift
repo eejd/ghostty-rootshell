@@ -59,6 +59,7 @@ struct TerminalCommandPaletteView: View {
 
                         CommandPaletteView(
                             isPresented: $isPresented,
+                            backgroundColor: ghosttyConfig.backgroundColor,
                             options: commandOptions
                         )
                         .transition(
