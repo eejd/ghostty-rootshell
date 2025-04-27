@@ -115,6 +115,11 @@ class BaseTerminalController: NSWindowController,
             selector: #selector(ghosttyCommandPaletteDidToggle(_:)),
             name: .ghosttyCommandPaletteDidToggle,
             object: nil)
+        center.addObserver(
+            self,
+            selector: #selector(toggleMaximize),
+            name: .ghosttyToggleMaximize,
+            object: nil)
 
         // Listen for local events that we need to know of outside of
         // single surface handlers.
@@ -546,6 +551,11 @@ class BaseTerminalController: NSWindowController,
     @IBAction func closeWindow(_ sender: Any) {
         guard let window = window else { return }
         window.performClose(sender)
+    }
+
+    @IBAction func toggleMaximize(_ sender: Any) {
+        guard let window = window else { return }
+        window.zoom(self)
     }
 
     @IBAction func splitRight(_ sender: Any) {

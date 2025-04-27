@@ -774,8 +774,23 @@ extension Ghostty {
             _ app: ghostty_app_t,
             target: ghostty_target_s
         ) {
-            guard let appDelegate = NSApplication.shared.delegate as? AppDelegate else { return }
-            appDelegate.toggleMaximize(self)
+            switch (target.tag) {
+            case GHOSTTY_TARGET_APP:
+                Ghostty.logger.warning("toggle maximize does nothing with an app target")
+                return
+
+            case GHOSTTY_TARGET_SURFACE:
+                guard let surface = target.target.surface else { return }
+                guard let surfaceView = self.surfaceView(from: surface) else { return }
+                NotificationCenter.default.post(
+                    name: .ghosttyToggleMaximize,
+                    object: surfaceView
+                )
+
+
+            default:
+                assertionFailure()
+            }
         }
 
         private static func toggleVisibility(

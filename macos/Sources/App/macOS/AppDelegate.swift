@@ -807,12 +807,6 @@ class AppDelegate: NSObject,
         setSecureInput(.toggle)
     }
 
-    @IBAction func toggleMaximize(_ sender: Any) {
-        if NSApp.isActive, let keyWindow = NSApp.keyWindow {
-            keyWindow.zoom(self)
-        }
-    }
-
     @IBAction func toggleQuickTerminal(_ sender: Any) {
         if quickController == nil {
             quickController = QuickTerminalController(
