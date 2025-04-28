@@ -783,7 +783,7 @@ extension Ghostty {
                 guard let surface = target.target.surface else { return }
                 guard let surfaceView = self.surfaceView(from: surface) else { return }
                 NotificationCenter.default.post(
-                    name: .ghosttyToggleMaximize,
+                    name: .ghosttyMaximizeDidToggle,
                     object: surfaceView
                 )
 

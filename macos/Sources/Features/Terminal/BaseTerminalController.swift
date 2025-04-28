@@ -117,8 +117,8 @@ class BaseTerminalController: NSWindowController,
             object: nil)
         center.addObserver(
             self,
-            selector: #selector(toggleMaximize),
-            name: .ghosttyToggleMaximize,
+            selector: #selector(ghosttyMaximizeDidToggle(_:)),
+            name: .ghosttyMaximizeDidToggle,
             object: nil)
 
         // Listen for local events that we need to know of outside of
@@ -237,6 +237,13 @@ class BaseTerminalController: NSWindowController,
         guard let surfaceView = notification.object as? Ghostty.SurfaceView else { return }
         guard surfaceTree?.contains(view: surfaceView) ?? false else { return }
         toggleCommandPalette(nil)
+    }
+
+    @objc private func ghosttyMaximizeDidToggle(_ notification: Notification) {
+        guard let window else { return }
+        guard let surfaceView = notification.object as? Ghostty.SurfaceView else { return }
+        guard surfaceTree?.contains(view: surfaceView) ?? false else { return }
+        window.zoom(nil)
     }
 
     // MARK: Local Events
@@ -551,11 +558,6 @@ class BaseTerminalController: NSWindowController,
     @IBAction func closeWindow(_ sender: Any) {
         guard let window = window else { return }
         window.performClose(sender)
-    }
-
-    @IBAction func toggleMaximize(_ sender: Any) {
-        guard let window = window else { return }
-        window.zoom(self)
     }
 
     @IBAction func splitRight(_ sender: Any) {

@@ -259,7 +259,7 @@ extension Notification.Name {
     static let ghosttyCommandPaletteDidToggle = Notification.Name("com.mitchellh.ghostty.commandPaletteDidToggle")
 
     /// Toggle maximize of current window
-    static let ghosttyToggleMaximize = Notification.Name("com.mitchellh.ghostty.toggleMaximize")
+    static let ghosttyMaximizeDidToggle = Notification.Name("com.mitchellh.ghostty.maximizeDidToggle")
 }
 
 // NOTE: I am moving all of these to Notification.Name extensions over time. This
