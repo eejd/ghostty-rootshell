@@ -407,7 +407,7 @@ test "fontconfig" {
     const alloc = testing.allocator;
 
     // Load freetype
-    var lib = try Library.init();
+    var lib = try Library.init(alloc);
     defer lib.deinit();
 
     // Get a deferred face from fontconfig
@@ -437,7 +437,7 @@ test "coretext" {
     const alloc = testing.allocator;
 
     // Load freetype
-    var lib = try Library.init();
+    var lib = try Library.init(alloc);
     defer lib.deinit();
 
     // Get a deferred face from fontconfig
