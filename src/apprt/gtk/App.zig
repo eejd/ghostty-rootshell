@@ -159,6 +159,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         opengl: bool = false,
         /// disable GLES, Ghostty can't use GLES
         @"gl-disable-gles": bool = false,
+        // GTK's new renderer can cause blurry font when using fractional scaling.
         @"gl-no-fractional": bool = false,
         /// Disabling Vulkan can improve startup times by hundreds of
         /// milliseconds on some systems. We don't use Vulkan so we can just
@@ -203,6 +204,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
             gdk_debug.@"vulkan-disable" = true;
 
             if (gtk_version.runtimeUntil(4, 17, 5)) {
+                // Removed at GTK v4.17.5
                 gdk_debug.@"gl-no-fractional" = true;
             }
             break :environment;
