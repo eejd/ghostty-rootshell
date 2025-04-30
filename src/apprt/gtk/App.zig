@@ -190,7 +190,6 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
             // For the remainder of "why" see the 4.14 comment below.
             gdk_disable.@"gles-api" = true;
             gdk_disable.vulkan = true;
-            gdk_debug.@"gl-no-fractional" = true;
             break :environment;
         }
         if (gtk_version.runtimeAtLeast(4, 14, 0)) {
@@ -201,8 +200,11 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
             //
             // Upstream issue: https://gitlab.gnome.org/GNOME/gtk/-/issues/6589
             gdk_debug.@"gl-disable-gles" = true;
-            gdk_debug.@"gl-no-fractional" = true;
             gdk_debug.@"vulkan-disable" = true;
+
+            if (gtk_version.runtimeUntil(4, 17, 5)) {
+                gdk_debug.@"gl-no-fractional" = true;
+            }
             break :environment;
         }
         // Versions prior to 4.14 are a bit of an unknown for Ghostty. It
