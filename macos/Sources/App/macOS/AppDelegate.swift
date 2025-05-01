@@ -52,6 +52,8 @@ class AppDelegate: NSObject,
     @IBOutlet private var menuSelectSplitLeft: NSMenuItem?
     @IBOutlet private var menuSelectSplitRight: NSMenuItem?
     @IBOutlet private var menuReturnToDefaultSize: NSMenuItem?
+    @IBOutlet private var menuFloatOnTop: NSMenuItem?
+    @IBOutlet private var menuUseAsDefault: NSMenuItem?
 
     @IBOutlet private var menuIncreaseFontSize: NSMenuItem?
     @IBOutlet private var menuDecreaseFontSize: NSMenuItem?
@@ -175,6 +177,12 @@ class AppDelegate: NSObject,
             handler: localEventHandler)
 
         // Notifications
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(windowDidBecomeKey),
+            name: NSWindow.didBecomeKeyNotification,
+            object: nil
+        )
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(quickTerminalDidChangeVisibility),
@@ -495,6 +503,16 @@ class AppDelegate: NSObject,
         }
 
         return event
+    }
+
+    @objc private func windowDidBecomeKey(_ notification: Notification) {
+        guard let terminal = notification.object as? TerminalWindow else {
+            // If some other window became key we always turn this off
+            self.menuFloatOnTop?.state = .off
+            return
+        }
+        
+        self.menuFloatOnTop?.state = terminal.level == .floating ? .on : .off
     }
 
     @objc private func quickTerminalDidChangeVisibility(_ notification: Notification) {
@@ -844,6 +862,22 @@ class AppDelegate: NSObject,
         hiddenState = nil
     }
 
+    @IBAction func floatOnTop(_ menuItem: NSMenuItem) {
+        menuItem.state = menuItem.state == .on ? .off : .on
+        guard let window = NSApp.keyWindow else { return }
+        window.level = menuItem.state == .on ? .floating : .normal
+    }
+
+    @IBAction func useAsDefault(_ sender: NSMenuItem) {
+        let ud = UserDefaults.standard
+        let key = TerminalWindow.defaultLevelKey
+        if (menuFloatOnTop?.state == .on) {
+            ud.set(NSWindow.Level.floating, forKey: key)
+        } else {
+            ud.removeObject(forKey: key)
+        }
+    }
+
     @IBAction func bringAllToFront(_ sender: Any) {
         if !NSApp.isActive {
             NSApp.activate(ignoringOtherApps: true)
@@ -896,6 +930,23 @@ class AppDelegate: NSObject,
         func restore() {
             hiddenWindows.forEach { $0.value?.orderFrontRegardless() }
             keyWindow?.value?.makeKey()
+        }
+    }
+}
+
+// MARK: NSMenuItemValidation
+
+extension AppDelegate: NSMenuItemValidation {
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        switch item.action {
+        case #selector(floatOnTop(_:)),
+            #selector(useAsDefault(_:)):
+            // Float on top items only active if the key window is a primary
+            // terminal window (not quick terminal).
+            return NSApp.keyWindow is TerminalWindow
+
+        default:
+            return true
         }
     }
 }
