@@ -414,6 +414,7 @@ class AppDelegate: NSObject,
         syncMenuShortcut(config, action: "prompt_surface_title", menuItem: self.menuChangeTitle)
         syncMenuShortcut(config, action: "toggle_quick_terminal", menuItem: self.menuQuickTerminal)
         syncMenuShortcut(config, action: "toggle_visibility", menuItem: self.menuToggleVisibility)
+        syncMenuShortcut(config, action: "toggle_window_float_on_top", menuItem: self.menuFloatOnTop)
         syncMenuShortcut(config, action: "inspector:toggle", menuItem: self.menuTerminalInspector)
         syncMenuShortcut(config, action: "toggle_command_palette", menuItem: self.menuCommandPalette)
 
@@ -506,13 +507,7 @@ class AppDelegate: NSObject,
     }
 
     @objc private func windowDidBecomeKey(_ notification: Notification) {
-        guard let terminal = notification.object as? TerminalWindow else {
-            // If some other window became key we always turn this off
-            self.menuFloatOnTop?.state = .off
-            return
-        }
-        
-        self.menuFloatOnTop?.state = terminal.level == .floating ? .on : .off
+        syncFloatOnTopMenu(notification.object as? NSWindow)
     }
 
     @objc private func quickTerminalDidChangeVisibility(_ notification: Notification) {
@@ -862,22 +857,6 @@ class AppDelegate: NSObject,
         hiddenState = nil
     }
 
-    @IBAction func floatOnTop(_ menuItem: NSMenuItem) {
-        menuItem.state = menuItem.state == .on ? .off : .on
-        guard let window = NSApp.keyWindow else { return }
-        window.level = menuItem.state == .on ? .floating : .normal
-    }
-
-    @IBAction func useAsDefault(_ sender: NSMenuItem) {
-        let ud = UserDefaults.standard
-        let key = TerminalWindow.defaultLevelKey
-        if (menuFloatOnTop?.state == .on) {
-            ud.set(NSWindow.Level.floating, forKey: key)
-        } else {
-            ud.removeObject(forKey: key)
-        }
-    }
-
     @IBAction func bringAllToFront(_ sender: Any) {
         if !NSApp.isActive {
             NSApp.activate(ignoringOtherApps: true)
@@ -930,6 +909,36 @@ class AppDelegate: NSObject,
         func restore() {
             hiddenWindows.forEach { $0.value?.orderFrontRegardless() }
             keyWindow?.value?.makeKey()
+        }
+    }
+}
+
+// MARK: Floating Windows
+
+extension AppDelegate {
+    func syncFloatOnTopMenu(_ window: NSWindow?) {
+        guard let window = (window ?? NSApp.keyWindow) as? TerminalWindow else {
+            // If some other window became key we always turn this off
+            self.menuFloatOnTop?.state = .off
+            return
+        }
+
+        self.menuFloatOnTop?.state = window.level == .floating ? .on : .off
+    }
+
+    @IBAction func floatOnTop(_ menuItem: NSMenuItem) {
+        menuItem.state = menuItem.state == .on ? .off : .on
+        guard let window = NSApp.keyWindow else { return }
+        window.level = menuItem.state == .on ? .floating : .normal
+    }
+
+    @IBAction func useAsDefault(_ sender: NSMenuItem) {
+        let ud = UserDefaults.standard
+        let key = TerminalWindow.defaultLevelKey
+        if (menuFloatOnTop?.state == .on) {
+            ud.set(NSWindow.Level.floating, forKey: key)
+        } else {
+            ud.removeObject(forKey: key)
         }
     }
 }
