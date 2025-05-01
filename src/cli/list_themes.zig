@@ -24,11 +24,8 @@ pub const Options = struct {
     /// If true, force a plain list of themes.
     plain: bool = false,
 
-    /// If true, print only the dark themes.
-    dark: bool = false,
-
-    /// If true, print only the light themes.
-    light: bool = false,
+    /// Specifies the color scheme of the themes to include in the list.
+    color: enum { all, dark, light } = .all,
 
     pub fn deinit(self: Options) void {
         _ = self;
@@ -99,6 +96,9 @@ const ThemeListElement = struct {
 ///   * `--path`: Show the full path to the theme.
 ///
 ///   * `--plain`: Force a plain listing of themes.
+///
+///   * `--color`: Specify the color scheme of the themes included in the list.
+///                This can be `dark`, `light`, or `all`. The default is `all`.
 pub fn run(gpa_alloc: std.mem.Allocator) !u8 {
     var opts: Options = .{};
     defer opts.deinit();
@@ -146,7 +146,7 @@ pub fn run(gpa_alloc: std.mem.Allocator) !u8 {
 
                     const path = try std.fs.path.join(alloc, &.{ loc.dir, entry.name });
                     // if there is no need to filter just append the theme to the list
-                    if (!opts.dark and !opts.light) {
+                    if (opts.color == .all) {
                         try themes.append(.{
                             .path = path,
                             .location = loc.location,
@@ -1627,5 +1627,5 @@ fn shouldIncludeTheme(opts: Options, theme_config: Config) bool {
     const luminance = 0.2126 * rf + 0.7152 * gf + 0.0722 * bf;
     const is_dark = luminance < 0.5;
 
-    return (opts.dark and is_dark) or (opts.light and !is_dark);
+    return (opts.color == .dark and is_dark) or (opts.color == .light and !is_dark);
 }
