@@ -714,15 +714,18 @@ test "add full" {
         ) });
     }
 
-    try testing.expectError(error.CollectionFull, c.add(
-        alloc,
-        .regular,
-        .{ .loaded = try Face.init(
-            lib,
-            testFont,
-            .{ .size = .{ .points = 12 } },
-        ) },
-    ));
+    var face = try Face.init(
+        lib,
+        testFont,
+        .{ .size = .{ .points = 12 } },
+    );
+    // We have to deinit it manually since the
+    // collection doesn't do it if adding fails.
+    defer face.deinit();
+    try testing.expectError(
+        error.CollectionFull,
+        c.add(alloc, .regular, .{ .loaded = face }),
+    );
 }
 
 test "add deferred without loading options" {

@@ -425,7 +425,8 @@ test "fontconfig" {
     try testing.expect(n.len > 0);
 
     // Load it and verify it works
-    const face = try def.load(lib, .{ .size = .{ .points = 12 } });
+    var face = try def.load(lib, .{ .size = .{ .points = 12 } });
+    defer face.deinit();
     try testing.expect(face.glyphIndex(' ') != null);
 }
 
@@ -456,6 +457,7 @@ test "coretext" {
     try testing.expect(n.len > 0);
 
     // Load it and verify it works
-    const face = try def.load(lib, .{ .size = .{ .points = 12 } });
+    var face = try def.load(lib, .{ .size = .{ .points = 12 } });
+    defer face.deinit();
     try testing.expect(face.glyphIndex(' ') != null);
 }
