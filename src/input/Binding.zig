@@ -279,6 +279,7 @@ pub const Action = union(enum) {
     /// Scroll the screen varying amounts.
     scroll_to_top,
     scroll_to_bottom,
+    scroll_to_selection,
     scroll_page_up,
     scroll_page_down,
     scroll_page_fractional: f32,
@@ -789,6 +790,7 @@ pub const Action = union(enum) {
             .select_all,
             .scroll_to_top,
             .scroll_to_bottom,
+            .scroll_to_selection,
             .scroll_page_up,
             .scroll_page_down,
             .scroll_page_fractional,
