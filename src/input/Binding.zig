@@ -345,7 +345,7 @@ pub const Action = union(enum) {
     move_tab: isize,
 
     /// Toggle the tab overview.
-    /// This only works with libadwaita enabled currently.
+    /// This only works with libadwaita version 1.4.0 or newer.
     toggle_tab_overview,
 
     /// Change the title of the current focused surface via a prompt.
