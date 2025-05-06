@@ -171,6 +171,13 @@ class NonNativeFullscreen: FullscreenBase, FullscreenStyle {
         guard let savedState = SavedState(window) else { return }
         self.savedState = savedState
 
+        // Get our current first responder on this window. For non-native fullscreen
+        // we have to restore this because for some reason the operations below
+        // lose it (see: https://github.com/ghostty-org/ghostty/issues/6999).
+        // I don't know the root cause here so if we can figure that out there may
+        // be a nicer way than this.
+        let firstResponder = window.firstResponder
+
         // We hide the dock if the window is on a screen with the dock.
         // We must hide the dock FIRST then hide the menu:
         // If you specify autoHideMenuBar, it must be accompanied by either hideDock or autoHideDock.
@@ -207,6 +214,10 @@ class NonNativeFullscreen: FullscreenBase, FullscreenStyle {
         // https://github.com/ghostty-org/ghostty/issues/1996
         DispatchQueue.main.async {
             self.window.setFrame(self.fullscreenFrame(screen), display: true)
+            if let firstResponder {
+                self.window.makeFirstResponder(firstResponder)
+            }
+
             self.delegate?.fullscreenDidChange()
         }
     }
@@ -219,6 +230,9 @@ class NonNativeFullscreen: FullscreenBase, FullscreenStyle {
         // we don't want to remove the observers that our superclass sets.
         let center = NotificationCenter.default
         center.removeObserver(self, name: NSWindow.didChangeScreenNotification, object: window)
+
+        // See enter where we do the same thing to understand why.
+        let firstResponder = window.firstResponder
 
         // Unhide our elements
         if savedState.dock {
@@ -256,6 +270,10 @@ class NonNativeFullscreen: FullscreenBase, FullscreenStyle {
                 // We were at the end
                 tabGroup.windows.last!.addTabbedWindow(window, ordered: .below)
             }
+        }
+
+        if let firstResponder {
+            window.makeFirstResponder(firstResponder)
         }
 
         // Unset our saved state, we're restored!
