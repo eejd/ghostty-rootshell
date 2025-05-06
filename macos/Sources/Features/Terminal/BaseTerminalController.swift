@@ -361,14 +361,6 @@ class BaseTerminalController: NSWindowController,
         }
     }
 
-    func fullscreenDidChange() {
-        // For some reason focus can get lost when we change fullscreen. Regardless of
-        // mode above we just move it back.
-        if let focusedSurface {
-            Ghostty.moveFocus(to: focusedSurface)
-        }
-    }
-
     // MARK: Clipboard Confirmation
 
     @objc private func onConfirmClipboardRequest(notification: SwiftUI.Notification) {
