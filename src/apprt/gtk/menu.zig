@@ -130,7 +130,7 @@ pub fn Menu(
         }
 
         /// Refocus tab that lost focus because of the popover menu
-        fn gtkRefocusTerm(_: *gtk.PopoverMenu, self: *Self) callconv(.C) void {
+        fn gtkRefocusTerm(_: *gtk.PopoverMenu, self: *Self) callconv(.c) void {
             const window: *Window = switch (T) {
                 Window => self.parent,
                 Surface => self.parent.container.window() orelse return,
