@@ -1527,7 +1527,7 @@ fn adwNotifyDark(
     style_manager: *adw.StyleManager,
     _: *gobject.ParamSpec,
     self: *App,
-) callconv(.C) void {
+) callconv(.c) void {
     const color_scheme: apprt.ColorScheme = if (style_manager.getDark() == 0)
         .light
     else

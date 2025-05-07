@@ -67,7 +67,7 @@ pub fn maybePresent(app: *App, window: ?*Window) void {
     }
 }
 
-fn onResponse(_: *DialogType, response: [*:0]const u8, app: *App) callconv(.C) void {
+fn onResponse(_: *DialogType, response: [*:0]const u8, app: *App) callconv(.c) void {
     if (std.mem.orderZ(u8, response, "reload") == .eq) {
         app.reloadConfig(.app, .{}) catch |err| {
             log.warn("error reloading config error={}", .{err});
