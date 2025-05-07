@@ -74,6 +74,9 @@ cursor_none: ?*gdk.Cursor,
 /// The clipboard confirmation window, if it is currently open.
 clipboard_confirmation_window: ?*ClipboardConfirmationWindow = null,
 
+/// The config errors dialog, if it is currently open.
+config_errors_dialog: ?ConfigErrorsDialog = null,
+
 /// The window containing the quick terminal.
 /// Null when never initialized.
 quick_terminal: ?*Window = null,
