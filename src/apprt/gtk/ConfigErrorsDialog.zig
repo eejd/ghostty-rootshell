@@ -37,7 +37,6 @@ pub fn maybePresent(app: *App, window: ?*Window) void {
             adw.MessageDialog => Builder.init("config-errors-dialog", 1, 2),
             else => unreachable,
         };
-        // defer builder.deinit();
 
         const dialog = builder.getObject(DialogType, "config_errors_dialog").?;
         const error_message = builder.getObject(gtk.TextBuffer, "error_message").?;
