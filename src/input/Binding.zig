@@ -568,6 +568,8 @@ pub const Action = union(enum) {
         left,
         up,
         auto, // splits along the larger direction
+
+        pub const default: SplitDirection = .auto;
     };
 
     pub const SplitFocusDirection = enum {
@@ -729,7 +731,28 @@ pub const Action = union(enum) {
                     Action.CursorKey => return Error.InvalidAction,
 
                     else => {
-                        const idx = colonIdx orelse return Error.InvalidFormat;
+                        // Get the parameter after the colon. The parameter
+                        // can be optional for action types that can have a
+                        // "default" decl.
+                        const idx = colonIdx orelse {
+                            switch (@typeInfo(field.type)) {
+                                .@"struct",
+                                .@"union",
+                                .@"enum",
+                                => if (@hasDecl(field.type, "default")) {
+                                    return @unionInit(
+                                        Action,
+                                        field.name,
+                                        @field(field.type, "default"),
+                                    );
+                                },
+
+                                else => {},
+                            }
+
+                            return Error.InvalidFormat;
+                        };
+
                         const param = input[idx + 1 ..];
                         return @unionInit(
                             Action,
@@ -2012,6 +2035,17 @@ test "parse: action with enum" {
         const binding = try parseSingle("a=new_split:right");
         try testing.expect(binding.action == .new_split);
         try testing.expectEqual(Action.SplitDirection.right, binding.action.new_split);
+    }
+}
+
+test "parse: action with enum with default" {
+    const testing = std.testing;
+
+    // parameter
+    {
+        const binding = try parseSingle("a=new_split");
+        try testing.expect(binding.action == .new_split);
+        try testing.expectEqual(Action.SplitDirection.auto, binding.action.new_split);
     }
 }
 
