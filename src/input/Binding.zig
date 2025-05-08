@@ -99,9 +99,12 @@ pub const Parser = struct {
                 if (flags.performable) return Error.InvalidFormat;
                 flags.performable = true;
             } else {
-                // If we don't recognize the prefix then we're done.
-                // There are trigger-specific prefixes like "physical:" so
-                // this lets us fall into that.
+                // If we don't recognize the prefix then we're done. We
+                // let any unknown prefix fallthrough to trigger-specific
+                // parsing in case there are trigger-specific prefixes
+                // (none currently but historically there was `physical:`
+                // at one point). Breaking here lets us always implement new
+                // prefixes.
                 break;
             }
 
@@ -202,14 +205,12 @@ pub fn lessThan(_: void, lhs: Binding, rhs: Binding) bool {
 
     const lhs_key: c_int = blk: {
         switch (lhs.trigger.key) {
-            .translated => break :blk @intFromEnum(lhs.trigger.key.translated),
             .physical => break :blk @intFromEnum(lhs.trigger.key.physical),
             .unicode => break :blk @intCast(lhs.trigger.key.unicode),
         }
     };
     const rhs_key: c_int = blk: {
         switch (rhs.trigger.key) {
-            .translated => break :blk @intFromEnum(rhs.trigger.key.translated),
             .physical => break :blk @intFromEnum(rhs.trigger.key.physical),
             .unicode => break :blk @intCast(rhs.trigger.key.unicode),
         }
@@ -1065,18 +1066,12 @@ pub const Action = union(enum) {
 /// This must be kept in sync with include/ghostty.h ghostty_input_trigger_s
 pub const Trigger = struct {
     /// The key that has to be pressed for a binding to take action.
-    key: Trigger.Key = .{ .translated = .invalid },
+    key: Trigger.Key = .{ .physical = .unidentified },
 
     /// The key modifiers that must be active for this to match.
     mods: key.Mods = .{},
 
     pub const Key = union(C.Tag) {
-        /// key is the translated version of a key. This is the key that
-        /// a logical keyboard layout at the OS level would translate the
-        /// physical key to. For example if you use a US hardware keyboard
-        /// but have a Dvorak layout, the key would be the Dvorak key.
-        translated: key.Key,
-
         /// key is the "physical" version. This is the same as mapped for
         /// standard US keyboard layouts. For non-US keyboard layouts, this
         /// is used to bind to a physical key location rather than a translated
@@ -1091,18 +1086,16 @@ pub const Trigger = struct {
 
     /// The extern struct used for triggers in the C API.
     pub const C = extern struct {
-        tag: Tag = .translated,
-        key: C.Key = .{ .translated = .invalid },
+        tag: Tag = .physical,
+        key: C.Key = .{ .physical = .unidentified },
         mods: key.Mods = .{},
 
         pub const Tag = enum(c_int) {
-            translated,
             physical,
             unicode,
         };
 
         pub const Key = extern union {
-            translated: key.Key,
             physical: key.Key,
             unicode: u32,
         };
@@ -1150,24 +1143,16 @@ pub const Trigger = struct {
                 }
             }
 
-            // If the key starts with "physical" then this is an physical key.
-            const physical_prefix = "physical:";
-            const physical = std.mem.startsWith(u8, part, physical_prefix);
-            const key_part = if (physical) part[physical_prefix.len..] else part;
-
             // Check if its a key
             const keysInfo = @typeInfo(key.Key).@"enum";
             inline for (keysInfo.fields) |field| {
-                if (!std.mem.eql(u8, field.name, "invalid")) {
-                    if (std.mem.eql(u8, key_part, field.name)) {
+                if (!std.mem.eql(u8, field.name, "unidentified")) {
+                    if (std.mem.eql(u8, part, field.name)) {
                         // Repeat not allowed
                         if (!result.isKeyUnset()) return Error.InvalidFormat;
 
                         const keyval = @field(key.Key, field.name);
-                        result.key = if (physical)
-                            .{ .physical = keyval }
-                        else
-                            .{ .translated = keyval };
+                        result.key = .{ .physical = keyval };
                         continue :loop;
                     }
                 }
@@ -1177,20 +1162,12 @@ pub const Trigger = struct {
             // character then we can use that as a key.
             if (result.isKeyUnset()) unicode: {
                 // Invalid UTF8 drops to invalid format
-                const view = std.unicode.Utf8View.init(key_part) catch break :unicode;
+                const view = std.unicode.Utf8View.init(part) catch break :unicode;
                 var it = view.iterator();
 
                 // No codepoints or multiple codepoints drops to invalid format
                 const cp = it.nextCodepoint() orelse break :unicode;
                 if (it.nextCodepoint() != null) break :unicode;
-
-                // If this is ASCII and we have a translated key, set that.
-                if (std.math.cast(u8, cp)) |ascii| {
-                    if (key.Key.fromASCII(ascii)) |k| {
-                        result.key = .{ .translated = k };
-                        continue :loop;
-                    }
-                }
 
                 result.key = .{ .unicode = cp };
                 continue :loop;
@@ -1205,7 +1182,7 @@ pub const Trigger = struct {
     /// Returns true if this trigger has no key set.
     pub fn isKeyUnset(self: Trigger) bool {
         return switch (self.key) {
-            .translated => |v| v == .invalid,
+            .physical => |v| v == .unidentified,
             else => false,
         };
     }
@@ -1228,7 +1205,6 @@ pub const Trigger = struct {
         return .{
             .tag = self.key,
             .key = switch (self.key) {
-                .translated => |v| .{ .translated = v },
                 .physical => |v| .{ .physical = v },
                 .unicode => |v| .{ .unicode = @intCast(v) },
             },
@@ -1254,8 +1230,7 @@ pub const Trigger = struct {
 
         // Key
         switch (self.key) {
-            .translated => |k| try writer.print("{s}", .{@tagName(k)}),
-            .physical => |k| try writer.print("physical:{s}", .{@tagName(k)}),
+            .physical => |k| try writer.print("{s}", .{@tagName(k)}),
             .unicode => |c| try writer.print("{u}", .{c}),
         }
     }
@@ -1620,11 +1595,8 @@ pub const Set = struct {
     pub fn getEvent(self: *const Set, event: KeyEvent) ?Entry {
         var trigger: Trigger = .{
             .mods = event.mods.binding(),
-            .key = .{ .translated = event.key },
+            .key = .{ .physical = event.physical_key },
         };
-        if (self.get(trigger)) |v| return v;
-
-        trigger.key = .{ .physical = event.physical_key };
         if (self.get(trigger)) |v| return v;
 
         if (event.unshifted_codepoint > 0) {
@@ -1637,19 +1609,7 @@ pub const Set = struct {
 
     /// Remove a binding for a given trigger.
     pub fn remove(self: *Set, alloc: Allocator, t: Trigger) void {
-        // Remove whatever this trigger is
         self.removeExact(alloc, t);
-
-        // If we have a physical we remove translated and vice versa.
-        const alternate: Trigger.Key = switch (t.key) {
-            .unicode => return,
-            .translated => |k| .{ .physical = k },
-            .physical => |k| .{ .translated = k },
-        };
-
-        var alt_t: Trigger = t;
-        alt_t.key = alternate;
-        self.removeExact(alloc, alt_t);
     }
 
     fn removeExact(self: *Set, alloc: Allocator, t: Trigger) void {
@@ -1750,37 +1710,24 @@ test "parse: triggers" {
     // single character
     try testing.expectEqual(
         Binding{
-            .trigger = .{ .key = .{ .translated = .a } },
+            .trigger = .{ .key = .{ .unicode = 'a' } },
             .action = .{ .ignore = {} },
         },
         try parseSingle("a=ignore"),
     );
 
-    // unicode keys that map to translated
-    try testing.expectEqual(Binding{
-        .trigger = .{ .key = .{ .translated = .one } },
-        .action = .{ .ignore = {} },
-    }, try parseSingle("1=ignore"));
-    try testing.expectEqual(Binding{
-        .trigger = .{
-            .mods = .{ .super = true },
-            .key = .{ .translated = .period },
-        },
-        .action = .{ .ignore = {} },
-    }, try parseSingle("cmd+.=ignore"));
-
     // single modifier
     try testing.expectEqual(Binding{
         .trigger = .{
             .mods = .{ .shift = true },
-            .key = .{ .translated = .a },
+            .key = .{ .unicode = 'a' },
         },
         .action = .{ .ignore = {} },
     }, try parseSingle("shift+a=ignore"));
     try testing.expectEqual(Binding{
         .trigger = .{
             .mods = .{ .ctrl = true },
-            .key = .{ .translated = .a },
+            .key = .{ .unicode = 'a' },
         },
         .action = .{ .ignore = {} },
     }, try parseSingle("ctrl+a=ignore"));
@@ -1789,7 +1736,7 @@ test "parse: triggers" {
     try testing.expectEqual(Binding{
         .trigger = .{
             .mods = .{ .shift = true, .ctrl = true },
-            .key = .{ .translated = .a },
+            .key = .{ .unicode = 'a' },
         },
         .action = .{ .ignore = {} },
     }, try parseSingle("shift+ctrl+a=ignore"));
@@ -1798,7 +1745,7 @@ test "parse: triggers" {
     try testing.expectEqual(Binding{
         .trigger = .{
             .mods = .{ .shift = true },
-            .key = .{ .translated = .a },
+            .key = .{ .unicode = 'a' },
         },
         .action = .{ .ignore = {} },
     }, try parseSingle("a+shift=ignore"));
@@ -1807,10 +1754,10 @@ test "parse: triggers" {
     try testing.expectEqual(Binding{
         .trigger = .{
             .mods = .{ .shift = true },
-            .key = .{ .physical = .a },
+            .key = .{ .physical = .key_a },
         },
         .action = .{ .ignore = {} },
-    }, try parseSingle("shift+physical:a=ignore"));
+    }, try parseSingle("shift+key_a=ignore"));
 
     // unicode keys
     try testing.expectEqual(Binding{
@@ -1825,7 +1772,7 @@ test "parse: triggers" {
     try testing.expectEqual(Binding{
         .trigger = .{
             .mods = .{ .shift = true },
-            .key = .{ .translated = .a },
+            .key = .{ .unicode = 'a' },
         },
         .action = .{ .ignore = {} },
         .flags = .{ .consumed = false },
@@ -1835,17 +1782,17 @@ test "parse: triggers" {
     try testing.expectEqual(Binding{
         .trigger = .{
             .mods = .{ .shift = true },
-            .key = .{ .physical = .a },
+            .key = .{ .physical = .key_a },
         },
         .action = .{ .ignore = {} },
         .flags = .{ .consumed = false },
-    }, try parseSingle("unconsumed:physical:a+shift=ignore"));
+    }, try parseSingle("unconsumed:key_a+shift=ignore"));
 
     // performable keys
     try testing.expectEqual(Binding{
         .trigger = .{
             .mods = .{ .shift = true },
-            .key = .{ .translated = .a },
+            .key = .{ .unicode = 'a' },
         },
         .action = .{ .ignore = {} },
         .flags = .{ .performable = true },
@@ -1868,7 +1815,7 @@ test "parse: global triggers" {
     try testing.expectEqual(Binding{
         .trigger = .{
             .mods = .{ .shift = true },
-            .key = .{ .translated = .a },
+            .key = .{ .unicode = 'a' },
         },
         .action = .{ .ignore = {} },
         .flags = .{ .global = true },
@@ -1878,17 +1825,17 @@ test "parse: global triggers" {
     try testing.expectEqual(Binding{
         .trigger = .{
             .mods = .{ .shift = true },
-            .key = .{ .physical = .a },
+            .key = .{ .physical = .key_a },
         },
         .action = .{ .ignore = {} },
         .flags = .{ .global = true },
-    }, try parseSingle("global:physical:a+shift=ignore"));
+    }, try parseSingle("global:key_a+shift=ignore"));
 
     // global unconsumed keys
     try testing.expectEqual(Binding{
         .trigger = .{
             .mods = .{ .shift = true },
-            .key = .{ .translated = .a },
+            .key = .{ .unicode = 'a' },
         },
         .action = .{ .ignore = {} },
         .flags = .{
@@ -1911,7 +1858,7 @@ test "parse: all triggers" {
     try testing.expectEqual(Binding{
         .trigger = .{
             .mods = .{ .shift = true },
-            .key = .{ .translated = .a },
+            .key = .{ .unicode = 'a' },
         },
         .action = .{ .ignore = {} },
         .flags = .{ .all = true },
@@ -1921,17 +1868,17 @@ test "parse: all triggers" {
     try testing.expectEqual(Binding{
         .trigger = .{
             .mods = .{ .shift = true },
-            .key = .{ .physical = .a },
+            .key = .{ .physical = .key_a },
         },
         .action = .{ .ignore = {} },
         .flags = .{ .all = true },
-    }, try parseSingle("all:physical:a+shift=ignore"));
+    }, try parseSingle("all:key_a+shift=ignore"));
 
     // all unconsumed keys
     try testing.expectEqual(Binding{
         .trigger = .{
             .mods = .{ .shift = true },
-            .key = .{ .translated = .a },
+            .key = .{ .unicode = 'a' },
         },
         .action = .{ .ignore = {} },
         .flags = .{
@@ -1953,14 +1900,14 @@ test "parse: modifier aliases" {
     try testing.expectEqual(Binding{
         .trigger = .{
             .mods = .{ .super = true },
-            .key = .{ .translated = .a },
+            .key = .{ .unicode = 'a' },
         },
         .action = .{ .ignore = {} },
     }, try parseSingle("cmd+a=ignore"));
     try testing.expectEqual(Binding{
         .trigger = .{
             .mods = .{ .super = true },
-            .key = .{ .translated = .a },
+            .key = .{ .unicode = 'a' },
         },
         .action = .{ .ignore = {} },
     }, try parseSingle("command+a=ignore"));
@@ -1968,14 +1915,14 @@ test "parse: modifier aliases" {
     try testing.expectEqual(Binding{
         .trigger = .{
             .mods = .{ .alt = true },
-            .key = .{ .translated = .a },
+            .key = .{ .unicode = 'a' },
         },
         .action = .{ .ignore = {} },
     }, try parseSingle("opt+a=ignore"));
     try testing.expectEqual(Binding{
         .trigger = .{
             .mods = .{ .alt = true },
-            .key = .{ .translated = .a },
+            .key = .{ .unicode = 'a' },
         },
         .action = .{ .ignore = {} },
     }, try parseSingle("option+a=ignore"));
@@ -1983,7 +1930,7 @@ test "parse: modifier aliases" {
     try testing.expectEqual(Binding{
         .trigger = .{
             .mods = .{ .ctrl = true },
-            .key = .{ .translated = .a },
+            .key = .{ .unicode = 'a' },
         },
         .action = .{ .ignore = {} },
     }, try parseSingle("control+a=ignore"));
@@ -2002,7 +1949,7 @@ test "parse: action no parameters" {
     // no parameters
     try testing.expectEqual(
         Binding{
-            .trigger = .{ .key = .{ .translated = .a } },
+            .trigger = .{ .key = .{ .unicode = 'a' } },
             .action = .{ .ignore = {} },
         },
         try parseSingle("a=ignore"),
@@ -2108,15 +2055,15 @@ test "sequence iterator" {
     // single character
     {
         var it: SequenceIterator = .{ .input = "a" };
-        try testing.expectEqual(Trigger{ .key = .{ .translated = .a } }, (try it.next()).?);
+        try testing.expectEqual(Trigger{ .key = .{ .unicode = 'a' } }, (try it.next()).?);
         try testing.expect(try it.next() == null);
     }
 
     // multi character
     {
         var it: SequenceIterator = .{ .input = "a>b" };
-        try testing.expectEqual(Trigger{ .key = .{ .translated = .a } }, (try it.next()).?);
-        try testing.expectEqual(Trigger{ .key = .{ .translated = .b } }, (try it.next()).?);
+        try testing.expectEqual(Trigger{ .key = .{ .unicode = 'a' } }, (try it.next()).?);
+        try testing.expectEqual(Trigger{ .key = .{ .unicode = 'b' } }, (try it.next()).?);
         try testing.expect(try it.next() == null);
     }
 
@@ -2135,7 +2082,7 @@ test "sequence iterator" {
     // empty ending sequence
     {
         var it: SequenceIterator = .{ .input = "a>" };
-        try testing.expectEqual(Trigger{ .key = .{ .translated = .a } }, (try it.next()).?);
+        try testing.expectEqual(Trigger{ .key = .{ .unicode = 'a' } }, (try it.next()).?);
         try testing.expectError(Error.InvalidFormat, it.next());
     }
 }
@@ -2149,7 +2096,7 @@ test "parse: sequences" {
         try testing.expectEqual(Parser.Elem{ .binding = .{
             .trigger = .{
                 .mods = .{ .ctrl = true },
-                .key = .{ .translated = .a },
+                .key = .{ .unicode = 'a' },
             },
             .action = .{ .ignore = {} },
         } }, (try p.next()).?);
@@ -2160,11 +2107,11 @@ test "parse: sequences" {
     {
         var p = try Parser.init("a>b=ignore");
         try testing.expectEqual(Parser.Elem{ .leader = .{
-            .key = .{ .translated = .a },
+            .key = .{ .unicode = 'a' },
         } }, (try p.next()).?);
         try testing.expectEqual(Parser.Elem{ .binding = .{
             .trigger = .{
-                .key = .{ .translated = .b },
+                .key = .{ .unicode = 'b' },
             },
             .action = .{ .ignore = {} },
         } }, (try p.next()).?);
@@ -2183,7 +2130,7 @@ test "set: parseAndPut typical binding" {
 
     // Creates forward mapping
     {
-        const action = s.get(.{ .key = .{ .translated = .a } }).?.value_ptr.*.leaf;
+        const action = s.get(.{ .key = .{ .unicode = 'a' } }).?.value_ptr.*.leaf;
         try testing.expect(action.action == .new_window);
         try testing.expectEqual(Flags{}, action.flags);
     }
@@ -2191,7 +2138,7 @@ test "set: parseAndPut typical binding" {
     // Creates reverse mapping
     {
         const trigger = s.getTrigger(.{ .new_window = {} }).?;
-        try testing.expect(trigger.key.translated == .a);
+        try testing.expect(trigger.key.unicode == 'a');
     }
 }
 
@@ -2206,7 +2153,7 @@ test "set: parseAndPut unconsumed binding" {
 
     // Creates forward mapping
     {
-        const trigger: Trigger = .{ .key = .{ .translated = .a } };
+        const trigger: Trigger = .{ .key = .{ .unicode = 'a' } };
         const action = s.get(trigger).?.value_ptr.*.leaf;
         try testing.expect(action.action == .new_window);
         try testing.expectEqual(Flags{ .consumed = false }, action.flags);
@@ -2215,7 +2162,7 @@ test "set: parseAndPut unconsumed binding" {
     // Creates reverse mapping
     {
         const trigger = s.getTrigger(.{ .new_window = {} }).?;
-        try testing.expect(trigger.key.translated == .a);
+        try testing.expect(trigger.key.unicode == 'a');
     }
 }
 
@@ -2231,25 +2178,7 @@ test "set: parseAndPut removed binding" {
 
     // Creates forward mapping
     {
-        const trigger: Trigger = .{ .key = .{ .translated = .a } };
-        try testing.expect(s.get(trigger) == null);
-    }
-    try testing.expect(s.getTrigger(.{ .new_window = {} }) == null);
-}
-
-test "set: parseAndPut removed physical binding" {
-    const testing = std.testing;
-    const alloc = testing.allocator;
-
-    var s: Set = .{};
-    defer s.deinit(alloc);
-
-    try s.parseAndPut(alloc, "physical:a=new_window");
-    try s.parseAndPut(alloc, "a=unbind");
-
-    // Creates forward mapping
-    {
-        const trigger: Trigger = .{ .key = .{ .physical = .a } };
+        const trigger: Trigger = .{ .key = .{ .unicode = 'a' } };
         try testing.expect(s.get(trigger) == null);
     }
     try testing.expect(s.getTrigger(.{ .new_window = {} }) == null);
@@ -2265,13 +2194,13 @@ test "set: parseAndPut sequence" {
     try s.parseAndPut(alloc, "a>b=new_window");
     var current: *Set = &s;
     {
-        const t: Trigger = .{ .key = .{ .translated = .a } };
+        const t: Trigger = .{ .key = .{ .unicode = 'a' } };
         const e = current.get(t).?.value_ptr.*;
         try testing.expect(e == .leader);
         current = e.leader;
     }
     {
-        const t: Trigger = .{ .key = .{ .translated = .b } };
+        const t: Trigger = .{ .key = .{ .unicode = 'b' } };
         const e = current.get(t).?.value_ptr.*;
         try testing.expect(e == .leaf);
         try testing.expect(e.leaf.action == .new_window);
@@ -2290,20 +2219,20 @@ test "set: parseAndPut sequence with two actions" {
     try s.parseAndPut(alloc, "a>c=new_tab");
     var current: *Set = &s;
     {
-        const t: Trigger = .{ .key = .{ .translated = .a } };
+        const t: Trigger = .{ .key = .{ .unicode = 'a' } };
         const e = current.get(t).?.value_ptr.*;
         try testing.expect(e == .leader);
         current = e.leader;
     }
     {
-        const t: Trigger = .{ .key = .{ .translated = .b } };
+        const t: Trigger = .{ .key = .{ .unicode = 'b' } };
         const e = current.get(t).?.value_ptr.*;
         try testing.expect(e == .leaf);
         try testing.expect(e.leaf.action == .new_window);
         try testing.expectEqual(Flags{}, e.leaf.flags);
     }
     {
-        const t: Trigger = .{ .key = .{ .translated = .c } };
+        const t: Trigger = .{ .key = .{ .unicode = 'c' } };
         const e = current.get(t).?.value_ptr.*;
         try testing.expect(e == .leaf);
         try testing.expect(e.leaf.action == .new_tab);
@@ -2322,13 +2251,13 @@ test "set: parseAndPut overwrite sequence" {
     try s.parseAndPut(alloc, "a>b=new_window");
     var current: *Set = &s;
     {
-        const t: Trigger = .{ .key = .{ .translated = .a } };
+        const t: Trigger = .{ .key = .{ .unicode = 'a' } };
         const e = current.get(t).?.value_ptr.*;
         try testing.expect(e == .leader);
         current = e.leader;
     }
     {
-        const t: Trigger = .{ .key = .{ .translated = .b } };
+        const t: Trigger = .{ .key = .{ .unicode = 'b' } };
         const e = current.get(t).?.value_ptr.*;
         try testing.expect(e == .leaf);
         try testing.expect(e.leaf.action == .new_window);
@@ -2347,13 +2276,13 @@ test "set: parseAndPut overwrite leader" {
     try s.parseAndPut(alloc, "a>b=new_window");
     var current: *Set = &s;
     {
-        const t: Trigger = .{ .key = .{ .translated = .a } };
+        const t: Trigger = .{ .key = .{ .unicode = 'a' } };
         const e = current.get(t).?.value_ptr.*;
         try testing.expect(e == .leader);
         current = e.leader;
     }
     {
-        const t: Trigger = .{ .key = .{ .translated = .b } };
+        const t: Trigger = .{ .key = .{ .unicode = 'b' } };
         const e = current.get(t).?.value_ptr.*;
         try testing.expect(e == .leaf);
         try testing.expect(e.leaf.action == .new_window);
@@ -2372,7 +2301,7 @@ test "set: parseAndPut unbind sequence unbinds leader" {
     try s.parseAndPut(alloc, "a>b=unbind");
     var current: *Set = &s;
     {
-        const t: Trigger = .{ .key = .{ .translated = .a } };
+        const t: Trigger = .{ .key = .{ .unicode = 'a' } };
         try testing.expect(current.get(t) == null);
     }
 }
@@ -2387,7 +2316,7 @@ test "set: parseAndPut unbind sequence unbinds leader if not set" {
     try s.parseAndPut(alloc, "a>b=unbind");
     var current: *Set = &s;
     {
-        const t: Trigger = .{ .key = .{ .translated = .a } };
+        const t: Trigger = .{ .key = .{ .unicode = 'a' } };
         try testing.expect(current.get(t) == null);
     }
 }
@@ -2405,7 +2334,7 @@ test "set: parseAndPut sequence preserves reverse mapping" {
     // Creates reverse mapping
     {
         const trigger = s.getTrigger(.{ .new_window = {} }).?;
-        try testing.expect(trigger.key.translated == .a);
+        try testing.expect(trigger.key.unicode == 'a');
     }
 }
 
@@ -2419,13 +2348,13 @@ test "set: put overwrites sequence" {
     try s.parseAndPut(alloc, "ctrl+a>b=new_window");
     try s.put(alloc, .{
         .mods = .{ .ctrl = true },
-        .key = .{ .translated = .a },
+        .key = .{ .unicode = 'a' },
     }, .{ .new_window = {} });
 
     // Creates reverse mapping
     {
         const trigger = s.getTrigger(.{ .new_window = {} }).?;
-        try testing.expect(trigger.key.translated == .a);
+        try testing.expect(trigger.key.unicode == 'a');
     }
 }
 
@@ -2436,24 +2365,24 @@ test "set: maintains reverse mapping" {
     var s: Set = .{};
     defer s.deinit(alloc);
 
-    try s.put(alloc, .{ .key = .{ .translated = .a } }, .{ .new_window = {} });
+    try s.put(alloc, .{ .key = .{ .unicode = 'a' } }, .{ .new_window = {} });
     {
         const trigger = s.getTrigger(.{ .new_window = {} }).?;
-        try testing.expect(trigger.key.translated == .a);
+        try testing.expect(trigger.key.unicode == 'a');
     }
 
     // should be most recent
-    try s.put(alloc, .{ .key = .{ .translated = .b } }, .{ .new_window = {} });
+    try s.put(alloc, .{ .key = .{ .unicode = 'b' } }, .{ .new_window = {} });
     {
         const trigger = s.getTrigger(.{ .new_window = {} }).?;
-        try testing.expect(trigger.key.translated == .b);
+        try testing.expect(trigger.key.unicode == 'b');
     }
 
     // removal should replace
-    s.remove(alloc, .{ .key = .{ .translated = .b } });
+    s.remove(alloc, .{ .key = .{ .unicode = 'b' } });
     {
         const trigger = s.getTrigger(.{ .new_window = {} }).?;
-        try testing.expect(trigger.key.translated == .a);
+        try testing.expect(trigger.key.unicode == 'a');
     }
 }
 
@@ -2464,29 +2393,29 @@ test "set: performable is not part of reverse mappings" {
     var s: Set = .{};
     defer s.deinit(alloc);
 
-    try s.put(alloc, .{ .key = .{ .translated = .a } }, .{ .new_window = {} });
+    try s.put(alloc, .{ .key = .{ .unicode = 'a' } }, .{ .new_window = {} });
     {
         const trigger = s.getTrigger(.{ .new_window = {} }).?;
-        try testing.expect(trigger.key.translated == .a);
+        try testing.expect(trigger.key.unicode == 'a');
     }
 
     // trigger should be non-performable
     try s.putFlags(
         alloc,
-        .{ .key = .{ .translated = .b } },
+        .{ .key = .{ .unicode = 'b' } },
         .{ .new_window = {} },
         .{ .performable = true },
     );
     {
         const trigger = s.getTrigger(.{ .new_window = {} }).?;
-        try testing.expect(trigger.key.translated == .a);
+        try testing.expect(trigger.key.unicode == 'a');
     }
 
     // removal of performable should do nothing
-    s.remove(alloc, .{ .key = .{ .translated = .b } });
+    s.remove(alloc, .{ .key = .{ .unicode = 'b' } });
     {
         const trigger = s.getTrigger(.{ .new_window = {} }).?;
-        try testing.expect(trigger.key.translated == .a);
+        try testing.expect(trigger.key.unicode == 'a');
     }
 }
 
@@ -2497,14 +2426,14 @@ test "set: overriding a mapping updates reverse" {
     var s: Set = .{};
     defer s.deinit(alloc);
 
-    try s.put(alloc, .{ .key = .{ .translated = .a } }, .{ .new_window = {} });
+    try s.put(alloc, .{ .key = .{ .unicode = 'a' } }, .{ .new_window = {} });
     {
         const trigger = s.getTrigger(.{ .new_window = {} }).?;
-        try testing.expect(trigger.key.translated == .a);
+        try testing.expect(trigger.key.unicode == 'a');
     }
 
     // should be most recent
-    try s.put(alloc, .{ .key = .{ .translated = .a } }, .{ .new_tab = {} });
+    try s.put(alloc, .{ .key = .{ .unicode = 'a' } }, .{ .new_tab = {} });
     {
         const trigger = s.getTrigger(.{ .new_window = {} });
         try testing.expect(trigger == null);
@@ -2518,22 +2447,22 @@ test "set: consumed state" {
     var s: Set = .{};
     defer s.deinit(alloc);
 
-    try s.put(alloc, .{ .key = .{ .translated = .a } }, .{ .new_window = {} });
-    try testing.expect(s.get(.{ .key = .{ .translated = .a } }).?.value_ptr.* == .leaf);
-    try testing.expect(s.get(.{ .key = .{ .translated = .a } }).?.value_ptr.*.leaf.flags.consumed);
+    try s.put(alloc, .{ .key = .{ .unicode = 'a' } }, .{ .new_window = {} });
+    try testing.expect(s.get(.{ .key = .{ .unicode = 'a' } }).?.value_ptr.* == .leaf);
+    try testing.expect(s.get(.{ .key = .{ .unicode = 'a' } }).?.value_ptr.*.leaf.flags.consumed);
 
     try s.putFlags(
         alloc,
-        .{ .key = .{ .translated = .a } },
+        .{ .key = .{ .unicode = 'a' } },
         .{ .new_window = {} },
         .{ .consumed = false },
     );
-    try testing.expect(s.get(.{ .key = .{ .translated = .a } }).?.value_ptr.* == .leaf);
-    try testing.expect(!s.get(.{ .key = .{ .translated = .a } }).?.value_ptr.*.leaf.flags.consumed);
+    try testing.expect(s.get(.{ .key = .{ .unicode = 'a' } }).?.value_ptr.* == .leaf);
+    try testing.expect(!s.get(.{ .key = .{ .unicode = 'a' } }).?.value_ptr.*.leaf.flags.consumed);
 
-    try s.put(alloc, .{ .key = .{ .translated = .a } }, .{ .new_window = {} });
-    try testing.expect(s.get(.{ .key = .{ .translated = .a } }).?.value_ptr.* == .leaf);
-    try testing.expect(s.get(.{ .key = .{ .translated = .a } }).?.value_ptr.*.leaf.flags.consumed);
+    try s.put(alloc, .{ .key = .{ .unicode = 'a' } }, .{ .new_window = {} });
+    try testing.expect(s.get(.{ .key = .{ .unicode = 'a' } }).?.value_ptr.* == .leaf);
+    try testing.expect(s.get(.{ .key = .{ .unicode = 'a' } }).?.value_ptr.*.leaf.flags.consumed);
 }
 
 test "Action: clone" {

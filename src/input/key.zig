@@ -21,7 +21,7 @@ pub const KeyEvent = struct {
     /// the "i" physical key will be reported as "c". The physical
     /// key is the key that was physically pressed on the keyboard.
     key: Key,
-    physical_key: Key = .invalid,
+    physical_key: Key = .unidentified,
 
     /// Mods are the modifiers that are pressed.
     mods: Mods = .{},
@@ -391,6 +391,25 @@ pub const Key = enum(c_int) {
     numpad_paren_right,
     numpad_subtract,
 
+    // > For numpads that provide keys not listed here, a code value string
+    // > should be created by starting with "Numpad" and appending an
+    // > appropriate description of the key.
+    //
+    // These numpad entries are distinguished by various encoding protocols
+    // (legacy and Kitty) so we support them here in case the apprt can
+    // produce them.
+    numpad_up,
+    numpad_down,
+    numpad_right,
+    numpad_left,
+    numpad_begin,
+    numpad_home,
+    numpad_end,
+    numpad_insert,
+    numpad_delete,
+    numpad_page_up,
+    numpad_page_down,
+
     // "Function Section" § 3.5
     escape,
     f1,
@@ -405,6 +424,19 @@ pub const Key = enum(c_int) {
     f10,
     f11,
     f12,
+    f13,
+    f14,
+    f15,
+    f16,
+    f17,
+    f18,
+    f19,
+    f20,
+    f21,
+    f22,
+    f23,
+    f24,
+    f25,
     @"fn",
     fn_lock,
     print_screen,
@@ -437,87 +469,61 @@ pub const Key = enum(c_int) {
 
     // Backwards compatibility for Ghostty 1.1.x and earlier, we don't
     // want to force people to rewrite their configs.
-    pub const a = .key_a;
-    pub const b = .key_b;
-    pub const c = .key_c;
-    pub const d = .key_d;
-    pub const e = .key_e;
-    pub const f = .key_f;
-    pub const g = .key_g;
-    pub const h = .key_h;
-    pub const i = .key_i;
-    pub const j = .key_j;
-    pub const k = .key_k;
-    pub const l = .key_l;
-    pub const m = .key_m;
-    pub const n = .key_n;
-    pub const o = .key_o;
-    pub const p = .key_p;
-    pub const q = .key_q;
-    pub const r = .key_r;
-    pub const s = .key_s;
-    pub const t = .key_t;
-    pub const u = .key_u;
-    pub const v = .key_v;
-    pub const w = .key_w;
-    pub const x = .key_x;
-    pub const y = .key_y;
-    pub const z = .key_z;
-    pub const zero = .digit_0;
-    pub const one = .digit_1;
-    pub const two = .digit_2;
-    pub const three = .digit_3;
-    pub const four = .digit_4;
-    pub const five = .digit_5;
-    pub const six = .digit_6;
-    pub const seven = .digit_7;
-    pub const eight = .digit_8;
-    pub const nine = .digit_9;
-    pub const apostrophe = .quote;
-    pub const grave_accent = .backquote;
-    pub const left_bracket = .bracket_left;
-    pub const right_bracket = .bracket_right;
-    pub const up = .arrow_up;
-    pub const down = .arrow_down;
-    pub const left = .arrow_left;
-    pub const right = .arrow_right;
-    pub const kp_0 = .numpad_0;
-    pub const kp_1 = .numpad_1;
-    pub const kp_2 = .numpad_2;
-    pub const kp_3 = .numpad_3;
-    pub const kp_4 = .numpad_4;
-    pub const kp_5 = .numpad_5;
-    pub const kp_6 = .numpad_6;
-    pub const kp_7 = .numpad_7;
-    pub const kp_8 = .numpad_8;
-    pub const kp_9 = .numpad_9;
-    pub const kp_decimal = .numpad_decimal;
-    pub const kp_divide = .numpad_divide;
-    pub const kp_multiply = .numpad_multiply;
-    pub const kp_subtract = .numpad_subtract;
-    pub const kp_add = .numpad_add;
-    pub const kp_enter = .numpad_enter;
-    pub const kp_equal = .numpad_equal;
-    pub const kp_separator = .numpad_separator;
-    pub const kp_left = .numpad_left;
-    pub const kp_right = .numpad_right;
-    pub const kp_up = .numpad_up;
-    pub const kp_down = .numpad_down;
-    pub const kp_page_up = .numpad_page_up;
-    pub const kp_page_down = .numpad_page_down;
-    pub const kp_home = .numpad_home;
-    pub const kp_end = .numpad_end;
-    pub const kp_insert = .numpad_insert;
-    pub const kp_delete = .numpad_delete;
-    pub const kp_begin = .numpad_begin;
-    pub const left_shift = .shift_left;
-    pub const right_shift = .shift_right;
-    pub const left_control = .control_left;
-    pub const right_control = .control_right;
-    pub const left_alt = .alt_left;
-    pub const right_alt = .alt_right;
-    pub const left_super = .meta_left;
-    pub const right_super = .meta_right;
+    // pub const zero = .digit_0;
+    // pub const one = .digit_1;
+    // pub const two = .digit_2;
+    // pub const three = .digit_3;
+    // pub const four = .digit_4;
+    // pub const five = .digit_5;
+    // pub const six = .digit_6;
+    // pub const seven = .digit_7;
+    // pub const eight = .digit_8;
+    // pub const nine = .digit_9;
+    // pub const apostrophe = .quote;
+    // pub const grave_accent = .backquote;
+    // pub const left_bracket = .bracket_left;
+    // pub const right_bracket = .bracket_right;
+    // pub const up = .arrow_up;
+    // pub const down = .arrow_down;
+    // pub const left = .arrow_left;
+    // pub const right = .arrow_right;
+    // pub const kp_0 = .numpad_0;
+    // pub const kp_1 = .numpad_1;
+    // pub const kp_2 = .numpad_2;
+    // pub const kp_3 = .numpad_3;
+    // pub const kp_4 = .numpad_4;
+    // pub const kp_5 = .numpad_5;
+    // pub const kp_6 = .numpad_6;
+    // pub const kp_7 = .numpad_7;
+    // pub const kp_8 = .numpad_8;
+    // pub const kp_9 = .numpad_9;
+    // pub const kp_decimal = .numpad_decimal;
+    // pub const kp_divide = .numpad_divide;
+    // pub const kp_multiply = .numpad_multiply;
+    // pub const kp_subtract = .numpad_subtract;
+    // pub const kp_add = .numpad_add;
+    // pub const kp_enter = .numpad_enter;
+    // pub const kp_equal = .numpad_equal;
+    // pub const kp_separator = .numpad_separator;
+    // pub const kp_left = .numpad_left;
+    // pub const kp_right = .numpad_right;
+    // pub const kp_up = .numpad_up;
+    // pub const kp_down = .numpad_down;
+    // pub const kp_page_up = .numpad_page_up;
+    // pub const kp_page_down = .numpad_page_down;
+    // pub const kp_home = .numpad_home;
+    // pub const kp_end = .numpad_end;
+    // pub const kp_insert = .numpad_insert;
+    // pub const kp_delete = .numpad_delete;
+    // pub const kp_begin = .numpad_begin;
+    // pub const left_shift = .shift_left;
+    // pub const right_shift = .shift_right;
+    // pub const left_control = .control_left;
+    // pub const right_control = .control_right;
+    // pub const left_alt = .alt_left;
+    // pub const right_alt = .alt_right;
+    // pub const left_super = .meta_left;
+    // pub const right_super = .meta_right;
 
     /// Converts an ASCII character to a key, if possible. This returns
     /// null if the character is unknown.
@@ -586,7 +592,7 @@ pub const Key = enum(c_int) {
         return switch (self) {
             inline else => |tag| {
                 const name = @tagName(tag);
-                const result = comptime std.mem.startsWith(u8, name, "kp_");
+                const result = comptime std.mem.startsWith(u8, name, "numpad_");
                 return result;
             },
         };
@@ -763,107 +769,106 @@ pub const Key = enum(c_int) {
     /// or ctrl.
     pub fn ctrlOrSuper(self: Key) bool {
         if (comptime builtin.target.os.tag.isDarwin()) {
-            return self == .left_super or self == .right_super;
+            return self == .meta_left or self == .meta_right;
         }
-        return self == .left_control or self == .right_control;
+        return self == .control_left or self == .control_right;
     }
 
     /// true if this key is either left or right shift.
     pub fn leftOrRightShift(self: Key) bool {
-        return self == .left_shift or self == .right_shift;
+        return self == .shift_left or self == .shift_right;
     }
 
     /// true if this key is either left or right alt.
     pub fn leftOrRightAlt(self: Key) bool {
-        return self == .left_alt or self == .right_alt;
+        return self == .alt_left or self == .alt_right;
     }
 
     test "fromASCII should not return keypad keys" {
         const testing = std.testing;
-        try testing.expect(Key.fromASCII('0').? == .zero);
+        try testing.expect(Key.fromASCII('0').? == .digit_0);
         try testing.expect(Key.fromASCII('*') == null);
     }
 
     test "keypad keys" {
         const testing = std.testing;
-        try testing.expect(Key.kp_0.keypad());
-        try testing.expect(!Key.one.keypad());
+        try testing.expect(Key.numpad_0.keypad());
+        try testing.expect(!Key.digit_1.keypad());
     }
 
     const codepoint_map: []const struct { u21, Key } = &.{
-        .{ 'a', .a },
-        .{ 'b', .b },
-        .{ 'c', .c },
-        .{ 'd', .d },
-        .{ 'e', .e },
-        .{ 'f', .f },
-        .{ 'g', .g },
-        .{ 'h', .h },
-        .{ 'i', .i },
-        .{ 'j', .j },
-        .{ 'k', .k },
-        .{ 'l', .l },
-        .{ 'm', .m },
-        .{ 'n', .n },
-        .{ 'o', .o },
-        .{ 'p', .p },
-        .{ 'q', .q },
-        .{ 'r', .r },
-        .{ 's', .s },
-        .{ 't', .t },
-        .{ 'u', .u },
-        .{ 'v', .v },
-        .{ 'w', .w },
-        .{ 'x', .x },
-        .{ 'y', .y },
-        .{ 'z', .z },
-        .{ '0', .zero },
-        .{ '1', .one },
-        .{ '2', .two },
-        .{ '3', .three },
-        .{ '4', .four },
-        .{ '5', .five },
-        .{ '6', .six },
-        .{ '7', .seven },
-        .{ '8', .eight },
-        .{ '9', .nine },
+        .{ 'a', .key_a },
+        .{ 'b', .key_b },
+        .{ 'c', .key_c },
+        .{ 'd', .key_d },
+        .{ 'e', .key_e },
+        .{ 'f', .key_f },
+        .{ 'g', .key_g },
+        .{ 'h', .key_h },
+        .{ 'i', .key_i },
+        .{ 'j', .key_j },
+        .{ 'k', .key_k },
+        .{ 'l', .key_l },
+        .{ 'm', .key_m },
+        .{ 'n', .key_n },
+        .{ 'o', .key_o },
+        .{ 'p', .key_p },
+        .{ 'q', .key_q },
+        .{ 'r', .key_r },
+        .{ 's', .key_s },
+        .{ 't', .key_t },
+        .{ 'u', .key_u },
+        .{ 'v', .key_v },
+        .{ 'w', .key_w },
+        .{ 'x', .key_x },
+        .{ 'y', .key_y },
+        .{ 'z', .key_z },
+        .{ '0', .digit_0 },
+        .{ '1', .digit_1 },
+        .{ '2', .digit_2 },
+        .{ '3', .digit_3 },
+        .{ '4', .digit_4 },
+        .{ '5', .digit_5 },
+        .{ '6', .digit_6 },
+        .{ '7', .digit_7 },
+        .{ '8', .digit_8 },
+        .{ '9', .digit_9 },
         .{ ';', .semicolon },
         .{ ' ', .space },
-        .{ '\'', .apostrophe },
+        .{ '\'', .quote },
         .{ ',', .comma },
-        .{ '`', .grave_accent },
+        .{ '`', .backquote },
         .{ '.', .period },
         .{ '/', .slash },
         .{ '-', .minus },
-        .{ '+', .plus },
         .{ '=', .equal },
-        .{ '[', .left_bracket },
-        .{ ']', .right_bracket },
+        .{ '[', .bracket_left },
+        .{ ']', .bracket_right },
         .{ '\\', .backslash },
 
         // Control characters
         .{ '\t', .tab },
 
-        // Keypad entries. We just assume keypad with the kp_ prefix
+        // Keypad entries. We just assume keypad with the numpad_ prefix
         // so that has some special meaning. These must also always be last,
         // so that our `fromASCII` function doesn't accidentally map them
         // over normal numerics and other keys.
-        .{ '0', .kp_0 },
-        .{ '1', .kp_1 },
-        .{ '2', .kp_2 },
-        .{ '3', .kp_3 },
-        .{ '4', .kp_4 },
-        .{ '5', .kp_5 },
-        .{ '6', .kp_6 },
-        .{ '7', .kp_7 },
-        .{ '8', .kp_8 },
-        .{ '9', .kp_9 },
-        .{ '.', .kp_decimal },
-        .{ '/', .kp_divide },
-        .{ '*', .kp_multiply },
-        .{ '-', .kp_subtract },
-        .{ '+', .kp_add },
-        .{ '=', .kp_equal },
+        .{ '0', .numpad_0 },
+        .{ '1', .numpad_1 },
+        .{ '2', .numpad_2 },
+        .{ '3', .numpad_3 },
+        .{ '4', .numpad_4 },
+        .{ '5', .numpad_5 },
+        .{ '6', .numpad_6 },
+        .{ '7', .numpad_7 },
+        .{ '8', .numpad_8 },
+        .{ '9', .numpad_9 },
+        .{ '.', .numpad_decimal },
+        .{ '/', .numpad_divide },
+        .{ '*', .numpad_multiply },
+        .{ '-', .numpad_subtract },
+        .{ '+', .numpad_add },
+        .{ '=', .numpad_equal },
     };
 };
 
