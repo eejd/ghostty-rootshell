@@ -4495,17 +4495,17 @@ pub const Keybinds = struct {
         if (comptime !builtin.target.os.tag.isDarwin()) {
             try self.set.put(
                 alloc,
-                .{ .key = .{ .physical = .n }, .mods = .{ .ctrl = true, .shift = true } },
+                .{ .key = .{ .unicode = 'n' }, .mods = .{ .ctrl = true, .shift = true } },
                 .{ .new_window = {} },
             );
             try self.set.put(
                 alloc,
-                .{ .key = .{ .physical = .w }, .mods = .{ .ctrl = true, .shift = true } },
+                .{ .key = .{ .unicode = 'w' }, .mods = .{ .ctrl = true, .shift = true } },
                 .{ .close_surface = {} },
             );
             try self.set.put(
                 alloc,
-                .{ .key = .{ .physical = .q }, .mods = .{ .ctrl = true, .shift = true } },
+                .{ .key = .{ .unicode = 'q' }, .mods = .{ .ctrl = true, .shift = true } },
                 .{ .quit = {} },
             );
             try self.set.put(
@@ -4515,22 +4515,22 @@ pub const Keybinds = struct {
             );
             try self.set.put(
                 alloc,
-                .{ .key = .{ .physical = .t }, .mods = .{ .ctrl = true, .shift = true } },
+                .{ .key = .{ .unicode = 't' }, .mods = .{ .ctrl = true, .shift = true } },
                 .{ .new_tab = {} },
             );
             try self.set.put(
                 alloc,
-                .{ .key = .{ .physical = .w }, .mods = .{ .ctrl = true, .shift = true } },
+                .{ .key = .{ .unicode = 'w' }, .mods = .{ .ctrl = true, .shift = true } },
                 .{ .close_tab = {} },
             );
             try self.set.put(
                 alloc,
-                .{ .key = .{ .physical = .left }, .mods = .{ .ctrl = true, .shift = true } },
+                .{ .key = .{ .physical = .arrow_left }, .mods = .{ .ctrl = true, .shift = true } },
                 .{ .previous_tab = {} },
             );
             try self.set.put(
                 alloc,
-                .{ .key = .{ .physical = .right }, .mods = .{ .ctrl = true, .shift = true } },
+                .{ .key = .{ .physical = .arrow_right }, .mods = .{ .ctrl = true, .shift = true } },
                 .{ .next_tab = {} },
             );
             try self.set.put(
@@ -4545,12 +4545,12 @@ pub const Keybinds = struct {
             );
             try self.set.put(
                 alloc,
-                .{ .key = .{ .physical = .o }, .mods = .{ .ctrl = true, .shift = true } },
+                .{ .key = .{ .unicode = 'o' }, .mods = .{ .ctrl = true, .shift = true } },
                 .{ .new_split = .right },
             );
             try self.set.put(
                 alloc,
-                .{ .key = .{ .physical = .e }, .mods = .{ .ctrl = true, .shift = true } },
+                .{ .key = .{ .unicode = 'e' }, .mods = .{ .ctrl = true, .shift = true } },
                 .{ .new_split = .down },
             );
             try self.set.put(
@@ -4565,50 +4565,45 @@ pub const Keybinds = struct {
             );
             try self.set.put(
                 alloc,
-                .{ .key = .{ .physical = .up }, .mods = .{ .ctrl = true, .alt = true } },
+                .{ .key = .{ .physical = .arrow_up }, .mods = .{ .ctrl = true, .alt = true } },
                 .{ .goto_split = .up },
             );
             try self.set.put(
                 alloc,
-                .{ .key = .{ .physical = .down }, .mods = .{ .ctrl = true, .alt = true } },
+                .{ .key = .{ .physical = .arrow_down }, .mods = .{ .ctrl = true, .alt = true } },
                 .{ .goto_split = .down },
             );
             try self.set.put(
                 alloc,
-                .{ .key = .{ .physical = .left }, .mods = .{ .ctrl = true, .alt = true } },
+                .{ .key = .{ .physical = .arrow_left }, .mods = .{ .ctrl = true, .alt = true } },
                 .{ .goto_split = .left },
             );
             try self.set.put(
                 alloc,
-                .{ .key = .{ .physical = .right }, .mods = .{ .ctrl = true, .alt = true } },
+                .{ .key = .{ .physical = .arrow_right }, .mods = .{ .ctrl = true, .alt = true } },
                 .{ .goto_split = .right },
             );
 
             // Resizing splits
             try self.set.put(
                 alloc,
-                .{ .key = .{ .physical = .up }, .mods = .{ .super = true, .ctrl = true, .shift = true } },
+                .{ .key = .{ .physical = .arrow_up }, .mods = .{ .super = true, .ctrl = true, .shift = true } },
                 .{ .resize_split = .{ .up, 10 } },
             );
             try self.set.put(
                 alloc,
-                .{ .key = .{ .physical = .down }, .mods = .{ .super = true, .ctrl = true, .shift = true } },
+                .{ .key = .{ .physical = .arrow_down }, .mods = .{ .super = true, .ctrl = true, .shift = true } },
                 .{ .resize_split = .{ .down, 10 } },
             );
             try self.set.put(
                 alloc,
-                .{ .key = .{ .physical = .left }, .mods = .{ .super = true, .ctrl = true, .shift = true } },
+                .{ .key = .{ .physical = .arrow_left }, .mods = .{ .super = true, .ctrl = true, .shift = true } },
                 .{ .resize_split = .{ .left, 10 } },
             );
             try self.set.put(
                 alloc,
-                .{ .key = .{ .physical = .right }, .mods = .{ .super = true, .ctrl = true, .shift = true } },
+                .{ .key = .{ .physical = .arrow_right }, .mods = .{ .super = true, .ctrl = true, .shift = true } },
                 .{ .resize_split = .{ .right, 10 } },
-            );
-            try self.set.put(
-                alloc,
-                .{ .key = .{ .physical = .plus }, .mods = .{ .super = true, .ctrl = true, .shift = true } },
-                .{ .equalize_splits = {} },
             );
 
             // Viewport scrolling
@@ -4648,14 +4643,14 @@ pub const Keybinds = struct {
             // Inspector, matching Chromium
             try self.set.put(
                 alloc,
-                .{ .key = .{ .physical = .i }, .mods = .{ .shift = true, .ctrl = true } },
+                .{ .key = .{ .unicode = 'i' }, .mods = .{ .shift = true, .ctrl = true } },
                 .{ .inspector = .toggle },
             );
 
             // Terminal
             try self.set.put(
                 alloc,
-                .{ .key = .{ .physical = .a }, .mods = .{ .shift = true, .ctrl = true } },
+                .{ .key = .{ .unicode = 'a' }, .mods = .{ .shift = true, .ctrl = true } },
                 .{ .select_all = {} },
             );
 

@@ -398,6 +398,7 @@ pub const Key = enum(c_int) {
     // These numpad entries are distinguished by various encoding protocols
     // (legacy and Kitty) so we support them here in case the apprt can
     // produce them.
+    numpad_separator,
     numpad_up,
     numpad_down,
     numpad_right,
@@ -763,6 +764,7 @@ pub const Key = enum(c_int) {
             .convert,
             .kana_mode,
             .non_convert,
+            .numpad_separator,
             .numpad_backspace,
             .numpad_clear,
             .numpad_clear_entry,
