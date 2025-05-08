@@ -47,29 +47,19 @@ class ServiceProvider: NSObject {
         let terminalManager = delegate.terminalManager
 
         for path in paths {
-            // Check if the path exists and determine if it's a directory
-            var isDirectory = ObjCBool(false)
+            // We only open in directories.
+            var isDirectory = ObjCBool(true)
             guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) else { continue }
 
-            let targetDirectoryPath: String
-
-            if isDirectory.boolValue {
-                // Path is already a directory, use it directly
-                targetDirectoryPath = path
-            } else {
-                // Path is a file, get its parent directory
-                let parentDirectoryPath = (path as NSString).deletingLastPathComponent
-                var isParentPathDirectory = ObjCBool(true)
-                guard FileManager.default.fileExists(atPath: parentDirectoryPath, isDirectory: &isParentPathDirectory),
-                    isParentPathDirectory.boolValue else {
-                    continue
-                }
-                targetDirectoryPath = parentDirectoryPath
+            var workingDirectory = path
+            if !isDirectory.boolValue {
+                workingDirectory = (path as NSString).deletingLastPathComponent
+                guard FileManager.default.fileExists(atPath: workingDirectory, isDirectory: &isDirectory), isDirectory.boolValue else { continue }
             }
 
             // Build our config
             var config = Ghostty.SurfaceConfiguration()
-            config.workingDirectory = targetDirectoryPath
+            config.workingDirectory = workingDirectory
 
             switch (target) {
             case .window:
