@@ -929,12 +929,23 @@ class: ?[:0]const u8 = null,
 /// Trigger: `+`-separated list of keys and modifiers. Example: `ctrl+a`,
 /// `ctrl+shift+b`, `up`.
 ///
-/// Valid keys are currently only listed in the
-/// [Ghostty source code](https://github.com/ghostty-org/ghostty/blob/d6e76858164d52cff460fedc61ddf2e560912d71/src/input/key.zig#L255).
-/// This is a documentation limitation and we will improve this in the future.
-/// A common gotcha is that numeric keys are written as words: e.g. `one`,
-/// `two`, `three`, etc. and not `1`, `2`, `3`. This will also be improved in
-/// the future.
+/// If the key is a single Unicode codepoint, the trigger will match
+/// any presses that produce that codepoint. These are impacted by
+/// keyboard layouts. For example, `a` will match the `a` key on a
+/// QWERTY keyboard, but will match the `q` key on a AZERTY keyboard
+/// (assuming US physical layout).
+///
+/// Physical key codes can be specified by using any of the key codes
+/// as specified by the [W3C specification](https://www.w3.org/TR/uievents-code/).
+/// For example, `KeyA` will match the physical `a` key on a US standard
+/// keyboard regardless of the keyboard layout.
+///
+/// Function keys such as `insert`, `up`, `f5`, etc. are also specified
+/// using the keys as specified by the previously linked W3C specification.
+///
+/// Physical keys always match with a higher priority than Unicode codepoints,
+/// so if you specify both `a` and `KeyA`, the physical key will always be used
+/// regardless of what order they are configured.
 ///
 /// Valid modifiers are `shift`, `ctrl` (alias: `control`), `alt` (alias: `opt`,
 /// `option`), and `super` (alias: `cmd`, `command`). You may use the modifier
@@ -953,11 +964,6 @@ class: ?[:0]const u8 = null,
 ///     but valid.
 ///
 ///   * only a single key input is allowed, `ctrl+a+b` is invalid.
-///
-///   * the key input can be prefixed with `physical:` to specify a
-///     physical key mapping rather than a logical one. A physical key
-///     mapping responds to the hardware keycode and not the keycode
-///     translated by any system keyboard layouts. Example: "ctrl+physical:a"
 ///
 /// You may also specify multiple triggers separated by `>` to require a
 /// sequence of triggers to activate the action. For example,
