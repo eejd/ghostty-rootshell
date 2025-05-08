@@ -468,64 +468,6 @@ pub const Key = enum(c_int) {
     audio_volume_up,
     wake_up,
 
-    // Backwards compatibility for Ghostty 1.1.x and earlier, we don't
-    // want to force people to rewrite their configs.
-    // pub const zero = .digit_0;
-    // pub const one = .digit_1;
-    // pub const two = .digit_2;
-    // pub const three = .digit_3;
-    // pub const four = .digit_4;
-    // pub const five = .digit_5;
-    // pub const six = .digit_6;
-    // pub const seven = .digit_7;
-    // pub const eight = .digit_8;
-    // pub const nine = .digit_9;
-    // pub const apostrophe = .quote;
-    // pub const grave_accent = .backquote;
-    // pub const left_bracket = .bracket_left;
-    // pub const right_bracket = .bracket_right;
-    // pub const up = .arrow_up;
-    // pub const down = .arrow_down;
-    // pub const left = .arrow_left;
-    // pub const right = .arrow_right;
-    // pub const kp_0 = .numpad_0;
-    // pub const kp_1 = .numpad_1;
-    // pub const kp_2 = .numpad_2;
-    // pub const kp_3 = .numpad_3;
-    // pub const kp_4 = .numpad_4;
-    // pub const kp_5 = .numpad_5;
-    // pub const kp_6 = .numpad_6;
-    // pub const kp_7 = .numpad_7;
-    // pub const kp_8 = .numpad_8;
-    // pub const kp_9 = .numpad_9;
-    // pub const kp_decimal = .numpad_decimal;
-    // pub const kp_divide = .numpad_divide;
-    // pub const kp_multiply = .numpad_multiply;
-    // pub const kp_subtract = .numpad_subtract;
-    // pub const kp_add = .numpad_add;
-    // pub const kp_enter = .numpad_enter;
-    // pub const kp_equal = .numpad_equal;
-    // pub const kp_separator = .numpad_separator;
-    // pub const kp_left = .numpad_left;
-    // pub const kp_right = .numpad_right;
-    // pub const kp_up = .numpad_up;
-    // pub const kp_down = .numpad_down;
-    // pub const kp_page_up = .numpad_page_up;
-    // pub const kp_page_down = .numpad_page_down;
-    // pub const kp_home = .numpad_home;
-    // pub const kp_end = .numpad_end;
-    // pub const kp_insert = .numpad_insert;
-    // pub const kp_delete = .numpad_delete;
-    // pub const kp_begin = .numpad_begin;
-    // pub const left_shift = .shift_left;
-    // pub const right_shift = .shift_right;
-    // pub const left_control = .control_left;
-    // pub const right_control = .control_right;
-    // pub const left_alt = .alt_left;
-    // pub const right_alt = .alt_right;
-    // pub const left_super = .meta_left;
-    // pub const right_super = .meta_right;
-
     /// Converts an ASCII character to a key, if possible. This returns
     /// null if the character is unknown.
     ///

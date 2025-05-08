@@ -1143,14 +1143,15 @@ pub const Trigger = struct {
                 }
             }
 
+            // Anything after this point is a key and we only support
+            // single keys.
+            if (!result.isKeyUnset()) return Error.InvalidFormat;
+
             // Check if its a key
             const keysInfo = @typeInfo(key.Key).@"enum";
             inline for (keysInfo.fields) |field| {
                 if (!std.mem.eql(u8, field.name, "unidentified")) {
                     if (std.mem.eql(u8, part, field.name)) {
-                        // Repeat not allowed
-                        if (!result.isKeyUnset()) return Error.InvalidFormat;
-
                         const keyval = @field(key.Key, field.name);
                         result.key = .{ .physical = keyval };
                         continue :loop;
@@ -1173,12 +1174,141 @@ pub const Trigger = struct {
                 continue :loop;
             }
 
+            // If we're still unset then we look for backwards compatible
+            // keys with Ghostty 1.1.x. We do this last so its least likely
+            // to impact performance for modern users.
+            if (backwards_compatible_keys.get(part)) |old_key| {
+                result.key = old_key;
+                continue :loop;
+            }
+
             // We didn't recognize this value
             return Error.InvalidFormat;
         }
 
         return result;
     }
+
+    /// The values that are backwards compatible with Ghostty 1.1.x.
+    /// Ghostty 1.2+ doesn't support these anymore since we moved to
+    /// W3C key codes.
+    const backwards_compatible_keys = std.StaticStringMap(Key).initComptime(.{
+        .{ "zero", Key{ .unicode = '0' } },
+        .{ "one", Key{ .unicode = '1' } },
+        .{ "two", Key{ .unicode = '2' } },
+        .{ "three", Key{ .unicode = '3' } },
+        .{ "four", Key{ .unicode = '4' } },
+        .{ "five", Key{ .unicode = '5' } },
+        .{ "six", Key{ .unicode = '6' } },
+        .{ "seven", Key{ .unicode = '7' } },
+        .{ "eight", Key{ .unicode = '8' } },
+        .{ "nine", Key{ .unicode = '9' } },
+        .{ "apostrophe", Key{ .unicode = '\'' } },
+        .{ "grave_accent", Key{ .physical = .backquote } },
+        .{ "left_bracket", Key{ .physical = .bracket_left } },
+        .{ "right_bracket", Key{ .physical = .bracket_right } },
+        .{ "up", Key{ .physical = .arrow_up } },
+        .{ "down", Key{ .physical = .arrow_down } },
+        .{ "left", Key{ .physical = .arrow_left } },
+        .{ "right", Key{ .physical = .arrow_right } },
+        .{ "kp_0", Key{ .physical = .numpad_0 } },
+        .{ "kp_1", Key{ .physical = .numpad_1 } },
+        .{ "kp_2", Key{ .physical = .numpad_2 } },
+        .{ "kp_3", Key{ .physical = .numpad_3 } },
+        .{ "kp_4", Key{ .physical = .numpad_4 } },
+        .{ "kp_5", Key{ .physical = .numpad_5 } },
+        .{ "kp_6", Key{ .physical = .numpad_6 } },
+        .{ "kp_7", Key{ .physical = .numpad_7 } },
+        .{ "kp_8", Key{ .physical = .numpad_8 } },
+        .{ "kp_9", Key{ .physical = .numpad_9 } },
+        .{ "kp_add", Key{ .physical = .numpad_add } },
+        .{ "kp_subtract", Key{ .physical = .numpad_subtract } },
+        .{ "kp_multiply", Key{ .physical = .numpad_multiply } },
+        .{ "kp_divide", Key{ .physical = .numpad_divide } },
+        .{ "kp_decimal", Key{ .physical = .numpad_decimal } },
+        .{ "kp_enter", Key{ .physical = .numpad_enter } },
+        .{ "kp_equal", Key{ .physical = .numpad_equal } },
+        .{ "kp_separator", Key{ .physical = .numpad_separator } },
+        .{ "kp_left", Key{ .physical = .numpad_left } },
+        .{ "kp_right", Key{ .physical = .numpad_right } },
+        .{ "kp_up", Key{ .physical = .numpad_up } },
+        .{ "kp_down", Key{ .physical = .numpad_down } },
+        .{ "kp_page_up", Key{ .physical = .numpad_page_up } },
+        .{ "kp_page_down", Key{ .physical = .numpad_page_down } },
+        .{ "kp_home", Key{ .physical = .numpad_home } },
+        .{ "kp_end", Key{ .physical = .numpad_end } },
+        .{ "kp_insert", Key{ .physical = .numpad_insert } },
+        .{ "kp_delete", Key{ .physical = .numpad_delete } },
+        .{ "kp_begin", Key{ .physical = .numpad_begin } },
+        .{ "left_shift", Key{ .physical = .shift_left } },
+        .{ "right_shift", Key{ .physical = .shift_right } },
+        .{ "left_control", Key{ .physical = .control_left } },
+        .{ "right_control", Key{ .physical = .control_right } },
+        .{ "left_alt", Key{ .physical = .alt_left } },
+        .{ "right_alt", Key{ .physical = .alt_right } },
+        .{ "left_super", Key{ .physical = .meta_left } },
+        .{ "right_super", Key{ .physical = .meta_right } },
+
+        // Physical variants. This is a blunt approach to this but its
+        // glue for backwards compatibility so I'm not too worried about
+        // making this super nice.
+        .{ "physical:zero", Key{ .physical = .digit_0 } },
+        .{ "physical:one", Key{ .physical = .digit_1 } },
+        .{ "physical:two", Key{ .physical = .digit_2 } },
+        .{ "physical:three", Key{ .physical = .digit_3 } },
+        .{ "physical:four", Key{ .physical = .digit_4 } },
+        .{ "physical:five", Key{ .physical = .digit_5 } },
+        .{ "physical:six", Key{ .physical = .digit_6 } },
+        .{ "physical:seven", Key{ .physical = .digit_7 } },
+        .{ "physical:eight", Key{ .physical = .digit_8 } },
+        .{ "physical:nine", Key{ .physical = .digit_9 } },
+        .{ "physical:apostrophe", Key{ .physical = .quote } },
+        .{ "physical:grave_accent", Key{ .physical = .backquote } },
+        .{ "physical:left_bracket", Key{ .physical = .bracket_left } },
+        .{ "physical:right_bracket", Key{ .physical = .bracket_right } },
+        .{ "physical:up", Key{ .physical = .arrow_up } },
+        .{ "physical:down", Key{ .physical = .arrow_down } },
+        .{ "physical:left", Key{ .physical = .arrow_left } },
+        .{ "physical:right", Key{ .physical = .arrow_right } },
+        .{ "physical:kp_0", Key{ .physical = .numpad_0 } },
+        .{ "physical:kp_1", Key{ .physical = .numpad_1 } },
+        .{ "physical:kp_2", Key{ .physical = .numpad_2 } },
+        .{ "physical:kp_3", Key{ .physical = .numpad_3 } },
+        .{ "physical:kp_4", Key{ .physical = .numpad_4 } },
+        .{ "physical:kp_5", Key{ .physical = .numpad_5 } },
+        .{ "physical:kp_6", Key{ .physical = .numpad_6 } },
+        .{ "physical:kp_7", Key{ .physical = .numpad_7 } },
+        .{ "physical:kp_8", Key{ .physical = .numpad_8 } },
+        .{ "physical:kp_9", Key{ .physical = .numpad_9 } },
+        .{ "physical:kp_add", Key{ .physical = .numpad_add } },
+        .{ "physical:kp_subtract", Key{ .physical = .numpad_subtract } },
+        .{ "physical:kp_multiply", Key{ .physical = .numpad_multiply } },
+        .{ "physical:kp_divide", Key{ .physical = .numpad_divide } },
+        .{ "physical:kp_decimal", Key{ .physical = .numpad_decimal } },
+        .{ "physical:kp_enter", Key{ .physical = .numpad_enter } },
+        .{ "physical:kp_equal", Key{ .physical = .numpad_equal } },
+        .{ "physical:kp_separator", Key{ .physical = .numpad_separator } },
+        .{ "physical:kp_left", Key{ .physical = .numpad_left } },
+        .{ "physical:kp_right", Key{ .physical = .numpad_right } },
+        .{ "physical:kp_up", Key{ .physical = .numpad_up } },
+        .{ "physical:kp_down", Key{ .physical = .numpad_down } },
+        .{ "physical:kp_page_up", Key{ .physical = .numpad_page_up } },
+        .{ "physical:kp_page_down", Key{ .physical = .numpad_page_down } },
+        .{ "physical:kp_home", Key{ .physical = .numpad_home } },
+        .{ "physical:kp_end", Key{ .physical = .numpad_end } },
+        .{ "physical:kp_insert", Key{ .physical = .numpad_insert } },
+        .{ "physical:kp_delete", Key{ .physical = .numpad_delete } },
+        .{ "physical:kp_begin", Key{ .physical = .numpad_begin } },
+        .{ "physical:left_shift", Key{ .physical = .shift_left } },
+        .{ "physical:right_shift", Key{ .physical = .shift_right } },
+        .{ "physical:left_control", Key{ .physical = .control_left } },
+        .{ "physical:right_control", Key{ .physical = .control_right } },
+        .{ "physical:left_alt", Key{ .physical = .alt_left } },
+        .{ "physical:right_alt", Key{ .physical = .alt_right } },
+        .{ "physical:left_super", Key{ .physical = .meta_left } },
+        .{ "physical:right_super", Key{ .physical = .meta_right } },
+    });
+
     /// Returns true if this trigger has no key set.
     pub fn isKeyUnset(self: Trigger) bool {
         return switch (self.key) {
@@ -1806,6 +1936,49 @@ test "parse: triggers" {
 
     // multiple character
     try testing.expectError(Error.InvalidFormat, parseSingle("a+b=ignore"));
+}
+
+// For Ghostty 1.2+ we changed our key names to match the W3C and removed
+// `physical:`. This tests the backwards compatibility with the old format.
+// Note that our backwards compatibility isn't 100% perfect since triggers
+// like `a` now map to unicode instead of "translated" (which was also
+// removed). But we did our best here with what was unambiguous.
+test "parse: backwards compatibility with <= 1.1.x" {
+    const testing = std.testing;
+
+    // simple, for sanity
+    try testing.expectEqual(
+        Binding{
+            .trigger = .{ .key = .{ .unicode = '0' } },
+            .action = .{ .ignore = {} },
+        },
+        try parseSingle("zero=ignore"),
+    );
+    try testing.expectEqual(
+        Binding{
+            .trigger = .{ .key = .{ .physical = .digit_0 } },
+            .action = .{ .ignore = {} },
+        },
+        try parseSingle("physical:zero=ignore"),
+    );
+
+    // duplicates
+    try testing.expectError(Error.InvalidFormat, parseSingle("zero+one=ignore"));
+
+    // test our full map
+    for (
+        Trigger.backwards_compatible_keys.keys(),
+        Trigger.backwards_compatible_keys.values(),
+    ) |k, v| {
+        var buf: [128]u8 = undefined;
+        try testing.expectEqual(
+            Binding{
+                .trigger = .{ .key = v },
+                .action = .{ .ignore = {} },
+            },
+            try parseSingle(try std.fmt.bufPrint(&buf, "{s}=ignore", .{k})),
+        );
+    }
 }
 
 test "parse: global triggers" {
