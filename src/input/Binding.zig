@@ -1174,6 +1174,12 @@ pub const Trigger = struct {
                 continue :loop;
             }
 
+            // Look for a matching w3c name next.
+            if (key.Key.fromW3C(part)) |w3c_key| {
+                result.key = .{ .physical = w3c_key };
+                continue :loop;
+            }
+
             // If we're still unset then we look for backwards compatible
             // keys with Ghostty 1.1.x. We do this last so its least likely
             // to impact performance for modern users.
@@ -1936,6 +1942,22 @@ test "parse: triggers" {
 
     // multiple character
     try testing.expectError(Error.InvalidFormat, parseSingle("a+b=ignore"));
+}
+
+test "parse: w3c key names" {
+    const testing = std.testing;
+
+    // Exact match
+    try testing.expectEqual(
+        Binding{
+            .trigger = .{ .key = .{ .physical = .key_a } },
+            .action = .{ .ignore = {} },
+        },
+        try parseSingle("KeyA=ignore"),
+    );
+
+    // Case-sensitive
+    try testing.expectError(Error.InvalidFormat, parseSingle("Keya=ignore"));
 }
 
 // For Ghostty 1.2+ we changed our key names to match the W3C and removed

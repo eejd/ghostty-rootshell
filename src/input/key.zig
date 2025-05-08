@@ -497,6 +497,74 @@ pub const Key = enum(c_int) {
         };
     }
 
+    /// Converts a W3C key code to a Ghostty key enum value.
+    ///
+    /// All required W3C key codes are supported, but there are a number of
+    /// non-standard key codes that are not supported. In the case the value is
+    /// invalid or unsupported, this function will return null.
+    pub fn fromW3C(code: []const u8) ?Key {
+        var result: [128]u8 = undefined;
+
+        // If the code is bigger than our buffer it can't possibly match.
+        if (code.len > result.len) return null;
+
+        // First just check the whole thing lowercased, this is the simple case
+        if (std.meta.stringToEnum(
+            Key,
+            std.ascii.lowerString(&result, code),
+        )) |key| return key;
+
+        // We need to convert FooBar to foo_bar
+        var fbs = std.io.fixedBufferStream(&result);
+        const w = fbs.writer();
+        for (code, 0..) |ch, i| switch (ch) {
+            'a'...'z' => w.writeByte(ch) catch return null,
+
+            // Caps and numbers trigger underscores
+            'A'...'Z', '0'...'9' => {
+                if (i > 0) w.writeByte('_') catch return null;
+                w.writeByte(std.ascii.toLower(ch)) catch return null;
+            },
+
+            // We don't know of any key codes that aren't alphanumeric.
+            else => return null,
+        };
+
+        return std.meta.stringToEnum(Key, fbs.getWritten());
+    }
+
+    /// Converts a Ghostty key enum value to a W3C key code.
+    pub fn w3c(self: Key) []const u8 {
+        return switch (self) {
+            inline else => |tag| comptime w3c: {
+                @setEvalBranchQuota(50_000);
+
+                const name = @tagName(tag);
+
+                var buf: [128]u8 = undefined;
+                var fbs = std.io.fixedBufferStream(&buf);
+                const w = fbs.writer();
+                var i: usize = 0;
+                while (i < name.len) {
+                    if (i == 0) {
+                        w.writeByte(std.ascii.toUpper(name[i])) catch unreachable;
+                    } else if (name[i] == '_') {
+                        i += 1;
+                        w.writeByte(std.ascii.toUpper(name[i])) catch unreachable;
+                    } else {
+                        w.writeByte(name[i]) catch unreachable;
+                    }
+
+                    i += 1;
+                }
+
+                const written = buf;
+                const result = written[0..fbs.getWritten().len];
+                break :w3c result;
+            },
+        };
+    }
+
     /// True if this key represents a printable character.
     pub fn printable(self: Key) bool {
         return switch (self) {
@@ -779,6 +847,18 @@ pub const Key = enum(c_int) {
         const testing = std.testing;
         try testing.expect(Key.numpad_0.keypad());
         try testing.expect(!Key.digit_1.keypad());
+    }
+
+    test "w3c" {
+        // All our keys should convert to and from the W3C format.
+        // We don't support every key in the W3C spec, so we only
+        // check the enum fields.
+        const testing = std.testing;
+        inline for (@typeInfo(Key).@"enum".fields) |field| {
+            const key = @field(Key, field.name);
+            const w3c_name = key.w3c();
+            try testing.expectEqual(key, Key.fromW3C(w3c_name).?);
+        }
     }
 
     const codepoint_map: []const struct { u21, Key } = &.{
