@@ -938,7 +938,14 @@ class: ?[:0]const u8 = null,
 /// Physical key codes can be specified by using any of the key codes
 /// as specified by the [W3C specification](https://www.w3.org/TR/uievents-code/).
 /// For example, `KeyA` will match the physical `a` key on a US standard
-/// keyboard regardless of the keyboard layout.
+/// keyboard regardless of the keyboard layout. These are case-sensitive.
+///
+/// For aesthetic reasons, the w3c codes also support snake case. For
+/// example, `key_a` is equivalent to `KeyA`. The only exceptions are
+/// function keys, e.g. `F1` is `f1` (no underscore). This is a consequence
+/// of our internal code using snake case but is purposely supported
+/// and tested so it is safe to use. It allows an all-lowercase binding
+/// which I find more aesthetically pleasing.
 ///
 /// Function keys such as `insert`, `up`, `f5`, etc. are also specified
 /// using the keys as specified by the previously linked W3C specification.
