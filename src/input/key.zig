@@ -573,14 +573,14 @@ pub const Key = enum(c_int) {
     /// True if this key is a modifier.
     pub fn modifier(self: Key) bool {
         return switch (self) {
-            .left_shift,
-            .left_control,
-            .left_alt,
-            .left_super,
-            .right_shift,
-            .right_control,
-            .right_alt,
-            .right_super,
+            .shift_left,
+            .control_left,
+            .alt_left,
+            .meta_left,
+            .shift_right,
+            .control_right,
+            .alt_right,
+            .meta_right,
             => true,
 
             else => false,

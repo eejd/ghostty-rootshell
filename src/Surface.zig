@@ -1895,12 +1895,12 @@ pub fn keyCallback(
             // if we didn't have a previous event and this is a release
             // event then we just want to set it to null.
             const prev = self.pressed_key orelse break :event null;
-            if (prev.key == copy.key) copy.key = .invalid;
+            if (prev.key == copy.key) copy.key = .unidentified;
         }
 
         // If our key is invalid and we have no mods, then we're done!
         // This helps catch the state that we naturally released all keys.
-        if (copy.key == .invalid and copy.mods.empty()) break :event null;
+        if (copy.key == .unidentified and copy.mods.empty()) break :event null;
 
         break :event copy;
     };
@@ -2295,7 +2295,7 @@ pub fn focusCallback(self: *Surface, focused: bool) !void {
         pressed_key.action = .release;
 
         // Release the full key first
-        if (pressed_key.key != .invalid) {
+        if (pressed_key.key != .unidentified) {
             assert(self.keyCallback(pressed_key) catch |err| err: {
                 log.warn("error releasing key on focus loss err={}", .{err});
                 break :err .ignored;
@@ -2315,8 +2315,15 @@ pub fn focusCallback(self: *Surface, focused: bool) !void {
             if (@field(pressed_key.mods, key)) {
                 @field(pressed_key.mods, key) = false;
                 inline for (&.{ "right", "left" }) |side| {
-                    const keyname = if (comptime std.mem.eql(u8, key, "ctrl")) "control" else key;
-                    pressed_key.key = @field(input.Key, side ++ "_" ++ keyname);
+                    const keyname = comptime keyname: {
+                        break :keyname if (std.mem.eql(u8, key, "ctrl"))
+                            "control"
+                        else if (std.mem.eql(u8, key, "super"))
+                            "meta"
+                        else
+                            key;
+                    };
+                    pressed_key.key = @field(input.Key, keyname ++ "_" ++ side);
                     if (pressed_key.key != original_key) {
                         assert(self.keyCallback(pressed_key) catch |err| err: {
                             log.warn("error releasing key on focus loss err={}", .{err});
