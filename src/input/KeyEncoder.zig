@@ -103,11 +103,15 @@ fn kitty(
         // and UTF8 text we just send it directly since we assume that is
         // whats happening. See legacy()'s similar logic for more details
         // on how to verify this.
-        if (self.event.utf8.len > 0) {
+        if (self.event.utf8.len > 0) utf8: {
             switch (self.event.key) {
-                .enter => return try copyToBuf(buf, self.event.utf8),
-                .backspace => return "",
                 else => {},
+                inline .enter, .backspace => |tag| {
+                    // See legacy for why we handle this this way.
+                    if (isControlUtf8(self.event.utf8)) break :utf8;
+                    if (comptime tag == .backspace) return "";
+                    return try copyToBuf(buf, self.event.utf8);
+                },
             }
         }
 
@@ -272,11 +276,21 @@ fn legacy(
         //   - Korean: escape commits the dead key state
         //   - Korean: backspace should delete a single preedit char
         //
-        if (self.event.utf8.len > 0) {
+        if (self.event.utf8.len > 0) utf8: {
             switch (self.event.key) {
                 else => {},
-                .backspace => return "",
-                .enter, .escape => break :pc_style,
+                inline .backspace, .enter, .escape => |tag| {
+                    // We want to ignore control characters. This is because
+                    // some apprts (macOS) will send control characters as
+                    // UTF-8 encodings and we handle that manually.
+                    if (isControlUtf8(self.event.utf8)) break :utf8;
+
+                    // Backspace encodes nothing because we modified IME.
+                    // Enter/escape don't encode the PC-style encoding
+                    // because we want to encode committed text.
+                    if (comptime tag == .backspace) return "";
+                    break :pc_style;
+                },
             }
         }
 
@@ -710,6 +724,12 @@ fn ctrlSeq(
 /// Returns true if this is an ASCII control character, matches libc implementation.
 fn isControl(cp: u21) bool {
     return cp < 0x20 or cp == 0x7F;
+}
+
+/// Returns true if this string is comprised of a single
+/// control character. This returns false for multi-byte strings.
+fn isControlUtf8(str: []const u8) bool {
+    return str.len == 1 and isControl(@intCast(str[0]));
 }
 
 /// This is the bitmask for fixterm CSI u modifiers.
@@ -2232,6 +2252,20 @@ test "legacy: super and other mods on macOS with text" {
 
     const actual = try enc.legacy(&buf);
     try testing.expectEqualStrings("", actual);
+}
+
+test "legacy: backspace with DEL utf8" {
+    var buf: [128]u8 = undefined;
+    var enc: KeyEncoder = .{
+        .event = .{
+            .key = .backspace,
+            .utf8 = &.{0x7F},
+            .unshifted_codepoint = 0x08,
+        },
+    };
+
+    const actual = try enc.legacy(&buf);
+    try testing.expectEqualStrings("\x7F", actual);
 }
 
 test "ctrlseq: normal ctrl c" {
