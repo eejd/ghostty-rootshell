@@ -1761,6 +1761,8 @@ pub fn keyEventIsBinding(
     // sequences) or the root set.
     const set = self.keyboard.bindings orelse &self.config.keybind.set;
 
+    // log.warn("text keyEventIsBinding event={} match={}", .{ event, set.getEvent(event) != null });
+
     // If we have a keybinding for this event then we return true.
     return set.getEvent(event) != null;
 }
