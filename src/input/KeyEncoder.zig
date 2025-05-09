@@ -571,7 +571,9 @@ fn ctrlSeq(
     if (!mods.ctrl) return null;
 
     const char, const unset_mods = unset_mods: {
-        var unset_mods = mods;
+        // We need to only get binding modifiers so we strip lock
+        // keys, sides, etc.
+        var unset_mods = mods.binding();
 
         // Remove alt from our modifiers because it does not impact whether
         // we are generating a ctrl sequence and we handle the ESC-prefix
@@ -640,7 +642,7 @@ fn ctrlSeq(
         // only matches Kitty in behavior. But I believe this is a
         // justified divergence because it's a useful distinction.
 
-        break :unset_mods .{ char, unset_mods.binding() };
+        break :unset_mods .{ char, unset_mods };
     };
 
     // After unsetting, we only continue if we have ONLY control set.
@@ -2278,5 +2280,13 @@ test "ctrlseq: russian shifted ctrl c" {
 
 test "ctrlseq: russian alt ctrl c" {
     const seq = ctrlSeq(.key_c, "с", 0x0441, .{ .ctrl = true, .alt = true });
+    try testing.expectEqual(@as(u8, 0x03), seq.?);
+}
+
+test "ctrlseq: right ctrl c" {
+    const seq = ctrlSeq(.key_c, "с", 'c', .{
+        .ctrl = true,
+        .sides = .{ .ctrl = .right },
+    });
     try testing.expectEqual(@as(u8, 0x03), seq.?);
 }
