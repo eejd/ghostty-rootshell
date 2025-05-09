@@ -1731,7 +1731,7 @@ pub const Set = struct {
     pub fn getEvent(self: *const Set, event: KeyEvent) ?Entry {
         var trigger: Trigger = .{
             .mods = event.mods.binding(),
-            .key = .{ .physical = event.physical_key },
+            .key = .{ .physical = event.key },
         };
         if (self.get(trigger)) |v| return v;
 

@@ -98,7 +98,6 @@ pub const App = struct {
             return .{
                 .action = self.action,
                 .key = physical_key,
-                .physical_key = physical_key,
                 .mods = self.mods,
                 .consumed_mods = self.consumed_mods,
                 .composing = self.composing,

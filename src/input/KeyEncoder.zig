@@ -2190,7 +2190,6 @@ test "legacy: hu layout ctrl+ő sends proper codepoint" {
     var enc: KeyEncoder = .{
         .event = .{
             .key = .bracket_left,
-            .physical_key = .bracket_left,
             .mods = .{ .ctrl = true },
             .utf8 = "ő",
             .unshifted_codepoint = 337,

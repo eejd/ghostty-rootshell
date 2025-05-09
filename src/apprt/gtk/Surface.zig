@@ -1891,7 +1891,6 @@ pub fn keyEvent(
     const effect = self.core_surface.keyCallback(.{
         .action = action,
         .key = physical_key,
-        .physical_key = physical_key,
         .mods = mods,
         .consumed_mods = consumed_mods,
         .composing = self.im_composing,
@@ -2043,7 +2042,6 @@ fn gtkInputCommit(
     _ = self.core_surface.keyCallback(.{
         .action = .press,
         .key = .unidentified,
-        .physical_key = .unidentified,
         .mods = .{},
         .consumed_mods = .{},
         .composing = false,

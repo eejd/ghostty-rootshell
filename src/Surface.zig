@@ -1870,7 +1870,7 @@ pub fn keyCallback(
     // Process the cursor state logic. This will update the cursor shape if
     // needed, depending on the key state.
     if ((SurfaceMouse{
-        .physical_key = event.physical_key,
+        .physical_key = event.key,
         .mouse_event = self.io.terminal.flags.mouse_event,
         .mouse_shape = self.io.terminal.mouse_shape,
         .mods = self.mouse.mods,

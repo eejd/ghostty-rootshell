@@ -117,13 +117,6 @@ pub const Event = struct {
             _ = cimgui.c.igTableSetColumnIndex(1);
             cimgui.c.igText("%s", @tagName(self.event.key).ptr);
         }
-        if (self.event.physical_key != self.event.key) {
-            cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
-            _ = cimgui.c.igTableSetColumnIndex(0);
-            cimgui.c.igText("Physical Key");
-            _ = cimgui.c.igTableSetColumnIndex(1);
-            cimgui.c.igText("%s", @tagName(self.event.physical_key).ptr);
-        }
         if (!self.event.mods.empty()) {
             cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
             _ = cimgui.c.igTableSetColumnIndex(0);

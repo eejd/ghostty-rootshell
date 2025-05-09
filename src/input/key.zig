@@ -16,12 +16,10 @@ pub const KeyEvent = struct {
     /// The action: press, release, etc.
     action: Action = .press,
 
-    /// "key" is the logical key that was pressed. For example, if
-    /// a Dvorak keyboard layout is being used on a US keyboard,
-    /// the "i" physical key will be reported as "c". The physical
-    /// key is the key that was physically pressed on the keyboard.
-    key: Key,
-    physical_key: Key = .unidentified,
+    /// The keycode of the physical key that was pressed. This is agnostic
+    /// to the layout. Layout-dependent matching can only be done via the
+    /// UTF-8 or unshifted codepoint.
+    key: Key = .unidentified,
 
     /// Mods are the modifiers that are pressed.
     mods: Mods = .{},
@@ -63,7 +61,6 @@ pub const KeyEvent = struct {
 
         // These are all the fields that are explicitly part of Trigger.
         std.hash.autoHash(&hasher, self.key);
-        std.hash.autoHash(&hasher, self.physical_key);
         std.hash.autoHash(&hasher, self.unshifted_codepoint);
         std.hash.autoHash(&hasher, self.mods.binding());
 

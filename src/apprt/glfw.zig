@@ -1108,7 +1108,6 @@ pub const Surface = struct {
         const key_event: input.KeyEvent = .{
             .action = action,
             .key = key,
-            .physical_key = key,
             .mods = mods,
             .consumed_mods = .{},
             .composing = false,
