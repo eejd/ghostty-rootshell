@@ -1735,6 +1735,23 @@ pub const Set = struct {
         };
         if (self.get(trigger)) |v| return v;
 
+        // If our UTF-8 text is exactly one codepoint, we try to match that.
+        if (event.utf8.len > 0) unicode: {
+            const view = std.unicode.Utf8View.init(event.utf8) catch break :unicode;
+            var it = view.iterator();
+
+            // No codepoints or multiple codepoints drops to invalid format
+            const cp = it.nextCodepoint() orelse break :unicode;
+            if (it.nextCodepoint() != null) break :unicode;
+
+            trigger.key = .{ .unicode = cp };
+            if (self.get(trigger)) |v| return v;
+        }
+
+        // Finally fallback to the full unshifted codepoint if we have one.
+        // Question: should we be doing this if we have UTF-8 text? I
+        // suspect "no" but we don't currently have any failing scenarios
+        // to verify this.
         if (event.unshifted_codepoint > 0) {
             trigger.key = .{ .unicode = event.unshifted_codepoint };
             if (self.get(trigger)) |v| return v;
@@ -2658,6 +2675,76 @@ test "set: consumed state" {
     try s.put(alloc, .{ .key = .{ .unicode = 'a' } }, .{ .new_window = {} });
     try testing.expect(s.get(.{ .key = .{ .unicode = 'a' } }).?.value_ptr.* == .leaf);
     try testing.expect(s.get(.{ .key = .{ .unicode = 'a' } }).?.value_ptr.*.leaf.flags.consumed);
+}
+
+test "set: getEvent physical" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s: Set = .{};
+    defer s.deinit(alloc);
+
+    try s.parseAndPut(alloc, "ctrl+quote=new_window");
+
+    // Physical matches on physical
+    {
+        const action = s.getEvent(.{
+            .key = .quote,
+            .mods = .{ .ctrl = true },
+        }).?.value_ptr.*.leaf;
+        try testing.expect(action.action == .new_window);
+    }
+
+    // Physical does not match on UTF8/codepoint
+    {
+        const action = s.getEvent(.{
+            .key = .key_a,
+            .mods = .{ .ctrl = true },
+            .utf8 = "'",
+            .unshifted_codepoint = '\'',
+        });
+        try testing.expect(action == null);
+    }
+}
+
+test "set: getEvent codepoint" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s: Set = .{};
+    defer s.deinit(alloc);
+
+    try s.parseAndPut(alloc, "ctrl+'=new_window");
+
+    // Matches on codepoint
+    {
+        const action = s.getEvent(.{
+            .key = .key_a,
+            .mods = .{ .ctrl = true },
+            .utf8 = "",
+            .unshifted_codepoint = '\'',
+        }).?.value_ptr.*.leaf;
+        try testing.expect(action.action == .new_window);
+    }
+
+    // Matches on UTF-8
+    {
+        const action = s.getEvent(.{
+            .key = .key_a,
+            .mods = .{ .ctrl = true },
+            .utf8 = "'",
+        }).?.value_ptr.*.leaf;
+        try testing.expect(action.action == .new_window);
+    }
+
+    // Doesn't match on physical
+    {
+        const action = s.getEvent(.{
+            .key = .key_a,
+            .mods = .{ .ctrl = true },
+        });
+        try testing.expect(action == null);
+    }
 }
 
 test "Action: clone" {
