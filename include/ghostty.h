@@ -103,6 +103,7 @@ typedef enum {
   GHOSTTY_ACTION_REPEAT,
 } ghostty_input_action_e;
 
+// Based on: https://www.w3.org/TR/uievents-code/
 typedef enum {
   GHOSTTY_KEY_UNIDENTIFIED,
 

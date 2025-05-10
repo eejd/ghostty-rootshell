@@ -5159,9 +5159,9 @@ pub const Keybinds = struct {
 
         // NB: This does not currently retain the order of the keybinds.
         const want =
-            \\a = ctrl+a>ctrl+b>n=new_window
-            \\a = ctrl+a>ctrl+b>w=close_window
             \\a = ctrl+a>ctrl+c>t=new_tab
+            \\a = ctrl+a>ctrl+b>w=close_window
+            \\a = ctrl+a>ctrl+b>n=new_window
             \\a = ctrl+b>ctrl+d>a=previous_tab
             \\
         ;
