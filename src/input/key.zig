@@ -149,9 +149,6 @@ pub const Mods = packed struct(Mods.Backing) {
     pub fn translation(self: Mods, option_as_alt: config.OptionAsAlt) Mods {
         var result = self;
 
-        // Control is never used for translation.
-        result.ctrl = false;
-
         // macos-option-as-alt for darwin
         if (comptime builtin.target.os.tag.isDarwin()) alt: {
             // Alt has to be set only on the correct side
@@ -185,14 +182,6 @@ pub const Mods = packed struct(Mods.Backing) {
             @as(Backing, @bitCast(Mods{ .shift = true })),
             @as(Backing, 0b0000_0001),
         );
-    }
-
-    test "translation removes control" {
-        const testing = std.testing;
-
-        const mods: Mods = .{ .ctrl = true };
-        const result = mods.translation(.true);
-        try testing.expectEqual(Mods{}, result);
     }
 
     test "translation macos-option-as-alt" {

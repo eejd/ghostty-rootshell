@@ -1066,6 +1066,16 @@ extension Ghostty {
 
                 equivalent = "\r"
 
+            case "/":
+                // Treat C-/ as C-_. We do this because C-/ makes macOS make a beep
+                // sound and we don't like the beep sound.
+                if (!event.modifierFlags.contains(.control) ||
+                    !event.modifierFlags.isDisjoint(with: [.shift, .command, .option])) {
+                    return false
+                }
+
+                equivalent = "_"
+
             default:
                 // It looks like some part of AppKit sometimes generates synthetic NSEvents
                 // with a zero timestamp. We never process these at this point. Concretely,
