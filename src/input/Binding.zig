@@ -5,6 +5,7 @@ const Binding = @This();
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
+const ziglyph = @import("ziglyph");
 const key = @import("key.zig");
 const KeyEvent = key.KeyEvent;
 
@@ -1332,8 +1333,30 @@ pub const Trigger = struct {
 
     /// Hash the trigger into the given hasher.
     fn hashIncremental(self: Trigger, hasher: anytype) void {
-        std.hash.autoHash(hasher, self.key);
+        std.hash.autoHash(hasher, std.meta.activeTag(self.key));
+        switch (self.key) {
+            .physical => |v| std.hash.autoHash(hasher, v),
+            .unicode => |cp| std.hash.autoHash(
+                hasher,
+                foldedCodepoint(cp),
+            ),
+        }
         std.hash.autoHash(hasher, self.mods.binding());
+    }
+
+    /// The codepoint we use for comparisons. Case folding can result
+    /// in more codepoints so we need to use a 3 element array.
+    fn foldedCodepoint(cp: u21) [3]u21 {
+        // ASCII fast path
+        if (ziglyph.letter.isAsciiLetter(cp)) {
+            return .{ ziglyph.letter.toLower(cp), 0, 0 };
+        }
+
+        // Unicode slow path. Case folding can resultin more codepoints.
+        // If more codepoints are produced then we return the codepoint
+        // as-is which isn't correct but until we have a failing test
+        // then I don't want to handle this.
+        return ziglyph.letter.toCaseFold(cp);
     }
 
     /// Convert the trigger to a C API compatible trigger.
@@ -2747,6 +2770,46 @@ test "set: getEvent codepoint" {
     }
 }
 
+test "set: getEvent codepoint case folding" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s: Set = .{};
+    defer s.deinit(alloc);
+
+    try s.parseAndPut(alloc, "ctrl+A=new_window");
+
+    // Lowercase codepoint
+    {
+        const action = s.getEvent(.{
+            .key = .key_j,
+            .mods = .{ .ctrl = true },
+            .utf8 = "",
+            .unshifted_codepoint = 'a',
+        }).?.value_ptr.*.leaf;
+        try testing.expect(action.action == .new_window);
+    }
+
+    // Uppercase codepoint
+    {
+        const action = s.getEvent(.{
+            .key = .key_a,
+            .mods = .{ .ctrl = true },
+            .utf8 = "",
+            .unshifted_codepoint = 'A',
+        }).?.value_ptr.*.leaf;
+        try testing.expect(action.action == .new_window);
+    }
+
+    // Negative case for sanity
+    {
+        const action = s.getEvent(.{
+            .key = .key_j,
+            .mods = .{ .ctrl = true },
+        });
+        try testing.expect(action == null);
+    }
+}
 test "Action: clone" {
     const testing = std.testing;
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
