@@ -146,7 +146,9 @@ fn kitty(
                 // the real world issue is usually control characters.
                 const view = try std.unicode.Utf8View.init(self.event.utf8);
                 var it = view.iterator();
-                while (it.nextCodepoint()) |cp| if (isControl(cp)) break :plain_text;
+                while (it.nextCodepoint()) |cp| {
+                    if (isControl(cp)) break :plain_text;
+                }
 
                 return try copyToBuf(buf, self.event.utf8);
             }
@@ -212,7 +214,9 @@ fn kitty(
             }
         }
 
-        if (self.kitty_flags.report_associated and seq.event != .release) associated: {
+        if (self.kitty_flags.report_associated and
+            seq.event != .release)
+        associated: {
             // Determine if the Alt modifier should be treated as an actual
             // modifier (in which case it prevents associated text) or as
             // the macOS Option key, which does not prevent associated text.
