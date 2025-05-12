@@ -89,7 +89,7 @@ const code_to_key = code_to_key: {
         .{ "Minus", .minus },
         .{ "Equal", .equal },
         .{ "BracketLeft", .bracket_left },
-        .{ "BracketRight", .bracket_left },
+        .{ "BracketRight", .bracket_right },
         .{ "Backslash", .backslash },
         .{ "Semicolon", .semicolon },
         .{ "Quote", .quote },
