@@ -1043,12 +1043,16 @@ extension Ghostty {
             }
 
             // If this event as-is would result in a key binding then we send it.
-            if let surface,
-               ghostty_surface_key_is_binding(
-                  surface,
-                  event.ghosttyKeyEvent(GHOSTTY_ACTION_PRESS)) {
-                self.keyDown(with: event)
-                return true
+            if let surface {
+                var ghosttyEvent = event.ghosttyKeyEvent(GHOSTTY_ACTION_PRESS)
+                let match = (event.characters ?? "").withCString { ptr in
+                    ghosttyEvent.text = ptr
+                    return ghostty_surface_key_is_binding(surface, ghosttyEvent)
+                }
+                if match {
+                    self.keyDown(with: event)
+                    return true
+                }
             }
 
             let equivalent: String
@@ -1061,6 +1065,16 @@ extension Ghostty {
                 }
 
                 equivalent = "\r"
+
+            case "/":
+                // Treat C-/ as C-_. We do this because C-/ makes macOS make a beep
+                // sound and we don't like the beep sound.
+                if (!event.modifierFlags.contains(.control) ||
+                    !event.modifierFlags.isDisjoint(with: [.shift, .command, .option])) {
+                    return false
+                }
+
+                equivalent = "_"
 
             default:
                 // It looks like some part of AppKit sometimes generates synthetic NSEvents
