@@ -1109,10 +1109,11 @@ pub const Trigger = struct {
     pub fn parse(input: []const u8) !Trigger {
         if (input.len == 0) return Error.InvalidFormat;
         var result: Trigger = .{};
-        var iter = std.mem.tokenizeScalar(u8, input, '+');
-        loop: while (iter.next()) |part| {
-            // All parts must be non-empty
-            if (part.len == 0) return Error.InvalidFormat;
+        var rem: []const u8 = input;
+        loop: while (rem.len > 0) {
+            const idx = std.mem.indexOfScalar(u8, rem, '+') orelse rem.len;
+            const part = rem[0..idx];
+            rem = if (idx >= rem.len) "" else rem[idx + 1 ..];
 
             // Check if its a modifier
             const modsInfo = @typeInfo(key.Mods).@"struct";
@@ -1147,6 +1148,13 @@ pub const Trigger = struct {
             // Anything after this point is a key and we only support
             // single keys.
             if (!result.isKeyUnset()) return Error.InvalidFormat;
+
+            // If the part is empty it means that it is actually
+            // a literal `+`, which we treat as a Unicode character.
+            if (part.len == 0) {
+                result.key = .{ .unicode = '+' };
+                continue :loop;
+            }
 
             // Check if its a key
             const keysInfo = @typeInfo(key.Key).@"enum";
@@ -1998,6 +2006,32 @@ test "parse: w3c key names" {
 
     // Case-sensitive
     try testing.expectError(Error.InvalidFormat, parseSingle("Keya=ignore"));
+}
+
+test "parse: plus sign" {
+    const testing = std.testing;
+
+    try testing.expectEqual(
+        Binding{
+            .trigger = .{ .key = .{ .unicode = '+' } },
+            .action = .{ .ignore = {} },
+        },
+        try parseSingle("+=ignore"),
+    );
+
+    // Modifier
+    try testing.expectEqual(
+        Binding{
+            .trigger = .{
+                .key = .{ .unicode = '+' },
+                .mods = .{ .ctrl = true },
+            },
+            .action = .{ .ignore = {} },
+        },
+        try parseSingle("ctrl++=ignore"),
+    );
+
+    try testing.expectError(Error.InvalidFormat, parseSingle("++=ignore"));
 }
 
 // For Ghostty 1.2+ we changed our key names to match the W3C and removed

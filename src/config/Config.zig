@@ -935,6 +935,22 @@ class: ?[:0]const u8 = null,
 /// QWERTY keyboard, but will match the `q` key on a AZERTY keyboard
 /// (assuming US physical layout).
 ///
+/// For Unicode codepoints, matching is done by comparing the set of
+/// modifiers with the unmodified codepoint. The unmodified codepoint is
+/// sometimes called an "unshifted character" in other software, but all
+/// modifiers are considered, not only shift. For example, `ctrl+a` will match
+/// `a` but not `ctrl+shift+a` (which is `A` on a US keyboard).
+///
+/// Further, codepoint matching is case-insensitive and the unmodified
+/// codepoint is always case folded for comparison. As a result,
+/// `ctrl+A` configured will match when `ctrl+a` is pressed. Note that
+/// this means some key combinations are impossible depending on keyboard
+/// layout. For example, `ctrl+_` is impossible on a US keyboard because
+/// `_` is `shift+-` and `ctrl+shift+-` is not equal to `ctrl+_` (because
+/// the modifiers don't match!). More details on impossible key combinations
+/// can be found at this excellent source written by Qt developers:
+/// https://doc.qt.io/qt-6/qkeysequence.html#keyboard-layout-issues
+///
 /// Physical key codes can be specified by using any of the key codes
 /// as specified by the [W3C specification](https://www.w3.org/TR/uievents-code/).
 /// For example, `KeyA` will match the physical `a` key on a US standard
