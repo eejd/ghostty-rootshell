@@ -1218,6 +1218,7 @@ pub const Trigger = struct {
         .{ "seven", Key{ .unicode = '7' } },
         .{ "eight", Key{ .unicode = '8' } },
         .{ "nine", Key{ .unicode = '9' } },
+        .{ "plus", Key{ .unicode = '+' } },
         .{ "apostrophe", Key{ .unicode = '\'' } },
         .{ "grave_accent", Key{ .physical = .backquote } },
         .{ "left_bracket", Key{ .physical = .bracket_left } },
