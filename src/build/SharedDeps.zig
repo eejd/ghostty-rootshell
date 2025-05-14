@@ -60,6 +60,9 @@ pub fn changeEntrypoint(
 
     var result = self.*;
     result.config = config;
+    result.options = b.addOptions();
+    try config.addOptions(result.options);
+
     return result;
 }
 

@@ -15,6 +15,7 @@ const ArenaAllocator = std.heap.ArenaAllocator;
 const ziglyph = @import("ziglyph");
 const cli = @import("../cli.zig");
 const terminal = @import("../terminal/main.zig");
+const synth = @import("synth/main.zig");
 
 const Args = struct {
     mode: Mode = .noop,
@@ -70,6 +71,14 @@ const Mode = enum {
 
     // Generate an infinite stream of arbitrary random bytes.
     @"gen-rand",
+
+    // Generate an infinite stream of OSC requests. These will be mixed
+    // with valid and invalid OSC requests by default, but the
+    // `-valid` and `-invalid`-suffixed variants can be used to get only
+    // a specific type of OSC request.
+    @"gen-osc",
+    @"gen-osc-valid",
+    @"gen-osc-invalid",
 };
 
 pub const std_options: std.Options = .{
@@ -84,7 +93,7 @@ pub fn main() !void {
     var args: Args = .{};
     defer args.deinit();
     {
-        var iter = try std.process.argsWithAllocator(alloc);
+        var iter = try cli.args.argsIterator(alloc);
         defer iter.deinit();
         try cli.args.parse(Args, alloc, &args, &iter);
     }
@@ -100,6 +109,9 @@ pub fn main() !void {
         .@"gen-ascii" => try genAscii(writer, seed),
         .@"gen-utf8" => try genUtf8(writer, seed),
         .@"gen-rand" => try genRand(writer, seed),
+        .@"gen-osc" => try genOsc(writer, seed, 0.5),
+        .@"gen-osc-valid" => try genOsc(writer, seed, 1.0),
+        .@"gen-osc-invalid" => try genOsc(writer, seed, 0.0),
         .noop => try benchNoop(reader, buf),
 
         // Handle the ones that depend on terminal state next
@@ -142,7 +154,7 @@ fn genAscii(writer: anytype, seed: u64) !void {
 
 /// Generates an infinite stream of bytes from the given alphabet.
 fn genData(writer: anytype, alphabet: []const u8, seed: u64) !void {
-    var prng = std.rand.DefaultPrng.init(seed);
+    var prng = std.Random.DefaultPrng.init(seed);
     const rnd = prng.random();
     var buf: [1024]u8 = undefined;
     while (true) {
@@ -159,7 +171,7 @@ fn genData(writer: anytype, alphabet: []const u8, seed: u64) !void {
 }
 
 fn genUtf8(writer: anytype, seed: u64) !void {
-    var prng = std.rand.DefaultPrng.init(seed);
+    var prng = std.Random.DefaultPrng.init(seed);
     const rnd = prng.random();
     var buf: [1024]u8 = undefined;
     while (true) {
@@ -180,8 +192,22 @@ fn genUtf8(writer: anytype, seed: u64) !void {
     }
 }
 
+fn genOsc(writer: anytype, seed: u64, p_valid: f64) !void {
+    var prng = std.Random.DefaultPrng.init(seed);
+    const gen: synth.OSC = .{ .rand = prng.random(), .p_valid = p_valid };
+
+    var buf: [1024]u8 = undefined;
+    while (true) {
+        const seq = try gen.next(&buf);
+        writer.writeAll(seq) catch |err| switch (err) {
+            error.BrokenPipe => return, // stdout closed
+            else => return err,
+        };
+    }
+}
+
 fn genRand(writer: anytype, seed: u64) !void {
-    var prng = std.rand.DefaultPrng.init(seed);
+    var prng = std.Random.DefaultPrng.init(seed);
     const rnd = prng.random();
     var buf: [1024]u8 = undefined;
     while (true) {

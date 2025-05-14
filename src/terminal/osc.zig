@@ -6,6 +6,7 @@
 const osc = @This();
 
 const std = @import("std");
+const builtin = @import("builtin");
 const mem = std.mem;
 const assert = std.debug.assert;
 const Allocator = mem.Allocator;
@@ -1332,7 +1333,10 @@ pub const Parser = struct {
     /// the response terminator.
     pub fn end(self: *Parser, terminator_ch: ?u8) ?Command {
         if (!self.complete) {
-            log.warn("invalid OSC command: {s}", .{self.buf[0..self.buf_idx]});
+            if (comptime !builtin.is_test) log.warn(
+                "invalid OSC command: {s}",
+                .{self.buf[0..self.buf_idx]},
+            );
             return null;
         }
 
