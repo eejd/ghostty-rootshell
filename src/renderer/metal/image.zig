@@ -441,7 +441,7 @@ pub const Image = union(enum) {
         };
 
         // Set our properties
-        desc.setProperty("pixelFormat", @intFromEnum(mtl.MTLPixelFormat.rgba8uint));
+        desc.setProperty("pixelFormat", @intFromEnum(mtl.MTLPixelFormat.rgba8unorm));
         desc.setProperty("width", @as(c_ulong, @intCast(p.width)));
         desc.setProperty("height", @as(c_ulong, @intCast(p.height)));
 
