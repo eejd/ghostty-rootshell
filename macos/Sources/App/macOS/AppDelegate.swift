@@ -154,10 +154,6 @@ class AppDelegate: NSObject,
             toggleSecureInput(self)
         }
 
-        // Hook up updater menu
-        menuCheckForUpdates?.target = updaterController
-        menuCheckForUpdates?.action = #selector(SPUStandardUpdaterController.checkForUpdates(_:))
-
         // Initial config loading
         ghosttyConfigDidChange(config: ghostty.config)
 
@@ -374,6 +370,7 @@ class AppDelegate: NSObject,
     private func syncMenuShortcuts(_ config: Ghostty.Config) {
         guard ghostty.readiness == .ready else { return }
 
+        syncMenuShortcut(config, action: "check_for_updates", menuItem: self.menuCheckForUpdates)
         syncMenuShortcut(config, action: "open_config", menuItem: self.menuOpenConfig)
         syncMenuShortcut(config, action: "reload_config", menuItem: self.menuReloadConfig)
         syncMenuShortcut(config, action: "quit", menuItem: self.menuQuit)
@@ -789,6 +786,10 @@ class AppDelegate: NSObject,
 
     @IBAction func reloadConfig(_ sender: Any?) {
         ghostty.reloadConfig()
+    }
+
+    @IBAction func checkForUpdates(_ sender: Any?) {
+        updaterController.checkForUpdates(sender)
     }
 
     @IBAction func newWindow(_ sender: Any?) {
