@@ -368,8 +368,8 @@ pub const Image = union(enum) {
             internal: gl.Texture.InternalFormat,
             format: gl.Texture.Format,
         } = switch (self.*) {
-            .pending_rgb, .replace_rgb => .{ .internal = .rgb, .format = .rgb },
-            .pending_rgba, .replace_rgba => .{ .internal = .rgba, .format = .rgba },
+            .pending_rgb, .replace_rgb => .{ .internal = .srgb, .format = .rgb },
+            .pending_rgba, .replace_rgba => .{ .internal = .srgba, .format = .rgba },
             else => unreachable,
         };
 
