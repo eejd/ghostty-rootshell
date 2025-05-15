@@ -249,6 +249,7 @@ pub const App = struct {
             .prompt_title,
             .reset_window_size,
             .ring_bell,
+            .check_for_updates,
             => {
                 log.info("unimplemented action={}", .{action});
                 return false;

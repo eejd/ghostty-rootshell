@@ -504,6 +504,7 @@ pub fn performAction(
         .renderer_health,
         .color_change,
         .reset_window_size,
+        .check_for_updates,
         => {
             log.warn("unimplemented action={}", .{action});
             return false;
