@@ -1331,7 +1331,7 @@ test "storage: aspect ratio calculation when only columns or rows specified" {
         };
 
         // Image is 16x9, set to a width of 10 columns, at 10px per column
-        // that's 100px width. 100px * (9 / 16) = 56.25, which sould round
+        // that's 100px width. 100px * (9 / 16) = 56.25, which should round
         // to a height of 56px.
 
         const calc_size = placement.calculatedSize(image, &t);
