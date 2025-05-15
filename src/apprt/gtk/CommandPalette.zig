@@ -93,6 +93,9 @@ pub fn deinit(self: *CommandPalette) void {
 
 pub fn toggle(self: *CommandPalette) void {
     self.dialog.present(self.window.window.as(gtk.Widget));
+
+    // Focus on the search bar when opening the dialog
+    self.dialog.setFocus(self.search.as(gtk.Widget));
 }
 
 pub fn updateConfig(self: *CommandPalette, config: *const configpkg.Config) !void {
@@ -126,6 +129,12 @@ fn activated(self: *CommandPalette, pos: c_uint) void {
     const object = self.model.as(gio.ListModel).getObject(pos) orelse return;
     const cmd = gobject.ext.cast(Command, object) orelse return;
 
+    // Close before running the action in order to avoid being replaced by another
+    // dialog (such as the change title dialog). If that occurs then the command
+    // palette dialog won't be counted as having closed properly and cannot
+    // receive focus when reopened.
+    _ = self.dialog.close();
+
     const action = inputpkg.Binding.Action.parse(
         std.mem.span(cmd.cmd_c.action_key),
     ) catch |err| {
@@ -134,7 +143,6 @@ fn activated(self: *CommandPalette, pos: c_uint) void {
     };
 
     self.window.performBindingAction(action);
-    _ = self.dialog.close();
 }
 
 fn searchStopped(_: *gtk.SearchEntry, self: *CommandPalette) callconv(.c) void {
