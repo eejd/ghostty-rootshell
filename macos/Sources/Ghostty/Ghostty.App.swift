@@ -592,7 +592,7 @@ extension Ghostty {
         }
 
         private static func checkForUpdates(
-            _ app: ghostty_app_t,
+            _ app: ghostty_app_t
         ) {
             if let appDelegate = NSApplication.shared.delegate as? AppDelegate {
                 appDelegate.checkForUpdates(nil)
