@@ -364,6 +364,12 @@ fn actionCommands(action: Action.Key) []const Command {
             .description = "Toggle secure input mode.",
         }},
 
+        .check_for_updates => comptime &.{.{
+            .action = .check_for_updates,
+            .title = "Check for Updates",
+            .description = "Check for updates to the application.",
+        }},
+
         .quit => comptime &.{.{
             .action = .quit,
             .title = "Quit",

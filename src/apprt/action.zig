@@ -255,6 +255,8 @@ pub const Action = union(Key) {
     /// it needs to ring the bell. This is usually a sound or visual effect.
     ring_bell,
 
+    check_for_updates,
+
     /// Sync with: ghostty_action_tag_e
     pub const Key = enum(c_int) {
         quit,
@@ -301,6 +303,7 @@ pub const Action = union(Key) {
         config_change,
         close_window,
         ring_bell,
+        check_for_updates,
     };
 
     /// Sync with: ghostty_action_u
