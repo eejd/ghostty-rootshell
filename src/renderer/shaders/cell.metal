@@ -668,12 +668,12 @@ fragment float4 image_fragment(
 
   float4 rgba = image.sample(textureSampler, in.tex_coord);
 
-  return load_color(
-    uchar4(rgba * 255.0),
-    // We assume all images are sRGB regardless of the configured colorspace
-    // TODO: Maybe support wide gamut images?
-    false,
-    uniforms.use_linear_blending
-  );
+  if (!uniforms.use_linear_blending) {
+    rgba = unlinearize(rgba);
+  }
+
+  rgba.rgb *= rgba.a;
+
+  return rgba;
 }
 
