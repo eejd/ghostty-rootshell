@@ -474,6 +474,21 @@ foreground: Color = .{ .r = 0xFF, .g = 0xFF, .b = 0xFF },
 /// selection color will vary across the selection.
 @"selection-invert-fg-bg": bool = false,
 
+/// Whether to clear selected text when typing. This defaults to `true`.
+/// This is typical behavior for most terminal emulators as well as
+/// text input fields. If you set this to `false`, then the selected text
+/// will not be cleared when typing.
+///
+/// "Typing" is specifically defined as any non-modifier (shift, control,
+/// alt, etc.) keypress that produces data to be sent to the application
+/// running within the terminal (e.g. the shell). Additionally, selection
+/// is cleared when any preedit or composition state is started (e.g.
+/// when typing languages such as Japanese).
+///
+/// If this is `false`, then the selection can still be manually
+/// cleared by clicking once or by pressing `escape`.
+@"selection-clear-on-typing": bool = true,
+
 /// The minimum contrast ratio between the foreground and background colors.
 /// The contrast ratio is a value between 1 and 21. A value of 1 allows for no
 /// contrast (e.g. black on black). This value is the contrast ratio as defined
