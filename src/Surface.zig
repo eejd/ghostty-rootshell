@@ -253,6 +253,7 @@ const DerivedConfig = struct {
     mouse_shift_capture: configpkg.MouseShiftCapture,
     macos_non_native_fullscreen: configpkg.NonNativeFullscreen,
     macos_option_as_alt: ?configpkg.OptionAsAlt,
+    selection_clear_on_typing: bool,
     vt_kam_allowed: bool,
     window_padding_top: u32,
     window_padding_bottom: u32,
@@ -316,6 +317,7 @@ const DerivedConfig = struct {
             .mouse_shift_capture = config.@"mouse-shift-capture",
             .macos_non_native_fullscreen = config.@"macos-non-native-fullscreen",
             .macos_option_as_alt = config.@"macos-option-as-alt",
+            .selection_clear_on_typing = config.@"selection-clear-on-typing",
             .vt_kam_allowed = config.@"vt-kam-allowed",
             .window_padding_top = config.@"window-padding-y".top_left,
             .window_padding_bottom = config.@"window-padding-y".bottom_right,
@@ -1687,7 +1689,9 @@ pub fn preeditCallback(self: *Surface, preedit_: ?[]const u8) !void {
     if (self.renderer_state.preedit != null or
         preedit_ != null)
     {
-        self.setSelection(null) catch {};
+        if (self.config.selection_clear_on_typing) {
+            self.setSelection(null) catch {};
+        }
     }
 
     // We always clear our prior preedit
@@ -1930,7 +1934,13 @@ pub fn keyCallback(
     if (!event.key.modifier()) {
         self.renderer_state.mutex.lock();
         defer self.renderer_state.mutex.unlock();
-        try self.setSelection(null);
+
+        if (self.config.selection_clear_on_typing or
+            event.key == .escape)
+        {
+            try self.setSelection(null);
+        }
+
         try self.io.terminal.scrollViewport(.{ .bottom = {} });
         try self.queueRender();
     }
