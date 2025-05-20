@@ -246,7 +246,7 @@ test "xdgShortcutFromTrigger" {
 
     try testing.expectEqualStrings("LOGO+q", (try xdgShortcutFromTrigger(&buf, .{
         .mods = .{ .super = true },
-        .key = .{ .translated = .q },
+        .key = .{ .unicode = 'q' },
     })).?);
 
     try testing.expectEqualStrings("SHIFT+CTRL+ALT+LOGO+backslash", (try xdgShortcutFromTrigger(&buf, .{
