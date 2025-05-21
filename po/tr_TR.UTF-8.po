@@ -216,7 +216,7 @@ msgstr "Açık Sekmeleri Görüntüle"
 
 #: src/apprt/gtk/Window.zig:249
 msgid "New Split"
-msgstr ""
+msgstr "Yeni Bölme"
 
 #: src/apprt/gtk/Window.zig:312
 msgid ""
