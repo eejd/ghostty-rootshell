@@ -1195,6 +1195,181 @@ pub const StreamHandler = struct {
         }
     }
 
+    pub fn handleColorOperation(
+        self: *StreamHandler,
+        source: terminal.osc.Command.ColorOperationSource,
+        operations: []terminal.osc.Command.ColorOperation,
+        terminator: terminal.osc.Terminator,
+    ) !void {
+        var buffer: [1024]u8 = undefined;
+        var fba: std.heap.FixedBufferAllocator = .init(&buffer);
+        const alloc = fba.allocator();
+
+        var response: std.ArrayListUnmanaged(u8) = .empty;
+        const writer = response.writer(alloc);
+
+        var report: bool = false;
+
+        try writer.print("\x1b]{}", .{source});
+
+        for (operations) |op| {
+            switch (op) {
+                .set => |set| {
+                    switch (set.kind) {
+                        .palette => |i| {
+                            self.terminal.flags.dirty.palette = true;
+                            self.terminal.color_palette.colors[i] = set.color;
+                            self.terminal.color_palette.mask.set(i);
+                        },
+                        .foreground => {
+                            self.foreground_color = set.color;
+                            _ = self.renderer_mailbox.push(.{
+                                .foreground_color = set.color,
+                            }, .{ .forever = {} });
+                        },
+                        .background => {
+                            self.background_color = set.color;
+                            _ = self.renderer_mailbox.push(.{
+                                .background_color = set.color,
+                            }, .{ .forever = {} });
+                        },
+                        .cursor => {
+                            self.cursor_color = set.color;
+                            _ = self.renderer_mailbox.push(.{
+                                .cursor_color = set.color,
+                            }, .{ .forever = {} });
+                        },
+                    }
+
+                    // Notify the surface of the color change
+                    self.surfaceMessageWriter(.{ .color_change = .{
+                        .kind = set.kind,
+                        .color = set.color,
+                    } });
+                },
+
+                .reset => |kind| {
+                    switch (kind) {
+                        .palette => |i| {
+                            const mask = &self.terminal.color_palette.mask;
+                            self.terminal.flags.dirty.palette = true;
+                            self.terminal.color_palette.colors[i] = self.terminal.default_palette[i];
+                            mask.unset(i);
+
+                            self.surfaceMessageWriter(.{
+                                .color_change = .{
+                                    .kind = .{ .palette = @intCast(i) },
+                                    .color = self.terminal.color_palette.colors[i],
+                                },
+                            });
+                        },
+                        .foreground => {
+                            self.foreground_color = null;
+                            _ = self.renderer_mailbox.push(.{
+                                .foreground_color = self.foreground_color,
+                            }, .{ .forever = {} });
+
+                            self.surfaceMessageWriter(.{ .color_change = .{
+                                .kind = .foreground,
+                                .color = self.default_foreground_color,
+                            } });
+                        },
+                        .background => {
+                            self.background_color = null;
+                            _ = self.renderer_mailbox.push(.{
+                                .background_color = self.background_color,
+                            }, .{ .forever = {} });
+
+                            self.surfaceMessageWriter(.{ .color_change = .{
+                                .kind = .background,
+                                .color = self.default_background_color,
+                            } });
+                        },
+                        .cursor => {
+                            self.cursor_color = null;
+
+                            _ = self.renderer_mailbox.push(.{
+                                .cursor_color = self.cursor_color,
+                            }, .{ .forever = {} });
+
+                            if (self.default_cursor_color) |color| {
+                                self.surfaceMessageWriter(.{ .color_change = .{
+                                    .kind = .cursor,
+                                    .color = color,
+                                } });
+                            }
+                        },
+                    }
+                },
+
+                .report => |kind| report: {
+                    if (self.osc_color_report_format == .none) break :report;
+
+                    report = true;
+
+                    const color = switch (kind) {
+                        .palette => |i| self.terminal.color_palette.colors[i],
+                        .foreground => self.foreground_color orelse self.default_foreground_color,
+                        .background => self.background_color orelse self.default_background_color,
+                        .cursor => self.cursor_color orelse
+                            self.default_cursor_color orelse
+                            self.foreground_color orelse
+                            self.default_foreground_color,
+                    };
+
+                    switch (self.osc_color_report_format) {
+                        .@"16-bit" => switch (kind) {
+                            .palette => |i| try writer.print(
+                                ";{d};rgb:{x:0>4}/{x:0>4}/{x:0>4}",
+                                .{
+                                    i,
+                                    @as(u16, color.r) * 257,
+                                    @as(u16, color.g) * 257,
+                                    @as(u16, color.b) * 257,
+                                },
+                            ),
+                            else => try writer.print(
+                                ";rgb:{x:0>4}/{x:0>4}/{x:0>4}",
+                                .{
+                                    @as(u16, color.r) * 257,
+                                    @as(u16, color.g) * 257,
+                                    @as(u16, color.b) * 257,
+                                },
+                            ),
+                        },
+
+                        .@"8-bit" => switch (kind) {
+                            .palette => |i| try writer.print(
+                                ";{d};rgb:{x:0>2}/{x:0>2}/{x:0>2}",
+                                .{
+                                    i,
+                                    @as(u16, color.r),
+                                    @as(u16, color.g),
+                                    @as(u16, color.b),
+                                },
+                            ),
+                            else => try writer.print(
+                                ";rgb:{x:0>2}/{x:0>2}/{x:0>2}",
+                                .{
+                                    @as(u16, color.r),
+                                    @as(u16, color.g),
+                                    @as(u16, color.b),
+                                },
+                            ),
+                        },
+
+                        .none => unreachable,
+                    }
+                },
+            }
+        }
+        if (report) {
+            try writer.writeAll(terminator.string());
+            const msg: termio.Message = .{ .write_stable = response.items };
+            self.messageWriter(msg);
+        }
+    }
+
     /// Implements OSC 4, OSC 10, and OSC 11, which reports palette color,
     /// default foreground color, and background color respectively.
     pub fn reportColor(

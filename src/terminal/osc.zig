@@ -109,6 +109,13 @@ pub const Command = union(enum) {
         value: []const u8,
     },
 
+    /// OSC color operations
+    color_operation: struct {
+        source: ColorOperationSource,
+        operations: std.ArrayListUnmanaged(ColorOperation) = .empty,
+        terminator: Terminator = .st,
+    },
+
     /// OSC 4, OSC 10, and OSC 11 color report.
     report_color: struct {
         /// OSC 4 requests a palette color, OSC 10 requests the foreground
@@ -182,6 +189,32 @@ pub const Command = union(enum) {
     /// Wait input (OSC 9;5)
     wait_input: void,
 
+    pub const ColorOperationSource = enum(u16) {
+        osc_4 = 4,
+        osc_10 = 10,
+        osc_11 = 11,
+        osc_12 = 12,
+        osc_104 = 104,
+
+        pub fn format(
+            self: ColorOperationSource,
+            comptime _: []const u8,
+            _: std.fmt.FormatOptions,
+            writer: anytype,
+        ) !void {
+            try writer.print("{d}", .{@intFromEnum(self)});
+        }
+    };
+
+    pub const ColorOperation = union(enum) {
+        set: struct {
+            kind: ColorKind,
+            color: RGB,
+        },
+        reset: ColorKind,
+        report: ColorKind,
+    };
+
     pub const ColorKind = union(enum) {
         palette: u8,
         foreground,
@@ -233,6 +266,15 @@ pub const Terminator = enum {
             .st => "\x1b\\",
             .bel => "\x07",
         };
+    }
+
+    pub fn format(
+        self: Terminator,
+        comptime _: []const u8,
+        _: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        try writer.writeAll(self.string());
     }
 };
 
@@ -288,6 +330,7 @@ pub const Parser = struct {
         @"0",
         @"1",
         @"10",
+        @"104",
         @"11",
         @"12",
         @"13",
@@ -327,16 +370,15 @@ pub const Parser = struct {
         clipboard_kind_end,
 
         // Get/set color palette index
-        color_palette_index,
-        color_palette_index_end,
+        osc_4,
+
+        // Reset color palette index
+        osc_104,
 
         // Hyperlinks
         hyperlink_param_key,
         hyperlink_param_value,
         hyperlink_uri,
-
-        // Reset color palette index
-        reset_color_palette_index,
 
         // rxvt extension. Only used for OSC 777 and only the value "notify" is
         // supported
@@ -423,6 +465,10 @@ pub const Parser = struct {
                 v.list.deinit();
                 self.command = default;
             },
+            .color_operation => |*v| {
+                v.operations.deinit(self.alloc.?);
+                self.command = default;
+            },
             else => {},
         }
     }
@@ -503,17 +549,25 @@ pub const Parser = struct {
 
             .@"10" => switch (c) {
                 ';' => self.state = .query_fg_color,
-                '4' => {
-                    self.command = .{ .reset_color = .{
-                        .kind = .{ .palette = 0 },
-                        .value = "",
-                    } };
+                '4' => self.state = .@"104",
+                else => self.state = .invalid,
+            },
 
-                    self.state = .reset_color_palette_index;
+            .@"104" => switch (c) {
+                ';' => osc_104: {
+                    if (self.alloc == null) {
+                        log.info("OSC 104 requires an allocator, but none was provided", .{});
+                        self.state = .invalid;
+                        break :osc_104;
+                    }
+                    self.state = .osc_104;
+                    self.buf_start = self.buf_idx;
                     self.complete = true;
                 },
                 else => self.state = .invalid,
             },
+
+            .osc_104 => {},
 
             .@"11" => switch (c) {
                 ';' => self.state = .query_bg_color,
@@ -621,65 +675,20 @@ pub const Parser = struct {
             },
 
             .@"4" => switch (c) {
-                ';' => {
-                    self.state = .color_palette_index;
-                    self.buf_start = self.buf_idx;
-                },
-                else => self.state = .invalid,
-            },
-
-            .color_palette_index => switch (c) {
-                '0'...'9' => {},
-                ';' => blk: {
-                    const str = self.buf[self.buf_start .. self.buf_idx - 1];
-                    if (str.len == 0) {
+                ';' => osc_4: {
+                    if (self.alloc == null) {
+                        log.info("OSC 4 requires an allocator, but none was provided", .{});
                         self.state = .invalid;
-                        break :blk;
+                        break :osc_4;
                     }
-
-                    if (std.fmt.parseUnsigned(u8, str, 10)) |num| {
-                        self.state = .color_palette_index_end;
-                        self.temp_state = .{ .num = num };
-                    } else |err| switch (err) {
-                        error.Overflow => self.state = .invalid,
-                        error.InvalidCharacter => unreachable,
-                    }
-                },
-                else => self.state = .invalid,
-            },
-
-            .color_palette_index_end => switch (c) {
-                '?' => {
-                    self.command = .{ .report_color = .{
-                        .kind = .{ .palette = @intCast(self.temp_state.num) },
-                    } };
-
+                    self.state = .osc_4;
+                    self.buf_start = self.buf_idx;
                     self.complete = true;
                 },
-                else => {
-                    self.command = .{ .set_color = .{
-                        .kind = .{ .palette = @intCast(self.temp_state.num) },
-                        .value = "",
-                    } };
-
-                    self.state = .string;
-                    self.temp_state = .{ .str = &self.command.set_color.value };
-                    self.buf_start = self.buf_idx - 1;
-                },
+                else => self.state = .invalid,
             },
 
-            .reset_color_palette_index => switch (c) {
-                ';' => {
-                    self.state = .string;
-                    self.temp_state = .{ .str = &self.command.reset_color.value };
-                    self.buf_start = self.buf_idx;
-                    self.complete = false;
-                },
-                else => {
-                    self.state = .invalid;
-                    self.complete = false;
-                },
-            },
+            .osc_4 => {},
 
             .@"5" => switch (c) {
                 '2' => self.state = .@"52",
@@ -1327,6 +1336,104 @@ pub const Parser = struct {
         self.temp_state.str.* = list.items;
     }
 
+    fn parseOSC4(self: *Parser) void {
+        assert(self.state == .osc_4);
+
+        const alloc = self.alloc orelse return;
+
+        self.command = .{
+            .color_operation = .{
+                .source = .osc_4,
+                .operations = std.ArrayListUnmanaged(Command.ColorOperation).initCapacity(alloc, 8) catch |err| {
+                    log.warn("unable to allocate memory for OSC 4 parsing: {}", .{err});
+                    self.state = .invalid;
+                    return;
+                },
+            },
+        };
+
+        const str = self.buf[self.buf_start..self.buf_idx];
+        var it = std.mem.splitScalar(u8, str, ';');
+        while (it.next()) |index_str| {
+            const index = std.fmt.parseUnsigned(u8, index_str, 10) catch |err| switch (err) {
+                error.Overflow, error.InvalidCharacter => {
+                    log.warn("invalid palette index spec in OSC 4: {s}", .{index_str});
+                    // skip any spec
+                    _ = it.next();
+                    continue;
+                },
+            };
+            const spec_str = it.next() orelse continue;
+            if (std.mem.eql(u8, spec_str, "?")) {
+                self.command.color_operation.operations.append(
+                    alloc,
+                    .{
+                        .report = .{ .palette = index },
+                    },
+                ) catch |err| {
+                    log.warn("unable to append color operation: {}", .{err});
+                    return;
+                };
+            } else {
+                const color = RGB.parse(spec_str) catch |err| {
+                    log.warn("invalid color specification {s} in OSC 4: {}", .{ spec_str, err });
+                    continue;
+                };
+                self.command.color_operation.operations.append(
+                    alloc,
+                    .{
+                        .set = .{
+                            .kind = .{
+                                .palette = index,
+                            },
+                            .color = color,
+                        },
+                    },
+                ) catch |err| {
+                    log.warn("unable to append color operation: {}", .{err});
+                    return;
+                };
+            }
+        }
+    }
+
+    fn parseOSC104(self: *Parser) void {
+        assert(self.state == .osc_104);
+
+        const alloc = self.alloc orelse return;
+
+        self.command = .{
+            .color_operation = .{
+                .source = .osc_104,
+                .operations = std.ArrayListUnmanaged(Command.ColorOperation).initCapacity(alloc, 8) catch |err| {
+                    log.warn("unable to allocate memory for OSC 104 parsing: {}", .{err});
+                    self.state = .invalid;
+                    return;
+                },
+            },
+        };
+
+        const str = self.buf[self.buf_start..self.buf_idx];
+        var it = std.mem.splitScalar(u8, str, ';');
+        while (it.next()) |index_str| {
+            const index = std.fmt.parseUnsigned(u8, index_str, 10) catch |err| switch (err) {
+                error.Overflow, error.InvalidCharacter => {
+                    log.warn("invalid palette index spec in OSC 104: {s}", .{index_str});
+                    continue;
+                },
+            };
+            self.command.color_operation.operations.append(
+                alloc,
+                .{
+                    .reset = .{ .palette = index },
+                },
+            ) catch |err| {
+                log.warn("unable to append color operation: {}", .{err});
+                return;
+            };
+        }
+    }
+
     /// End the sequence and return the command, if any. If the return value
     /// is null, then no valid command was found. The optional terminator_ch
     /// is the final character in the OSC sequence. This is used to determine
@@ -1350,12 +1457,15 @@ pub const Parser = struct {
             .allocable_string => self.endAllocableString(),
             .kitty_color_protocol_key => self.endKittyColorProtocolOption(.key_only, true),
             .kitty_color_protocol_value => self.endKittyColorProtocolOption(.key_and_value, true),
+            .osc_4 => self.parseOSC4(),
+            .osc_104 => self.parseOSC104(),
             else => {},
         }
 
         switch (self.command) {
             .report_color => |*c| c.terminator = .init(terminator_ch),
             .kitty_color_protocol => |*c| c.terminator = .init(terminator_ch),
+            .color_operation => |*c| c.terminator = .init(terminator_ch),
             else => {},
         }
 
@@ -1729,32 +1839,192 @@ test "OSC: set background color" {
     try testing.expectEqualStrings(cmd.set_color.value, "rgb:f/ff/ffff");
 }
 
-test "OSC: get palette color" {
+test "OSC: OSC4: get palette color 1" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var p: Parser = .{ .alloc = arena.allocator() };
 
     const input = "4;1;?";
     for (input) |ch| p.next(ch);
 
     const cmd = p.end('\x1b').?;
-    try testing.expect(cmd == .report_color);
-    try testing.expectEqual(Command.ColorKind{ .palette = 1 }, cmd.report_color.kind);
-    try testing.expectEqual(cmd.report_color.terminator, .st);
+    try testing.expect(cmd == .color_operation);
+    try testing.expect(cmd.color_operation.source == .osc_4);
+    try testing.expect(cmd.color_operation.operations.items.len == 1);
+    const op = cmd.color_operation.operations.items[0];
+    try testing.expect(op == .report);
+    try testing.expectEqual(Command.ColorKind{ .palette = 1 }, op.report);
+    try testing.expectEqual(cmd.color_operation.terminator, .st);
 }
 
-test "OSC: set palette color" {
+test "OSC: OSC4: get palette color 2" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var p: Parser = .{ .alloc = arena.allocator() };
+
+    const input = "4;1;?;2;?";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .color_operation);
+    try testing.expect(cmd.color_operation.source == .osc_4);
+    try testing.expect(cmd.color_operation.operations.items.len == 2);
+    {
+        const op = cmd.color_operation.operations.items[0];
+        try testing.expect(op == .report);
+        try testing.expectEqual(Command.ColorKind{ .palette = 1 }, op.report);
+    }
+    {
+        const op = cmd.color_operation.operations.items[1];
+        try testing.expect(op == .report);
+        try testing.expectEqual(Command.ColorKind{ .palette = 2 }, op.report);
+    }
+    try testing.expectEqual(cmd.color_operation.terminator, .st);
+}
+
+test "OSC: OSC4: set palette color 1" {
+    const testing = std.testing;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var p: Parser = .{ .alloc = arena.allocator() };
 
     const input = "4;17;rgb:aa/bb/cc";
     for (input) |ch| p.next(ch);
 
     const cmd = p.end('\x1b').?;
-    try testing.expect(cmd == .set_color);
-    try testing.expectEqual(Command.ColorKind{ .palette = 17 }, cmd.set_color.kind);
-    try testing.expectEqualStrings(cmd.set_color.value, "rgb:aa/bb/cc");
+    try testing.expect(cmd == .color_operation);
+    try testing.expect(cmd.color_operation.source == .osc_4);
+    try testing.expect(cmd.color_operation.operations.items.len == 1);
+    const op = cmd.color_operation.operations.items[0];
+    try testing.expect(op == .set);
+    try testing.expectEqual(Command.ColorKind{ .palette = 17 }, op.set.kind);
+    try testing.expectEqual(
+        RGB{ .r = 0xaa, .g = 0xbb, .b = 0xcc },
+        op.set.color,
+    );
+}
+
+test "OSC: OSC4: set palette color 2" {
+    const testing = std.testing;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var p: Parser = .{ .alloc = arena.allocator() };
+
+    const input = "4;17;rgb:aa/bb/cc;1;rgb:00/11/22";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .color_operation);
+    try testing.expect(cmd.color_operation.source == .osc_4);
+    try testing.expect(cmd.color_operation.operations.items.len == 2);
+    {
+        const op = cmd.color_operation.operations.items[0];
+        try testing.expect(op == .set);
+        try testing.expectEqual(Command.ColorKind{ .palette = 17 }, op.set.kind);
+        try testing.expectEqual(
+            RGB{ .r = 0xaa, .g = 0xbb, .b = 0xcc },
+            op.set.color,
+        );
+    }
+    {
+        const op = cmd.color_operation.operations.items[1];
+        try testing.expect(op == .set);
+        try testing.expectEqual(Command.ColorKind{ .palette = 1 }, op.set.kind);
+        try testing.expectEqual(
+            RGB{ .r = 0x00, .g = 0x11, .b = 0x22 },
+            op.set.color,
+        );
+    }
+}
+
+test "OSC: OSC4: mix get/set palette color" {
+    const testing = std.testing;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var p: Parser = .{ .alloc = arena.allocator() };
+
+    const input = "4;17;rgb:aa/bb/cc;254;?";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .color_operation);
+    try testing.expect(cmd.color_operation.source == .osc_4);
+    try testing.expect(cmd.color_operation.operations.items.len == 2);
+    {
+        const op = cmd.color_operation.operations.items[0];
+        try testing.expect(op == .set);
+        try testing.expectEqual(Command.ColorKind{ .palette = 17 }, op.set.kind);
+        try testing.expectEqual(
+            RGB{ .r = 0xaa, .g = 0xbb, .b = 0xcc },
+            op.set.color,
+        );
+    }
+    {
+        const op = cmd.color_operation.operations.items[1];
+        try testing.expect(op == .report);
+        try testing.expectEqual(Command.ColorKind{ .palette = 254 }, op.report);
+    }
+}
+
+test "OSC: OSC104: reset palette color 1" {
+    const testing = std.testing;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var p: Parser = .{ .alloc = arena.allocator() };
+
+    const input = "104;17";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .color_operation);
+    try testing.expect(cmd.color_operation.source == .osc_104);
+    try testing.expect(cmd.color_operation.operations.items.len == 1);
+    {
+        const op = cmd.color_operation.operations.items[0];
+        try testing.expect(op == .reset);
+        try testing.expectEqual(Command.ColorKind{ .palette = 17 }, op.reset);
+    }
+}
+
+test "OSC: OSC104: reset palette color 2" {
+    const testing = std.testing;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var p: Parser = .{ .alloc = arena.allocator() };
+
+    const input = "104;17;111";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .color_operation);
+    try testing.expect(cmd.color_operation.source == .osc_104);
+    try testing.expect(cmd.color_operation.operations.items.len == 2);
+    {
+        const op = cmd.color_operation.operations.items[0];
+        try testing.expect(op == .reset);
+        try testing.expectEqual(Command.ColorKind{ .palette = 17 }, op.reset);
+    }
+    {
+        const op = cmd.color_operation.operations.items[1];
+        try testing.expect(op == .reset);
+        try testing.expectEqual(Command.ColorKind{ .palette = 111 }, op.reset);
+    }
 }
 
 test "OSC: conemu sleep" {
