@@ -454,6 +454,11 @@ pub const Key = enum(c_int) {
     audio_volume_up,
     wake_up,
 
+    // "Legacy, Non-standard, and Special Keys" § 3.7
+    copy,
+    cut,
+    paste,
+
     /// Converts an ASCII character to a key, if possible. This returns
     /// null if the character is unknown.
     ///
@@ -797,6 +802,9 @@ pub const Key = enum(c_int) {
             .audio_volume_up,
             .wake_up,
             .help,
+            .copy,
+            .cut,
+            .paste,
             => null,
 
             .unidentified,

@@ -292,6 +292,11 @@ typedef enum {
   GHOSTTY_KEY_AUDIO_VOLUME_MUTE,
   GHOSTTY_KEY_AUDIO_VOLUME_UP,
   GHOSTTY_KEY_WAKE_UP,
+
+  // "Legacy, Non-standard, and Special Keys" § 3.7
+  GHOSTTY_KEY_COPY,
+  GHOSTTY_KEY_CUT,
+  GHOSTTY_KEY_PASTE,
 } ghostty_input_key_e;
 
 typedef struct {

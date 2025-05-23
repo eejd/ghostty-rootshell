@@ -388,6 +388,10 @@ const keymap: []const RawEntry = &.{
     .{ gdk.KEY_KP_Delete, .numpad_delete },
     .{ gdk.KEY_KP_Begin, .numpad_begin },
 
+    .{ gdk.KEY_Copy, .copy },
+    .{ gdk.KEY_Cut, .cut },
+    .{ gdk.KEY_Paste, .paste },
+
     .{ gdk.KEY_Shift_L, .shift_left },
     .{ gdk.KEY_Control_L, .control_left },
     .{ gdk.KEY_Alt_L, .alt_left },
