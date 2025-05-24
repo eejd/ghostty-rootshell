@@ -900,11 +900,11 @@ test "osc: 112 incomplete sequence" {
         try testing.expect(cmd == .color_operation);
         try testing.expectEqual(cmd.color_operation.terminator, .bel);
         try testing.expect(cmd.color_operation.source == .osc_112);
-        try testing.expect(cmd.color_operation.operations.count == 1);
-        var it = cmd.color_operation.operations.iterator();
+        try testing.expect(cmd.color_operation.operations.count() == 1);
+        var it = cmd.color_operation.operations.constIterator(0);
         {
             const op = it.next().?;
-            try testing.expect(op == .reset);
+            try testing.expect(op.* == .reset);
             try testing.expectEqual(
                 osc.Command.ColorKind.cursor,
                 op.reset,

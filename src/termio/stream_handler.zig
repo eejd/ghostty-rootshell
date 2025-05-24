@@ -1212,10 +1212,10 @@ pub const StreamHandler = struct {
 
         try writer.print("\x1b]{}", .{source});
 
-        var it = operations.iterator();
+        var it = operations.constIterator(0);
 
         while (it.next()) |op| {
-            switch (op) {
+            switch (op.*) {
                 .set => |set| {
                     switch (set.kind) {
                         .palette => |i| {
