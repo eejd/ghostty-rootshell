@@ -13,6 +13,8 @@ const Allocator = mem.Allocator;
 const RGB = @import("color.zig").RGB;
 const kitty = @import("kitty.zig");
 
+const ArrayListStaticUnmanaged = @import("../datastruct/list.zig").ArrayListStaticUnmanaged;
+
 const log = std.log.scoped(.osc);
 
 pub const Command = union(enum) {
@@ -112,7 +114,7 @@ pub const Command = union(enum) {
     /// OSC color operations
     color_operation: struct {
         source: ColorOperationSource,
-        operations: std.ArrayListUnmanaged(ColorOperation) = .empty,
+        operations: ColorOperationList = .empty,
         terminator: Terminator = .st,
     },
 
@@ -186,6 +188,8 @@ pub const Command = union(enum) {
         reset: ColorKind,
         report: ColorKind,
     };
+
+    pub const ColorOperationList = ArrayListStaticUnmanaged(4, ColorOperation);
 
     pub const ColorKind = union(enum) {
         palette: u8,
@@ -1325,11 +1329,7 @@ pub const Parser = struct {
         self.command = .{
             .color_operation = .{
                 .source = .osc_4,
-                .operations = std.ArrayListUnmanaged(Command.ColorOperation).initCapacity(alloc, 8) catch |err| {
-                    log.warn("unable to allocate memory for OSC 4 parsing: {}", .{err});
-                    self.state = .invalid;
-                    return;
-                },
+                .operations = .empty,
             },
         };
 
@@ -1394,11 +1394,7 @@ pub const Parser = struct {
                     .osc_12 => .osc_12,
                     else => unreachable,
                 },
-                .operations = std.ArrayListUnmanaged(Command.ColorOperation).initCapacity(alloc, 1) catch |err| {
-                    log.warn("unable to allocate memory for OSC 10/11/12 parsing: {}", .{err});
-                    self.state = .invalid;
-                    return;
-                },
+                .operations = .empty,
             },
         };
         const str = self.buf[self.buf_start..self.buf_idx];
@@ -1464,11 +1460,7 @@ pub const Parser = struct {
                     .osc_112 => .osc_112,
                     else => unreachable,
                 },
-                .operations = std.ArrayListUnmanaged(Command.ColorOperation).initCapacity(alloc, 1) catch |err| {
-                    log.warn("unable to allocate memory for OSC 110/111/112 parsing: {}", .{err});
-                    self.state = .invalid;
-                    return;
-                },
+                .operations = .empty,
             },
         };
         self.command.color_operation.operations.append(
@@ -1495,11 +1487,7 @@ pub const Parser = struct {
         self.command = .{
             .color_operation = .{
                 .source = .osc_104,
-                .operations = std.ArrayListUnmanaged(Command.ColorOperation).initCapacity(alloc, 8) catch |err| {
-                    log.warn("unable to allocate memory for OSC 104 parsing: {}", .{err});
-                    self.state = .invalid;
-                    return;
-                },
+                .operations = .empty,
             },
         };
 
@@ -1788,15 +1776,17 @@ test "OSC: OSC110: reset cursor color" {
     try testing.expect(cmd == .color_operation);
     try testing.expectEqual(cmd.color_operation.terminator, .st);
     try testing.expect(cmd.color_operation.source == .osc_110);
-    try testing.expect(cmd.color_operation.operations.items.len == 1);
+    try testing.expect(cmd.color_operation.operations.count == 1);
+    var it = cmd.color_operation.operations.iterator();
     {
-        const op = cmd.color_operation.operations.items[0];
+        const op = it.next().?;
         try testing.expect(op == .reset);
         try testing.expectEqual(
             Command.ColorKind.foreground,
             op.reset,
         );
     }
+    try testing.expect(it.next() == null);
 }
 
 test "OSC: OSC111: reset cursor color" {
@@ -1814,15 +1804,17 @@ test "OSC: OSC111: reset cursor color" {
     try testing.expect(cmd == .color_operation);
     try testing.expectEqual(cmd.color_operation.terminator, .st);
     try testing.expect(cmd.color_operation.source == .osc_111);
-    try testing.expect(cmd.color_operation.operations.items.len == 1);
+    try testing.expect(cmd.color_operation.operations.count == 1);
+    var it = cmd.color_operation.operations.iterator();
     {
-        const op = cmd.color_operation.operations.items[0];
+        const op = it.next().?;
         try testing.expect(op == .reset);
         try testing.expectEqual(
             Command.ColorKind.background,
             op.reset,
         );
     }
+    try testing.expect(it.next() == null);
 }
 
 test "OSC: OSC112: reset cursor color" {
@@ -1834,25 +1826,55 @@ test "OSC: OSC112: reset cursor color" {
     var p: Parser = .{ .alloc = arena.allocator() };
 
     const input = "112";
-    for (input) |ch| {
-        log.warn("feeding {c} {s}", .{ ch, @tagName(p.state) });
-        p.next(ch);
-    }
-    log.warn("finish: {s}", .{@tagName(p.state)});
+    for (input) |ch| p.next(ch);
 
     const cmd = p.end(null).?;
     try testing.expect(cmd == .color_operation);
     try testing.expectEqual(cmd.color_operation.terminator, .st);
     try testing.expect(cmd.color_operation.source == .osc_112);
-    try testing.expect(cmd.color_operation.operations.items.len == 1);
+    try testing.expect(cmd.color_operation.operations.count == 1);
+    var it = cmd.color_operation.operations.iterator();
     {
-        const op = cmd.color_operation.operations.items[0];
+        const op = it.next().?;
         try testing.expect(op == .reset);
         try testing.expectEqual(
             Command.ColorKind.cursor,
             op.reset,
         );
     }
+    try testing.expect(it.next() == null);
+}
+
+test "OSC: OSC112: reset cursor color with semicolon" {
+    const testing = std.testing;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var p: Parser = .{ .alloc = arena.allocator() };
+
+    const input = "112;";
+    for (input) |ch| {
+        log.warn("feeding {c} {s}", .{ ch, @tagName(p.state) });
+        p.next(ch);
+    }
+    log.warn("finish: {s}", .{@tagName(p.state)});
+
+    const cmd = p.end(0x07).?;
+    try testing.expect(cmd == .color_operation);
+    try testing.expectEqual(cmd.color_operation.terminator, .bel);
+    try testing.expect(cmd.color_operation.source == .osc_112);
+    try testing.expect(cmd.color_operation.operations.count == 1);
+    var it = cmd.color_operation.operations.iterator();
+    {
+        const op = it.next().?;
+        try testing.expect(op == .reset);
+        try testing.expectEqual(
+            Command.ColorKind.cursor,
+            op.reset,
+        );
+    }
+    try testing.expect(it.next() == null);
 }
 
 test "OSC: get/set clipboard" {
@@ -1966,15 +1988,17 @@ test "OSC: OSC10: report default foreground color" {
     try testing.expect(cmd == .color_operation);
     try testing.expectEqual(cmd.color_operation.terminator, .st);
     try testing.expect(cmd.color_operation.source == .osc_10);
-    try testing.expect(cmd.color_operation.operations.items.len == 1);
+    try testing.expect(cmd.color_operation.operations.count == 1);
+    var it = cmd.color_operation.operations.iterator();
     {
-        const op = cmd.color_operation.operations.items[0];
+        const op = it.next().?;
         try testing.expect(op == .report);
         try testing.expectEqual(
             Command.ColorKind.foreground,
             op.report,
         );
     }
+    try testing.expect(it.next() == null);
 }
 
 test "OSC: OSC10: set foreground color" {
@@ -1992,9 +2016,10 @@ test "OSC: OSC10: set foreground color" {
     try testing.expect(cmd == .color_operation);
     try testing.expectEqual(cmd.color_operation.terminator, .bel);
     try testing.expect(cmd.color_operation.source == .osc_10);
-    try testing.expect(cmd.color_operation.operations.items.len == 1);
+    try testing.expect(cmd.color_operation.operations.count == 1);
+    var it = cmd.color_operation.operations.iterator();
     {
-        const op = cmd.color_operation.operations.items[0];
+        const op = it.next().?;
         try testing.expect(op == .set);
         try testing.expectEqual(
             Command.ColorKind.foreground,
@@ -2005,6 +2030,7 @@ test "OSC: OSC10: set foreground color" {
             op.set.color,
         );
     }
+    try testing.expect(it.next() == null);
 }
 
 test "OSC: OSC11: report default background color" {
@@ -2023,9 +2049,10 @@ test "OSC: OSC11: report default background color" {
     try testing.expect(cmd == .color_operation);
     try testing.expectEqual(cmd.color_operation.terminator, .bel);
     try testing.expect(cmd.color_operation.source == .osc_11);
-    try testing.expect(cmd.color_operation.operations.items.len == 1);
+    try testing.expect(cmd.color_operation.operations.count == 1);
+    var it = cmd.color_operation.operations.iterator();
     {
-        const op = cmd.color_operation.operations.items[0];
+        const op = it.next().?;
         try testing.expect(op == .report);
         try testing.expectEqual(
             Command.ColorKind.background,
@@ -2033,6 +2060,7 @@ test "OSC: OSC11: report default background color" {
         );
     }
     try testing.expectEqual(cmd.color_operation.terminator, .bel);
+    try testing.expect(it.next() == null);
 }
 
 test "OSC: OSC11: set background color" {
@@ -2050,9 +2078,10 @@ test "OSC: OSC11: set background color" {
     try testing.expect(cmd == .color_operation);
     try testing.expectEqual(cmd.color_operation.terminator, .st);
     try testing.expect(cmd.color_operation.source == .osc_11);
-    try testing.expect(cmd.color_operation.operations.items.len == 1);
+    try testing.expect(cmd.color_operation.operations.count == 1);
+    var it = cmd.color_operation.operations.iterator();
     {
-        const op = cmd.color_operation.operations.items[0];
+        const op = it.next().?;
         try testing.expect(op == .set);
         try testing.expectEqual(
             Command.ColorKind.background,
@@ -2063,6 +2092,7 @@ test "OSC: OSC11: set background color" {
             op.set.color,
         );
     }
+    try testing.expect(it.next() == null);
 }
 
 test "OSC: OSC12: report background color" {
@@ -2081,9 +2111,10 @@ test "OSC: OSC12: report background color" {
     try testing.expect(cmd == .color_operation);
     try testing.expectEqual(cmd.color_operation.terminator, .bel);
     try testing.expect(cmd.color_operation.source == .osc_12);
-    try testing.expect(cmd.color_operation.operations.items.len == 1);
+    try testing.expect(cmd.color_operation.operations.count == 1);
+    var it = cmd.color_operation.operations.iterator();
     {
-        const op = cmd.color_operation.operations.items[0];
+        const op = it.next().?;
         try testing.expect(op == .report);
         try testing.expectEqual(
             Command.ColorKind.cursor,
@@ -2091,6 +2122,7 @@ test "OSC: OSC12: report background color" {
         );
     }
     try testing.expectEqual(cmd.color_operation.terminator, .bel);
+    try testing.expect(it.next() == null);
 }
 
 test "OSC: OSC12: set background color" {
@@ -2108,9 +2140,10 @@ test "OSC: OSC12: set background color" {
     try testing.expect(cmd == .color_operation);
     try testing.expectEqual(cmd.color_operation.terminator, .st);
     try testing.expect(cmd.color_operation.source == .osc_12);
-    try testing.expect(cmd.color_operation.operations.items.len == 1);
+    try testing.expect(cmd.color_operation.operations.count == 1);
+    var it = cmd.color_operation.operations.iterator();
     {
-        const op = cmd.color_operation.operations.items[0];
+        const op = it.next().?;
         try testing.expect(op == .set);
         try testing.expectEqual(
             Command.ColorKind.cursor,
@@ -2121,6 +2154,7 @@ test "OSC: OSC12: set background color" {
             op.set.color,
         );
     }
+    try testing.expect(it.next() == null);
 }
 
 test "OSC: OSC4: get palette color 1" {
@@ -2137,9 +2171,10 @@ test "OSC: OSC4: get palette color 1" {
     const cmd = p.end('\x1b').?;
     try testing.expect(cmd == .color_operation);
     try testing.expect(cmd.color_operation.source == .osc_4);
-    try testing.expect(cmd.color_operation.operations.items.len == 1);
+    try testing.expect(cmd.color_operation.operations.count == 1);
+    var it = cmd.color_operation.operations.iterator();
     {
-        const op = cmd.color_operation.operations.items[0];
+        const op = it.next().?;
         try testing.expect(op == .report);
         try testing.expectEqual(
             Command.ColorKind{ .palette = 1 },
@@ -2147,6 +2182,7 @@ test "OSC: OSC4: get palette color 1" {
         );
         try testing.expectEqual(cmd.color_operation.terminator, .st);
     }
+    try testing.expect(it.next() == null);
 }
 
 test "OSC: OSC4: get palette color 2" {
@@ -2163,9 +2199,10 @@ test "OSC: OSC4: get palette color 2" {
     const cmd = p.end('\x1b').?;
     try testing.expect(cmd == .color_operation);
     try testing.expect(cmd.color_operation.source == .osc_4);
-    try testing.expect(cmd.color_operation.operations.items.len == 2);
+    try testing.expect(cmd.color_operation.operations.count == 2);
+    var it = cmd.color_operation.operations.iterator();
     {
-        const op = cmd.color_operation.operations.items[0];
+        const op = it.next().?;
         try testing.expect(op == .report);
         try testing.expectEqual(
             Command.ColorKind{ .palette = 1 },
@@ -2173,7 +2210,7 @@ test "OSC: OSC4: get palette color 2" {
         );
     }
     {
-        const op = cmd.color_operation.operations.items[1];
+        const op = it.next().?;
         try testing.expect(op == .report);
         try testing.expectEqual(
             Command.ColorKind{ .palette = 2 },
@@ -2181,6 +2218,7 @@ test "OSC: OSC4: get palette color 2" {
         );
     }
     try testing.expectEqual(cmd.color_operation.terminator, .st);
+    try testing.expect(it.next() == null);
 }
 
 test "OSC: OSC4: set palette color 1" {
@@ -2197,17 +2235,21 @@ test "OSC: OSC4: set palette color 1" {
     const cmd = p.end('\x1b').?;
     try testing.expect(cmd == .color_operation);
     try testing.expect(cmd.color_operation.source == .osc_4);
-    try testing.expect(cmd.color_operation.operations.items.len == 1);
-    const op = cmd.color_operation.operations.items[0];
-    try testing.expect(op == .set);
-    try testing.expectEqual(
-        Command.ColorKind{ .palette = 17 },
-        op.set.kind,
-    );
-    try testing.expectEqual(
-        RGB{ .r = 0xaa, .g = 0xbb, .b = 0xcc },
-        op.set.color,
-    );
+    try testing.expect(cmd.color_operation.operations.count == 1);
+    var it = cmd.color_operation.operations.iterator();
+    {
+        const op = it.next().?;
+        try testing.expect(op == .set);
+        try testing.expectEqual(
+            Command.ColorKind{ .palette = 17 },
+            op.set.kind,
+        );
+        try testing.expectEqual(
+            RGB{ .r = 0xaa, .g = 0xbb, .b = 0xcc },
+            op.set.color,
+        );
+    }
+    try testing.expect(it.next() == null);
 }
 
 test "OSC: OSC4: set palette color 2" {
@@ -2224,9 +2266,10 @@ test "OSC: OSC4: set palette color 2" {
     const cmd = p.end('\x1b').?;
     try testing.expect(cmd == .color_operation);
     try testing.expect(cmd.color_operation.source == .osc_4);
-    try testing.expect(cmd.color_operation.operations.items.len == 2);
+    try testing.expect(cmd.color_operation.operations.count == 2);
+    var it = cmd.color_operation.operations.iterator();
     {
-        const op = cmd.color_operation.operations.items[0];
+        const op = it.next().?;
         try testing.expect(op == .set);
         try testing.expectEqual(
             Command.ColorKind{ .palette = 17 },
@@ -2238,7 +2281,7 @@ test "OSC: OSC4: set palette color 2" {
         );
     }
     {
-        const op = cmd.color_operation.operations.items[1];
+        const op = it.next().?;
         try testing.expect(op == .set);
         try testing.expectEqual(
             Command.ColorKind{ .palette = 1 },
@@ -2249,6 +2292,7 @@ test "OSC: OSC4: set palette color 2" {
             op.set.color,
         );
     }
+    try testing.expect(it.next() == null);
 }
 
 test "OSC: OSC4: get with invalid index" {
@@ -2265,15 +2309,17 @@ test "OSC: OSC4: get with invalid index" {
     const cmd = p.end('\x1b').?;
     try testing.expect(cmd == .color_operation);
     try testing.expect(cmd.color_operation.source == .osc_4);
-    try testing.expect(cmd.color_operation.operations.items.len == 1);
+    try testing.expect(cmd.color_operation.operations.count == 1);
+    var it = cmd.color_operation.operations.iterator();
     {
-        const op = cmd.color_operation.operations.items[0];
+        const op = it.next().?;
         try testing.expect(op == .report);
         try testing.expectEqual(
             Command.ColorKind{ .palette = 1 },
             op.report,
         );
     }
+    try testing.expect(it.next() == null);
 }
 
 test "OSC: OSC4: set with invalid index" {
@@ -2290,9 +2336,10 @@ test "OSC: OSC4: set with invalid index" {
     const cmd = p.end('\x1b').?;
     try testing.expect(cmd == .color_operation);
     try testing.expect(cmd.color_operation.source == .osc_4);
-    try testing.expect(cmd.color_operation.operations.items.len == 1);
+    try testing.expect(cmd.color_operation.operations.count == 1);
+    var it = cmd.color_operation.operations.iterator();
     {
-        const op = cmd.color_operation.operations.items[0];
+        const op = it.next().?;
         try testing.expect(op == .set);
         try testing.expectEqual(
             Command.ColorKind{ .palette = 1 },
@@ -2303,6 +2350,7 @@ test "OSC: OSC4: set with invalid index" {
             op.set.color,
         );
     }
+    try testing.expect(it.next() == null);
 }
 
 test "OSC: OSC4: mix get/set palette color" {
@@ -2319,9 +2367,10 @@ test "OSC: OSC4: mix get/set palette color" {
     const cmd = p.end('\x1b').?;
     try testing.expect(cmd == .color_operation);
     try testing.expect(cmd.color_operation.source == .osc_4);
-    try testing.expect(cmd.color_operation.operations.items.len == 2);
+    try testing.expect(cmd.color_operation.operations.count == 2);
+    var it = cmd.color_operation.operations.iterator();
     {
-        const op = cmd.color_operation.operations.items[0];
+        const op = it.next().?;
         try testing.expect(op == .set);
         try testing.expectEqual(
             Command.ColorKind{ .palette = 17 },
@@ -2333,10 +2382,11 @@ test "OSC: OSC4: mix get/set palette color" {
         );
     }
     {
-        const op = cmd.color_operation.operations.items[1];
+        const op = it.next().?;
         try testing.expect(op == .report);
         try testing.expectEqual(Command.ColorKind{ .palette = 254 }, op.report);
     }
+    try testing.expect(it.next() == null);
 }
 
 test "OSC: OSC104: reset palette color 1" {
@@ -2353,15 +2403,17 @@ test "OSC: OSC104: reset palette color 1" {
     const cmd = p.end('\x1b').?;
     try testing.expect(cmd == .color_operation);
     try testing.expect(cmd.color_operation.source == .osc_104);
-    try testing.expect(cmd.color_operation.operations.items.len == 1);
+    try testing.expect(cmd.color_operation.operations.count == 1);
+    var it = cmd.color_operation.operations.iterator();
     {
-        const op = cmd.color_operation.operations.items[0];
+        const op = it.next().?;
         try testing.expect(op == .reset);
         try testing.expectEqual(
             Command.ColorKind{ .palette = 17 },
             op.reset,
         );
     }
+    try testing.expect(it.next() == null);
 }
 
 test "OSC: OSC104: reset palette color 2" {
@@ -2378,9 +2430,10 @@ test "OSC: OSC104: reset palette color 2" {
     const cmd = p.end('\x1b').?;
     try testing.expect(cmd == .color_operation);
     try testing.expect(cmd.color_operation.source == .osc_104);
-    try testing.expect(cmd.color_operation.operations.items.len == 2);
+    try testing.expect(cmd.color_operation.operations.count == 2);
+    var it = cmd.color_operation.operations.iterator();
     {
-        const op = cmd.color_operation.operations.items[0];
+        const op = it.next().?;
         try testing.expect(op == .reset);
         try testing.expectEqual(
             Command.ColorKind{ .palette = 17 },
@@ -2388,13 +2441,14 @@ test "OSC: OSC104: reset palette color 2" {
         );
     }
     {
-        const op = cmd.color_operation.operations.items[1];
+        const op = it.next().?;
         try testing.expect(op == .reset);
         try testing.expectEqual(
             Command.ColorKind{ .palette = 111 },
             op.reset,
         );
     }
+    try testing.expect(it.next() == null);
 }
 
 test "OSC: OSC104: invalid palette index" {
@@ -2411,15 +2465,17 @@ test "OSC: OSC104: invalid palette index" {
     const cmd = p.end('\x1b').?;
     try testing.expect(cmd == .color_operation);
     try testing.expect(cmd.color_operation.source == .osc_104);
-    try testing.expect(cmd.color_operation.operations.items.len == 1);
+    try testing.expect(cmd.color_operation.operations.count == 1);
+    var it = cmd.color_operation.operations.iterator();
     {
-        const op = cmd.color_operation.operations.items[0];
+        const op = it.next().?;
         try testing.expect(op == .reset);
         try testing.expectEqual(
             Command.ColorKind{ .palette = 111 },
             op.reset,
         );
     }
+    try testing.expect(it.next() == null);
 }
 
 test "OSC: OSC104: empty palette index" {
@@ -2436,15 +2492,17 @@ test "OSC: OSC104: empty palette index" {
     const cmd = p.end('\x1b').?;
     try testing.expect(cmd == .color_operation);
     try testing.expect(cmd.color_operation.source == .osc_104);
-    try testing.expect(cmd.color_operation.operations.items.len == 1);
+    try testing.expect(cmd.color_operation.operations.count == 1);
+    var it = cmd.color_operation.operations.iterator();
     {
-        const op = cmd.color_operation.operations.items[0];
+        const op = it.next().?;
         try testing.expect(op == .reset);
         try testing.expectEqual(
             Command.ColorKind{ .palette = 111 },
             op.reset,
         );
     }
+    try std.testing.expect(it.next() == null);
 }
 
 test "OSC: conemu sleep" {

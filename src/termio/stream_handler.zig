@@ -1198,7 +1198,7 @@ pub const StreamHandler = struct {
     pub fn handleColorOperation(
         self: *StreamHandler,
         source: terminal.osc.Command.ColorOperationSource,
-        operations: []terminal.osc.Command.ColorOperation,
+        operations: *const terminal.osc.Command.ColorOperationList,
         terminator: terminal.osc.Terminator,
     ) !void {
         var buffer: [1024]u8 = undefined;
@@ -1212,7 +1212,9 @@ pub const StreamHandler = struct {
 
         try writer.print("\x1b]{}", .{source});
 
-        for (operations) |op| {
+        var it = operations.iterator();
+
+        while (it.next()) |op| {
             switch (op) {
                 .set => |set| {
                     switch (set.kind) {
