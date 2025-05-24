@@ -2295,7 +2295,7 @@ test "OSC: OSC4: set palette color 2" {
     try testing.expect(it.next() == null);
 }
 
-test "OSC: OSC4: get with invalid index" {
+test "OSC: OSC4: get with invalid index 1" {
     const testing = std.testing;
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -2316,6 +2316,209 @@ test "OSC: OSC4: get with invalid index" {
         try testing.expect(op == .report);
         try testing.expectEqual(
             Command.ColorKind{ .palette = 1 },
+            op.report,
+        );
+    }
+    try testing.expect(it.next() == null);
+}
+
+test "OSC: OSC4: get with invalid index 2" {
+    const testing = std.testing;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var p: Parser = .{ .alloc = arena.allocator() };
+
+    const input = "4;5;?;1111;?;1;?";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .color_operation);
+    try testing.expect(cmd.color_operation.source == .osc_4);
+    try testing.expect(cmd.color_operation.operations.count == 2);
+    var it = cmd.color_operation.operations.iterator();
+    {
+        const op = it.next().?;
+        try testing.expect(op == .report);
+        try testing.expectEqual(
+            Command.ColorKind{ .palette = 5 },
+            op.report,
+        );
+    }
+    {
+        const op = it.next().?;
+        try testing.expect(op == .report);
+        try testing.expectEqual(
+            Command.ColorKind{ .palette = 1 },
+            op.report,
+        );
+    }
+    try testing.expect(it.next() == null);
+}
+
+// Inspired by Microsoft Edit
+test "OSC: OSC4: multiple get 8a" {
+    const testing = std.testing;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var p: Parser = .{ .alloc = arena.allocator() };
+
+    const input = "4;0;?;1;?;2;?;3;?;4;?;5;?;6;?;7;?";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .color_operation);
+    try testing.expect(cmd.color_operation.source == .osc_4);
+    try testing.expect(cmd.color_operation.operations.count == 8);
+    var it = cmd.color_operation.operations.iterator();
+    {
+        const op = it.next().?;
+        try testing.expect(op == .report);
+        try testing.expectEqual(
+            Command.ColorKind{ .palette = 0 },
+            op.report,
+        );
+    }
+    {
+        const op = it.next().?;
+        try testing.expect(op == .report);
+        try testing.expectEqual(
+            Command.ColorKind{ .palette = 1 },
+            op.report,
+        );
+    }
+    {
+        const op = it.next().?;
+        try testing.expect(op == .report);
+        try testing.expectEqual(
+            Command.ColorKind{ .palette = 2 },
+            op.report,
+        );
+    }
+    {
+        const op = it.next().?;
+        try testing.expect(op == .report);
+        try testing.expectEqual(
+            Command.ColorKind{ .palette = 3 },
+            op.report,
+        );
+    }
+    {
+        const op = it.next().?;
+        try testing.expect(op == .report);
+        try testing.expectEqual(
+            Command.ColorKind{ .palette = 4 },
+            op.report,
+        );
+    }
+    {
+        const op = it.next().?;
+        try testing.expect(op == .report);
+        try testing.expectEqual(
+            Command.ColorKind{ .palette = 5 },
+            op.report,
+        );
+    }
+    {
+        const op = it.next().?;
+        try testing.expect(op == .report);
+        try testing.expectEqual(
+            Command.ColorKind{ .palette = 6 },
+            op.report,
+        );
+    }
+    {
+        const op = it.next().?;
+        try testing.expect(op == .report);
+        try testing.expectEqual(
+            Command.ColorKind{ .palette = 7 },
+            op.report,
+        );
+    }
+    try testing.expect(it.next() == null);
+}
+
+// Inspired by Microsoft Edit
+test "OSC: OSC4: multiple get 8b" {
+    const testing = std.testing;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var p: Parser = .{ .alloc = arena.allocator() };
+
+    const input = "4;8;?;9;?;10;?;11;?;12;?;13;?;14;?;15;?";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .color_operation);
+    try testing.expect(cmd.color_operation.source == .osc_4);
+    try testing.expect(cmd.color_operation.operations.count == 8);
+    var it = cmd.color_operation.operations.iterator();
+    {
+        const op = it.next().?;
+        try testing.expect(op == .report);
+        try testing.expectEqual(
+            Command.ColorKind{ .palette = 8 },
+            op.report,
+        );
+    }
+    {
+        const op = it.next().?;
+        try testing.expect(op == .report);
+        try testing.expectEqual(
+            Command.ColorKind{ .palette = 9 },
+            op.report,
+        );
+    }
+    {
+        const op = it.next().?;
+        try testing.expect(op == .report);
+        try testing.expectEqual(
+            Command.ColorKind{ .palette = 10 },
+            op.report,
+        );
+    }
+    {
+        const op = it.next().?;
+        try testing.expect(op == .report);
+        try testing.expectEqual(
+            Command.ColorKind{ .palette = 11 },
+            op.report,
+        );
+    }
+    {
+        const op = it.next().?;
+        try testing.expect(op == .report);
+        try testing.expectEqual(
+            Command.ColorKind{ .palette = 12 },
+            op.report,
+        );
+    }
+    {
+        const op = it.next().?;
+        try testing.expect(op == .report);
+        try testing.expectEqual(
+            Command.ColorKind{ .palette = 13 },
+            op.report,
+        );
+    }
+    {
+        const op = it.next().?;
+        try testing.expect(op == .report);
+        try testing.expectEqual(
+            Command.ColorKind{ .palette = 14 },
+            op.report,
+        );
+    }
+    {
+        const op = it.next().?;
+        try testing.expect(op == .report);
+        try testing.expectEqual(
+            Command.ColorKind{ .palette = 15 },
             op.report,
         );
     }
