@@ -1367,7 +1367,7 @@ pub const StreamHandler = struct {
         }
         if (report) {
             try writer.writeAll(terminator.string());
-            const msg: termio.Message = .{ .write_stable = response.items };
+            const msg = try termio.Message.writeReq(self.alloc, response.items);
             self.messageWriter(msg);
         }
     }
