@@ -1201,6 +1201,9 @@ pub const StreamHandler = struct {
         operations: *const terminal.osc.Command.ColorOperationList,
         terminator: terminal.osc.Terminator,
     ) !void {
+        // return early if there is nothing to do
+        if (operations.count() == 0) return;
+
         var buffer: [1024]u8 = undefined;
         var fba: std.heap.FixedBufferAllocator = .init(&buffer);
         const alloc = fba.allocator();
@@ -1366,6 +1369,8 @@ pub const StreamHandler = struct {
             }
         }
         if (report) {
+            // If any of the operations were reports, finialize the report
+            // string and send it to the terminal.
             try writer.writeAll(terminator.string());
             const msg = try termio.Message.writeReq(self.alloc, response.items);
             self.messageWriter(msg);
