@@ -345,7 +345,8 @@ pub const Parser = struct {
         clipboard_kind_end,
 
         // Get/set color palette index
-        osc_4,
+        osc_4_index,
+        osc_4_color,
 
         // Get/set foreground color
         osc_10,
@@ -358,15 +359,6 @@ pub const Parser = struct {
 
         // Reset color palette index
         osc_104,
-
-        // Reset foreground color
-        osc_110,
-
-        // Reset background color
-        osc_111,
-
-        // Reset cursor color
-        osc_112,
 
         // Hyperlinks
         hyperlink_param_key,
@@ -547,6 +539,11 @@ pub const Parser = struct {
                         self.state = .invalid;
                         break :osc_10;
                     }
+                    self.command = .{
+                        .color_operation = .{
+                            .source = .get_set_foreground,
+                        },
+                    };
                     self.state = .osc_10;
                     self.buf_start = self.buf_idx;
                     self.complete = true;
@@ -555,7 +552,10 @@ pub const Parser = struct {
                 else => self.state = .invalid,
             },
 
-            .osc_10 => {},
+            .osc_10, .osc_11, .osc_12 => switch (c) {
+                ';' => self.parseOSC101112(false),
+                else => {},
+            },
 
             .@"104" => switch (c) {
                 ';' => osc_104: {
@@ -564,6 +564,11 @@ pub const Parser = struct {
                         self.state = .invalid;
                         break :osc_104;
                     }
+                    self.command = .{
+                        .color_operation = .{
+                            .source = .reset_palette,
+                        },
+                    };
                     self.state = .osc_104;
                     self.buf_start = self.buf_idx;
                     self.complete = true;
@@ -571,7 +576,10 @@ pub const Parser = struct {
                 else => self.state = .invalid,
             },
 
-            .osc_104 => {},
+            .osc_104 => switch (c) {
+                ';' => self.parseOSC104(false),
+                else => {},
+            },
 
             .@"11" => switch (c) {
                 ';' => osc_11: {
@@ -580,50 +588,51 @@ pub const Parser = struct {
                         self.state = .invalid;
                         break :osc_11;
                     }
+                    self.command = .{
+                        .color_operation = .{
+                            .source = .get_set_background,
+                        },
+                    };
                     self.state = .osc_11;
                     self.buf_start = self.buf_idx;
                     self.complete = true;
                 },
-                '0' => osc_110: {
+                '0'...'2' => blk: {
                     if (self.alloc == null) {
-                        log.warn("OSC 110 requires an allocator, but none was provided", .{});
+                        log.warn("OSC 11{c} requires an allocator, but none was provided", .{c});
                         self.state = .invalid;
-                        break :osc_110;
+                        break :blk;
                     }
-                    self.state = .osc_110;
-                    self.buf_start = self.buf_idx;
-                    self.complete = true;
-                },
-                '1' => osc_111: {
-                    if (self.alloc == null) {
-                        log.warn("OSC 111 requires an allocator, but none was provided", .{});
-                        self.state = .invalid;
-                        break :osc_111;
-                    }
-                    self.state = .osc_111;
-                    self.buf_start = self.buf_idx;
-                    self.complete = true;
-                },
-                '2' => osc_112: {
-                    if (self.alloc == null) {
-                        log.warn("OSC 112 requires an allocator, but none was provided", .{});
-                        self.state = .invalid;
-                        break :osc_112;
-                    }
-                    self.state = .osc_112;
-                    self.buf_start = self.buf_idx;
+
+                    const alloc = self.alloc orelse return;
+
+                    self.command = .{
+                        .color_operation = .{
+                            .source = switch (c) {
+                                '0' => .reset_foreground,
+                                '1' => .reset_background,
+                                '2' => .reset_cursor,
+                                else => unreachable,
+                            },
+                        },
+                    };
+                    const op = self.command.color_operation.operations.addOne(alloc) catch |err| {
+                        log.warn("unable to append color operation: {}", .{err});
+                        return;
+                    };
+                    op.* = .{
+                        .reset = switch (c) {
+                            '0' => .foreground,
+                            '1' => .background,
+                            '2' => .cursor,
+                            else => unreachable,
+                        },
+                    };
+                    self.state = .swallow;
                     self.complete = true;
                 },
                 else => self.state = .invalid,
             },
-
-            .osc_11 => {},
-
-            .osc_110 => {},
-
-            .osc_111 => {},
-
-            .osc_112 => {},
 
             .@"12" => switch (c) {
                 ';' => osc_12: {
@@ -632,14 +641,17 @@ pub const Parser = struct {
                         self.state = .invalid;
                         break :osc_12;
                     }
+                    self.command = .{
+                        .color_operation = .{
+                            .source = .get_set_cursor,
+                        },
+                    };
                     self.state = .osc_12;
                     self.buf_start = self.buf_idx;
                     self.complete = true;
                 },
                 else => self.state = .invalid,
             },
-
-            .osc_12 => {},
 
             .@"13" => switch (c) {
                 '3' => self.state = .@"133",
@@ -728,14 +740,30 @@ pub const Parser = struct {
                         self.state = .invalid;
                         break :osc_4;
                     }
-                    self.state = .osc_4;
+                    self.command = .{
+                        .color_operation = .{
+                            .source = .get_set_palette,
+                        },
+                    };
+                    self.state = .osc_4_index;
                     self.buf_start = self.buf_idx;
                     self.complete = true;
                 },
                 else => self.state = .invalid,
             },
 
-            .osc_4 => {},
+            .osc_4_index => switch (c) {
+                ';' => self.state = .osc_4_color,
+                else => {},
+            },
+
+            .osc_4_color => switch (c) {
+                ';' => {
+                    self.parseOSC4(false);
+                    self.state = .osc_4_index;
+                },
+                else => {},
+            },
 
             .@"5" => switch (c) {
                 '2' => self.state = .@"52",
@@ -1329,85 +1357,104 @@ pub const Parser = struct {
         self.temp_state.str.* = list.items;
     }
 
-    fn parseOSC4(self: *Parser) void {
-        assert(self.state == .osc_4);
+    fn parseOSC4(self: *Parser, final: bool) void {
+        assert(self.state == .osc_4_color);
+        assert(self.command == .color_operation);
+        assert(self.command.color_operation.source == .get_set_palette);
 
         const alloc = self.alloc orelse return;
+        const operations = &self.command.color_operation.operations;
 
-        self.command = .{
-            .color_operation = .{
-                .source = .get_set_palette,
+        const str = self.buf[self.buf_start .. self.buf_idx - (1 - @intFromBool(final))];
+        self.buf_start = 0;
+        self.buf_idx = 0;
+
+        var it = std.mem.splitScalar(u8, str, ';');
+        const index_str = it.next() orelse {
+            log.warn("OSC 4 is missing palette index", .{});
+            return;
+        };
+        const spec_str = it.next() orelse {
+            log.warn("OSC 4 is missing color spec", .{});
+            return;
+        };
+        const index = std.fmt.parseUnsigned(u8, index_str, 10) catch |err| switch (err) {
+            error.Overflow, error.InvalidCharacter => {
+                log.warn("invalid color palette index in OSC 4: {s} {}", .{ index_str, err });
+                return;
             },
         };
-
-        const str = self.buf[self.buf_start..self.buf_idx];
-        var it = std.mem.splitScalar(u8, str, ';');
-        while (it.next()) |index_str| {
-            const index = std.fmt.parseUnsigned(u8, index_str, 10) catch |err| switch (err) {
-                error.Overflow, error.InvalidCharacter => {
-                    log.warn("invalid color palette index in OSC 4: {s} {}", .{ index_str, err });
-                    // skip any color spec
-                    _ = it.next();
-                    continue;
+        if (std.mem.eql(u8, spec_str, "?")) {
+            const op = operations.addOne(alloc) catch |err| {
+                log.warn("unable to append color operation: {}", .{err});
+                return;
+            };
+            op.* = .{
+                .report = .{ .palette = index },
+            };
+        } else {
+            const color = RGB.parse(spec_str) catch |err| {
+                log.warn("invalid color specification in OSC 4: '{s}' {}", .{ spec_str, err });
+                return;
+            };
+            const op = operations.addOne(alloc) catch |err| {
+                log.warn("unable to append color operation: {}", .{err});
+                return;
+            };
+            op.* = .{
+                .set = .{
+                    .kind = .{
+                        .palette = index,
+                    },
+                    .color = color,
                 },
             };
-            const spec_str = it.next() orelse continue;
-            if (std.mem.eql(u8, spec_str, "?")) {
-                const op = self.command.color_operation.operations.addOne(alloc) catch |err| {
-                    log.warn("unable to append color operation: {}", .{err});
-                    return;
-                };
-                op.* = .{
-                    .report = .{ .palette = index },
-                };
-            } else {
-                const color = RGB.parse(spec_str) catch |err| {
-                    log.warn("invalid color specification in OSC 4: {s} {}", .{ spec_str, err });
-                    continue;
-                };
-                const op = self.command.color_operation.operations.addOne(alloc) catch |err| {
-                    log.warn("unable to append color operation: {}", .{err});
-                    return;
-                };
-                op.* = .{
-                    .set = .{
-                        .kind = .{
-                            .palette = index,
-                        },
-                        .color = color,
-                    },
-                };
-            }
         }
     }
 
-    fn parseOSC101112(self: *Parser) void {
+    fn parseOSC101112(self: *Parser, final: bool) void {
         assert(switch (self.state) {
             .osc_10, .osc_11, .osc_12 => true,
             else => false,
         });
+        assert(self.command == .color_operation);
+        assert(self.command.color_operation.source == switch (self.state) {
+            .osc_10 => Command.ColorOperation.Source.get_set_foreground,
+            .osc_11 => Command.ColorOperation.Source.get_set_background,
+            .osc_12 => Command.ColorOperation.Source.get_set_cursor,
+            else => unreachable,
+        });
+
+        const spec_str = self.buf[self.buf_start .. self.buf_idx - (1 - @intFromBool(final))];
+
+        if (self.command.color_operation.operations.count() > 0) {
+            // don't emit the warning if the string is empty
+            if (spec_str.len == 0) return;
+
+            log.warn("OSC 1{s} can only accept 1 color", .{switch (self.state) {
+                .osc_10 => "0",
+                .osc_11 => "1",
+                .osc_12 => "2",
+                else => unreachable,
+            }});
+            return;
+        }
+
+        if (spec_str.len == 0) {
+            log.warn("OSC 1{s} requires an argument", .{switch (self.state) {
+                .osc_10 => "0",
+                .osc_11 => "1",
+                .osc_12 => "2",
+                else => unreachable,
+            }});
+            return;
+        }
 
         const alloc = self.alloc orelse return;
+        const operations = &self.command.color_operation.operations;
 
-        self.command = .{
-            .color_operation = .{
-                .source = switch (self.state) {
-                    .osc_10 => .get_set_foreground,
-                    .osc_11 => .get_set_background,
-                    .osc_12 => .get_set_cursor,
-                    else => unreachable,
-                },
-            },
-        };
-        const str = self.buf[self.buf_start..self.buf_idx];
-        var it = std.mem.splitScalar(u8, str, ';');
-        const color_str = it.next() orelse {
-            log.warn("OSC 10/11/12 requires an argument", .{});
-            self.state = .invalid;
-            return;
-        };
-        if (std.mem.eql(u8, color_str, "?")) {
-            const op = self.command.color_operation.operations.addOne(alloc) catch |err| {
+        if (std.mem.eql(u8, spec_str, "?")) {
+            const op = operations.addOne(alloc) catch |err| {
                 log.warn("unable to append color operation: {}", .{err});
                 return;
             };
@@ -1420,11 +1467,20 @@ pub const Parser = struct {
                 },
             };
         } else {
-            const color = RGB.parse(color_str) catch |err| {
-                log.warn("invalid color specification in OSC 10/11/12: {s} {}", .{ color_str, err });
+            const color = RGB.parse(spec_str) catch |err| {
+                log.warn("invalid color specification in OSC 1{s}: {s} {}", .{
+                    switch (self.state) {
+                        .osc_10 => "0",
+                        .osc_11 => "1",
+                        .osc_12 => "2",
+                        else => unreachable,
+                    },
+                    spec_str,
+                    err,
+                });
                 return;
             };
-            const op = self.command.color_operation.operations.addOne(alloc) catch |err| {
+            const op = operations.addOne(alloc) catch |err| {
                 log.warn("unable to append color operation: {}", .{err});
                 return;
             };
@@ -1442,22 +1498,21 @@ pub const Parser = struct {
         }
     }
 
-    fn parseOSC110111112(self: *Parser) void {
-        assert(switch (self.state) {
-            .osc_110, .osc_111, .osc_112 => true,
-            else => false,
-        });
+    fn parseOSC104(self: *Parser, final: bool) void {
+        assert(self.state == .osc_104);
+        assert(self.command == .color_operation);
+        assert(self.command.color_operation.source == .reset_palette);
 
         const alloc = self.alloc orelse return;
 
-        self.command = .{
-            .color_operation = .{
-                .source = switch (self.state) {
-                    .osc_110 => .reset_foreground,
-                    .osc_111 => .reset_background,
-                    .osc_112 => .reset_cursor,
-                    else => unreachable,
-                },
+        const index_str = self.buf[self.buf_start .. self.buf_idx - (1 - @intFromBool(final))];
+        self.buf_start = 0;
+        self.buf_idx = 0;
+
+        const index = std.fmt.parseUnsigned(u8, index_str, 10) catch |err| switch (err) {
+            error.Overflow, error.InvalidCharacter => {
+                log.warn("invalid color palette index in OSC 104: {s} {}", .{ index_str, err });
+                return;
             },
         };
         const op = self.command.color_operation.operations.addOne(alloc) catch |err| {
@@ -1465,43 +1520,8 @@ pub const Parser = struct {
             return;
         };
         op.* = .{
-            .reset = switch (self.state) {
-                .osc_110 => .foreground,
-                .osc_111 => .background,
-                .osc_112 => .cursor,
-                else => unreachable,
-            },
+            .reset = .{ .palette = index },
         };
-    }
-
-    fn parseOSC104(self: *Parser) void {
-        assert(self.state == .osc_104);
-
-        const alloc = self.alloc orelse return;
-
-        self.command = .{
-            .color_operation = .{
-                .source = .get_set_palette,
-            },
-        };
-
-        const str = self.buf[self.buf_start..self.buf_idx];
-        var it = std.mem.splitScalar(u8, str, ';');
-        while (it.next()) |index_str| {
-            const index = std.fmt.parseUnsigned(u8, index_str, 10) catch |err| switch (err) {
-                error.Overflow, error.InvalidCharacter => {
-                    log.warn("invalid color palette index in OSC 104: {s} {}", .{ index_str, err });
-                    continue;
-                },
-            };
-            const op = self.command.color_operation.operations.addOne(alloc) catch |err| {
-                log.warn("unable to append color operation: {}", .{err});
-                return;
-            };
-            op.* = .{
-                .reset = .{ .palette = index },
-            };
-        }
     }
 
     /// End the sequence and return the command, if any. If the return value
@@ -1527,18 +1547,9 @@ pub const Parser = struct {
             .allocable_string => self.endAllocableString(),
             .kitty_color_protocol_key => self.endKittyColorProtocolOption(.key_only, true),
             .kitty_color_protocol_value => self.endKittyColorProtocolOption(.key_and_value, true),
-            .osc_4,
-            => self.parseOSC4(),
-            .osc_10,
-            .osc_11,
-            .osc_12,
-            => self.parseOSC101112(),
-            .osc_104,
-            => self.parseOSC104(),
-            .osc_110,
-            .osc_111,
-            .osc_112,
-            => self.parseOSC110111112(),
+            .osc_4_color => self.parseOSC4(true),
+            .osc_10, .osc_11, .osc_12 => self.parseOSC101112(true),
+            .osc_104 => self.parseOSC104(true),
             else => {},
         }
 
@@ -1838,10 +1849,7 @@ test "OSC: OSC112: reset cursor color with semicolon" {
     defer p.deinit();
 
     const input = "112;";
-    for (input) |ch| {
-        log.warn("feeding {c} {s}", .{ ch, @tagName(p.state) });
-        p.next(ch);
-    }
+    for (input) |ch| p.next(ch);
     log.warn("finish: {s}", .{@tagName(p.state)});
 
     const cmd = p.end(0x07).?;
@@ -2538,7 +2546,52 @@ test "OSC: OSC4: mix get/set palette color" {
     {
         const op = it.next().?;
         try testing.expect(op.* == .report);
-        try testing.expectEqual(Command.ColorOperation.Kind{ .palette = 254 }, op.report);
+        try testing.expectEqual(
+            Command.ColorOperation.Kind{ .palette = 254 },
+            op.report,
+        );
+    }
+    try testing.expect(it.next() == null);
+}
+
+test "OSC: OSC4: incomplete color/spec 1" {
+    const testing = std.testing;
+
+    var p: Parser = .{ .alloc = testing.allocator };
+    defer p.deinit();
+
+    const input = "4;17";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .color_operation);
+    try testing.expect(cmd.color_operation.source == .get_set_palette);
+    try testing.expect(cmd.color_operation.operations.count() == 0);
+    var it = cmd.color_operation.operations.constIterator(0);
+    try testing.expect(it.next() == null);
+}
+
+test "OSC: OSC4: incomplete color/spec 2" {
+    const testing = std.testing;
+
+    var p: Parser = .{ .alloc = testing.allocator };
+    defer p.deinit();
+
+    const input = "4;17;?;42";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .color_operation);
+    try testing.expect(cmd.color_operation.source == .get_set_palette);
+    try testing.expect(cmd.color_operation.operations.count() == 1);
+    var it = cmd.color_operation.operations.constIterator(0);
+    {
+        const op = it.next().?;
+        try testing.expect(op.* == .report);
+        try testing.expectEqual(
+            Command.ColorOperation.Kind{ .palette = 17 },
+            op.report,
+        );
     }
     try testing.expect(it.next() == null);
 }
@@ -2554,7 +2607,7 @@ test "OSC: OSC104: reset palette color 1" {
 
     const cmd = p.end('\x1b').?;
     try testing.expect(cmd == .color_operation);
-    try testing.expect(cmd.color_operation.source == .get_set_palette);
+    try testing.expect(cmd.color_operation.source == .reset_palette);
     try testing.expect(cmd.color_operation.operations.count() == 1);
     var it = cmd.color_operation.operations.constIterator(0);
     {
@@ -2579,8 +2632,8 @@ test "OSC: OSC104: reset palette color 2" {
 
     const cmd = p.end('\x1b').?;
     try testing.expect(cmd == .color_operation);
-    try testing.expect(cmd.color_operation.source == .get_set_palette);
-    try testing.expect(cmd.color_operation.operations.count() == 2);
+    try testing.expect(cmd.color_operation.source == .reset_palette);
+    try testing.expectEqual(2, cmd.color_operation.operations.count());
     var it = cmd.color_operation.operations.constIterator(0);
     {
         const op = it.next().?;
@@ -2612,7 +2665,7 @@ test "OSC: OSC104: invalid palette index" {
 
     const cmd = p.end('\x1b').?;
     try testing.expect(cmd == .color_operation);
-    try testing.expect(cmd.color_operation.source == .get_set_palette);
+    try testing.expect(cmd.color_operation.source == .reset_palette);
     try testing.expect(cmd.color_operation.operations.count() == 1);
     var it = cmd.color_operation.operations.constIterator(0);
     {
@@ -2637,7 +2690,7 @@ test "OSC: OSC104: empty palette index" {
 
     const cmd = p.end('\x1b').?;
     try testing.expect(cmd == .color_operation);
-    try testing.expect(cmd.color_operation.source == .get_set_palette);
+    try testing.expect(cmd.color_operation.source == .reset_palette);
     try testing.expect(cmd.color_operation.operations.count() == 1);
     var it = cmd.color_operation.operations.constIterator(0);
     {
