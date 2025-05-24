@@ -1197,8 +1197,8 @@ pub const StreamHandler = struct {
 
     pub fn handleColorOperation(
         self: *StreamHandler,
-        source: terminal.osc.Command.ColorOperationSource,
-        operations: *const terminal.osc.Command.ColorOperationList,
+        source: terminal.osc.Command.ColorOperation.Source,
+        operations: *const terminal.osc.Command.ColorOperation.List,
         terminator: terminal.osc.Terminator,
     ) !void {
         // return early if there is nothing to do
