@@ -179,10 +179,10 @@ pub const Command = union(enum) {
         pub fn format(
             self: ColorOperationSource,
             comptime _: []const u8,
-            _: std.fmt.FormatOptions,
+            options: std.fmt.FormatOptions,
             writer: anytype,
         ) !void {
-            try writer.print("{d}", .{@intFromEnum(self)});
+            try std.fmt.formatInt(@intFromEnum(self), 10, .lower, options, writer);
         }
     };
 
