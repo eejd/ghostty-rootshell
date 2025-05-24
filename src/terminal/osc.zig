@@ -215,7 +215,11 @@ pub const Command = union(enum) {
     };
 
     comptime {
-        assert(@sizeOf(Command) == 64);
+        assert(@sizeOf(Command) == switch (@sizeOf(usize)) {
+            4 => 44,
+            8 => 64,
+            else => unreachable,
+        });
         // @compileLog(@sizeOf(Command));
     }
 };
