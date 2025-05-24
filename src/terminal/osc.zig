@@ -202,15 +202,6 @@ pub const Command = union(enum) {
         foreground,
         background,
         cursor,
-
-        pub fn code(self: ColorKind) []const u8 {
-            return switch (self) {
-                .palette => "4",
-                .foreground => "10",
-                .background => "11",
-                .cursor => "12",
-            };
-        }
     };
 
     pub const ProgressState = enum {
