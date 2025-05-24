@@ -877,11 +877,9 @@ test "osc: change window title (end in esc)" {
 // https://github.com/darrenstarr/VtNetCore/pull/14
 // Saw this on HN, decided to add a test case because why not.
 test "osc: 112 incomplete sequence" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-
     var p: Parser = init();
-    p.osc_parser.alloc = arena.allocator();
+    defer p.deinit();
+    p.osc_parser.alloc = std.testing.allocator;
 
     _ = p.next(0x1B);
     _ = p.next(']');

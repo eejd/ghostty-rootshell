@@ -1745,10 +1745,8 @@ test "OSC: end_of_input" {
 test "OSC: OSC110: reset cursor color" {
     const testing = std.testing;
 
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-
-    var p: Parser = .{ .alloc = arena.allocator() };
+    var p: Parser = .{ .alloc = testing.allocator };
+    defer p.deinit();
 
     const input = "110";
     for (input) |ch| p.next(ch);
@@ -1773,10 +1771,8 @@ test "OSC: OSC110: reset cursor color" {
 test "OSC: OSC111: reset cursor color" {
     const testing = std.testing;
 
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-
-    var p: Parser = .{ .alloc = arena.allocator() };
+    var p: Parser = .{ .alloc = testing.allocator };
+    defer p.deinit();
 
     const input = "111";
     for (input) |ch| p.next(ch);
@@ -1801,10 +1797,8 @@ test "OSC: OSC111: reset cursor color" {
 test "OSC: OSC112: reset cursor color" {
     const testing = std.testing;
 
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-
-    var p: Parser = .{ .alloc = arena.allocator() };
+    var p: Parser = .{ .alloc = testing.allocator };
+    defer p.deinit();
 
     const input = "112";
     for (input) |ch| p.next(ch);
@@ -1829,10 +1823,8 @@ test "OSC: OSC112: reset cursor color" {
 test "OSC: OSC112: reset cursor color with semicolon" {
     const testing = std.testing;
 
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-
-    var p: Parser = .{ .alloc = arena.allocator() };
+    var p: Parser = .{ .alloc = testing.allocator };
+    defer p.deinit();
 
     const input = "112;";
     for (input) |ch| {
@@ -1888,9 +1880,8 @@ test "OSC: get/set clipboard (optional parameter)" {
 
 test "OSC: get/set clipboard with allocator" {
     const testing = std.testing;
-    const alloc = testing.allocator;
 
-    var p: Parser = .{ .alloc = alloc };
+    var p: Parser = .{ .alloc = testing.allocator };
     defer p.deinit();
 
     const input = "52;s;?";
@@ -1955,10 +1946,8 @@ test "OSC: longer than buffer" {
 test "OSC: OSC10: report default foreground color" {
     const testing = std.testing;
 
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-
-    var p: Parser = .{ .alloc = arena.allocator() };
+    var p: Parser = .{ .alloc = testing.allocator };
+    defer p.deinit();
 
     const input = "10;?";
     for (input) |ch| p.next(ch);
@@ -1985,10 +1974,8 @@ test "OSC: OSC10: report default foreground color" {
 test "OSC: OSC10: set foreground color" {
     const testing = std.testing;
 
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-
-    var p: Parser = .{ .alloc = arena.allocator() };
+    var p: Parser = .{ .alloc = testing.allocator };
+    defer p.deinit();
 
     const input = "10;rgbi:0.0/0.5/1.0";
     for (input) |ch| p.next(ch);
@@ -2017,10 +2004,8 @@ test "OSC: OSC10: set foreground color" {
 test "OSC: OSC11: report default background color" {
     const testing = std.testing;
 
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-
-    var p: Parser = .{ .alloc = arena.allocator() };
+    var p: Parser = .{ .alloc = testing.allocator };
+    defer p.deinit();
 
     const input = "11;?";
     for (input) |ch| p.next(ch);
@@ -2047,10 +2032,8 @@ test "OSC: OSC11: report default background color" {
 test "OSC: OSC11: set background color" {
     const testing = std.testing;
 
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-
-    var p: Parser = .{ .alloc = arena.allocator() };
+    var p: Parser = .{ .alloc = testing.allocator };
+    defer p.deinit();
 
     const input = "11;rgb:f/ff/ffff";
     for (input) |ch| p.next(ch);
@@ -2079,10 +2062,8 @@ test "OSC: OSC11: set background color" {
 test "OSC: OSC12: report background color" {
     const testing = std.testing;
 
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-
-    var p: Parser = .{ .alloc = arena.allocator() };
+    var p: Parser = .{ .alloc = testing.allocator };
+    defer p.deinit();
 
     const input = "12;?";
     for (input) |ch| p.next(ch);
@@ -2109,10 +2090,8 @@ test "OSC: OSC12: report background color" {
 test "OSC: OSC12: set background color" {
     const testing = std.testing;
 
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-
-    var p: Parser = .{ .alloc = arena.allocator() };
+    var p: Parser = .{ .alloc = testing.allocator };
+    defer p.deinit();
 
     const input = "12;rgb:f/ff/ffff";
     for (input) |ch| p.next(ch);
@@ -2141,10 +2120,8 @@ test "OSC: OSC12: set background color" {
 test "OSC: OSC4: get palette color 1" {
     const testing = std.testing;
 
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-
-    var p: Parser = .{ .alloc = arena.allocator() };
+    var p: Parser = .{ .alloc = testing.allocator };
+    defer p.deinit();
 
     const input = "4;1;?";
     for (input) |ch| p.next(ch);
@@ -2169,10 +2146,8 @@ test "OSC: OSC4: get palette color 1" {
 test "OSC: OSC4: get palette color 2" {
     const testing = std.testing;
 
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-
-    var p: Parser = .{ .alloc = arena.allocator() };
+    var p: Parser = .{ .alloc = testing.allocator };
+    defer p.deinit();
 
     const input = "4;1;?;2;?";
     for (input) |ch| p.next(ch);
@@ -2205,10 +2180,8 @@ test "OSC: OSC4: get palette color 2" {
 test "OSC: OSC4: set palette color 1" {
     const testing = std.testing;
 
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-
-    var p: Parser = .{ .alloc = arena.allocator() };
+    var p: Parser = .{ .alloc = testing.allocator };
+    defer p.deinit();
 
     const input = "4;17;rgb:aa/bb/cc";
     for (input) |ch| p.next(ch);
@@ -2236,10 +2209,8 @@ test "OSC: OSC4: set palette color 1" {
 test "OSC: OSC4: set palette color 2" {
     const testing = std.testing;
 
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-
-    var p: Parser = .{ .alloc = arena.allocator() };
+    var p: Parser = .{ .alloc = testing.allocator };
+    defer p.deinit();
 
     const input = "4;17;rgb:aa/bb/cc;1;rgb:00/11/22";
     for (input) |ch| p.next(ch);
@@ -2279,10 +2250,8 @@ test "OSC: OSC4: set palette color 2" {
 test "OSC: OSC4: get with invalid index 1" {
     const testing = std.testing;
 
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-
-    var p: Parser = .{ .alloc = arena.allocator() };
+    var p: Parser = .{ .alloc = testing.allocator };
+    defer p.deinit();
 
     const input = "4;1111;?;1;?";
     for (input) |ch| p.next(ch);
@@ -2306,10 +2275,8 @@ test "OSC: OSC4: get with invalid index 1" {
 test "OSC: OSC4: get with invalid index 2" {
     const testing = std.testing;
 
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-
-    var p: Parser = .{ .alloc = arena.allocator() };
+    var p: Parser = .{ .alloc = testing.allocator };
+    defer p.deinit();
 
     const input = "4;5;?;1111;?;1;?";
     for (input) |ch| p.next(ch);
@@ -2342,10 +2309,8 @@ test "OSC: OSC4: get with invalid index 2" {
 test "OSC: OSC4: multiple get 8a" {
     const testing = std.testing;
 
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-
-    var p: Parser = .{ .alloc = arena.allocator() };
+    var p: Parser = .{ .alloc = testing.allocator };
+    defer p.deinit();
 
     const input = "4;0;?;1;?;2;?;3;?;4;?;5;?;6;?;7;?";
     for (input) |ch| p.next(ch);
@@ -2426,10 +2391,8 @@ test "OSC: OSC4: multiple get 8a" {
 test "OSC: OSC4: multiple get 8b" {
     const testing = std.testing;
 
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-
-    var p: Parser = .{ .alloc = arena.allocator() };
+    var p: Parser = .{ .alloc = testing.allocator };
+    defer p.deinit();
 
     const input = "4;8;?;9;?;10;?;11;?;12;?;13;?;14;?;15;?";
     for (input) |ch| p.next(ch);
@@ -2509,10 +2472,8 @@ test "OSC: OSC4: multiple get 8b" {
 test "OSC: OSC4: set with invalid index" {
     const testing = std.testing;
 
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-
-    var p: Parser = .{ .alloc = arena.allocator() };
+    var p: Parser = .{ .alloc = testing.allocator };
+    defer p.deinit();
 
     const input = "4;256;#ffffff;1;#aabbcc";
     for (input) |ch| p.next(ch);
@@ -2540,10 +2501,8 @@ test "OSC: OSC4: set with invalid index" {
 test "OSC: OSC4: mix get/set palette color" {
     const testing = std.testing;
 
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-
-    var p: Parser = .{ .alloc = arena.allocator() };
+    var p: Parser = .{ .alloc = testing.allocator };
+    defer p.deinit();
 
     const input = "4;17;rgb:aa/bb/cc;254;?";
     for (input) |ch| p.next(ch);
@@ -2576,10 +2535,8 @@ test "OSC: OSC4: mix get/set palette color" {
 test "OSC: OSC104: reset palette color 1" {
     const testing = std.testing;
 
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-
-    var p: Parser = .{ .alloc = arena.allocator() };
+    var p: Parser = .{ .alloc = testing.allocator };
+    defer p.deinit();
 
     const input = "104;17";
     for (input) |ch| p.next(ch);
@@ -2603,10 +2560,8 @@ test "OSC: OSC104: reset palette color 1" {
 test "OSC: OSC104: reset palette color 2" {
     const testing = std.testing;
 
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-
-    var p: Parser = .{ .alloc = arena.allocator() };
+    var p: Parser = .{ .alloc = testing.allocator };
+    defer p.deinit();
 
     const input = "104;17;111";
     for (input) |ch| p.next(ch);
@@ -2638,10 +2593,8 @@ test "OSC: OSC104: reset palette color 2" {
 test "OSC: OSC104: invalid palette index" {
     const testing = std.testing;
 
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-
-    var p: Parser = .{ .alloc = arena.allocator() };
+    var p: Parser = .{ .alloc = testing.allocator };
+    defer p.deinit();
 
     const input = "104;ffff;111";
     for (input) |ch| p.next(ch);
@@ -2665,10 +2618,8 @@ test "OSC: OSC104: invalid palette index" {
 test "OSC: OSC104: empty palette index" {
     const testing = std.testing;
 
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-
-    var p: Parser = .{ .alloc = arena.allocator() };
+    var p: Parser = .{ .alloc = testing.allocator };
+    defer p.deinit();
 
     const input = "104;;111";
     for (input) |ch| p.next(ch);
