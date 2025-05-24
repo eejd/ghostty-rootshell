@@ -189,7 +189,7 @@ pub const Command = union(enum) {
             }
         };
 
-        pub const List = std.SegmentedList(ColorOperation, 4);
+        pub const List = std.SegmentedList(ColorOperation, 2);
 
         pub const Kind = union(enum) {
             palette: u8,
@@ -213,6 +213,11 @@ pub const Command = union(enum) {
         indeterminate,
         pause,
     };
+
+    comptime {
+        assert(@sizeOf(Command) == 64);
+        // @compileLog(@sizeOf(Command));
+    }
 };
 
 /// The terminator used to end an OSC command. For OSC commands that demand
