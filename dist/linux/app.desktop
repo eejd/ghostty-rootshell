@@ -1,8 +1,10 @@
 [Desktop Entry]
+Version=1.0
 Name=Ghostty
 Type=Application
 Comment=A terminal emulator
-Exec=ghostty
+TryExec=ghostty
+Exec=ghostty %F
 Icon=com.mitchellh.ghostty
 Categories=System;TerminalEmulator;
 Keywords=terminal;tty;pty;
@@ -16,6 +18,7 @@ X-TerminalArgTitle=--title=
 X-TerminalArgAppId=--class=
 X-TerminalArgDir=--working-directory=
 X-TerminalArgHold=--wait-after-command
+DBusActivatable=true
 
 [Desktop Action new-window]
 Name=New Window
