@@ -2,10 +2,10 @@ const std = @import("std");
 
 const assert = std.debug.assert;
 
-/// Datastructure to manage a (usually) small list of items. To prevent allocations
-/// on the heap, statically allocate a small array that gets used to store items. Once
-/// that small array is full then memory will be dynamically allocated on the heap
-/// to store items.
+/// Datastructure to manage a (usually) small list of items. To prevent
+/// allocations on the heap, statically allocate a small array that gets used to
+/// store items. Once that small array is full then memory will be dynamically
+/// allocated on the heap to store items.
 pub fn ArrayListStaticUnmanaged(comptime static_size: usize, comptime T: type) type {
     return struct {
         count: usize,
