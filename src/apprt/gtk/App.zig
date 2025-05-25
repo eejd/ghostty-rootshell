@@ -1690,30 +1690,33 @@ fn initActions(self: *App) void {
 }
 
 fn isValidAppId(app_id: [:0]const u8) bool {
-    if (app_id.len > 255 or app_id.len == 0) return false;
-    if (app_id[0] == '.') return false;
-    if (app_id[app_id.len - 1] == '.') return false;
+    if (app_id.len > 255) return false;
 
-    var hasDot = false;
+    var hasSep = false;
+    var lastWasSep = true;
     for (app_id) |char| {
         switch (char) {
-            'a'...'z', 'A'...'Z', '0'...'9', '_', '-' => {},
-            '.' => hasDot = true,
+            'a'...'z', 'A'...'Z', '_', '-' => {},
+            '0'...'9', '.' => if (lastWasSep) return false,
             else => return false,
         }
+        lastWasSep = char == '.';
+        hasSep = hasSep or lastWasSep;
     }
-    if (!hasDot) return false;
-
-    return true;
+    return hasSep and !lastWasSep;
 }
 
 test "isValidAppId" {
     try testing.expect(isValidAppId("foo.bar"));
     try testing.expect(isValidAppId("foo.bar.baz"));
+    try testing.expect(isValidAppId("f00.bar"));
+    try testing.expect(isValidAppId("foo-bar._baz"));
     try testing.expect(!isValidAppId("foo"));
     try testing.expect(!isValidAppId("foo.bar?"));
     try testing.expect(!isValidAppId("foo."));
     try testing.expect(!isValidAppId(".foo"));
     try testing.expect(!isValidAppId(""));
     try testing.expect(!isValidAppId("foo" ** 86));
+    try testing.expect(!isValidAppId("foo..bar"));
+    try testing.expect(!isValidAppId("0foo.bar"));
 }
