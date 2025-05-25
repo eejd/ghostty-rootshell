@@ -288,7 +288,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
     // can develop Ghostty in Ghostty.
     const app_id: [:0]const u8 = app_id: {
         if (config.class) |class| {
-            if (isValidAppId(class)) {
+            if (gio.Application.idIsValid(class) != 0) {
                 break :app_id class;
             } else {
                 log.warn("invalid 'class' in config, ignoring", .{});
@@ -1687,33 +1687,4 @@ fn initActions(self: *App) void {
         const action_map = self.app.as(gio.ActionMap);
         action_map.addAction(action.as(gio.Action));
     }
-}
-
-fn isValidAppId(app_id: [:0]const u8) bool {
-    if (app_id.len > 255 or app_id.len == 0) return false;
-    if (app_id[0] == '.') return false;
-    if (app_id[app_id.len - 1] == '.') return false;
-
-    var hasDot = false;
-    for (app_id) |char| {
-        switch (char) {
-            'a'...'z', 'A'...'Z', '0'...'9', '_', '-' => {},
-            '.' => hasDot = true,
-            else => return false,
-        }
-    }
-    if (!hasDot) return false;
-
-    return true;
-}
-
-test "isValidAppId" {
-    try testing.expect(isValidAppId("foo.bar"));
-    try testing.expect(isValidAppId("foo.bar.baz"));
-    try testing.expect(!isValidAppId("foo"));
-    try testing.expect(!isValidAppId("foo.bar?"));
-    try testing.expect(!isValidAppId("foo."));
-    try testing.expect(!isValidAppId(".foo"));
-    try testing.expect(!isValidAppId(""));
-    try testing.expect(!isValidAppId("foo" ** 86));
 }
