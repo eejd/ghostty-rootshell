@@ -206,6 +206,7 @@ const entries: []const ModeEntry = &.{
     .{ .name = "cursor_visible", .value = 25, .default = true },
     .{ .name = "enable_mode_3", .value = 40 },
     .{ .name = "reverse_wrap", .value = 45 },
+    .{ .name = "alt_screen_legacy", .value = 47 },
     .{ .name = "keypad_keys", .value = 66 },
     .{ .name = "enable_left_and_right_margin", .value = 69 },
     .{ .name = "mouse_event_normal", .value = 1000 },
