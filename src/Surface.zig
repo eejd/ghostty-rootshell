@@ -4817,7 +4817,29 @@ fn presentSurface(self: *Surface) !void {
     );
 }
 
-test "Surface: selection logic" {
+/// Utility function for the unit tests for mouse selection logic.
+///
+/// Tests a click and drag on a 10x5 cell grid, x positions are given in
+/// fractional cells, e.g. 3.1 would be 10% through the cell at x = 3.
+///
+/// NOTE: The size tested with has 10px wide cells, meaning only one digit
+///       after the decimal place has any meaning, e.g. 3.14 is equal to 3.1.
+///
+/// The provided start_x/y and end_x/y are the expected start and end points
+/// of the resulting selection.
+fn testMouseSelection(
+    click_x: f64,
+    click_y: u32,
+    drag_x: f64,
+    drag_y: u32,
+    start_x: terminal.size.CellCountInt,
+    start_y: u32,
+    end_x: terminal.size.CellCountInt,
+    end_y: u32,
+    rect: bool,
+) !void {
+    assert(builtin.is_test);
+
     // Our screen size is 10x5 cells that are
     // 10x20 px, with 5px padding on all sides.
     const size: rendererpkg.Size = .{
@@ -4828,1086 +4850,396 @@ test "Surface: selection logic" {
     var screen = try terminal.Screen.init(std.testing.allocator, 10, 5, 0);
     defer screen.deinit();
 
-    // We are testing normal selection logic here so no mods.
-    const mods: input.Mods = .{};
+    // We hold both ctrl and alt for rectangular
+    // select so that this test is platform agnostic.
+    const mods: input.Mods = .{
+        .ctrl = rect,
+        .alt = rect,
+    };
 
-    const expectEqual = std.testing.expectEqualDeep;
+    try std.testing.expectEqual(rect, SurfaceMouse.isRectangleSelectState(mods));
 
-    // LTR, including click and drag pin cells
-    {
-        const click_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 3, .y = 3 },
-        }) orelse unreachable;
-        const drag_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 5, .y = 3 },
-        }) orelse unreachable;
+    const click_pin = screen.pages.pin(.{
+        .viewport = .{ .x = @intFromFloat(@floor(click_x)), .y = click_y },
+    }) orelse unreachable;
+    const drag_pin = screen.pages.pin(.{
+        .viewport = .{ .x = @intFromFloat(@floor(drag_x)), .y = drag_y },
+    }) orelse unreachable;
 
-        const click_x =
-            @as(u32, click_pin.x) * size.cell.width + size.padding.left +
-            0; // At px 0 within the cell.
-        const drag_x =
-            @as(u32, drag_pin.x) * size.cell.width + size.padding.left +
-            size.cell.width - 1; // At the rightmost px of the cell.
+    const cell_width_f64: f64 = @floatFromInt(size.cell.width);
+    const click_x_pos: u32 =
+        @as(u32, @intFromFloat(@floor(click_x * cell_width_f64))) +
+        size.padding.left;
+    const drag_x_pos: u32 =
+        @as(u32, @intFromFloat(@floor(drag_x * cell_width_f64))) +
+        size.padding.left;
 
-        const start_pin = click_pin;
-        const end_pin = drag_pin;
+    const start_pin = screen.pages.pin(.{
+        .viewport = .{ .x = start_x, .y = start_y },
+    }) orelse unreachable;
+    const end_pin = screen.pages.pin(.{
+        .viewport = .{ .x = end_x, .y = end_y },
+    }) orelse unreachable;
 
-        try expectEqual(terminal.Selection{
-            .bounds = .{ .untracked = .{
-                .start = start_pin,
-                .end = end_pin,
-            } },
-            .rectangle = false,
-        }, mouseSelection(
+    try std.testing.expectEqualDeep(terminal.Selection{
+        .bounds = .{ .untracked = .{
+            .start = start_pin,
+            .end = end_pin,
+        } },
+        .rectangle = rect,
+    }, mouseSelection(
+        click_pin,
+        drag_pin,
+        click_x_pos,
+        drag_x_pos,
+        mods,
+        size,
+    ));
+}
+
+/// Like `testMouseSelection` but checks that the resulting selection is null.
+///
+/// See `testMouseSelection` for more details.
+fn testMouseSelectionIsNull(
+    click_x: f64,
+    click_y: u32,
+    drag_x: f64,
+    drag_y: u32,
+    rect: bool,
+) !void {
+    assert(builtin.is_test);
+
+    // Our screen size is 10x5 cells that are
+    // 10x20 px, with 5px padding on all sides.
+    const size: rendererpkg.Size = .{
+        .cell = .{ .width = 10, .height = 20 },
+        .padding = .{ .left = 5, .top = 5, .right = 5, .bottom = 5 },
+        .screen = .{ .width = 110, .height = 110 },
+    };
+    var screen = try terminal.Screen.init(std.testing.allocator, 10, 5, 0);
+    defer screen.deinit();
+
+    // We hold both ctrl and alt for rectangular
+    // select so that this test is platform agnostic.
+    const mods: input.Mods = .{
+        .ctrl = rect,
+        .alt = rect,
+    };
+
+    try std.testing.expectEqual(rect, SurfaceMouse.isRectangleSelectState(mods));
+
+    const click_pin = screen.pages.pin(.{
+        .viewport = .{ .x = @intFromFloat(@floor(click_x)), .y = click_y },
+    }) orelse unreachable;
+    const drag_pin = screen.pages.pin(.{
+        .viewport = .{ .x = @intFromFloat(@floor(drag_x)), .y = drag_y },
+    }) orelse unreachable;
+
+    const cell_width_f64: f64 = @floatFromInt(size.cell.width);
+    const click_x_pos: u32 =
+        @as(u32, @intFromFloat(@floor(click_x * cell_width_f64))) +
+        size.padding.left;
+    const drag_x_pos: u32 =
+        @as(u32, @intFromFloat(@floor(drag_x * cell_width_f64))) +
+        size.padding.left;
+
+    try std.testing.expectEqual(
+        null,
+        mouseSelection(
             click_pin,
             drag_pin,
-            click_x,
-            drag_x,
+            click_x_pos,
+            drag_x_pos,
             mods,
             size,
-        ));
-    }
+        ),
+    );
+}
 
-    // LTR, including click pin cell but not drag pin cell
-    {
-        const click_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 3, .y = 3 },
-        }) orelse unreachable;
-        const drag_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 5, .y = 3 },
-        }) orelse unreachable;
+test "Surface: selection logic" {
+    // We disable format to make these easier to
+    // read by pairing sets of coordinates per line.
+    // zig fmt: off
 
-        const click_x =
-            @as(u32, click_pin.x) * size.cell.width + size.padding.left +
-            0; // At px 0 within the cell.
-        const drag_x =
-            @as(u32, drag_pin.x) * size.cell.width + size.padding.left +
-            0; // At px 0 within the cell.
+    // -- LTR
+    // single cell selection
+    try testMouseSelection(
+        3.0, 3, // click
+        3.9, 3, // drag
+        3, 3, // expected start
+        3, 3, // expected end
+        false, // regular selection
+    );
+    // including click and drag pin cells
+    try testMouseSelection(
+        3.0, 3, // click
+        5.9, 3, // drag
+        3, 3, // expected start
+        5, 3, // expected end
+        false, // regular selection
+    );
+    // including click pin cell but not drag pin cell
+    try testMouseSelection(
+        3.0, 3, // click
+        5.0, 3, // drag
+        3, 3, // expected start
+        4, 3, // expected end
+        false, // regular selection
+    );
+    // including drag pin cell but not click pin cell
+    try testMouseSelection(
+        3.9, 3, // click
+        5.9, 3, // drag
+        4, 3, // expected start
+        5, 3, // expected end
+        false, // regular selection
+    );
+    // including neither click nor drag pin cells
+    try testMouseSelection(
+        3.9, 3, // click
+        5.0, 3, // drag
+        4, 3, // expected start
+        4, 3, // expected end
+        false, // regular selection
+    );
+    // empty selection (single cell on only left half)
+    try testMouseSelectionIsNull(
+        3.0, 3, // click
+        3.1, 3, // drag
+        false, // regular selection
+    );
+    // empty selection (single cell on only right half)
+    try testMouseSelectionIsNull(
+        3.8, 3, // click
+        3.9, 3, // drag
+        false, // regular selection
+    );
+    // empty selection (between two cells, not crossing threshold)
+    try testMouseSelectionIsNull(
+        3.9, 3, // click
+        4.0, 3, // drag
+        false, // regular selection
+    );
 
-        const start_pin = click_pin;
-        const end_pin = drag_pin.left(1);
-
-        try expectEqual(terminal.Selection{
-            .bounds = .{ .untracked = .{
-                .start = start_pin,
-                .end = end_pin,
-            } },
-            .rectangle = false,
-        }, mouseSelection(
-            click_pin,
-            drag_pin,
-            click_x,
-            drag_x,
-            mods,
-            size,
-        ));
-    }
-
-    // LTR, including drag pin cell but not click pin cell
-    {
-        const click_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 3, .y = 3 },
-        }) orelse unreachable;
-        const drag_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 5, .y = 3 },
-        }) orelse unreachable;
-
-        const click_x =
-            @as(u32, click_pin.x) * size.cell.width + size.padding.left +
-            size.cell.width - 1; // At rightmost px in cell.
-        const drag_x =
-            @as(u32, drag_pin.x) * size.cell.width + size.padding.left +
-            size.cell.width - 1; // At rightmost px in cell.
-
-        const start_pin = click_pin.right(1);
-        const end_pin = drag_pin;
-
-        try expectEqual(terminal.Selection{
-            .bounds = .{ .untracked = .{
-                .start = start_pin,
-                .end = end_pin,
-            } },
-            .rectangle = false,
-        }, mouseSelection(
-            click_pin,
-            drag_pin,
-            click_x,
-            drag_x,
-            mods,
-            size,
-        ));
-    }
-
-    // LTR, including neither click nor drag pin cells
-    {
-        const click_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 3, .y = 3 },
-        }) orelse unreachable;
-        const drag_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 5, .y = 3 },
-        }) orelse unreachable;
-
-        const click_x =
-            @as(u32, click_pin.x) * size.cell.width + size.padding.left +
-            size.cell.width - 1; // At the rightmost px of the cell.
-        const drag_x =
-            @as(u32, drag_pin.x) * size.cell.width + size.padding.left +
-            0; // At px 0 within the cell.
-
-        const start_pin = click_pin.right(1);
-        const end_pin = drag_pin.left(1);
-
-        try expectEqual(terminal.Selection{
-            .bounds = .{ .untracked = .{
-                .start = start_pin,
-                .end = end_pin,
-            } },
-            .rectangle = false,
-        }, mouseSelection(
-            click_pin,
-            drag_pin,
-            click_x,
-            drag_x,
-            mods,
-            size,
-        ));
-    }
-
-    // LTR, empty selection (single cell on only left half)
-    {
-        const click_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 3, .y = 3 },
-        }) orelse unreachable;
-        const drag_pin = click_pin;
-
-        const click_x =
-            @as(u32, click_pin.x) * size.cell.width + size.padding.left +
-            0; // At px 0 within the cell.
-        const drag_x =
-            @as(u32, drag_pin.x) * size.cell.width + size.padding.left +
-            1; // At px 1 within the cell.
-
-        try expectEqual(
-            null,
-            mouseSelection(
-                click_pin,
-                drag_pin,
-                click_x,
-                drag_x,
-                mods,
-                size,
-            ),
-        );
-    }
-
-    // LTR, empty selection (single cell on only right half)
-    {
-        const click_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 3, .y = 3 },
-        }) orelse unreachable;
-        const drag_pin = click_pin;
-
-        const click_x =
-            @as(u32, click_pin.x) * size.cell.width + size.padding.left +
-            size.cell.width - 2; // 1px left of right edge of cell
-        const drag_x =
-            @as(u32, drag_pin.x) * size.cell.width + size.padding.left +
-            size.cell.width - 1; // At right edge of cell
-
-        try expectEqual(
-            null,
-            mouseSelection(
-                click_pin,
-                drag_pin,
-                click_x,
-                drag_x,
-                mods,
-                size,
-            ),
-        );
-    }
-
-    // LTR, empty selection (between two cells, not crossing threshold)
-    {
-        const click_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 3, .y = 3 },
-        }) orelse unreachable;
-        const drag_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 4, .y = 3 },
-        }) orelse unreachable;
-
-        const click_x =
-            @as(u32, click_pin.x) * size.cell.width + size.padding.left +
-            size.cell.width - 1; // At right edge of cell
-        const drag_x =
-            @as(u32, drag_pin.x) * size.cell.width + size.padding.left +
-            0; // At px 0 within the cell
-
-        try expectEqual(
-            null,
-            mouseSelection(
-                click_pin,
-                drag_pin,
-                click_x,
-                drag_x,
-                mods,
-                size,
-            ),
-        );
-    }
-
-    // --- RTL
-
-    // RTL, including click and drag pin cells
-    {
-        const click_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 5, .y = 3 },
-        }) orelse unreachable;
-        const drag_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 3, .y = 3 },
-        }) orelse unreachable;
-
-        const click_x =
-            @as(u32, click_pin.x) * size.cell.width + size.padding.left +
-            size.cell.width - 1; // At the rightmost px of the cell.
-        const drag_x =
-            @as(u32, drag_pin.x) * size.cell.width + size.padding.left +
-            0; // At px 0 within the cell.
-
-        const start_pin = click_pin;
-        const end_pin = drag_pin;
-
-        try expectEqual(terminal.Selection{
-            .bounds = .{ .untracked = .{
-                .start = start_pin,
-                .end = end_pin,
-            } },
-            .rectangle = false,
-        }, mouseSelection(
-            click_pin,
-            drag_pin,
-            click_x,
-            drag_x,
-            mods,
-            size,
-        ));
-    }
-
-    // RTL, including click pin cell but not drag pin cell
-    {
-        const click_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 5, .y = 3 },
-        }) orelse unreachable;
-        const drag_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 3, .y = 3 },
-        }) orelse unreachable;
-
-        const click_x =
-            @as(u32, click_pin.x) * size.cell.width + size.padding.left +
-            size.cell.width - 1; // At the rightmost px of the cell.
-        const drag_x =
-            @as(u32, drag_pin.x) * size.cell.width + size.padding.left +
-            size.cell.width - 1; // At the rightmost px of the cell.
-
-        const start_pin = click_pin;
-        const end_pin = drag_pin.right(1);
-
-        try expectEqual(terminal.Selection{
-            .bounds = .{ .untracked = .{
-                .start = start_pin,
-                .end = end_pin,
-            } },
-            .rectangle = false,
-        }, mouseSelection(
-            click_pin,
-            drag_pin,
-            click_x,
-            drag_x,
-            mods,
-            size,
-        ));
-    }
-
-    // RTL, including drag pin cell but not click pin cell
-    {
-        const click_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 5, .y = 3 },
-        }) orelse unreachable;
-        const drag_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 3, .y = 3 },
-        }) orelse unreachable;
-
-        const click_x =
-            @as(u32, click_pin.x) * size.cell.width + size.padding.left +
-            0; // At px 0 within cell.
-        const drag_x =
-            @as(u32, drag_pin.x) * size.cell.width + size.padding.left +
-            0; // At px 0 within cell.
-
-        const start_pin = click_pin.left(1);
-        const end_pin = drag_pin;
-
-        try expectEqual(terminal.Selection{
-            .bounds = .{ .untracked = .{
-                .start = start_pin,
-                .end = end_pin,
-            } },
-            .rectangle = false,
-        }, mouseSelection(
-            click_pin,
-            drag_pin,
-            click_x,
-            drag_x,
-            mods,
-            size,
-        ));
-    }
-
-    // RTL, including neither click nor drag pin cells
-    {
-        const click_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 5, .y = 3 },
-        }) orelse unreachable;
-        const drag_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 3, .y = 3 },
-        }) orelse unreachable;
-
-        const click_x =
-            @as(u32, click_pin.x) * size.cell.width + size.padding.left +
-            0; // At px 0 within the cell.
-        const drag_x =
-            @as(u32, drag_pin.x) * size.cell.width + size.padding.left +
-            size.cell.width - 1; // At the rightmost px of the cell.
-
-        const start_pin = click_pin.left(1);
-        const end_pin = drag_pin.right(1);
-
-        try expectEqual(terminal.Selection{
-            .bounds = .{ .untracked = .{
-                .start = start_pin,
-                .end = end_pin,
-            } },
-            .rectangle = false,
-        }, mouseSelection(
-            click_pin,
-            drag_pin,
-            click_x,
-            drag_x,
-            mods,
-            size,
-        ));
-    }
-
-    // RTL, empty selection (single cell on only left half)
-    {
-        const click_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 3, .y = 3 },
-        }) orelse unreachable;
-        const drag_pin = click_pin;
-
-        const click_x =
-            @as(u32, click_pin.x) * size.cell.width + size.padding.left +
-            1; // At px 1 within the cell.
-        const drag_x =
-            @as(u32, drag_pin.x) * size.cell.width + size.padding.left +
-            0; // At px 0 within the cell.
-
-        try expectEqual(
-            null,
-            mouseSelection(
-                click_pin,
-                drag_pin,
-                click_x,
-                drag_x,
-                mods,
-                size,
-            ),
-        );
-    }
-
-    // RTL, empty selection (single cell on only right half)
-    {
-        const click_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 3, .y = 3 },
-        }) orelse unreachable;
-        const drag_pin = click_pin;
-
-        const click_x =
-            @as(u32, click_pin.x) * size.cell.width + size.padding.left +
-            size.cell.width - 1; // At right edge of cell
-        const drag_x =
-            @as(u32, drag_pin.x) * size.cell.width + size.padding.left +
-            size.cell.width - 2; // 1px left of right edge of cell
-
-        try expectEqual(
-            null,
-            mouseSelection(
-                click_pin,
-                drag_pin,
-                click_x,
-                drag_x,
-                mods,
-                size,
-            ),
-        );
-    }
-
-    // RTL, empty selection (between two cells, not crossing threshold)
-    {
-        const click_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 4, .y = 3 },
-        }) orelse unreachable;
-        const drag_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 3, .y = 3 },
-        }) orelse unreachable;
-
-        const click_x =
-            @as(u32, click_pin.x) * size.cell.width + size.padding.left +
-            0; // At px 0 within the cell
-        const drag_x =
-            @as(u32, drag_pin.x) * size.cell.width + size.padding.left +
-            size.cell.width - 1; // At right edge of cell
-
-        try expectEqual(
-            null,
-            mouseSelection(
-                click_pin,
-                drag_pin,
-                click_x,
-                drag_x,
-                mods,
-                size,
-            ),
-        );
-    }
+    // -- RTL
+    // single cell selection
+    try testMouseSelection(
+        3.9, 3, // click
+        3.0, 3, // drag
+        3, 3, // expected start
+        3, 3, // expected end
+        false, // regular selection
+    );
+    // including click and drag pin cells
+    try testMouseSelection(
+        5.9, 3, // click
+        3.0, 3, // drag
+        5, 3, // expected start
+        3, 3, // expected end
+        false, // regular selection
+    );
+    // including click pin cell but not drag pin cell
+    try testMouseSelection(
+        5.9, 3, // click
+        3.9, 3, // drag
+        5, 3, // expected start
+        4, 3, // expected end
+        false, // regular selection
+    );
+    // including drag pin cell but not click pin cell
+    try testMouseSelection(
+        5.0, 3, // click
+        3.0, 3, // drag
+        4, 3, // expected start
+        3, 3, // expected end
+        false, // regular selection
+    );
+    // including neither click nor drag pin cells
+    try testMouseSelection(
+        5.0, 3, // click
+        3.9, 3, // drag
+        4, 3, // expected start
+        4, 3, // expected end
+        false, // regular selection
+    );
+    // empty selection (single cell on only left half)
+    try testMouseSelectionIsNull(
+        3.1, 3, // click
+        3.0, 3, // drag
+        false, // regular selection
+    );
+    // empty selection (single cell on only right half)
+    try testMouseSelectionIsNull(
+        3.9, 3, // click
+        3.8, 3, // drag
+        false, // regular selection
+    );
+    // empty selection (between two cells, not crossing threshold)
+    try testMouseSelectionIsNull(
+        4.0, 3, // click
+        3.9, 3, // drag
+        false, // regular selection
+    );
 
     // -- Wrapping
-
     // LTR, wrap excluded cells
-    {
-        const click_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 9, .y = 2 },
-        }) orelse unreachable;
-        const drag_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 0, .y = 4 },
-        }) orelse unreachable;
-
-        const click_x =
-            @as(u32, click_pin.x) * size.cell.width + size.padding.left +
-            size.cell.width - 1; // At right edge of cell
-        const drag_x =
-            @as(u32, drag_pin.x) * size.cell.width + size.padding.left +
-            0; // At px 0 within the cell
-
-        const start_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 0, .y = 3 },
-        }) orelse unreachable;
-        const end_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 9, .y = 3 },
-        }) orelse unreachable;
-
-        try expectEqual(terminal.Selection{
-            .bounds = .{ .untracked = .{
-                .start = start_pin,
-                .end = end_pin,
-            } },
-            .rectangle = false,
-        }, mouseSelection(
-            click_pin,
-            drag_pin,
-            click_x,
-            drag_x,
-            mods,
-            size,
-        ));
-    }
-
+    try testMouseSelection(
+        9.9, 2, // click
+        0.0, 4, // drag
+        0, 3, // expected start
+        9, 3, // expected end
+        false, // regular selection
+    );
     // RTL, wrap excluded cells
-    {
-        const click_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 0, .y = 4 },
-        }) orelse unreachable;
-        const drag_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 9, .y = 2 },
-        }) orelse unreachable;
-
-        const click_x =
-            @as(u32, click_pin.x) * size.cell.width + size.padding.left +
-            0; // At px 0 within the cell
-        const drag_x =
-            @as(u32, drag_pin.x) * size.cell.width + size.padding.left +
-            size.cell.width - 1; // At right edge of cell
-
-        const start_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 9, .y = 3 },
-        }) orelse unreachable;
-        const end_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 0, .y = 3 },
-        }) orelse unreachable;
-
-        try expectEqual(terminal.Selection{
-            .bounds = .{ .untracked = .{
-                .start = start_pin,
-                .end = end_pin,
-            } },
-            .rectangle = false,
-        }, mouseSelection(
-            click_pin,
-            drag_pin,
-            click_x,
-            drag_x,
-            mods,
-            size,
-        ));
-    }
+    try testMouseSelection(
+        0.0, 4, // click
+        9.9, 2, // drag
+        9, 3, // expected start
+        0, 3, // expected end
+        false, // regular selection
+    );
 }
 
 test "Surface: rectangle selection logic" {
-    // Our screen size is 10x5 cells that are
-    // 10x20 px, with 5px padding on all sides.
-    const size: rendererpkg.Size = .{
-        .cell = .{ .width = 10, .height = 20 },
-        .padding = .{ .left = 5, .top = 5, .right = 5, .bottom = 5 },
-        .screen = .{ .width = 110, .height = 110 },
-    };
-    var screen = try terminal.Screen.init(std.testing.allocator, 10, 5, 0);
-    defer screen.deinit();
+    // We disable format to make these easier to
+    // read by pairing sets of coordinates per line.
+    // zig fmt: off
 
-    // We hold ctrl and alt so that this test is platform-agnostic.
-    const mods: input.Mods = .{
-        .ctrl = true,
-        .alt = true,
-    };
+    // -- LTR
+    // single column selection
+    try testMouseSelection(
+        3.0, 2, // click
+        3.9, 4, // drag
+        3, 2, // expected start
+        3, 4, // expected end
+        true, //rectangle selection
+    );
+    // including click and drag pin columns
+    try testMouseSelection(
+        3.0, 2, // click
+        5.9, 4, // drag
+        3, 2, // expected start
+        5, 4, // expected end
+        true, //rectangle selection
+    );
+    // including click pin column but not drag pin column
+    try testMouseSelection(
+        3.0, 2, // click
+        5.0, 4, // drag
+        3, 2, // expected start
+        4, 4, // expected end
+        true, //rectangle selection
+    );
+    // including drag pin column but not click pin column
+    try testMouseSelection(
+        3.9, 2, // click
+        5.9, 4, // drag
+        4, 2, // expected start
+        5, 4, // expected end
+        true, //rectangle selection
+    );
+    // including neither click nor drag pin columns
+    try testMouseSelection(
+        3.9, 2, // click
+        5.0, 4, // drag
+        4, 2, // expected start
+        4, 4, // expected end
+        true, //rectangle selection
+    );
+    // empty selection (single column on only left half)
+    try testMouseSelectionIsNull(
+        3.0, 2, // click
+        3.1, 4, // drag
+        true, //rectangle selection
+    );
+    // empty selection (single column on only right half)
+    try testMouseSelectionIsNull(
+        3.8, 2, // click
+        3.9, 4, // drag
+        true, //rectangle selection
+    );
+    // empty selection (between two columns, not crossing threshold)
+    try testMouseSelectionIsNull(
+        3.9, 2, // click
+        4.0, 4, // drag
+        true, //rectangle selection
+    );
 
-    try std.testing.expect(SurfaceMouse.isRectangleSelectState(mods));
-
-    const expectEqual = std.testing.expectEqualDeep;
-
-    // LTR, including click and drag pin cells
-    {
-        const click_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 3, .y = 2 },
-        }) orelse unreachable;
-        const drag_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 5, .y = 4 },
-        }) orelse unreachable;
-
-        const click_x =
-            @as(u32, click_pin.x) * size.cell.width + size.padding.left +
-            0; // At px 0 within the cell.
-        const drag_x =
-            @as(u32, drag_pin.x) * size.cell.width + size.padding.left +
-            size.cell.width - 1; // At the rightmost px of the cell.
-
-        const start_pin = click_pin;
-        const end_pin = drag_pin;
-
-        try expectEqual(terminal.Selection{
-            .bounds = .{ .untracked = .{
-                .start = start_pin,
-                .end = end_pin,
-            } },
-            .rectangle = true,
-        }, mouseSelection(
-            click_pin,
-            drag_pin,
-            click_x,
-            drag_x,
-            mods,
-            size,
-        ));
-    }
-
-    // LTR, including click pin cell but not drag pin cell
-    {
-        const click_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 3, .y = 2 },
-        }) orelse unreachable;
-        const drag_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 5, .y = 4 },
-        }) orelse unreachable;
-
-        const click_x =
-            @as(u32, click_pin.x) * size.cell.width + size.padding.left +
-            0; // At px 0 within the cell.
-        const drag_x =
-            @as(u32, drag_pin.x) * size.cell.width + size.padding.left +
-            0; // At px 0 within the cell.
-
-        const start_pin = click_pin;
-        const end_pin = drag_pin.left(1);
-
-        try expectEqual(terminal.Selection{
-            .bounds = .{ .untracked = .{
-                .start = start_pin,
-                .end = end_pin,
-            } },
-            .rectangle = true,
-        }, mouseSelection(
-            click_pin,
-            drag_pin,
-            click_x,
-            drag_x,
-            mods,
-            size,
-        ));
-    }
-
-    // LTR, including drag pin cell but not click pin cell
-    {
-        const click_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 3, .y = 2 },
-        }) orelse unreachable;
-        const drag_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 5, .y = 4 },
-        }) orelse unreachable;
-
-        const click_x =
-            @as(u32, click_pin.x) * size.cell.width + size.padding.left +
-            size.cell.width - 1; // At rightmost px in cell.
-        const drag_x =
-            @as(u32, drag_pin.x) * size.cell.width + size.padding.left +
-            size.cell.width - 1; // At rightmost px in cell.
-
-        const start_pin = click_pin.right(1);
-        const end_pin = drag_pin;
-
-        try expectEqual(terminal.Selection{
-            .bounds = .{ .untracked = .{
-                .start = start_pin,
-                .end = end_pin,
-            } },
-            .rectangle = true,
-        }, mouseSelection(
-            click_pin,
-            drag_pin,
-            click_x,
-            drag_x,
-            mods,
-            size,
-        ));
-    }
-
-    // LTR, including neither click nor drag pin cells
-    {
-        const click_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 3, .y = 2 },
-        }) orelse unreachable;
-        const drag_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 5, .y = 4 },
-        }) orelse unreachable;
-
-        const click_x =
-            @as(u32, click_pin.x) * size.cell.width + size.padding.left +
-            size.cell.width - 1; // At the rightmost px of the cell.
-        const drag_x =
-            @as(u32, drag_pin.x) * size.cell.width + size.padding.left +
-            0; // At px 0 within the cell.
-
-        const start_pin = click_pin.right(1);
-        const end_pin = drag_pin.left(1);
-
-        try expectEqual(terminal.Selection{
-            .bounds = .{ .untracked = .{
-                .start = start_pin,
-                .end = end_pin,
-            } },
-            .rectangle = true,
-        }, mouseSelection(
-            click_pin,
-            drag_pin,
-            click_x,
-            drag_x,
-            mods,
-            size,
-        ));
-    }
-
-    // LTR, empty selection (single column on only left half)
-    {
-        const click_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 3, .y = 2 },
-        }) orelse unreachable;
-        const drag_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 3, .y = 4 },
-        }) orelse unreachable;
-
-        const click_x =
-            @as(u32, click_pin.x) * size.cell.width + size.padding.left +
-            0; // At px 0 within the cell.
-        const drag_x =
-            @as(u32, drag_pin.x) * size.cell.width + size.padding.left +
-            1; // At px 1 within the cell.
-
-        try expectEqual(
-            null,
-            mouseSelection(
-                click_pin,
-                drag_pin,
-                click_x,
-                drag_x,
-                mods,
-                size,
-            ),
-        );
-    }
-
-    // LTR, empty selection (single column on only right half)
-    {
-        const click_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 3, .y = 2 },
-        }) orelse unreachable;
-        const drag_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 3, .y = 4 },
-        }) orelse unreachable;
-
-        const click_x =
-            @as(u32, click_pin.x) * size.cell.width + size.padding.left +
-            size.cell.width - 2; // 1px left of right edge of cell
-        const drag_x =
-            @as(u32, drag_pin.x) * size.cell.width + size.padding.left +
-            size.cell.width - 1; // At right edge of cell
-
-        try expectEqual(
-            null,
-            mouseSelection(
-                click_pin,
-                drag_pin,
-                click_x,
-                drag_x,
-                mods,
-                size,
-            ),
-        );
-    }
-
-    // LTR, empty selection (between two columns, not crossing threshold)
-    {
-        const click_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 3, .y = 2 },
-        }) orelse unreachable;
-        const drag_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 4, .y = 4 },
-        }) orelse unreachable;
-
-        const click_x =
-            @as(u32, click_pin.x) * size.cell.width + size.padding.left +
-            size.cell.width - 1; // At right edge of cell
-        const drag_x =
-            @as(u32, drag_pin.x) * size.cell.width + size.padding.left +
-            0; // At px 0 within the cell
-
-        try expectEqual(
-            null,
-            mouseSelection(
-                click_pin,
-                drag_pin,
-                click_x,
-                drag_x,
-                mods,
-                size,
-            ),
-        );
-    }
-
-    // --- RTL
-
-    // RTL, including click and drag pin cells
-    {
-        const click_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 5, .y = 2 },
-        }) orelse unreachable;
-        const drag_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 3, .y = 4 },
-        }) orelse unreachable;
-
-        const click_x =
-            @as(u32, click_pin.x) * size.cell.width + size.padding.left +
-            size.cell.width - 1; // At the rightmost px of the cell.
-        const drag_x =
-            @as(u32, drag_pin.x) * size.cell.width + size.padding.left +
-            0; // At px 0 within the cell.
-
-        const start_pin = click_pin;
-        const end_pin = drag_pin;
-
-        try expectEqual(terminal.Selection{
-            .bounds = .{ .untracked = .{
-                .start = start_pin,
-                .end = end_pin,
-            } },
-            .rectangle = true,
-        }, mouseSelection(
-            click_pin,
-            drag_pin,
-            click_x,
-            drag_x,
-            mods,
-            size,
-        ));
-    }
-
-    // RTL, including click pin cell but not drag pin cell
-    {
-        const click_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 5, .y = 2 },
-        }) orelse unreachable;
-        const drag_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 3, .y = 4 },
-        }) orelse unreachable;
-
-        const click_x =
-            @as(u32, click_pin.x) * size.cell.width + size.padding.left +
-            size.cell.width - 1; // At the rightmost px of the cell.
-        const drag_x =
-            @as(u32, drag_pin.x) * size.cell.width + size.padding.left +
-            size.cell.width - 1; // At the rightmost px of the cell.
-
-        const start_pin = click_pin;
-        const end_pin = drag_pin.right(1);
-
-        try expectEqual(terminal.Selection{
-            .bounds = .{ .untracked = .{
-                .start = start_pin,
-                .end = end_pin,
-            } },
-            .rectangle = true,
-        }, mouseSelection(
-            click_pin,
-            drag_pin,
-            click_x,
-            drag_x,
-            mods,
-            size,
-        ));
-    }
-
-    // RTL, including drag pin cell but not click pin cell
-    {
-        const click_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 5, .y = 2 },
-        }) orelse unreachable;
-        const drag_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 3, .y = 4 },
-        }) orelse unreachable;
-
-        const click_x =
-            @as(u32, click_pin.x) * size.cell.width + size.padding.left +
-            0; // At px 0 within cell.
-        const drag_x =
-            @as(u32, drag_pin.x) * size.cell.width + size.padding.left +
-            0; // At px 0 within cell.
-
-        const start_pin = click_pin.left(1);
-        const end_pin = drag_pin;
-
-        try expectEqual(terminal.Selection{
-            .bounds = .{ .untracked = .{
-                .start = start_pin,
-                .end = end_pin,
-            } },
-            .rectangle = true,
-        }, mouseSelection(
-            click_pin,
-            drag_pin,
-            click_x,
-            drag_x,
-            mods,
-            size,
-        ));
-    }
-
-    // RTL, including neither click nor drag pin cells
-    {
-        const click_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 5, .y = 2 },
-        }) orelse unreachable;
-        const drag_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 3, .y = 4 },
-        }) orelse unreachable;
-
-        const click_x =
-            @as(u32, click_pin.x) * size.cell.width + size.padding.left +
-            0; // At px 0 within the cell.
-        const drag_x =
-            @as(u32, drag_pin.x) * size.cell.width + size.padding.left +
-            size.cell.width - 1; // At the rightmost px of the cell.
-
-        const start_pin = click_pin.left(1);
-        const end_pin = drag_pin.right(1);
-
-        try expectEqual(terminal.Selection{
-            .bounds = .{ .untracked = .{
-                .start = start_pin,
-                .end = end_pin,
-            } },
-            .rectangle = true,
-        }, mouseSelection(
-            click_pin,
-            drag_pin,
-            click_x,
-            drag_x,
-            mods,
-            size,
-        ));
-    }
-
-    // RTL, empty selection (single column on only left half)
-    {
-        const click_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 3, .y = 2 },
-        }) orelse unreachable;
-        const drag_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 3, .y = 4 },
-        }) orelse unreachable;
-
-        const click_x =
-            @as(u32, click_pin.x) * size.cell.width + size.padding.left +
-            1; // At px 1 within the cell.
-        const drag_x =
-            @as(u32, drag_pin.x) * size.cell.width + size.padding.left +
-            1; // At px 0 within the cell.
-
-        try expectEqual(
-            null,
-            mouseSelection(
-                click_pin,
-                drag_pin,
-                click_x,
-                drag_x,
-                mods,
-                size,
-            ),
-        );
-    }
-
-    // RTL, empty selection (single column on only right half)
-    {
-        const click_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 3, .y = 2 },
-        }) orelse unreachable;
-        const drag_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 3, .y = 4 },
-        }) orelse unreachable;
-
-        const click_x =
-            @as(u32, click_pin.x) * size.cell.width + size.padding.left +
-            size.cell.width - 1; // At right edge of cell
-        const drag_x =
-            @as(u32, drag_pin.x) * size.cell.width + size.padding.left +
-            size.cell.width - 2; // 1px left of right edge of cell
-
-        try expectEqual(
-            null,
-            mouseSelection(
-                click_pin,
-                drag_pin,
-                click_x,
-                drag_x,
-                mods,
-                size,
-            ),
-        );
-    }
-
-    // RTL, empty selection (between two cells, not crossing threshold)
-    {
-        const click_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 4, .y = 2 },
-        }) orelse unreachable;
-        const drag_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 3, .y = 4 },
-        }) orelse unreachable;
-
-        const click_x =
-            @as(u32, click_pin.x) * size.cell.width + size.padding.left +
-            0; // At px 0 within the cell
-        const drag_x =
-            @as(u32, drag_pin.x) * size.cell.width + size.padding.left +
-            size.cell.width - 1; // At right edge of cell
-
-        try expectEqual(
-            null,
-            mouseSelection(
-                click_pin,
-                drag_pin,
-                click_x,
-                drag_x,
-                mods,
-                size,
-            ),
-        );
-    }
+    // -- RTL
+    // single column selection
+    try testMouseSelection(
+        3.9, 2, // click
+        3.0, 4, // drag
+        3, 2, // expected start
+        3, 4, // expected end
+        true, //rectangle selection
+    );
+    // including click and drag pin columns
+    try testMouseSelection(
+        5.9, 2, // click
+        3.0, 4, // drag
+        5, 2, // expected start
+        3, 4, // expected end
+        true, //rectangle selection
+    );
+    // including click pin column but not drag pin column
+    try testMouseSelection(
+        5.9, 2, // click
+        3.9, 4, // drag
+        5, 2, // expected start
+        4, 4, // expected end
+        true, //rectangle selection
+    );
+    // including drag pin column but not click pin column
+    try testMouseSelection(
+        5.0, 2, // click
+        3.0, 4, // drag
+        4, 2, // expected start
+        3, 4, // expected end
+        true, //rectangle selection
+    );
+    // including neither click nor drag pin columns
+    try testMouseSelection(
+        5.0, 2, // click
+        3.9, 4, // drag
+        4, 2, // expected start
+        4, 4, // expected end
+        true, //rectangle selection
+    );
+    // empty selection (single column on only left half)
+    try testMouseSelectionIsNull(
+        3.1, 2, // click
+        3.0, 4, // drag
+        true, //rectangle selection
+    );
+    // empty selection (single column on only right half)
+    try testMouseSelectionIsNull(
+        3.9, 2, // click
+        3.8, 4, // drag
+        true, //rectangle selection
+    );
+    // empty selection (between two columns, not crossing threshold)
+    try testMouseSelectionIsNull(
+        4.0, 2, // click
+        3.9, 4, // drag
+        true, //rectangle selection
+    );
 
     // -- Wrapping
-
     // LTR, do not wrap
-    {
-        const click_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 9, .y = 2 },
-        }) orelse unreachable;
-        const drag_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 0, .y = 4 },
-        }) orelse unreachable;
-
-        const click_x =
-            @as(u32, click_pin.x) * size.cell.width + size.padding.left +
-            size.cell.width - 1; // At right edge of cell
-        const drag_x =
-            @as(u32, drag_pin.x) * size.cell.width + size.padding.left +
-            0; // At px 0 within the cell
-
-        const start_pin = click_pin;
-        const end_pin = drag_pin;
-
-        try expectEqual(terminal.Selection{
-            .bounds = .{ .untracked = .{
-                .start = start_pin,
-                .end = end_pin,
-            } },
-            .rectangle = true,
-        }, mouseSelection(
-            click_pin,
-            drag_pin,
-            click_x,
-            drag_x,
-            mods,
-            size,
-        ));
-    }
-
+    try testMouseSelection(
+        9.9, 2, // click
+        0.0, 4, // drag
+        9, 2, // expected start
+        0, 4, // expected end
+        true, //rectangle selection
+    );
     // RTL, do not wrap
-    {
-        const click_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 0, .y = 4 },
-        }) orelse unreachable;
-        const drag_pin = screen.pages.pin(.{
-            .viewport = .{ .x = 9, .y = 2 },
-        }) orelse unreachable;
-
-        const click_x =
-            @as(u32, click_pin.x) * size.cell.width + size.padding.left +
-            0; // At px 0 within the cell
-        const drag_x =
-            @as(u32, drag_pin.x) * size.cell.width + size.padding.left +
-            size.cell.width - 1; // At right edge of cell
-
-        const start_pin = click_pin;
-        const end_pin = drag_pin;
-
-        try expectEqual(terminal.Selection{
-            .bounds = .{ .untracked = .{
-                .start = start_pin,
-                .end = end_pin,
-            } },
-            .rectangle = true,
-        }, mouseSelection(
-            click_pin,
-            drag_pin,
-            click_x,
-            drag_x,
-            mods,
-            size,
-        ));
-    }
+    try testMouseSelection(
+        0.0, 4, // click
+        9.9, 2, // drag
+        0, 4, // expected start
+        9, 2, // expected end
+        true, //rectangle selection
+    );
 }
