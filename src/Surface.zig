@@ -3678,163 +3678,163 @@ fn dragLeftClickSingle(
     drag_pin: terminal.Pin,
     xpos: f64,
 ) !void {
-    // NOTE(mitchellh): This logic super sucks. There has to be an easier way
-    // to calculate this, but this is good for a v1. Selection isn't THAT
-    // common so its not like this performance heavy code is running that
-    // often.
-    // TODO: unit test this, this logic sucks
+    // TODO: Unit tests for this logic, maybe extract it out to a pure
+    //       function so that it can be tested without mocking state.
 
-    // If we were selecting, and we switched directions, then we restart
-    // calculations because it forces us to reconsider if the first cell is
-    // selected.
-    self.checkResetSelSwitch(drag_pin);
-
-    // Our logic for determining if the starting cell is selected:
+    // Explanation:
     //
-    //   - The "xboundary" is 60% the width of a cell from the left. We choose
-    //     60% somewhat arbitrarily based on feeling.
-    //   - If we started our click left of xboundary, backwards selections
-    //     can NEVER select the current char.
-    //   - If we started our click right of xboundary, backwards selections
-    //     ALWAYS selected the current char, but we must move the cursor
-    //     left of the xboundary.
-    //   - Inverted logic for forwards selections.
+    // # Normal selections
     //
+    // ## Left-to-right selections
+    // - The clicked cell is included if it was clicked to the left of its
+    //   threshold point and the drag location is right of the threshold point.
+    // - The cell under the cursor (the "drag cell") is included if the drag
+    //   location is right of its threshold point.
+    //
+    // ## Right-to-left selections
+    // - The clicked cell is included if it was clicked to the right of its
+    //   threshold point and the drag location is left of the threshold point.
+    // - The cell under the cursor (the "drag cell") is included if the drag
+    //   location is left of its threshold point.
+    //
+    // # Rectangular selections
+    //
+    // Rectangular selections are handled similarly, except that
+    // entire columns are considered rather than individual cells.
 
-    // Our clicking point
     const click_pin = self.mouse.left_click_pin.?.*;
 
-    // the boundary point at which we consider selection or non-selection
-    const cell_width_f64: f64 = @floatFromInt(self.size.cell.width);
-    const cell_xboundary = cell_width_f64 * 0.6;
+    // We only include cells in the selection if the threshold point lies
+    // between the start and end points of the selection. A threshold of
+    // 60% of the cell width was chosen empirically because it felt good.
+    const threshold_point: u32 = @intFromFloat(
+        @as(f64, @floatFromInt(self.size.cell.width)) * 0.6,
+    );
 
-    // first xpos of the clicked cell adjusted for padding
-    const left_padding_f64: f64 = @as(f64, @floatFromInt(self.size.padding.left));
-    const cell_xstart = @as(f64, @floatFromInt(click_pin.x)) * cell_width_f64;
-    const cell_start_xpos = self.mouse.left_click_xpos - cell_xstart - left_padding_f64;
+    // We use this to clamp the pixel positions below.
+    const max_x = self.size.grid().columns * self.size.cell.width - 1;
 
-    // If this is the same cell, then we only start the selection if weve
-    // moved past the boundary point the opposite direction from where we
-    // started.
-    if (click_pin.eql(drag_pin)) {
-        // Ensuring to adjusting the cursor position for padding
-        const cell_xpos = xpos - cell_xstart - left_padding_f64;
-        const selected: bool = if (cell_start_xpos < cell_xboundary)
-            cell_xpos >= cell_xboundary
-        else
-            cell_xpos < cell_xboundary;
+    // We need to know how far across in the cell the drag pos is, so
+    // we subtract the padding and then take it modulo the cell width.
+    const drag_x = @min(
+        max_x,
+        @as(u32, @intFromFloat(@max(0.0, xpos))) -| self.size.padding.left,
+    );
+    const drag_x_frac = drag_x % self.size.cell.width;
 
-        try self.setSelection(if (selected) terminal.Selection.init(
-            drag_pin,
-            drag_pin,
-            SurfaceMouse.isRectangleSelectState(self.mouse.mods),
-        ) else null);
+    // We figure out the fractional part of the click x position similarly.
+    //
+    // NOTE: This click_x position may be incorrect for the current location
+    //       of the click pin, since it's a tracked pin that can move, so we
+    //       should only use this for the fractional position not absolute.
+    const click_x = @min(
+        max_x,
+        @as(u32, @intFromFloat(@max(0.0, self.mouse.left_click_xpos))) -|
+            self.size.padding.left,
+    );
+    const click_x_frac = click_x % self.size.cell.width;
 
-        return;
-    }
+    // Whether or not this is a rectangular selection.
+    const rectangle_selection =
+        SurfaceMouse.isRectangleSelectState(self.mouse.mods);
 
-    // If this is a different cell and we haven't started selection,
-    // we determine the starting cell first.
-    if (self.io.terminal.screen.selection == null) {
-        //   - If we're moving to a point before the start, then we select
-        //     the starting cell if we started after the boundary, else
-        //     we start selection of the prior cell.
-        //   - Inverse logic for a point after the start.
-        const start: terminal.Pin = if (dragLeftClickBefore(
-            drag_pin,
-            click_pin,
-            self.mouse.mods,
-        )) start: {
-            if (cell_start_xpos >= cell_xboundary) break :start click_pin;
-            if (click_pin.x > 0) break :start click_pin.left(1);
-            var start = click_pin.up(1) orelse click_pin;
-            start.x = self.io.terminal.screen.pages.cols - 1;
-            break :start start;
-        } else start: {
-            if (cell_start_xpos < cell_xboundary) break :start click_pin;
-            if (click_pin.x < self.io.terminal.screen.pages.cols - 1)
-                break :start click_pin.right(1);
-            var start = click_pin.down(1) orelse click_pin;
-            start.x = 0;
-            break :start start;
-        };
+    // Whether the click pin and drag pin are equal.
+    const same_pin = drag_pin.eql(click_pin);
 
-        try self.setSelection(terminal.Selection.init(
-            start,
-            drag_pin,
-            SurfaceMouse.isRectangleSelectState(self.mouse.mods),
-        ));
-        return;
-    }
+    // Whether or not the end point of our selection is before the start point.
+    const end_before_start = ebs: {
+        if (same_pin) {
+            break :ebs drag_x_frac < click_x_frac;
+        }
 
-    // TODO: detect if selection point is passed the point where we've
-    // actually written data before and disallow it.
-
-    // We moved! Set the selection end point. The start point should be
-    // set earlier.
-    assert(self.io.terminal.screen.selection != null);
-    const sel = self.io.terminal.screen.selection.?;
-    try self.setSelection(terminal.Selection.init(
-        sel.start(),
-        drag_pin,
-        sel.rectangle,
-    ));
-}
-
-// Resets the selection if we switched directions, depending on the select
-// mode. See dragLeftClickSingle for more details.
-fn checkResetSelSwitch(
-    self: *Surface,
-    drag_pin: terminal.Pin,
-) void {
-    const screen = &self.io.terminal.screen;
-    const sel = screen.selection orelse return;
-    const sel_start = sel.start();
-    const sel_end = sel.end();
-
-    var reset: bool = false;
-    if (sel.rectangle) {
-        // When we're in rectangle mode, we reset the selection relative to
-        // the click point depending on the selection mode we're in, with
-        // the exception of single-column selections, which we always reset
-        // on if we drift.
-        if (sel_start.x == sel_end.x) {
-            reset = drag_pin.x != sel_start.x;
-        } else {
-            reset = switch (sel.order(screen)) {
-                .forward => drag_pin.x < sel_start.x or drag_pin.before(sel_start),
-                .reverse => drag_pin.x > sel_start.x or sel_start.before(drag_pin),
-                .mirrored_forward => drag_pin.x > sel_start.x or drag_pin.before(sel_start),
-                .mirrored_reverse => drag_pin.x < sel_start.x or sel_start.before(drag_pin),
+        // Special handling for rectangular selections, we only use x position.
+        if (rectangle_selection) {
+            break :ebs switch (std.math.order(drag_pin.x, click_pin.x)) {
+                .eq => drag_x_frac < click_x_frac,
+                .lt => true,
+                .gt => false,
             };
         }
-    } else {
-        // Normal select uses simpler logic that is just based on the
-        // selection start/end.
-        reset = if (sel_end.before(sel_start))
-            sel_start.before(drag_pin)
+
+        break :ebs drag_pin.before(click_pin);
+    };
+
+    // Whether or not the the click pin cell
+    // should be included in the selection.
+    const include_click_cell = if (end_before_start)
+        click_x_frac >= threshold_point
+    else
+        click_x_frac < threshold_point;
+
+    // Whether or not the the drag pin cell
+    // should be included in the selection.
+    const include_drag_cell = if (end_before_start)
+        drag_x_frac < threshold_point
+    else
+        drag_x_frac >= threshold_point;
+
+    // If the click cell should be included in the selection then it's the
+    // start, otherwise we get the previous or next cell to it depending on
+    // the type and direction of the selection.
+    const start_pin =
+        if (include_click_cell)
+            click_pin
+        else if (end_before_start)
+            if (rectangle_selection)
+                click_pin.leftClamp(1)
+            else
+                click_pin.leftWrap(1) orelse click_pin
+        else if (rectangle_selection)
+            click_pin.rightClamp(1)
         else
-            drag_pin.before(sel_start);
+            click_pin.rightWrap(1) orelse click_pin;
+
+    // Likewise for the end pin with the drag cell.
+    const end_pin =
+        if (include_drag_cell)
+            drag_pin
+        else if (end_before_start)
+            if (rectangle_selection)
+                drag_pin.rightClamp(1)
+            else
+                drag_pin.rightWrap(1) orelse drag_pin
+        else if (rectangle_selection)
+            drag_pin.leftClamp(1)
+        else
+            drag_pin.leftWrap(1) orelse drag_pin;
+
+    // If the click cell is the same as the drag cell and the click cell
+    // shouldn't be included, or if the cells are adjacent such that the
+    // start or end pin becomes the other cell, and that cell should not
+    // be included, then we have no selection, so we set it to null.
+    //
+    // If in rectangular selection mode, we compare columns as well.
+    //
+    // TODO(qwerasd): this can/should probably be refactored, it's a bit
+    //                repetitive and does excess work in rectangle mode.
+    if ((!include_click_cell and same_pin) or
+        (!include_click_cell and rectangle_selection and click_pin.x == drag_pin.x) or
+        (!include_click_cell and end_pin.eql(click_pin)) or
+        (!include_click_cell and rectangle_selection and end_pin.x == click_pin.x) or
+        (!include_drag_cell and start_pin.eql(drag_pin)) or
+        (!include_drag_cell and rectangle_selection and start_pin.x == drag_pin.x))
+    {
+        try self.setSelection(null);
+        return;
     }
 
-    // Nullifying a selection can't fail.
-    if (reset) self.setSelection(null) catch unreachable;
-}
+    // TODO: Clamp selection to the screen area, don't
+    //       let it extend past the last written row.
 
-// Handles how whether or not the drag screen point is before the click point.
-// When we are in rectangle select, we only interpret the x axis to determine
-// where to start the selection (before or after the click point). See
-// dragLeftClickSingle for more details.
-fn dragLeftClickBefore(
-    drag_pin: terminal.Pin,
-    click_pin: terminal.Pin,
-    mods: input.Mods,
-) bool {
-    if (mods.ctrlOrSuper() and mods.alt) {
-        return drag_pin.x < click_pin.x;
-    }
+    try self.setSelection(
+        terminal.Selection.init(
+            start_pin,
+            end_pin,
+            rectangle_selection,
+        ),
+    );
 
-    return drag_pin.before(click_pin);
+    return;
 }
 
 /// Call to notify Ghostty that the color scheme for the terminal has
