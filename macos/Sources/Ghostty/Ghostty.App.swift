@@ -745,7 +745,7 @@ extension Ghostty {
                 guard let surface = target.target.surface else { return }
                 guard let surfaceView = self.surfaceView(from: surface) else { return }
                 guard let mode = FullscreenMode.from(ghostty: raw) else {
-                    Ghostty.logger.warning("unknow fullscreen mode raw=\(raw.rawValue)")
+                    Ghostty.logger.warning("unknown fullscreen mode raw=\(raw.rawValue)")
                     return
                 }
                 NotificationCenter.default.post(
@@ -1082,7 +1082,7 @@ extension Ghostty {
                 guard let surface = target.target.surface else { return }
                 guard let surfaceView = self.surfaceView(from: surface) else { return }
                 guard let window = surfaceView.window as? TerminalWindow else { return }
-                
+
                 switch (mode) {
                 case .on:
                     window.level = .floating
