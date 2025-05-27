@@ -3572,6 +3572,74 @@ pub const Pin = struct {
         return result;
     }
 
+    /// Move the pin left n columns, stopping at the start of the row.
+    pub fn leftClamp(self: Pin, n: size.CellCountInt) Pin {
+        var result = self;
+        result.x -|= n;
+        return result;
+    }
+
+    /// Move the pin right n columns, stopping at the end of the row.
+    pub fn rightClamp(self: Pin, n: size.CellCountInt) Pin {
+        var result = self;
+        result.x = @min(self.x +| n, self.node.data.size.cols - 1);
+        return result;
+    }
+
+    /// Move the pin left n cells, wrapping to the previous row as needed.
+    ///
+    /// If the offset goes beyond the top of the screen, returns null.
+    ///
+    /// TODO: Unit tests.
+    pub fn leftWrap(self: Pin, n: usize) ?Pin {
+        // NOTE: This assumes that all pages have the same width, which may
+        //       be violated under certain circumstances by incomplete reflow.
+        const cols = self.node.data.size.cols;
+        const remaining_in_row = self.x;
+
+        if (n <= remaining_in_row) return self.left(n);
+
+        const extra_after_remaining = n - remaining_in_row;
+
+        const rows_off = 1 + extra_after_remaining / cols;
+
+        switch (self.upOverflow(rows_off)) {
+            .offset => |v| {
+                var result = v;
+                result.x = @intCast(cols - extra_after_remaining % cols);
+                return result;
+            },
+            .overflow => return null,
+        }
+    }
+
+    /// Move the pin right n cells, wrapping to the next row as needed.
+    ///
+    /// If the offset goes beyond the bottom of the screen, returns null.
+    ///
+    /// TODO: Unit tests.
+    pub fn rightWrap(self: Pin, n: usize) ?Pin {
+        // NOTE: This assumes that all pages have the same width, which may
+        //       be violated under certain circumstances by incomplete reflow.
+        const cols = self.node.data.size.cols;
+        const remaining_in_row = cols - self.x - 1;
+
+        if (n <= remaining_in_row) return self.right(n);
+
+        const extra_after_remaining = n - remaining_in_row;
+
+        const rows_off = 1 + extra_after_remaining / cols;
+
+        switch (self.downOverflow(rows_off)) {
+            .offset => |v| {
+                var result = v;
+                result.x = @intCast(extra_after_remaining % cols - 1);
+                return result;
+            },
+            .overflow => return null,
+        }
+    }
+
     /// Move the pin down a certain number of rows, or return null if
     /// the pin goes beyond the end of the screen.
     pub fn down(self: Pin, n: usize) ?Pin {
