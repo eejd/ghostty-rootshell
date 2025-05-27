@@ -79,7 +79,7 @@ default_palette: color.Palette = color.default,
 color_palette: struct {
     const Mask = std.StaticBitSet(@typeInfo(color.Palette).array.len);
     colors: color.Palette = color.default,
-    mask: Mask = Mask.initEmpty(),
+    mask: Mask = .initEmpty(),
 } = .{},
 
 /// The previous printed character. This is used for the repeat previous
@@ -210,9 +210,9 @@ pub fn init(
         .cols = cols,
         .rows = rows,
         .active_screen = .primary,
-        .screen = try Screen.init(alloc, cols, rows, opts.max_scrollback),
-        .secondary_screen = try Screen.init(alloc, cols, rows, 0),
-        .tabstops = try Tabstops.init(alloc, cols, TABSTOP_INTERVAL),
+        .screen = try .init(alloc, cols, rows, opts.max_scrollback),
+        .secondary_screen = try .init(alloc, cols, rows, 0),
+        .tabstops = try .init(alloc, cols, TABSTOP_INTERVAL),
         .scrolling_region = .{
             .top = 0,
             .bottom = rows - 1,
@@ -2454,7 +2454,7 @@ pub fn resize(
     // Resize our tabstops
     if (self.cols != cols) {
         self.tabstops.deinit(alloc);
-        self.tabstops = try Tabstops.init(alloc, cols, 8);
+        self.tabstops = try .init(alloc, cols, 8);
     }
 
     // If we're making the screen smaller, dealloc the unused items.

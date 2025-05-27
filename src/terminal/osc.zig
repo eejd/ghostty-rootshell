@@ -1354,8 +1354,8 @@ pub const Parser = struct {
         }
 
         switch (self.command) {
-            .report_color => |*c| c.terminator = Terminator.init(terminator_ch),
-            .kitty_color_protocol => |*c| c.terminator = Terminator.init(terminator_ch),
+            .report_color => |*c| c.terminator = .init(terminator_ch),
+            .kitty_color_protocol => |*c| c.terminator = .init(terminator_ch),
             else => {},
         }
 

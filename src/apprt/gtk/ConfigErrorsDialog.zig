@@ -32,9 +32,9 @@ pub fn maybePresent(app: *App, window: ?*Window) void {
     const config_errors_dialog = config_errors_dialog: {
         if (app.config_errors_dialog) |config_errors_dialog| break :config_errors_dialog config_errors_dialog;
 
-        var builder = switch (DialogType) {
-            adw.AlertDialog => Builder.init("config-errors-dialog", 1, 5),
-            adw.MessageDialog => Builder.init("config-errors-dialog", 1, 2),
+        var builder: Builder = switch (DialogType) {
+            adw.AlertDialog => .init("config-errors-dialog", 1, 5),
+            adw.MessageDialog => .init("config-errors-dialog", 1, 2),
             else => unreachable,
         };
 

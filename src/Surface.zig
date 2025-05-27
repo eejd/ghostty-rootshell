@@ -463,7 +463,7 @@ pub fn init(
     // Create our terminal grid with the initial size
     const app_mailbox: App.Mailbox = .{ .rt_app = rt_app, .mailbox = &app.mailbox };
     var renderer_impl = try Renderer.init(alloc, .{
-        .config = try Renderer.DerivedConfig.init(alloc, config),
+        .config = try .init(alloc, config),
         .font_grid = font_grid,
         .size = size,
         .surface_mailbox = .{ .surface = self, .app = app_mailbox },
