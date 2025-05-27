@@ -3827,7 +3827,7 @@ fn mouseSelection(
     // TODO: Clamp selection to the screen area, don't
     //       let it extend past the last written row.
 
-    return terminal.Selection.init(
+    return .init(
         start_pin,
         end_pin,
         rectangle_selection,
