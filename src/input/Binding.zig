@@ -71,7 +71,7 @@ pub const Parser = struct {
         // parse the action now.
         return .{
             .trigger_it = .{ .input = input[0..eql_idx] },
-            .action = try Action.parse(input[eql_idx + 1 ..]),
+            .action = try .parse(input[eql_idx + 1 ..]),
             .flags = flags,
         };
     }
@@ -158,7 +158,7 @@ const SequenceIterator = struct {
         const rem = self.input[self.i..];
         const idx = std.mem.indexOf(u8, rem, ">") orelse rem.len;
         defer self.i += idx + 1;
-        return try Trigger.parse(rem[0..idx]);
+        return try .parse(rem[0..idx]);
     }
 
     /// Returns true if there are no more triggers to parse.

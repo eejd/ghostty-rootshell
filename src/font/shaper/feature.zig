@@ -21,7 +21,7 @@ pub const Feature = struct {
     pub fn fromString(str: []const u8) ?Feature {
         var fbs = std.io.fixedBufferStream(str);
         const reader = fbs.reader();
-        return Feature.fromReader(reader);
+        return .fromReader(reader);
     }
 
     /// Parse a single font feature setting from a std.io.Reader, with a version

@@ -24,9 +24,9 @@ pub const LazyPathList = std.ArrayList(std.Build.LazyPath);
 pub fn init(b: *std.Build, cfg: *const Config) !SharedDeps {
     var result: SharedDeps = .{
         .config = cfg,
-        .help_strings = try HelpStrings.init(b, cfg),
-        .unicode_tables = try UnicodeTables.init(b),
-        .framedata = try GhosttyFrameData.init(b),
+        .help_strings = try .init(b, cfg),
+        .unicode_tables = try .init(b),
+        .framedata = try .init(b),
 
         // Setup by retarget
         .options = undefined,
@@ -72,7 +72,7 @@ fn initTarget(
     target: std.Build.ResolvedTarget,
 ) !void {
     // Update our metallib
-    self.metallib = MetallibStep.create(b, .{
+    self.metallib = .create(b, .{
         .name = "Ghostty",
         .target = target,
         .sources = &.{b.path("src/renderer/shaders/cell.metal")},

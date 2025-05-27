@@ -217,7 +217,7 @@ intermediates_idx: u8 = 0,
 
 /// Param tracking, building
 params: [MAX_PARAMS]u16 = undefined,
-params_sep: Action.CSI.SepList = Action.CSI.SepList.initEmpty(),
+params_sep: Action.CSI.SepList = .initEmpty(),
 params_idx: u8 = 0,
 param_acc: u16 = 0,
 param_acc_idx: u8 = 0,
@@ -395,7 +395,7 @@ fn doAction(self: *Parser, action: TransitionAction, c: u8) ?Action {
 pub fn clear(self: *Parser) void {
     self.intermediates_idx = 0;
     self.params_idx = 0;
-    self.params_sep = Action.CSI.SepList.initEmpty();
+    self.params_sep = .initEmpty();
     self.param_acc = 0;
     self.param_acc_idx = 0;
 }

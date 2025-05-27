@@ -287,8 +287,8 @@ fn initPages(
         // Initialize the first set of pages to contain our viewport so that
         // the top of the first page is always the active area.
         node.* = .{
-            .data = Page.initBuf(
-                OffsetBuf.init(page_buf),
+            .data = .initBuf(
+                .init(page_buf),
                 Page.layout(cap),
             ),
         };
@@ -472,7 +472,7 @@ pub fn clone(
             };
 
             // Setup our pools
-            break :alloc try MemoryPool.init(
+            break :alloc try .init(
                 alloc,
                 std.heap.page_allocator,
                 page_count,
@@ -1201,7 +1201,7 @@ const ReflowCursor = struct {
         node.data.size.rows = 1;
         list.pages.insertAfter(self.node, node);
 
-        self.* = ReflowCursor.init(node);
+        self.* = .init(node);
 
         self.new_rows = new_rows;
     }
@@ -1817,7 +1817,7 @@ pub fn grow(self: *PageList) !?*List.Node {
         @memset(buf, 0);
 
         // Initialize our new page and reinsert it as the last
-        first.data = Page.initBuf(OffsetBuf.init(buf), layout);
+        first.data = .initBuf(.init(buf), layout);
         first.data.size.rows = 1;
         self.pages.insertAfter(last, first);
 
@@ -1989,7 +1989,7 @@ fn createPageExt(
     // to undefined, 0xAA.
     if (comptime std.debug.runtime_safety) @memset(page_buf, 0);
 
-    page.* = .{ .data = Page.initBuf(OffsetBuf.init(page_buf), layout) };
+    page.* = .{ .data = .initBuf(.init(page_buf), layout) };
     page.data.size.rows = 0;
 
     if (total_size) |v| {

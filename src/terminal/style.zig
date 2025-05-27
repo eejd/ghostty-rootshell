@@ -302,9 +302,9 @@ pub const Style = struct {
                     .underline = std.meta.activeTag(style.underline_color),
                 },
                 .data = .{
-                    .fg = Data.fromColor(style.fg_color),
-                    .bg = Data.fromColor(style.bg_color),
-                    .underline = Data.fromColor(style.underline_color),
+                    .fg = .fromColor(style.fg_color),
+                    .bg = .fromColor(style.bg_color),
+                    .underline = .fromColor(style.underline_color),
                 },
                 .flags = style.flags,
             };
@@ -349,7 +349,7 @@ test "Set basic usage" {
     const style: Style = .{ .flags = .{ .bold = true } };
     const style2: Style = .{ .flags = .{ .italic = true } };
 
-    var set = Set.init(OffsetBuf.init(buf), layout, .{});
+    var set = Set.init(.init(buf), layout, .{});
 
     // Add style
     const id = try set.add(buf, style);

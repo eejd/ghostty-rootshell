@@ -109,7 +109,7 @@ pub const App = struct {
         return .{
             .display = xlib_display,
             .base_event_code = base_event_code,
-            .atoms = Atoms.init(gdk_x11_display),
+            .atoms = .init(gdk_x11_display),
         };
     }
 

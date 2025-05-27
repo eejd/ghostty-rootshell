@@ -2531,7 +2531,7 @@ pub fn load(alloc_gpa: Allocator) !Config {
 pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
     // Build up our basic config
     var result: Config = .{
-        ._arena = ArenaAllocator.init(alloc_gpa),
+        ._arena = .init(alloc_gpa),
     };
     errdefer result.deinit();
     const alloc = result._arena.?.allocator();
@@ -3332,7 +3332,7 @@ pub fn parseManuallyHook(
 /// be deallocated while shallow clones exist.
 pub fn shallowClone(self: *const Config, alloc_gpa: Allocator) Config {
     var result = self.*;
-    result._arena = ArenaAllocator.init(alloc_gpa);
+    result._arena = .init(alloc_gpa);
     return result;
 }
 
@@ -5975,7 +5975,7 @@ pub const QuickTerminalSize = struct {
             it.next() orelse return error.ValueRequired,
             cli.args.whitespace,
         );
-        self.primary = try Size.parse(primary);
+        self.primary = try .parse(primary);
 
         self.secondary = secondary: {
             const secondary = std.mem.trim(
@@ -5983,7 +5983,7 @@ pub const QuickTerminalSize = struct {
                 it.next() orelse break :secondary null,
                 cli.args.whitespace,
             );
-            break :secondary try Size.parse(secondary);
+            break :secondary try .parse(secondary);
         };
 
         if (it.next()) |_| return error.TooManyArguments;
