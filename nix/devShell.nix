@@ -16,7 +16,7 @@
   python3,
   qemu,
   scdoc,
-  snapcraft,
+  # snapcraft,
   valgrind,
   #, vulkan-loader # unused
   vttest,
@@ -134,7 +134,7 @@ in
         appstream
         flatpak-builder
         gdb
-        snapcraft
+        # snapcraft
         valgrind
         wraptest
 
