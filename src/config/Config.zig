@@ -410,7 +410,7 @@ pub const renamed = std.StaticStringMap([]const u8).initComptime(&.{
 /// include path separators unless it is an absolute pathname.
 ///
 /// The first directory is the `themes` subdirectory of your Ghostty
-/// configuration directory. This is `$XDG_CONFIG_DIR/ghostty/themes` or
+/// configuration directory. This is `$XDG_CONFIG_HOME/ghostty/themes` or
 /// `~/.config/ghostty/themes`.
 ///
 /// The second directory is the `themes` subdirectory of the Ghostty resources
