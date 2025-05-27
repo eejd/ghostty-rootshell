@@ -516,40 +516,40 @@ fn draw(self: Box, alloc: Allocator, canvas: *font.sprite.Canvas, cp: u32) !void
         0x257f => self.draw_lines(canvas, .{ .up = .heavy, .down = .light }),
 
         // '▀' UPPER HALF BLOCK
-        0x2580 => self.draw_block(canvas, Alignment.upper, 1, half),
+        0x2580 => self.draw_block(canvas, .upper, 1, half),
         // '▁' LOWER ONE EIGHTH BLOCK
-        0x2581 => self.draw_block(canvas, Alignment.lower, 1, one_eighth),
+        0x2581 => self.draw_block(canvas, .lower, 1, one_eighth),
         // '▂' LOWER ONE QUARTER BLOCK
-        0x2582 => self.draw_block(canvas, Alignment.lower, 1, one_quarter),
+        0x2582 => self.draw_block(canvas, .lower, 1, one_quarter),
         // '▃' LOWER THREE EIGHTHS BLOCK
-        0x2583 => self.draw_block(canvas, Alignment.lower, 1, three_eighths),
+        0x2583 => self.draw_block(canvas, .lower, 1, three_eighths),
         // '▄' LOWER HALF BLOCK
-        0x2584 => self.draw_block(canvas, Alignment.lower, 1, half),
+        0x2584 => self.draw_block(canvas, .lower, 1, half),
         // '▅' LOWER FIVE EIGHTHS BLOCK
-        0x2585 => self.draw_block(canvas, Alignment.lower, 1, five_eighths),
+        0x2585 => self.draw_block(canvas, .lower, 1, five_eighths),
         // '▆' LOWER THREE QUARTERS BLOCK
-        0x2586 => self.draw_block(canvas, Alignment.lower, 1, three_quarters),
+        0x2586 => self.draw_block(canvas, .lower, 1, three_quarters),
         // '▇' LOWER SEVEN EIGHTHS BLOCK
-        0x2587 => self.draw_block(canvas, Alignment.lower, 1, seven_eighths),
+        0x2587 => self.draw_block(canvas, .lower, 1, seven_eighths),
         // '█' FULL BLOCK
         0x2588 => self.draw_full_block(canvas),
         // '▉' LEFT SEVEN EIGHTHS BLOCK
-        0x2589 => self.draw_block(canvas, Alignment.left, seven_eighths, 1),
+        0x2589 => self.draw_block(canvas, .left, seven_eighths, 1),
         // '▊' LEFT THREE QUARTERS BLOCK
-        0x258a => self.draw_block(canvas, Alignment.left, three_quarters, 1),
+        0x258a => self.draw_block(canvas, .left, three_quarters, 1),
         // '▋' LEFT FIVE EIGHTHS BLOCK
-        0x258b => self.draw_block(canvas, Alignment.left, five_eighths, 1),
+        0x258b => self.draw_block(canvas, .left, five_eighths, 1),
         // '▌' LEFT HALF BLOCK
-        0x258c => self.draw_block(canvas, Alignment.left, half, 1),
+        0x258c => self.draw_block(canvas, .left, half, 1),
         // '▍' LEFT THREE EIGHTHS BLOCK
-        0x258d => self.draw_block(canvas, Alignment.left, three_eighths, 1),
+        0x258d => self.draw_block(canvas, .left, three_eighths, 1),
         // '▎' LEFT ONE QUARTER BLOCK
-        0x258e => self.draw_block(canvas, Alignment.left, one_quarter, 1),
+        0x258e => self.draw_block(canvas, .left, one_quarter, 1),
         // '▏' LEFT ONE EIGHTH BLOCK
-        0x258f => self.draw_block(canvas, Alignment.left, one_eighth, 1),
+        0x258f => self.draw_block(canvas, .left, one_eighth, 1),
 
         // '▐' RIGHT HALF BLOCK
-        0x2590 => self.draw_block(canvas, Alignment.right, half, 1),
+        0x2590 => self.draw_block(canvas, .right, half, 1),
         // '░'
         0x2591 => self.draw_light_shade(canvas),
         // '▒'
@@ -557,9 +557,9 @@ fn draw(self: Box, alloc: Allocator, canvas: *font.sprite.Canvas, cp: u32) !void
         // '▓'
         0x2593 => self.draw_dark_shade(canvas),
         // '▔' UPPER ONE EIGHTH BLOCK
-        0x2594 => self.draw_block(canvas, Alignment.upper, 1, one_eighth),
+        0x2594 => self.draw_block(canvas, .upper, 1, one_eighth),
         // '▕' RIGHT ONE EIGHTH BLOCK
-        0x2595 => self.draw_block(canvas, Alignment.right, one_eighth, 1),
+        0x2595 => self.draw_block(canvas, .right, one_eighth, 1),
         // '▖'
         0x2596 => self.draw_quadrant(canvas, .{ .bl = true }),
         // '▗'
@@ -588,35 +588,35 @@ fn draw(self: Box, alloc: Allocator, canvas: *font.sprite.Canvas, cp: u32) !void
         octant_min...octant_max => self.draw_octant(canvas, cp),
 
         // '🬼'
-        0x1fb3c => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+        0x1fb3c => try self.draw_smooth_mosaic(canvas, .from(
             \\...
             \\...
             \\#..
             \\##.
         )),
         // '🬽'
-        0x1fb3d => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+        0x1fb3d => try self.draw_smooth_mosaic(canvas, .from(
             \\...
             \\...
             \\#\.
             \\###
         )),
         // '🬾'
-        0x1fb3e => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+        0x1fb3e => try self.draw_smooth_mosaic(canvas, .from(
             \\...
             \\#..
             \\#\.
             \\##.
         )),
         // '🬿'
-        0x1fb3f => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+        0x1fb3f => try self.draw_smooth_mosaic(canvas, .from(
             \\...
             \\#..
             \\##.
             \\###
         )),
         // '🭀'
-        0x1fb40 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+        0x1fb40 => try self.draw_smooth_mosaic(canvas, .from(
             \\#..
             \\#..
             \\##.
@@ -624,42 +624,42 @@ fn draw(self: Box, alloc: Allocator, canvas: *font.sprite.Canvas, cp: u32) !void
         )),
 
         // '🭁'
-        0x1fb41 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+        0x1fb41 => try self.draw_smooth_mosaic(canvas, .from(
             \\/##
             \\###
             \\###
             \\###
         )),
         // '🭂'
-        0x1fb42 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+        0x1fb42 => try self.draw_smooth_mosaic(canvas, .from(
             \\./#
             \\###
             \\###
             \\###
         )),
         // '🭃'
-        0x1fb43 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+        0x1fb43 => try self.draw_smooth_mosaic(canvas, .from(
             \\.##
             \\.##
             \\###
             \\###
         )),
         // '🭄'
-        0x1fb44 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+        0x1fb44 => try self.draw_smooth_mosaic(canvas, .from(
             \\..#
             \\.##
             \\###
             \\###
         )),
         // '🭅'
-        0x1fb45 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+        0x1fb45 => try self.draw_smooth_mosaic(canvas, .from(
             \\.##
             \\.##
             \\.##
             \\###
         )),
         // '🭆'
-        0x1fb46 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+        0x1fb46 => try self.draw_smooth_mosaic(canvas, .from(
             \\...
             \\./#
             \\###
@@ -667,35 +667,35 @@ fn draw(self: Box, alloc: Allocator, canvas: *font.sprite.Canvas, cp: u32) !void
         )),
 
         // '🭇'
-        0x1fb47 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+        0x1fb47 => try self.draw_smooth_mosaic(canvas, .from(
             \\...
             \\...
             \\..#
             \\.##
         )),
         // '🭈'
-        0x1fb48 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+        0x1fb48 => try self.draw_smooth_mosaic(canvas, .from(
             \\...
             \\...
             \\./#
             \\###
         )),
         // '🭉'
-        0x1fb49 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+        0x1fb49 => try self.draw_smooth_mosaic(canvas, .from(
             \\...
             \\..#
             \\./#
             \\.##
         )),
         // '🭊'
-        0x1fb4a => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+        0x1fb4a => try self.draw_smooth_mosaic(canvas, .from(
             \\...
             \\..#
             \\.##
             \\###
         )),
         // '🭋'
-        0x1fb4b => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+        0x1fb4b => try self.draw_smooth_mosaic(canvas, .from(
             \\..#
             \\..#
             \\.##
@@ -703,42 +703,42 @@ fn draw(self: Box, alloc: Allocator, canvas: *font.sprite.Canvas, cp: u32) !void
         )),
 
         // '🭌'
-        0x1fb4c => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+        0x1fb4c => try self.draw_smooth_mosaic(canvas, .from(
             \\##\
             \\###
             \\###
             \\###
         )),
         // '🭍'
-        0x1fb4d => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+        0x1fb4d => try self.draw_smooth_mosaic(canvas, .from(
             \\#\.
             \\###
             \\###
             \\###
         )),
         // '🭎'
-        0x1fb4e => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+        0x1fb4e => try self.draw_smooth_mosaic(canvas, .from(
             \\##.
             \\##.
             \\###
             \\###
         )),
         // '🭏'
-        0x1fb4f => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+        0x1fb4f => try self.draw_smooth_mosaic(canvas, .from(
             \\#..
             \\##.
             \\###
             \\###
         )),
         // '🭐'
-        0x1fb50 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+        0x1fb50 => try self.draw_smooth_mosaic(canvas, .from(
             \\##.
             \\##.
             \\##.
             \\###
         )),
         // '🭑'
-        0x1fb51 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+        0x1fb51 => try self.draw_smooth_mosaic(canvas, .from(
             \\...
             \\#\.
             \\###
@@ -746,35 +746,35 @@ fn draw(self: Box, alloc: Allocator, canvas: *font.sprite.Canvas, cp: u32) !void
         )),
 
         // '🭒'
-        0x1fb52 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+        0x1fb52 => try self.draw_smooth_mosaic(canvas, .from(
             \\###
             \\###
             \\###
             \\\##
         )),
         // '🭓'
-        0x1fb53 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+        0x1fb53 => try self.draw_smooth_mosaic(canvas, .from(
             \\###
             \\###
             \\###
             \\.\#
         )),
         // '🭔'
-        0x1fb54 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+        0x1fb54 => try self.draw_smooth_mosaic(canvas, .from(
             \\###
             \\###
             \\.##
             \\.##
         )),
         // '🭕'
-        0x1fb55 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+        0x1fb55 => try self.draw_smooth_mosaic(canvas, .from(
             \\###
             \\###
             \\.##
             \\..#
         )),
         // '🭖'
-        0x1fb56 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+        0x1fb56 => try self.draw_smooth_mosaic(canvas, .from(
             \\###
             \\.##
             \\.##
@@ -782,35 +782,35 @@ fn draw(self: Box, alloc: Allocator, canvas: *font.sprite.Canvas, cp: u32) !void
         )),
 
         // '🭗'
-        0x1fb57 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+        0x1fb57 => try self.draw_smooth_mosaic(canvas, .from(
             \\##.
             \\#..
             \\...
             \\...
         )),
         // '🭘'
-        0x1fb58 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+        0x1fb58 => try self.draw_smooth_mosaic(canvas, .from(
             \\###
             \\#/.
             \\...
             \\...
         )),
         // '🭙'
-        0x1fb59 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+        0x1fb59 => try self.draw_smooth_mosaic(canvas, .from(
             \\##.
             \\#/.
             \\#..
             \\...
         )),
         // '🭚'
-        0x1fb5a => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+        0x1fb5a => try self.draw_smooth_mosaic(canvas, .from(
             \\###
             \\##.
             \\#..
             \\...
         )),
         // '🭛'
-        0x1fb5b => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+        0x1fb5b => try self.draw_smooth_mosaic(canvas, .from(
             \\##.
             \\##.
             \\#..
@@ -818,42 +818,42 @@ fn draw(self: Box, alloc: Allocator, canvas: *font.sprite.Canvas, cp: u32) !void
         )),
 
         // '🭜'
-        0x1fb5c => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+        0x1fb5c => try self.draw_smooth_mosaic(canvas, .from(
             \\###
             \\###
             \\#/.
             \\...
         )),
         // '🭝'
-        0x1fb5d => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+        0x1fb5d => try self.draw_smooth_mosaic(canvas, .from(
             \\###
             \\###
             \\###
             \\##/
         )),
         // '🭞'
-        0x1fb5e => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+        0x1fb5e => try self.draw_smooth_mosaic(canvas, .from(
             \\###
             \\###
             \\###
             \\#/.
         )),
         // '🭟'
-        0x1fb5f => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+        0x1fb5f => try self.draw_smooth_mosaic(canvas, .from(
             \\###
             \\###
             \\##.
             \\##.
         )),
         // '🭠'
-        0x1fb60 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+        0x1fb60 => try self.draw_smooth_mosaic(canvas, .from(
             \\###
             \\###
             \\##.
             \\#..
         )),
         // '🭡'
-        0x1fb61 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+        0x1fb61 => try self.draw_smooth_mosaic(canvas, .from(
             \\###
             \\##.
             \\##.
@@ -861,42 +861,42 @@ fn draw(self: Box, alloc: Allocator, canvas: *font.sprite.Canvas, cp: u32) !void
         )),
 
         // '🭢'
-        0x1fb62 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+        0x1fb62 => try self.draw_smooth_mosaic(canvas, .from(
             \\.##
             \\..#
             \\...
             \\...
         )),
         // '🭣'
-        0x1fb63 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+        0x1fb63 => try self.draw_smooth_mosaic(canvas, .from(
             \\###
             \\.\#
             \\...
             \\...
         )),
         // '🭤'
-        0x1fb64 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+        0x1fb64 => try self.draw_smooth_mosaic(canvas, .from(
             \\.##
             \\.\#
             \\..#
             \\...
         )),
         // '🭥'
-        0x1fb65 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+        0x1fb65 => try self.draw_smooth_mosaic(canvas, .from(
             \\###
             \\.##
             \\..#
             \\...
         )),
         // '🭦'
-        0x1fb66 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+        0x1fb66 => try self.draw_smooth_mosaic(canvas, .from(
             \\.##
             \\.##
             \\..#
             \\..#
         )),
         // '🭧'
-        0x1fb67 => try self.draw_smooth_mosaic(canvas, SmoothMosaic.from(
+        0x1fb67 => try self.draw_smooth_mosaic(canvas, .from(
             \\###
             \\###
             \\.\#
@@ -959,79 +959,79 @@ fn draw(self: Box, alloc: Allocator, canvas: *font.sprite.Canvas, cp: u32) !void
         0x1fb7b => self.draw_horizontal_one_eighth_block_n(canvas, 6),
 
         // '🮂' UPPER ONE QUARTER BLOCK
-        0x1fb82 => self.draw_block(canvas, Alignment.upper, 1, one_quarter),
+        0x1fb82 => self.draw_block(canvas, .upper, 1, one_quarter),
         // '🮃' UPPER THREE EIGHTHS BLOCK
-        0x1fb83 => self.draw_block(canvas, Alignment.upper, 1, three_eighths),
+        0x1fb83 => self.draw_block(canvas, .upper, 1, three_eighths),
         // '🮄' UPPER FIVE EIGHTHS BLOCK
-        0x1fb84 => self.draw_block(canvas, Alignment.upper, 1, five_eighths),
+        0x1fb84 => self.draw_block(canvas, .upper, 1, five_eighths),
         // '🮅' UPPER THREE QUARTERS BLOCK
-        0x1fb85 => self.draw_block(canvas, Alignment.upper, 1, three_quarters),
+        0x1fb85 => self.draw_block(canvas, .upper, 1, three_quarters),
         // '🮆' UPPER SEVEN EIGHTHS BLOCK
-        0x1fb86 => self.draw_block(canvas, Alignment.upper, 1, seven_eighths),
+        0x1fb86 => self.draw_block(canvas, .upper, 1, seven_eighths),
 
         // '🭼' LEFT AND LOWER ONE EIGHTH BLOCK
         0x1fb7c => {
-            self.draw_block(canvas, Alignment.left, one_eighth, 1);
-            self.draw_block(canvas, Alignment.lower, 1, one_eighth);
+            self.draw_block(canvas, .left, one_eighth, 1);
+            self.draw_block(canvas, .lower, 1, one_eighth);
         },
         // '🭽' LEFT AND UPPER ONE EIGHTH BLOCK
         0x1fb7d => {
-            self.draw_block(canvas, Alignment.left, one_eighth, 1);
-            self.draw_block(canvas, Alignment.upper, 1, one_eighth);
+            self.draw_block(canvas, .left, one_eighth, 1);
+            self.draw_block(canvas, .upper, 1, one_eighth);
         },
         // '🭾' RIGHT AND UPPER ONE EIGHTH BLOCK
         0x1fb7e => {
-            self.draw_block(canvas, Alignment.right, one_eighth, 1);
-            self.draw_block(canvas, Alignment.upper, 1, one_eighth);
+            self.draw_block(canvas, .right, one_eighth, 1);
+            self.draw_block(canvas, .upper, 1, one_eighth);
         },
         // '🭿' RIGHT AND LOWER ONE EIGHTH BLOCK
         0x1fb7f => {
-            self.draw_block(canvas, Alignment.right, one_eighth, 1);
-            self.draw_block(canvas, Alignment.lower, 1, one_eighth);
+            self.draw_block(canvas, .right, one_eighth, 1);
+            self.draw_block(canvas, .lower, 1, one_eighth);
         },
         // '🮀' UPPER AND LOWER ONE EIGHTH BLOCK
         0x1fb80 => {
-            self.draw_block(canvas, Alignment.upper, 1, one_eighth);
-            self.draw_block(canvas, Alignment.lower, 1, one_eighth);
+            self.draw_block(canvas, .upper, 1, one_eighth);
+            self.draw_block(canvas, .lower, 1, one_eighth);
         },
         // '🮁'
         0x1fb81 => self.draw_horizontal_one_eighth_1358_block(canvas),
 
         // '🮇' RIGHT ONE QUARTER BLOCK
-        0x1fb87 => self.draw_block(canvas, Alignment.right, one_quarter, 1),
+        0x1fb87 => self.draw_block(canvas, .right, one_quarter, 1),
         // '🮈' RIGHT THREE EIGHTHS BLOCK
-        0x1fb88 => self.draw_block(canvas, Alignment.right, three_eighths, 1),
+        0x1fb88 => self.draw_block(canvas, .right, three_eighths, 1),
         // '🮉' RIGHT FIVE EIGHTHS BLOCK
-        0x1fb89 => self.draw_block(canvas, Alignment.right, five_eighths, 1),
+        0x1fb89 => self.draw_block(canvas, .right, five_eighths, 1),
         // '🮊' RIGHT THREE QUARTERS BLOCK
-        0x1fb8a => self.draw_block(canvas, Alignment.right, three_quarters, 1),
+        0x1fb8a => self.draw_block(canvas, .right, three_quarters, 1),
         // '🮋' RIGHT SEVEN EIGHTHS BLOCK
-        0x1fb8b => self.draw_block(canvas, Alignment.right, seven_eighths, 1),
+        0x1fb8b => self.draw_block(canvas, .right, seven_eighths, 1),
         // '🮌'
-        0x1fb8c => self.draw_block_shade(canvas, Alignment.left, half, 1, .medium),
+        0x1fb8c => self.draw_block_shade(canvas, .left, half, 1, .medium),
         // '🮍'
-        0x1fb8d => self.draw_block_shade(canvas, Alignment.right, half, 1, .medium),
+        0x1fb8d => self.draw_block_shade(canvas, .right, half, 1, .medium),
         // '🮎'
-        0x1fb8e => self.draw_block_shade(canvas, Alignment.upper, 1, half, .medium),
+        0x1fb8e => self.draw_block_shade(canvas, .upper, 1, half, .medium),
         // '🮏'
-        0x1fb8f => self.draw_block_shade(canvas, Alignment.lower, 1, half, .medium),
+        0x1fb8f => self.draw_block_shade(canvas, .lower, 1, half, .medium),
 
         // '🮐'
         0x1fb90 => self.draw_medium_shade(canvas),
         // '🮑'
         0x1fb91 => {
             self.draw_medium_shade(canvas);
-            self.draw_block(canvas, Alignment.upper, 1, half);
+            self.draw_block(canvas, .upper, 1, half);
         },
         // '🮒'
         0x1fb92 => {
             self.draw_medium_shade(canvas);
-            self.draw_block(canvas, Alignment.lower, 1, half);
+            self.draw_block(canvas, .lower, 1, half);
         },
         // '🮔'
         0x1fb94 => {
             self.draw_medium_shade(canvas);
-            self.draw_block(canvas, Alignment.right, half, 1);
+            self.draw_block(canvas, .right, half, 1);
         },
         // '🮕'
         0x1fb95 => self.draw_checkerboard_fill(canvas, 0),
@@ -1117,194 +1117,194 @@ fn draw(self: Box, alloc: Allocator, canvas: *font.sprite.Canvas, cp: u32) !void
         },
 
         // '🯎'
-        0x1fbce => self.draw_block(canvas, Alignment.left, two_thirds, 1),
+        0x1fbce => self.draw_block(canvas, .left, two_thirds, 1),
         // '🯏'
-        0x1fbcf => self.draw_block(canvas, Alignment.left, one_third, 1),
+        0x1fbcf => self.draw_block(canvas, .left, one_third, 1),
         // '🯐'
         0x1fbd0 => self.draw_cell_diagonal(
             canvas,
-            Alignment.middle_right,
-            Alignment.lower_left,
+            .middle_right,
+            .lower_left,
         ),
         // '🯑'
         0x1fbd1 => self.draw_cell_diagonal(
             canvas,
-            Alignment.upper_right,
-            Alignment.middle_left,
+            .upper_right,
+            .middle_left,
         ),
         // '🯒'
         0x1fbd2 => self.draw_cell_diagonal(
             canvas,
-            Alignment.upper_left,
-            Alignment.middle_right,
+            .upper_left,
+            .middle_right,
         ),
         // '🯓'
         0x1fbd3 => self.draw_cell_diagonal(
             canvas,
-            Alignment.middle_left,
-            Alignment.lower_right,
+            .middle_left,
+            .lower_right,
         ),
         // '🯔'
         0x1fbd4 => self.draw_cell_diagonal(
             canvas,
-            Alignment.upper_left,
-            Alignment.lower_center,
+            .upper_left,
+            .lower_center,
         ),
         // '🯕'
         0x1fbd5 => self.draw_cell_diagonal(
             canvas,
-            Alignment.upper_center,
-            Alignment.lower_right,
+            .upper_center,
+            .lower_right,
         ),
         // '🯖'
         0x1fbd6 => self.draw_cell_diagonal(
             canvas,
-            Alignment.upper_right,
-            Alignment.lower_center,
+            .upper_right,
+            .lower_center,
         ),
         // '🯗'
         0x1fbd7 => self.draw_cell_diagonal(
             canvas,
-            Alignment.upper_center,
-            Alignment.lower_left,
+            .upper_center,
+            .lower_left,
         ),
         // '🯘'
         0x1fbd8 => {
             self.draw_cell_diagonal(
                 canvas,
-                Alignment.upper_left,
-                Alignment.middle_center,
+                .upper_left,
+                .middle_center,
             );
             self.draw_cell_diagonal(
                 canvas,
-                Alignment.middle_center,
-                Alignment.upper_right,
+                .middle_center,
+                .upper_right,
             );
         },
         // '🯙'
         0x1fbd9 => {
             self.draw_cell_diagonal(
                 canvas,
-                Alignment.upper_right,
-                Alignment.middle_center,
+                .upper_right,
+                .middle_center,
             );
             self.draw_cell_diagonal(
                 canvas,
-                Alignment.middle_center,
-                Alignment.lower_right,
+                .middle_center,
+                .lower_right,
             );
         },
         // '🯚'
         0x1fbda => {
             self.draw_cell_diagonal(
                 canvas,
-                Alignment.lower_left,
-                Alignment.middle_center,
+                .lower_left,
+                .middle_center,
             );
             self.draw_cell_diagonal(
                 canvas,
-                Alignment.middle_center,
-                Alignment.lower_right,
+                .middle_center,
+                .lower_right,
             );
         },
         // '🯛'
         0x1fbdb => {
             self.draw_cell_diagonal(
                 canvas,
-                Alignment.upper_left,
-                Alignment.middle_center,
+                .upper_left,
+                .middle_center,
             );
             self.draw_cell_diagonal(
                 canvas,
-                Alignment.middle_center,
-                Alignment.lower_left,
+                .middle_center,
+                .lower_left,
             );
         },
         // '🯜'
         0x1fbdc => {
             self.draw_cell_diagonal(
                 canvas,
-                Alignment.upper_left,
-                Alignment.lower_center,
+                .upper_left,
+                .lower_center,
             );
             self.draw_cell_diagonal(
                 canvas,
-                Alignment.lower_center,
-                Alignment.upper_right,
+                .lower_center,
+                .upper_right,
             );
         },
         // '🯝'
         0x1fbdd => {
             self.draw_cell_diagonal(
                 canvas,
-                Alignment.upper_right,
-                Alignment.middle_left,
+                .upper_right,
+                .middle_left,
             );
             self.draw_cell_diagonal(
                 canvas,
-                Alignment.middle_left,
-                Alignment.lower_right,
+                .middle_left,
+                .lower_right,
             );
         },
         // '🯞'
         0x1fbde => {
             self.draw_cell_diagonal(
                 canvas,
-                Alignment.lower_left,
-                Alignment.upper_center,
+                .lower_left,
+                .upper_center,
             );
             self.draw_cell_diagonal(
                 canvas,
-                Alignment.upper_center,
-                Alignment.lower_right,
+                .upper_center,
+                .lower_right,
             );
         },
         // '🯟'
         0x1fbdf => {
             self.draw_cell_diagonal(
                 canvas,
-                Alignment.upper_left,
-                Alignment.middle_right,
+                .upper_left,
+                .middle_right,
             );
             self.draw_cell_diagonal(
                 canvas,
-                Alignment.middle_right,
-                Alignment.lower_left,
+                .middle_right,
+                .lower_left,
             );
         },
 
         // '🯠'
-        0x1fbe0 => self.draw_circle(canvas, Alignment.top, false),
+        0x1fbe0 => self.draw_circle(canvas, .top, false),
         // '🯡'
-        0x1fbe1 => self.draw_circle(canvas, Alignment.right, false),
+        0x1fbe1 => self.draw_circle(canvas, .right, false),
         // '🯢'
-        0x1fbe2 => self.draw_circle(canvas, Alignment.bottom, false),
+        0x1fbe2 => self.draw_circle(canvas, .bottom, false),
         // '🯣'
-        0x1fbe3 => self.draw_circle(canvas, Alignment.left, false),
+        0x1fbe3 => self.draw_circle(canvas, .left, false),
         // '🯤'
-        0x1fbe4 => self.draw_block(canvas, Alignment.upper_center, 0.5, 0.5),
+        0x1fbe4 => self.draw_block(canvas, .upper_center, 0.5, 0.5),
         // '🯥'
-        0x1fbe5 => self.draw_block(canvas, Alignment.lower_center, 0.5, 0.5),
+        0x1fbe5 => self.draw_block(canvas, .lower_center, 0.5, 0.5),
         // '🯦'
-        0x1fbe6 => self.draw_block(canvas, Alignment.middle_left, 0.5, 0.5),
+        0x1fbe6 => self.draw_block(canvas, .middle_left, 0.5, 0.5),
         // '🯧'
-        0x1fbe7 => self.draw_block(canvas, Alignment.middle_right, 0.5, 0.5),
+        0x1fbe7 => self.draw_block(canvas, .middle_right, 0.5, 0.5),
         // '🯨'
-        0x1fbe8 => self.draw_circle(canvas, Alignment.top, true),
+        0x1fbe8 => self.draw_circle(canvas, .top, true),
         // '🯩'
-        0x1fbe9 => self.draw_circle(canvas, Alignment.right, true),
+        0x1fbe9 => self.draw_circle(canvas, .right, true),
         // '🯪'
-        0x1fbea => self.draw_circle(canvas, Alignment.bottom, true),
+        0x1fbea => self.draw_circle(canvas, .bottom, true),
         // '🯫'
-        0x1fbeb => self.draw_circle(canvas, Alignment.left, true),
+        0x1fbeb => self.draw_circle(canvas, .left, true),
         // '🯬'
-        0x1fbec => self.draw_circle(canvas, Alignment.top_right, true),
+        0x1fbec => self.draw_circle(canvas, .top_right, true),
         // '🯭'
-        0x1fbed => self.draw_circle(canvas, Alignment.bottom_left, true),
+        0x1fbed => self.draw_circle(canvas, .bottom_left, true),
         // '🯮'
-        0x1fbee => self.draw_circle(canvas, Alignment.bottom_right, true),
+        0x1fbee => self.draw_circle(canvas, .bottom_right, true),
         // '🯯'
-        0x1fbef => self.draw_circle(canvas, Alignment.top_left, true),
+        0x1fbef => self.draw_circle(canvas, .top_left, true),
 
         // (Below:)
         // Branch drawing character set, used for drawing git-like
