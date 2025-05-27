@@ -582,6 +582,16 @@ pub const StreamHandler = struct {
                 self.terminal.scrolling_region.right = self.terminal.cols - 1;
             },
 
+            .alt_screen_legacy => {
+                if (enabled)
+                    self.terminal.alternateScreen(.{})
+                else
+                    self.terminal.primaryScreen(.{});
+
+                // Schedule a render since we changed screens
+                try self.queueRender();
+            },
+
             .alt_screen => {
                 const opts: terminal.Terminal.AlternateScreenOptions = .{
                     .cursor_save = false,
