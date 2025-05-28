@@ -498,7 +498,7 @@ pub const Key = struct {
     /// each style. For example, bold is from
     /// offsets[@intFromEnum(.bold) - 1] to
     /// offsets[@intFromEnum(.bold)].
-    style_offsets: StyleOffsets = .{0} ** style_offsets_len,
+    style_offsets: StyleOffsets = @splat(0),
 
     /// The codepoint map configuration.
     codepoint_map: CodepointMap = .{},

@@ -2329,7 +2329,7 @@ pub fn printAttributes(self: *Terminal, buf: []u8) ![]const u8 {
     try writer.writeByte('0');
 
     const pen = self.screen.cursor.style;
-    var attrs = [_]u8{0} ** 8;
+    var attrs: [8]u8 = @splat(0);
     var i: usize = 0;
 
     if (pen.flags.bold) {

@@ -2517,7 +2517,7 @@ fn draw_octant(self: Box, canvas: *font.sprite.Canvas, cp: u32) void {
     const octants: [octants_len]Octant = comptime octants: {
         @setEvalBranchQuota(10_000);
 
-        var result: [octants_len]Octant = .{Octant{}} ** octants_len;
+        var result: [octants_len]Octant = @splat(.{});
         var i: usize = 0;
 
         const data = @embedFile("octants.txt");

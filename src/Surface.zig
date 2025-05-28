@@ -160,7 +160,7 @@ pub const InputEffect = enum {
 /// Mouse state for the surface.
 const Mouse = struct {
     /// The last tracked mouse button state by button.
-    click_state: [input.MouseButton.max]input.MouseButtonState = .{.release} ** input.MouseButton.max,
+    click_state: [input.MouseButton.max]input.MouseButtonState = @splat(.release),
 
     /// The last mods state when the last mouse button (whatever it was) was
     /// pressed or release.
