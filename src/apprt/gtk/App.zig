@@ -481,6 +481,7 @@ pub fn performAction(
         .config_change => self.configChange(target, value.config),
         .reload_config => try self.reloadConfig(target, value),
         .inspector => self.controlInspector(target, value),
+        .show_gtk_inspector => self.showGTKInspector(),
         .desktop_notification => self.showDesktopNotification(target, value),
         .set_title => try self.setTitle(target, value),
         .pwd => try self.setPwd(target, value),
@@ -685,6 +686,12 @@ fn controlInspector(
     };
 
     surface.controlInspector(mode);
+}
+
+fn showGTKInspector(
+    _: *const App,
+) void {
+    gtk.Window.setInteractiveDebugging(@intFromBool(true));
 }
 
 fn toggleMaximize(_: *App, target: apprt.Target) void {
@@ -1060,6 +1067,7 @@ fn syncActionAccelerators(self: *App) !void {
     try self.syncActionAccelerator("app.open-config", .{ .open_config = {} });
     try self.syncActionAccelerator("app.reload-config", .{ .reload_config = {} });
     try self.syncActionAccelerator("win.toggle-inspector", .{ .inspector = .toggle });
+    try self.syncActionAccelerator("app.show-gtk-inspector", .show_gtk_inspector);
     try self.syncActionAccelerator("win.toggle-command-palette", .toggle_command_palette);
     try self.syncActionAccelerator("win.close", .{ .close_window = {} });
     try self.syncActionAccelerator("win.new-window", .{ .new_window = {} });
@@ -1655,6 +1663,16 @@ fn gtkActionPresentSurface(
     );
 }
 
+fn gtkActionShowGTKInspector(
+    _: *gio.SimpleAction,
+    _: ?*glib.Variant,
+    self: *App,
+) callconv(.c) void {
+    self.core_app.performAction(self, .show_gtk_inspector) catch |err| {
+        log.err("error showing GTK inspector err={}", .{err});
+    };
+}
+
 /// This is called to setup the action map that this application supports.
 /// This should be called only once on startup.
 fn initActions(self: *App) void {
@@ -1673,6 +1691,7 @@ fn initActions(self: *App) void {
         .{ "open-config", gtkActionOpenConfig, null },
         .{ "reload-config", gtkActionReloadConfig, null },
         .{ "present-surface", gtkActionPresentSurface, t },
+        .{ "show-gtk-inspector", gtkActionShowGTKInspector, null },
     };
     inline for (actions) |entry| {
         const action = gio.SimpleAction.new(entry[0], entry[2]);

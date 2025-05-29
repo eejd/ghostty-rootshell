@@ -298,6 +298,12 @@ fn actionCommands(action: Action.Key) []const Command {
             .description = "Toggle the inspector.",
         }},
 
+        .show_gtk_inspector => comptime &.{.{
+            .action = .show_gtk_inspector,
+            .title = "Show the GTK Inspector",
+            .description = "Show the GTK inspector.",
+        }},
+
         .open_config => comptime &.{.{
             .action = .open_config,
             .title = "Open Config",
