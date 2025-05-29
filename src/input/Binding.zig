@@ -222,13 +222,20 @@ pub fn lessThan(_: void, lhs: Binding, rhs: Binding) bool {
 
 /// The set of actions that a keybinding can take.
 pub const Action = union(enum) {
-    /// Ignore this key combination, don't send it to the child process, just
-    /// black hole it.
+    /// Ignore this key combination, don't send it to the child process,
+    /// pretend that it never happened at the Ghostty level. The key
+    /// combination may still be processed by the OS or other
+    /// applications.
     ignore,
 
     /// This action is used to flag that the binding should be removed from
     /// the set. This should never exist in an active set and `set.put` has an
     /// assertion to verify this.
+    ///
+    /// This is only able to unbind bindings that were previously
+    /// bound to Ghostty. This cannot unbind bindings that were not
+    /// bound by Ghostty (e.g. bindings set by the OS or some other
+    /// application).
     unbind,
 
     /// Send a CSI sequence. The value should be the CSI sequence without the

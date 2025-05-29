@@ -2069,12 +2069,18 @@ fn maybeHandleBinding(
         break :performed try self.performBindingAction(action);
     };
 
-    // If we performed an action and it was a closing action,
-    // our "self" pointer is not safe to use anymore so we need to
-    // just exit immediately.
-    if (performed and closingAction(action)) {
-        log.debug("key binding is a closing binding, halting key event processing", .{});
-        return .closed;
+    if (performed) {
+        // If we performed an action and it was a closing action,
+        // our "self" pointer is not safe to use anymore so we need to
+        // just exit immediately.
+        if (closingAction(action)) {
+            log.debug("key binding is a closing binding, halting key event processing", .{});
+            return .closed;
+        }
+
+        // If our action was "ignore" then we return the special input
+        // effect of "ignored".
+        if (action == .ignore) return .ignored;
     }
 
     // If we have the performable flag and the action was not performed,
