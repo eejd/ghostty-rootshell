@@ -583,42 +583,17 @@ pub const StreamHandler = struct {
             },
 
             .alt_screen_legacy => {
-                if (enabled)
-                    self.terminal.alternateScreen(.{})
-                else
-                    self.terminal.primaryScreen(.{});
-
-                // Schedule a render since we changed screens
+                self.terminal.switchScreenMode(.@"47", enabled);
                 try self.queueRender();
             },
 
             .alt_screen => {
-                const opts: terminal.Terminal.AlternateScreenOptions = .{
-                    .cursor_save = false,
-                    .clear_on_enter = false,
-                };
-
-                if (enabled)
-                    self.terminal.alternateScreen(opts)
-                else
-                    self.terminal.primaryScreen(opts);
-
-                // Schedule a render since we changed screens
+                self.terminal.switchScreenMode(.@"1047", enabled);
                 try self.queueRender();
             },
 
             .alt_screen_save_cursor_clear_enter => {
-                const opts: terminal.Terminal.AlternateScreenOptions = .{
-                    .cursor_save = true,
-                    .clear_on_enter = true,
-                };
-
-                if (enabled)
-                    self.terminal.alternateScreen(opts)
-                else
-                    self.terminal.primaryScreen(opts);
-
-                // Schedule a render since we changed screens
+                self.terminal.switchScreenMode(.@"1049", enabled);
                 try self.queueRender();
             },
 
