@@ -90,6 +90,7 @@ pub const DerivedConfig = struct {
     quick_terminal_position: configpkg.Config.QuickTerminalPosition,
     quick_terminal_size: configpkg.Config.QuickTerminalSize,
     quick_terminal_autohide: bool,
+    quick_terminal_keyboard_interactivity: configpkg.Config.QuickTerminalKeyboardInteractivity,
 
     maximize: bool,
     fullscreen: bool,
@@ -109,6 +110,7 @@ pub const DerivedConfig = struct {
             .quick_terminal_position = config.@"quick-terminal-position",
             .quick_terminal_size = config.@"quick-terminal-size",
             .quick_terminal_autohide = config.@"quick-terminal-autohide",
+            .quick_terminal_keyboard_interactivity = config.@"quick-terminal-keyboard-interactivity",
 
             .maximize = config.maximize,
             .fullscreen = config.fullscreen,

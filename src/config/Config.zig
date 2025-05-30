@@ -1808,6 +1808,34 @@ keybind: Keybinds = .{},
 /// On Linux the behavior is always equivalent to `move`.
 @"quick-terminal-space-behavior": QuickTerminalSpaceBehavior = .move,
 
+/// Determines under which circumstances that the quick terminal should receive
+/// keyboard input. See the corresponding [Wayland documentation](https://wayland.app/protocols/wlr-layer-shell-unstable-v1#zwlr_layer_surface_v1:enum:keyboard_interactivity)
+/// for a more detailed explanation of the behavior of each option.
+///
+/// > [!NOTE]
+/// > The exact behavior of each option may differ significantly across
+/// > compositors -- experiment with them on your system to find one that
+/// > suits your liking!
+///
+/// Valid values are:
+///
+///  * `none`
+///
+///    The quick terminal will not receive any keyboard input.
+///
+///  * `on-demand` (default)
+///
+///    The quick terminal would only receive keyboard input when it is focused.
+///
+///  * `exclusive`
+///
+///    The quick terminal will always receive keyboard input, even when another
+///    window is currently focused.
+///
+/// Only has an effect on Linux Wayland.
+/// On macOS the behavior is always equivalent to `on-demand`.
+@"quick-terminal-keyboard-interactivity": QuickTerminalKeyboardInteractivity = .@"on-demand",
+
 /// Whether to enable shell integration auto-injection or not. Shell integration
 /// greatly enhances the terminal experience by enabling a number of features:
 ///
@@ -6136,6 +6164,13 @@ pub const QuickTerminalScreen = enum {
 pub const QuickTerminalSpaceBehavior = enum {
     remain,
     move,
+};
+
+/// See quick-terminal-keyboard-interactivity
+pub const QuickTerminalKeyboardInteractivity = enum {
+    none,
+    @"on-demand",
+    exclusive,
 };
 
 /// See grapheme-width-method

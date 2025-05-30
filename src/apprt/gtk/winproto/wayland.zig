@@ -110,7 +110,6 @@ pub const App = struct {
 
         gtk4_layer_shell.initForWindow(window);
         gtk4_layer_shell.setLayer(window, .top);
-        gtk4_layer_shell.setKeyboardMode(window, .on_demand);
     }
 
     fn registryListener(
@@ -356,15 +355,24 @@ pub const Window = struct {
 
     fn syncQuickTerminal(self: *Window) !void {
         const window = self.apprt_window.window.as(gtk.Window);
-        const position = self.apprt_window.config.quick_terminal_position;
+        const config = &self.apprt_window.config;
 
-        const anchored_edge: ?gtk4_layer_shell.ShellEdge = switch (position) {
+        const anchored_edge: ?gtk4_layer_shell.ShellEdge = switch (config.quick_terminal_position) {
             .left => .left,
             .right => .right,
             .top => .top,
             .bottom => .bottom,
             .center => null,
         };
+
+        gtk4_layer_shell.setKeyboardMode(
+            window,
+            switch (config.quick_terminal_keyboard_interactivity) {
+                .none => .none,
+                .@"on-demand" => .on_demand,
+                .exclusive => .exclusive,
+            },
+        );
 
         for (std.meta.tags(gtk4_layer_shell.ShellEdge)) |edge| {
             if (anchored_edge) |anchored| {
@@ -412,16 +420,18 @@ pub const Window = struct {
         apprt_window: *ApprtWindow,
     ) callconv(.c) void {
         const window = apprt_window.window.as(gtk.Window);
-        const size = apprt_window.config.quick_terminal_size;
-        const position = apprt_window.config.quick_terminal_position;
+        const config = &apprt_window.config;
 
         var monitor_size: gdk.Rectangle = undefined;
         monitor.getGeometry(&monitor_size);
 
-        const dims = size.calculate(position, .{
-            .width = @intCast(monitor_size.f_width),
-            .height = @intCast(monitor_size.f_height),
-        });
+        const dims = config.quick_terminal_size.calculate(
+            config.quick_terminal_position,
+            .{
+                .width = @intCast(monitor_size.f_width),
+                .height = @intCast(monitor_size.f_height),
+            },
+        );
 
         window.setDefaultSize(@intCast(dims.width), @intCast(dims.height));
     }
