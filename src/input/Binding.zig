@@ -404,6 +404,9 @@ pub const Action = union(enum) {
     ///   keybind = cmd+i=inspector:toggle
     inspector: InspectorMode,
 
+    /// Show the GTK inspector.
+    show_gtk_inspector,
+
     /// Open the configuration file in the default OS editor. If your default OS
     /// editor isn't configured then this will fail. Currently, any failures to
     /// open the configuration will show up only in the logs.
@@ -802,6 +805,7 @@ pub const Action = union(enum) {
             .toggle_quick_terminal,
             .toggle_visibility,
             .check_for_updates,
+            .show_gtk_inspector,
             => .app,
 
             // These are app but can be special-cased in a surface context.
