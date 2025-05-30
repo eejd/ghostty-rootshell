@@ -176,8 +176,8 @@ pub const App = struct {
 pub const Window = struct {
     app: *App,
     config: *const ApprtWindow.DerivedConfig,
-    window: xlib.Window,
     gtk_window: *adw.ApplicationWindow,
+    x11_surface: *gdk_x11.X11Surface,
 
     blur_region: Region = .{},
 
@@ -192,13 +192,6 @@ pub const Window = struct {
             gtk.Native,
         ).getSurface() orelse return error.NotX11Surface;
 
-        // Check if we're actually on X11
-        if (gobject.typeCheckInstanceIsA(
-            surface.as(gobject.TypeInstance),
-            gdk_x11.X11Surface.getGObjectType(),
-        ) == 0)
-            return error.NotX11Surface;
-
         const x11_surface = gobject.ext.cast(
             gdk_x11.X11Surface,
             surface,
@@ -207,8 +200,8 @@ pub const Window = struct {
         return .{
             .app = app,
             .config = &apprt_window.config,
-            .window = x11_surface.getXid(),
             .gtk_window = apprt_window.window,
+            .x11_surface = x11_surface,
         };
     }
 
@@ -279,7 +272,7 @@ pub const Window = struct {
         const blur = self.config.background_blur;
         log.debug("set blur={}, window xid={}, region={}", .{
             blur,
-            self.window,
+            self.x11_surface.getXid(),
             self.blur_region,
         });
 
@@ -335,9 +328,17 @@ pub const Window = struct {
 
     pub fn addSubprocessEnv(self: *Window, env: *std.process.EnvMap) !void {
         var buf: [64]u8 = undefined;
-        const window_id = try std.fmt.bufPrint(&buf, "{}", .{self.window});
+        const window_id = try std.fmt.bufPrint(
+            &buf,
+            "{}",
+            .{self.x11_surface.getXid()},
+        );
 
         try env.put("WINDOWID", window_id);
+    }
+
+    pub fn setUrgent(self: *Window, urgent: bool) !void {
+        self.x11_surface.setUrgencyHint(@intFromBool(urgent));
     }
 
     fn getWindowProperty(
@@ -363,7 +364,7 @@ pub const Window = struct {
 
         const code = c.XGetWindowProperty(
             @ptrCast(@alignCast(self.app.display)),
-            self.window,
+            self.x11_surface.getXid(),
             name,
             options.offset,
             options.length,
@@ -401,7 +402,7 @@ pub const Window = struct {
 
         const status = c.XChangeProperty(
             @ptrCast(@alignCast(self.app.display)),
-            self.window,
+            self.x11_surface.getXid(),
             name,
             typ,
             @intFromEnum(format),
@@ -419,7 +420,7 @@ pub const Window = struct {
     fn deleteProperty(self: *Window, name: c.Atom) X11Error!void {
         const status = c.XDeleteProperty(
             @ptrCast(@alignCast(self.app.display)),
-            self.window,
+            self.x11_surface.getXid(),
             name,
         );
         if (status == 0) return error.RequestFailed;

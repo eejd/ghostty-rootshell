@@ -2447,6 +2447,11 @@ pub fn ringBell(self: *Surface) !void {
         // Need attention if we're not the currently selected tab
         if (page.getSelected() == 0) page.setNeedsAttention(@intFromBool(true));
     }
+
+    // Request user attention
+    window.winproto.setUrgent(true) catch |err| {
+        log.err("failed to request user attention={}", .{err});
+    };
 }
 
 /// Handle a stream that is in an error state.

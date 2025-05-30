@@ -16,6 +16,7 @@ const ApprtWindow = @import("../Window.zig");
 
 const wl = wayland.client.wl;
 const org = wayland.client.org;
+const xdg = wayland.client.xdg;
 
 const log = std.log.scoped(.winproto_wayland);
 
@@ -34,6 +35,8 @@ pub const App = struct {
         kde_slide_manager: ?*org.KdeKwinSlideManager = null,
 
         default_deco_mode: ?org.KdeKwinServerDecorationManager.Mode = null,
+
+        xdg_activation: ?*xdg.ActivationV1 = null,
     };
 
     pub fn init(
@@ -150,6 +153,15 @@ pub const App = struct {
                     context.kde_slide_manager = slide_manager;
                     return;
                 }
+
+                if (registryBind(
+                    xdg.ActivationV1,
+                    registry,
+                    global,
+                )) |activation| {
+                    context.xdg_activation = activation;
+                    return;
+                }
             },
 
             // We don't handle removal events
@@ -207,15 +219,19 @@ pub const Window = struct {
     app_context: *App.Context,
 
     /// A token that, when present, indicates that the window is blurred.
-    blur_token: ?*org.KdeKwinBlur,
+    blur_token: ?*org.KdeKwinBlur = null,
 
     /// Object that controls the decoration mode (client/server/auto)
     /// of the window.
-    decoration: ?*org.KdeKwinServerDecoration,
+    decoration: ?*org.KdeKwinServerDecoration = null,
 
     /// Object that controls the slide-in/slide-out animations of the
     /// quick terminal. Always null for windows other than the quick terminal.
-    slide: ?*org.KdeKwinSlide,
+    slide: ?*org.KdeKwinSlide = null,
+
+    /// Object that, when present, denotes that the window is currently
+    /// requesting attention from the user.
+    activation_token: ?*xdg.ActivationTokenV1 = null,
 
     pub fn init(
         alloc: Allocator,
@@ -268,9 +284,7 @@ pub const Window = struct {
             .apprt_window = apprt_window,
             .surface = wl_surface,
             .app_context = app.context,
-            .blur_token = null,
             .decoration = deco,
-            .slide = null,
         };
     }
 
@@ -313,6 +327,21 @@ pub const Window = struct {
     pub fn addSubprocessEnv(self: *Window, env: *std.process.EnvMap) !void {
         _ = self;
         _ = env;
+    }
+
+    pub fn setUrgent(self: *Window, urgent: bool) !void {
+        const activation = self.app_context.xdg_activation orelse return;
+
+        // If there already is a token, destroy and unset it
+        if (self.activation_token) |token| token.destroy();
+
+        self.activation_token = if (urgent) token: {
+            const token = try activation.getActivationToken();
+            token.setSurface(self.surface);
+            token.setListener(*Window, onActivationTokenEvent, self);
+            token.commit();
+            break :token token;
+        } else null;
     }
 
     /// Update the blur state of the window.
@@ -439,5 +468,27 @@ pub const Window = struct {
         );
 
         window.setDefaultSize(@intCast(dims.width), @intCast(dims.height));
+    }
+
+    fn onActivationTokenEvent(
+        token: *xdg.ActivationTokenV1,
+        event: xdg.ActivationTokenV1.Event,
+        self: *Window,
+    ) void {
+        const activation = self.app_context.xdg_activation orelse return;
+        const current_token = self.activation_token orelse return;
+
+        if (token.getId() != current_token.getId()) {
+            log.warn("received event for unknown activation token; ignoring", .{});
+            return;
+        }
+
+        switch (event) {
+            .done => |done| {
+                activation.activate(done.token, self.surface);
+                token.destroy();
+                self.activation_token = null;
+            },
+        }
     }
 };
