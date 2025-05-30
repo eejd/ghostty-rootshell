@@ -36,16 +36,11 @@ pub const App = struct {
         config: *const Config,
     ) !?App {
         // If the display isn't X11, then we don't need to do anything.
-        if (gobject.typeCheckInstanceIsA(
-            gdk_display.as(gobject.TypeInstance),
-            gdk_x11.X11Display.getGObjectType(),
-        ) == 0) return null;
-
-        // Get our X11 display
         const gdk_x11_display = gobject.ext.cast(
             gdk_x11.X11Display,
             gdk_display,
         ) orelse return null;
+
         const xlib_display = gdk_x11_display.getXdisplay();
 
         const x11_program_name: [:0]const u8 = if (config.@"x11-instance-name") |pn|
