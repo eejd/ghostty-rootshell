@@ -27,6 +27,10 @@ pub fn isSupported() bool {
     return c.gtk_layer_is_supported() != 0;
 }
 
+pub fn getProtocolVersion() c_uint {
+    return c.gtk_layer_get_protocol_version();
+}
+
 pub fn initForWindow(window: *gtk.Window) void {
     c.gtk_layer_init_for_window(@ptrCast(window));
 }

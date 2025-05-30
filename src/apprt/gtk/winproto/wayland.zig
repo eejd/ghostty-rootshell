@@ -369,7 +369,13 @@ pub const Window = struct {
             window,
             switch (config.quick_terminal_keyboard_interactivity) {
                 .none => .none,
-                .@"on-demand" => .on_demand,
+                .@"on-demand" => on_demand: {
+                    if (gtk4_layer_shell.getProtocolVersion() < 4) {
+                        log.warn("your compositor does not support on-demand keyboard access; falling back to exclusive access", .{});
+                        break :on_demand .exclusive;
+                    }
+                    break :on_demand .on_demand;
+                },
                 .exclusive => .exclusive,
             },
         );
