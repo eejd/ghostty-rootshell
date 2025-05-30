@@ -6,8 +6,8 @@ const build_options = @import("build_options");
 const gdk = @import("gdk");
 const gdk_wayland = @import("gdk_wayland");
 const gobject = @import("gobject");
-const gtk4_layer_shell = @import("gtk4-layer-shell");
 const gtk = @import("gtk");
+const layer_shell = @import("gtk4-layer-shell");
 const wayland = @import("wayland");
 
 const Config = @import("../../../config.zig").Config;
@@ -98,7 +98,7 @@ pub const App = struct {
     }
 
     pub fn supportsQuickTerminal(_: App) bool {
-        if (!gtk4_layer_shell.isSupported()) {
+        if (!layer_shell.isSupported()) {
             log.warn("your compositor does not support the wlr-layer-shell protocol; disabling quick terminal", .{});
             return false;
         }
@@ -108,8 +108,8 @@ pub const App = struct {
     pub fn initQuickTerminal(_: *App, apprt_window: *ApprtWindow) !void {
         const window = apprt_window.window.as(gtk.Window);
 
-        gtk4_layer_shell.initForWindow(window);
-        gtk4_layer_shell.setLayer(window, .top);
+        layer_shell.initForWindow(window);
+        layer_shell.setLayer(window, .top);
     }
 
     fn registryListener(
@@ -357,7 +357,7 @@ pub const Window = struct {
         const window = self.apprt_window.window.as(gtk.Window);
         const config = &self.apprt_window.config;
 
-        const anchored_edge: ?gtk4_layer_shell.ShellEdge = switch (config.quick_terminal_position) {
+        const anchored_edge: ?layer_shell.ShellEdge = switch (config.quick_terminal_position) {
             .left => .left,
             .right => .right,
             .top => .top,
@@ -365,12 +365,12 @@ pub const Window = struct {
             .center => null,
         };
 
-        gtk4_layer_shell.setKeyboardMode(
+        layer_shell.setKeyboardMode(
             window,
             switch (config.quick_terminal_keyboard_interactivity) {
                 .none => .none,
                 .@"on-demand" => on_demand: {
-                    if (gtk4_layer_shell.getProtocolVersion() < 4) {
+                    if (layer_shell.getProtocolVersion() < 4) {
                         log.warn("your compositor does not support on-demand keyboard access; falling back to exclusive access", .{});
                         break :on_demand .exclusive;
                     }
@@ -380,18 +380,18 @@ pub const Window = struct {
             },
         );
 
-        for (std.meta.tags(gtk4_layer_shell.ShellEdge)) |edge| {
+        for (std.meta.tags(layer_shell.ShellEdge)) |edge| {
             if (anchored_edge) |anchored| {
                 if (edge == anchored) {
-                    gtk4_layer_shell.setMargin(window, edge, 0);
-                    gtk4_layer_shell.setAnchor(window, edge, true);
+                    layer_shell.setMargin(window, edge, 0);
+                    layer_shell.setAnchor(window, edge, true);
                     continue;
                 }
             }
 
             // Arbitrary margin - could be made customizable?
-            gtk4_layer_shell.setMargin(window, edge, 20);
-            gtk4_layer_shell.setAnchor(window, edge, false);
+            layer_shell.setMargin(window, edge, 20);
+            layer_shell.setAnchor(window, edge, false);
         }
 
         if (self.apprt_window.isQuickTerminal()) {
