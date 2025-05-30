@@ -48,16 +48,11 @@ pub const App = struct {
         _ = config;
         _ = app_id;
 
-        // Check if we're actually on Wayland
-        if (gobject.typeCheckInstanceIsA(
-            gdk_display.as(gobject.TypeInstance),
-            gdk_wayland.WaylandDisplay.getGObjectType(),
-        ) == 0) return null;
-
         const gdk_wayland_display = gobject.ext.cast(
             gdk_wayland.WaylandDisplay,
             gdk_display,
-        ) orelse return error.NoWaylandDisplay;
+        ) orelse return null;
+
         const display: *wl.Display = @ptrCast(@alignCast(
             gdk_wayland_display.getWlDisplay() orelse return error.NoWaylandDisplay,
         ));
