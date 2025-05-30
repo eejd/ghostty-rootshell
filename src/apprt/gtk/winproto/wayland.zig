@@ -110,6 +110,7 @@ pub const App = struct {
 
         layer_shell.initForWindow(window);
         layer_shell.setLayer(window, .top);
+        layer_shell.setNamespace(window, "ghostty-quick-terminal");
     }
 
     fn registryListener(

@@ -50,3 +50,7 @@ pub fn setMargin(window: *gtk.Window, edge: ShellEdge, margin_size: c_int) void 
 pub fn setKeyboardMode(window: *gtk.Window, mode: KeyboardMode) void {
     c.gtk_layer_set_keyboard_mode(@ptrCast(window), @intFromEnum(mode));
 }
+
+pub fn setNamespace(window: *gtk.Window, name: [:0]const u8) void {
+    c.gtk_layer_set_namespace(@ptrCast(window), name.ptr);
+}
