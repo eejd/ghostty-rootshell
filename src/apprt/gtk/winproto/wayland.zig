@@ -357,14 +357,6 @@ pub const Window = struct {
         const window = self.apprt_window.window.as(gtk.Window);
         const config = &self.apprt_window.config;
 
-        const anchored_edge: ?layer_shell.ShellEdge = switch (config.quick_terminal_position) {
-            .left => .left,
-            .right => .right,
-            .top => .top,
-            .bottom => .bottom,
-            .center => null,
-        };
-
         layer_shell.setKeyboardMode(
             window,
             switch (config.quick_terminal_keyboard_interactivity) {
@@ -380,6 +372,14 @@ pub const Window = struct {
             },
         );
 
+        const anchored_edge: ?layer_shell.ShellEdge = switch (config.quick_terminal_position) {
+            .left => .left,
+            .right => .right,
+            .top => .top,
+            .bottom => .bottom,
+            .center => null,
+        };
+
         for (std.meta.tags(layer_shell.ShellEdge)) |edge| {
             if (anchored_edge) |anchored| {
                 if (edge == anchored) {
@@ -394,29 +394,27 @@ pub const Window = struct {
             layer_shell.setAnchor(window, edge, false);
         }
 
-        if (self.apprt_window.isQuickTerminal()) {
-            if (self.slide) |slide| slide.release();
+        if (self.slide) |slide| slide.release();
 
-            self.slide = if (anchored_edge) |anchored| slide: {
-                const mgr = self.app_context.kde_slide_manager orelse break :slide null;
+        self.slide = if (anchored_edge) |anchored| slide: {
+            const mgr = self.app_context.kde_slide_manager orelse break :slide null;
 
-                const slide = mgr.create(self.surface) catch |err| {
-                    log.warn("could not create slide object={}", .{err});
-                    break :slide null;
-                };
+            const slide = mgr.create(self.surface) catch |err| {
+                log.warn("could not create slide object={}", .{err});
+                break :slide null;
+            };
 
-                const slide_location: org.KdeKwinSlide.Location = switch (anchored) {
-                    .top => .top,
-                    .bottom => .bottom,
-                    .left => .left,
-                    .right => .right,
-                };
+            const slide_location: org.KdeKwinSlide.Location = switch (anchored) {
+                .top => .top,
+                .bottom => .bottom,
+                .left => .left,
+                .right => .right,
+            };
 
-                slide.setLocation(@intCast(@intFromEnum(slide_location)));
-                slide.commit();
-                break :slide slide;
-            } else null;
-        }
+            slide.setLocation(@intCast(@intFromEnum(slide_location)));
+            slide.commit();
+            break :slide slide;
+        } else null;
     }
 
     /// Update the size of the quick terminal based on monitor dimensions.
