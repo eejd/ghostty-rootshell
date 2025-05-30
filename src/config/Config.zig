@@ -2722,19 +2722,18 @@ pub fn loadCliArgs(self: *Config, alloc_gpa: Allocator) !void {
     // can replay if we are discarding the default files.
     const replay_len_start = self._replay_steps.items.len;
 
-    // Keep track of font families because if they are set from the CLI
-    // then we clear the previously set values. This avoids a UX oddity
-    // where on the CLI you have to specify `font-family=""` to clear the
-    // font families before setting a new one.
+    // font-family settings set via the CLI overwrite any prior values
+    // rather than append. This avoids a UX oddity where you have to
+    // specify `font-family=""` to clear the font families.
     const fields = &[_][]const u8{
         "font-family",
         "font-family-bold",
         "font-family-italic",
         "font-family-bold-italic",
     };
-    var counter: [fields.len]usize = undefined;
-    inline for (fields, 0..) |field, i| {
-        counter[i] = @field(self, field).list.items.len;
+    inline for (fields) |field| @field(self, field).overwrite_next = true;
+    defer {
+        inline for (fields) |field| @field(self, field).overwrite_next = false;
     }
 
     // Initialize our CLI iterator.
@@ -2759,28 +2758,6 @@ pub fn loadCliArgs(self: *Config, alloc_gpa: Allocator) !void {
         try new_config.loadIter(alloc_gpa, &it);
         self.deinit();
         self.* = new_config;
-    } else {
-        // If any of our font family settings were changed, then we
-        // replace the entire list with the new list.
-        inline for (fields, 0..) |field, i| {
-            const v = &@field(self, field);
-
-            // The list can be empty if it was reset, i.e. --font-family=""
-            if (v.list.items.len > 0) {
-                const len = v.list.items.len - counter[i];
-                if (len > 0) {
-                    // Note: we don't have to worry about freeing the memory
-                    // that we overwrite or cut off here because its all in
-                    // an arena.
-                    v.list.replaceRangeAssumeCapacity(
-                        0,
-                        len,
-                        v.list.items[counter[i]..],
-                    );
-                    v.list.items.len = len;
-                }
-            }
-        }
     }
 
     // Any paths referenced from the CLI are relative to the current working
@@ -4172,6 +4149,11 @@ pub const RepeatableString = struct {
     // Allocator for the list is the arena for the parent config.
     list: std.ArrayListUnmanaged([:0]const u8) = .{},
 
+    // If true, then the next value will clear the list and start over
+    // rather than append. This is a bit of a hack but is here to make
+    // the font-family set of configurations work with CLI parsing.
+    overwrite_next: bool = false,
+
     pub fn parseCLI(self: *Self, alloc: Allocator, input: ?[]const u8) !void {
         const value = input orelse return error.ValueRequired;
 
@@ -4179,6 +4161,12 @@ pub const RepeatableString = struct {
         if (value.len == 0) {
             self.list.clearRetainingCapacity();
             return;
+        }
+
+        // If we're overwriting then we clear before appending
+        if (self.overwrite_next) {
+            self.list.clearRetainingCapacity();
+            self.overwrite_next = false;
         }
 
         const copy = try alloc.dupeZ(u8, value);
@@ -4245,6 +4233,24 @@ pub const RepeatableString = struct {
 
         try list.parseCLI(alloc, "");
         try testing.expectEqual(@as(usize, 0), list.list.items.len);
+    }
+
+    test "parseCLI overwrite" {
+        const testing = std.testing;
+        var arena = ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        var list: Self = .{};
+        try list.parseCLI(alloc, "A");
+
+        // Set our overwrite flag
+        list.overwrite_next = true;
+
+        try list.parseCLI(alloc, "B");
+        try testing.expectEqual(@as(usize, 1), list.list.items.len);
+        try list.parseCLI(alloc, "C");
+        try testing.expectEqual(@as(usize, 2), list.list.items.len);
     }
 
     test "formatConfig empty" {
