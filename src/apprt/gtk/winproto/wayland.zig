@@ -6,8 +6,8 @@ const build_options = @import("build_options");
 const gdk = @import("gdk");
 const gdk_wayland = @import("gdk_wayland");
 const gobject = @import("gobject");
-const gtk4_layer_shell = @import("gtk4-layer-shell");
 const gtk = @import("gtk");
+const layer_shell = @import("gtk4-layer-shell");
 const wayland = @import("wayland");
 
 const Config = @import("../../../config.zig").Config;
@@ -98,7 +98,7 @@ pub const App = struct {
     }
 
     pub fn supportsQuickTerminal(_: App) bool {
-        if (!gtk4_layer_shell.isSupported()) {
+        if (!layer_shell.isSupported()) {
             log.warn("your compositor does not support the wlr-layer-shell protocol; disabling quick terminal", .{});
             return false;
         }
@@ -108,9 +108,9 @@ pub const App = struct {
     pub fn initQuickTerminal(_: *App, apprt_window: *ApprtWindow) !void {
         const window = apprt_window.window.as(gtk.Window);
 
-        gtk4_layer_shell.initForWindow(window);
-        gtk4_layer_shell.setLayer(window, .top);
-        gtk4_layer_shell.setKeyboardMode(window, .on_demand);
+        layer_shell.initForWindow(window);
+        layer_shell.setLayer(window, .top);
+        layer_shell.setNamespace(window, "ghostty-quick-terminal");
     }
 
     fn registryListener(
@@ -356,9 +356,24 @@ pub const Window = struct {
 
     fn syncQuickTerminal(self: *Window) !void {
         const window = self.apprt_window.window.as(gtk.Window);
-        const position = self.apprt_window.config.quick_terminal_position;
+        const config = &self.apprt_window.config;
 
-        const anchored_edge: ?gtk4_layer_shell.ShellEdge = switch (position) {
+        layer_shell.setKeyboardMode(
+            window,
+            switch (config.quick_terminal_keyboard_interactivity) {
+                .none => .none,
+                .@"on-demand" => on_demand: {
+                    if (layer_shell.getProtocolVersion() < 4) {
+                        log.warn("your compositor does not support on-demand keyboard access; falling back to exclusive access", .{});
+                        break :on_demand .exclusive;
+                    }
+                    break :on_demand .on_demand;
+                },
+                .exclusive => .exclusive,
+            },
+        );
+
+        const anchored_edge: ?layer_shell.ShellEdge = switch (config.quick_terminal_position) {
             .left => .left,
             .right => .right,
             .top => .top,
@@ -366,43 +381,41 @@ pub const Window = struct {
             .center => null,
         };
 
-        for (std.meta.tags(gtk4_layer_shell.ShellEdge)) |edge| {
+        for (std.meta.tags(layer_shell.ShellEdge)) |edge| {
             if (anchored_edge) |anchored| {
                 if (edge == anchored) {
-                    gtk4_layer_shell.setMargin(window, edge, 0);
-                    gtk4_layer_shell.setAnchor(window, edge, true);
+                    layer_shell.setMargin(window, edge, 0);
+                    layer_shell.setAnchor(window, edge, true);
                     continue;
                 }
             }
 
             // Arbitrary margin - could be made customizable?
-            gtk4_layer_shell.setMargin(window, edge, 20);
-            gtk4_layer_shell.setAnchor(window, edge, false);
+            layer_shell.setMargin(window, edge, 20);
+            layer_shell.setAnchor(window, edge, false);
         }
 
-        if (self.apprt_window.isQuickTerminal()) {
-            if (self.slide) |slide| slide.release();
+        if (self.slide) |slide| slide.release();
 
-            self.slide = if (anchored_edge) |anchored| slide: {
-                const mgr = self.app_context.kde_slide_manager orelse break :slide null;
+        self.slide = if (anchored_edge) |anchored| slide: {
+            const mgr = self.app_context.kde_slide_manager orelse break :slide null;
 
-                const slide = mgr.create(self.surface) catch |err| {
-                    log.warn("could not create slide object={}", .{err});
-                    break :slide null;
-                };
+            const slide = mgr.create(self.surface) catch |err| {
+                log.warn("could not create slide object={}", .{err});
+                break :slide null;
+            };
 
-                const slide_location: org.KdeKwinSlide.Location = switch (anchored) {
-                    .top => .top,
-                    .bottom => .bottom,
-                    .left => .left,
-                    .right => .right,
-                };
+            const slide_location: org.KdeKwinSlide.Location = switch (anchored) {
+                .top => .top,
+                .bottom => .bottom,
+                .left => .left,
+                .right => .right,
+            };
 
-                slide.setLocation(@intCast(@intFromEnum(slide_location)));
-                slide.commit();
-                break :slide slide;
-            } else null;
-        }
+            slide.setLocation(@intCast(@intFromEnum(slide_location)));
+            slide.commit();
+            break :slide slide;
+        } else null;
     }
 
     /// Update the size of the quick terminal based on monitor dimensions.
@@ -412,16 +425,18 @@ pub const Window = struct {
         apprt_window: *ApprtWindow,
     ) callconv(.c) void {
         const window = apprt_window.window.as(gtk.Window);
-        const size = apprt_window.config.quick_terminal_size;
-        const position = apprt_window.config.quick_terminal_position;
+        const config = &apprt_window.config;
 
         var monitor_size: gdk.Rectangle = undefined;
         monitor.getGeometry(&monitor_size);
 
-        const dims = size.calculate(position, .{
-            .width = @intCast(monitor_size.f_width),
-            .height = @intCast(monitor_size.f_height),
-        });
+        const dims = config.quick_terminal_size.calculate(
+            config.quick_terminal_position,
+            .{
+                .width = @intCast(monitor_size.f_width),
+                .height = @intCast(monitor_size.f_height),
+            },
+        );
 
         window.setDefaultSize(@intCast(dims.width), @intCast(dims.height));
     }
