@@ -814,11 +814,15 @@ fn gtkWindowNotifyIsActive(
     _: *gobject.ParamSpec,
     self: *Window,
 ) callconv(.c) void {
-    if (!self.isQuickTerminal()) return;
+    self.winproto.setUrgent(false) catch |err| {
+        log.err("failed to unrequest user attention={}", .{err});
+    };
 
-    // Hide when we're unfocused
-    if (self.config.quick_terminal_autohide and self.window.as(gtk.Window).isActive() == 0) {
-        self.toggleVisibility();
+    if (self.isQuickTerminal()) {
+        // Hide when we're unfocused
+        if (self.config.quick_terminal_autohide and self.window.as(gtk.Window).isActive() == 0) {
+            self.toggleVisibility();
+        }
     }
 }
 
