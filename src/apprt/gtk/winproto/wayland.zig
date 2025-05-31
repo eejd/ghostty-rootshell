@@ -48,16 +48,11 @@ pub const App = struct {
         _ = config;
         _ = app_id;
 
-        // Check if we're actually on Wayland
-        if (gobject.typeCheckInstanceIsA(
-            gdk_display.as(gobject.TypeInstance),
-            gdk_wayland.WaylandDisplay.getGObjectType(),
-        ) == 0) return null;
-
         const gdk_wayland_display = gobject.ext.cast(
             gdk_wayland.WaylandDisplay,
             gdk_display,
-        ) orelse return error.NoWaylandDisplay;
+        ) orelse return null;
+
         const display: *wl.Display = @ptrCast(@alignCast(
             gdk_wayland_display.getWlDisplay() orelse return error.NoWaylandDisplay,
         ));
@@ -76,9 +71,9 @@ pub const App = struct {
         registry.setListener(*Context, registryListener, context);
         if (display.roundtrip() != .SUCCESS) return error.RoundtripFailed;
 
-        if (context.kde_decoration_manager != null) {
-            // FIXME: Roundtrip again because we have to wait for the decoration
-            // manager to respond with the preferred default mode. Ew.
+        // Do another round-trip to get the default decoration mode
+        if (context.kde_decoration_manager) |deco_manager| {
+            deco_manager.setListener(*Context, decoManagerListener, context);
             if (display.roundtrip() != .SUCCESS) return error.RoundtripFailed;
         }
 
@@ -121,78 +116,52 @@ pub const App = struct {
         event: wl.Registry.Event,
         context: *Context,
     ) void {
-        switch (event) {
-            // https://wayland.app/protocols/wayland#wl_registry:event:global
-            .global => |global| {
-                log.debug("wl_registry.global: interface={s}", .{global.interface});
+        inline for (@typeInfo(Context).@"struct".fields) |field| {
+            // Globals should be optional pointers
+            const T = switch (@typeInfo(field.type)) {
+                .optional => |o| switch (@typeInfo(o.child)) {
+                    .pointer => |v| v.child,
+                    else => continue,
+                },
+                else => continue,
+            };
 
-                if (registryBind(
-                    org.KdeKwinBlurManager,
-                    registry,
-                    global,
-                )) |blur_manager| {
-                    context.kde_blur_manager = blur_manager;
-                    return;
-                }
+            // Only process Wayland interfaces
+            if (!@hasDecl(T, "interface")) continue;
 
-                if (registryBind(
-                    org.KdeKwinServerDecorationManager,
-                    registry,
-                    global,
-                )) |deco_manager| {
-                    context.kde_decoration_manager = deco_manager;
-                    deco_manager.setListener(*Context, decoManagerListener, context);
-                    return;
-                }
+            switch (event) {
+                .global => |v| global: {
+                    if (std.mem.orderZ(
+                        u8,
+                        v.interface,
+                        T.interface.name,
+                    ) != .eq) break :global;
 
-                if (registryBind(
-                    org.KdeKwinSlideManager,
-                    registry,
-                    global,
-                )) |slide_manager| {
-                    context.kde_slide_manager = slide_manager;
-                    return;
-                }
+                    @field(context, field.name) = registry.bind(
+                        v.name,
+                        T,
+                        T.generated_version,
+                    ) catch |err| {
+                        log.warn(
+                            "error binding interface {s} error={}",
+                            .{ v.interface, err },
+                        );
+                        return;
+                    };
+                },
 
-                if (registryBind(
-                    xdg.ActivationV1,
-                    registry,
-                    global,
-                )) |activation| {
-                    context.xdg_activation = activation;
-                    return;
-                }
-            },
-
-            // We don't handle removal events
-            .global_remove => {},
+                // This should be a rare occurrence, but in case a global
+                // is suddenly no longer available, we destroy and unset it
+                // as the protocol mandates.
+                .global_remove => |v| remove: {
+                    const global = @field(context, field.name) orelse break :remove;
+                    if (global.getId() == v.name) {
+                        global.destroy();
+                        @field(context, field.name) = null;
+                    }
+                },
+            }
         }
-    }
-
-    /// Bind a Wayland interface to a global object. Returns non-null
-    /// if the binding was successful, otherwise null.
-    ///
-    /// The type T is the Wayland interface type that we're requesting.
-    /// This function will verify that the global object is the correct
-    /// interface and version before binding.
-    fn registryBind(
-        comptime T: type,
-        registry: *wl.Registry,
-        global: anytype,
-    ) ?*T {
-        if (std.mem.orderZ(
-            u8,
-            global.interface,
-            T.interface.name,
-        ) != .eq) return null;
-
-        return registry.bind(global.name, T, T.generated_version) catch |err| {
-            log.warn("error binding interface {s} error={}", .{
-                global.interface,
-                err,
-            });
-            return null;
-        };
     }
 
     fn decoManagerListener(
