@@ -372,21 +372,10 @@ class TerminalWindow: NSWindow {
     private func updateResetZoomTitlebarButtonVisibility() {
         guard let tabGroup, let resetZoomTitlebarAccessoryViewController else { return }
 
-		let isHidden = tabGroup.isTabBarVisible ? true : !surfaceIsZoomed
-
-		if titlebarTabs {
-			resetZoomToolbarButton.isHidden = isHidden
-
-			for (index, vc) in titlebarAccessoryViewControllers.enumerated() {
-				guard vc == resetZoomTitlebarAccessoryViewController else { return }
-				removeTitlebarAccessoryViewController(at: index)
-			}
-		} else {
-			if !titlebarAccessoryViewControllers.contains(resetZoomTitlebarAccessoryViewController) {
-				addTitlebarAccessoryViewController(resetZoomTitlebarAccessoryViewController)
-			}
-			resetZoomTitlebarAccessoryViewController.view.isHidden = isHidden
-		}
+        if !titlebarAccessoryViewControllers.contains(resetZoomTitlebarAccessoryViewController) {
+            addTitlebarAccessoryViewController(resetZoomTitlebarAccessoryViewController)
+        }
+        resetZoomTitlebarAccessoryViewController.view.isHidden = tabGroup.isTabBarVisible ? true : !surfaceIsZoomed
     }
 
 	private func generateResetZoomButton() -> NSButton {
