@@ -150,6 +150,26 @@ class NonNativeFullscreen: FullscreenBase, FullscreenStyle {
 
     private var savedState: SavedState?
 
+    required init?(_ window: NSWindow) {
+        super.init(window)
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(windowWillCloseNotification),
+            name: NSWindow.willCloseNotification,
+            object: window)
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    @objc private func windowWillCloseNotification(_ notification: Notification) {
+        // When the window closes we need to explicitly exit non-native fullscreen
+        // otherwise some state like the menu bar can remain hidden.
+        exit()
+    }
+
     func enter() {
         // If we are in fullscreen we don't do it again.
         guard !isFullscreen else { return }
