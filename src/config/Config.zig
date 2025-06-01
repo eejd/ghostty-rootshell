@@ -2053,6 +2053,25 @@ keybind: Keybinds = .{},
 /// it will retain the previous setting until fullscreen is exited.
 @"macos-non-native-fullscreen": NonNativeFullscreen = .false,
 
+/// Whether the window buttons in the macOS titlebar are visible. The window
+/// buttons are the colored buttons in the upper left corner of most macOS apps,
+/// also known as the traffic lights, that allow you to close, miniaturize, and
+/// zoom the window.
+///
+/// This setting has no effect when `window-decoration = false` or
+/// `macos-titlebar-style = hidden`, as the window buttons are always hidden in
+/// these modes.
+///
+/// Valid values are:
+///
+///   * `visible` - Show the window buttons.
+///   * `hidden` - Hide the window buttons.
+///
+/// The default value is `visible`.
+///
+/// Changing this option at runtime only applies to new windows.
+@"macos-window-buttons": MacWindowButtons = .visible,
+
 /// The style of the macOS titlebar. Available values are: "native",
 /// "transparent", "tabs", and "hidden".
 ///
@@ -5801,6 +5820,12 @@ pub const WindowTheme = enum {
 pub const WindowColorspace = enum {
     srgb,
     @"display-p3",
+};
+
+/// See macos-window-buttons
+pub const MacWindowButtons = enum {
+    visible,
+    hidden,
 };
 
 /// See macos-titlebar-style

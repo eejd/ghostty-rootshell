@@ -377,6 +377,14 @@ class TerminalController: BaseTerminalController {
         shouldCascadeWindows = false
     }
 
+   fileprivate func hideWindowButtons() {
+        guard let window else { return }
+
+        window.standardWindowButton(.closeButton)?.isHidden = true
+        window.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        window.standardWindowButton(.zoomButton)?.isHidden = true
+    }
+
     fileprivate func applyHiddenTitlebarStyle() {
         guard let window else { return }
 
@@ -398,9 +406,7 @@ class TerminalController: BaseTerminalController {
         window.titlebarAppearsTransparent = true
 
         // Hide the traffic lights (window control buttons)
-        window.standardWindowButton(.closeButton)?.isHidden = true
-        window.standardWindowButton(.miniaturizeButton)?.isHidden = true
-        window.standardWindowButton(.zoomButton)?.isHidden = true
+        hideWindowButtons()
 
         // Disallow tabbing if the titlebar is hidden, since that will (should) also hide the tab bar.
         window.tabbingMode = .disallowed
@@ -455,6 +461,10 @@ class TerminalController: BaseTerminalController {
             x: config.windowPositionX,
             y: config.windowPositionY,
             windowDecorations: config.windowDecorations)
+
+        if config.macosWindowButtons == .hidden {
+            hideWindowButtons()
+        }
 
         // Make sure our theme is set on the window so styling is correct.
         if let windowTheme = config.windowTheme {
@@ -872,17 +882,20 @@ class TerminalController: BaseTerminalController {
 
     struct DerivedConfig {
         let backgroundColor: Color
+        let macosWindowButtons: Ghostty.MacOSWindowButtons
         let macosTitlebarStyle: String
         let maximize: Bool
 
         init() {
             self.backgroundColor = Color(NSColor.windowBackgroundColor)
+            self.macosWindowButtons = .visible
             self.macosTitlebarStyle = "system"
             self.maximize = false
         }
 
         init(_ config: Ghostty.Config) {
             self.backgroundColor = config.backgroundColor
+            self.macosWindowButtons = config.macosWindowButtons
             self.macosTitlebarStyle = config.macosTitlebarStyle
             self.maximize = config.maximize
         }
