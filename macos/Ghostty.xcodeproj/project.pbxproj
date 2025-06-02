@@ -59,6 +59,8 @@
 		A571AB1D2A206FCF00248498 /* GhosttyKit.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A5D495A1299BEC7E00DD1313 /* GhosttyKit.xcframework */; };
 		A57D79272C9C879B001D522E /* SecureInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = A57D79262C9C8798001D522E /* SecureInput.swift */; };
 		A586167C2B7703CC009BDB1D /* fish in Resources */ = {isa = PBXBuildFile; fileRef = A586167B2B7703CC009BDB1D /* fish */; };
+		A586365F2DEE6C2300E04A10 /* SplitTree.swift in Sources */ = {isa = PBXBuildFile; fileRef = A586365E2DEE6C2100E04A10 /* SplitTree.swift */; };
+		A58636662DEF964100E04A10 /* TerminalSplitTreeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A58636652DEF963F00E04A10 /* TerminalSplitTreeView.swift */; };
 		A5874D992DAD751B00E83852 /* CGS.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5874D982DAD751A00E83852 /* CGS.swift */; };
 		A5874D9D2DAD786100E83852 /* NSWindow+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5874D9C2DAD785F00E83852 /* NSWindow+Extension.swift */; };
 		A59444F729A2ED5200725BBA /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A59444F629A2ED5200725BBA /* SettingsView.swift */; };
@@ -164,6 +166,8 @@
 		A571AB1C2A206FC600248498 /* Ghostty-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "Ghostty-Info.plist"; sourceTree = "<group>"; };
 		A57D79262C9C8798001D522E /* SecureInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecureInput.swift; sourceTree = "<group>"; };
 		A586167B2B7703CC009BDB1D /* fish */ = {isa = PBXFileReference; lastKnownFileType = folder; name = fish; path = "../zig-out/share/fish"; sourceTree = "<group>"; };
+		A586365E2DEE6C2100E04A10 /* SplitTree.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitTree.swift; sourceTree = "<group>"; };
+		A58636652DEF963F00E04A10 /* TerminalSplitTreeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalSplitTreeView.swift; sourceTree = "<group>"; };
 		A5874D982DAD751A00E83852 /* CGS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CGS.swift; sourceTree = "<group>"; };
 		A5874D9C2DAD785F00E83852 /* NSWindow+Extension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NSWindow+Extension.swift"; sourceTree = "<group>"; };
 		A59444F629A2ED5200725BBA /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
@@ -275,6 +279,7 @@
 				A5CBD05A2CA0C5910017A1AE /* QuickTerminal */,
 				A5E112912AF73E4D00C6E0C2 /* ClipboardConfirmation */,
 				A57D79252C9C8782001D522E /* Secure Input */,
+				A58636622DEF955100E04A10 /* Splits */,
 				A53A29742DB2E04900B6E02C /* Command Palette */,
 				A534263E2A7DCC5800EBB7A2 /* Settings */,
 				A51BFC1C2B2FB5AB00E92F16 /* About */,
@@ -426,6 +431,15 @@
 				A5CC36122C9CD729004D6760 /* SecureInputOverlay.swift */,
 			);
 			path = "Secure Input";
+			sourceTree = "<group>";
+		};
+		A58636622DEF955100E04A10 /* Splits */ = {
+			isa = PBXGroup;
+			children = (
+				A586365E2DEE6C2100E04A10 /* SplitTree.swift */,
+				A58636652DEF963F00E04A10 /* TerminalSplitTreeView.swift */,
+			);
+			path = Splits;
 			sourceTree = "<group>";
 		};
 		A5874D9B2DAD781100E83852 /* Private */ = {
@@ -685,6 +699,7 @@
 				A5CBD05E2CA0C5EC0017A1AE /* QuickTerminalController.swift in Sources */,
 				A5CF66D72D29DDB500139794 /* Ghostty.Event.swift in Sources */,
 				A5A2A3CA2D4445E30033CF96 /* Dock.swift in Sources */,
+				A586365F2DEE6C2300E04A10 /* SplitTree.swift in Sources */,
 				A51BFC222B2FB6B400E92F16 /* AboutView.swift in Sources */,
 				A5278A9B2AA05B2600CD3039 /* Ghostty.Input.swift in Sources */,
 				A53A29812DB44A6100B6E02C /* KeyboardShortcut+Extension.swift in Sources */,
@@ -734,6 +749,7 @@
 				A5CEAFFF29C2410700646FDA /* Backport.swift in Sources */,
 				A5E112952AF73E8A00C6E0C2 /* ClipboardConfirmationController.swift in Sources */,
 				A596309E2AEE1D6C00D64628 /* TerminalView.swift in Sources */,
+				A58636662DEF964100E04A10 /* TerminalSplitTreeView.swift in Sources */,
 				A52FFF592CAA4FF3000C6A5B /* Fullscreen.swift in Sources */,
 				AEF9CE242B6AD07A0017E195 /* TerminalToolbar.swift in Sources */,
 				C159E81D2B66A06B00FDFE9C /* OSColor+Extension.swift in Sources */,

@@ -228,6 +228,9 @@ class TerminalController: BaseTerminalController {
         // Update our window light/darkness based on our updated background color
         window.isLightTheme = OSColor(surfaceConfig.backgroundColor).isLightColor
 
+        // Sync our zoom state for splits
+        window.surfaceIsZoomed = surfaceTree2.zoomed != nil
+
         // If our window is not visible, then we do nothing. Some things such as blurring
         // have no effect if the window is not visible. Ultimately, we'll have this called
         // at some point when a surface becomes focused.

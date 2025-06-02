@@ -31,7 +31,7 @@ protocol TerminalViewDelegate: AnyObject {
 protocol TerminalViewModel: ObservableObject {
     /// The tree of terminal surfaces (splits) within the view. This is mutated by TerminalView
     /// and children. This should be @Published.
-    var surfaceTree: Ghostty.SplitNode? { get set }
+    var surfaceTree2: SplitTree { get set }
 
     /// The command palette state.
     var commandPaletteIsShowing: Bool { get set }
@@ -81,7 +81,7 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                         DebugBuildWarningView()
                     }
 
-                    Ghostty.TerminalSplit(node: $viewModel.surfaceTree)
+                    TerminalSplitTreeView(tree: viewModel.surfaceTree2)
                         .environmentObject(ghostty)
                         .focused($focused)
                         .onAppear { self.focused = true }
@@ -99,12 +99,6 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                         .onChange(of: cellSize) { newValue in
                             guard let size = newValue else { return }
                             self.delegate?.cellSizeDidChange(to: size)
-                        }
-                        .onChange(of: viewModel.surfaceTree?.hashValue) { _ in
-                            // This is funky, but its the best way I could think of to detect
-                            // ANY CHANGE within the deeply nested surface tree -- detecting a change
-                            // in the hash value.
-                            self.delegate?.surfaceTreeDidChange()
                         }
                         .onChange(of: zoomedSplit) { newValue in
                             self.delegate?.zoomStateDidChange(to: newValue ?? false)

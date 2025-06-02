@@ -46,6 +46,8 @@ class BaseTerminalController: NSWindowController,
         didSet { surfaceTreeDidChange(from: oldValue, to: surfaceTree) }
     }
 
+    @Published var surfaceTree2: SplitTree = .init()
+
     /// This can be set to show/hide the command palette.
     @Published var commandPaletteIsShowing: Bool = false
 
@@ -97,6 +99,9 @@ class BaseTerminalController: NSWindowController,
         guard let ghostty_app = ghostty.app else { preconditionFailure("app must be loaded") }
         self.surfaceTree = tree ?? .leaf(.init(ghostty_app, baseConfig: base))
 
+        let firstView = Ghostty.SurfaceView(ghostty_app, baseConfig: base)
+        self.surfaceTree2 = .init(view: firstView)
+
         // Setup our notifications for behaviors
         let center = NotificationCenter.default
         center.addObserver(
@@ -123,6 +128,18 @@ class BaseTerminalController: NSWindowController,
             self,
             selector: #selector(ghosttyMaximizeDidToggle(_:)),
             name: .ghosttyMaximizeDidToggle,
+            object: nil)
+
+        // Splits
+        center.addObserver(
+            self,
+            selector: #selector(ghosttyDidCloseSurface(_:)),
+            name: Ghostty.Notification.ghosttyCloseSurface,
+            object: nil)
+        center.addObserver(
+            self,
+            selector: #selector(ghosttyDidNewSplit(_:)),
+            name: Ghostty.Notification.ghosttyNewSplit,
             object: nil)
         center.addObserver(
             self,
@@ -252,7 +269,58 @@ class BaseTerminalController: NSWindowController,
         guard surfaceTree?.contains(view: surfaceView) ?? false else { return }
         window.zoom(nil)
     }
-    
+
+    @objc private func ghosttyDidCloseSurface(_ notification: Notification) {
+        // The target must be within our tree
+        guard let oldView = notification.object as? Ghostty.SurfaceView else { return }
+        guard let node = surfaceTree2.root?.node(view: oldView) else { return }
+
+        // Remove it
+        surfaceTree2 = surfaceTree2.remove(node)
+
+        // TODO: fix focus
+    }
+
+    @objc private func ghosttyDidNewSplit(_ notification: Notification) {
+        // The target must be within our tree
+        guard let oldView = notification.object as? Ghostty.SurfaceView else { return }
+        guard surfaceTree2.root?.node(view: oldView) != nil else { return }
+
+        // Notification must contain our base config
+        let configAny = notification.userInfo?[Ghostty.Notification.NewSurfaceConfigKey]
+        let config = configAny as? Ghostty.SurfaceConfiguration
+
+        // Determine our desired direction
+        guard let directionAny = notification.userInfo?["direction"] else { return }
+        guard let direction = directionAny as? ghostty_action_split_direction_e else { return }
+        let splitDirection: SplitTree.NewDirection
+        switch (direction) {
+        case GHOSTTY_SPLIT_DIRECTION_RIGHT: splitDirection = .right
+        case GHOSTTY_SPLIT_DIRECTION_LEFT: splitDirection = .left
+        case GHOSTTY_SPLIT_DIRECTION_DOWN: splitDirection = .down
+        case GHOSTTY_SPLIT_DIRECTION_UP: splitDirection = .up
+        default: return
+        }
+
+        // Create a new surface view
+        guard let ghostty_app = ghostty.app else { return }
+        let newView = Ghostty.SurfaceView(ghostty_app, baseConfig: config)
+
+        // Do the split
+        do {
+            surfaceTree2 = try surfaceTree2.insert(view: newView, at: oldView, direction: splitDirection)
+        } catch {
+            // If splitting fails for any reason (it should not), then we just log
+            // and return. The new view we created will be deinitialized and its
+            // no big deal.
+            // TODO: log
+            return
+        }
+
+        // Once we've split, we need to move focus to the new split
+        Ghostty.moveFocus(to: newView, from: oldView)
+    }
+
     @objc private func ghosttyDidEqualizeSplits(_ notification: Notification) {
         guard let target = notification.object as? Ghostty.SurfaceView else { return }
         
