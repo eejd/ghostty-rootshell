@@ -25,6 +25,16 @@ class TerminalToolbar: NSToolbar, NSToolbarDelegate {
         }
     }
 
+    var titleIsHidden: Bool {
+        get {
+            titleTextField.isHidden
+        }
+
+        set {
+            titleTextField.isHidden = newValue
+        }
+    }
+
     override init(identifier: NSToolbar.Identifier) {
         super.init(identifier: identifier)
 
