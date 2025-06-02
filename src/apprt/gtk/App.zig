@@ -273,7 +273,10 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
     const single_instance = switch (config.@"gtk-single-instance") {
         .true => true,
         .false => false,
-        .desktop => internal_os.launchedFromDesktop(),
+        .desktop => switch (config.@"launched-from".?) {
+            .desktop, .systemd, .dbus => true,
+            .cli => false,
+        },
     };
 
     // Setup the flags for our application.
