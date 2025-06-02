@@ -406,8 +406,8 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
     //
     // https://gitlab.gnome.org/GNOME/glib/-/blob/bd2ccc2f69ecfd78ca3f34ab59e42e2b462bad65/gio/gapplication.c#L2302
     if (config.@"initial-window") switch (config.@"launched-from".?) {
+        .desktop, .cli => gio_app.activate(),
         .dbus, .systemd => {},
-        else => gio_app.activate(),
     };
 
     // Internally, GTK ensures that only one instance of this provider exists in the provider list
