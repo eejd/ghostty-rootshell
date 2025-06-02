@@ -75,7 +75,6 @@ extension Ghostty {
                         .onReceive(pubZoom) { onZoom(notification: $0) }
                     }
                 }
-                .id(node) // Needed for change detection on node
             } else {
                 // On these events we want to reset the split state and call it.
                 let pubSplit = center.publisher(for: Notification.ghosttyNewSplit, object: zoomedSurface!)
@@ -289,7 +288,7 @@ extension Ghostty {
 
         let neighbors: SplitNode.Neighbors
         @Binding var node: SplitNode?
-        @StateObject var container: SplitNode.Container
+        @ObservedObject var container: SplitNode.Container
 
         var body: some View {
             SplitView(
@@ -331,7 +330,6 @@ extension Ghostty {
                 }
 
                 // Closing
-                container.topLeft.close()
                 node = container.bottomRight
 
                 switch (node) {
@@ -362,7 +360,6 @@ extension Ghostty {
                 }
 
                 // Closing
-                container.bottomRight.close()
                 node = container.topLeft
 
                 switch (node) {

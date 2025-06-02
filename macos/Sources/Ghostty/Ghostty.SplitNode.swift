@@ -102,19 +102,6 @@ extension Ghostty {
             }
         }
 
-        /// Close the surface associated with this node. This will likely deinitialize the
-        /// surface. At this point, the surface view in this node tree can never be used again.
-        func close() {
-            switch (self) {
-            case .leaf(let leaf):
-                leaf.surface.close()
-
-            case .split(let container):
-                container.topLeft.close()
-                container.bottomRight.close()
-            }
-        }
-
         /// Returns true if any surface in the split stack requires quit confirmation.
         func needsConfirmQuit() -> Bool {
             switch (self) {
@@ -224,7 +211,7 @@ extension Ghostty {
                 self.app = app
                 self.surface = SurfaceView(app, baseConfig: baseConfig, uuid: uuid)
             }
-
+            
             // MARK: - Hashable
 
             func hash(into hasher: inout Hasher) {
