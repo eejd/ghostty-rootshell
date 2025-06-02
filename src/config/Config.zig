@@ -2428,6 +2428,23 @@ term: []const u8 = "xterm-ghostty",
 /// running. Defaults to an empty string if not set.
 @"enquiry-response": []const u8 = "",
 
+/// The mechanism used to launch Ghostty. This should generally not be
+/// set by users, see the warning below.
+///
+/// WARNING: This is a low-level configuration that is not intended to be
+/// modified by users. All the values will be automatically detected as they
+/// are needed by Ghostty. This is only here in case our detection logic is
+/// incorrect for your environment or for developers who want to test
+/// Ghostty's behavior in different, forced environments.
+///
+/// This is set using the standard `no-[value]`, `[value]` syntax separated
+/// by commas. Example: "no-desktop,systemd". Specific details about the
+/// available values are documented on LaunchProperties in the code. Since
+/// this isn't intended to be modified by users, the documentation is
+/// lighter than the other configurations and users are expected to
+/// refer to the code for details.
+@"launched-from": ?LaunchSource = null,
+
 /// Configures the low-level API to use for async IO, eventing, etc.
 ///
 /// Most users should leave this set to `auto`. This will automatically detect
@@ -3111,6 +3128,11 @@ pub fn finalize(self: *Config) !void {
 
     const alloc = self._arena.?.allocator();
 
+    // Ensure our launch source is properly set.
+    if (self.@"launched-from" == null) {
+        self.@"launched-from" = .detect();
+    }
+
     // If we have a font-family set and don't set the others, default
     // the others to the font family. This way, if someone does
     // --font-family=foo, then we try to get the stylized versions of
@@ -3135,14 +3157,11 @@ pub fn finalize(self: *Config) !void {
     }
 
     // The default for the working directory depends on the system.
-    const wd = self.@"working-directory" orelse wd: {
+    const wd = self.@"working-directory" orelse switch (self.@"launched-from".?) {
         // If we have no working directory set, our default depends on
-        // whether we were launched from the desktop or CLI.
-        if (internal_os.launchedFromDesktop()) {
-            break :wd "home";
-        }
-
-        break :wd "inherit";
+        // whether we were launched from the desktop or elsewhere.
+        .desktop => "home",
+        .cli, .dbus, .systemd => "inherit",
     };
 
     // If we are missing either a command or home directory, we need
@@ -3165,7 +3184,10 @@ pub fn finalize(self: *Config) !void {
                 // If we were launched from the desktop, our SHELL env var
                 // will represent our SHELL at login time. We want to use the
                 // latest shell from /etc/passwd or directory services.
-                if (internal_os.launchedFromDesktop()) break :shell_env;
+                switch (self.@"launched-from".?) {
+                    .desktop, .dbus, .systemd => break :shell_env,
+                    .cli => {},
+                }
 
                 if (std.process.getEnvVarOwned(alloc, "SHELL")) |value| {
                     log.info("default shell source=env value={s}", .{value});
@@ -6592,6 +6614,34 @@ pub const Duration = struct {
             std.time.ns_per_ms,
         ) catch std.math.maxInt(c_uint);
         return std.math.cast(c_uint, ms) orelse std.math.maxInt(c_uint);
+    }
+};
+
+pub const LaunchSource = enum {
+    /// Ghostty was launched via the CLI. This is the default if
+    /// no other source is detected.
+    cli,
+
+    /// Ghostty was launched in a desktop environment (not via the CLI).
+    /// This is used to determine some behaviors such as how to read
+    /// settings, whether single instance defaults to true, etc.
+    desktop,
+
+    /// Ghostty was started via dbus activation.
+    dbus,
+
+    /// Ghostty was started via systemd activation.
+    systemd,
+
+    pub fn detect() LaunchSource {
+        return if (internal_os.launchedFromDesktop())
+            .desktop
+        else if (internal_os.launchedByDbusActivation())
+            .dbus
+        else if (internal_os.launchedBySystemd())
+            .systemd
+        else
+            .cli;
     }
 };
 
