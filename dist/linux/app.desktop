@@ -4,7 +4,7 @@ Name=Ghostty
 Type=Application
 Comment=A terminal emulator
 TryExec=ghostty
-Exec=ghostty %F
+Exec=ghostty --launched-from=desktop
 Icon=com.mitchellh.ghostty
 Categories=System;TerminalEmulator;
 Keywords=terminal;tty;pty;
