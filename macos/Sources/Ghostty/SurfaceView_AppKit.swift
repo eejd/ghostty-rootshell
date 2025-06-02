@@ -279,22 +279,14 @@ extension Ghostty {
             // Remove ourselves from secure input if we have to
             SecureInput.shared.removeScoped(ObjectIdentifier(self))
 
-            guard let surface = self.surface else { return }
-            ghostty_surface_free(surface)
-        }
-
-        /// Close the surface early. This will free the associated Ghostty surface and the view will
-        /// no longer render. The view can never be used again. This is a way for us to free the
-        /// Ghostty resources while references may still be held to this view. I've found that SwiftUI
-        /// tends to hold this view longer than it should so we free the expensive stuff explicitly.
-        func close() {
             // Remove any notifications associated with this surface
             let identifiers = Array(self.notificationIdentifiers)
             UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: identifiers)
 
-            guard let surface = self.surface else { return }
-            ghostty_surface_free(surface)
-            self.surface = nil
+            // Free our core surface resources
+            if let surface = self.surface {
+                ghostty_surface_free(surface)
+            }
         }
 
         func focusDidChange(_ focused: Bool) {

@@ -149,10 +149,8 @@ class BaseTerminalController: NSWindowController,
     ///
     /// Subclasses should call super first.
     func surfaceTreeDidChange(from: Ghostty.SplitNode?, to: Ghostty.SplitNode?) {
-        // If our surface tree becomes nil then ensure all surfaces
-        // in the old tree have closed.
+        // If our surface tree becomes nil then we have no focused surface.
         if (to == nil) {
-            from?.close()
             focusedSurface = nil
         }
     }
