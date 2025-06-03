@@ -350,3 +350,30 @@ extension SplitTree.Node: Equatable {
         }
     }
 }
+
+// MARK: SplitTree Sequences
+
+extension SplitTree.Node {
+    /// Returns all leaf views in this subtree
+    func leaves() -> [NSView] {
+        switch self {
+        case .leaf(let view):
+            return [view]
+            
+        case .split(let split):
+            return split.left.leaves() + split.right.leaves()
+        }
+    }
+}
+
+extension SplitTree: Sequence {
+    func makeIterator() -> [NSView].Iterator {
+        return root?.leaves().makeIterator() ?? [].makeIterator()
+    }
+}
+
+extension SplitTree.Node: Sequence {
+    func makeIterator() -> [NSView].Iterator {
+        return leaves().makeIterator()
+    }
+}

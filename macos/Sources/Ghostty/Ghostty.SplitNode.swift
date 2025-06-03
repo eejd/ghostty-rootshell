@@ -11,7 +11,7 @@ extension Ghostty {
     ///   "container" which has a recursive top/left SplitNode and bottom/right SplitNode. These
     ///   values can further be split infinitely.
     ///
-    enum SplitNode: Equatable, Hashable, Codable, Sequence {
+    enum SplitNode: Equatable, Hashable, Codable {
         case leaf(Leaf)
         case split(Container)
 

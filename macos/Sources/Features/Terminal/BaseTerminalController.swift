@@ -175,16 +175,16 @@ class BaseTerminalController: NSWindowController,
     /// Update all surfaces with the focus state. This ensures that libghostty has an accurate view about
     /// what surface is focused. This must be called whenever a surface OR window changes focus.
     func syncFocusToSurfaceTree() {
-        guard let tree = self.surfaceTree else { return }
-
-        for leaf in tree {
-            // Our focus state requires that this window is key and our currently
-            // focused surface is the surface in this leaf.
-            let focused: Bool = (window?.isKeyWindow ?? false) &&
-                !commandPaletteIsShowing &&
-                focusedSurface != nil &&
-                leaf.surface == focusedSurface!
-            leaf.surface.focusDidChange(focused)
+        for view in surfaceTree2 {
+            if let surfaceView = view as? Ghostty.SurfaceView {
+                // Our focus state requires that this window is key and our currently
+                // focused surface is the surface in this view.
+                let focused: Bool = (window?.isKeyWindow ?? false) &&
+                    !commandPaletteIsShowing &&
+                    focusedSurface != nil &&
+                    surfaceView == focusedSurface!
+                surfaceView.focusDidChange(focused)
+            }
         }
     }
 
@@ -387,20 +387,18 @@ class BaseTerminalController: NSWindowController,
     }
 
     private func localEventFlagsChanged(_ event: NSEvent) -> NSEvent? {
-        // Go through all our surfaces and notify it that the flags changed.
-        if let surfaceTree {
-            var surfaces: [Ghostty.SurfaceView] = surfaceTree.map { $0.surface }
-
-            // If we're the main window receiving key input, then we want to avoid
-            // calling this on our focused surface because that'll trigger a double
-            // flagsChanged call.
-            if NSApp.mainWindow == window {
-                surfaces = surfaces.filter { $0 != focusedSurface }
-            }
-
-            for surface in surfaces {
-                surface.flagsChanged(with: event)
-            }
+        // Also update surfaceTree2
+        var surfaces2: [Ghostty.SurfaceView] = surfaceTree2.compactMap { $0 as? Ghostty.SurfaceView }
+        
+        // If we're the main window receiving key input, then we want to avoid
+        // calling this on our focused surface because that'll trigger a double
+        // flagsChanged call.
+        if NSApp.mainWindow == window {
+            surfaces2 = surfaces2.filter { $0 != focusedSurface }
+        }
+        
+        for surface in surfaces2 {
+            surface.flagsChanged(with: event)
         }
 
         return event
@@ -675,10 +673,10 @@ class BaseTerminalController: NSWindowController,
     }
 
     func windowDidChangeOcclusionState(_ notification: Notification) {
-        guard let surfaceTree = self.surfaceTree else { return }
         let visible = self.window?.occlusionState.contains(.visible) ?? false
-        for leaf in surfaceTree {
-            if let surface = leaf.surface.surface {
+        for view in surfaceTree2 {
+            if let surfaceView = view as? Ghostty.SurfaceView,
+               let surface = surfaceView.surface {
                 ghostty_surface_set_occlusion(surface, visible)
             }
         }
