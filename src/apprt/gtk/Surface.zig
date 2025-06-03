@@ -2454,6 +2454,13 @@ pub fn ringBell(self: *Surface) !void {
         media_stream.play();
     }
 
+    if (features.attention) {
+        // Request user attention
+        window.winproto.setUrgent(true) catch |err| {
+            log.err("failed to request user attention={}", .{err});
+        };
+    }
+
     // Mark tab as needing attention
     if (self.container.tab()) |tab| tab: {
         const page = window.notebook.getTabPage(tab) orelse break :tab;
@@ -2461,11 +2468,6 @@ pub fn ringBell(self: *Surface) !void {
         // Need attention if we're not the currently selected tab
         if (page.getSelected() == 0) page.setNeedsAttention(@intFromBool(true));
     }
-
-    // Request user attention
-    window.winproto.setUrgent(true) catch |err| {
-        log.err("failed to request user attention={}", .{err});
-    };
 }
 
 /// Handle a stream that is in an error state.
