@@ -194,6 +194,40 @@ class BaseTerminalController: NSWindowController,
         savedFrame = .init(window: window.frame, screen: screen.visibleFrame)
     }
 
+    func confirmClose(
+        messageText: String,
+        informativeText: String,
+        completion: @escaping () -> Void
+    ) {
+        // If we already have an alert, we need to wait for that one.
+        guard alert == nil else { return }
+
+        // If there is no window to attach the modal then we assume success
+        // since we'll never be able to show the modal.
+        guard let window else {
+            completion()
+            return
+        }
+
+        // If we need confirmation by any, show one confirmation for all windows
+        // in the tab group.
+        let alert = NSAlert()
+        alert.messageText = messageText
+        alert.informativeText = informativeText
+        alert.addButton(withTitle: "Close")
+        alert.addButton(withTitle: "Cancel")
+        alert.alertStyle = .warning
+        alert.beginSheetModal(for: window) { response in
+            self.alert = nil
+            if response == .alertFirstButtonReturn {
+                completion()
+            }
+        }
+
+        // Store our alert so we only ever show one.
+        self.alert = alert
+    }
+
     // MARK: Notifications
 
     @objc private func didChangeScreenParametersNotification(_ notification: Notification) {
@@ -287,37 +321,19 @@ class BaseTerminalController: NSWindowController,
             return
         }
 
-        // If we don't have a window to attach our modal to, we also exit immediately.
-        // This should NOT happen.
-        guard let window = target.window else {
-            surfaceTree2 = surfaceTree2.remove(node)
-            return
-        }
-
         // Confirm close. We use an NSAlert instead of a SwiftUI confirmationDialog
         // due to SwiftUI bugs (see Ghostty #560). To repeat from #560, the bug is that
         // confirmationDialog allows the user to Cmd-W close the alert, but when doing
         // so SwiftUI does not update any of the bindings to note that window is no longer
         // being shown, and provides no callback to detect this.
-        let alert = NSAlert()
-        alert.messageText = "Close Terminal?"
-        alert.informativeText = "The terminal still has a running process. If you close the " +
-            "terminal the process will be killed."
-        alert.addButton(withTitle: "Close the Terminal")
-        alert.addButton(withTitle: "Cancel")
-        alert.alertStyle = .warning
-        alert.beginSheetModal(for: window, completionHandler: { [weak self] response in
-            switch (response) {
-            case .alertFirstButtonReturn:
-                alert.window.orderOut(nil)
-                if let self {
-                    self.surfaceTree2 = self.surfaceTree2.remove(node)
-                }
-
-            default:
-                break
+        confirmClose(
+            messageText: "Close Terminal?",
+            informativeText: "The terminal still has a running process. If you close the terminal the process will be killed."
+        ) { [weak self] in
+            if let self {
+                self.surfaceTree2 = self.surfaceTree2.remove(node)
             }
-        })
+        }
     }
 
     @objc private func ghosttyDidNewSplit(_ notification: Notification) {
@@ -624,26 +640,12 @@ class BaseTerminalController: NSWindowController,
         if (!node.needsConfirmQuit()) { return true }
 
         // We require confirmation, so show an alert as long as we aren't already.
-        let alert = NSAlert()
-        alert.messageText = "Close Terminal?"
-        alert.informativeText = "The terminal still has a running process. If you close the " +
-        "terminal the process will be killed."
-        alert.addButton(withTitle: "Close the Terminal")
-        alert.addButton(withTitle: "Cancel")
-        alert.alertStyle = .warning
-        alert.beginSheetModal(for: window, completionHandler: { response in
-            self.alert = nil
-            switch (response) {
-            case .alertFirstButtonReturn:
-                alert.window.orderOut(nil)
-                window.close()
-
-            default:
-                break
-            }
-        })
-
-        self.alert = alert
+        confirmClose(
+            messageText: "Close Terminal?",
+            informativeText: "The terminal still has a running process. If you close the terminal the process will be killed."
+        ) {
+            window.close()
+        }
 
         return false
     }

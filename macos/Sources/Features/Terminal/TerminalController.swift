@@ -587,27 +587,6 @@ class TerminalController: BaseTerminalController {
         ghostty.newTab(surface: surface)
     }
 
-    private func confirmClose(
-        window: NSWindow,
-        messageText: String,
-        informativeText: String,
-        completion: @escaping () -> Void
-    ) {
-        // If we need confirmation by any, show one confirmation for all windows
-        // in the tab group.
-        let alert = NSAlert()
-        alert.messageText = messageText
-        alert.informativeText = informativeText
-        alert.addButton(withTitle: "Close")
-        alert.addButton(withTitle: "Cancel")
-        alert.alertStyle = .warning
-        alert.beginSheetModal(for: window) { response in
-            if response == .alertFirstButtonReturn {
-                completion()
-            }
-        }
-    }
-
     @IBAction func closeTab(_ sender: Any?) {
         guard let window = window else { return }
         guard window.tabGroup != nil else {
@@ -618,7 +597,6 @@ class TerminalController: BaseTerminalController {
 
         if surfaceTree?.needsConfirmQuit() ?? false {
             confirmClose(
-                window: window,
                 messageText: "Close Tab?",
                 informativeText: "The terminal still has a running process. If you close the tab the process will be killed."
             ) {
@@ -664,7 +642,6 @@ class TerminalController: BaseTerminalController {
         }
 
         confirmClose(
-            window: window,
             messageText: "Close Window?",
             informativeText: "All terminal sessions in this window will be terminated."
         ) {
