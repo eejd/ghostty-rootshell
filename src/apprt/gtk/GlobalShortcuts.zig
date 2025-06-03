@@ -117,7 +117,9 @@ pub fn refreshSession(self: *GlobalShortcuts, app: *App) !void {
         );
     }
 
-    try self.request(.create_session);
+    if (self.map.count() > 0) {
+        try self.request(.create_session);
+    }
 }
 
 fn shortcutActivated(
