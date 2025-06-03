@@ -1,7 +1,7 @@
 import AppKit
 
 /// SplitTree represents a tree of views that can be divided.
-struct SplitTree {
+struct SplitTree<ViewType: NSView & Codable>: Codable {
     /// The root of the tree. This can be nil to indicate the tree is empty.
     let root: Node?
 
@@ -11,11 +11,11 @@ struct SplitTree {
 
     /// A single node in the tree is either a leaf node (a view) or a split (has a
     /// left/right or top/bottom).
-    indirect enum Node {
-        case leaf(view: NSView)
+    indirect enum Node: Codable {
+        case leaf(view: ViewType)
         case split(Split)
 
-        struct Split: Equatable {
+        struct Split: Equatable, Codable {
             let direction: Direction
             let ratio: Double
             let left: Node
@@ -23,7 +23,7 @@ struct SplitTree {
         }
     }
 
-    enum Direction {
+    enum Direction: Codable {
         case horizontal // Splits are laid out left and right
         case vertical // Splits are laid out top and bottom
     }
@@ -63,12 +63,12 @@ extension SplitTree {
         self.init(root: nil, zoomed: nil)
     }
 
-    init(view: NSView) {
+    init(view: ViewType) {
         self.init(root: .leaf(view: view), zoomed: nil)
     }
 
     /// Insert a new view at the given view point by creating a split in the given direction.
-    func insert(view: NSView, at: NSView, direction: NewDirection) throws -> Self {
+    func insert(view: ViewType, at: ViewType, direction: NewDirection) throws -> Self {
         guard let root else { throw SplitError.viewNotFound }
         return .init(
             root: try root.insert(view: view, at: at, direction: direction),
@@ -122,7 +122,7 @@ extension SplitTree.Node {
     typealias Path = SplitTree.Path
 
     /// Returns the node in the tree that contains the given view.
-    func node(view: NSView) -> Node? {
+    func node(view: ViewType) -> Node? {
         switch (self) {
         case .leaf(view):
             return self
@@ -188,7 +188,7 @@ extension SplitTree.Node {
     ///
     /// - Note: If the existing view (`at`) is not found in the tree, this method does nothing. We should
     /// maybe throw instead but at the moment we just do nothing.
-    func insert(view: NSView, at: NSView, direction: NewDirection) throws -> Self {
+    func insert(view: ViewType, at: ViewType, direction: NewDirection) throws -> Self {
         // Get the path to our insertion point. If it doesn't exist we do
         // nothing.
         guard let path = path(to: .leaf(view: at)) else {
@@ -351,11 +351,51 @@ extension SplitTree.Node: Equatable {
     }
 }
 
+// MARK: SplitTree Codable
+
+extension SplitTree.Node {
+    enum CodingKeys: String, CodingKey {
+        case view
+        case split
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        
+        if container.contains(.view) {
+            let view = try container.decode(ViewType.self, forKey: .view)
+            self = .leaf(view: view)
+        } else if container.contains(.split) {
+            let split = try container.decode(Split.self, forKey: .split)
+            self = .split(split)
+        } else {
+            throw DecodingError.dataCorrupted(
+                DecodingError.Context(
+                    codingPath: decoder.codingPath,
+                    debugDescription: "No valid node type found"
+                )
+            )
+        }
+    }
+    
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        
+        switch self {
+        case .leaf(let view):
+            try container.encode(view, forKey: .view)
+            
+        case .split(let split):
+            try container.encode(split, forKey: .split)
+        }
+    }
+}
+
 // MARK: SplitTree Sequences
 
 extension SplitTree.Node {
     /// Returns all leaf views in this subtree
-    func leaves() -> [NSView] {
+    func leaves() -> [ViewType] {
         switch self {
         case .leaf(let view):
             return [view]
@@ -367,13 +407,13 @@ extension SplitTree.Node {
 }
 
 extension SplitTree: Sequence {
-    func makeIterator() -> [NSView].Iterator {
+    func makeIterator() -> [ViewType].Iterator {
         return root?.leaves().makeIterator() ?? [].makeIterator()
     }
 }
 
 extension SplitTree.Node: Sequence {
-    func makeIterator() -> [NSView].Iterator {
+    func makeIterator() -> [ViewType].Iterator {
         return leaves().makeIterator()
     }
 }

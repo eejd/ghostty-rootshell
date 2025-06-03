@@ -6,7 +6,7 @@ import GhosttyKit
 
 extension Ghostty {
     /// The NSView implementation for a terminal surface.
-    class SurfaceView: OSView, ObservableObject {
+    class SurfaceView: OSView, ObservableObject, Codable {
         /// Unique ID per surface
         let uuid: UUID
 
@@ -1430,6 +1430,35 @@ extension Ghostty {
                 self.windowTitleFontFamily = config.windowTitleFontFamily
                 self.windowAppearance = .init(ghosttyConfig: config)
             }
+        }
+
+        // MARK: - Codable
+
+        enum CodingKeys: String, CodingKey {
+            case pwd
+            case uuid
+        }
+
+        required convenience init(from decoder: Decoder) throws {
+            // Decoding uses the global Ghostty app
+            guard let del = NSApplication.shared.delegate,
+                  let appDel = del as? AppDelegate,
+                  let app = appDel.ghostty.app else {
+                throw TerminalRestoreError.delegateInvalid
+            }
+
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            let uuid = UUID(uuidString: try container.decode(String.self, forKey: .uuid))
+            var config = Ghostty.SurfaceConfiguration()
+            config.workingDirectory = try container.decode(String?.self, forKey: .pwd)
+
+            self.init(app, baseConfig: config, uuid: uuid)
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(pwd, forKey: .pwd)
+            try container.encode(uuid.uuidString, forKey: .uuid)
         }
     }
 }

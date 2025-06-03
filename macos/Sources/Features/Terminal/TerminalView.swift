@@ -21,7 +21,7 @@ protocol TerminalViewDelegate: AnyObject {
     func performAction(_ action: String, on: Ghostty.SurfaceView)
 
     /// A split is resizing to a given value.
-    func splitDidResize(node: SplitTree.Node, to newRatio: Double)
+    func splitDidResize(node: SplitTree<Ghostty.SurfaceView>.Node, to newRatio: Double)
 }
 
 /// The view model is a required implementation for TerminalView callers. This contains
@@ -30,7 +30,7 @@ protocol TerminalViewDelegate: AnyObject {
 protocol TerminalViewModel: ObservableObject {
     /// The tree of terminal surfaces (splits) within the view. This is mutated by TerminalView
     /// and children. This should be @Published.
-    var surfaceTree2: SplitTree { get set }
+    var surfaceTree2: SplitTree<Ghostty.SurfaceView> { get set }
 
     /// The command palette state.
     var commandPaletteIsShowing: Bool { get set }

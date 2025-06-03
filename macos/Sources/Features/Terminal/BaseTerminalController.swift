@@ -46,7 +46,7 @@ class BaseTerminalController: NSWindowController,
         didSet { surfaceTreeDidChange(from: oldValue, to: surfaceTree) }
     }
 
-    @Published var surfaceTree2: SplitTree = .init()
+    @Published var surfaceTree2: SplitTree<Ghostty.SurfaceView> = .init()
 
     /// This can be set to show/hide the command palette.
     @Published var commandPaletteIsShowing: Bool = false
@@ -88,7 +88,8 @@ class BaseTerminalController: NSWindowController,
 
     init(_ ghostty: Ghostty.App,
          baseConfig base: Ghostty.SurfaceConfiguration? = nil,
-         surfaceTree tree: Ghostty.SplitNode? = nil
+         surfaceTree tree: Ghostty.SplitNode? = nil,
+         surfaceTree2 tree2: SplitTree<Ghostty.SurfaceView>? = nil
     ) {
         self.ghostty = ghostty
         self.derivedConfig = DerivedConfig(ghostty.config)
@@ -98,9 +99,7 @@ class BaseTerminalController: NSWindowController,
         // Initialize our initial surface.
         guard let ghostty_app = ghostty.app else { preconditionFailure("app must be loaded") }
         self.surfaceTree = tree ?? .leaf(.init(ghostty_app, baseConfig: base))
-
-        let firstView = Ghostty.SurfaceView(ghostty_app, baseConfig: base)
-        self.surfaceTree2 = .init(view: firstView)
+        self.surfaceTree2 = tree2 ?? .init(view: Ghostty.SurfaceView(ghostty_app, baseConfig: base))
 
         // Setup our notifications for behaviors
         let center = NotificationCenter.default
@@ -175,16 +174,14 @@ class BaseTerminalController: NSWindowController,
     /// Update all surfaces with the focus state. This ensures that libghostty has an accurate view about
     /// what surface is focused. This must be called whenever a surface OR window changes focus.
     func syncFocusToSurfaceTree() {
-        for view in surfaceTree2 {
-            if let surfaceView = view as? Ghostty.SurfaceView {
-                // Our focus state requires that this window is key and our currently
-                // focused surface is the surface in this view.
-                let focused: Bool = (window?.isKeyWindow ?? false) &&
-                    !commandPaletteIsShowing &&
-                    focusedSurface != nil &&
-                    surfaceView == focusedSurface!
-                surfaceView.focusDidChange(focused)
-            }
+        for surfaceView in surfaceTree2 {
+            // Our focus state requires that this window is key and our currently
+            // focused surface is the surface in this view.
+            let focused: Bool = (window?.isKeyWindow ?? false) &&
+                !commandPaletteIsShowing &&
+                focusedSurface != nil &&
+                surfaceView == focusedSurface!
+            surfaceView.focusDidChange(focused)
         }
     }
 
@@ -335,7 +332,7 @@ class BaseTerminalController: NSWindowController,
         // Determine our desired direction
         guard let directionAny = notification.userInfo?["direction"] else { return }
         guard let direction = directionAny as? ghostty_action_split_direction_e else { return }
-        let splitDirection: SplitTree.NewDirection
+        let splitDirection: SplitTree<Ghostty.SurfaceView>.NewDirection
         switch (direction) {
         case GHOSTTY_SPLIT_DIRECTION_RIGHT: splitDirection = .right
         case GHOSTTY_SPLIT_DIRECTION_LEFT: splitDirection = .left
@@ -388,16 +385,16 @@ class BaseTerminalController: NSWindowController,
 
     private func localEventFlagsChanged(_ event: NSEvent) -> NSEvent? {
         // Also update surfaceTree2
-        var surfaces2: [Ghostty.SurfaceView] = surfaceTree2.compactMap { $0 as? Ghostty.SurfaceView }
-        
+        var surfaces: [Ghostty.SurfaceView] = surfaceTree2.map { $0 }
+
         // If we're the main window receiving key input, then we want to avoid
         // calling this on our focused surface because that'll trigger a double
         // flagsChanged call.
         if NSApp.mainWindow == window {
-            surfaces2 = surfaces2.filter { $0 != focusedSurface }
+            surfaces = surfaces.filter { $0 != focusedSurface }
         }
         
-        for surface in surfaces2 {
+        for surface in surfaces {
             surface.flagsChanged(with: event)
         }
 
@@ -455,7 +452,7 @@ class BaseTerminalController: NSWindowController,
 
     func zoomStateDidChange(to: Bool) {}
 
-    func splitDidResize(node: SplitTree.Node, to newRatio: Double) {
+    func splitDidResize(node: SplitTree<Ghostty.SurfaceView>.Node, to newRatio: Double) {
         let resizedNode = node.resize(to: newRatio)
         do {
             surfaceTree2 = try surfaceTree2.replace(node: node, with: resizedNode)
@@ -675,8 +672,7 @@ class BaseTerminalController: NSWindowController,
     func windowDidChangeOcclusionState(_ notification: Notification) {
         let visible = self.window?.occlusionState.contains(.visible) ?? false
         for view in surfaceTree2 {
-            if let surfaceView = view as? Ghostty.SurfaceView,
-               let surface = surfaceView.surface {
+            if let surface = view.surface {
                 ghostty_surface_set_occlusion(surface, visible)
             }
         }

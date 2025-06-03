@@ -32,7 +32,8 @@ class TerminalController: BaseTerminalController {
 
     init(_ ghostty: Ghostty.App,
          withBaseConfig base: Ghostty.SurfaceConfiguration? = nil,
-         withSurfaceTree tree: Ghostty.SplitNode? = nil
+         withSurfaceTree tree: Ghostty.SplitNode? = nil,
+         withSurfaceTree2 tree2: SplitTree<Ghostty.SurfaceView>? = nil
     ) {
         // The window we manage is not restorable if we've specified a command
         // to execute. We do this because the restored window is meaningless at the
@@ -44,7 +45,7 @@ class TerminalController: BaseTerminalController {
         // Setup our initial derived config based on the current app config
         self.derivedConfig = DerivedConfig(ghostty.config)
 
-        super.init(ghostty, baseConfig: base, surfaceTree: tree)
+        super.init(ghostty, baseConfig: base, surfaceTree: tree, surfaceTree2: tree2)
 
         // Setup our notifications for behaviors
         let center = NotificationCenter.default

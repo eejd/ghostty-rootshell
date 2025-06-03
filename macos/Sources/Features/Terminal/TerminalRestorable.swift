@@ -4,14 +4,16 @@ import Cocoa
 class TerminalRestorableState: Codable {
     static let selfKey = "state"
     static let versionKey = "version"
-    static let version: Int = 2
+    static let version: Int = 3
 
     let focusedSurface: String?
     let surfaceTree: Ghostty.SplitNode?
+    let surfaceTree2: SplitTree<Ghostty.SurfaceView>?
 
     init(from controller: TerminalController) {
         self.focusedSurface = controller.focusedSurface?.uuid.uuidString
         self.surfaceTree = controller.surfaceTree
+        self.surfaceTree2 = controller.surfaceTree2
     }
 
     init?(coder aDecoder: NSCoder) {
@@ -27,6 +29,7 @@ class TerminalRestorableState: Codable {
         }
 
         self.surfaceTree = v.value.surfaceTree
+        self.surfaceTree2 = v.value.surfaceTree2
         self.focusedSurface = v.value.focusedSurface
     }
 
@@ -83,18 +86,37 @@ class TerminalWindowRestoration: NSObject, NSWindowRestoration {
         // can be found for events from libghostty. This uses the low-level
         // createWindow so that AppKit can place the window wherever it should
         // be.
-        let c = appDelegate.terminalManager.createWindow(withSurfaceTree: state.surfaceTree)
+        let c = appDelegate.terminalManager.createWindow(
+            withSurfaceTree: state.surfaceTree,
+            withSurfaceTree2: state.surfaceTree2
+        )
         guard let window = c.window else {
             completionHandler(nil, TerminalRestoreError.windowDidNotLoad)
             return
         }
 
         // Setup our restored state on the controller
+        // First try to find the focused surface in surfaceTree2
         if let focusedStr = state.focusedSurface,
-           let focusedUUID = UUID(uuidString: focusedStr),
-           let view = c.surfaceTree?.findUUID(uuid: focusedUUID) {
-            c.focusedSurface = view
-            restoreFocus(to: view, inWindow: window)
+           let focusedUUID = UUID(uuidString: focusedStr) {
+            // Try surfaceTree2 first
+            var foundView: Ghostty.SurfaceView?
+            for view in c.surfaceTree2 {
+                if view.uuid.uuidString == focusedStr {
+                    foundView = view
+                    break
+                }
+            }
+            
+            // Fall back to surfaceTree if not found
+            if foundView == nil {
+                foundView = c.surfaceTree?.findUUID(uuid: focusedUUID)
+            }
+            
+            if let view = foundView {
+                c.focusedSurface = view
+                restoreFocus(to: view, inWindow: window)
+            }
         }
 
         completionHandler(window, nil)

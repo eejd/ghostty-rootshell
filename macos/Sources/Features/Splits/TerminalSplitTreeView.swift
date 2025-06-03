@@ -1,8 +1,8 @@
 import SwiftUI
 
 struct TerminalSplitTreeView: View {
-    let tree: SplitTree
-    let onResize: (SplitTree.Node, Double) -> Void
+    let tree: SplitTree<Ghostty.SurfaceView>
+    let onResize: (SplitTree<Ghostty.SurfaceView>.Node, Double) -> Void
 
     var body: some View {
         if let node = tree.root {
@@ -14,16 +14,15 @@ struct TerminalSplitTreeView: View {
 struct TerminalSplitSubtreeView: View {
     @EnvironmentObject var ghostty: Ghostty.App
 
-    let node: SplitTree.Node
+    let node: SplitTree<Ghostty.SurfaceView>.Node
     var isRoot: Bool = false
-    let onResize: (SplitTree.Node, Double) -> Void
+    let onResize: (SplitTree<Ghostty.SurfaceView>.Node, Double) -> Void
 
     var body: some View {
         switch (node) {
         case .leaf(let leafView):
-            // TODO: Fix the as!
             Ghostty.InspectableSurface(
-                surfaceView: leafView as! Ghostty.SurfaceView,
+                surfaceView: leafView,
                 isSplit: !isRoot)
 
         case .split(let split):
