@@ -272,13 +272,55 @@ class BaseTerminalController: NSWindowController,
 
     @objc private func ghosttyDidCloseSurface(_ notification: Notification) {
         // The target must be within our tree
-        guard let oldView = notification.object as? Ghostty.SurfaceView else { return }
-        guard let node = surfaceTree2.root?.node(view: oldView) else { return }
-
-        // Remove it
-        surfaceTree2 = surfaceTree2.remove(node)
+        guard let target = notification.object as? Ghostty.SurfaceView else { return }
+        guard let node = surfaceTree2.root?.node(view: target) else { return }
 
         // TODO: fix focus
+
+        var processAlive = false
+        if let valueAny = notification.userInfo?["process_alive"] {
+            if let value = valueAny as? Bool {
+                processAlive = value
+            }
+        }
+
+        // If the child process is not alive, then we exit immediately
+        guard processAlive else {
+            surfaceTree2 = surfaceTree2.remove(node)
+            return
+        }
+
+        // If we don't have a window to attach our modal to, we also exit immediately.
+        // This should NOT happen.
+        guard let window = target.window else {
+            surfaceTree2 = surfaceTree2.remove(node)
+            return
+        }
+
+        // Confirm close. We use an NSAlert instead of a SwiftUI confirmationDialog
+        // due to SwiftUI bugs (see Ghostty #560). To repeat from #560, the bug is that
+        // confirmationDialog allows the user to Cmd-W close the alert, but when doing
+        // so SwiftUI does not update any of the bindings to note that window is no longer
+        // being shown, and provides no callback to detect this.
+        let alert = NSAlert()
+        alert.messageText = "Close Terminal?"
+        alert.informativeText = "The terminal still has a running process. If you close the " +
+            "terminal the process will be killed."
+        alert.addButton(withTitle: "Close the Terminal")
+        alert.addButton(withTitle: "Cancel")
+        alert.alertStyle = .warning
+        alert.beginSheetModal(for: window, completionHandler: { [weak self] response in
+            switch (response) {
+            case .alertFirstButtonReturn:
+                alert.window.orderOut(nil)
+                if let self {
+                    self.surfaceTree2 = self.surfaceTree2.remove(node)
+                }
+
+            default:
+                break
+            }
+        })
     }
 
     @objc private func ghosttyDidNewSplit(_ notification: Notification) {
