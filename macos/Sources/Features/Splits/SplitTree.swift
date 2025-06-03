@@ -93,6 +93,24 @@ extension SplitTree {
         
         return .init(root: newRoot, zoomed: newZoomed)
     }
+
+    /// Replace a node in the tree with a new node.
+    func replace(node: Node, with newNode: Node) throws -> Self {
+        guard let root else { throw SplitError.viewNotFound }
+        
+        // Get the path to the node we want to replace
+        guard let path = root.path(to: node) else {
+            throw SplitError.viewNotFound
+        }
+        
+        // Replace the node
+        let newRoot = try root.replaceNode(at: path, with: newNode)
+        
+        // Update zoomed if it was the replaced node
+        let newZoomed = (zoomed == node) ? newNode : zoomed
+        
+        return .init(root: newRoot, zoomed: newZoomed)
+    }
 }
 
 // MARK: SplitTree.Node
@@ -210,7 +228,7 @@ extension SplitTree.Node {
     }
 
     /// Helper function to replace a node at the given path from the root
-    private func replaceNode(at path: Path, with newNode: Self) throws -> Self {
+    func replaceNode(at path: Path, with newNode: Self) throws -> Self {
         // If path is empty, replace the root
         if path.isEmpty {
             return newNode
@@ -290,6 +308,26 @@ extension SplitTree.Node {
                 ratio: split.ratio,
                 left: newLeft!,
                 right: newRight!
+            ))
+        }
+    }
+
+    /// Resize a split node to the specified ratio.
+    /// For leaf nodes, this returns the node unchanged.
+    /// For split nodes, this creates a new split with the updated ratio.
+    func resize(to ratio: Double) -> Self {
+        switch self {
+        case .leaf:
+            // Leaf nodes don't have a ratio to resize
+            return self
+            
+        case .split(let split):
+            // Create a new split with the updated ratio
+            return .split(.init(
+                direction: split.direction,
+                ratio: ratio,
+                left: split.left,
+                right: split.right
             ))
         }
     }

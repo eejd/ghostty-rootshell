@@ -30,7 +30,6 @@ class TerminalWindow: NSWindow {
         observe(\.surfaceIsZoomed, options: [.initial, .new]) { [weak self] window, _ in
             guard let tabGroup = self?.tabGroup else { return }
 
-            Ghostty.logger.warning("WOW \(window.surfaceIsZoomed)")
             self?.resetZoomTabButton.isHidden = !window.surfaceIsZoomed
             self?.updateResetZoomTitlebarButtonVisibility()
         },

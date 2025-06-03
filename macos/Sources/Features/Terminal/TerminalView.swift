@@ -14,15 +14,14 @@ protocol TerminalViewDelegate: AnyObject {
     /// The cell size changed.
     func cellSizeDidChange(to: NSSize)
 
-    /// The surface tree did change in some way, i.e. a split was added, removed, etc. This is
-    /// not called initially.
-    func surfaceTreeDidChange()
-
     /// This is called when a split is zoomed.
     func zoomStateDidChange(to: Bool)
 
     /// Perform an action. At the time of writing this is only triggered by the command palette.
     func performAction(_ action: String, on: Ghostty.SurfaceView)
+
+    /// A split is resizing to a given value.
+    func splitDidResize(node: SplitTree.Node, to newRatio: Double)
 }
 
 /// The view model is a required implementation for TerminalView callers. This contains
@@ -81,7 +80,9 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                         DebugBuildWarningView()
                     }
 
-                    TerminalSplitTreeView(tree: viewModel.surfaceTree2)
+                    TerminalSplitTreeView(
+                        tree: viewModel.surfaceTree2,
+                        onResize: { delegate?.splitDidResize(node: $0, to: $1) })
                         .environmentObject(ghostty)
                         .focused($focused)
                         .onAppear { self.focused = true }

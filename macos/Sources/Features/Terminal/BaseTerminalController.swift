@@ -366,11 +366,6 @@ class BaseTerminalController: NSWindowController,
 
     // MARK: TerminalViewDelegate
 
-    // Note: this is different from surfaceDidTreeChange(from:,to:) because this is called
-    // when the currently set value changed in place and the from:to: variant is called
-    // when the variable was set.
-    func surfaceTreeDidChange() {}
-
     func focusedSurfaceDidChange(to: Ghostty.SurfaceView?) {
         let lastFocusedSurface = focusedSurface
         focusedSurface = to
@@ -419,6 +414,16 @@ class BaseTerminalController: NSWindowController,
     }
 
     func zoomStateDidChange(to: Bool) {}
+
+    func splitDidResize(node: SplitTree.Node, to newRatio: Double) {
+        let resizedNode = node.resize(to: newRatio)
+        do {
+            surfaceTree2 = try surfaceTree2.replace(node: node, with: resizedNode)
+        } catch {
+            // TODO: log
+            return
+        }
+    }
 
     func performAction(_ action: String, on surfaceView: Ghostty.SurfaceView) {
         guard let surface = surfaceView.surface else { return }

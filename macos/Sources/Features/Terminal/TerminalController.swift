@@ -107,6 +107,10 @@ class TerminalController: BaseTerminalController {
 
     override func surfaceTreeDidChange(from: Ghostty.SplitNode?, to: Ghostty.SplitNode?) {
         super.surfaceTreeDidChange(from: from, to: to)
+        
+        // Whenever our surface tree changes in any way (new split, close split, etc.)
+        // we want to invalidate our state.
+        invalidateRestorableState()
 
         // If our surface tree is now nil then we close our window.
         if (to == nil) {
@@ -694,12 +698,6 @@ class TerminalController: BaseTerminalController {
             }
             toolbar.titleText = to
         }
-    }
-
-    override func surfaceTreeDidChange() {
-        // Whenever our surface tree changes in any way (new split, close split, etc.)
-        // we want to invalidate our state.
-        invalidateRestorableState()
     }
 
     override func zoomStateDidChange(to: Bool) {
