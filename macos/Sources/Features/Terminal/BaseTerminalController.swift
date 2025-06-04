@@ -150,6 +150,11 @@ class BaseTerminalController: NSWindowController,
             selector: #selector(ghosttyDidFocusSplit(_:)),
             name: Ghostty.Notification.ghosttyFocusSplit,
             object: nil)
+        center.addObserver(
+            self,
+            selector: #selector(ghosttyDidToggleSplitZoom(_:)),
+            name: Ghostty.Notification.didToggleSplitZoom,
+            object: nil)
 
         // Listen for local events that we need to know of outside of
         // single surface handlers.
@@ -421,6 +426,24 @@ class BaseTerminalController: NSWindowController,
 
         // Move focus to the next surface
         Ghostty.moveFocus(to: nextSurface, from: target)
+    }
+    
+    @objc private func ghosttyDidToggleSplitZoom(_ notification: Notification) {
+        // The target must be within our tree
+        guard let target = notification.object as? Ghostty.SurfaceView else { return }
+        guard let targetNode = surfaceTree2.root?.node(view: target) else { return }
+        
+        // Toggle the zoomed state
+        if surfaceTree2.zoomed == targetNode {
+            // Already zoomed, unzoom it
+            surfaceTree2 = SplitTree(root: surfaceTree2.root, zoomed: nil)
+        } else {
+            // Not zoomed or different node zoomed, zoom this node
+            surfaceTree2 = SplitTree(root: surfaceTree2.root, zoomed: targetNode)
+        }
+        
+        // Ensure focus stays on the target surface
+        Ghostty.moveFocus(to: target)
     }
 
     // MARK: Local Events

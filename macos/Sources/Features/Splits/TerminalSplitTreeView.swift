@@ -5,8 +5,11 @@ struct TerminalSplitTreeView: View {
     let onResize: (SplitTree<Ghostty.SurfaceView>.Node, Double) -> Void
 
     var body: some View {
-        if let node = tree.root {
-            TerminalSplitSubtreeView(node: node, isRoot: true, onResize: onResize)
+        if let node = tree.zoomed ?? tree.root {
+            TerminalSplitSubtreeView(
+                node: node,
+                isRoot: node == tree.root,
+                onResize: onResize)
         }
     }
 }
