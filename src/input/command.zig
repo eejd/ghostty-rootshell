@@ -119,7 +119,7 @@ fn actionCommands(action: Action.Key) []const Command {
         .paste_from_clipboard => comptime &.{.{
             .action = .paste_from_clipboard,
             .title = "Paste from Clipboard",
-            .description = "Paste the contents of the clipboard.",
+            .description = "Paste the contents of the main clipboard.",
         }},
 
         .paste_from_selection => comptime &.{.{
