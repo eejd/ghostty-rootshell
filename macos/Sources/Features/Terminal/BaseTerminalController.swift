@@ -151,6 +151,11 @@ class BaseTerminalController: NSWindowController,
             selector: #selector(ghosttyDidToggleSplitZoom(_:)),
             name: Ghostty.Notification.didToggleSplitZoom,
             object: nil)
+        center.addObserver(
+            self,
+            selector: #selector(ghosttyDidResizeSplit(_:)),
+            name: Ghostty.Notification.didResizeSplit,
+            object: nil)
 
         // Listen for local events that we need to know of outside of
         // single surface handlers.
@@ -478,6 +483,38 @@ class BaseTerminalController: NSWindowController,
         // this so we need to grab it again.
         DispatchQueue.main.async {
             Ghostty.moveFocus(to: target)
+        }
+    }
+    
+    @objc private func ghosttyDidResizeSplit(_ notification: Notification) {
+        // The target must be within our tree
+        guard let target = notification.object as? Ghostty.SurfaceView else { return }
+        guard let targetNode = surfaceTree.root?.node(view: target) else { return }
+        
+        // Extract direction and amount from notification
+        guard let directionAny = notification.userInfo?[Ghostty.Notification.ResizeSplitDirectionKey] else { return }
+        guard let direction = directionAny as? Ghostty.SplitResizeDirection else { return }
+        
+        guard let amountAny = notification.userInfo?[Ghostty.Notification.ResizeSplitAmountKey] else { return }
+        guard let amount = amountAny as? UInt16 else { return }
+        
+        // Convert Ghostty.SplitResizeDirection to SplitTree.Spatial.Direction
+        let spatialDirection: SplitTree<Ghostty.SurfaceView>.Spatial.Direction
+        switch direction {
+        case .up: spatialDirection = .up
+        case .down: spatialDirection = .down
+        case .left: spatialDirection = .left
+        case .right: spatialDirection = .right
+        }
+        
+        // Use viewBounds for the spatial calculation bounds
+        let bounds = CGRect(origin: .zero, size: surfaceTree.viewBounds())
+        
+        // Perform the resize using the new SplitTree resize method
+        do {
+            surfaceTree = try surfaceTree.resize(node: targetNode, by: amount, in: spatialDirection, with: bounds)
+        } catch {
+            Ghostty.logger.warning("failed to resize split: \(error)")
         }
     }
 

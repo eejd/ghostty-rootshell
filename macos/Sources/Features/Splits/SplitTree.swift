@@ -213,6 +213,108 @@ extension SplitTree {
         let newRoot = root.equalize()
         return .init(root: newRoot, zoomed: zoomed)
     }
+    
+    /// Resize a node in the tree by the given pixel amount in the specified direction.
+    /// 
+    /// This method adjusts the split ratios of the tree to accommodate the requested resize
+    /// operation. For up/down resizing, it finds the nearest parent vertical split and adjusts
+    /// its ratio. For left/right resizing, it finds the nearest parent horizontal split.
+    /// The bounds parameter is used to construct the spatial tree representation which is 
+    /// needed to calculate the current pixel dimensions.
+    ///
+    /// This will always reset the zoomed state.
+    ///
+    /// - Parameters:
+    ///   - node: The node to resize
+    ///   - by: The number of pixels to resize by
+    ///   - direction: The direction to resize in (up, down, left, right)
+    ///   - bounds: The bounds used to construct the spatial tree representation
+    /// - Returns: A new SplitTree with the adjusted split ratios
+    /// - Throws: SplitError.viewNotFound if the node is not found in the tree or no suitable parent split exists
+    func resize(node: Node, by pixels: UInt16, in direction: Spatial.Direction, with bounds: CGRect) throws -> Self {
+        guard let root else { throw SplitError.viewNotFound }
+        
+        // Find the path to the target node
+        guard let path = root.path(to: node) else {
+            throw SplitError.viewNotFound
+        }
+        
+        // Determine which type of split we need to find based on resize direction
+        let targetSplitDirection: Direction = switch direction {
+        case .up, .down: .vertical
+        case .left, .right: .horizontal
+        }
+        
+        // Find the nearest parent split of the correct type by walking up the path
+        var splitPath: Path?
+        var splitNode: Node?
+        
+        for i in stride(from: path.path.count - 1, through: 0, by: -1) {
+            let parentPath = Path(path: Array(path.path.prefix(i)))
+            if let parent = root.node(at: parentPath), case .split(let split) = parent {
+                if split.direction == targetSplitDirection {
+                    splitPath = parentPath
+                    splitNode = parent
+                    break
+                }
+            }
+        }
+        
+        guard let splitPath = splitPath, 
+              let splitNode = splitNode,
+              case .split(let split) = splitNode else {
+            throw SplitError.viewNotFound
+        }
+        
+        // Get current spatial representation to calculate pixel dimensions
+        let spatial = root.spatial(within: bounds.size)
+        guard let splitSlot = spatial.slots.first(where: { $0.node == splitNode }) else {
+            throw SplitError.viewNotFound
+        }
+        
+        // Calculate the new ratio based on pixel change
+        let pixelOffset = Double(pixels)
+        let newRatio: Double
+        
+        switch (split.direction, direction) {
+        case (.horizontal, .left):
+            // Moving left boundary: decrease left side
+            newRatio = Swift.max(0.1, Swift.min(0.9, split.ratio - (pixelOffset / splitSlot.bounds.width)))
+        case (.horizontal, .right):
+            // Moving right boundary: increase left side  
+            newRatio = Swift.max(0.1, Swift.min(0.9, split.ratio + (pixelOffset / splitSlot.bounds.width)))
+        case (.vertical, .up):
+            // Moving top boundary: decrease top side
+            newRatio = Swift.max(0.1, Swift.min(0.9, split.ratio - (pixelOffset / splitSlot.bounds.height)))
+        case (.vertical, .down):
+            // Moving bottom boundary: increase top side
+            newRatio = Swift.max(0.1, Swift.min(0.9, split.ratio + (pixelOffset / splitSlot.bounds.height)))
+        default:
+            // Direction doesn't match split type - shouldn't happen due to earlier logic
+            throw SplitError.viewNotFound
+        }
+        
+        // Create new split with adjusted ratio
+        let newSplit = Node.Split(
+            direction: split.direction,
+            ratio: newRatio,
+            left: split.left,
+            right: split.right
+        )
+        
+        // Replace the split node with the new one
+        let newRoot = try root.replaceNode(at: splitPath, with: .split(newSplit))
+        return .init(root: newRoot, zoomed: nil)
+    }
+    
+    /// Returns the total bounds of the split hierarchy using NSView bounds.
+    /// Ignores x/y coordinates and assumes views are laid out in a perfect grid.
+    /// Also ignores any possible padding between views.
+    /// - Returns: The total width and height needed to contain all views
+    func viewBounds() -> CGSize {
+        guard let root else { return .zero }
+        return root.viewBounds()
+    }
 }
 
 // MARK: SplitTree.Node
@@ -276,6 +378,27 @@ extension SplitTree.Node {
         }
 
         return search(self) ? Path(path: components) : nil
+    }
+    
+    /// Returns the node at the given path from this node as root.
+    func node(at path: Path) -> Node? {
+        if path.isEmpty {
+            return self
+        }
+        
+        guard case .split(let split) = self else {
+            return nil
+        }
+        
+        let component = path.path[0]
+        let remainingPath = Path(path: Array(path.path.dropFirst()))
+        
+        switch component {
+        case .left:
+            return split.left.node(at: remainingPath)
+        case .right:
+            return split.right.node(at: remainingPath)
+        }
     }
 
     /// Inserts a new view into the split tree by creating a split at the location of an existing view.
@@ -541,6 +664,36 @@ extension SplitTree.Node {
                    split.right.calculateViewBounds(in: rightBounds)
         }
     }
+    
+    /// Returns the total bounds of this subtree using NSView bounds.
+    /// Ignores x/y coordinates and assumes views are laid out in a perfect grid.
+    /// - Returns: The total width and height needed to contain all views in this subtree
+    func viewBounds() -> CGSize {
+        switch self {
+        case .leaf(let view):
+            return view.bounds.size
+            
+        case .split(let split):
+            let leftBounds = split.left.viewBounds()
+            let rightBounds = split.right.viewBounds()
+            
+            switch split.direction {
+            case .horizontal:
+                // Horizontal split: width is sum, height is max
+                return CGSize(
+                    width: leftBounds.width + rightBounds.width,
+                    height: Swift.max(leftBounds.height, rightBounds.height)
+                )
+                
+            case .vertical:
+                // Vertical split: height is sum, width is max
+                return CGSize(
+                    width: Swift.max(leftBounds.width, rightBounds.width),
+                    height: leftBounds.height + rightBounds.height
+                )
+            }
+        }
+    }
 }
 
 // MARK: SplitTree.Node Spatial
@@ -575,16 +728,25 @@ extension SplitTree.Node {
     /// // - Node bounds based on actual split ratios
     /// ```
     ///
+    /// - Parameter bounds: Optional size constraints for the spatial representation. If nil, uses artificial dimensions based
+    ///   on grid layout
     /// - Returns: A `Spatial` struct containing all slots with their calculated bounds
-    func spatial() -> SplitTree.Spatial {
-        // First, calculate the total dimensions needed
-        let dimensions = dimensions()
+    func spatial(within bounds: CGSize? = nil) -> SplitTree.Spatial {
+        // If we're not given bounds, we use artificial dimensions based on
+        // the total width/height in columns/rows.
+        let width: Double
+        let height: Double
+        if let bounds {
+            width = bounds.width
+            height = bounds.height
+        } else {
+            let (w, h) = self.dimensions()
+            width = Double(w)
+            height = Double(h)
+        }
 
         // Calculate slots with relative bounds
-        let slots = spatialSlots(
-            in: CGRect(x: 0, y: 0, width: Double(dimensions.width), height: Double(dimensions.height))
-        )
-
+        let slots = spatialSlots(in: CGRect(x: 0, y: 0, width: width, height: height))
         return SplitTree.Spatial(slots: slots)
     }
 
