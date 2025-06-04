@@ -7,12 +7,10 @@ class TerminalRestorableState: Codable {
     static let version: Int = 3
 
     let focusedSurface: String?
-    let surfaceTree: Ghostty.SplitNode?
-    let surfaceTree2: SplitTree<Ghostty.SurfaceView>?
+    let surfaceTree2: SplitTree<Ghostty.SurfaceView>
 
     init(from controller: TerminalController) {
         self.focusedSurface = controller.focusedSurface?.uuid.uuidString
-        self.surfaceTree = controller.surfaceTree
         self.surfaceTree2 = controller.surfaceTree2
     }
 
@@ -28,7 +26,6 @@ class TerminalRestorableState: Codable {
             return nil
         }
 
-        self.surfaceTree = v.value.surfaceTree
         self.surfaceTree2 = v.value.surfaceTree2
         self.focusedSurface = v.value.focusedSurface
     }
@@ -87,7 +84,6 @@ class TerminalWindowRestoration: NSObject, NSWindowRestoration {
         // createWindow so that AppKit can place the window wherever it should
         // be.
         let c = appDelegate.terminalManager.createWindow(
-            withSurfaceTree: state.surfaceTree,
             withSurfaceTree2: state.surfaceTree2
         )
         guard let window = c.window else {
@@ -96,21 +92,14 @@ class TerminalWindowRestoration: NSObject, NSWindowRestoration {
         }
 
         // Setup our restored state on the controller
-        // First try to find the focused surface in surfaceTree2
-        if let focusedStr = state.focusedSurface,
-           let focusedUUID = UUID(uuidString: focusedStr) {
-            // Try surfaceTree2 first
+        // Find the focused surface in surfaceTree2
+        if let focusedStr = state.focusedSurface {
             var foundView: Ghostty.SurfaceView?
             for view in c.surfaceTree2 {
                 if view.uuid.uuidString == focusedStr {
                     foundView = view
                     break
                 }
-            }
-            
-            // Fall back to surfaceTree if not found
-            if foundView == nil {
-                foundView = c.surfaceTree?.findUUID(uuid: focusedUUID)
             }
             
             if let view = foundView {

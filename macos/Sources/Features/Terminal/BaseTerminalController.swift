@@ -41,9 +41,7 @@ class BaseTerminalController: NSWindowController,
         didSet { syncFocusToSurfaceTree() }
     }
 
-    /// The surface tree for this window.
-    @Published var surfaceTree: Ghostty.SplitNode? = nil
-
+    /// The tree of splits within this terminal window.
     @Published var surfaceTree2: SplitTree<Ghostty.SurfaceView> = .init() {
         didSet { surfaceTreeDidChange(from: oldValue, to: surfaceTree2) }
     }
@@ -88,7 +86,6 @@ class BaseTerminalController: NSWindowController,
 
     init(_ ghostty: Ghostty.App,
          baseConfig base: Ghostty.SurfaceConfiguration? = nil,
-         surfaceTree tree: Ghostty.SplitNode? = nil,
          surfaceTree2 tree2: SplitTree<Ghostty.SurfaceView>? = nil
     ) {
         self.ghostty = ghostty
@@ -98,7 +95,6 @@ class BaseTerminalController: NSWindowController,
 
         // Initialize our initial surface.
         guard let ghostty_app = ghostty.app else { preconditionFailure("app must be loaded") }
-        self.surfaceTree = tree ?? .leaf(.init(ghostty_app, baseConfig: base))
         self.surfaceTree2 = tree2 ?? .init(view: Ghostty.SurfaceView(ghostty_app, baseConfig: base))
 
         // Setup our notifications for behaviors
@@ -171,11 +167,11 @@ class BaseTerminalController: NSWindowController,
         }
     }
 
-    /// Called when the surfaceTree variable changed.
+    /// Called when the surfaceTree2 variable changed.
     ///
     /// Subclasses should call super first.
     func surfaceTreeDidChange(from: SplitTree<Ghostty.SurfaceView>, to: SplitTree<Ghostty.SurfaceView>) {
-        // If our surface tree becomes nil then we have no focused surface.
+        // If our surface tree becomes empty then we have no focused surface.
         if (to.isEmpty) {
             focusedSurface = nil
         }

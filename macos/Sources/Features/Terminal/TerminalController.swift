@@ -45,7 +45,7 @@ class TerminalController: BaseTerminalController {
         // Setup our initial derived config based on the current app config
         self.derivedConfig = DerivedConfig(ghostty.config)
 
-        super.init(ghostty, baseConfig: base, surfaceTree: tree, surfaceTree2: tree2)
+        super.init(ghostty, baseConfig: base, surfaceTree2: tree2)
 
         // Setup our notifications for behaviors
         let center = NotificationCenter.default
@@ -154,7 +154,7 @@ class TerminalController: BaseTerminalController {
             // If we have no surfaces in our window (is that possible?) then we update
             // our window appearance based on the root config. If we have surfaces, we
             // don't call this because the TODO
-            if surfaceTree == nil {
+            if surfaceTree2.isEmpty {
                 syncAppearance(.init(config))
             }
 
@@ -456,10 +456,10 @@ class TerminalController: BaseTerminalController {
 
         // If we have only a single surface (no splits) and there is a default size then
         // we should resize to that default size.
-        if case let .leaf(leaf) = surfaceTree {
+        if case let .leaf(view) = surfaceTree2.root {
             // If this is our first surface then our focused surface will be nil
             // so we force the focused surface to the leaf.
-            focusedSurface = leaf.surface
+            focusedSurface = view
 
             if let defaultSize {
                 window.setFrame(defaultSize, display: true)
