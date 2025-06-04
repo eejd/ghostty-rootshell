@@ -461,6 +461,7 @@ extension Ghostty {
         }
     }
 
+    #if canImport(AppKit)
     /// When changing the split state, or going full screen (native or non), the terminal view
     /// will lose focus. There has to be some nice SwiftUI-native way to fix this but I can't
     /// figure it out so we're going to do this hacky thing to bring focus back to the terminal
@@ -514,6 +515,7 @@ extension Ghostty {
             queue.async(execute: work)
         }
     }
+    #endif
 }
 
 // MARK: Surface Environment Keys
