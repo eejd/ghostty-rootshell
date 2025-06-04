@@ -185,11 +185,11 @@ class QuickTerminalController: BaseTerminalController {
 
     // MARK: Base Controller Overrides
 
-    override func surfaceTreeDidChange(from: Ghostty.SplitNode?, to: Ghostty.SplitNode?) {
+    override func surfaceTreeDidChange(from: SplitTree<Ghostty.SurfaceView>, to: SplitTree<Ghostty.SurfaceView>) {
         super.surfaceTreeDidChange(from: from, to: to)
 
         // If our surface tree is nil then we animate the window out.
-        if (to == nil) {
+        if (to.isEmpty) {
             animateOut()
         }
     }

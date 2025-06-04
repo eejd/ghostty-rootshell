@@ -30,7 +30,6 @@ extension Ghostty {
                     InspectableSurface(surfaceView: surfaceView)
                 }
             }
-            .focusedValue(\.ghosttySurfaceZoomed, zoomedSurface != nil)
         }
     }
 

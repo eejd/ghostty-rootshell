@@ -106,15 +106,20 @@ class TerminalController: BaseTerminalController {
 
     // MARK: Base Controller Overrides
 
-    override func surfaceTreeDidChange(from: Ghostty.SplitNode?, to: Ghostty.SplitNode?) {
+    override func surfaceTreeDidChange(from: SplitTree<Ghostty.SurfaceView>, to: SplitTree<Ghostty.SurfaceView>) {
         super.surfaceTreeDidChange(from: from, to: to)
         
         // Whenever our surface tree changes in any way (new split, close split, etc.)
         // we want to invalidate our state.
         invalidateRestorableState()
 
+        // Update our zoom state
+        if let window = window as? TerminalWindow {
+            window.surfaceIsZoomed = to.zoomed != nil
+        }
+
         // If our surface tree is now nil then we close our window.
-        if (to == nil) {
+        if (to.isEmpty) {
             self.window?.close()
         }
     }
@@ -677,12 +682,7 @@ class TerminalController: BaseTerminalController {
             toolbar.titleText = to
         }
     }
-
-    override func zoomStateDidChange(to: Bool) {
-        guard let window = window as? TerminalWindow else { return }
-        window.surfaceIsZoomed = to
-    }
-
+    
     override func focusedSurfaceDidChange(to: Ghostty.SurfaceView?) {
         super.focusedSurfaceDidChange(to: to)
 

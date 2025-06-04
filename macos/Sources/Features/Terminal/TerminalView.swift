@@ -14,9 +14,6 @@ protocol TerminalViewDelegate: AnyObject {
     /// The cell size changed.
     func cellSizeDidChange(to: NSSize)
 
-    /// This is called when a split is zoomed.
-    func zoomStateDidChange(to: Bool)
-
     /// Perform an action. At the time of writing this is only triggered by the command palette.
     func performAction(_ action: String, on: Ghostty.SurfaceView)
 
@@ -56,7 +53,6 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
     // Various state values sent back up from the currently focused terminals.
     @FocusedValue(\.ghosttySurfaceView) private var focusedSurface
     @FocusedValue(\.ghosttySurfacePwd) private var surfacePwd
-    @FocusedValue(\.ghosttySurfaceZoomed) private var zoomedSplit
     @FocusedValue(\.ghosttySurfaceCellSize) private var cellSize
 
     // The pwd of the focused surface as a URL
@@ -100,9 +96,6 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                         .onChange(of: cellSize) { newValue in
                             guard let size = newValue else { return }
                             self.delegate?.cellSizeDidChange(to: size)
-                        }
-                        .onChange(of: zoomedSplit) { newValue in
-                            self.delegate?.zoomStateDidChange(to: newValue ?? false)
                         }
                 }
                 // Ignore safe area to extend up in to the titlebar region if we have the "hidden" titlebar style

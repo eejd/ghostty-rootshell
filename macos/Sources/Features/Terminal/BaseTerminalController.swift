@@ -42,11 +42,11 @@ class BaseTerminalController: NSWindowController,
     }
 
     /// The surface tree for this window.
-    @Published var surfaceTree: Ghostty.SplitNode? = nil {
-        didSet { surfaceTreeDidChange(from: oldValue, to: surfaceTree) }
-    }
+    @Published var surfaceTree: Ghostty.SplitNode? = nil
 
-    @Published var surfaceTree2: SplitTree<Ghostty.SurfaceView> = .init()
+    @Published var surfaceTree2: SplitTree<Ghostty.SurfaceView> = .init() {
+        didSet { surfaceTreeDidChange(from: oldValue, to: surfaceTree2) }
+    }
 
     /// This can be set to show/hide the command palette.
     @Published var commandPaletteIsShowing: Bool = false
@@ -174,9 +174,9 @@ class BaseTerminalController: NSWindowController,
     /// Called when the surfaceTree variable changed.
     ///
     /// Subclasses should call super first.
-    func surfaceTreeDidChange(from: Ghostty.SplitNode?, to: Ghostty.SplitNode?) {
+    func surfaceTreeDidChange(from: SplitTree<Ghostty.SurfaceView>, to: SplitTree<Ghostty.SurfaceView>) {
         // If our surface tree becomes nil then we have no focused surface.
-        if (to == nil) {
+        if (to.isEmpty) {
             focusedSurface = nil
         }
     }
@@ -442,8 +442,11 @@ class BaseTerminalController: NSWindowController,
             surfaceTree2 = SplitTree(root: surfaceTree2.root, zoomed: targetNode)
         }
         
-        // Ensure focus stays on the target surface
-        Ghostty.moveFocus(to: target)
+        // Ensure focus stays on the target surface. We lose focus when we do
+        // this so we need to grab it again.
+        DispatchQueue.main.async {
+            Ghostty.moveFocus(to: target)
+        }
     }
 
     // MARK: Local Events
@@ -524,8 +527,6 @@ class BaseTerminalController: NSWindowController,
         guard derivedConfig.windowStepResize else { return }
         self.window?.contentResizeIncrements = to
     }
-
-    func zoomStateDidChange(to: Bool) {}
 
     func splitDidResize(node: SplitTree<Ghostty.SurfaceView>.Node, to newRatio: Double) {
         let resizedNode = node.resize(to: newRatio)

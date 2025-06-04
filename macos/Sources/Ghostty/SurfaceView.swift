@@ -502,15 +502,6 @@ extension FocusedValues {
         typealias Value = String
     }
 
-    var ghosttySurfaceZoomed: Bool? {
-        get { self[FocusedGhosttySurfaceZoomed.self] }
-        set { self[FocusedGhosttySurfaceZoomed.self] = newValue }
-    }
-
-    struct FocusedGhosttySurfaceZoomed: FocusedValueKey {
-        typealias Value = Bool
-    }
-
     var ghosttySurfaceCellSize: OSSize? {
         get { self[FocusedGhosttySurfaceCellSize.self] }
         set { self[FocusedGhosttySurfaceCellSize.self] = newValue }
