@@ -282,15 +282,19 @@ class TerminalController: BaseTerminalController {
         // If it does, we match the focused surface. If it doesn't, we use the app
         // configuration.
         let backgroundColor: OSColor
-        if let surfaceTree {
-            if let focusedSurface, surfaceTree.doesBorderTop(view: focusedSurface) {
+        if !surfaceTree2.isEmpty {
+            if let focusedSurface = focusedSurface,
+               let treeRoot = surfaceTree2.root,
+               let focusedNode = treeRoot.node(view: focusedSurface),
+               treeRoot.spatial().doesBorder(side: .up, from: focusedNode) {
                 // Similar to above, an alpha component of "0" causes compositor issues, so
                 // we use 0.001. See: https://github.com/ghostty-org/ghostty/pull/4308
                 backgroundColor = OSColor(focusedSurface.backgroundColor ?? surfaceConfig.backgroundColor).withAlphaComponent(0.001)
             } else {
                 // We don't have a focused surface or our surface doesn't border the
                 // top. We choose to match the color of the top-left most surface.
-                backgroundColor = OSColor(surfaceTree.topLeft().backgroundColor ?? derivedConfig.backgroundColor)
+                let topLeftSurface = surfaceTree2.root?.leftmostLeaf()
+                backgroundColor = OSColor(topLeftSurface?.backgroundColor ?? derivedConfig.backgroundColor)
             }
         } else {
             backgroundColor = OSColor(self.derivedConfig.backgroundColor)

@@ -774,6 +774,39 @@ extension SplitTree.Spatial {
             }
         }
     }
+
+    /// Returns whether the given node borders the specified side of the spatial bounds.
+    ///
+    /// This method checks if a node's bounds touch the edge of the overall spatial area:
+    /// - **Up**: Node's top edge touches the top of the spatial area (Y=0)
+    /// - **Down**: Node's bottom edge touches the bottom of the spatial area (Y=maxY)
+    /// - **Left**: Node's left edge touches the left of the spatial area (X=0)
+    /// - **Right**: Node's right edge touches the right of the spatial area (X=maxX)
+    ///
+    /// - Parameters:
+    ///   - side: The side of the spatial bounds to check
+    ///   - node: The node to check if it borders the specified side
+    /// - Returns: True if the node borders the specified side, false otherwise
+    func doesBorder(side: Direction, from node: SplitTree.Node) -> Bool {
+        // Find the slot for this node
+        guard let slot = slots.first(where: { $0.node == node }) else { return false }
+        
+        // Calculate the overall bounds of all slots
+        let overallBounds = slots.reduce(CGRect.null) { result, slot in
+            result.union(slot.bounds)
+        }
+        
+        return switch side {
+        case .up: 
+            slot.bounds.minY == overallBounds.minY
+        case .down:
+            slot.bounds.maxY == overallBounds.maxY
+        case .left:
+            slot.bounds.minX == overallBounds.minX
+        case .right:
+            slot.bounds.maxX == overallBounds.maxX
+        }
+    }
 }
 
 // MARK: SplitTree.Node Protocols
