@@ -405,7 +405,7 @@ class BaseTerminalController: NSWindowController,
             // If splitting fails for any reason (it should not), then we just log
             // and return. The new view we created will be deinitialized and its
             // no big deal.
-            // TODO: log
+            Ghostty.logger.warning("failed to insert split: \(error)")
             return
         }
 
@@ -559,7 +559,7 @@ class BaseTerminalController: NSWindowController,
         do {
             surfaceTree = try surfaceTree.replace(node: node, with: resizedNode)
         } catch {
-            // TODO: log
+            Ghostty.logger.warning("failed to replace node during split resize: \(error)")
             return
         }
     }

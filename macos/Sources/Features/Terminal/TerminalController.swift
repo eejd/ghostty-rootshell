@@ -152,7 +152,7 @@ class TerminalController: BaseTerminalController {
 
             // If we have no surfaces in our window (is that possible?) then we update
             // our window appearance based on the root config. If we have surfaces, we
-            // don't call this because the TODO
+            // don't call this because focused surface changes will trigger appearance updates.
             if surfaceTree.isEmpty {
                 syncAppearance(.init(config))
             }
