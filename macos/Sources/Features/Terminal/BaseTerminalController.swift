@@ -405,10 +405,10 @@ class BaseTerminalController: NSWindowController,
         switch direction {
         case .previous: focusDirection = .previous
         case .next: focusDirection = .next
-        case .up: focusDirection = .up
-        case .down: focusDirection = .down
-        case .left: focusDirection = .left
-        case .right: focusDirection = .right
+        case .up: focusDirection = .spatial(.up)
+        case .down: focusDirection = .spatial(.down)
+        case .left: focusDirection = .spatial(.left)
+        case .right: focusDirection = .spatial(.right)
         }
         
         // Find the node for the target surface
