@@ -108,11 +108,12 @@ extension SplitTree {
     }
 
     /// Insert a new view at the given view point by creating a split in the given direction.
+    /// This will always reset the zoomed state of the tree.
     func insert(view: ViewType, at: ViewType, direction: NewDirection) throws -> Self {
         guard let root else { throw SplitError.viewNotFound }
         return .init(
             root: try root.insert(view: view, at: at, direction: direction),
-            zoomed: zoomed)
+            zoomed: nil)
     }
 
     /// Remove a node from the tree. If the node being removed is part of a split,

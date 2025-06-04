@@ -451,6 +451,11 @@ class BaseTerminalController: NSWindowController,
             return
         }
 
+        // Remove the zoomed state for this surface tree.
+        if surfaceTree.zoomed != nil {
+            surfaceTree = .init(root: surfaceTree.root, zoomed: nil)
+        }
+
         // Move focus to the next surface
         Ghostty.moveFocus(to: nextSurface, from: target)
     }
