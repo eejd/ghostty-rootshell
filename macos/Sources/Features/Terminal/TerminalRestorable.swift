@@ -7,11 +7,11 @@ class TerminalRestorableState: Codable {
     static let version: Int = 3
 
     let focusedSurface: String?
-    let surfaceTree2: SplitTree<Ghostty.SurfaceView>
+    let surfaceTree: SplitTree<Ghostty.SurfaceView>
 
     init(from controller: TerminalController) {
         self.focusedSurface = controller.focusedSurface?.uuid.uuidString
-        self.surfaceTree2 = controller.surfaceTree2
+        self.surfaceTree = controller.surfaceTree
     }
 
     init?(coder aDecoder: NSCoder) {
@@ -26,7 +26,7 @@ class TerminalRestorableState: Codable {
             return nil
         }
 
-        self.surfaceTree2 = v.value.surfaceTree2
+        self.surfaceTree = v.value.surfaceTree
         self.focusedSurface = v.value.focusedSurface
     }
 
@@ -84,7 +84,7 @@ class TerminalWindowRestoration: NSObject, NSWindowRestoration {
         // createWindow so that AppKit can place the window wherever it should
         // be.
         let c = appDelegate.terminalManager.createWindow(
-            withSurfaceTree2: state.surfaceTree2
+            withSurfaceTree: state.surfaceTree
         )
         guard let window = c.window else {
             completionHandler(nil, TerminalRestoreError.windowDidNotLoad)
@@ -92,10 +92,10 @@ class TerminalWindowRestoration: NSObject, NSWindowRestoration {
         }
 
         // Setup our restored state on the controller
-        // Find the focused surface in surfaceTree2
+        // Find the focused surface in surfaceTree
         if let focusedStr = state.focusedSurface {
             var foundView: Ghostty.SurfaceView?
-            for view in c.surfaceTree2 {
+            for view in c.surfaceTree {
                 if view.uuid.uuidString == focusedStr {
                     foundView = view
                     break

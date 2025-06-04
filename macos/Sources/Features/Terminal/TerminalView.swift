@@ -27,7 +27,7 @@ protocol TerminalViewDelegate: AnyObject {
 protocol TerminalViewModel: ObservableObject {
     /// The tree of terminal surfaces (splits) within the view. This is mutated by TerminalView
     /// and children. This should be @Published.
-    var surfaceTree2: SplitTree<Ghostty.SurfaceView> { get set }
+    var surfaceTree: SplitTree<Ghostty.SurfaceView> { get set }
 
     /// The command palette state.
     var commandPaletteIsShowing: Bool { get set }
@@ -77,7 +77,7 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                     }
 
                     TerminalSplitTreeView(
-                        tree: viewModel.surfaceTree2,
+                        tree: viewModel.surfaceTree,
                         onResize: { delegate?.splitDidResize(node: $0, to: $1) })
                         .environmentObject(ghostty)
                         .focused($focused)

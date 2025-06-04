@@ -32,8 +32,7 @@ class TerminalController: BaseTerminalController {
 
     init(_ ghostty: Ghostty.App,
          withBaseConfig base: Ghostty.SurfaceConfiguration? = nil,
-         withSurfaceTree tree: Ghostty.SplitNode? = nil,
-         withSurfaceTree2 tree2: SplitTree<Ghostty.SurfaceView>? = nil
+         withSurfaceTree tree: SplitTree<Ghostty.SurfaceView>? = nil
     ) {
         // The window we manage is not restorable if we've specified a command
         // to execute. We do this because the restored window is meaningless at the
@@ -45,7 +44,7 @@ class TerminalController: BaseTerminalController {
         // Setup our initial derived config based on the current app config
         self.derivedConfig = DerivedConfig(ghostty.config)
 
-        super.init(ghostty, baseConfig: base, surfaceTree2: tree2)
+        super.init(ghostty, baseConfig: base, surfaceTree: tree)
 
         // Setup our notifications for behaviors
         let center = NotificationCenter.default
@@ -154,7 +153,7 @@ class TerminalController: BaseTerminalController {
             // If we have no surfaces in our window (is that possible?) then we update
             // our window appearance based on the root config. If we have surfaces, we
             // don't call this because the TODO
-            if surfaceTree2.isEmpty {
+            if surfaceTree.isEmpty {
                 syncAppearance(.init(config))
             }
 
@@ -164,7 +163,7 @@ class TerminalController: BaseTerminalController {
         // This is a surface-level config update. If we have the surface, we
         // update our appearance based on it.
         guard let surfaceView = notification.object as? Ghostty.SurfaceView else { return }
-        guard surfaceTree2.contains(surfaceView) else { return }
+        guard surfaceTree.contains(surfaceView) else { return }
 
         // We can't use surfaceView.derivedConfig because it may not be updated
         // yet since it also responds to notifications.
@@ -239,7 +238,7 @@ class TerminalController: BaseTerminalController {
         window.isLightTheme = OSColor(surfaceConfig.backgroundColor).isLightColor
 
         // Sync our zoom state for splits
-        window.surfaceIsZoomed = surfaceTree2.zoomed != nil
+        window.surfaceIsZoomed = surfaceTree.zoomed != nil
 
         // If our window is not visible, then we do nothing. Some things such as blurring
         // have no effect if the window is not visible. Ultimately, we'll have this called
@@ -282,9 +281,9 @@ class TerminalController: BaseTerminalController {
         // If it does, we match the focused surface. If it doesn't, we use the app
         // configuration.
         let backgroundColor: OSColor
-        if !surfaceTree2.isEmpty {
+        if !surfaceTree.isEmpty {
             if let focusedSurface = focusedSurface,
-               let treeRoot = surfaceTree2.root,
+               let treeRoot = surfaceTree.root,
                let focusedNode = treeRoot.node(view: focusedSurface),
                treeRoot.spatial().doesBorder(side: .up, from: focusedNode) {
                 // Similar to above, an alpha component of "0" causes compositor issues, so
@@ -293,7 +292,7 @@ class TerminalController: BaseTerminalController {
             } else {
                 // We don't have a focused surface or our surface doesn't border the
                 // top. We choose to match the color of the top-left most surface.
-                let topLeftSurface = surfaceTree2.root?.leftmostLeaf()
+                let topLeftSurface = surfaceTree.root?.leftmostLeaf()
                 backgroundColor = OSColor(topLeftSurface?.backgroundColor ?? derivedConfig.backgroundColor)
             }
         } else {
@@ -456,7 +455,7 @@ class TerminalController: BaseTerminalController {
 
         // If we have only a single surface (no splits) and there is a default size then
         // we should resize to that default size.
-        if case let .leaf(view) = surfaceTree2.root {
+        if case let .leaf(view) = surfaceTree.root {
             // If this is our first surface then our focused surface will be nil
             // so we force the focused surface to the leaf.
             focusedSurface = view
@@ -604,7 +603,7 @@ class TerminalController: BaseTerminalController {
             return
         }
 
-        if surfaceTree2.contains(where: { $0.needsConfirmQuit }) {
+        if surfaceTree.contains(where: { $0.needsConfirmQuit }) {
             confirmClose(
                 messageText: "Close Tab?",
                 informativeText: "The terminal still has a running process. If you close the tab the process will be killed."
@@ -641,7 +640,7 @@ class TerminalController: BaseTerminalController {
             guard let controller = tabWindow.windowController as? TerminalController else {
                 return false
             }
-            return controller.surfaceTree2.contains(where: { $0.needsConfirmQuit })
+            return controller.surfaceTree.contains(where: { $0.needsConfirmQuit })
         }
 
         // If none need confirmation then we can just close all the windows.
@@ -819,19 +818,19 @@ class TerminalController: BaseTerminalController {
 
     @objc private func onCloseTab(notification: SwiftUI.Notification) {
         guard let target = notification.object as? Ghostty.SurfaceView else { return }
-        guard surfaceTree2.contains(target) else { return }
+        guard surfaceTree.contains(target) else { return }
         closeTab(self)
     }
 
     @objc private func onCloseWindow(notification: SwiftUI.Notification) {
         guard let target = notification.object as? Ghostty.SurfaceView else { return }
-        guard surfaceTree2.contains(target) else { return }
+        guard surfaceTree.contains(target) else { return }
         closeWindow(self)
     }
 
     @objc private func onResetWindowSize(notification: SwiftUI.Notification) {
         guard let target = notification.object as? Ghostty.SurfaceView else { return }
-        guard surfaceTree2.contains(target) else { return }
+        guard surfaceTree.contains(target) else { return }
         returnToDefaultSize(nil)
     }
 

@@ -42,8 +42,8 @@ class BaseTerminalController: NSWindowController,
     }
 
     /// The tree of splits within this terminal window.
-    @Published var surfaceTree2: SplitTree<Ghostty.SurfaceView> = .init() {
-        didSet { surfaceTreeDidChange(from: oldValue, to: surfaceTree2) }
+    @Published var surfaceTree: SplitTree<Ghostty.SurfaceView> = .init() {
+        didSet { surfaceTreeDidChange(from: oldValue, to: surfaceTree) }
     }
 
     /// This can be set to show/hide the command palette.
@@ -86,7 +86,7 @@ class BaseTerminalController: NSWindowController,
 
     init(_ ghostty: Ghostty.App,
          baseConfig base: Ghostty.SurfaceConfiguration? = nil,
-         surfaceTree2 tree2: SplitTree<Ghostty.SurfaceView>? = nil
+         surfaceTree tree: SplitTree<Ghostty.SurfaceView>? = nil
     ) {
         self.ghostty = ghostty
         self.derivedConfig = DerivedConfig(ghostty.config)
@@ -95,7 +95,7 @@ class BaseTerminalController: NSWindowController,
 
         // Initialize our initial surface.
         guard let ghostty_app = ghostty.app else { preconditionFailure("app must be loaded") }
-        self.surfaceTree2 = tree2 ?? .init(view: Ghostty.SurfaceView(ghostty_app, baseConfig: base))
+        self.surfaceTree = tree ?? .init(view: Ghostty.SurfaceView(ghostty_app, baseConfig: base))
 
         // Setup our notifications for behaviors
         let center = NotificationCenter.default
@@ -167,7 +167,7 @@ class BaseTerminalController: NSWindowController,
         }
     }
 
-    /// Called when the surfaceTree2 variable changed.
+    /// Called when the surfaceTree variable changed.
     ///
     /// Subclasses should call super first.
     func surfaceTreeDidChange(from: SplitTree<Ghostty.SurfaceView>, to: SplitTree<Ghostty.SurfaceView>) {
@@ -180,7 +180,7 @@ class BaseTerminalController: NSWindowController,
     /// Update all surfaces with the focus state. This ensures that libghostty has an accurate view about
     /// what surface is focused. This must be called whenever a surface OR window changes focus.
     func syncFocusToSurfaceTree() {
-        for surfaceView in surfaceTree2 {
+        for surfaceView in surfaceTree {
             // Our focus state requires that this window is key and our currently
             // focused surface is the surface in this view.
             let focused: Bool = (window?.isKeyWindow ?? false) &&
@@ -296,21 +296,21 @@ class BaseTerminalController: NSWindowController,
 
     @objc private func ghosttyCommandPaletteDidToggle(_ notification: Notification) {
         guard let surfaceView = notification.object as? Ghostty.SurfaceView else { return }
-        guard surfaceTree2.contains(surfaceView) else { return }
+        guard surfaceTree.contains(surfaceView) else { return }
         toggleCommandPalette(nil)
     }
 
     @objc private func ghosttyMaximizeDidToggle(_ notification: Notification) {
         guard let window else { return }
         guard let surfaceView = notification.object as? Ghostty.SurfaceView else { return }
-        guard surfaceTree2.contains(surfaceView) else { return }
+        guard surfaceTree.contains(surfaceView) else { return }
         window.zoom(nil)
     }
 
     @objc private func ghosttyDidCloseSurface(_ notification: Notification) {
         // The target must be within our tree
         guard let target = notification.object as? Ghostty.SurfaceView else { return }
-        guard let node = surfaceTree2.root?.node(view: target) else { return }
+        guard let node = surfaceTree.root?.node(view: target) else { return }
 
         // TODO: fix focus
 
@@ -323,7 +323,7 @@ class BaseTerminalController: NSWindowController,
 
         // If the child process is not alive, then we exit immediately
         guard processAlive else {
-            surfaceTree2 = surfaceTree2.remove(node)
+            surfaceTree = surfaceTree.remove(node)
             return
         }
 
@@ -337,7 +337,7 @@ class BaseTerminalController: NSWindowController,
             informativeText: "The terminal still has a running process. If you close the terminal the process will be killed."
         ) { [weak self] in
             if let self {
-                self.surfaceTree2 = self.surfaceTree2.remove(node)
+                self.surfaceTree = self.surfaceTree.remove(node)
             }
         }
     }
@@ -345,7 +345,7 @@ class BaseTerminalController: NSWindowController,
     @objc private func ghosttyDidNewSplit(_ notification: Notification) {
         // The target must be within our tree
         guard let oldView = notification.object as? Ghostty.SurfaceView else { return }
-        guard surfaceTree2.root?.node(view: oldView) != nil else { return }
+        guard surfaceTree.root?.node(view: oldView) != nil else { return }
 
         // Notification must contain our base config
         let configAny = notification.userInfo?[Ghostty.Notification.NewSurfaceConfigKey]
@@ -369,7 +369,7 @@ class BaseTerminalController: NSWindowController,
 
         // Do the split
         do {
-            surfaceTree2 = try surfaceTree2.insert(view: newView, at: oldView, direction: splitDirection)
+            surfaceTree = try surfaceTree.insert(view: newView, at: oldView, direction: splitDirection)
         } catch {
             // If splitting fails for any reason (it should not), then we just log
             // and return. The new view we created will be deinitialized and its
@@ -386,16 +386,16 @@ class BaseTerminalController: NSWindowController,
         guard let target = notification.object as? Ghostty.SurfaceView else { return }
         
         // Check if target surface is in current controller's tree
-        guard surfaceTree2.contains(target) else { return }
+        guard surfaceTree.contains(target) else { return }
         
         // Equalize the splits
-        surfaceTree2 = surfaceTree2.equalize()
+        surfaceTree = surfaceTree.equalize()
     }
     
     @objc private func ghosttyDidFocusSplit(_ notification: Notification) {
         // The target must be within our tree
         guard let target = notification.object as? Ghostty.SurfaceView else { return }
-        guard surfaceTree2.root?.node(view: target) != nil else { return }
+        guard surfaceTree.root?.node(view: target) != nil else { return }
 
         // Get the direction from the notification
         guard let directionAny = notification.userInfo?[Ghostty.Notification.SplitDirectionKey] else { return }
@@ -413,10 +413,10 @@ class BaseTerminalController: NSWindowController,
         }
         
         // Find the node for the target surface
-        guard let targetNode = surfaceTree2.root?.node(view: target) else { return }
+        guard let targetNode = surfaceTree.root?.node(view: target) else { return }
         
         // Find the next surface to focus
-        guard let nextSurface = surfaceTree2.focusTarget(for: focusDirection, from: targetNode) else {
+        guard let nextSurface = surfaceTree.focusTarget(for: focusDirection, from: targetNode) else {
             return
         }
 
@@ -427,15 +427,15 @@ class BaseTerminalController: NSWindowController,
     @objc private func ghosttyDidToggleSplitZoom(_ notification: Notification) {
         // The target must be within our tree
         guard let target = notification.object as? Ghostty.SurfaceView else { return }
-        guard let targetNode = surfaceTree2.root?.node(view: target) else { return }
+        guard let targetNode = surfaceTree.root?.node(view: target) else { return }
         
         // Toggle the zoomed state
-        if surfaceTree2.zoomed == targetNode {
+        if surfaceTree.zoomed == targetNode {
             // Already zoomed, unzoom it
-            surfaceTree2 = SplitTree(root: surfaceTree2.root, zoomed: nil)
+            surfaceTree = SplitTree(root: surfaceTree.root, zoomed: nil)
         } else {
             // Not zoomed or different node zoomed, zoom this node
-            surfaceTree2 = SplitTree(root: surfaceTree2.root, zoomed: targetNode)
+            surfaceTree = SplitTree(root: surfaceTree.root, zoomed: targetNode)
         }
         
         // Ensure focus stays on the target surface. We lose focus when we do
@@ -458,8 +458,7 @@ class BaseTerminalController: NSWindowController,
     }
 
     private func localEventFlagsChanged(_ event: NSEvent) -> NSEvent? {
-        // Also update surfaceTree2
-        var surfaces: [Ghostty.SurfaceView] = surfaceTree2.map { $0 }
+        var surfaces: [Ghostty.SurfaceView] = surfaceTree.map { $0 }
 
         // If we're the main window receiving key input, then we want to avoid
         // calling this on our focused surface because that'll trigger a double
@@ -489,7 +488,7 @@ class BaseTerminalController: NSWindowController,
         // want to care if the surface is in the tree so we don't listen to titles of
         // closed surfaces.
         if let titleSurface = focusedSurface ?? lastFocusedSurface,
-           surfaceTree2.contains(titleSurface) {
+           surfaceTree.contains(titleSurface) {
             // If we have a surface, we want to listen for title changes.
             titleSurface.$title
                 .sink { [weak self] in self?.titleDidChange(to: $0) }
@@ -527,7 +526,7 @@ class BaseTerminalController: NSWindowController,
     func splitDidResize(node: SplitTree<Ghostty.SurfaceView>.Node, to newRatio: Double) {
         let resizedNode = node.resize(to: newRatio)
         do {
-            surfaceTree2 = try surfaceTree2.replace(node: node, with: resizedNode)
+            surfaceTree = try surfaceTree.replace(node: node, with: resizedNode)
         } catch {
             // TODO: log
             return
@@ -687,13 +686,13 @@ class BaseTerminalController: NSWindowController,
         guard let window = self.window else { return true }
 
         // If we have no surfaces, close.
-        if surfaceTree2.isEmpty { return true }
+        if surfaceTree.isEmpty { return true }
 
         // If we already have an alert, continue with it
         guard alert == nil else { return false }
 
         // If our surfaces don't require confirmation, close.
-        if !surfaceTree2.contains(where: { $0.needsConfirmQuit }) { return true }
+        if !surfaceTree.contains(where: { $0.needsConfirmQuit }) { return true }
 
         // We require confirmation, so show an alert as long as we aren't already.
         confirmClose(
@@ -729,7 +728,7 @@ class BaseTerminalController: NSWindowController,
 
     func windowDidChangeOcclusionState(_ notification: Notification) {
         let visible = self.window?.occlusionState.contains(.visible) ?? false
-        for view in surfaceTree2 {
+        for view in surfaceTree {
             if let surface = view.surface {
                 ghostty_surface_set_occlusion(surface, visible)
             }

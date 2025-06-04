@@ -197,9 +197,9 @@ class TerminalManager {
 
     /// Creates a window controller, adds it to our managed list, and returns it.
     func createWindow(withBaseConfig base: Ghostty.SurfaceConfiguration? = nil,
-                      withSurfaceTree2 tree2: SplitTree<Ghostty.SurfaceView>? = nil) -> TerminalController {
+                      withSurfaceTree tree: SplitTree<Ghostty.SurfaceView>? = nil) -> TerminalController {
         // Initialize our controller to load the window
-        let c = TerminalController(ghostty, withBaseConfig: base, withSurfaceTree2: tree2)
+        let c = TerminalController(ghostty, withBaseConfig: base, withSurfaceTree: tree)
 
         // Create a listener for when the window is closed so we can remove it.
         let pubClose = NotificationCenter.default.publisher(
@@ -268,7 +268,7 @@ class TerminalManager {
     func closeAllWindows() {
         var needsConfirm: Bool = false
         for w in self.windows {
-            if w.controller.surfaceTree2.contains(where: { $0.needsConfirmQuit }) {
+            if w.controller.surfaceTree.contains(where: { $0.needsConfirmQuit }) {
                 needsConfirm = true
                 break
             }

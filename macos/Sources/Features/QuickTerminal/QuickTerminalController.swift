@@ -30,11 +30,11 @@ class QuickTerminalController: BaseTerminalController {
     init(_ ghostty: Ghostty.App,
          position: QuickTerminalPosition = .top,
          baseConfig base: Ghostty.SurfaceConfiguration? = nil,
-         surfaceTree2 tree2: SplitTree<Ghostty.SurfaceView>? = nil
+         surfaceTree tree: SplitTree<Ghostty.SurfaceView>? = nil
     ) {
         self.position = position
         self.derivedConfig = DerivedConfig(ghostty.config)
-        super.init(ghostty, baseConfig: base, surfaceTree2: tree2)
+        super.init(ghostty, baseConfig: base, surfaceTree: tree)
 
         // Setup our notifications for behaviors
         let center = NotificationCenter.default
@@ -236,10 +236,10 @@ class QuickTerminalController: BaseTerminalController {
         // If our surface tree is empty then we initialize a new terminal. The surface
         // tree can be empty if for example we run "exit" in the terminal and force
         // animate out.
-        if surfaceTree2.isEmpty,
+        if surfaceTree.isEmpty,
            let ghostty_app = ghostty.app {
             let view = Ghostty.SurfaceView(ghostty_app, baseConfig: nil)
-            surfaceTree2 = SplitTree(view: view)
+            surfaceTree = SplitTree(view: view)
             focusedSurface = view
         }
     }
