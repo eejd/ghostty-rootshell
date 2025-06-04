@@ -72,7 +72,12 @@ extension SplitTree {
     var isEmpty: Bool {
         root == nil
     }
-    
+
+    /// Returns true if this tree is split.
+    var isSplit: Bool {
+        if case .split = root { true } else { false }
+    }
+
     init() {
         self.init(root: nil, zoomed: nil)
     }
