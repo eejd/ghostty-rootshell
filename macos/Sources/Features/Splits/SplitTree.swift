@@ -168,6 +168,14 @@ extension SplitTree {
         // TODO
         return nil
     }
+    
+    /// Equalize all splits in the tree so that each split's ratio is based on the
+    /// relative weight (number of leaves) of its children.
+    func equalize() -> Self {
+        guard let root else { return self }
+        let newRoot = root.equalize()
+        return .init(root: newRoot, zoomed: zoomed)
+    }
 }
 
 // MARK: SplitTree.Node
@@ -406,6 +414,42 @@ extension SplitTree.Node {
             return view
         case .split(let split):
             return split.right.rightmostLeaf()
+        }
+    }
+    
+    /// Equalize this node and all its children, returning a new node with splits
+    /// adjusted so that each split's ratio is based on the relative weight
+    /// (number of leaves) of its children.
+    func equalize() -> Node {
+        let (equalizedNode, _) = equalizeWithWeight()
+        return equalizedNode
+    }
+    
+    /// Internal helper that equalizes and returns both the node and its weight.
+    private func equalizeWithWeight() -> (node: Node, weight: Int) {
+        switch self {
+        case .leaf:
+            // A leaf has weight 1 and doesn't change
+            return (self, 1)
+            
+        case .split(let split):
+            // Recursively equalize children
+            let (leftNode, leftWeight) = split.left.equalizeWithWeight()
+            let (rightNode, rightWeight) = split.right.equalizeWithWeight()
+            
+            // Calculate new ratio based on relative weights
+            let totalWeight = leftWeight + rightWeight
+            let newRatio = Double(leftWeight) / Double(totalWeight)
+            
+            // Create new split with equalized ratio
+            let newSplit = Split(
+                direction: split.direction,
+                ratio: newRatio,
+                left: leftNode,
+                right: rightNode
+            )
+            
+            return (.split(newSplit), totalWeight)
         }
     }
 }

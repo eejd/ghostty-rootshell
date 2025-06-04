@@ -385,11 +385,10 @@ class BaseTerminalController: NSWindowController,
         guard let target = notification.object as? Ghostty.SurfaceView else { return }
         
         // Check if target surface is in current controller's tree
-        guard surfaceTree?.contains(view: target) ?? false else { return }
+        guard surfaceTree2.contains(target) else { return }
         
-        if case .split(let container) = surfaceTree {
-            _ = container.equalize()
-        }
+        // Equalize the splits
+        surfaceTree2 = surfaceTree2.equalize()
     }
     
     @objc private func ghosttyDidFocusSplit(_ notification: Notification) {
