@@ -668,13 +668,13 @@ class BaseTerminalController: NSWindowController,
         guard let window = self.window else { return true }
 
         // If we have no surfaces, close.
-        guard let node = self.surfaceTree else { return true }
+        if surfaceTree2.isEmpty { return true }
 
         // If we already have an alert, continue with it
         guard alert == nil else { return false }
 
         // If our surfaces don't require confirmation, close.
-        if (!node.needsConfirmQuit()) { return true }
+        if !surfaceTree2.contains(where: { $0.needsConfirmQuit }) { return true }
 
         // We require confirmation, so show an alert as long as we aren't already.
         confirmClose(

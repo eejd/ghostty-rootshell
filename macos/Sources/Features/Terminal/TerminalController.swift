@@ -595,7 +595,7 @@ class TerminalController: BaseTerminalController {
             return
         }
 
-        if surfaceTree?.needsConfirmQuit() ?? false {
+        if surfaceTree2.contains(where: { $0.needsConfirmQuit }) {
             confirmClose(
                 messageText: "Close Tab?",
                 informativeText: "The terminal still has a running process. If you close the tab the process will be killed."
@@ -632,7 +632,7 @@ class TerminalController: BaseTerminalController {
             guard let controller = tabWindow.windowController as? TerminalController else {
                 return false
             }
-            return controller.surfaceTree?.needsConfirmQuit() ?? false
+            return controller.surfaceTree2.contains(where: { $0.needsConfirmQuit })
         }
 
         // If none need confirmation then we can just close all the windows.

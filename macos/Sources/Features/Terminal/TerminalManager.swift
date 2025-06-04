@@ -269,7 +269,7 @@ class TerminalManager {
     func closeAllWindows() {
         var needsConfirm: Bool = false
         for w in self.windows {
-            if (w.controller.surfaceTree?.needsConfirmQuit() ?? false) {
+            if w.controller.surfaceTree2.contains(where: { $0.needsConfirmQuit }) {
                 needsConfirm = true
                 break
             }
