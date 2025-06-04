@@ -921,7 +921,8 @@ extension Ghostty {
                     // we should only be returning true if we actually performed the action,
                     // but this handles the most common case of caring about goto_split performability
                     // which is the no-split case.
-                    guard controller.surfaceTree?.isSplit ?? false else { return false }
+                    // TODO: fix this
+                    //guard controller.surfaceTree?.isSplit ?? false else { return false }
 
                     NotificationCenter.default.post(
                         name: Notification.ghosttyFocusSplit,

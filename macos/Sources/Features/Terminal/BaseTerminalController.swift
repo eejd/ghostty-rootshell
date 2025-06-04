@@ -145,6 +145,11 @@ class BaseTerminalController: NSWindowController,
             selector: #selector(ghosttyDidEqualizeSplits(_:)),
             name: Ghostty.Notification.didEqualizeSplits,
             object: nil)
+        center.addObserver(
+            self,
+            selector: #selector(ghosttyDidFocusSplit(_:)),
+            name: Ghostty.Notification.ghosttyFocusSplit,
+            object: nil)
 
         // Listen for local events that we need to know of outside of
         // single surface handlers.
@@ -385,6 +390,38 @@ class BaseTerminalController: NSWindowController,
         if case .split(let container) = surfaceTree {
             _ = container.equalize()
         }
+    }
+    
+    @objc private func ghosttyDidFocusSplit(_ notification: Notification) {
+        // The target must be within our tree
+        guard let target = notification.object as? Ghostty.SurfaceView else { return }
+        guard surfaceTree2.root?.node(view: target) != nil else { return }
+
+        // Get the direction from the notification
+        guard let directionAny = notification.userInfo?[Ghostty.Notification.SplitDirectionKey] else { return }
+        guard let direction = directionAny as? Ghostty.SplitFocusDirection else { return }
+        
+        // Convert Ghostty.SplitFocusDirection to our SplitTree.FocusDirection
+        let focusDirection: SplitTree<Ghostty.SurfaceView>.FocusDirection
+        switch direction {
+        case .previous: focusDirection = .previous
+        case .next: focusDirection = .next
+        case .up: focusDirection = .up
+        case .down: focusDirection = .down
+        case .left: focusDirection = .left
+        case .right: focusDirection = .right
+        }
+        
+        // Find the node for the target surface
+        guard let targetNode = surfaceTree2.root?.node(view: target) else { return }
+        
+        // Find the next surface to focus
+        guard let nextSurface = surfaceTree2.focusTarget(for: focusDirection, from: targetNode) else {
+            return
+        }
+
+        // Move focus to the next surface
+        Ghostty.moveFocus(to: nextSurface, from: target)
     }
 
     // MARK: Local Events

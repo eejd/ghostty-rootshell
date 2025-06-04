@@ -50,6 +50,20 @@ struct SplitTree<ViewType: NSView & Codable>: Codable {
         case down
         case up
     }
+
+    /// The direction that focus can move from a node.
+    enum FocusDirection {
+        // Follow a consistent tree-like structure.
+        case previous
+        case next
+
+        // Geospatially-aware navigation targets. These take into account the
+        // dimensions of the view to find the correct node to go to.
+        case up
+        case down
+        case left
+        case right
+    }
 }
 
 // MARK: SplitTree
@@ -110,6 +124,44 @@ extension SplitTree {
         let newZoomed = (zoomed == node) ? newNode : zoomed
         
         return .init(root: newRoot, zoomed: newZoomed)
+    }
+    
+    /// Find the next view to focus based on the current focused node and direction
+    func focusTarget(for direction: FocusDirection, from currentNode: Node) -> ViewType? {
+        guard let root else { return nil }
+        
+        switch direction {
+        case .previous:
+            // For previous, we traverse in order and find the previous leaf from our leftmost
+            let allLeaves = root.leaves()
+            let currentView = currentNode.leftmostLeaf()
+            guard let currentIndex = allLeaves.firstIndex(where: { $0 === currentView }) else {
+                // Shouldn't be possible leftmostLeaf can't return something that doesn't exist!
+                return nil
+            }
+            let index = allLeaves.indexWrapping(before: currentIndex)
+            return allLeaves[index]
+
+        case .next:
+            // For previous, we traverse in order and find the next leaf from our rightmost
+            let allLeaves = root.leaves()
+            let currentView = currentNode.rightmostLeaf()
+            guard let currentIndex = allLeaves.firstIndex(where: { $0 === currentView }) else {
+                return nil
+            }
+            let index = allLeaves.indexWrapping(after: currentIndex)
+            return allLeaves[index]
+
+        case .up, .down, .left, .right:
+            // For directional movement, we need to traverse the tree structure
+            return directionalTarget(for: direction, from: currentNode)
+        }
+    }
+    
+    /// Find focus target in a specific direction by traversing split boundaries
+    private func directionalTarget(for direction: FocusDirection, from currentNode: Node) -> ViewType? {
+        // TODO
+        return nil
     }
 }
 
@@ -329,6 +381,26 @@ extension SplitTree.Node {
                 left: split.left,
                 right: split.right
             ))
+        }
+    }
+    
+    /// Get the leftmost leaf in this subtree
+    func leftmostLeaf() -> ViewType {
+        switch self {
+        case .leaf(let view):
+            return view
+        case .split(let split):
+            return split.left.leftmostLeaf()
+        }
+    }
+    
+    /// Get the rightmost leaf in this subtree
+    func rightmostLeaf() -> ViewType {
+        switch self {
+        case .leaf(let view):
+            return view
+        case .split(let split):
+            return split.right.rightmostLeaf()
         }
     }
 }
