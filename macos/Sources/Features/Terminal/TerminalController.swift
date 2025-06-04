@@ -159,7 +159,7 @@ class TerminalController: BaseTerminalController {
         // This is a surface-level config update. If we have the surface, we
         // update our appearance based on it.
         guard let surfaceView = notification.object as? Ghostty.SurfaceView else { return }
-        guard surfaceTree?.contains(view: surfaceView) ?? false else { return }
+        guard surfaceTree2.contains(surfaceView) else { return }
 
         // We can't use surfaceView.derivedConfig because it may not be updated
         // yet since it also responds to notifications.
@@ -815,19 +815,19 @@ class TerminalController: BaseTerminalController {
 
     @objc private func onCloseTab(notification: SwiftUI.Notification) {
         guard let target = notification.object as? Ghostty.SurfaceView else { return }
-        guard surfaceTree?.contains(view: target) ?? false else { return }
+        guard surfaceTree2.contains(target) else { return }
         closeTab(self)
     }
 
     @objc private func onCloseWindow(notification: SwiftUI.Notification) {
         guard let target = notification.object as? Ghostty.SurfaceView else { return }
-        guard surfaceTree?.contains(view: target) ?? false else { return }
+        guard surfaceTree2.contains(target) else { return }
         closeWindow(self)
     }
 
     @objc private func onResetWindowSize(notification: SwiftUI.Notification) {
         guard let target = notification.object as? Ghostty.SurfaceView else { return }
-        guard surfaceTree?.contains(view: target) ?? false else { return }
+        guard surfaceTree2.contains(target) else { return }
         returnToDefaultSize(nil)
     }
 

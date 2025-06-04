@@ -295,14 +295,14 @@ class BaseTerminalController: NSWindowController,
 
     @objc private func ghosttyCommandPaletteDidToggle(_ notification: Notification) {
         guard let surfaceView = notification.object as? Ghostty.SurfaceView else { return }
-        guard surfaceTree?.contains(view: surfaceView) ?? false else { return }
+        guard surfaceTree2.contains(surfaceView) else { return }
         toggleCommandPalette(nil)
     }
 
     @objc private func ghosttyMaximizeDidToggle(_ notification: Notification) {
         guard let window else { return }
         guard let surfaceView = notification.object as? Ghostty.SurfaceView else { return }
-        guard surfaceTree?.contains(view: surfaceView) ?? false else { return }
+        guard surfaceTree2.contains(surfaceView) else { return }
         window.zoom(nil)
     }
 
@@ -468,7 +468,7 @@ class BaseTerminalController: NSWindowController,
         // want to care if the surface is in the tree so we don't listen to titles of
         // closed surfaces.
         if let titleSurface = focusedSurface ?? lastFocusedSurface,
-           surfaceTree?.contains(view: titleSurface) ?? false {
+           surfaceTree2.contains(titleSurface) {
             // If we have a surface, we want to listen for title changes.
             titleSurface.$title
                 .sink { [weak self] in self?.titleDidChange(to: $0) }

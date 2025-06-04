@@ -314,7 +314,6 @@
 				A5A2A3CB2D444AB80033CF96 /* NSApplication+Extension.swift */,
 				A54B0CEA2D0CFB4A00CBEFF8 /* NSImage+Extension.swift */,
 				A52FFF5C2CAB4D05000C6A5B /* NSScreen+Extension.swift */,
-				C1F26EA62B738B9900404083 /* NSView+Extension.swift */,
 				AEE8B3442B9AA39600260C5E /* NSPasteboard+Extension.swift */,
 				A5874D9C2DAD785F00E83852 /* NSWindow+Extension.swift */,
 				A5985CD62C320C4500C57AD3 /* String+Extension.swift */,
@@ -449,6 +448,7 @@
 			isa = PBXGroup;
 			children = (
 				A586366A2DF0A98900E04A10 /* Array+Extension.swift */,
+				C1F26EA62B738B9900404083 /* NSView+Extension.swift */,
 			);
 			path = Extensions;
 			sourceTree = "<group>";

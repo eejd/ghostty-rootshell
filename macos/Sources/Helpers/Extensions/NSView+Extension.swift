@@ -1,6 +1,19 @@
 import AppKit
 
 extension NSView {
+    /// Returns true if this view is currently in the responder chain
+    var isInResponderChain: Bool {
+        var responder = window?.firstResponder
+        while let currentResponder = responder {
+            if currentResponder === self {
+                return true
+            }
+            responder = currentResponder.nextResponder
+        }
+
+        return false
+    }
+
     /// Recursively finds and returns the first descendant view that has the given class name.
     func firstDescendant(withClassName name: String) -> NSView? {
         for subview in subviews {
