@@ -234,6 +234,39 @@ class BaseTerminalController: NSWindowController,
         self.alert = alert
     }
 
+    // MARK: Focus Management
+    
+    /// Find the next surface to focus when a node is being closed.
+    /// Goes to previous split unless we're the leftmost leaf, then goes to next.
+    private func findNextFocusTargetAfterClosing(node: SplitTree<Ghostty.SurfaceView>.Node) -> Ghostty.SurfaceView? {
+        guard let root = surfaceTree.root else { return nil }
+        
+        // If we're the leftmost, then we move to the next surface after closing.
+        // Otherwise, we move to the previous.
+        if root.leftmostLeaf() == node.leftmostLeaf() {
+            return surfaceTree.focusTarget(for: .next, from: node)
+        } else {
+            return surfaceTree.focusTarget(for: .previous, from: node)
+        }
+    }
+    
+    /// Remove a node from the surface tree and move focus appropriately.
+    private func removeSurfaceAndMoveFocus(_ node: SplitTree<Ghostty.SurfaceView>.Node) {
+        let nextTarget = findNextFocusTargetAfterClosing(node: node)
+        let oldFocused = focusedSurface
+        let focused = node.contains { $0 == focusedSurface }
+
+        // Remove the node from the tree
+        surfaceTree = surfaceTree.remove(node)
+        
+        // Move focus if the closed surface was focused and we have a next target
+        if let nextTarget, focused {
+            DispatchQueue.main.async {
+                Ghostty.moveFocus(to: nextTarget, from: oldFocused)
+            }
+        }
+    }
+
     // MARK: Notifications
 
     @objc private func didChangeScreenParametersNotification(_ notification: Notification) {
@@ -312,8 +345,6 @@ class BaseTerminalController: NSWindowController,
         guard let target = notification.object as? Ghostty.SurfaceView else { return }
         guard let node = surfaceTree.root?.node(view: target) else { return }
 
-        // TODO: fix focus
-
         var processAlive = false
         if let valueAny = notification.userInfo?["process_alive"] {
             if let value = valueAny as? Bool {
@@ -323,7 +354,7 @@ class BaseTerminalController: NSWindowController,
 
         // If the child process is not alive, then we exit immediately
         guard processAlive else {
-            surfaceTree = surfaceTree.remove(node)
+            removeSurfaceAndMoveFocus(node)
             return
         }
 
@@ -337,7 +368,7 @@ class BaseTerminalController: NSWindowController,
             informativeText: "The terminal still has a running process. If you close the terminal the process will be killed."
         ) { [weak self] in
             if let self {
-                self.surfaceTree = self.surfaceTree.remove(node)
+                self.removeSurfaceAndMoveFocus(node)
             }
         }
     }
