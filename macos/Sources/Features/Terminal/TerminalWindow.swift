@@ -387,6 +387,7 @@ class TerminalWindow: NSWindow {
         if !titlebarAccessoryViewControllers.contains(resetZoomTitlebarAccessoryViewController) {
             addTitlebarAccessoryViewController(resetZoomTitlebarAccessoryViewController)
         }
+
         resetZoomTitlebarAccessoryViewController.view.isHidden = tabGroup.isTabBarVisible ? true : !surfaceIsZoomed
     }
 

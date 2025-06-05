@@ -197,7 +197,7 @@ class TerminalManager {
 
     /// Creates a window controller, adds it to our managed list, and returns it.
     func createWindow(withBaseConfig base: Ghostty.SurfaceConfiguration? = nil,
-                      withSurfaceTree tree: Ghostty.SplitNode? = nil) -> TerminalController {
+                      withSurfaceTree tree: SplitTree<Ghostty.SurfaceView>? = nil) -> TerminalController {
         // Initialize our controller to load the window
         let c = TerminalController(ghostty, withBaseConfig: base, withSurfaceTree: tree)
 
@@ -268,7 +268,7 @@ class TerminalManager {
     func closeAllWindows() {
         var needsConfirm: Bool = false
         for w in self.windows {
-            if (w.controller.surfaceTree?.needsConfirmQuit() ?? false) {
+            if w.controller.surfaceTree.contains(where: { $0.needsConfirmQuit }) {
                 needsConfirm = true
                 break
             }

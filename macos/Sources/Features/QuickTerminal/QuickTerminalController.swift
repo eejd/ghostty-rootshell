@@ -30,7 +30,7 @@ class QuickTerminalController: BaseTerminalController {
     init(_ ghostty: Ghostty.App,
          position: QuickTerminalPosition = .top,
          baseConfig base: Ghostty.SurfaceConfiguration? = nil,
-         surfaceTree tree: Ghostty.SplitNode? = nil
+         surfaceTree tree: SplitTree<Ghostty.SurfaceView>? = nil
     ) {
         self.position = position
         self.derivedConfig = DerivedConfig(ghostty.config)
@@ -185,11 +185,11 @@ class QuickTerminalController: BaseTerminalController {
 
     // MARK: Base Controller Overrides
 
-    override func surfaceTreeDidChange(from: Ghostty.SplitNode?, to: Ghostty.SplitNode?) {
+    override func surfaceTreeDidChange(from: SplitTree<Ghostty.SurfaceView>, to: SplitTree<Ghostty.SurfaceView>) {
         super.surfaceTreeDidChange(from: from, to: to)
 
         // If our surface tree is nil then we animate the window out.
-        if (to == nil) {
+        if (to.isEmpty) {
             animateOut()
         }
     }
@@ -233,13 +233,14 @@ class QuickTerminalController: BaseTerminalController {
         // Animate the window in
         animateWindowIn(window: window, from: position)
 
-        // If our surface tree is nil then we initialize a new terminal. The surface
-        // tree can be nil if for example we run "eixt" in the terminal and force
+        // If our surface tree is empty then we initialize a new terminal. The surface
+        // tree can be empty if for example we run "exit" in the terminal and force
         // animate out.
-        if (surfaceTree == nil) {
-            let leaf: Ghostty.SplitNode.Leaf = .init(ghostty.app!, baseConfig: nil)
-            surfaceTree = .leaf(leaf)
-            focusedSurface = leaf.surface
+        if surfaceTree.isEmpty,
+           let ghostty_app = ghostty.app {
+            let view = Ghostty.SurfaceView(ghostty_app, baseConfig: nil)
+            surfaceTree = SplitTree(view: view)
+            focusedSurface = view
         }
     }
 

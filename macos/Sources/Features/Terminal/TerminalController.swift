@@ -32,7 +32,7 @@ class TerminalController: BaseTerminalController {
 
     init(_ ghostty: Ghostty.App,
          withBaseConfig base: Ghostty.SurfaceConfiguration? = nil,
-         withSurfaceTree tree: Ghostty.SplitNode? = nil
+         withSurfaceTree tree: SplitTree<Ghostty.SurfaceView>? = nil
     ) {
         // The window we manage is not restorable if we've specified a command
         // to execute. We do this because the restored window is meaningless at the
@@ -105,11 +105,20 @@ class TerminalController: BaseTerminalController {
 
     // MARK: Base Controller Overrides
 
-    override func surfaceTreeDidChange(from: Ghostty.SplitNode?, to: Ghostty.SplitNode?) {
+    override func surfaceTreeDidChange(from: SplitTree<Ghostty.SurfaceView>, to: SplitTree<Ghostty.SurfaceView>) {
         super.surfaceTreeDidChange(from: from, to: to)
+        
+        // Whenever our surface tree changes in any way (new split, close split, etc.)
+        // we want to invalidate our state.
+        invalidateRestorableState()
+
+        // Update our zoom state
+        if let window = window as? TerminalWindow {
+            window.surfaceIsZoomed = to.zoomed != nil
+        }
 
         // If our surface tree is now nil then we close our window.
-        if (to == nil) {
+        if (to.isEmpty) {
             self.window?.close()
         }
     }
@@ -143,8 +152,8 @@ class TerminalController: BaseTerminalController {
 
             // If we have no surfaces in our window (is that possible?) then we update
             // our window appearance based on the root config. If we have surfaces, we
-            // don't call this because the TODO
-            if surfaceTree == nil {
+            // don't call this because focused surface changes will trigger appearance updates.
+            if surfaceTree.isEmpty {
                 syncAppearance(.init(config))
             }
 
@@ -154,7 +163,7 @@ class TerminalController: BaseTerminalController {
         // This is a surface-level config update. If we have the surface, we
         // update our appearance based on it.
         guard let surfaceView = notification.object as? Ghostty.SurfaceView else { return }
-        guard surfaceTree?.contains(view: surfaceView) ?? false else { return }
+        guard surfaceTree.contains(surfaceView) else { return }
 
         // We can't use surfaceView.derivedConfig because it may not be updated
         // yet since it also responds to notifications.
@@ -228,6 +237,9 @@ class TerminalController: BaseTerminalController {
         // Update our window light/darkness based on our updated background color
         window.isLightTheme = OSColor(surfaceConfig.backgroundColor).isLightColor
 
+        // Sync our zoom state for splits
+        window.surfaceIsZoomed = surfaceTree.zoomed != nil
+
         // If our window is not visible, then we do nothing. Some things such as blurring
         // have no effect if the window is not visible. Ultimately, we'll have this called
         // at some point when a surface becomes focused.
@@ -269,15 +281,19 @@ class TerminalController: BaseTerminalController {
         // If it does, we match the focused surface. If it doesn't, we use the app
         // configuration.
         let backgroundColor: OSColor
-        if let surfaceTree {
-            if let focusedSurface, surfaceTree.doesBorderTop(view: focusedSurface) {
+        if !surfaceTree.isEmpty {
+            if let focusedSurface = focusedSurface,
+               let treeRoot = surfaceTree.root,
+               let focusedNode = treeRoot.node(view: focusedSurface),
+               treeRoot.spatial().doesBorder(side: .up, from: focusedNode) {
                 // Similar to above, an alpha component of "0" causes compositor issues, so
                 // we use 0.001. See: https://github.com/ghostty-org/ghostty/pull/4308
                 backgroundColor = OSColor(focusedSurface.backgroundColor ?? surfaceConfig.backgroundColor).withAlphaComponent(0.001)
             } else {
                 // We don't have a focused surface or our surface doesn't border the
                 // top. We choose to match the color of the top-left most surface.
-                backgroundColor = OSColor(surfaceTree.topLeft().backgroundColor ?? derivedConfig.backgroundColor)
+                let topLeftSurface = surfaceTree.root?.leftmostLeaf()
+                backgroundColor = OSColor(topLeftSurface?.backgroundColor ?? derivedConfig.backgroundColor)
             }
         } else {
             backgroundColor = OSColor(self.derivedConfig.backgroundColor)
@@ -445,10 +461,10 @@ class TerminalController: BaseTerminalController {
 
         // If we have only a single surface (no splits) and there is a default size then
         // we should resize to that default size.
-        if case let .leaf(leaf) = surfaceTree {
+        if case let .leaf(view) = surfaceTree.root {
             // If this is our first surface then our focused surface will be nil
             // so we force the focused surface to the leaf.
-            focusedSurface = leaf.surface
+            focusedSurface = view
 
             if let defaultSize {
                 window.setFrame(defaultSize, display: true)
@@ -589,27 +605,6 @@ class TerminalController: BaseTerminalController {
         ghostty.newTab(surface: surface)
     }
 
-    private func confirmClose(
-        window: NSWindow,
-        messageText: String,
-        informativeText: String,
-        completion: @escaping () -> Void
-    ) {
-        // If we need confirmation by any, show one confirmation for all windows
-        // in the tab group.
-        let alert = NSAlert()
-        alert.messageText = messageText
-        alert.informativeText = informativeText
-        alert.addButton(withTitle: "Close")
-        alert.addButton(withTitle: "Cancel")
-        alert.alertStyle = .warning
-        alert.beginSheetModal(for: window) { response in
-            if response == .alertFirstButtonReturn {
-                completion()
-            }
-        }
-    }
-
     @IBAction func closeTab(_ sender: Any?) {
         guard let window = window else { return }
         guard window.tabGroup != nil else {
@@ -618,9 +613,8 @@ class TerminalController: BaseTerminalController {
             return
         }
 
-        if surfaceTree?.needsConfirmQuit() ?? false {
+        if surfaceTree.contains(where: { $0.needsConfirmQuit }) {
             confirmClose(
-                window: window,
                 messageText: "Close Tab?",
                 informativeText: "The terminal still has a running process. If you close the tab the process will be killed."
             ) {
@@ -656,7 +650,7 @@ class TerminalController: BaseTerminalController {
             guard let controller = tabWindow.windowController as? TerminalController else {
                 return false
             }
-            return controller.surfaceTree?.needsConfirmQuit() ?? false
+            return controller.surfaceTree.contains(where: { $0.needsConfirmQuit })
         }
 
         // If none need confirmation then we can just close all the windows.
@@ -666,7 +660,6 @@ class TerminalController: BaseTerminalController {
         }
 
         confirmClose(
-            window: window,
             messageText: "Close Window?",
             informativeText: "All terminal sessions in this window will be terminated."
         ) {
@@ -702,18 +695,7 @@ class TerminalController: BaseTerminalController {
             toolbar.titleText = to
         }
     }
-
-    override func surfaceTreeDidChange() {
-        // Whenever our surface tree changes in any way (new split, close split, etc.)
-        // we want to invalidate our state.
-        invalidateRestorableState()
-    }
-
-    override func zoomStateDidChange(to: Bool) {
-        guard let window = window as? TerminalWindow else { return }
-        window.surfaceIsZoomed = to
-    }
-
+    
     override func focusedSurfaceDidChange(to: Ghostty.SurfaceView?) {
         super.focusedSurfaceDidChange(to: to)
 
@@ -846,19 +828,19 @@ class TerminalController: BaseTerminalController {
 
     @objc private func onCloseTab(notification: SwiftUI.Notification) {
         guard let target = notification.object as? Ghostty.SurfaceView else { return }
-        guard surfaceTree?.contains(view: target) ?? false else { return }
+        guard surfaceTree.contains(target) else { return }
         closeTab(self)
     }
 
     @objc private func onCloseWindow(notification: SwiftUI.Notification) {
         guard let target = notification.object as? Ghostty.SurfaceView else { return }
-        guard surfaceTree?.contains(view: target) ?? false else { return }
+        guard surfaceTree.contains(target) else { return }
         closeWindow(self)
     }
 
     @objc private func onResetWindowSize(notification: SwiftUI.Notification) {
         guard let target = notification.object as? Ghostty.SurfaceView else { return }
-        guard surfaceTree?.contains(view: target) ?? false else { return }
+        guard surfaceTree.contains(target) else { return }
         returnToDefaultSize(nil)
     }
 
