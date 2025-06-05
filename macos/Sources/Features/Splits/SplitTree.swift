@@ -190,17 +190,22 @@ extension SplitTree {
                 return nil
             }
 
-            // Extract the view from the best candidate node
-            let bestNode = nodes[0].node
-            switch bestNode {
+            // Extract the view from the best candidate node. The best candidate
+            // node is the closest leaf node. If we have no leaves (impossible?)
+            // just use the first node.
+            let bestNode = nodes.first(where: {
+                if case .leaf = $0.node { return true } else { return false }
+            }) ?? nodes[0]
+            switch bestNode.node {
             case .leaf(let view):
                 return view
+
             case .split:
                 // If the best candidate is a split node, use its the leaf/rightmost
                 // depending on our spatial direction.
                 return switch (spatialDirection) {
-                case .up, .left: bestNode.leftmostLeaf()
-                case .down, .right: bestNode.rightmostLeaf()
+                case .up, .left: bestNode.node.leftmostLeaf()
+                case .down, .right: bestNode.node.rightmostLeaf()
                 }
             }
         }
@@ -892,32 +897,47 @@ extension SplitTree.Spatial {
     /// - **Up**: Slots with bounds above the reference node (Y=0 is top)
     /// - **Down**: Slots with bounds below the reference node
     ///
-    /// Results are sorted by distance from the reference node, with closest slots first.
-    /// Distance is calculated as the gap between the reference node and the candidate slot
-    /// in the direction of movement.
+    /// Results are sorted by 2D euclidean distance from the reference node, with closest slots first.
+    /// Distance is calculated from the top-left corners of the bounds, prioritizing nodes that are
+    /// closer in both dimensions.
+    ///
+    /// **Important**: The returned array contains both split nodes and leaf nodes. When using this
+    /// for navigation or focus management, you typically want to filter for leaf nodes first, as they
+    /// represent the actual views that can receive focus. Split nodes are included in the results
+    /// because they have bounds and occupy space in the layout, but they are structural elements
+    /// that cannot themselves be focused. If no leaf nodes are found in the results, you may need
+    /// to traverse into a split node to find its appropriate leaf child.
     ///
     /// - Parameters:
     ///   - direction: The direction to search for slots
     ///   - referenceNode: The node to use as the reference point
-    /// - Returns: An array of slots in the specified direction, sorted by distance (closest first)
+    /// - Returns: An array of slots in the specified direction, sorted by 2D distance (closest first)
     func slots(in direction: Direction, from referenceNode: SplitTree.Node) -> [Slot] {
         guard let refSlot = slots.first(where: { $0.node == referenceNode }) else { return [] }
+
+        // Helper function to calculate 2D euclidean distance between top-left corners of two rectangles
+        func distance(from rect1: CGRect, to rect2: CGRect) -> Double {
+            // Calculate distance between top-left corners
+            let dx = rect2.minX - rect1.minX
+            let dy = rect2.minY - rect1.minY
+            return sqrt(dx * dx + dy * dy)
+        }
         
-        return switch direction {
+        let result = switch direction {
         case .left:
             // Slots to the left: their right edge is at or left of reference's left edge
             slots.filter {
                 $0.node != referenceNode && $0.bounds.maxX <= refSlot.bounds.minX 
             }.sorted {
-                (refSlot.bounds.minX - $0.bounds.maxX) < (refSlot.bounds.minX - $1.bounds.maxX)
+                distance(from: refSlot.bounds, to: $0.bounds) < distance(from: refSlot.bounds, to: $1.bounds)
             }
-
+            
         case .right:
             // Slots to the right: their left edge is at or right of reference's right edge
             slots.filter {
                 $0.node != referenceNode && $0.bounds.minX >= refSlot.bounds.maxX 
             }.sorted {
-                ($0.bounds.minX - refSlot.bounds.maxX) < ($1.bounds.minX - refSlot.bounds.maxX)
+                distance(from: refSlot.bounds, to: $0.bounds) < distance(from: refSlot.bounds, to: $1.bounds)
             }
             
         case .up:
@@ -925,7 +945,7 @@ extension SplitTree.Spatial {
             slots.filter {
                 $0.node != referenceNode && $0.bounds.maxY <= refSlot.bounds.minY 
             }.sorted {
-                (refSlot.bounds.minY - $0.bounds.maxY) < (refSlot.bounds.minY - $1.bounds.maxY)
+                distance(from: refSlot.bounds, to: $0.bounds) < distance(from: refSlot.bounds, to: $1.bounds)
             }
             
         case .down:
@@ -933,9 +953,11 @@ extension SplitTree.Spatial {
             slots.filter {
                 $0.node != referenceNode && $0.bounds.minY >= refSlot.bounds.maxY 
             }.sorted {
-                ($0.bounds.minY - refSlot.bounds.maxY) < ($1.bounds.minY - refSlot.bounds.maxY)
+                distance(from: refSlot.bounds, to: $0.bounds) < distance(from: refSlot.bounds, to: $1.bounds)
             }
         }
+        
+        return result
     }
 
     /// Returns whether the given node borders the specified side of the spatial bounds.
