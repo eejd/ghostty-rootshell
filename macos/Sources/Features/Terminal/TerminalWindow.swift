@@ -45,15 +45,14 @@ class TerminalWindow: NSWindow {
         },
     ]
 
+    // false if all three traffic lights are missing/hidden, otherwise true
     private var hasWindowButtons: Bool {
         get {
-            if let close = standardWindowButton(.closeButton),
-                  let miniaturize = standardWindowButton(.miniaturizeButton),
-                  let zoom = standardWindowButton(.zoomButton) {
-                return !(close.isHidden && miniaturize.isHidden && zoom.isHidden)
-            } else {
-                return false
-            }
+            // if standardWindowButton(.theButton) == nil, the button isn't there, so coalesce to true
+            let closeIsHidden = standardWindowButton(.closeButton)?.isHiddenOrHasHiddenAncestor ?? true
+            let miniaturizeIsHidden = standardWindowButton(.miniaturizeButton)?.isHiddenOrHasHiddenAncestor ?? true
+            let zoomIsHidden = standardWindowButton(.zoomButton)?.isHiddenOrHasHiddenAncestor ?? true
+            return !(closeIsHidden && miniaturizeIsHidden && zoomIsHidden)
         }
     }
 
@@ -78,7 +77,7 @@ class TerminalWindow: NSWindow {
 		if titlebarTabs {
 			generateToolbar()
 		}
-        
+
         level = UserDefaults.standard.value(forKey: Self.defaultLevelKey) as? NSWindow.Level ?? .normal
     }
 
