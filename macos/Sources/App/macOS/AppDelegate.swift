@@ -36,6 +36,8 @@ class AppDelegate: NSObject,
     @IBOutlet private var menuCloseWindow: NSMenuItem?
     @IBOutlet private var menuCloseAllWindows: NSMenuItem?
 
+    @IBOutlet private var menuUndo: NSMenuItem?
+    @IBOutlet private var menuRedo: NSMenuItem?
     @IBOutlet private var menuCopy: NSMenuItem?
     @IBOutlet private var menuPaste: NSMenuItem?
     @IBOutlet private var menuPasteSelection: NSMenuItem?
@@ -87,6 +89,9 @@ class AppDelegate: NSObject,
 
     /// Manages our terminal windows.
     let terminalManager: TerminalManager
+
+    /// The global undo manager for app-level state such as window restoration.
+    lazy var undoManager = UndoManager()
 
     /// Our quick terminal. This starts out uninitialized and only initializes if used.
     private var quickController: QuickTerminalController? = nil
@@ -393,6 +398,11 @@ class AppDelegate: NSObject,
         syncMenuShortcut(config, action: "new_split:down", menuItem: self.menuSplitDown)
         syncMenuShortcut(config, action: "new_split:up", menuItem: self.menuSplitUp)
 
+        // TODO: sync
+        menuUndo?.keyEquivalent = "z"
+        menuUndo?.keyEquivalentModifierMask = [.command]
+        menuRedo?.keyEquivalent = "z"
+        menuRedo?.keyEquivalentModifierMask = [.command, .shift]
         syncMenuShortcut(config, action: "copy_to_clipboard", menuItem: self.menuCopy)
         syncMenuShortcut(config, action: "paste_from_clipboard", menuItem: self.menuPaste)
         syncMenuShortcut(config, action: "paste_from_selection", menuItem: self.menuPasteSelection)

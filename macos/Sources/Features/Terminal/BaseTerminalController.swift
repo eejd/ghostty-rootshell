@@ -75,6 +75,13 @@ class BaseTerminalController: NSWindowController,
     /// The cancellables related to our focused surface.
     private var focusedSurfaceCancellables: Set<AnyCancellable> = []
 
+    /// The undo manager for this controller is the undo manager of the window,
+    /// which we set via the delegate method.
+    override var undoManager: UndoManager? {
+        // This should be set via the delegate method windowWillReturnUndoManager
+        window?.undoManager
+    }
+
     struct SavedFrame {
         let window: NSRect
         let screen: NSRect
@@ -261,6 +268,9 @@ class BaseTerminalController: NSWindowController,
         let oldFocused = focusedSurface
         let focused = node.contains { $0 == focusedSurface }
 
+        // Keep track of the old tree for undo management.
+        let oldTree = surfaceTree
+
         // Remove the node from the tree
         surfaceTree = surfaceTree.remove(node)
         
@@ -268,6 +278,32 @@ class BaseTerminalController: NSWindowController,
         if let nextTarget, focused {
             DispatchQueue.main.async {
                 Ghostty.moveFocus(to: nextTarget, from: oldFocused)
+            }
+        }
+
+        // Setup our undo
+        if let undoManager {
+            undoManager.setActionName("Close Terminal")
+            undoManager.registerUndo(withTarget: ExpiringTarget(
+                with: .seconds(5),
+                in: undoManager,
+            )) { [weak self] v in
+                guard let self else { return }
+                self.surfaceTree = oldTree
+                if let oldFocused {
+                    DispatchQueue.main.async {
+                        Ghostty.moveFocus(to: oldFocused, from: self.focusedSurface)
+                    }
+                }
+
+                undoManager.registerUndo(withTarget: NSObject()) { [weak self] _ in
+                    self?.closeSurface(
+                        node.leftmostLeaf(),
+                        withConfirmation: node.contains {
+                            $0.needsConfirmQuit
+                        }
+                    )
+                }
             }
         }
     }
@@ -346,19 +382,25 @@ class BaseTerminalController: NSWindowController,
     }
 
     @objc private func ghosttyDidCloseSurface(_ notification: Notification) {
-        // The target must be within our tree
         guard let target = notification.object as? Ghostty.SurfaceView else { return }
+        closeSurface(
+            target,
+            withConfirmation: (notification.userInfo?["process_alive"] as? Bool) ?? false,
+        )
+    }
+
+    /// Close a surface view, requesting confirmation if necessary.
+    ///
+    /// This will also insert the proper undo stack information in.
+    private func closeSurface(
+        _ target: Ghostty.SurfaceView,
+        withConfirmation: Bool = true,
+    ) {
+        // The target must be within our tree
         guard let node = surfaceTree.root?.node(view: target) else { return }
 
-        var processAlive = false
-        if let valueAny = notification.userInfo?["process_alive"] {
-            if let value = valueAny as? Bool {
-                processAlive = value
-            }
-        }
-
         // If the child process is not alive, then we exit immediately
-        guard processAlive else {
+        guard withConfirmation else {
             removeSurfaceAndMoveFocus(node)
             return
         }
@@ -405,7 +447,8 @@ class BaseTerminalController: NSWindowController,
 
         // Do the split
         do {
-            surfaceTree = try surfaceTree.insert(view: newView, at: oldView, direction: splitDirection)
+            let newTree = try surfaceTree.insert(view: newView, at: oldView, direction: splitDirection)
+            surfaceTree = newTree
         } catch {
             // If splitting fails for any reason (it should not), then we just log
             // and return. The new view we created will be deinitialized and its
@@ -413,6 +456,7 @@ class BaseTerminalController: NSWindowController,
             Ghostty.logger.warning("failed to insert split: \(error)")
             return
         }
+
 
         // Once we've split, we need to move focus to the new split
         Ghostty.moveFocus(to: newView, from: oldView)
@@ -732,6 +776,11 @@ class BaseTerminalController: NSWindowController,
     // MARK: NSWindowController
 
     override func windowDidLoad() {
+        super.windowDidLoad()
+
+        // Setup our undo manager.
+
+        // Everything beyond here is setting up the window
         guard let window else { return }
 
         // If there is a hardcoded title in the configuration, we set that
@@ -816,6 +865,11 @@ class BaseTerminalController: NSWindowController,
 
     func windowDidMove(_ notification: Notification) {
         windowFrameDidChange()
+    }
+
+    func windowWillReturnUndoManager(_ window: NSWindow) -> UndoManager? {
+        guard let appDelegate = NSApplication.shared.delegate as? AppDelegate else { return nil }
+        return appDelegate.undoManager
     }
 
     // MARK: First Responder
