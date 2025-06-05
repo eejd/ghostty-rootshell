@@ -43,7 +43,6 @@ struct TerminalSplitSubtreeView: View {
                 }),
                 dividerColor: ghostty.config.splitDividerColor,
                 resizeIncrements: .init(width: 1, height: 1),
-                resizePublisher: .init(),
                 left: {
                     TerminalSplitSubtreeView(node: split.left, onResize: onResize)
                 },
