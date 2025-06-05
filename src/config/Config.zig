@@ -1963,7 +1963,7 @@ keybind: Keybinds = .{},
 ///
 ///  * `system`
 ///
-///    Instructs the system to notify the user using built-in system functions.
+///    Instruct the system to notify the user using built-in system functions.
 ///    This could result in an audiovisual effect, a notification, or something
 ///    else entirely. Changing these effects require altering system settings:
 ///    for instance under the "Sound > Alert Sound" setting in GNOME,
@@ -1973,15 +1973,31 @@ keybind: Keybinds = .{},
 ///
 ///    Play a custom sound. (GTK only)
 ///
-/// Example: `audio`, `no-audio`, `system`, `no-system`:
+///  * `attention` *(enabled by default)*
 ///
-/// On macOS, if the app is unfocused, it will bounce the app icon in the dock
-/// once. Additionally, the title of the window with the alerted terminal
-/// surface will contain a bell emoji (🔔) until the terminal is focused
-/// or a key is pressed. These are not currently configurable since they're
-/// considered unobtrusive.
+///    Request the user's attention when Ghostty is unfocused, until it has
+///    received focus again. On macOS, this will bounce the app icon in the
+///    dock once. On Linux, the behavior depends on the desktop environment
+///    and/or the window manager/compositor:
 ///
-/// By default, no bell features are enabled.
+///    - On KDE, the background of the desktop icon in the task bar would be
+///      highlighted;
+///
+///    - On GNOME, you may receive a notification that, when clicked, would
+///      bring the Ghostty window into focus;
+///
+///    - On Sway, the window may be decorated with a distinctly colored border;
+///
+///    - On other systems this may have no effect at all.
+///
+///  * `title` *(enabled by default)*
+///
+///    Prepend a bell emoji (🔔) to the title of the alerted surface until the
+///    terminal is re-focused or interacted with (such as on keyboard input).
+///
+///    Only implemented on macOS.
+///
+/// Example: `audio`, `no-audio`, `system`, `no-system`
 @"bell-features": BellFeatures = .{},
 
 /// If `audio` is an enabled bell feature, this is a path to an audio file. If
@@ -5879,6 +5895,8 @@ pub const AppNotifications = packed struct {
 pub const BellFeatures = packed struct {
     system: bool = false,
     audio: bool = false,
+    attention: bool = true,
+    title: bool = true,
 };
 
 /// See mouse-shift-capture
