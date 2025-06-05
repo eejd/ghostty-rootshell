@@ -250,6 +250,17 @@ extension Ghostty {
             return String(cString: ptr)
         }
 
+        var macosWindowButtons: MacOSWindowButtons {
+            let defaultValue = MacOSWindowButtons.visible
+            guard let config = self.config else { return defaultValue }
+            var v: UnsafePointer<Int8>? = nil
+            let key = "macos-window-buttons"
+            guard ghostty_config_get(config, &v, key, UInt(key.count)) else { return defaultValue }
+            guard let ptr = v else { return defaultValue }
+            let str = String(cString: ptr)
+            return MacOSWindowButtons(rawValue: str) ?? defaultValue
+        }
+
         var macosTitlebarStyle: String {
             let defaultValue = "transparent"
             guard let config = self.config else { return defaultValue }
