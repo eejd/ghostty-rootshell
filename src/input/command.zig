@@ -274,6 +274,39 @@ fn actionCommands(action: Action.Key) []const Command {
             },
         },
 
+        .goto_split => comptime &.{
+            .{
+                .action = .{ .goto_split = .previous },
+                .title = "Focus Split: Previous",
+                .description = "Focus the previous split, if any.",
+            },
+            .{
+                .action = .{ .goto_split = .next },
+                .title = "Focus Split: Next",
+                .description = "Focus the next split, if any.",
+            },
+            .{
+                .action = .{ .goto_split = .left },
+                .title = "Focus Split: Left",
+                .description = "Focus the split to the left, if it exists.",
+            },
+            .{
+                .action = .{ .goto_split = .right },
+                .title = "Focus Split: Right",
+                .description = "Focus the split to the right, if it exists.",
+            },
+            .{
+                .action = .{ .goto_split = .up },
+                .title = "Focus Split: Up",
+                .description = "Focus the split above, if it exists.",
+            },
+            .{
+                .action = .{ .goto_split = .down },
+                .title = "Focus Split: Down",
+                .description = "Focus the split below, if it exists.",
+            },
+        },
+
         .toggle_split_zoom => comptime &.{.{
             .action = .toggle_split_zoom,
             .title = "Toggle Split Zoom",
@@ -396,7 +429,6 @@ fn actionCommands(action: Action.Key) []const Command {
         .jump_to_prompt,
         .write_scrollback_file,
         .goto_tab,
-        .goto_split,
         .resize_split,
         .crash,
         => comptime &.{},

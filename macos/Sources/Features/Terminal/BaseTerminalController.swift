@@ -447,7 +447,7 @@ class BaseTerminalController: NSWindowController,
         case .left: focusDirection = .spatial(.left)
         case .right: focusDirection = .spatial(.right)
         }
-        
+
         // Find the node for the target surface
         guard let targetNode = surfaceTree.root?.node(view: target) else { return }
         
@@ -462,7 +462,9 @@ class BaseTerminalController: NSWindowController,
         }
 
         // Move focus to the next surface
-        Ghostty.moveFocus(to: nextSurface, from: target)
+        DispatchQueue.main.async {
+            Ghostty.moveFocus(to: nextSurface, from: target)
+        }
     }
     
     @objc private func ghosttyDidToggleSplitZoom(_ notification: Notification) {
