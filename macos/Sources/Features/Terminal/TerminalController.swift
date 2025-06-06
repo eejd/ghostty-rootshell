@@ -710,7 +710,11 @@ class TerminalController: BaseTerminalController {
     }
 
     static private func closeAllWindowsImmediately() {
-        all.forEach { $0.close() }
+        let undoManager = (NSApp.delegate as? AppDelegate)?.undoManager
+        undoManager?.beginUndoGrouping()
+        all.forEach { $0.closeWindowImmediately() }
+        undoManager?.setActionName("Close All Windows")
+        undoManager?.endUndoGrouping()
     }
 
     // MARK: Undo/Redo
