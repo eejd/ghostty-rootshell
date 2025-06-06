@@ -29,6 +29,9 @@ class ExpiringUndoManager: UndoManager {
         expiresAfter duration: Duration,
         handler: @escaping (TargetType) -> Void
     ) {
+        // Ignore instantly expiring undos
+        guard duration.timeInterval > 0 else { return }
+
         let expiringTarget = ExpiringTarget(
             target,
             expiresAfter: duration,

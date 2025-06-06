@@ -77,7 +77,7 @@ class BaseTerminalController: NSWindowController,
 
     /// The time that undo/redo operations that contain running ptys are valid for.
     var undoExpiration: Duration {
-        .seconds(5)
+        ghostty.config.undoTimeout
     }
 
     /// The undo manager for this controller is the undo manager of the window,
