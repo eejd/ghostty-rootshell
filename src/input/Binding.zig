@@ -980,6 +980,8 @@ pub const Action = union(enum) {
 
             // These are app but can be special-cased in a surface context.
             .new_window,
+            .undo,
+            .redo,
             => .app,
 
             // Obviously surface actions.
@@ -1020,8 +1022,6 @@ pub const Action = union(enum) {
             .toggle_secure_input,
             .toggle_command_palette,
             .reset_window_size,
-            .undo,
-            .redo,
             .crash,
             => .surface,
 
