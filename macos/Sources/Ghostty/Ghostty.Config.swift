@@ -566,6 +566,9 @@ extension Ghostty.Config {
         let rawValue: CUnsignedInt
 
         static let system = BellFeatures(rawValue: 1 << 0)
+        static let audio = BellFeatures(rawValue: 1 << 1)
+        static let attention = BellFeatures(rawValue: 1 << 2)
+        static let title = BellFeatures(rawValue: 1 << 3)
     }
 
     enum MacHidden : String {

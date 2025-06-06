@@ -59,7 +59,7 @@ extension Ghostty {
 
         var title: String {
             var result = surfaceView.title
-            if (surfaceView.bell) {
+            if (surfaceView.bell && ghostty.config.bellFeatures.contains(.title)) {
                 result = "🔔 \(result)"
             }
 

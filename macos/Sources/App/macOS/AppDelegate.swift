@@ -537,11 +537,13 @@ class AppDelegate: NSObject,
     }
 
     @objc private func ghosttyBellDidRing(_ notification: Notification) {
-        // Bounce the dock icon if we're not focused.
-        NSApp.requestUserAttention(.informationalRequest)
+        if (ghostty.config.bellFeatures.contains(.attention)) {
+            // Bounce the dock icon if we're not focused.
+            NSApp.requestUserAttention(.informationalRequest)
 
-        // Handle setting the dock badge based on permissions
-        ghosttyUpdateBadgeForBell()
+            // Handle setting the dock badge based on permissions
+            ghosttyUpdateBadgeForBell()
+        }
     }
 
     private func ghosttyUpdateBadgeForBell() {
