@@ -62,8 +62,8 @@
 		A586365F2DEE6C2300E04A10 /* SplitTree.swift in Sources */ = {isa = PBXBuildFile; fileRef = A586365E2DEE6C2100E04A10 /* SplitTree.swift */; };
 		A58636662DEF964100E04A10 /* TerminalSplitTreeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A58636652DEF963F00E04A10 /* TerminalSplitTreeView.swift */; };
 		A586366B2DF0A98C00E04A10 /* Array+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = A586366A2DF0A98900E04A10 /* Array+Extension.swift */; };
-		A586366D2DF25C2500E04A10 /* ExpiringTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = A586366C2DF25C1C00E04A10 /* ExpiringTarget.swift */; };
 		A586366F2DF25D8600E04A10 /* Duration+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = A586366E2DF25D8300E04A10 /* Duration+Extension.swift */; };
+		A58636712DF298FB00E04A10 /* ExpiringUndoManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A58636702DF298F700E04A10 /* ExpiringUndoManager.swift */; };
 		A5874D992DAD751B00E83852 /* CGS.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5874D982DAD751A00E83852 /* CGS.swift */; };
 		A5874D9D2DAD786100E83852 /* NSWindow+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5874D9C2DAD785F00E83852 /* NSWindow+Extension.swift */; };
 		A59444F729A2ED5200725BBA /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A59444F629A2ED5200725BBA /* SettingsView.swift */; };
@@ -170,8 +170,8 @@
 		A586365E2DEE6C2100E04A10 /* SplitTree.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitTree.swift; sourceTree = "<group>"; };
 		A58636652DEF963F00E04A10 /* TerminalSplitTreeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalSplitTreeView.swift; sourceTree = "<group>"; };
 		A586366A2DF0A98900E04A10 /* Array+Extension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Array+Extension.swift"; sourceTree = "<group>"; };
-		A586366C2DF25C1C00E04A10 /* ExpiringTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExpiringTarget.swift; sourceTree = "<group>"; };
 		A586366E2DF25D8300E04A10 /* Duration+Extension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Duration+Extension.swift"; sourceTree = "<group>"; };
+		A58636702DF298F700E04A10 /* ExpiringUndoManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExpiringUndoManager.swift; sourceTree = "<group>"; };
 		A5874D982DAD751A00E83852 /* CGS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CGS.swift; sourceTree = "<group>"; };
 		A5874D9C2DAD785F00E83852 /* NSWindow+Extension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NSWindow+Extension.swift"; sourceTree = "<group>"; };
 		A59444F629A2ED5200725BBA /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
@@ -294,7 +294,6 @@
 		A534263D2A7DCBB000EBB7A2 /* Helpers */ = {
 			isa = PBXGroup;
 			children = (
-				A586366C2DF25C1C00E04A10 /* ExpiringTarget.swift */,
 				A58636692DF0A98100E04A10 /* Extensions */,
 				A5874D9B2DAD781100E83852 /* Private */,
 				A5AEB1642D5BE7BF00513529 /* LastWindowPosition.swift */,
@@ -303,6 +302,7 @@
 				A5333E1B2B5A1CE3008AEFF7 /* CrossKit.swift */,
 				A5CBD0572C9F30860017A1AE /* Cursor.swift */,
 				A5D0AF3C2B37804400D21823 /* CodableBridge.swift */,
+				A58636702DF298F700E04A10 /* ExpiringUndoManager.swift */,
 				A52FFF582CAA4FF1000C6A5B /* Fullscreen.swift */,
 				A59630962AEE163600D64628 /* HostingWindow.swift */,
 				A5CA378B2D2A4DE800931030 /* KeyboardLayout.swift */,
@@ -708,6 +708,7 @@
 				A53A29812DB44A6100B6E02C /* KeyboardShortcut+Extension.swift in Sources */,
 				A5CBD0562C9E65B80017A1AE /* DraggableWindowView.swift in Sources */,
 				C1F26EE92B76CBFC00404083 /* VibrantLayer.m in Sources */,
+				A58636712DF298FB00E04A10 /* ExpiringUndoManager.swift in Sources */,
 				A59630972AEE163600D64628 /* HostingWindow.swift in Sources */,
 				A59630A02AEF6AEB00D64628 /* TerminalManager.swift in Sources */,
 				A51BFC2B2B30F6BE00E92F16 /* UpdateDelegate.swift in Sources */,
@@ -720,7 +721,6 @@
 				A52FFF5B2CAA54B1000C6A5B /* FullscreenMode+Extension.swift in Sources */,
 				A5333E222B5A2128008AEFF7 /* SurfaceView_AppKit.swift in Sources */,
 				A5CA378E2D31D6C300931030 /* Weak.swift in Sources */,
-				A586366D2DF25C2500E04A10 /* ExpiringTarget.swift in Sources */,
 				A5CDF1952AAFA19600513312 /* ConfigurationErrorsView.swift in Sources */,
 				A55B7BBC29B6FC330055DE60 /* SurfaceView.swift in Sources */,
 				A5333E1C2B5A1CE3008AEFF7 /* CrossKit.swift in Sources */,

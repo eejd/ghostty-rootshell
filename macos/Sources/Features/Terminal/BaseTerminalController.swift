@@ -75,11 +75,25 @@ class BaseTerminalController: NSWindowController,
     /// The cancellables related to our focused surface.
     private var focusedSurfaceCancellables: Set<AnyCancellable> = []
 
+    /// The time that undo/redo operations that contain running ptys are valid for.
+    private var undoExpiration: Duration {
+        .seconds(5)
+    }
+
     /// The undo manager for this controller is the undo manager of the window,
     /// which we set via the delegate method.
-    override var undoManager: UndoManager? {
+    override var undoManager: ExpiringUndoManager? {
         // This should be set via the delegate method windowWillReturnUndoManager
-        window?.undoManager
+        if let result = window?.undoManager as? ExpiringUndoManager {
+            return result
+        }
+
+        // If the window one isn't set, we fallback to our global one.
+        if let appDelegate = NSApplication.shared.delegate as? AppDelegate {
+            return appDelegate.undoManager
+        }
+
+        return nil
     }
 
     struct SavedFrame {
@@ -173,7 +187,7 @@ class BaseTerminalController: NSWindowController,
 
     deinit {
         NotificationCenter.default.removeObserver(self)
-
+        undoManager?.removeAllActions(withTarget: self)
         if let eventMonitor {
             NSEvent.removeMonitor(eventMonitor)
         }
@@ -284,20 +298,20 @@ class BaseTerminalController: NSWindowController,
         // Setup our undo
         if let undoManager {
             undoManager.setActionName("Close Terminal")
-            undoManager.registerUndo(withTarget: ExpiringTarget(
-                with: .seconds(5),
-                in: undoManager,
-            )) { [weak self] v in
-                guard let self else { return }
-                self.surfaceTree = oldTree
+            undoManager.registerUndo(
+                withTarget: self,
+                expiresAfter: undoExpiration) { target in
+                target.surfaceTree = oldTree
                 if let oldFocused {
                     DispatchQueue.main.async {
-                        Ghostty.moveFocus(to: oldFocused, from: self.focusedSurface)
+                        Ghostty.moveFocus(to: oldFocused, from: target.focusedSurface)
                     }
                 }
 
-                undoManager.registerUndo(withTarget: NSObject()) { [weak self] _ in
-                    self?.closeSurface(
+                undoManager.registerUndo(
+                    withTarget: target,
+                    expiresAfter: target.undoExpiration) { target in
+                    target.closeSurface(
                         node.leftmostLeaf(),
                         withConfirmation: node.contains {
                             $0.needsConfirmQuit
@@ -446,9 +460,12 @@ class BaseTerminalController: NSWindowController,
         let newView = Ghostty.SurfaceView(ghostty_app, baseConfig: config)
 
         // Do the split
+        let newTree: SplitTree<Ghostty.SurfaceView>
         do {
-            let newTree = try surfaceTree.insert(view: newView, at: oldView, direction: splitDirection)
-            surfaceTree = newTree
+            newTree = try surfaceTree.insert(
+                view: newView,
+                at: oldView,
+                direction: splitDirection)
         } catch {
             // If splitting fails for any reason (it should not), then we just log
             // and return. The new view we created will be deinitialized and its
@@ -457,9 +474,36 @@ class BaseTerminalController: NSWindowController,
             return
         }
 
+        // Keep track of the old tree for undo
+        let oldTree = surfaceTree
 
-        // Once we've split, we need to move focus to the new split
-        Ghostty.moveFocus(to: newView, from: oldView)
+        // Setup our new split tree
+        surfaceTree = newTree
+        DispatchQueue.main.async {
+            Ghostty.moveFocus(to: newView, from: oldView)
+        }
+
+        // Setup our undo
+        if let undoManager {
+            undoManager.setActionName("New Split")
+            undoManager.registerUndo(
+                withTarget: self,
+                expiresAfter: undoExpiration) { target in
+                target.surfaceTree = oldTree
+                DispatchQueue.main.async {
+                    Ghostty.moveFocus(to: oldView, from: target.focusedSurface)
+                }
+                
+                undoManager.registerUndo(
+                    withTarget: target,
+                    expiresAfter: target.undoExpiration) { target in
+                    target.surfaceTree = newTree
+                    DispatchQueue.main.async {
+                        Ghostty.moveFocus(to: newView, from: target.focusedSurface)
+                    }
+                }
+            }
+        }
     }
 
     @objc private func ghosttyDidEqualizeSplits(_ notification: Notification) {
@@ -836,6 +880,9 @@ class BaseTerminalController: NSWindowController,
         // the view and the window so we had to nil this out to break it but I think this
         // may now be resolved. We should verify that no memory leaks and we can remove this.
         window.contentView = nil
+
+        // Make sure we clean up all our undos
+        window.undoManager?.removeAllActions(withTarget: self)
     }
 
     func windowDidBecomeKey(_ notification: Notification) {

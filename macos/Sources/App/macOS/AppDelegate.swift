@@ -91,7 +91,7 @@ class AppDelegate: NSObject,
     let terminalManager: TerminalManager
 
     /// The global undo manager for app-level state such as window restoration.
-    lazy var undoManager = UndoManager()
+    lazy var undoManager = ExpiringUndoManager()
 
     /// Our quick terminal. This starts out uninitialized and only initializes if used.
     private var quickController: QuickTerminalController? = nil

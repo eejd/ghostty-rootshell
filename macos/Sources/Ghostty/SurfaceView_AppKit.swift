@@ -287,6 +287,8 @@ extension Ghostty {
             if let surface = self.surface {
                 ghostty_surface_free(surface)
             }
+
+            Ghostty.logger.warning("WOW close")
         }
 
         func focusDidChange(_ focused: Bool) {
