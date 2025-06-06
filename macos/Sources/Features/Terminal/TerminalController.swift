@@ -205,6 +205,27 @@ class TerminalController: BaseTerminalController {
             c.showWindow(self)
         }
 
+        // Setup our undo
+        if let undoManager = c.undoManager {
+            undoManager.setActionName("New Window")
+            undoManager.registerUndo(
+                withTarget: c,
+                expiresAfter: c.undoExpiration) { target in
+                // Close the window when undoing
+                target.closeWindow(nil)
+
+                // Register redo action
+                undoManager.registerUndo(
+                    withTarget: ghostty,
+                    expiresAfter: target.undoExpiration) { ghostty in
+                    _ = TerminalController.newWindow(
+                        ghostty,
+                        withBaseConfig: baseConfig,
+                        withParent: explicitParent)
+                }
+            }
+        }
+
         return c
     }
 
