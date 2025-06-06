@@ -309,6 +309,27 @@ class TerminalController: BaseTerminalController {
             controller.relabelTabs()
         }
 
+        // Setup our undo
+        if let undoManager = parentController.undoManager {
+            undoManager.setActionName("New Tab")
+            undoManager.registerUndo(
+                withTarget: controller,
+                expiresAfter: controller.undoExpiration) { target in
+                // Close the tab when undoing
+                target.closeTab(nil)
+                
+                // Register redo action
+                undoManager.registerUndo(
+                    withTarget: ghostty,
+                    expiresAfter: target.undoExpiration) { ghostty in
+                    _ = TerminalController.newTab(
+                        ghostty,
+                        from: parent,
+                        withBaseConfig: baseConfig)
+                }
+            }
+        }
+
         return controller
     }
 
