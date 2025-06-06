@@ -228,7 +228,7 @@ class TerminalManager {
 
         // Ensure any publishers we have are cancelled
         w.closePublisher.cancel()
-
+        
         // If we remove a window, we reset the cascade point to the key window so that
         // the next window cascade's from that one.
         if let focusedWindow = NSApplication.shared.keyWindow {

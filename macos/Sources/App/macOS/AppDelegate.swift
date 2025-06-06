@@ -892,6 +892,14 @@ class AppDelegate: NSObject,
         NSApplication.shared.arrangeInFront(sender)
     }
 
+    @IBAction func undo(_ sender: Any?) {
+        undoManager.undo()
+    }
+
+    @IBAction func redo(_ sender: Any?) {
+        undoManager.redo()
+    }
+
     private struct DerivedConfig {
         let initialWindow: Bool
         let shouldQuitAfterLastWindowClosed: Bool
@@ -980,6 +988,22 @@ extension AppDelegate: NSMenuItemValidation {
             // Float on top items only active if the key window is a primary
             // terminal window (not quick terminal).
             return NSApp.keyWindow is TerminalWindow
+
+        case #selector(undo(_:)):
+            if undoManager.canUndo {
+                item.title = "Undo \(undoManager.undoActionName)"
+            } else {
+                item.title = "Undo"
+            }
+            return undoManager.canUndo
+
+        case #selector(redo(_:)):
+            if undoManager.canRedo {
+                item.title = "Redo \(undoManager.redoActionName)"
+            } else {
+                item.title = "Redo"
+            }
+            return undoManager.canRedo
 
         default:
             return true
