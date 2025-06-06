@@ -417,34 +417,12 @@ class TerminalController: BaseTerminalController {
         
         // Undo
         if let undoManager, let undoState {
-            // Get the current tab index before closing
-            let tabIndex = tabGroup.windows.firstIndex(of: window) ?? 0
-            
             // Register undo action to restore the tab
             undoManager.setActionName("Close Tab")
             undoManager.registerUndo(
                 withTarget: ghostty,
                 expiresAfter: undoExpiration) { ghostty in
-                
-                // Create a new window controller with the saved state
                 let newController = TerminalController(ghostty, with: undoState)
-                
-                if let newWindow = newController.window {
-                    // Add the window back to the tab group at the correct position
-                    if let targetWindow = tabGroup.windows.dropFirst(tabIndex).first {
-                        // Insert after the target window
-                        targetWindow.addTabbedWindow(newWindow, ordered: .above)
-                    } else if let targetWindow = tabGroup.windows.last {
-                        // Add at the end if the original position is beyond current tabs
-                        targetWindow.addTabbedWindow(newWindow, ordered: .above)
-                    } else if let firstWindow = tabGroup.windows.first {
-                        // Fallback: add to the beginning if needed
-                        firstWindow.addTabbedWindow(newWindow, ordered: .below)
-                    }
-                    
-                    // Make it the key window
-                    newWindow.makeKeyAndOrderFront(nil)
-                }
                 
                 // Register redo action
                 undoManager.registerUndo(
@@ -510,6 +488,8 @@ class TerminalController: BaseTerminalController {
         let frame: NSRect
         let surfaceTree: SplitTree<Ghostty.SurfaceView>
         let focusedSurface: UUID?
+        let tabIndex: Int?
+        private(set) weak var tabGroup: NSWindowTabGroup?
     }
 
     convenience init(_ ghostty: Ghostty.App,
@@ -521,6 +501,21 @@ class TerminalController: BaseTerminalController {
         showWindow(nil)
         if let window {
             window.setFrame(undoState.frame, display: true)
+
+            // If we have a tab group and index, restore the tab to its original position
+            if let tabGroup = undoState.tabGroup,
+               let tabIndex = undoState.tabIndex {
+                if tabIndex < tabGroup.windows.count {
+                    // Find the window that is currently at that index
+                    let currentWindow = tabGroup.windows[tabIndex]
+                    currentWindow.addTabbedWindow(window, ordered: .below)
+                } else {
+                    tabGroup.windows.last?.addTabbedWindow(window, ordered: .above)
+                }
+
+                // Make it the key window
+                window.makeKeyAndOrderFront(nil)
+            }
 
             // Restore focus to the previously focused surface
             if let focusedUUID = undoState.focusedSurface,
@@ -538,7 +533,9 @@ class TerminalController: BaseTerminalController {
         return .init(
             frame: window.frame,
             surfaceTree: surfaceTree,
-            focusedSurface: focusedSurface?.uuid)
+            focusedSurface: focusedSurface?.uuid,
+            tabIndex: window.tabGroup?.windows.firstIndex(of: window),
+            tabGroup: window.tabGroup)
     }
 
     //MARK: - NSWindowController
