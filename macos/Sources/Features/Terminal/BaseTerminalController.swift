@@ -76,7 +76,7 @@ class BaseTerminalController: NSWindowController,
     private var focusedSurfaceCancellables: Set<AnyCancellable> = []
 
     /// The time that undo/redo operations that contain running ptys are valid for.
-    private var undoExpiration: Duration {
+    var undoExpiration: Duration {
         .seconds(5)
     }
 
@@ -277,7 +277,11 @@ class BaseTerminalController: NSWindowController,
     }
     
     /// Remove a node from the surface tree and move focus appropriately.
-    private func removeSurfaceAndMoveFocus(_ node: SplitTree<Ghostty.SurfaceView>.Node) {
+    ///
+    /// This also updates the undo manager to support restoring this node.
+    ///
+    /// This does no confirmation and assumes confirmation is already done.
+    private func removeSurfaceNode(_ node: SplitTree<Ghostty.SurfaceView>.Node) {
         let nextTarget = findNextFocusTargetAfterClosing(node: node)
         let oldFocused = focusedSurface
         let focused = node.contains { $0 == focusedSurface }
@@ -311,8 +315,8 @@ class BaseTerminalController: NSWindowController,
                 undoManager.registerUndo(
                     withTarget: target,
                     expiresAfter: target.undoExpiration) { target in
-                    target.closeSurface(
-                        node.leftmostLeaf(),
+                    target.closeSurfaceNode(
+                        node,
                         withConfirmation: node.contains {
                             $0.needsConfirmQuit
                         }
@@ -397,25 +401,26 @@ class BaseTerminalController: NSWindowController,
 
     @objc private func ghosttyDidCloseSurface(_ notification: Notification) {
         guard let target = notification.object as? Ghostty.SurfaceView else { return }
-        closeSurface(
-            target,
+        guard let node = surfaceTree.root?.node(view: target) else { return }
+        closeSurfaceNode(
+            node,
             withConfirmation: (notification.userInfo?["process_alive"] as? Bool) ?? false,
         )
     }
 
-    /// Close a surface view, requesting confirmation if necessary.
+    /// Close a surface node (which may contain splits), requesting confirmation if necessary.
     ///
     /// This will also insert the proper undo stack information in.
-    private func closeSurface(
-        _ target: Ghostty.SurfaceView,
+    func closeSurfaceNode(
+        _ node: SplitTree<Ghostty.SurfaceView>.Node,
         withConfirmation: Bool = true,
     ) {
-        // The target must be within our tree
-        guard let node = surfaceTree.root?.node(view: target) else { return }
+        // This node must be part of our tree
+        guard surfaceTree.contains(node) else { return }
 
         // If the child process is not alive, then we exit immediately
         guard withConfirmation else {
-            removeSurfaceAndMoveFocus(node)
+            removeSurfaceNode(node)
             return
         }
 
@@ -429,7 +434,7 @@ class BaseTerminalController: NSWindowController,
             informativeText: "The terminal still has a running process. If you close the terminal the process will be killed."
         ) { [weak self] in
             if let self {
-                self.removeSurfaceAndMoveFocus(node)
+                self.removeSurfaceNode(node)
             }
         }
     }
