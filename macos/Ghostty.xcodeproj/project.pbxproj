@@ -71,7 +71,6 @@
 		A596309A2AEE1C6400D64628 /* Terminal.xib in Resources */ = {isa = PBXBuildFile; fileRef = A59630992AEE1C6400D64628 /* Terminal.xib */; };
 		A596309C2AEE1C9E00D64628 /* TerminalController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A596309B2AEE1C9E00D64628 /* TerminalController.swift */; };
 		A596309E2AEE1D6C00D64628 /* TerminalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A596309D2AEE1D6C00D64628 /* TerminalView.swift */; };
-		A59630A02AEF6AEB00D64628 /* TerminalManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A596309F2AEF6AEB00D64628 /* TerminalManager.swift */; };
 		A5985CD72C320C4500C57AD3 /* String+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5985CD62C320C4500C57AD3 /* String+Extension.swift */; };
 		A5985CD82C320C4500C57AD3 /* String+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5985CD62C320C4500C57AD3 /* String+Extension.swift */; };
 		A5985CE62C33060F00C57AD3 /* man in Resources */ = {isa = PBXBuildFile; fileRef = A5985CE52C33060F00C57AD3 /* man */; };
@@ -179,7 +178,6 @@
 		A59630992AEE1C6400D64628 /* Terminal.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = Terminal.xib; sourceTree = "<group>"; };
 		A596309B2AEE1C9E00D64628 /* TerminalController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalController.swift; sourceTree = "<group>"; };
 		A596309D2AEE1D6C00D64628 /* TerminalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalView.swift; sourceTree = "<group>"; };
-		A596309F2AEF6AEB00D64628 /* TerminalManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalManager.swift; sourceTree = "<group>"; };
 		A5985CD62C320C4500C57AD3 /* String+Extension.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = "String+Extension.swift"; sourceTree = "<group>"; };
 		A5985CE52C33060F00C57AD3 /* man */ = {isa = PBXFileReference; lastKnownFileType = folder; name = man; path = "../zig-out/share/man"; sourceTree = "<group>"; };
 		A599CDAF2CF103F20049FA26 /* NSAppearance+Extension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NSAppearance+Extension.swift"; sourceTree = "<group>"; };
@@ -467,7 +465,6 @@
 			isa = PBXGroup;
 			children = (
 				A59630992AEE1C6400D64628 /* Terminal.xib */,
-				A596309F2AEF6AEB00D64628 /* TerminalManager.swift */,
 				A596309B2AEE1C9E00D64628 /* TerminalController.swift */,
 				A5D0AF3A2B36A1DE00D21823 /* TerminalRestorable.swift */,
 				A596309D2AEE1D6C00D64628 /* TerminalView.swift */,
@@ -710,7 +707,6 @@
 				C1F26EE92B76CBFC00404083 /* VibrantLayer.m in Sources */,
 				A58636712DF298FB00E04A10 /* ExpiringUndoManager.swift in Sources */,
 				A59630972AEE163600D64628 /* HostingWindow.swift in Sources */,
-				A59630A02AEF6AEB00D64628 /* TerminalManager.swift in Sources */,
 				A51BFC2B2B30F6BE00E92F16 /* UpdateDelegate.swift in Sources */,
 				A5CBD06B2CA322430017A1AE /* GlobalEventTap.swift in Sources */,
 				AEE8B3452B9AA39600260C5E /* NSPasteboard+Extension.swift in Sources */,
