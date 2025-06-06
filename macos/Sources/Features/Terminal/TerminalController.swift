@@ -407,52 +407,82 @@ class TerminalController: BaseTerminalController {
         closeWindow(nil)
     }
 
-    /// Closes the current window (including any other tabs) immediately and without
-    /// confirmation. This will setup proper undo state so the action can be undone.
-    private func closeWindowImmediately(_ sender: Any?) {
+    private func closeTabImmediately() {
         guard let window = window else { return }
-
-        // Regardless of tabs vs no tabs, what we want to do here is keep
-        // track of the window frame to restore, the surface tree, and the
-        // the focused surface. We want to restore that with undo even
-        // if we end up closing.
-        if let undoManager {
-            // Capture current state for undo
-            let currentFrame = window.frame
-            let currentSurfaceTree = surfaceTree
-            let currentFocusedSurface = focusedSurface
-
-            // Register undo action to restore the window
-            undoManager.setActionName("Close Window")
+        guard let tabGroup = window.tabGroup,
+                tabGroup.windows.count > 1 else {
+            closeWindowImmediately()
+            return
+        }
+        
+        // Undo
+        if let undoManager, let undoState {
+            // Get the current tab index before closing
+            let tabIndex = tabGroup.windows.firstIndex(of: window) ?? 0
+            
+            // Register undo action to restore the tab
+            undoManager.setActionName("Close Tab")
             undoManager.registerUndo(
                 withTarget: ghostty,
                 expiresAfter: undoExpiration) { ghostty in
-
-                // Create a new window controller with the saved state
-                let newController = TerminalController(
-                    ghostty,
-                    withSurfaceTree: currentSurfaceTree
-                )
                 
-                // Show the window and restore its frame
-                newController.showWindow(nil)
+                // Create a new window controller with the saved state
+                let newController = TerminalController(ghostty, with: undoState)
+                
                 if let newWindow = newController.window {
-                    newWindow.setFrame(currentFrame, display: true)
-                    
-                    // Restore focus to the previously focused surface
-                    if let focusTarget = currentFocusedSurface {
-                        DispatchQueue.main.async {
-                            Ghostty.moveFocus(to: focusTarget, from: nil)
-                        }
+                    // Add the window back to the tab group at the correct position
+                    if let targetWindow = tabGroup.windows.dropFirst(tabIndex).first {
+                        // Insert after the target window
+                        targetWindow.addTabbedWindow(newWindow, ordered: .above)
+                    } else if let targetWindow = tabGroup.windows.last {
+                        // Add at the end if the original position is beyond current tabs
+                        targetWindow.addTabbedWindow(newWindow, ordered: .above)
+                    } else if let firstWindow = tabGroup.windows.first {
+                        // Fallback: add to the beginning if needed
+                        firstWindow.addTabbedWindow(newWindow, ordered: .below)
                     }
+                    
+                    // Make it the key window
+                    newWindow.makeKeyAndOrderFront(nil)
                 }
                 
                 // Register redo action
                 undoManager.registerUndo(
                     withTarget: newController,
                     expiresAfter: newController.undoExpiration) { target in
+                    // For redo, we close the tab again
+                    target.closeTabImmediately()
+                }
+            }
+        }
+        
+        window.close()
+    }
+
+    /// Closes the current window (including any other tabs) immediately and without
+    /// confirmation. This will setup proper undo state so the action can be undone.
+    private func closeWindowImmediately() {
+        guard let window = window else { return }
+
+        // Regardless of tabs vs no tabs, what we want to do here is keep
+        // track of the window frame to restore, the surface tree, and the
+        // the focused surface. We want to restore that with undo even
+        // if we end up closing.
+        if let undoManager, let undoState {
+            // Register undo action to restore the window
+            undoManager.setActionName("Close Window")
+            undoManager.registerUndo(
+                withTarget: ghostty,
+                expiresAfter: undoExpiration) { ghostty in
+                // Restore the undo state
+                let newController = TerminalController(ghostty, with: undoState)
+
+                // Register redo action
+                undoManager.registerUndo(
+                    withTarget: newController,
+                    expiresAfter: newController.undoExpiration) { target in
                     // For redo, we close the window again
-                    target.closeWindowImmediately(sender)
+                    target.closeWindowImmediately()
                 }
             }
         }
@@ -471,6 +501,44 @@ class TerminalController: BaseTerminalController {
 
 
         tabGroup.windows.forEach { $0.close() }
+    }
+
+    // MARK: Undo/Redo
+
+    /// The state that we require to recreate a TerminalController from an undo.
+    struct UndoState {
+        let frame: NSRect
+        let surfaceTree: SplitTree<Ghostty.SurfaceView>
+        let focusedSurface: UUID?
+    }
+
+    convenience init(_ ghostty: Ghostty.App,
+         with undoState: UndoState
+    ) {
+        self.init(ghostty, withSurfaceTree: undoState.surfaceTree)
+
+        // Show the window and restore its frame
+        showWindow(nil)
+        if let window {
+            window.setFrame(undoState.frame, display: true)
+
+            // Restore focus to the previously focused surface
+            if let focusedUUID = undoState.focusedSurface,
+               let focusTarget = surfaceTree.first(where: { $0.uuid == focusedUUID }) {
+                DispatchQueue.main.async {
+                    Ghostty.moveFocus(to: focusTarget, from: nil)
+                }
+            }
+        }
+    }
+
+    /// The current undo state for this controller
+    var undoState: UndoState? {
+        guard let window else { return nil }
+        return .init(
+            frame: window.frame,
+            surfaceTree: surfaceTree,
+            focusedSurface: focusedSurface?.uuid)
     }
 
     //MARK: - NSWindowController
@@ -694,23 +762,22 @@ class TerminalController: BaseTerminalController {
 
     @IBAction func closeTab(_ sender: Any?) {
         guard let window = window else { return }
-        guard window.tabGroup != nil else {
-            // No tabs, no tab group, just perform a normal close.
-            window.performClose(sender)
+        guard window.tabGroup?.windows.count ?? 0 > 1 else {
+            closeWindow(sender)
             return
         }
 
-        if surfaceTree.contains(where: { $0.needsConfirmQuit }) {
-            confirmClose(
-                messageText: "Close Tab?",
-                informativeText: "The terminal still has a running process. If you close the tab the process will be killed."
-            ) {
-                window.close()
-            }
+        guard surfaceTree.contains(where: { $0.needsConfirmQuit }) else {
+            closeTabImmediately()
             return
         }
 
-        window.close()
+        confirmClose(
+            messageText: "Close Tab?",
+            informativeText: "The terminal still has a running process. If you close the tab the process will be killed."
+        ) {
+            self.closeTabImmediately()
+        }
     }
 
     @IBAction func returnToDefaultSize(_ sender: Any?) {
@@ -722,13 +789,13 @@ class TerminalController: BaseTerminalController {
         guard let window = window else { return }
         guard let tabGroup = window.tabGroup else {
             // No tabs, no tab group, just perform a normal close.
-            closeWindowImmediately(sender)
+            closeWindowImmediately()
             return
         }
 
         // If have one window then we just do a normal close
         if tabGroup.windows.count == 1 {
-            closeWindowImmediately(sender)
+            closeWindowImmediately()
             return
         }
 
@@ -742,7 +809,7 @@ class TerminalController: BaseTerminalController {
 
         // If none need confirmation then we can just close all the windows.
         if !needsConfirm {
-            closeWindowImmediately(sender)
+            closeWindowImmediately()
             return
         }
 
@@ -750,7 +817,7 @@ class TerminalController: BaseTerminalController {
             messageText: "Close Window?",
             informativeText: "All terminal sessions in this window will be terminated."
         ) {
-            self.closeWindowImmediately(sender)
+            self.closeWindowImmediately()
         }
     }
 
@@ -948,7 +1015,6 @@ class TerminalController: BaseTerminalController {
         toggleFullscreen(mode: fullscreenMode)
     }
 
-
     struct DerivedConfig {
         let backgroundColor: Color
         let macosWindowButtons: Ghostty.MacOSWindowButtons
@@ -971,6 +1037,7 @@ class TerminalController: BaseTerminalController {
     }
 }
 
+// MARK: NSMenuItemValidation
 
 extension TerminalController: NSMenuItemValidation {
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
