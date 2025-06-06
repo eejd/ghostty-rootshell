@@ -4337,6 +4337,18 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             {},
         ),
 
+        .undo => return try self.rt_app.performAction(
+            .{ .surface = self },
+            .undo,
+            {},
+        ),
+
+        .redo => return try self.rt_app.performAction(
+            .{ .surface = self },
+            .redo,
+            {},
+        ),
+
         .select_all => {
             const sel = self.io.terminal.screen.selectAll();
             if (sel) |s| {

@@ -4900,6 +4900,18 @@ pub const Keybinds = struct {
             );
             try self.set.putFlags(
                 alloc,
+                .{ .key = .{ .unicode = 'z' }, .mods = .{ .super = true } },
+                .{ .undo = {} },
+                .{ .performable = true },
+            );
+            try self.set.putFlags(
+                alloc,
+                .{ .key = .{ .unicode = 'z' }, .mods = .{ .super = true, .shift = true } },
+                .{ .redo = {} },
+                .{ .performable = true },
+            );
+            try self.set.putFlags(
+                alloc,
                 .{ .key = .{ .unicode = 'k' }, .mods = .{ .super = true } },
                 .{ .clear_screen = {} },
                 .{ .performable = true },

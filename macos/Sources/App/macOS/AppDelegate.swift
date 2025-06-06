@@ -398,11 +398,8 @@ class AppDelegate: NSObject,
         syncMenuShortcut(config, action: "new_split:down", menuItem: self.menuSplitDown)
         syncMenuShortcut(config, action: "new_split:up", menuItem: self.menuSplitUp)
 
-        // TODO: sync
-        menuUndo?.keyEquivalent = "z"
-        menuUndo?.keyEquivalentModifierMask = [.command]
-        menuRedo?.keyEquivalent = "z"
-        menuRedo?.keyEquivalentModifierMask = [.command, .shift]
+        syncMenuShortcut(config, action: "undo", menuItem: self.menuUndo)
+        syncMenuShortcut(config, action: "redo", menuItem: self.menuRedo)
         syncMenuShortcut(config, action: "copy_to_clipboard", menuItem: self.menuCopy)
         syncMenuShortcut(config, action: "paste_from_clipboard", menuItem: self.menuPaste)
         syncMenuShortcut(config, action: "paste_from_selection", menuItem: self.menuPasteSelection)

@@ -655,6 +655,35 @@ pub const Action = union(enum) {
     /// Only implemented on macOS.
     check_for_updates,
 
+    /// Undo the last undoable action for the focused surface or terminal,
+    /// if possible. This can undo actions such as closing tabs or
+    /// windows.
+    ///
+    /// Not every action in Ghostty can be undone or redone. The list
+    /// of actions support undo/redo is currently limited to:
+    ///
+    ///   - New window, close window
+    ///   - New tab, close tab
+    ///   - New split, close split
+    ///
+    /// All actions are only undoable/redoable for a limited time.
+    /// For example, restoring a closed split can only be done for
+    /// some number of seconds since the split was closed. The exact
+    /// amount is configured with `TODO`.
+    ///
+    /// The undo/redo actions being limited ensures that there is
+    /// bounded memory usage over time, closed surfaces don't continue running
+    /// in the background indefinitely, and the keybinds become available
+    /// for terminal applications to use.
+    ///
+    /// Only implemented on macOS.
+    undo,
+
+    /// Redo the last undoable action for the focused surface or terminal,
+    /// if possible. See "undo" for more details on what can and cannot
+    /// be undone or redone.
+    redo,
+
     /// Quit Ghostty.
     quit,
 
@@ -991,6 +1020,8 @@ pub const Action = union(enum) {
             .toggle_secure_input,
             .toggle_command_palette,
             .reset_window_size,
+            .undo,
+            .redo,
             .crash,
             => .surface,
 

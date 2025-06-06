@@ -428,8 +428,7 @@ class TerminalController: BaseTerminalController {
                 undoManager.registerUndo(
                     withTarget: newController,
                     expiresAfter: newController.undoExpiration) { target in
-                    // For redo, we close the tab again
-                    target.closeTabImmediately()
+                    target.closeTab(nil)
                 }
             }
         }
@@ -459,8 +458,7 @@ class TerminalController: BaseTerminalController {
                 undoManager.registerUndo(
                     withTarget: newController,
                     expiresAfter: newController.undoExpiration) { target in
-                    // For redo, we close the window again
-                    target.closeWindowImmediately()
+                    target.closeWindow(nil)
                 }
             }
         }
