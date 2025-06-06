@@ -404,8 +404,7 @@ class BaseTerminalController: NSWindowController,
         guard let node = surfaceTree.root?.node(view: target) else { return }
         closeSurfaceNode(
             node,
-            withConfirmation: (notification.userInfo?["process_alive"] as? Bool) ?? false,
-        )
+            withConfirmation: (notification.userInfo?["process_alive"] as? Bool) ?? false)
     }
 
     /// Close a surface node (which may contain splits), requesting confirmation if necessary.
@@ -413,7 +412,7 @@ class BaseTerminalController: NSWindowController,
     /// This will also insert the proper undo stack information in.
     func closeSurfaceNode(
         _ node: SplitTree<Ghostty.SurfaceView>.Node,
-        withConfirmation: Bool = true,
+        withConfirmation: Bool = true
     ) {
         // This node must be part of our tree
         guard surfaceTree.contains(node) else { return }
