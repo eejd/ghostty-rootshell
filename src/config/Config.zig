@@ -4946,6 +4946,25 @@ pub const Keybinds = struct {
             );
             try self.set.putFlags(
                 alloc,
+                .{ .key = .{ .unicode = 'k' }, .mods = .{ .super = true } },
+                .{ .clear_screen = {} },
+                .{ .performable = true },
+            );
+            try self.set.put(
+                alloc,
+                .{ .key = .{ .unicode = 'a' }, .mods = .{ .super = true } },
+                .{ .select_all = {} },
+            );
+
+            // Undo/redo
+            try self.set.putFlags(
+                alloc,
+                .{ .key = .{ .unicode = 't' }, .mods = .{ .super = true, .shift = true } },
+                .{ .undo = {} },
+                .{ .performable = true },
+            );
+            try self.set.putFlags(
+                alloc,
                 .{ .key = .{ .unicode = 'z' }, .mods = .{ .super = true } },
                 .{ .undo = {} },
                 .{ .performable = true },
@@ -4955,17 +4974,6 @@ pub const Keybinds = struct {
                 .{ .key = .{ .unicode = 'z' }, .mods = .{ .super = true, .shift = true } },
                 .{ .redo = {} },
                 .{ .performable = true },
-            );
-            try self.set.putFlags(
-                alloc,
-                .{ .key = .{ .unicode = 'k' }, .mods = .{ .super = true } },
-                .{ .clear_screen = {} },
-                .{ .performable = true },
-            );
-            try self.set.put(
-                alloc,
-                .{ .key = .{ .unicode = 'a' }, .mods = .{ .super = true } },
-                .{ .select_all = {} },
             );
 
             // Viewport scrolling
