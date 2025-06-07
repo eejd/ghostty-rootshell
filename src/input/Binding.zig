@@ -63,9 +63,11 @@ pub const Parser = struct {
         const flags, const start_idx = try parseFlags(raw_input);
         const input = raw_input[start_idx..];
 
-        // Find the first = which splits are mapping into the trigger
+        // Find the last = which splits are mapping into the trigger
         // and action, respectively.
-        const eql_idx = std.mem.indexOf(u8, input, "=") orelse return Error.InvalidFormat;
+        // We use the last = because the keybind itself could contain
+        // raw equal signs (for the = codepoint)
+        const eql_idx = std.mem.lastIndexOf(u8, input, "=") orelse return Error.InvalidFormat;
 
         // Sequence iterator goes up to the equal, action is after. We can
         // parse the action now.
@@ -2048,6 +2050,32 @@ test "parse: plus sign" {
     );
 
     try testing.expectError(Error.InvalidFormat, parseSingle("++=ignore"));
+}
+
+test "parse: equals sign" {
+    const testing = std.testing;
+
+    try testing.expectEqual(
+        Binding{
+            .trigger = .{ .key = .{ .unicode = '=' } },
+            .action = .ignore,
+        },
+        try parseSingle("==ignore"),
+    );
+
+    // Modifier
+    try testing.expectEqual(
+        Binding{
+            .trigger = .{
+                .key = .{ .unicode = '=' },
+                .mods = .{ .ctrl = true },
+            },
+            .action = .ignore,
+        },
+        try parseSingle("ctrl+==ignore"),
+    );
+
+    try testing.expectError(Error.InvalidFormat, parseSingle("=ignore"));
 }
 
 // For Ghostty 1.2+ we changed our key names to match the W3C and removed
