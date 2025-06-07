@@ -43,6 +43,7 @@ pub fn init(self: *CommandPalette, window: *Window) !void {
     _ = Command.getGObjectType();
 
     var builder = Builder.init("command-palette", 1, 5);
+    defer builder.deinit();
 
     self.* = .{
         .window = window,
@@ -120,7 +121,9 @@ pub fn updateConfig(self: *CommandPalette, config: *const configpkg.Config) !voi
             command,
             config.keybind.set,
         );
-        self.source.append(cmd.as(gobject.Object));
+        const cmd_ref = cmd.as(gobject.Object);
+        self.source.append(cmd_ref);
+        cmd_ref.unref();
     }
 }
 
