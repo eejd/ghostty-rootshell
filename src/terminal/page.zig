@@ -1316,7 +1316,12 @@ pub const Page = struct {
 
     /// Set the graphemes for the given cell. This asserts that the cell
     /// has no graphemes set, and only contains a single codepoint.
-    pub fn setGraphemes(self: *Page, row: *Row, cell: *Cell, cps: []u21) GraphemeError!void {
+    pub fn setGraphemes(
+        self: *Page,
+        row: *Row,
+        cell: *Cell,
+        cps: []const u21,
+    ) GraphemeError!void {
         defer self.assertIntegrity();
 
         assert(cell.codepoint() > 0);
