@@ -210,14 +210,18 @@ class TerminalController: BaseTerminalController {
             undoManager.setActionName("New Window")
             undoManager.registerUndo(
                 withTarget: c,
-                expiresAfter: c.undoExpiration) { target in
+                expiresAfter: c.undoExpiration
+            ) { target in
                 // Close the window when undoing
-                target.closeWindow(nil)
+                undoManager.disableUndoRegistration {
+                    target.closeWindow(nil)
+                }
 
                 // Register redo action
                 undoManager.registerUndo(
                     withTarget: ghostty,
-                    expiresAfter: target.undoExpiration) { ghostty in
+                    expiresAfter: target.undoExpiration
+                ) { ghostty in
                     _ = TerminalController.newWindow(
                         ghostty,
                         withBaseConfig: baseConfig,
@@ -314,14 +318,18 @@ class TerminalController: BaseTerminalController {
             undoManager.setActionName("New Tab")
             undoManager.registerUndo(
                 withTarget: controller,
-                expiresAfter: controller.undoExpiration) { target in
+                expiresAfter: controller.undoExpiration
+            ) { target in
                 // Close the tab when undoing
-                target.closeTab(nil)
-                
+                undoManager.disableUndoRegistration {
+                    target.closeTab(nil)
+                }
+
                 // Register redo action
                 undoManager.registerUndo(
                     withTarget: ghostty,
-                    expiresAfter: target.undoExpiration) { ghostty in
+                    expiresAfter: target.undoExpiration
+                ) { ghostty in
                     _ = TerminalController.newTab(
                         ghostty,
                         from: parent,
@@ -617,14 +625,16 @@ class TerminalController: BaseTerminalController {
             undoManager.setActionName("Close Tab")
             undoManager.registerUndo(
                 withTarget: ghostty,
-                expiresAfter: undoExpiration) { ghostty in
+                expiresAfter: undoExpiration
+            ) { ghostty in
                 let newController = TerminalController(ghostty, with: undoState)
                 
                 // Register redo action
                 undoManager.registerUndo(
                     withTarget: newController,
-                    expiresAfter: newController.undoExpiration) { target in
-                    target.closeTab(nil)
+                    expiresAfter: newController.undoExpiration
+                ) { target in
+                    target.closeTabImmediately()
                 }
             }
         }
@@ -654,7 +664,7 @@ class TerminalController: BaseTerminalController {
                 undoManager.registerUndo(
                     withTarget: newController,
                     expiresAfter: newController.undoExpiration) { target in
-                    target.closeWindow(nil)
+                    target.closeWindowImmediately()
                 }
             }
         }

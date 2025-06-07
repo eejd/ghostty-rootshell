@@ -32,6 +32,11 @@ class ExpiringUndoManager: UndoManager {
         // Ignore instantly expiring undos
         guard duration.timeInterval > 0 else { return }
 
+        // Ignore when undo registration is disabled. UndoManager still lets
+        // registration happen then cancels later but I was seeing some
+        // weird behavior with this so let's just guard on it.
+        guard self.isUndoRegistrationEnabled else { return }
+
         let expiringTarget = ExpiringTarget(
             target,
             expiresAfter: duration,
@@ -64,7 +69,10 @@ class ExpiringUndoManager: UndoManager {
         // Call super to handle standard removal
         super.removeAllActions(withTarget: target)
 
-        if !(target is ExpiringTarget) {
+        // If the target is an expiring target, remove it.
+        if let expiring = target as? ExpiringTarget {
+            expiringTargets.remove(expiring)
+        } else {
             // Find and remove any ExpiringTarget instances that wrap this target.
             expiringTargets
                 .filter { $0.target == nil || $0.target === (target as AnyObject) }

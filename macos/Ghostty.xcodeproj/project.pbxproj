@@ -64,6 +64,7 @@
 		A586366B2DF0A98C00E04A10 /* Array+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = A586366A2DF0A98900E04A10 /* Array+Extension.swift */; };
 		A586366F2DF25D8600E04A10 /* Duration+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = A586366E2DF25D8300E04A10 /* Duration+Extension.swift */; };
 		A58636712DF298FB00E04A10 /* ExpiringUndoManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A58636702DF298F700E04A10 /* ExpiringUndoManager.swift */; };
+		A58636732DF4813400E04A10 /* UndoManager+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = A58636722DF4813000E04A10 /* UndoManager+Extension.swift */; };
 		A5874D992DAD751B00E83852 /* CGS.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5874D982DAD751A00E83852 /* CGS.swift */; };
 		A5874D9D2DAD786100E83852 /* NSWindow+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5874D9C2DAD785F00E83852 /* NSWindow+Extension.swift */; };
 		A59444F729A2ED5200725BBA /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A59444F629A2ED5200725BBA /* SettingsView.swift */; };
@@ -171,6 +172,7 @@
 		A586366A2DF0A98900E04A10 /* Array+Extension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Array+Extension.swift"; sourceTree = "<group>"; };
 		A586366E2DF25D8300E04A10 /* Duration+Extension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Duration+Extension.swift"; sourceTree = "<group>"; };
 		A58636702DF298F700E04A10 /* ExpiringUndoManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExpiringUndoManager.swift; sourceTree = "<group>"; };
+		A58636722DF4813000E04A10 /* UndoManager+Extension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UndoManager+Extension.swift"; sourceTree = "<group>"; };
 		A5874D982DAD751A00E83852 /* CGS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CGS.swift; sourceTree = "<group>"; };
 		A5874D9C2DAD785F00E83852 /* NSWindow+Extension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NSWindow+Extension.swift"; sourceTree = "<group>"; };
 		A59444F629A2ED5200725BBA /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
@@ -447,6 +449,7 @@
 				C1F26EA62B738B9900404083 /* NSView+Extension.swift */,
 				A5874D9C2DAD785F00E83852 /* NSWindow+Extension.swift */,
 				A5985CD62C320C4500C57AD3 /* String+Extension.swift */,
+				A58636722DF4813000E04A10 /* UndoManager+Extension.swift */,
 				A5CC36142C9CDA03004D6760 /* View+Extension.swift */,
 			);
 			path = Extensions;
@@ -683,6 +686,7 @@
 				A54B0CEB2D0CFB4C00CBEFF8 /* NSImage+Extension.swift in Sources */,
 				A5874D9D2DAD786100E83852 /* NSWindow+Extension.swift in Sources */,
 				A54D786C2CA7978E001B19B1 /* BaseTerminalController.swift in Sources */,
+				A58636732DF4813400E04A10 /* UndoManager+Extension.swift in Sources */,
 				A59FB5CF2AE0DB50009128F3 /* InspectorView.swift in Sources */,
 				CFBB5FEA2D231E5000FD62EE /* QuickTerminalSpaceBehavior.swift in Sources */,
 				A54B0CE92D0CECD100CBEFF8 /* ColorizedGhosttyIconView.swift in Sources */,

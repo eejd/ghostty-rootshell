@@ -260,8 +260,8 @@ class BaseTerminalController: NSWindowController,
         self.alert = alert
     }
 
-    // MARK: Focus Management
-    
+    // MARK: Split Tree Management
+
     /// Find the next surface to focus when a node is being closed.
     /// Goes to previous split unless we're the leftmost leaf, then goes to next.
     private func findNextFocusTargetAfterClosing(node: SplitTree<Ghostty.SurfaceView>.Node) -> Ghostty.SurfaceView? {
@@ -282,45 +282,63 @@ class BaseTerminalController: NSWindowController,
     ///
     /// This does no confirmation and assumes confirmation is already done.
     private func removeSurfaceNode(_ node: SplitTree<Ghostty.SurfaceView>.Node) {
-        let nextTarget = findNextFocusTargetAfterClosing(node: node)
-        let oldFocused = focusedSurface
-        let focused = node.contains { $0 == focusedSurface }
-
-        // Keep track of the old tree for undo management.
-        let oldTree = surfaceTree
-
-        // Remove the node from the tree
-        surfaceTree = surfaceTree.remove(node)
-        
         // Move focus if the closed surface was focused and we have a next target
-        if let nextTarget, focused {
+        let nextFocus: Ghostty.SurfaceView? = if node.contains(
+            where: { $0 == focusedSurface }
+        ) {
+            findNextFocusTargetAfterClosing(node: node)
+        } else {
+            nil
+        }
+
+        replaceSurfaceTree(
+            surfaceTree.remove(node),
+            moveFocusTo: nextFocus,
+            moveFocusFrom: focusedSurface,
+            undoAction: "Close Terminal"
+        )
+    }
+
+    private func replaceSurfaceTree(
+        _ newTree: SplitTree<Ghostty.SurfaceView>,
+        moveFocusTo newView: Ghostty.SurfaceView? = nil,
+        moveFocusFrom oldView: Ghostty.SurfaceView? = nil,
+        undoAction: String? = nil
+    ) {
+        // Setup our new split tree
+        let oldTree = surfaceTree
+        surfaceTree = newTree
+        if let newView {
             DispatchQueue.main.async {
-                Ghostty.moveFocus(to: nextTarget, from: oldFocused)
+                Ghostty.moveFocus(to: newView, from: oldView)
             }
         }
 
         // Setup our undo
         if let undoManager {
-            undoManager.setActionName("Close Terminal")
+            if let undoAction {
+                undoManager.setActionName(undoAction)
+            }
             undoManager.registerUndo(
                 withTarget: self,
-                expiresAfter: undoExpiration) { target in
+                expiresAfter: undoExpiration
+            ) { target in
                 target.surfaceTree = oldTree
-                if let oldFocused {
+                if let oldView {
                     DispatchQueue.main.async {
-                        Ghostty.moveFocus(to: oldFocused, from: target.focusedSurface)
+                        Ghostty.moveFocus(to: oldView, from: target.focusedSurface)
                     }
                 }
 
                 undoManager.registerUndo(
                     withTarget: target,
-                    expiresAfter: target.undoExpiration) { target in
-                    target.closeSurfaceNode(
-                        node,
-                        withConfirmation: node.contains {
-                            $0.needsConfirmQuit
-                        }
-                    )
+                    expiresAfter: target.undoExpiration
+                ) { target in
+                    target.replaceSurfaceTree(
+                        newTree,
+                        moveFocusTo: newView,
+                        moveFocusFrom: target.focusedSurface,
+                        undoAction: undoAction)
                 }
             }
         }
@@ -478,36 +496,11 @@ class BaseTerminalController: NSWindowController,
             return
         }
 
-        // Keep track of the old tree for undo
-        let oldTree = surfaceTree
-
-        // Setup our new split tree
-        surfaceTree = newTree
-        DispatchQueue.main.async {
-            Ghostty.moveFocus(to: newView, from: oldView)
-        }
-
-        // Setup our undo
-        if let undoManager {
-            undoManager.setActionName("New Split")
-            undoManager.registerUndo(
-                withTarget: self,
-                expiresAfter: undoExpiration) { target in
-                target.surfaceTree = oldTree
-                DispatchQueue.main.async {
-                    Ghostty.moveFocus(to: oldView, from: target.focusedSurface)
-                }
-                
-                undoManager.registerUndo(
-                    withTarget: target,
-                    expiresAfter: target.undoExpiration) { target in
-                    target.surfaceTree = newTree
-                    DispatchQueue.main.async {
-                        Ghostty.moveFocus(to: newView, from: target.focusedSurface)
-                    }
-                }
-            }
-        }
+        replaceSurfaceTree(
+            newTree,
+            moveFocusTo: newView,
+            moveFocusFrom: oldView,
+            undoAction: "New Split")
     }
 
     @objc private func ghosttyDidEqualizeSplits(_ notification: Notification) {
