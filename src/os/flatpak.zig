@@ -112,6 +112,8 @@ pub const FlatpakHostCommand = struct {
     pub fn spawn(self: *FlatpakHostCommand, alloc: Allocator) !u32 {
         const thread = try std.Thread.spawn(.{}, threadMain, .{ self, alloc });
         thread.setName("flatpak-host-command") catch {};
+        // We don't track this thread, it will terminate on its own on command exit
+        thread.detach();
 
         // Wait for the process to start or error.
         self.state_mutex.lock();
