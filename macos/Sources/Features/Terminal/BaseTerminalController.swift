@@ -430,7 +430,7 @@ class BaseTerminalController: NSWindowController,
     /// This will also insert the proper undo stack information in.
     func closeSurfaceNode(
         _ node: SplitTree<Ghostty.SurfaceView>.Node,
-        withConfirmation: Bool = true,
+        withConfirmation: Bool = true
     ) {
         // This node must be part of our tree
         guard surfaceTree.contains(node) else { return }
