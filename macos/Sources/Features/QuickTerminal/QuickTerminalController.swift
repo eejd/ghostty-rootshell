@@ -202,9 +202,19 @@ class QuickTerminalController: BaseTerminalController {
     override func surfaceTreeDidChange(from: SplitTree<Ghostty.SurfaceView>, to: SplitTree<Ghostty.SurfaceView>) {
         super.surfaceTreeDidChange(from: from, to: to)
 
-        // If our surface tree is nil then we animate the window out.
-        if (to.isEmpty) {
+        // If our surface tree is nil then we animate the window out. We
+        // defer reinitializing the tree to save some memory here.
+        if to.isEmpty {
             animateOut()
+            return
+        }
+
+        // If we're not empty (e.g. this isn't the first set) and we're
+        // not visible, then we animate in. This allows us to show the quick
+        // terminal when things such as undo/redo are done.
+        if !from.isEmpty && !visible {
+            animateIn()
+            return
         }
     }
 
