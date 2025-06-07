@@ -349,6 +349,11 @@ class AppDelegate: NSObject,
         // the dock icon.
         guard TerminalController.all.isEmpty else { return true }
 
+        // If the application isn't active yet then we don't want to process
+        // this because we're not ready. This happens sometimes in Xcode runs
+        // but I haven't seen it happen in releases. I'm unsure why.
+        guard applicationHasBecomeActive else { return true }
+
         // No visible windows, open a new one.
         _ = TerminalController.newWindow(ghostty)
         return false
