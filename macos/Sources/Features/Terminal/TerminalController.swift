@@ -647,12 +647,19 @@ class TerminalController: BaseTerminalController {
     private func closeWindowImmediately() {
         guard let window = window else { return }
 
-        // Register undo for this close operation
         registerUndoForCloseWindow()
 
-        // Close the window(s)
         if let tabGroup = window.tabGroup, tabGroup.windows.count > 1 {
-            tabGroup.windows.forEach { $0.close() }
+            tabGroup.windows.forEach { window in
+                // Clear out the surfacetree to ensure there is no undo state.
+                // This prevents unnecessary undos registered since AppKit may
+                // process them on later ticks so we can't just disable undo registration.
+                if let controller = window.windowController as? TerminalController {
+                    controller.surfaceTree = .init()
+                }
+
+                window.close()
+            }
         } else {
             window.close()
         }
@@ -660,7 +667,7 @@ class TerminalController: BaseTerminalController {
 
     /// Registers undo for closing window(s), handling both single windows and tab groups.
     private func registerUndoForCloseWindow() {
-        guard let undoManager else { return }
+        guard let undoManager, undoManager.isUndoRegistrationEnabled else { return }
         guard let window else { return }
 
         // If we don't have a tab group or we don't have multiple tabs, then
@@ -859,6 +866,7 @@ class TerminalController: BaseTerminalController {
     /// The current undo state for this controller
     var undoState: UndoState? {
         guard let window else { return nil }
+        guard !surfaceTree.isEmpty else { return nil }
         return .init(
             frame: window.frame,
             surfaceTree: surfaceTree,
