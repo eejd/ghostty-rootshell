@@ -7,12 +7,9 @@ pub const HostnameParsingError = error{
     NoSpaceLeft,
 };
 
-pub const UrlParsingError = error{
+pub const UrlParsingError = std.Uri.ParseError || error{
     HostnameIsNotMacAddress,
-    InvalidFormat,
-    InvalidPort,
     NoSchemeProvided,
-    UnexpectedCharacter,
 };
 
 fn isUriPathSeparator(c: u8) bool {
