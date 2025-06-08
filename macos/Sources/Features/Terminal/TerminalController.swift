@@ -681,7 +681,6 @@ class TerminalController: BaseTerminalController {
             return
         }
 
-
         tabGroup.windows.forEach { $0.close() }
     }
 
@@ -953,6 +952,13 @@ class TerminalController: BaseTerminalController {
     }
 
     //MARK: - NSWindowDelegate
+
+    override func windowShouldClose(_ sender: NSWindow) -> Bool {
+        closeWindow(sender)
+
+        // We will always explicitly close the window using the above
+        return false
+    }
 
     override func windowWillClose(_ notification: Notification) {
         super.windowWillClose(notification)
