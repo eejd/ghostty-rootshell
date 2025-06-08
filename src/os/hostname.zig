@@ -12,6 +12,8 @@ pub const UrlParsingError = std.Uri.ParseError || error{
     NoSchemeProvided,
 };
 
+const mac_address_length = 17;
+
 fn isUriPathSeparator(c: u8) bool {
     return switch (c) {
         '?', '#' => true,
@@ -65,7 +67,6 @@ pub fn parseUrl(url: []const u8) UrlParsingError!std.Uri {
         // The first '/' after the scheme marks the end of the hostname. If the first '/'
         // following the end of the scheme is not at the right position this is not a
         // valid mac address.
-        const mac_address_length = 17;
         if (url_without_scheme.len != mac_address_length and
             std.mem.indexOfScalarPos(u8, url_without_scheme, 0, '/') != mac_address_length)
         {
