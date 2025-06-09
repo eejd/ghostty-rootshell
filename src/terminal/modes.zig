@@ -223,6 +223,7 @@ const entries: []const ModeEntry = &.{
     .{ .name = "alt_sends_escape", .value = 1039 },
     .{ .name = "reverse_wrap_extended", .value = 1045 },
     .{ .name = "alt_screen", .value = 1047 },
+    .{ .name = "save_cursor", .value = 1048 },
     .{ .name = "alt_screen_save_cursor_clear_enter", .value = 1049 },
     .{ .name = "bracketed_paste", .value = 2004 },
     .{ .name = "synchronized_output", .value = 2026 },

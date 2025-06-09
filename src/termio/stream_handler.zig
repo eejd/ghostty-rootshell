@@ -597,6 +597,18 @@ pub const StreamHandler = struct {
                 try self.queueRender();
             },
 
+            // Mode 1048 is xterm's conditional save cursor depending
+            // on if alt screen is enabled or not (at the terminal emulator
+            // level). Alt screen is always enabled for us so this just
+            // does a save/restore cursor.
+            .save_cursor => {
+                if (enabled) {
+                    self.terminal.saveCursor();
+                } else {
+                    try self.terminal.restoreCursor();
+                }
+            },
+
             // Force resize back to the window size
             .enable_mode_3 => {
                 const grid_size = self.size.grid();
