@@ -1844,3 +1844,26 @@ extension Ghostty.SurfaceView {
         return false
     }
 }
+
+// MARK: Accessibility
+
+extension Ghostty.SurfaceView {
+    /// Indicates that this view should be exposed to accessibility tools like VoiceOver.
+    /// By returning true, we make the terminal surface accessible to screen readers
+    /// and other assistive technologies.
+    override func isAccessibilityElement() -> Bool {
+         return true
+     }
+
+    /// Defines the accessibility role for this view, which helps assistive technologies
+    /// understand what kind of content this view contains and how users can interact with it.
+    override func accessibilityRole() -> NSAccessibility.Role? {
+        /// We use .textArea because the terminal surface is essentially an editable text area
+        /// where users can input commands and view output.
+        return .textArea
+    }
+
+    override func accessibilityHelp() -> String? {
+        return "Terminal content area"
+    }
+}
