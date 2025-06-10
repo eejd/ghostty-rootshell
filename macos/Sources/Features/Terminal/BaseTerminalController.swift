@@ -556,12 +556,15 @@ class BaseTerminalController: NSWindowController,
         // The target must be within our tree
         guard let target = notification.object as? Ghostty.SurfaceView else { return }
         guard let targetNode = surfaceTree.root?.node(view: target) else { return }
-        
+
         // Toggle the zoomed state
         if surfaceTree.zoomed == targetNode {
             // Already zoomed, unzoom it
             surfaceTree = SplitTree(root: surfaceTree.root, zoomed: nil)
         } else {
+            // We require that the split tree have splits
+            guard surfaceTree.isSplit else { return }
+
             // Not zoomed or different node zoomed, zoom this node
             surfaceTree = SplitTree(root: surfaceTree.root, zoomed: targetNode)
         }
