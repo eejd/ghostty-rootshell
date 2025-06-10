@@ -1046,7 +1046,12 @@ class TerminalController: BaseTerminalController {
     //MARK: - NSWindowDelegate
 
     override func windowShouldClose(_ sender: NSWindow) -> Bool {
-        closeWindow(sender)
+        // If we have tabs, then this should only close the tab.
+        if window?.tabGroup?.windows.count ?? 0 > 1 {
+            closeTab(sender)
+        } else {
+            closeWindow(sender)
+        }
 
         // We will always explicitly close the window using the above
         return false
