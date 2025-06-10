@@ -78,10 +78,12 @@ class FullscreenBase {
     }
 
     @objc private func didEnterFullScreenNotification(_ notification: Notification) {
+        NotificationCenter.default.post(name: .fullscreenDidEnter, object: self)
         delegate?.fullscreenDidChange()
     }
 
     @objc private func didExitFullScreenNotification(_ notification: Notification) {
+        NotificationCenter.default.post(name: .fullscreenDidExit, object: self)
         delegate?.fullscreenDidChange()
     }
 }
@@ -238,6 +240,7 @@ class NonNativeFullscreen: FullscreenBase, FullscreenStyle {
                 self.window.makeFirstResponder(firstResponder)
             }
 
+            NotificationCenter.default.post(name: .fullscreenDidEnter, object: self)
             self.delegate?.fullscreenDidChange()
         }
     }
@@ -268,7 +271,7 @@ class NonNativeFullscreen: FullscreenBase, FullscreenStyle {
 
         // This is a hack that I want to remove from this but for now, we need to
         // fix up the titlebar tabs here before we do everything below.
-        if let window = window as? TerminalWindow,
+        if let window = window as? LegacyTerminalWindow,
            window.titlebarTabs {
             window.titlebarTabs = true
         }
@@ -303,6 +306,7 @@ class NonNativeFullscreen: FullscreenBase, FullscreenStyle {
         window.makeKeyAndOrderFront(nil)
 
         // Notify the delegate
+        NotificationCenter.default.post(name: .fullscreenDidExit, object: self)
         self.delegate?.fullscreenDidChange()
     }
 
@@ -421,4 +425,9 @@ class NonNativeFullscreenVisibleMenu: NonNativeFullscreen {
 
 class NonNativeFullscreenPaddedNotch: NonNativeFullscreen {
     override var properties: Properties { Properties(paddedNotch: true) }
+}
+
+extension Notification.Name {
+    static let fullscreenDidEnter = Notification.Name("com.mitchellh.fullscreenDidEnter")
+    static let fullscreenDidExit = Notification.Name("com.mitchellh.fullscreenDidExit")
 }

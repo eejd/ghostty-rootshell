@@ -1,9 +1,8 @@
 import Cocoa
 
-class TerminalWindow: NSWindow {
-    /// This is the key in UserDefaults to use for the default `level` value.
-    static let defaultLevelKey: String = "TerminalDefaultLevel"
-
+/// The terminal window that we originally had in Ghostty for a long time. Kind of a soupy mess
+/// of styling.
+class LegacyTerminalWindow: TerminalWindow {
     @objc dynamic var keyEquivalent: String = ""
 
     /// This is used to determine if certain elements should be drawn light or dark and should
@@ -56,11 +55,6 @@ class TerminalWindow: NSWindow {
         }
     }
 
-    // Both of these must be true for windows without decorations to be able to
-    // still become key/main and receive events.
-    override var canBecomeKey: Bool { return true }
-    override var canBecomeMain: Bool { return true }
-
     // MARK: - Lifecycle
 
     override func awakeFromNib() {
@@ -77,8 +71,6 @@ class TerminalWindow: NSWindow {
 		if titlebarTabs {
 			generateToolbar()
 		}
-
-        level = UserDefaults.standard.value(forKey: Self.defaultLevelKey) as? NSWindow.Level ?? .normal
     }
 
     deinit {
@@ -134,25 +126,6 @@ class TerminalWindow: NSWindow {
             tab.attributedTitle = attributedTitle
         }
     }
-
-    // We override this so that with the hidden titlebar style the titlebar
-    // area is not draggable.
-    override var contentLayoutRect: CGRect {
-        var rect = super.contentLayoutRect
-
-        // If we are using a hidden titlebar style, the content layout is the
-        // full frame making it so that it is not draggable.
-        if let controller = windowController as? TerminalController,
-              controller.derivedConfig.macosTitlebarStyle == "hidden" {
-            rect.origin.y = 0
-            rect.size.height = self.frame.height
-        }
-        return rect
-    }
-
-    // The window theme configuration from Ghostty. This is used to control some
-    // behaviors that don't look quite right in certain situations.
-    var windowTheme: TerminalWindowTheme?
 
     // We only need to set this once, but need to do it after the window has been created in order
     // to determine if the theme is using a very dark background, in which case we don't want to
@@ -703,7 +676,7 @@ fileprivate class WindowDragView: NSView {
 fileprivate class WindowButtonsBackdropView: NSView {
     // This must be weak because the window has this view. Otherwise
     // a retain cycle occurs.
-	private weak var terminalWindow: TerminalWindow?
+	private weak var terminalWindow: LegacyTerminalWindow?
 	private let isLightTheme: Bool
     private let overlayLayer = VibrantLayer()
 
@@ -731,7 +704,7 @@ fileprivate class WindowButtonsBackdropView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    init(window: TerminalWindow) {
+    init(window: LegacyTerminalWindow) {
 		self.terminalWindow = window
         self.isLightTheme = window.isLightTheme
 
@@ -745,11 +718,4 @@ fileprivate class WindowButtonsBackdropView: NSView {
 
         layer?.addSublayer(overlayLayer)
     }
-}
-
-enum TerminalWindowTheme: String {
-    case auto
-    case system
-    case light
-    case dark
 }
