@@ -7,15 +7,13 @@ import GhosttyKit
 /// A classic, tabbed terminal experience.
 class TerminalController: BaseTerminalController {
     override var windowNibName: NSNib.Name? {
-        //NOTE(mitchellh): switch to this when we've transitioned all legacy logic out
-        //let defaultValue = "Terminal"
-        let defaultValue = "TerminalLegacy"
+        let defaultValue = "Terminal"
 
         guard let appDelegate = NSApp.delegate as? AppDelegate else { return defaultValue }
         let config = appDelegate.ghostty.config
         let nib = switch config.macosTitlebarStyle {
         case "native": "Terminal"
-        case "tabs": defaultValue
+        case "tabs": "TerminalLegacy"
         case "hidden": "TerminalHiddenTitlebar"
         case "transparent": "TerminalTransparentTitlebar"
         default: defaultValue
