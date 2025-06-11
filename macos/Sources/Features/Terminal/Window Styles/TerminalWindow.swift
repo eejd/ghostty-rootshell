@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import GhosttyKit
 
 /// The base class for all standalone, "normal" terminal windows. This sets the basic
@@ -42,6 +43,14 @@ class TerminalWindow: NSWindow {
             hideWindowButtons()
         }
 
+        // Setup the accessory view for tabs that shows our keyboard shortcuts,
+        // zoomed state, etc. Note I tried to use SwiftUI here but ran into issues
+        // where buttons were not clickable.
+        let stackView = NSStackView(views: [keyEquivalentLabel, resetZoomTabButton])
+        stackView.setHuggingPriority(.defaultHigh, for: .horizontal)
+        stackView.spacing = 3
+        tab.accessoryView = stackView
+
         // Get our saved level
         level = UserDefaults.standard.value(forKey: Self.defaultLevelKey) as? NSWindow.Level ?? .normal
     }
@@ -50,6 +59,85 @@ class TerminalWindow: NSWindow {
     // still become key/main and receive events.
     override var canBecomeKey: Bool { return true }
     override var canBecomeMain: Bool { return true }
+
+    override func becomeKey() {
+        super.becomeKey()
+        resetZoomTabButton.contentTintColor = .controlAccentColor
+    }
+
+    override func resignKey() {
+        super.resignKey()
+        resetZoomTabButton.contentTintColor = .secondaryLabelColor
+    }
+
+    override func mergeAllWindows(_ sender: Any?) {
+        super.mergeAllWindows(sender)
+        
+        // It takes an event loop cycle to merge all the windows so we set a
+        // short timer to relabel the tabs (issue #1902)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            self?.terminalController?.relabelTabs()
+        }
+    }
+
+    // MARK: Tab Key Equivalents
+
+    // TODO: rename once Legacy window removes
+    var keyEquivalent2: String? = nil {
+        didSet {
+            // When our key equivalent is set, we must update the tab label.
+            guard let keyEquivalent2 else {
+                keyEquivalentLabel.attributedStringValue = NSAttributedString()
+                return
+            }
+
+            keyEquivalentLabel.attributedStringValue = NSAttributedString(
+                string: "\(keyEquivalent2) ",
+                attributes: [
+                    .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
+                    .foregroundColor: isKeyWindow ? NSColor.labelColor : NSColor.secondaryLabelColor,
+                ])
+        }
+    }
+
+    /// The label that has the key equivalent for tab views.
+    private lazy var keyEquivalentLabel: NSTextField = {
+        let label = NSTextField(labelWithAttributedString: NSAttributedString())
+        label.setContentCompressionResistancePriority(.windowSizeStayPut, for: .horizontal)
+        label.postsFrameChangedNotifications = true
+        return label
+    }()
+
+    // MARK: Surface Zoom
+
+    /// Set to true if a surface is currently zoomed to show the reset zoom button.
+    var surfaceIsZoomed2: Bool = false {
+        didSet {
+            // Show/hide our reset zoom button depending on if we're zoomed.
+            // We want to show it if we are zoomed.
+            resetZoomTabButton.isHidden = !surfaceIsZoomed2
+        }
+    }
+
+    private lazy var resetZoomTabButton: NSButton = generateResetZoomButton()
+
+    private func generateResetZoomButton() -> NSButton {
+        let button = NSButton()
+        button.isHidden = true
+        button.target = terminalController
+        button.action = #selector(TerminalController.splitZoom(_:))
+        button.isBordered = false
+        button.allowsExpansionToolTips = true
+        button.toolTip = "Reset Zoom"
+        button.contentTintColor = .controlAccentColor
+        button.state = .on
+        button.image = NSImage(named:"ResetZoom")
+        button.frame = NSRect(x: 0, y: 0, width: 20, height: 20)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.widthAnchor.constraint(equalToConstant: 20).isActive = true
+        button.heightAnchor.constraint(equalToConstant: 20).isActive = true
+        return button
+    }
 
     // MARK: Positioning And Styling
 

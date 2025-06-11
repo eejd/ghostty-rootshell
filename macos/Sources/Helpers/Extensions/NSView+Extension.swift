@@ -27,6 +27,21 @@ extension NSView {
         return root
     }
 
+    /// Checks if a view contains another view in its hierarchy.
+    func contains(_ view: NSView) -> Bool {
+        if self == view {
+            return true
+        }
+
+        for subview in subviews {
+            if subview.contains(view) {
+                return true
+            }
+        }
+
+        return false
+    }
+
     /// Recursively finds and returns the first descendant view that has the given class name.
     func firstDescendant(withClassName name: String) -> NSView? {
         for subview in subviews {

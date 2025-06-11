@@ -14,6 +14,7 @@ class TerminalController: BaseTerminalController {
         guard let appDelegate = NSApp.delegate as? AppDelegate else { return defaultValue }
         let config = appDelegate.ghostty.config
         let nib = switch config.macosTitlebarStyle {
+        case "native": "Terminal"
         case "tabs": defaultValue
         case "hidden": "TerminalHiddenTitlebar"
         case "transparent": "TerminalTransparentTitlebar"
@@ -131,6 +132,9 @@ class TerminalController: BaseTerminalController {
         // Update our zoom state
         if let window = window as? LegacyTerminalWindow {
             window.surfaceIsZoomed = to.zoomed != nil
+        }
+        if let window = window as? TerminalWindow {
+            window.surfaceIsZoomed2 = to.zoomed != nil
         }
 
         // If our surface tree is now nil then we close our window.
@@ -395,28 +399,44 @@ class TerminalController: BaseTerminalController {
     /// changes, when a window is closed, and when tabs are reordered
     /// with the mouse.
     func relabelTabs() {
-        // Reset this to false. It'll be set back to true later.
-        tabListenForFrame = false
-
-        guard let windows = self.window?.tabbedWindows as? [LegacyTerminalWindow] else { return }
-
         // We only listen for frame changes if we have more than 1 window,
         // otherwise the accessory view doesn't matter.
-        tabListenForFrame = windows.count > 1
+        tabListenForFrame = window?.tabbedWindows?.count ?? 0 > 1
 
-        for (tab, window) in zip(1..., windows) {
-            // We need to clear any windows beyond this because they have had
-            // a keyEquivalent set previously.
-            guard tab <= 9 else {
-                window.keyEquivalent = ""
-                continue
+        if let windows = window?.tabbedWindows as? [TerminalWindow] {
+            for (tab, window) in zip(1..., windows) {
+                // We need to clear any windows beyond this because they have had
+                // a keyEquivalent set previously.
+                guard tab <= 9 else {
+                    window.keyEquivalent2 = ""
+                    continue
+                }
+
+                let action = "goto_tab:\(tab)"
+                if let equiv = ghostty.config.keyboardShortcut(for: action) {
+                    window.keyEquivalent2 = "\(equiv)"
+                } else {
+                    window.keyEquivalent2 = ""
+                }
             }
+        }
 
-            let action = "goto_tab:\(tab)"
-            if let equiv = ghostty.config.keyboardShortcut(for: action) {
-                window.keyEquivalent = "\(equiv)"
-            } else {
-                window.keyEquivalent = ""
+        // Legacy
+        if let windows = self.window?.tabbedWindows as? [LegacyTerminalWindow] {
+            for (tab, window) in zip(1..., windows) {
+                // We need to clear any windows beyond this because they have had
+                // a keyEquivalent set previously.
+                guard tab <= 9 else {
+                    window.keyEquivalent = ""
+                    continue
+                }
+
+                let action = "goto_tab:\(tab)"
+                if let equiv = ghostty.config.keyboardShortcut(for: action) {
+                    window.keyEquivalent = "\(equiv)"
+                } else {
+                    window.keyEquivalent = ""
+                }
             }
         }
     }

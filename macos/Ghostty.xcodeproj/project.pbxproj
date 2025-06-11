@@ -402,12 +402,12 @@
 			isa = PBXGroup;
 			children = (
 				A59630992AEE1C6400D64628 /* Terminal.xib */,
-				A5593FDE2DF8D57100B47B10 /* TerminalWindow.swift */,
 				A5593FE22DF8D78600B47B10 /* TerminalHiddenTitlebar.xib */,
-				A5593FE02DF8D73400B47B10 /* HiddenTitlebarTerminalWindow.swift */,
 				A5593FE42DF8DE3000B47B10 /* TerminalLegacy.xib */,
-				A51B78462AF4B58B00F3EDB9 /* LegacyTerminalWindow.swift */,
 				A5593FE82DF927DF00B47B10 /* TerminalTransparentTitlebar.xib */,
+				A5593FDE2DF8D57100B47B10 /* TerminalWindow.swift */,
+				A5593FE02DF8D73400B47B10 /* HiddenTitlebarTerminalWindow.swift */,
+				A51B78462AF4B58B00F3EDB9 /* LegacyTerminalWindow.swift */,
 				A5593FE62DF927CC00B47B10 /* TransparentTitlebarTerminalWindow.swift */,
 			);
 			path = "Window Styles";

@@ -26,6 +26,8 @@ class TransparentTitlebarTerminalWindow: TerminalWindow {
     }
 
     override func becomeMain() {
+        super.becomeMain()
+        
         guard let lastSurfaceConfig else { return }
         syncAppearance(lastSurfaceConfig)
 

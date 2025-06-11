@@ -568,7 +568,11 @@ class BaseTerminalController: NSWindowController,
             // Not zoomed or different node zoomed, zoom this node
             surfaceTree = SplitTree(root: surfaceTree.root, zoomed: targetNode)
         }
-        
+
+        // Move focus to our window. Importantly this ensures that if we click the
+        // reset zoom button in a tab bar of an unfocused tab that we become focused.
+        window?.makeKeyAndOrderFront(nil)
+
         // Ensure focus stays on the target surface. We lose focus when we do
         // this so we need to grab it again.
         DispatchQueue.main.async {
