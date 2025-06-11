@@ -1,14 +1,21 @@
 import AppKit
 
 class TransparentTitlebarTerminalWindow: TerminalWindow {
-    private var reapplyTimer: Timer?
+    private var debugTimer: Timer?
 
     override func awakeFromNib() {
         super.awakeFromNib()
+        
+        // Debug timer to print view hierarchy every second
+        debugTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            print("=== TransparentTitlebarTerminalWindow Debug ===")
+            self?.contentView?.rootView.printViewHierarchy()
+            print("===============================================\n")
+        }
     }
     
     deinit {
-        reapplyTimer?.invalidate()
+        debugTimer?.invalidate()
     }
 
     override func syncAppearance(_ surfaceConfig: Ghostty.SurfaceView.DerivedConfig) {

@@ -82,3 +82,51 @@ extension NSView {
 		return root.firstDescendant(withClassName: name)
 	}
 }
+
+// MARK: Debug
+
+extension NSView {
+	/// Prints the view hierarchy from the root in a tree-like ASCII format.
+    ///
+    /// I need this because the "Capture View Hiearchy" was broken under some scenarios in
+    /// Xcode 26 (FB17912569). But, I kept it around because it might be useful to print out
+    /// the view hierarchy without halting the program.
+	func printViewHierarchy() {
+		let root = rootView
+		print("View Hierarchy from Root:")
+		print(root.viewHierarchyDescription())
+	}
+	
+	/// Returns a string representation of the view hierarchy in a tree-like format.
+	private func viewHierarchyDescription(indent: String = "", isLast: Bool = true) -> String {
+		var result = ""
+		
+		// Add the tree branch characters
+		result += indent
+		if !indent.isEmpty {
+			result += isLast ? "└── " : "├── "
+		}
+		
+		// Add the class name and optional identifier
+		let className = String(describing: type(of: self))
+		result += className
+		
+		// Add identifier if present
+		if let identifier = self.identifier {
+			result += " (id: \(identifier.rawValue))"
+		}
+		
+		// Add frame info
+		result += " [frame: \(frame)]"
+		result += "\n"
+		
+		// Process subviews
+		for (index, subview) in subviews.enumerated() {
+			let isLastSubview = index == subviews.count - 1
+			let newIndent = indent + (isLast ? "    " : "│   ")
+			result += subview.viewHierarchyDescription(indent: newIndent, isLast: isLastSubview)
+		}
+		
+		return result
+	}
+}
