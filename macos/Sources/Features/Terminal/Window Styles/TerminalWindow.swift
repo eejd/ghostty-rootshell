@@ -201,7 +201,7 @@ class TerminalWindow: NSWindow {
 
     // MARK: Positioning And Styling
 
-    /// This is called by the controller when there is a need to reset the window apperance.
+    /// This is called by the controller when there is a need to reset the window appearance.
     func syncAppearance(_ surfaceConfig: Ghostty.SurfaceView.DerivedConfig) {
         // If our window is not visible, then we do nothing. Some things such as blurring
         // have no effect if the window is not visible. Ultimately, we'll have this called

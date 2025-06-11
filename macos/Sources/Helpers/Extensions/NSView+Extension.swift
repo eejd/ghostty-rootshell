@@ -103,7 +103,7 @@ extension NSView {
 extension NSView {
 	/// Prints the view hierarchy from the root in a tree-like ASCII format.
     ///
-    /// I need this because the "Capture View Hiearchy" was broken under some scenarios in
+    /// I need this because the "Capture View Hierarchy" was broken under some scenarios in
     /// Xcode 26 (FB17912569). But, I kept it around because it might be useful to print out
     /// the view hierarchy without halting the program.
 	func printViewHierarchy() {
