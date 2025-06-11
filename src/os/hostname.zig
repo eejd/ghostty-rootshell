@@ -32,10 +32,8 @@ fn isValidMacAddress(mac_address: []const u8) bool {
             if (c != ':') {
                 return false;
             }
-        } else {
-            if (!std.mem.containsAtLeastScalar(u8, "0123456789ABCDEFabcdef", 1, c)) {
-                return false;
-            }
+        } else if (!std.mem.containsAtLeastScalar(u8, "0123456789ABCDEFabcdef", 1, c)) {
+            return false;
         }
     }
 
