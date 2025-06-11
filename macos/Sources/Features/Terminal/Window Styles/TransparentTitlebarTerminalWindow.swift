@@ -94,32 +94,6 @@ class TransparentTitlebarTerminalWindow: TerminalWindow {
         titlebarContainer?.firstDescendant(withClassName: "NSTitlebarBackgroundView")
     }
 
-    private var titlebarContainer: NSView? {
-        // If we aren't fullscreen then the titlebar container is part of our window.
-        if !styleMask.contains(.fullScreen) {
-            return titlebarContainerView
-        }
-
-        // If we are fullscreen, the titlebar container view is part of a separate
-        // "fullscreen window", we need to find the window and then get the view.
-        for window in NSApplication.shared.windows {
-            // This is the private window class that contains the toolbar
-            guard window.className == "NSToolbarFullScreenWindow" else { continue }
-
-            // The parent will match our window. This is used to filter the correct
-            // fullscreen window if we have multiple.
-            guard window.parent == self else { continue }
-
-            return titlebarContainerView
-        }
-
-        return nil
-    }
-
-    private var titlebarContainerView: NSView? {
-        contentView?.firstViewFromRoot(withClassName: "NSTitlebarContainerView")
-    }
-    
     // MARK: Tab Group Observation
 
     private func setupKVO() {

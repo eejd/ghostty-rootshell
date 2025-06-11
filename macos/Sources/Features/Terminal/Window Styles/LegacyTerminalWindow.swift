@@ -77,48 +77,6 @@ class LegacyTerminalWindow: TerminalWindow {
         bindings.forEach() { $0.invalidate() }
     }
 
-    // MARK: Titlebar Helpers
-    // These helpers are generic to what we're trying to achieve (i.e. titlebar
-    // style tabs, titlebar styling, etc.). They're just here to make it easier.
-
-    private var titlebarContainer: NSView? {
-        // If we aren't fullscreen then the titlebar container is part of our window.
-        if !styleMask.contains(.fullScreen) {
-            guard let view = contentView?.superview ?? contentView else { return nil }
-            return titlebarContainerView(in: view)
-        }
-
-        // If we are fullscreen, the titlebar container view is part of a separate
-        // "fullscreen window", we need to find the window and then get the view.
-        for window in NSApplication.shared.windows {
-            // This is the private window class that contains the toolbar
-            guard window.className == "NSToolbarFullScreenWindow" else { continue }
-
-            // The parent will match our window. This is used to filter the correct
-            // fullscreen window if we have multiple.
-            guard window.parent == self else { continue }
-
-            guard let view = window.contentView else { continue }
-            return titlebarContainerView(in: view)
-        }
-
-        return nil
-    }
-
-    private func titlebarContainerView(in view: NSView) -> NSView? {
-        if view.className == "NSTitlebarContainerView" {
-            return view
-        }
-
-        for subview in view.subviews {
-            if let found = titlebarContainerView(in: subview) {
-                return found
-            }
-        }
-
-        return nil
-    }
-
     // MARK: - NSWindow
 
     override var title: String {

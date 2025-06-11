@@ -471,6 +471,17 @@ class TerminalController: BaseTerminalController {
     private func syncAppearance(_ surfaceConfig: Ghostty.SurfaceView.DerivedConfig) {
         // Let our window handle its own appearance
         if let window = window as? TerminalWindow {
+            // Sync our zoom state for splits
+            window.surfaceIsZoomed2 = surfaceTree.zoomed != nil
+
+            // Set the font for the window and tab titles.
+            if let titleFontName = surfaceConfig.windowTitleFontFamily {
+                window.titlebarFont2 = NSFont(name: titleFontName, size: NSFont.systemFontSize)
+            } else {
+                window.titlebarFont2 = nil
+            }
+
+            // Call this last in case it uses any of the properties above.
             window.syncAppearance(surfaceConfig)
         }
         

@@ -72,7 +72,7 @@ class TerminalWindow: NSWindow {
 
     override func mergeAllWindows(_ sender: Any?) {
         super.mergeAllWindows(sender)
-        
+
         // It takes an event loop cycle to merge all the windows so we set a
         // short timer to relabel the tabs (issue #1902)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
@@ -137,6 +137,66 @@ class TerminalWindow: NSWindow {
         button.widthAnchor.constraint(equalToConstant: 20).isActive = true
         button.heightAnchor.constraint(equalToConstant: 20).isActive = true
         return button
+    }
+
+    // MARK: Title Text
+
+    override var title: String {
+        didSet {
+            // Whenever we change the window title we must also update our
+            // tab title if we're using custom fonts.
+            tab.attributedTitle = attributedTitle
+        }
+    }
+
+    // Used to set the titlebar font.
+    var titlebarFont2: NSFont? {
+        didSet {
+            let font = titlebarFont2 ?? NSFont.titleBarFont(ofSize: NSFont.systemFontSize)
+
+            titlebarTextField?.font = font
+            tab.attributedTitle = attributedTitle
+        }
+    }
+
+    // Find the NSTextField responsible for displaying the titlebar's title.
+    private var titlebarTextField: NSTextField? {
+        titlebarContainer?
+            .firstDescendant(withClassName: "NSTitlebarView")?
+            .firstDescendant(withClassName: "NSTextField") as? NSTextField
+    }
+
+    // Return a styled representation of our title property.
+    private var attributedTitle: NSAttributedString? {
+        guard let titlebarFont = titlebarFont2 else { return nil }
+
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: titlebarFont,
+            .foregroundColor: isKeyWindow ? NSColor.labelColor : NSColor.secondaryLabelColor,
+        ]
+        return NSAttributedString(string: title, attributes: attributes)
+    }
+
+    var titlebarContainer: NSView? {
+        // If we aren't fullscreen then the titlebar container is part of our window.
+        if !styleMask.contains(.fullScreen) {
+            return contentView?.firstViewFromRoot(withClassName: "NSTitlebarContainerView")
+        }
+
+        // If we are fullscreen, the titlebar container view is part of a separate
+        // "fullscreen window", we need to find the window and then get the view.
+        for window in NSApplication.shared.windows {
+            // This is the private window class that contains the toolbar
+            guard window.className == "NSToolbarFullScreenWindow" else { continue }
+
+            // The parent will match our window. This is used to filter the correct
+            // fullscreen window if we have multiple.
+            guard window.parent == self else { continue }
+
+            return window.contentView?.firstViewFromRoot(withClassName: "NSTitlebarContainerView")
+        }
+
+        return nil
     }
 
     // MARK: Positioning And Styling
