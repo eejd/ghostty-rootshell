@@ -1,32 +1,41 @@
 import AppKit
 
+/// A terminal window style that provides a transparent titlebar effect. With this effect, the titlebar
+/// matches the background color of the window.
 class TransparentTitlebarTerminalWindow: TerminalWindow {
-    // We need to restore our last synced appearance so that we can reapply
-    // the appearance in certain scenarios.
+    /// Stores the last surface configuration to reapply appearance when needed.
+    /// This is necessary because various macOS operations (tab switching, tab bar
+    /// visibility changes) can reset the titlebar appearance.
     private var lastSurfaceConfig: Ghostty.SurfaceView.DerivedConfig?
     
-    // KVO observations
+    /// KVO observation for tab group window changes.
     private var tabGroupWindowsObservation: NSKeyValueObservation?
+    private var tabBarVisibleObservation: NSKeyValueObservation?
 
     override func awakeFromNib() {
         super.awakeFromNib()
 
-        // We need to observe the tab group because we need to redraw on
-        // tabbed window changes and there is no notification for that.
-        setupTabGroupObservation()
+        // Setup all the KVO we will use, see the docs for the respective functions
+        // to learn why we need KVO.
+        setupKVO()
     }
     
     deinit {
         tabGroupWindowsObservation?.invalidate()
+        tabBarVisibleObservation?.invalidate()
     }
 
     override func becomeMain() {
-        // On macOS Tahoe, the tab bar redraws and restores non-transparency when
-        // switching tabs. To overcome this, we resync the appearance whenever this
-        // window becomes main (focused).
-        if #available(macOS 26.0, *),
-           let lastSurfaceConfig {
-            syncAppearance(lastSurfaceConfig)
+        guard let lastSurfaceConfig else { return }
+        syncAppearance(lastSurfaceConfig)
+
+        // This is a nasty edge case. If we're going from 2 to 1 tab and the tab bar
+        // automatically disappears, then we need to resync our appearance because
+        // at some point macOS replaces the tab views.
+        if tabGroup?.windows.count ?? 0 == 2 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(50)) { [weak self] in
+                self?.syncAppearance(self?.lastSurfaceConfig ?? lastSurfaceConfig)
+            }
         }
     }
 
@@ -34,8 +43,14 @@ class TransparentTitlebarTerminalWindow: TerminalWindow {
 
     override func syncAppearance(_ surfaceConfig: Ghostty.SurfaceView.DerivedConfig) {
         super.syncAppearance(surfaceConfig)
-        
+
+        // Save our config in case we need to reapply
         lastSurfaceConfig = surfaceConfig
+
+        // Everytime we change appearance, set KVO up again in case any of our
+        // references changed (e.g. tabGroup is new).
+        setupKVO()
+
         if #available(macOS 26.0, *) {
             syncAppearanceTahoe(surfaceConfig)
         } else {
@@ -67,15 +82,8 @@ class TransparentTitlebarTerminalWindow: TerminalWindow {
     @available(macOS 13.0, *)
     private func syncAppearanceVentura(_ surfaceConfig: Ghostty.SurfaceView.DerivedConfig) {
         guard let titlebarContainer else { return }
-
-        let configBgColor = NSColor(surfaceConfig.backgroundColor)
-
-        // Set our window background color so it shows up
-        backgroundColor = configBgColor
-
-        // Set the background color of our titlebar to match
         titlebarContainer.wantsLayer = true
-        titlebarContainer.layer?.backgroundColor = configBgColor.withAlphaComponent(surfaceConfig.backgroundOpacity).cgColor
+        titlebarContainer.layer?.backgroundColor = preferredBackgroundColor?.cgColor
     }
 
     // MARK: View Finders
@@ -111,7 +119,16 @@ class TransparentTitlebarTerminalWindow: TerminalWindow {
     }
     
     // MARK: Tab Group Observation
-    
+
+    private func setupKVO() {
+        // See the docs for the respective setup functions for why.
+        setupTabGroupObservation()
+        setupTabBarVisibleObservation()
+    }
+
+    /// Monitors the tabGroup windows value for any changes and resyncs the appearance on change.
+    /// This is necessary because when the windows change, the tab bar and titlebar are recreated
+    /// which breaks our changes.
     private func setupTabGroupObservation() {
         // Remove existing observation if any
         tabGroupWindowsObservation?.invalidate()
@@ -126,13 +143,31 @@ class TransparentTitlebarTerminalWindow: TerminalWindow {
         tabGroupWindowsObservation = tabGroup.observe(
             \.windows,
              options: [.new]
-        ) { [weak self] _, _ in
+        ) { [weak self] _, change in
             // NOTE: At one point, I guarded this on only if we went from 0 to N
             // or N to 0 under the assumption that the tab bar would only get
             // replaced on those cases. This turned out to be false (Tahoe).
             // It's cheap enough to always redraw this so we should just do it
             // unconditionally.
 
+            guard let self else { return }
+            guard let lastSurfaceConfig else { return }
+            self.syncAppearance(lastSurfaceConfig)
+        }
+    }
+
+    /// Monitors the tab bar for visibility. This lets the "Show/Hide Tab Bar" manual menu item
+    /// to not break our appearance.
+    private func setupTabBarVisibleObservation() {
+        // Remove existing observation if any
+        tabBarVisibleObservation?.invalidate()
+        tabBarVisibleObservation = nil
+        
+        // Set up KVO observation for isTabBarVisible
+        tabBarVisibleObservation = tabGroup?.observe(
+            \.isTabBarVisible,
+             options: [.new]
+        ) { [weak self] _, change in
             guard let self else { return }
             guard let lastSurfaceConfig else { return }
             self.syncAppearance(lastSurfaceConfig)
