@@ -449,57 +449,34 @@ class TerminalController: BaseTerminalController {
     }
 
     private func syncAppearance(_ surfaceConfig: Ghostty.SurfaceView.DerivedConfig) {
+        // Let our window handle its own appearance
         if let window = window as? TerminalWindow {
             window.syncAppearance(surfaceConfig)
         }
         
-        guard let window = self.window as? LegacyTerminalWindow else { return }
+        guard let window else { return }
 
-        // Set our explicit appearance if we need to based on the configuration.
-        window.appearance = surfaceConfig.windowAppearance
+        if let window = window as? LegacyTerminalWindow {
+            // Update our window light/darkness based on our updated background color
+            window.isLightTheme = OSColor(surfaceConfig.backgroundColor).isLightColor
 
-        // Update our window light/darkness based on our updated background color
-        window.isLightTheme = OSColor(surfaceConfig.backgroundColor).isLightColor
+            // Sync our zoom state for splits
+            window.surfaceIsZoomed = surfaceTree.zoomed != nil
 
-        // Sync our zoom state for splits
-        window.surfaceIsZoomed = surfaceTree.zoomed != nil
+            // Set the font for the window and tab titles.
+            if let titleFontName = surfaceConfig.windowTitleFontFamily {
+                window.titlebarFont = NSFont(name: titleFontName, size: NSFont.systemFontSize)
+            } else {
+                window.titlebarFont = nil
+            }
+        }
 
         // If our window is not visible, then we do nothing. Some things such as blurring
         // have no effect if the window is not visible. Ultimately, we'll have this called
         // at some point when a surface becomes focused.
         guard window.isVisible else { return }
 
-        // Set the font for the window and tab titles.
-        if let titleFontName = surfaceConfig.windowTitleFontFamily {
-            window.titlebarFont = NSFont(name: titleFontName, size: NSFont.systemFontSize)
-        } else {
-            window.titlebarFont = nil
-        }
-
-        // If we have window transparency then set it transparent. Otherwise set it opaque.
-
-        // Window transparency only takes effect if our window is not native fullscreen.
-        // In native fullscreen we disable transparency/opacity because the background
-        // becomes gray and widgets show through.
-        if (!window.styleMask.contains(.fullScreen) &&
-            surfaceConfig.backgroundOpacity < 1
-        ) {
-            window.isOpaque = false
-
-            // This is weird, but we don't use ".clear" because this creates a look that
-            // matches Terminal.app much more closer. This lets users transition from
-            // Terminal.app more easily.
-            window.backgroundColor = .white.withAlphaComponent(0.001)
-
-            ghostty_set_window_background_blur(ghostty.app, Unmanaged.passUnretained(window).toOpaque())
-        } else {
-            window.isOpaque = true
-            window.backgroundColor = .windowBackgroundColor
-        }
-
-        window.hasShadow = surfaceConfig.macosWindowShadow
-
-        guard window.hasStyledTabs else { return }
+        guard let window = window as? LegacyTerminalWindow, window.hasStyledTabs else { return }
 
         // Our background color depends on if our focused surface borders the top or not.
         // If it does, we match the focused surface. If it doesn't, we use the app
