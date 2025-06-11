@@ -118,6 +118,36 @@ extension NSView {
 		
 		// Add frame info
 		result += " [frame: \(frame)]"
+		
+		// Add visual properties
+		var properties: [String] = []
+		
+		// Hidden status
+		if isHidden {
+			properties.append("hidden")
+		}
+		
+		// Opaque status
+		properties.append(isOpaque ? "opaque" : "transparent")
+		
+		// Layer backing
+		if wantsLayer {
+			properties.append("layer-backed")
+			if let bgColor = layer?.backgroundColor {
+				let color = NSColor(cgColor: bgColor)
+				if let rgb = color?.usingColorSpace(.deviceRGB) {
+					properties.append(String(format: "bg:rgba(%.0f,%.0f,%.0f,%.2f)", 
+						rgb.redComponent * 255, 
+						rgb.greenComponent * 255, 
+						rgb.blueComponent * 255, 
+						rgb.alphaComponent))
+				} else {
+					properties.append("bg:\(bgColor)")
+				}
+			}
+		}
+		
+		result += " [\(properties.joined(separator: ", "))]"
 		result += "\n"
 		
 		// Process subviews

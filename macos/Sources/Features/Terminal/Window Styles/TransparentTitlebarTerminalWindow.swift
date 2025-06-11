@@ -1,24 +1,39 @@
 import AppKit
 
 class TransparentTitlebarTerminalWindow: TerminalWindow {
-    private var debugTimer: Timer?
+    // We need to restore our last synced appearance so that we can reapply
+    // the appearance in certain scenarios.
+    private var lastSurfaceConfig: Ghostty.SurfaceView.DerivedConfig?
+    
+    // KVO observations
+    private var tabGroupWindowsObservation: NSKeyValueObservation?
 
     override func awakeFromNib() {
         super.awakeFromNib()
-        
-        // Debug timer to print view hierarchy every second
-        debugTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            print("=== TransparentTitlebarTerminalWindow Debug ===")
-            self?.contentView?.rootView.printViewHierarchy()
-            print("===============================================\n")
-        }
+
+        // We need to observe the tab group because we need to redraw on
+        // tabbed window changes and there is no notification for that.
+        setupTabGroupObservation()
     }
     
     deinit {
-        debugTimer?.invalidate()
+        tabGroupWindowsObservation?.invalidate()
     }
 
+    override func becomeMain() {
+        // On macOS Tahoe, the tab bar redraws and restores non-transparency when
+        // switching tabs. To overcome this, we resync the appearance whenever this
+        // window becomes main (focused).
+        if #available(macOS 26.0, *),
+           let lastSurfaceConfig {
+            syncAppearance(lastSurfaceConfig)
+        }
+    }
+
+    // MARK: Appearance
+
     override func syncAppearance(_ surfaceConfig: Ghostty.SurfaceView.DerivedConfig) {
+        lastSurfaceConfig = surfaceConfig
         if #available(macOS 26.0, *) {
             syncAppearanceTahoe(surfaceConfig)
         } else {
@@ -46,6 +61,8 @@ class TransparentTitlebarTerminalWindow: TerminalWindow {
         titlebarContainer.wantsLayer = true
         titlebarContainer.layer?.backgroundColor = configBgColor.withAlphaComponent(surfaceConfig.backgroundOpacity).cgColor
     }
+
+    // MARK: View Finders
 
     private var titlebarBackgroundView: NSView? {
         titlebarContainer?.firstDescendant(withClassName: "NSTitlebarBackgroundView")
@@ -75,5 +92,34 @@ class TransparentTitlebarTerminalWindow: TerminalWindow {
 
     private var titlebarContainerView: NSView? {
         contentView?.firstViewFromRoot(withClassName: "NSTitlebarContainerView")
+    }
+    
+    // MARK: Tab Group Observation
+    
+    private func setupTabGroupObservation() {
+        // Remove existing observation if any
+        tabGroupWindowsObservation?.invalidate()
+        tabGroupWindowsObservation = nil
+        
+        // Check if tabGroup is available
+        guard let tabGroup else { return }
+
+        // Set up KVO observation for the windows array. Whenever it changes
+        // we resync the appearance because it can cause macOS to redraw the
+        // tab bar.
+        tabGroupWindowsObservation = tabGroup.observe(
+            \.windows,
+             options: [.new]
+        ) { [weak self] _, _ in
+            // NOTE: At one point, I guarded this on only if we went from 0 to N
+            // or N to 0 under the assumption that the tab bar would only get
+            // replaced on those cases. This turned out to be false (Tahoe).
+            // It's cheap enough to always redraw this so we should just do it
+            // unconditionally.
+
+            guard let self else { return }
+            guard let lastSurfaceConfig else { return }
+            self.syncAppearance(lastSurfaceConfig)
+        }
     }
 }
