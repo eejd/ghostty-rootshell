@@ -104,6 +104,26 @@ class TerminalWindow: NSWindow {
         }
     }
 
+    override func addTitlebarAccessoryViewController(_ childViewController: NSTitlebarAccessoryViewController) {
+        super.addTitlebarAccessoryViewController(childViewController)
+
+        // Tab bar is attached as a titlebar accessory view controller (layout bottom). We
+        // can detect when it is shown or hidden by overriding add/remove and searching for
+        // it. This has been verified to work on macOS 12 to 26
+        if childViewController.view.contains(className: "NSTabBar") {
+            viewModel.hasTabBar = true
+        }
+    }
+
+    override func removeTitlebarAccessoryViewController(at index: Int) {
+        if let childViewController = titlebarAccessoryViewControllers[safe: index],
+           childViewController.view.contains(className: "NSTabBar") {
+            viewModel.hasTabBar = false
+        }
+
+        super.removeTitlebarAccessoryViewController(at: index)
+    }
+
     // MARK: Tab Key Equivalents
 
     var keyEquivalent: String? = nil {
@@ -348,6 +368,7 @@ extension TerminalWindow {
     class ViewModel: ObservableObject {
         @Published var isSurfaceZoomed: Bool = false
         @Published var hasToolbar: Bool = false
+        @Published var hasTabBar: Bool = false
     }
 
     struct ResetZoomAccessoryView: View {
@@ -355,7 +376,7 @@ extension TerminalWindow {
         let action: () -> Void
 
         var body: some View {
-            if viewModel.isSurfaceZoomed {
+            if viewModel.isSurfaceZoomed && !viewModel.hasTabBar {
                 VStack {
                     Button(action: action) {
                         Image("ResetZoom")

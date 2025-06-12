@@ -42,6 +42,21 @@ extension NSView {
         return false
     }
 
+    /// Checks if the view contains the given class in its hierarchy.
+    func contains(className name: String) -> Bool {
+        if String(describing: type(of: self)) == name {
+            return true
+        }
+
+        for subview in subviews {
+            if subview.contains(className: name) {
+                return true
+            }
+        }
+
+        return false
+    }
+
     /// Recursively finds and returns the first descendant view that has the given class name.
     func firstDescendant(withClassName name: String) -> NSView? {
         for subview in subviews {
@@ -113,7 +128,7 @@ extension NSView {
 	}
 	
 	/// Returns a string representation of the view hierarchy in a tree-like format.
-	private func viewHierarchyDescription(indent: String = "", isLast: Bool = true) -> String {
+	func viewHierarchyDescription(indent: String = "", isLast: Bool = true) -> String {
 		var result = ""
 		
 		// Add the tree branch characters
