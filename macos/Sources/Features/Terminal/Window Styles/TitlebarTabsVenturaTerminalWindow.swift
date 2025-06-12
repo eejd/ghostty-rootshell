@@ -6,12 +6,6 @@ class TitlebarTabsVenturaTerminalWindow: TerminalWindow {
     /// be updated whenever the window background color or surrounding elements changes.
     fileprivate var isLightTheme: Bool = false
 
-    override var surfaceIsZoomed: Bool {
-        didSet {
-            updateResetZoomTitlebarButtonVisibility()
-        }
-    }
-
     lazy var titlebarColor: NSColor = backgroundColor {
         didSet {
             guard let titlebarContainer else { return }
@@ -107,8 +101,6 @@ class TitlebarTabsVenturaTerminalWindow: TerminalWindow {
                 windowButtonsBackdrop?.isHighlighted = index == 0
             }
         }
-
-        updateResetZoomTitlebarButtonVisibility()
 
         // The remainder of this function only applies to styled tabs.
         guard hasStyledTabs else { return }
@@ -277,33 +269,6 @@ class TitlebarTabsVenturaTerminalWindow: TerminalWindow {
 
     private lazy var resetZoomToolbarButton: NSButton = generateResetZoomButton()
 
-    private lazy var resetZoomTitlebarAccessoryViewController: NSTitlebarAccessoryViewController? = {
-        guard let titlebarContainer else { return nil }
-        let size = NSSize(width: titlebarContainer.bounds.height, height: titlebarContainer.bounds.height)
-        let view = NSView(frame: NSRect(origin: .zero, size: size))
-
-        let button = generateResetZoomButton()
-        button.frame.origin.x = size.width/2 - button.bounds.width/2
-        button.frame.origin.y = size.height/2 - button.bounds.height/2
-        view.addSubview(button)
-
-        let titlebarAccessoryViewController = NSTitlebarAccessoryViewController()
-        titlebarAccessoryViewController.view = view
-        titlebarAccessoryViewController.layoutAttribute = .right
-
-        return titlebarAccessoryViewController
-    }()
-
-    private func updateResetZoomTitlebarButtonVisibility() {
-        guard let tabGroup, let resetZoomTitlebarAccessoryViewController else { return }
-
-        if !titlebarAccessoryViewControllers.contains(resetZoomTitlebarAccessoryViewController) {
-            addTitlebarAccessoryViewController(resetZoomTitlebarAccessoryViewController)
-        }
-
-        resetZoomTitlebarAccessoryViewController.view.isHidden = tabGroup.isTabBarVisible ? true : !surfaceIsZoomed
-    }
-
 	private func generateResetZoomButton() -> NSButton {
 		let button = NSButton()
 		button.target = nil
@@ -394,7 +359,6 @@ class TitlebarTabsVenturaTerminalWindow: TerminalWindow {
             resetZoomItem.view!.widthAnchor.constraint(equalToConstant: 22).isActive = true
             resetZoomItem.view!.heightAnchor.constraint(equalToConstant: 20).isActive = true
         }
-        updateResetZoomTitlebarButtonVisibility()
     }
 
     // For titlebar tabs, we want to hide the separator view so that we get rid
