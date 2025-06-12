@@ -13,6 +13,7 @@ class TerminalController: BaseTerminalController {
         let config = appDelegate.ghostty.config
         let nib = switch config.macosTitlebarStyle {
         case "native": "Terminal"
+        //case "tabs": "TerminalTabsTitlebar"
         case "tabs": "TerminalLegacy"
         case "hidden": "TerminalHiddenTitlebar"
         case "transparent": "TerminalTransparentTitlebar"
@@ -128,11 +129,8 @@ class TerminalController: BaseTerminalController {
         invalidateRestorableState()
 
         // Update our zoom state
-        if let window = window as? LegacyTerminalWindow {
-            window.surfaceIsZoomed = to.zoomed != nil
-        }
         if let window = window as? TerminalWindow {
-            window.surfaceIsZoomed2 = to.zoomed != nil
+            window.surfaceIsZoomed = to.zoomed != nil
         }
 
         // If our surface tree is now nil then we close our window.
@@ -418,25 +416,6 @@ class TerminalController: BaseTerminalController {
                 }
             }
         }
-
-        // Legacy
-        if let windows = self.window?.tabbedWindows as? [LegacyTerminalWindow] {
-            for (tab, window) in zip(1..., windows) {
-                // We need to clear any windows beyond this because they have had
-                // a keyEquivalent set previously.
-                guard tab <= 9 else {
-                    window.keyEquivalent = ""
-                    continue
-                }
-
-                let action = "goto_tab:\(tab)"
-                if let equiv = ghostty.config.keyboardShortcut(for: action) {
-                    window.keyEquivalent = "\(equiv)"
-                } else {
-                    window.keyEquivalent = ""
-                }
-            }
-        }
     }
 
     private func fixTabBar() {
@@ -470,13 +449,13 @@ class TerminalController: BaseTerminalController {
         // Let our window handle its own appearance
         if let window = window as? TerminalWindow {
             // Sync our zoom state for splits
-            window.surfaceIsZoomed2 = surfaceTree.zoomed != nil
+            window.surfaceIsZoomed = surfaceTree.zoomed != nil
 
             // Set the font for the window and tab titles.
             if let titleFontName = surfaceConfig.windowTitleFontFamily {
-                window.titlebarFont2 = NSFont(name: titleFontName, size: NSFont.systemFontSize)
+                window.titlebarFont = NSFont(name: titleFontName, size: NSFont.systemFontSize)
             } else {
-                window.titlebarFont2 = nil
+                window.titlebarFont = nil
             }
 
             // Call this last in case it uses any of the properties above.
@@ -488,16 +467,6 @@ class TerminalController: BaseTerminalController {
         if let window = window as? LegacyTerminalWindow {
             // Update our window light/darkness based on our updated background color
             window.isLightTheme = OSColor(surfaceConfig.backgroundColor).isLightColor
-
-            // Sync our zoom state for splits
-            window.surfaceIsZoomed = surfaceTree.zoomed != nil
-
-            // Set the font for the window and tab titles.
-            if let titleFontName = surfaceConfig.windowTitleFontFamily {
-                window.titlebarFont = NSFont(name: titleFontName, size: NSFont.systemFontSize)
-            } else {
-                window.titlebarFont = nil
-            }
         }
 
         // If our window is not visible, then we do nothing. Some things such as blurring
@@ -916,18 +885,15 @@ class TerminalController: BaseTerminalController {
         }
 
         // TODO: remove
-        if let window = window as? LegacyTerminalWindow {
+        if let window = window as? LegacyTerminalWindow,
+           config.macosTitlebarStyle == "tabs" {
             // Handle titlebar tabs config option. Something about what we do while setting up the
             // titlebar tabs interferes with the window restore process unless window.tabbingMode
             // is set to .preferred, so we set it, and switch back to automatic as soon as we can.
-            if (config.macosTitlebarStyle == "tabs") {
-                window.tabbingMode = .preferred
-                window.titlebarTabs = true
-                DispatchQueue.main.async {
-                    window.tabbingMode = .automatic
-                }
-            } else if (config.macosTitlebarStyle == "transparent") {
-                window.transparentTabs = true
+            window.tabbingMode = .preferred
+            window.titlebarTabs = true
+            DispatchQueue.main.async {
+                window.tabbingMode = .automatic
             }
 
             if window.hasStyledTabs {

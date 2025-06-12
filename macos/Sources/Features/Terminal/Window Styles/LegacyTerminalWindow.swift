@@ -3,11 +3,15 @@ import Cocoa
 /// The terminal window that we originally had in Ghostty for a long time. Kind of a soupy mess
 /// of styling.
 class LegacyTerminalWindow: TerminalWindow {
-    @objc dynamic var keyEquivalent: String = ""
-
     /// This is used to determine if certain elements should be drawn light or dark and should
     /// be updated whenever the window background color or surrounding elements changes.
     var isLightTheme: Bool = false
+
+    override var surfaceIsZoomed: Bool {
+        didSet {
+            updateResetZoomTitlebarButtonVisibility()
+        }
+    }
 
     lazy var titlebarColor: NSColor = backgroundColor {
         didSet {
@@ -16,33 +20,6 @@ class LegacyTerminalWindow: TerminalWindow {
             titlebarContainer.layer?.backgroundColor = titlebarColor.cgColor
         }
     }
-
-    private lazy var keyEquivalentLabel: NSTextField = {
-        let label = NSTextField(labelWithAttributedString: NSAttributedString())
-        label.setContentCompressionResistancePriority(.windowSizeStayPut, for: .horizontal)
-        label.postsFrameChangedNotifications = true
-
-        return label
-    }()
-
-    private lazy var bindings = [
-        observe(\.surfaceIsZoomed, options: [.initial, .new]) { [weak self] window, _ in
-            guard let tabGroup = self?.tabGroup else { return }
-
-            self?.resetZoomTabButton.isHidden = !window.surfaceIsZoomed
-            self?.updateResetZoomTitlebarButtonVisibility()
-        },
-
-        observe(\.keyEquivalent, options: [.initial, .new]) { [weak self] window, _ in
-            let attributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
-                .foregroundColor: window.isKeyWindow ? NSColor.labelColor : NSColor.secondaryLabelColor,
-            ]
-            let attributedString = NSAttributedString(string: " \(window.keyEquivalent) ", attributes: attributes)
-
-            self?.keyEquivalentLabel.attributedStringValue = attributedString
-        },
-    ]
 
     // false if all three traffic lights are missing/hidden, otherwise true
     private var hasWindowButtons: Bool {
@@ -60,30 +37,12 @@ class LegacyTerminalWindow: TerminalWindow {
     override func awakeFromNib() {
         super.awakeFromNib()
 
-		_ = bindings
-
-        // Create the tab accessory view that houses the key-equivalent label and optional un-zoom button
-        let stackView = NSStackView(views: [keyEquivalentLabel, resetZoomTabButton])
-        stackView.setHuggingPriority(.defaultHigh, for: .horizontal)
-        stackView.spacing = 3
-        tab.accessoryView = stackView
-
 		if titlebarTabs {
 			generateToolbar()
 		}
     }
 
-    deinit {
-        bindings.forEach() { $0.invalidate() }
-    }
-
     // MARK: - NSWindow
-
-    override var title: String {
-        didSet {
-            tab.attributedTitle = attributedTitle
-        }
-    }
 
     // We only need to set this once, but need to do it after the window has been created in order
     // to determine if the theme is using a very dark background, in which case we don't want to
@@ -101,7 +60,6 @@ class LegacyTerminalWindow: TerminalWindow {
         super.becomeKey()
 
         updateNewTabButtonOpacity()
-        resetZoomTabButton.contentTintColor = .controlAccentColor
         resetZoomToolbarButton.contentTintColor = .controlAccentColor
         tab.attributedTitle = attributedTitle
     }
@@ -110,7 +68,6 @@ class LegacyTerminalWindow: TerminalWindow {
         super.resignKey()
 
         updateNewTabButtonOpacity()
-        resetZoomTabButton.contentTintColor = .secondaryLabelColor
         resetZoomToolbarButton.contentTintColor = .tertiaryLabelColor
         tab.attributedTitle = attributedTitle
     }
@@ -284,15 +241,7 @@ class LegacyTerminalWindow: TerminalWindow {
 
     // MARK: - Split Zoom Button
 
-    @objc dynamic var surfaceIsZoomed: Bool = false
-
     private lazy var resetZoomToolbarButton: NSButton = generateResetZoomButton()
-
-    private lazy var resetZoomTabButton: NSButton = {
-        let button = generateResetZoomButton()
-        button.action = #selector(selectTabAndZoom(_:))
-        return button
-    }()
 
     private lazy var resetZoomTitlebarAccessoryViewController: NSTitlebarAccessoryViewController? = {
         guard let titlebarContainer else { return nil }
@@ -356,35 +305,11 @@ class LegacyTerminalWindow: TerminalWindow {
     // MARK: - Titlebar Font
 
     // Used to set the titlebar font.
-    var titlebarFont: NSFont? {
+    override var titlebarFont: NSFont? {
         didSet {
-            let font = titlebarFont ?? NSFont.titleBarFont(ofSize: NSFont.systemFontSize)
-
-            titlebarTextField?.font = font
-            tab.attributedTitle = attributedTitle
-
-            if let toolbar = toolbar as? TerminalToolbar {
-                toolbar.titleFont = font
-            }
+            guard let toolbar = toolbar as? TerminalToolbar else { return }
+            toolbar.titleFont = titlebarFont ?? .titleBarFont(ofSize: NSFont.systemFontSize)
         }
-    }
-
-    // Find the NSTextField responsible for displaying the titlebar's title.
-    private var titlebarTextField: NSTextField? {
-        guard let titlebarView = titlebarContainer?.subviews
-            .first(where: { $0.className == "NSTitlebarView" }) else { return nil }
-        return titlebarView.subviews.first(where: { $0 is NSTextField }) as? NSTextField
-    }
-
-    // Return a styled representation of our title property.
-    private var attributedTitle: NSAttributedString? {
-        guard let titlebarFont else { return nil }
-
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: titlebarFont,
-            .foregroundColor: isKeyWindow ? NSColor.labelColor : NSColor.secondaryLabelColor,
-        ]
-        return NSAttributedString(string: title, attributes: attributes)
     }
 
     // MARK: - Titlebar Tabs

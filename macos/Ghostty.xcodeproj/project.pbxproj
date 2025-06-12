@@ -16,6 +16,8 @@
 		A514C8D62B54A16400493A16 /* Ghostty.Config.swift in Sources */ = {isa = PBXBuildFile; fileRef = A514C8D52B54A16400493A16 /* Ghostty.Config.swift */; };
 		A514C8D72B54A16400493A16 /* Ghostty.Config.swift in Sources */ = {isa = PBXBuildFile; fileRef = A514C8D52B54A16400493A16 /* Ghostty.Config.swift */; };
 		A514C8D82B54DC6800493A16 /* Ghostty.App.swift in Sources */ = {isa = PBXBuildFile; fileRef = A53D0C992B543F3B00305CE6 /* Ghostty.App.swift */; };
+		A51544FE2DFB111C009E85D8 /* TabsTitlebarTerminalWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A51544FD2DFB1110009E85D8 /* TabsTitlebarTerminalWindow.swift */; };
+		A51545002DFB112E009E85D8 /* TerminalTabsTitlebar.xib in Resources */ = {isa = PBXBuildFile; fileRef = A51544FF2DFB112E009E85D8 /* TerminalTabsTitlebar.xib */; };
 		A51B78472AF4B58B00F3EDB9 /* LegacyTerminalWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A51B78462AF4B58B00F3EDB9 /* LegacyTerminalWindow.swift */; };
 		A51BFC1E2B2FB5CE00E92F16 /* About.xib in Resources */ = {isa = PBXBuildFile; fileRef = A51BFC1D2B2FB5CE00E92F16 /* About.xib */; };
 		A51BFC202B2FB64F00E92F16 /* AboutController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A51BFC1F2B2FB64F00E92F16 /* AboutController.swift */; };
@@ -137,6 +139,8 @@
 		9351BE8E2D22937F003B3499 /* nvim */ = {isa = PBXFileReference; lastKnownFileType = folder; name = nvim; path = "../zig-out/share/nvim"; sourceTree = "<group>"; };
 		A50297342DFA0F3300B4E924 /* Double+Extension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Double+Extension.swift"; sourceTree = "<group>"; };
 		A514C8D52B54A16400493A16 /* Ghostty.Config.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ghostty.Config.swift; sourceTree = "<group>"; };
+		A51544FD2DFB1110009E85D8 /* TabsTitlebarTerminalWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabsTitlebarTerminalWindow.swift; sourceTree = "<group>"; };
+		A51544FF2DFB112E009E85D8 /* TerminalTabsTitlebar.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = TerminalTabsTitlebar.xib; sourceTree = "<group>"; };
 		A51B78462AF4B58B00F3EDB9 /* LegacyTerminalWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyTerminalWindow.swift; sourceTree = "<group>"; };
 		A51BFC1D2B2FB5CE00E92F16 /* About.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = About.xib; sourceTree = "<group>"; };
 		A51BFC1F2B2FB64F00E92F16 /* AboutController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutController.swift; sourceTree = "<group>"; };
@@ -404,10 +408,12 @@
 				A59630992AEE1C6400D64628 /* Terminal.xib */,
 				A5593FE22DF8D78600B47B10 /* TerminalHiddenTitlebar.xib */,
 				A5593FE42DF8DE3000B47B10 /* TerminalLegacy.xib */,
+				A51544FF2DFB112E009E85D8 /* TerminalTabsTitlebar.xib */,
 				A5593FE82DF927DF00B47B10 /* TerminalTransparentTitlebar.xib */,
 				A5593FDE2DF8D57100B47B10 /* TerminalWindow.swift */,
 				A5593FE02DF8D73400B47B10 /* HiddenTitlebarTerminalWindow.swift */,
 				A51B78462AF4B58B00F3EDB9 /* LegacyTerminalWindow.swift */,
+				A51544FD2DFB1110009E85D8 /* TabsTitlebarTerminalWindow.swift */,
 				A5593FE62DF927CC00B47B10 /* TransparentTitlebarTerminalWindow.swift */,
 			);
 			path = "Window Styles";
@@ -694,6 +700,7 @@
 				A5CDF1912AAF9A5800513312 /* ConfigurationErrors.xib in Resources */,
 				857F63812A5E64F200CA4815 /* MainMenu.xib in Resources */,
 				A596309A2AEE1C6400D64628 /* Terminal.xib in Resources */,
+				A51545002DFB112E009E85D8 /* TerminalTabsTitlebar.xib in Resources */,
 				A5CBD05C2CA0C5C70017A1AE /* QuickTerminal.xib in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -761,6 +768,7 @@
 				A5333E1C2B5A1CE3008AEFF7 /* CrossKit.swift in Sources */,
 				A5874D992DAD751B00E83852 /* CGS.swift in Sources */,
 				A586366B2DF0A98C00E04A10 /* Array+Extension.swift in Sources */,
+				A51544FE2DFB111C009E85D8 /* TabsTitlebarTerminalWindow.swift in Sources */,
 				A59444F729A2ED5200725BBA /* SettingsView.swift in Sources */,
 				A56D58862ACDDB4100508D2C /* Ghostty.Shell.swift in Sources */,
 				A5985CD72C320C4500C57AD3 /* String+Extension.swift in Sources */,

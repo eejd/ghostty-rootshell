@@ -111,11 +111,11 @@ class TerminalWindow: NSWindow {
     // MARK: Surface Zoom
 
     /// Set to true if a surface is currently zoomed to show the reset zoom button.
-    var surfaceIsZoomed2: Bool = false {
+    var surfaceIsZoomed: Bool = false {
         didSet {
             // Show/hide our reset zoom button depending on if we're zoomed.
             // We want to show it if we are zoomed.
-            resetZoomTabButton.isHidden = !surfaceIsZoomed2
+            resetZoomTabButton.isHidden = !surfaceIsZoomed
         }
     }
 
@@ -150,9 +150,9 @@ class TerminalWindow: NSWindow {
     }
 
     // Used to set the titlebar font.
-    var titlebarFont2: NSFont? {
+    var titlebarFont: NSFont? {
         didSet {
-            let font = titlebarFont2 ?? NSFont.titleBarFont(ofSize: NSFont.systemFontSize)
+            let font = titlebarFont ?? NSFont.titleBarFont(ofSize: NSFont.systemFontSize)
 
             titlebarTextField?.font = font
             tab.attributedTitle = attributedTitle
@@ -167,8 +167,8 @@ class TerminalWindow: NSWindow {
     }
 
     // Return a styled representation of our title property.
-    private var attributedTitle: NSAttributedString? {
-        guard let titlebarFont = titlebarFont2 else { return nil }
+    var attributedTitle: NSAttributedString? {
+        guard let titlebarFont = titlebarFont else { return nil }
 
         let attributes: [NSAttributedString.Key: Any] = [
             .font: titlebarFont,
