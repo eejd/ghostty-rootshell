@@ -271,6 +271,10 @@ class NonNativeFullscreen: FullscreenBase, FullscreenStyle {
             window.addTitlebarAccessoryViewController(c)
         }
 
+        // Removing "titled" also clears our toolbar
+        window.toolbar = savedState.toolbar
+        window.toolbarStyle = savedState.toolbarStyle
+
         // This is a hack that I want to remove from this but for now, we need to
         // fix up the titlebar tabs here before we do everything below.
         if let window = window as? TitlebarTabsVenturaTerminalWindow, window.titlebarTabs {
@@ -385,6 +389,8 @@ class NonNativeFullscreen: FullscreenBase, FullscreenStyle {
         let tabGroupIndex: Int?
         let contentFrame: NSRect
         let styleMask: NSWindow.StyleMask
+        let toolbar: NSToolbar?
+        let toolbarStyle: NSWindow.ToolbarStyle
         let titlebarAccessoryViewControllers: [NSTitlebarAccessoryViewController]
         let dock: Bool
         let menu: Bool
@@ -397,6 +403,8 @@ class NonNativeFullscreen: FullscreenBase, FullscreenStyle {
             self.tabGroupIndex = window.tabGroup?.windows.firstIndex(of: window)
             self.contentFrame = window.convertToScreen(contentView.frame)
             self.styleMask = window.styleMask
+            self.toolbar = window.toolbar
+            self.toolbarStyle = window.toolbarStyle
             self.titlebarAccessoryViewControllers = window.titlebarAccessoryViewControllers
             self.dock = window.screen?.hasDock ?? false
 
