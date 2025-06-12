@@ -110,18 +110,48 @@ class TerminalWindow: NSWindow {
         // Tab bar is attached as a titlebar accessory view controller (layout bottom). We
         // can detect when it is shown or hidden by overriding add/remove and searching for
         // it. This has been verified to work on macOS 12 to 26
-        if childViewController.view.contains(className: "NSTabBar") {
+        if isTabBar(childViewController) {
+            childViewController.identifier = Self.tabBarIdentifier
             viewModel.hasTabBar = true
         }
     }
 
     override func removeTitlebarAccessoryViewController(at index: Int) {
-        if let childViewController = titlebarAccessoryViewControllers[safe: index],
-           childViewController.view.contains(className: "NSTabBar") {
+        if let childViewController = titlebarAccessoryViewControllers[safe: index], isTabBar(childViewController) {
             viewModel.hasTabBar = false
         }
 
         super.removeTitlebarAccessoryViewController(at: index)
+    }
+
+    // MARK: Tab Bar
+
+    /// This identifier is attached to the tab bar view controller when we detect it being
+    /// added.
+    private static let tabBarIdentifier: NSUserInterfaceItemIdentifier = .init("_ghosttyTabBar")
+
+    func isTabBar(_ childViewController: NSTitlebarAccessoryViewController) -> Bool {
+        if childViewController.identifier == nil {
+            // The good case
+            if childViewController.view.contains(className: "NSTabBar") {
+                return true
+            }
+
+            // When a new window is attached to an existing tab group, AppKit adds
+            // an empty NSView as an accessory view and adds the tab bar later. If
+            // we're at the bottom and are a single NSView we assume its a tab bar.
+            if childViewController.layoutAttribute == .bottom &&
+                childViewController.view.className == "NSView" &&
+                childViewController.view.subviews.isEmpty {
+                return true
+            }
+
+            return false
+        }
+
+        // View controllers should be tagged with this as soon as possible to
+        // increase our accuracy. We do this manually.
+        return childViewController.identifier == Self.tabBarIdentifier
     }
 
     // MARK: Tab Key Equivalents

@@ -20,7 +20,6 @@ class TitlebarTabsTahoeTerminalWindow: TerminalWindow, NSToolbarDelegate {
         self.toolbar = toolbar
         toolbarStyle = .unifiedCompact
     }
-
     // MARK: NSWindow
 
     override var title: String {
@@ -29,11 +28,92 @@ class TitlebarTabsTahoeTerminalWindow: TerminalWindow, NSToolbarDelegate {
         }
     }
 
-    override func update() {
-        super.update()
+    override var toolbar: NSToolbar? {
+        didSet{
+            guard toolbar != nil else { return }
 
-        if let glass = titlebarContainer?.firstDescendant(withClassName: "NSGlassContainerView") {
-            glass.isHidden = true
+            // When a toolbar is added, remove the Liquid Glass look because we're
+            // abusing the toolbar as a tab bar.
+            if let glass = titlebarContainer?.firstDescendant(withClassName: "NSGlassContainerView") {
+                glass.isHidden = true
+            }
+        }
+    }
+
+    override func becomeMain() {
+        super.becomeMain()
+        DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(2)) {
+            self.contentView?.printViewHierarchy()
+        }
+    }
+
+    // This is called by macOS for native tabbing in order to add the tab bar. We hook into
+    // this, detect the tab bar being added, and override its behavior.
+    override func addTitlebarAccessoryViewController(_ childViewController: NSTitlebarAccessoryViewController) {
+        // If this is the tab bar then we need to set it up for the titlebar
+        guard isTabBar(childViewController) else {
+            super.addTitlebarAccessoryViewController(childViewController)
+            return
+        }
+
+        // Some setup needs to happen BEFORE it is added, such as layout. If
+        // we don't do this before the call below, we'll trigger an AppKit
+        // assertion.
+        childViewController.layoutAttribute = .right
+
+        super.addTitlebarAccessoryViewController(childViewController)
+
+        // View model updates must happen on their own ticks
+        DispatchQueue.main.async {
+            self.viewModel.hasTabBar = true
+        }
+
+        // Setup the tab bar to go into the titlebar.
+        DispatchQueue.main.async {
+            // HACK: wait a tick before doing anything, to avoid edge cases during startup... :/
+            // If we don't do this then on launch windows with restored state with tabs will end
+            // up with messed up tab bars that don't show all tabs.
+            let accessoryView = childViewController.view
+            guard let clipView = accessoryView.firstSuperview(withClassName: "NSTitlebarAccessoryClipView") else { return }
+            guard let titlebarView = clipView.firstSuperview(withClassName: "NSTitlebarView") else { return }
+            guard let toolbarView = titlebarView.firstDescendant(withClassName: "NSToolbarView") else { return }
+
+            // The container is the view that we'll constrain our tab bar within.
+            let container = toolbarView
+
+            // Constrain the accessory clip view (the parent of the accessory view
+            // usually that clips the children) to the container view.
+            clipView.translatesAutoresizingMaskIntoConstraints = false
+            clipView.leftAnchor.constraint(equalTo: container.leftAnchor, constant: 78).isActive = true
+            clipView.rightAnchor.constraint(equalTo: container.rightAnchor).isActive = true
+            clipView.topAnchor.constraint(equalTo: container.topAnchor).isActive = true
+            clipView.heightAnchor.constraint(equalTo: container.heightAnchor).isActive = true
+            clipView.needsLayout = true
+
+            // Constrain the actual accessory view (the tab bar) to the clip view
+            // so it takes up the full space.
+            accessoryView.translatesAutoresizingMaskIntoConstraints = false
+            accessoryView.leftAnchor.constraint(equalTo: clipView.leftAnchor).isActive = true
+            accessoryView.rightAnchor.constraint(equalTo: clipView.rightAnchor).isActive = true
+            accessoryView.topAnchor.constraint(equalTo: clipView.topAnchor).isActive = true
+            accessoryView.heightAnchor.constraint(equalTo: clipView.heightAnchor).isActive = true
+            accessoryView.needsLayout = true
+        }
+    }
+
+    override func removeTitlebarAccessoryViewController(at index: Int) {
+        guard let childViewController = titlebarAccessoryViewControllers[safe: index],
+                isTabBar(childViewController) else {
+            super.removeTitlebarAccessoryViewController(at: index)
+            return
+        }
+
+        super.removeTitlebarAccessoryViewController(at: index)
+
+        // View model needs to be updated on another tick because it
+        // triggers view updates.
+        DispatchQueue.main.async {
+            self.viewModel.hasTabBar = false
         }
     }
 
@@ -66,6 +146,7 @@ class TitlebarTabsTahoeTerminalWindow: TerminalWindow, NSToolbarDelegate {
 
     class ViewModel: ObservableObject {
         @Published var title: String = "👻 Ghostty"
+        @Published var hasTabBar: Bool = false
     }
 }
 
@@ -83,13 +164,20 @@ extension TitlebarTabsTahoeTerminalWindow {
             // An empty title makes this view zero-sized and NSToolbar on macOS
             // tahoe just deletes the item when that happens. So we use a space
             // instead to ensure there's always some size.
-            viewModel.title.isEmpty ? " " : viewModel.title
+            return viewModel.title.isEmpty ? " " : viewModel.title
         }
 
         var body: some View {
-            Text(title)
-                .lineLimit(1)
-                .truncationMode(.tail)
+            if !viewModel.hasTabBar {
+                Text(title)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            } else {
+                // 1x1.gif strikes again! For real: if we render a zero-sized
+                // view here then the toolbar just disappears our view. I don't
+                // know.
+                Color.clear.frame(width: 1, height: 1)
+            }
         }
     }
 }

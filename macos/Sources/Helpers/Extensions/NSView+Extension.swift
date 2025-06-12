@@ -57,6 +57,16 @@ extension NSView {
         return false
     }
 
+    /// Finds the superview with the given class name.
+    func firstSuperview(withClassName name: String) -> NSView? {
+        guard let superview else { return nil }
+        if String(describing: type(of: superview)) == name {
+            return superview
+        }
+
+        return superview.firstSuperview(withClassName: name)
+    }
+
     /// Recursively finds and returns the first descendant view that has the given class name.
     func firstDescendant(withClassName name: String) -> NSView? {
         for subview in subviews {
