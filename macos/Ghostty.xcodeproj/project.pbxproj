@@ -16,9 +16,9 @@
 		A514C8D62B54A16400493A16 /* Ghostty.Config.swift in Sources */ = {isa = PBXBuildFile; fileRef = A514C8D52B54A16400493A16 /* Ghostty.Config.swift */; };
 		A514C8D72B54A16400493A16 /* Ghostty.Config.swift in Sources */ = {isa = PBXBuildFile; fileRef = A514C8D52B54A16400493A16 /* Ghostty.Config.swift */; };
 		A514C8D82B54DC6800493A16 /* Ghostty.App.swift in Sources */ = {isa = PBXBuildFile; fileRef = A53D0C992B543F3B00305CE6 /* Ghostty.App.swift */; };
-		A51544FE2DFB111C009E85D8 /* TabsTitlebarTerminalWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A51544FD2DFB1110009E85D8 /* TabsTitlebarTerminalWindow.swift */; };
-		A51545002DFB112E009E85D8 /* TerminalTabsTitlebar.xib in Resources */ = {isa = PBXBuildFile; fileRef = A51544FF2DFB112E009E85D8 /* TerminalTabsTitlebar.xib */; };
-		A51B78472AF4B58B00F3EDB9 /* LegacyTerminalWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A51B78462AF4B58B00F3EDB9 /* LegacyTerminalWindow.swift */; };
+		A51544FE2DFB111C009E85D8 /* TitlebarTabsTahoeTerminalWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A51544FD2DFB1110009E85D8 /* TitlebarTabsTahoeTerminalWindow.swift */; };
+		A51545002DFB112E009E85D8 /* TerminalTabsTitlebarTahoe.xib in Resources */ = {isa = PBXBuildFile; fileRef = A51544FF2DFB112E009E85D8 /* TerminalTabsTitlebarTahoe.xib */; };
+		A51B78472AF4B58B00F3EDB9 /* TitlebarTabsVenturaTerminalWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A51B78462AF4B58B00F3EDB9 /* TitlebarTabsVenturaTerminalWindow.swift */; };
 		A51BFC1E2B2FB5CE00E92F16 /* About.xib in Resources */ = {isa = PBXBuildFile; fileRef = A51BFC1D2B2FB5CE00E92F16 /* About.xib */; };
 		A51BFC202B2FB64F00E92F16 /* AboutController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A51BFC1F2B2FB64F00E92F16 /* AboutController.swift */; };
 		A51BFC222B2FB6B400E92F16 /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A51BFC212B2FB6B400E92F16 /* AboutView.swift */; };
@@ -57,7 +57,7 @@
 		A5593FDF2DF8D57C00B47B10 /* TerminalWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5593FDE2DF8D57100B47B10 /* TerminalWindow.swift */; };
 		A5593FE12DF8D74000B47B10 /* HiddenTitlebarTerminalWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5593FE02DF8D73400B47B10 /* HiddenTitlebarTerminalWindow.swift */; };
 		A5593FE32DF8D78600B47B10 /* TerminalHiddenTitlebar.xib in Resources */ = {isa = PBXBuildFile; fileRef = A5593FE22DF8D78600B47B10 /* TerminalHiddenTitlebar.xib */; };
-		A5593FE52DF8DE3000B47B10 /* TerminalLegacy.xib in Resources */ = {isa = PBXBuildFile; fileRef = A5593FE42DF8DE3000B47B10 /* TerminalLegacy.xib */; };
+		A5593FE52DF8DE3000B47B10 /* TerminalTabsTitlebarVentura.xib in Resources */ = {isa = PBXBuildFile; fileRef = A5593FE42DF8DE3000B47B10 /* TerminalTabsTitlebarVentura.xib */; };
 		A5593FE72DF927D200B47B10 /* TransparentTitlebarTerminalWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5593FE62DF927CC00B47B10 /* TransparentTitlebarTerminalWindow.swift */; };
 		A5593FE92DF927DF00B47B10 /* TerminalTransparentTitlebar.xib in Resources */ = {isa = PBXBuildFile; fileRef = A5593FE82DF927DF00B47B10 /* TerminalTransparentTitlebar.xib */; };
 		A55B7BB829B6F53A0055DE60 /* Package.swift in Sources */ = {isa = PBXBuildFile; fileRef = A55B7BB729B6F53A0055DE60 /* Package.swift */; };
@@ -139,9 +139,9 @@
 		9351BE8E2D22937F003B3499 /* nvim */ = {isa = PBXFileReference; lastKnownFileType = folder; name = nvim; path = "../zig-out/share/nvim"; sourceTree = "<group>"; };
 		A50297342DFA0F3300B4E924 /* Double+Extension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Double+Extension.swift"; sourceTree = "<group>"; };
 		A514C8D52B54A16400493A16 /* Ghostty.Config.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ghostty.Config.swift; sourceTree = "<group>"; };
-		A51544FD2DFB1110009E85D8 /* TabsTitlebarTerminalWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabsTitlebarTerminalWindow.swift; sourceTree = "<group>"; };
-		A51544FF2DFB112E009E85D8 /* TerminalTabsTitlebar.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = TerminalTabsTitlebar.xib; sourceTree = "<group>"; };
-		A51B78462AF4B58B00F3EDB9 /* LegacyTerminalWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyTerminalWindow.swift; sourceTree = "<group>"; };
+		A51544FD2DFB1110009E85D8 /* TitlebarTabsTahoeTerminalWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TitlebarTabsTahoeTerminalWindow.swift; sourceTree = "<group>"; };
+		A51544FF2DFB112E009E85D8 /* TerminalTabsTitlebarTahoe.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = TerminalTabsTitlebarTahoe.xib; sourceTree = "<group>"; };
+		A51B78462AF4B58B00F3EDB9 /* TitlebarTabsVenturaTerminalWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TitlebarTabsVenturaTerminalWindow.swift; sourceTree = "<group>"; };
 		A51BFC1D2B2FB5CE00E92F16 /* About.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = About.xib; sourceTree = "<group>"; };
 		A51BFC1F2B2FB64F00E92F16 /* AboutController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutController.swift; sourceTree = "<group>"; };
 		A51BFC212B2FB6B400E92F16 /* AboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutView.swift; sourceTree = "<group>"; };
@@ -174,7 +174,7 @@
 		A5593FDE2DF8D57100B47B10 /* TerminalWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalWindow.swift; sourceTree = "<group>"; };
 		A5593FE02DF8D73400B47B10 /* HiddenTitlebarTerminalWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HiddenTitlebarTerminalWindow.swift; sourceTree = "<group>"; };
 		A5593FE22DF8D78600B47B10 /* TerminalHiddenTitlebar.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = TerminalHiddenTitlebar.xib; sourceTree = "<group>"; };
-		A5593FE42DF8DE3000B47B10 /* TerminalLegacy.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = TerminalLegacy.xib; sourceTree = "<group>"; };
+		A5593FE42DF8DE3000B47B10 /* TerminalTabsTitlebarVentura.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = TerminalTabsTitlebarVentura.xib; sourceTree = "<group>"; };
 		A5593FE62DF927CC00B47B10 /* TransparentTitlebarTerminalWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransparentTitlebarTerminalWindow.swift; sourceTree = "<group>"; };
 		A5593FE82DF927DF00B47B10 /* TerminalTransparentTitlebar.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = TerminalTransparentTitlebar.xib; sourceTree = "<group>"; };
 		A55B7BB729B6F53A0055DE60 /* Package.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Package.swift; sourceTree = "<group>"; };
@@ -407,13 +407,13 @@
 			children = (
 				A59630992AEE1C6400D64628 /* Terminal.xib */,
 				A5593FE22DF8D78600B47B10 /* TerminalHiddenTitlebar.xib */,
-				A5593FE42DF8DE3000B47B10 /* TerminalLegacy.xib */,
-				A51544FF2DFB112E009E85D8 /* TerminalTabsTitlebar.xib */,
+				A51544FF2DFB112E009E85D8 /* TerminalTabsTitlebarTahoe.xib */,
+				A5593FE42DF8DE3000B47B10 /* TerminalTabsTitlebarVentura.xib */,
 				A5593FE82DF927DF00B47B10 /* TerminalTransparentTitlebar.xib */,
 				A5593FDE2DF8D57100B47B10 /* TerminalWindow.swift */,
 				A5593FE02DF8D73400B47B10 /* HiddenTitlebarTerminalWindow.swift */,
-				A51B78462AF4B58B00F3EDB9 /* LegacyTerminalWindow.swift */,
-				A51544FD2DFB1110009E85D8 /* TabsTitlebarTerminalWindow.swift */,
+				A51B78462AF4B58B00F3EDB9 /* TitlebarTabsVenturaTerminalWindow.swift */,
+				A51544FD2DFB1110009E85D8 /* TitlebarTabsTahoeTerminalWindow.swift */,
 				A5593FE62DF927CC00B47B10 /* TransparentTitlebarTerminalWindow.swift */,
 			);
 			path = "Window Styles";
@@ -682,7 +682,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				FC9ABA9C2D0F53F80020D4C8 /* bash-completion in Resources */,
-				A5593FE52DF8DE3000B47B10 /* TerminalLegacy.xib in Resources */,
+				A5593FE52DF8DE3000B47B10 /* TerminalTabsTitlebarVentura.xib in Resources */,
 				29C15B1D2CDC3B2900520DD4 /* bat in Resources */,
 				A586167C2B7703CC009BDB1D /* fish in Resources */,
 				55154BE02B33911F001622DC /* ghostty in Resources */,
@@ -700,7 +700,7 @@
 				A5CDF1912AAF9A5800513312 /* ConfigurationErrors.xib in Resources */,
 				857F63812A5E64F200CA4815 /* MainMenu.xib in Resources */,
 				A596309A2AEE1C6400D64628 /* Terminal.xib in Resources */,
-				A51545002DFB112E009E85D8 /* TerminalTabsTitlebar.xib in Resources */,
+				A51545002DFB112E009E85D8 /* TerminalTabsTitlebarTahoe.xib in Resources */,
 				A5CBD05C2CA0C5C70017A1AE /* QuickTerminal.xib in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -768,7 +768,7 @@
 				A5333E1C2B5A1CE3008AEFF7 /* CrossKit.swift in Sources */,
 				A5874D992DAD751B00E83852 /* CGS.swift in Sources */,
 				A586366B2DF0A98C00E04A10 /* Array+Extension.swift in Sources */,
-				A51544FE2DFB111C009E85D8 /* TabsTitlebarTerminalWindow.swift in Sources */,
+				A51544FE2DFB111C009E85D8 /* TitlebarTabsTahoeTerminalWindow.swift in Sources */,
 				A59444F729A2ED5200725BBA /* SettingsView.swift in Sources */,
 				A56D58862ACDDB4100508D2C /* Ghostty.Shell.swift in Sources */,
 				A5985CD72C320C4500C57AD3 /* String+Extension.swift in Sources */,
@@ -777,7 +777,7 @@
 				A53A297F2DB4480F00B6E02C /* EventModifiers+Extension.swift in Sources */,
 				A53A297B2DB2E49700B6E02C /* CommandPalette.swift in Sources */,
 				A55B7BB829B6F53A0055DE60 /* Package.swift in Sources */,
-				A51B78472AF4B58B00F3EDB9 /* LegacyTerminalWindow.swift in Sources */,
+				A51B78472AF4B58B00F3EDB9 /* TitlebarTabsVenturaTerminalWindow.swift in Sources */,
 				A57D79272C9C879B001D522E /* SecureInput.swift in Sources */,
 				A5CEAFDC29B8009000646FDA /* SplitView.swift in Sources */,
 				A5593FE12DF8D74000B47B10 /* HiddenTitlebarTerminalWindow.swift in Sources */,

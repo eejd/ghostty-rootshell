@@ -13,10 +13,15 @@ class TerminalController: BaseTerminalController {
         let config = appDelegate.ghostty.config
         let nib = switch config.macosTitlebarStyle {
         case "native": "Terminal"
-        //case "tabs": "TerminalTabsTitlebar"
-        case "tabs": "TerminalLegacy"
         case "hidden": "TerminalHiddenTitlebar"
         case "transparent": "TerminalTransparentTitlebar"
+        case "tabs":
+            if #available(macOS 26.0, *) {
+                // TODO: Switch to Tahoe when ready
+                "TerminalTabsTitlebarVentura"
+            } else {
+                "TerminalTabsTitlebarVentura"
+            }
         default: defaultValue
         }
 
@@ -447,68 +452,20 @@ class TerminalController: BaseTerminalController {
 
     private func syncAppearance(_ surfaceConfig: Ghostty.SurfaceView.DerivedConfig) {
         // Let our window handle its own appearance
-        if let window = window as? TerminalWindow {
-            // Sync our zoom state for splits
-            window.surfaceIsZoomed = surfaceTree.zoomed != nil
+        guard let window = window as? TerminalWindow else { return }
 
-            // Set the font for the window and tab titles.
-            if let titleFontName = surfaceConfig.windowTitleFontFamily {
-                window.titlebarFont = NSFont(name: titleFontName, size: NSFont.systemFontSize)
-            } else {
-                window.titlebarFont = nil
-            }
+        // Sync our zoom state for splits
+        window.surfaceIsZoomed = surfaceTree.zoomed != nil
 
-            // Call this last in case it uses any of the properties above.
-            window.syncAppearance(surfaceConfig)
-        }
-        
-        guard let window else { return }
-
-        if let window = window as? LegacyTerminalWindow {
-            // Update our window light/darkness based on our updated background color
-            window.isLightTheme = OSColor(surfaceConfig.backgroundColor).isLightColor
-        }
-
-        // If our window is not visible, then we do nothing. Some things such as blurring
-        // have no effect if the window is not visible. Ultimately, we'll have this called
-        // at some point when a surface becomes focused.
-        guard window.isVisible else { return }
-
-        guard let window = window as? LegacyTerminalWindow, window.hasStyledTabs else { return }
-
-        // Our background color depends on if our focused surface borders the top or not.
-        // If it does, we match the focused surface. If it doesn't, we use the app
-        // configuration.
-        let backgroundColor: OSColor
-        if !surfaceTree.isEmpty {
-            if let focusedSurface = focusedSurface,
-               let treeRoot = surfaceTree.root,
-               let focusedNode = treeRoot.node(view: focusedSurface),
-               treeRoot.spatial().doesBorder(side: .up, from: focusedNode) {
-                // Similar to above, an alpha component of "0" causes compositor issues, so
-                // we use 0.001. See: https://github.com/ghostty-org/ghostty/pull/4308
-                backgroundColor = OSColor(focusedSurface.backgroundColor ?? surfaceConfig.backgroundColor).withAlphaComponent(0.001)
-            } else {
-                // We don't have a focused surface or our surface doesn't border the
-                // top. We choose to match the color of the top-left most surface.
-                let topLeftSurface = surfaceTree.root?.leftmostLeaf()
-                backgroundColor = OSColor(topLeftSurface?.backgroundColor ?? derivedConfig.backgroundColor)
-            }
+        // Set the font for the window and tab titles.
+        if let titleFontName = surfaceConfig.windowTitleFontFamily {
+            window.titlebarFont = NSFont(name: titleFontName, size: NSFont.systemFontSize)
         } else {
-            backgroundColor = OSColor(self.derivedConfig.backgroundColor)
+            window.titlebarFont = nil
         }
-        window.titlebarColor = backgroundColor.withAlphaComponent(surfaceConfig.backgroundOpacity)
 
-        if (window.isOpaque) {
-            // Bg color is only synced if we have no transparency. This is because
-            // the transparency is handled at the surface level (window.backgroundColor
-            // ignores alpha components)
-            window.backgroundColor = backgroundColor
-
-            // If there is transparency, calling this will make the titlebar opaque
-            // so we only call this if we are opaque.
-            window.updateTabBar()
-        }
+        // Call this last in case it uses any of the properties above.
+        window.syncAppearance(surfaceConfig)
     }
 
     /// Returns the default size of the window. This is contextual based on the focused surface because
@@ -884,28 +841,6 @@ class TerminalController: BaseTerminalController {
             }
         }
 
-        // TODO: remove
-        if let window = window as? LegacyTerminalWindow,
-           config.macosTitlebarStyle == "tabs" {
-            // Handle titlebar tabs config option. Something about what we do while setting up the
-            // titlebar tabs interferes with the window restore process unless window.tabbingMode
-            // is set to .preferred, so we set it, and switch back to automatic as soon as we can.
-            window.tabbingMode = .preferred
-            window.titlebarTabs = true
-            DispatchQueue.main.async {
-                window.tabbingMode = .automatic
-            }
-
-            if window.hasStyledTabs {
-                // Set the background color of the window
-                let backgroundColor = NSColor(config.backgroundColor)
-                window.backgroundColor = backgroundColor
-
-                // This makes sure our titlebar renders correctly when there is a transparent background
-                window.titlebarColor = backgroundColor.withAlphaComponent(config.backgroundOpacity)
-            }
-        }
-
         // Initialize our content view to the SwiftUI root
         window.contentView = NSHostingView(rootView: TerminalView(
             ghostty: self.ghostty,
@@ -1110,23 +1045,6 @@ class TerminalController: BaseTerminalController {
     }
 
     //MARK: - TerminalViewDelegate
-
-    override func titleDidChange(to: String) {
-        super.titleDidChange(to: to)
-
-        guard let window = window as? LegacyTerminalWindow else { return }
-
-        // Custom toolbar-based title used when titlebar tabs are enabled.
-        if let toolbar = window.toolbar as? TerminalToolbar {
-            if (window.titlebarTabs || derivedConfig.macosTitlebarStyle == "hidden") {
-                // Updating the title text as above automatically reveals the
-                // native title view in macOS 15.0 and above. Since we're using
-                // a custom view instead, we need to re-hide it.
-                window.titleVisibility = .hidden
-            }
-            toolbar.titleText = to
-        }
-    }
     
     override func focusedSurfaceDidChange(to: Ghostty.SurfaceView?) {
         super.focusedSurfaceDidChange(to: to)

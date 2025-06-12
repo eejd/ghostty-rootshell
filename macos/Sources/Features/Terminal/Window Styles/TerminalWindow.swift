@@ -10,7 +10,7 @@ class TerminalWindow: NSWindow {
     static let defaultLevelKey: String = "TerminalDefaultLevel"
 
     /// The configuration derived from the Ghostty config so we don't need to rely on references.
-    private var derivedConfig: DerivedConfig?
+    private(set) var derivedConfig: DerivedConfig?
 
     /// Gets the terminal controller from the window controller.
     var terminalController: TerminalController? {

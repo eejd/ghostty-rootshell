@@ -271,8 +271,7 @@ class NonNativeFullscreen: FullscreenBase, FullscreenStyle {
 
         // This is a hack that I want to remove from this but for now, we need to
         // fix up the titlebar tabs here before we do everything below.
-        if let window = window as? LegacyTerminalWindow,
-           window.titlebarTabs {
+        if let window = window as? TitlebarTabsVenturaTerminalWindow, window.titlebarTabs {
             window.titlebarTabs = true
         }
 

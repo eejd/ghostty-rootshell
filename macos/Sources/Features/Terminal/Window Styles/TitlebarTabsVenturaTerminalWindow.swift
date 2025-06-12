@@ -1,11 +1,10 @@
 import Cocoa
 
-/// The terminal window that we originally had in Ghostty for a long time. Kind of a soupy mess
-/// of styling.
-class LegacyTerminalWindow: TerminalWindow {
+/// Titlebar tabs for macOS 13 to 15.
+class TitlebarTabsVenturaTerminalWindow: TerminalWindow {
     /// This is used to determine if certain elements should be drawn light or dark and should
     /// be updated whenever the window background color or surrounding elements changes.
-    var isLightTheme: Bool = false
+    fileprivate var isLightTheme: Bool = false
 
     override var surfaceIsZoomed: Bool {
         didSet {
@@ -32,17 +31,30 @@ class LegacyTerminalWindow: TerminalWindow {
         }
     }
 
-    // MARK: - Lifecycle
+    // MARK: NSWindow
 
     override func awakeFromNib() {
         super.awakeFromNib()
 
-		if titlebarTabs {
-			generateToolbar()
-		}
-    }
+        // Handle titlebar tabs config option. Something about what we do while setting up the
+        // titlebar tabs interferes with the window restore process unless window.tabbingMode
+        // is set to .preferred, so we set it, and switch back to automatic as soon as we can.
+        tabbingMode = .preferred
+        DispatchQueue.main.async {
+            self.tabbingMode = .automatic
+        }
 
-    // MARK: - NSWindow
+        titlebarTabs = true
+
+        // This should always be true since our super sets this up.
+        if let derivedConfig {
+            // Set the background color of the window
+            backgroundColor = derivedConfig.backgroundColor
+
+            // This makes sure our titlebar renders correctly when there is a transparent background
+            titlebarColor = derivedConfig.backgroundColor.withAlphaComponent(derivedConfig.backgroundOpacity)
+        }
+    }
 
     // We only need to set this once, but need to do it after the window has been created in order
     // to determine if the theme is using a very dark background, in which case we don't want to
@@ -145,7 +157,29 @@ class LegacyTerminalWindow: TerminalWindow {
         }
     }
 
-    // MARK: - Tab Bar Styling
+    // MARK: Appearance
+
+    override func syncAppearance(_ surfaceConfig: Ghostty.SurfaceView.DerivedConfig) {
+        super.syncAppearance(surfaceConfig)
+
+        // Update our window light/darkness based on our updated background color
+        isLightTheme = OSColor(surfaceConfig.backgroundColor).isLightColor
+
+        // Update our titlebar color
+        if let preferredBackgroundColor {
+            titlebarColor = preferredBackgroundColor
+        } else if let derivedConfig {
+            titlebarColor = derivedConfig.backgroundColor.withAlphaComponent(derivedConfig.backgroundOpacity)
+        }
+
+        if (isOpaque) {
+            // If there is transparency, calling this will make the titlebar opaque
+            // so we only call this if we are opaque.
+            updateTabBar()
+        }
+    }
+
+    // MARK: Tab Bar Styling
 
     // This is true if we should apply styles to the titlebar or tab bar.
     var hasStyledTabs: Bool {
@@ -329,6 +363,18 @@ class LegacyTerminalWindow: TerminalWindow {
 				generateToolbar()
             } else {
                 toolbar = nil
+            }
+        }
+    }
+
+    override var title: String {
+        didSet {
+            // Updating the title text as above automatically reveals the
+            // native title view in macOS 15.0 and above. Since we're using
+            // a custom view instead, we need to re-hide it.
+            titleVisibility = .hidden
+            if let toolbar = toolbar as? TerminalToolbar {
+                toolbar.titleText = title
             }
         }
     }
@@ -559,7 +605,7 @@ fileprivate class WindowDragView: NSView {
 fileprivate class WindowButtonsBackdropView: NSView {
     // This must be weak because the window has this view. Otherwise
     // a retain cycle occurs.
-	private weak var terminalWindow: LegacyTerminalWindow?
+	private weak var terminalWindow: TitlebarTabsVenturaTerminalWindow?
 	private let isLightTheme: Bool
     private let overlayLayer = VibrantLayer()
 
@@ -587,7 +633,7 @@ fileprivate class WindowButtonsBackdropView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    init(window: LegacyTerminalWindow) {
+    init(window: TitlebarTabsVenturaTerminalWindow) {
 		self.terminalWindow = window
         self.isLightTheme = window.isLightTheme
 

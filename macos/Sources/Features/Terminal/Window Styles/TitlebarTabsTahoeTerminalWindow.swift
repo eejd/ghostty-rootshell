@@ -1,7 +1,8 @@
 import AppKit
 import SwiftUI
 
-class TabsTitlebarTerminalWindow: TerminalWindow, NSToolbarDelegate {
+/// `macos-titlebar-style = tabs` for macOS 26 (Tahoe) and later.
+class TitlebarTabsTahoeTerminalWindow: TerminalWindow, NSToolbarDelegate {
     override func awakeFromNib() {
         super.awakeFromNib()
 
@@ -49,7 +50,7 @@ extension NSToolbarItem.Identifier {
     static let title = NSToolbarItem.Identifier("Title")
 }
 
-extension TabsTitlebarTerminalWindow {
+extension TitlebarTabsTahoeTerminalWindow {
     struct TitleItem: View {
         var body: some View {
             Text("HELLO THIS IS A PRETTY LONG TITLE")

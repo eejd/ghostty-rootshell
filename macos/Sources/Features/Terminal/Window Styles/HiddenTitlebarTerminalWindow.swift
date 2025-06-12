@@ -19,15 +19,6 @@ class HiddenTitlebarTerminalWindow: TerminalWindow {
         NotificationCenter.default.removeObserver(self)
     }
 
-    // We override this so that with the hidden titlebar style the titlebar
-    // area is not draggable.
-    override var contentLayoutRect: CGRect {
-        var rect = super.contentLayoutRect
-        rect.origin.y = 0
-        rect.size.height = self.frame.height
-        return rect
-    }
-
     /// Apply the hidden titlebar style.
     private func reapplyHiddenStyle() {
         styleMask = [
@@ -62,6 +53,26 @@ class HiddenTitlebarTerminalWindow: TerminalWindow {
            let titleBarContainer = themeFrame.firstDescendant(withClassName: "NSTitlebarContainerView") {
             titleBarContainer.isHidden = true
         }
+    }
+
+    // MARK: NSWindow
+
+    override var title: String {
+        didSet {
+            // Updating the title text as above automatically reveals the
+            // native title view in macOS 15.0 and above. Since we're using
+            // a custom view instead, we need to re-hide it.
+            reapplyHiddenStyle()
+        }
+    }
+
+    // We override this so that with the hidden titlebar style the titlebar
+    // area is not draggable.
+    override var contentLayoutRect: CGRect {
+        var rect = super.contentLayoutRect
+        rect.origin.y = 0
+        rect.size.height = self.frame.height
+        return rect
     }
 
     // MARK: Notifications
