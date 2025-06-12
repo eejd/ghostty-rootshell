@@ -9,6 +9,9 @@ class TerminalWindow: NSWindow {
     /// used by the manual float on top menu item feature.
     static let defaultLevelKey: String = "TerminalDefaultLevel"
 
+    /// The view model for SwiftUI views
+    private var viewModel = ViewModel()
+
     /// The configuration derived from the Ghostty config so we don't need to rely on references.
     private(set) var derivedConfig: DerivedConfig?
 
@@ -18,6 +21,15 @@ class TerminalWindow: NSWindow {
     }
 
     // MARK: NSWindow Overrides
+
+    override var toolbar: NSToolbar? {
+        didSet {
+            DispatchQueue.main.async {
+                // When we have a toolbar, our SwiftUI view needs to know for layout
+                self.viewModel.hasToolbar = self.toolbar != nil
+            }
+        }
+    }
 
     override func awakeFromNib() {
         guard let appDelegate = NSApp.delegate as? AppDelegate else { return }
@@ -42,6 +54,18 @@ class TerminalWindow: NSWindow {
         if config.macosWindowButtons == .hidden {
             hideWindowButtons()
         }
+
+        // Create our reset zoom titlebar accessory.
+        let resetZoomAccessory = NSTitlebarAccessoryViewController()
+        resetZoomAccessory.layoutAttribute = .right
+        resetZoomAccessory.view = NSHostingView(rootView: ResetZoomAccessoryView(
+            viewModel: viewModel,
+            action: { [weak self] in
+                guard let self else { return }
+                self.terminalController?.splitZoom(self)
+            }))
+        addTitlebarAccessoryViewController(resetZoomAccessory)
+        resetZoomAccessory.view.translatesAutoresizingMaskIntoConstraints = false
 
         // Setup the accessory view for tabs that shows our keyboard shortcuts,
         // zoomed state, etc. Note I tried to use SwiftUI here but ran into issues
@@ -115,6 +139,10 @@ class TerminalWindow: NSWindow {
             // Show/hide our reset zoom button depending on if we're zoomed.
             // We want to show it if we are zoomed.
             resetZoomTabButton.isHidden = !surfaceIsZoomed
+
+            DispatchQueue.main.async {
+                self.viewModel.isSurfaceZoomed = self.surfaceIsZoomed
+            }
         }
     }
 
@@ -310,6 +338,40 @@ class TerminalWindow: NSWindow {
         init(_ config: Ghostty.Config) {
             self.backgroundColor = NSColor(config.backgroundColor)
             self.backgroundOpacity = config.backgroundOpacity
+        }
+    }
+}
+
+// MARK: SwiftUI View
+
+extension TerminalWindow {
+    class ViewModel: ObservableObject {
+        @Published var isSurfaceZoomed: Bool = false
+        @Published var hasToolbar: Bool = false
+    }
+
+    struct ResetZoomAccessoryView: View {
+        @ObservedObject var viewModel: ViewModel
+        let action: () -> Void
+
+        var body: some View {
+            if viewModel.isSurfaceZoomed {
+                VStack {
+                    Button(action: action) {
+                        Image("ResetZoom")
+                            .foregroundColor(.accentColor)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Reset Split Zoom")
+                    .frame(width: 20, height: 20)
+                    Spacer()
+                }
+                // With a toolbar, the window title is taller, so we need more padding
+                // to properly align.
+                .padding(.top, viewModel.hasToolbar ? 10 : 5)
+                // We always need space at the end of the titlebar
+                .padding(.trailing, 10)
+            }
         }
     }
 }

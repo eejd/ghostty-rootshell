@@ -758,6 +758,8 @@ class BaseTerminalController: NSWindowController,
         }
     }
 
+    func fullscreenDidChange() {}
+
     // MARK: Clipboard Confirmation
 
     @objc private func onConfirmClipboardRequest(notification: SwiftUI.Notification) {

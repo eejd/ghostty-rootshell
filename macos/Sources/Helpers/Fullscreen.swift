@@ -45,10 +45,6 @@ protocol FullscreenDelegate: AnyObject {
     func fullscreenDidChange()
 }
 
-extension FullscreenDelegate {
-    func fullscreenDidChange() {}
-}
-
 /// The base class for fullscreen implementations, cannot be used as a FullscreenStyle on its own.
 class FullscreenBase {
     let window: NSWindow
@@ -269,6 +265,12 @@ class NonNativeFullscreen: FullscreenBase, FullscreenStyle {
         window.styleMask = savedState.styleMask
         window.setFrame(window.frameRect(forContentRect: savedState.contentFrame), display: true)
 
+        // Removing the "titled" style also derefs all our accessory view controllers
+        // so we need to restore those.
+        for c in savedState.titlebarAccessoryViewControllers {
+            window.addTitlebarAccessoryViewController(c)
+        }
+
         // This is a hack that I want to remove from this but for now, we need to
         // fix up the titlebar tabs here before we do everything below.
         if let window = window as? TitlebarTabsVenturaTerminalWindow, window.titlebarTabs {
@@ -383,6 +385,7 @@ class NonNativeFullscreen: FullscreenBase, FullscreenStyle {
         let tabGroupIndex: Int?
         let contentFrame: NSRect
         let styleMask: NSWindow.StyleMask
+        let titlebarAccessoryViewControllers: [NSTitlebarAccessoryViewController]
         let dock: Bool
         let menu: Bool
 
@@ -394,6 +397,7 @@ class NonNativeFullscreen: FullscreenBase, FullscreenStyle {
             self.tabGroupIndex = window.tabGroup?.windows.firstIndex(of: window)
             self.contentFrame = window.convertToScreen(contentView.frame)
             self.styleMask = window.styleMask
+            self.titlebarAccessoryViewControllers = window.titlebarAccessoryViewControllers
             self.dock = window.screen?.hasDock ?? false
 
             if let cgWindowId = window.cgWindowId {

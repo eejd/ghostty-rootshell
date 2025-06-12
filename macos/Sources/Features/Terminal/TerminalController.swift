@@ -145,7 +145,9 @@ class TerminalController: BaseTerminalController {
     }
 
 
-    func fullscreenDidChange() {
+    override func fullscreenDidChange() {
+        super.fullscreenDidChange()
+
         // When our fullscreen state changes, we resync our appearance because some
         // properties change when fullscreen or not.
         guard let focusedSurface else { return }
