@@ -18,7 +18,7 @@ class TerminalController: BaseTerminalController {
         case "tabs":
             if #available(macOS 26.0, *) {
                 // TODO: Switch to Tahoe when ready
-                "TerminalTabsTitlebarVentura"
+                "TerminalTabsTitlebarTahoe"
             } else {
                 "TerminalTabsTitlebarVentura"
             }
@@ -409,15 +409,15 @@ class TerminalController: BaseTerminalController {
                 // We need to clear any windows beyond this because they have had
                 // a keyEquivalent set previously.
                 guard tab <= 9 else {
-                    window.keyEquivalent2 = ""
+                    window.keyEquivalent = ""
                     continue
                 }
 
                 let action = "goto_tab:\(tab)"
                 if let equiv = ghostty.config.keyboardShortcut(for: action) {
-                    window.keyEquivalent2 = "\(equiv)"
+                    window.keyEquivalent = "\(equiv)"
                 } else {
-                    window.keyEquivalent2 = ""
+                    window.keyEquivalent = ""
                 }
             }
         }

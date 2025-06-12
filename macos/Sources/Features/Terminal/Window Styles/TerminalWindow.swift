@@ -82,17 +82,16 @@ class TerminalWindow: NSWindow {
 
     // MARK: Tab Key Equivalents
 
-    // TODO: rename once Legacy window removes
-    var keyEquivalent2: String? = nil {
+    var keyEquivalent: String? = nil {
         didSet {
             // When our key equivalent is set, we must update the tab label.
-            guard let keyEquivalent2 else {
+            guard let keyEquivalent else {
                 keyEquivalentLabel.attributedStringValue = NSAttributedString()
                 return
             }
 
             keyEquivalentLabel.attributedStringValue = NSAttributedString(
-                string: "\(keyEquivalent2) ",
+                string: "\(keyEquivalent) ",
                 attributes: [
                     .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
                     .foregroundColor: isKeyWindow ? NSColor.labelColor : NSColor.secondaryLabelColor,
