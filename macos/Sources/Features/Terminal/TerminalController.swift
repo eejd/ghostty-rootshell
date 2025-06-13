@@ -17,8 +17,6 @@ class TerminalController: BaseTerminalController {
         case "transparent": "TerminalTransparentTitlebar"
         case "tabs":
             if #available(macOS 26.0, *) {
-                // TODO: Switch to Tahoe when ready
-                //"TerminalTabsTitlebarVentura"
                 "TerminalTabsTitlebarTahoe"
             } else {
                 "TerminalTabsTitlebarVentura"
