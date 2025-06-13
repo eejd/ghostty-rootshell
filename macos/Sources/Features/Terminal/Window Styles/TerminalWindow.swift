@@ -13,7 +13,7 @@ class TerminalWindow: NSWindow {
     private var viewModel = ViewModel()
 
     /// The configuration derived from the Ghostty config so we don't need to rely on references.
-    private(set) var derivedConfig: DerivedConfig?
+    private(set) var derivedConfig: DerivedConfig = .init()
 
     /// Gets the terminal controller from the window controller.
     var terminalController: TerminalController? {
@@ -341,8 +341,8 @@ class TerminalWindow: NSWindow {
             }
         }
 
-        let alpha = derivedConfig?.backgroundOpacity.clamped(to: 0.001...1) ?? 1
-        return derivedConfig?.backgroundColor.withAlphaComponent(alpha)
+        let alpha = derivedConfig.backgroundOpacity.clamped(to: 0.001...1)
+        return derivedConfig.backgroundColor.withAlphaComponent(alpha)
     }
 
     private func setInitialWindowPosition(x: Int16?, y: Int16?, windowDecorations: Bool) {
@@ -379,15 +379,18 @@ class TerminalWindow: NSWindow {
     struct DerivedConfig {
         let backgroundColor: NSColor
         let backgroundOpacity: Double
+        let macosWindowButtons: Ghostty.MacOSWindowButtons
 
         init() {
             self.backgroundColor = NSColor.windowBackgroundColor
             self.backgroundOpacity = 1
+            self.macosWindowButtons = .visible
         }
 
         init(_ config: Ghostty.Config) {
             self.backgroundColor = NSColor(config.backgroundColor)
             self.backgroundOpacity = config.backgroundOpacity
+            self.macosWindowButtons = config.macosWindowButtons
         }
     }
 }

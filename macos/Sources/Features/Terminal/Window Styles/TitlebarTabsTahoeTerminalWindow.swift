@@ -84,12 +84,19 @@ class TitlebarTabsTahoeTerminalWindow: TransparentTitlebarTerminalWindow, NSTool
             // The container is the view that we'll constrain our tab bar within.
             let container = toolbarView
 
+            // The padding for the tab bar. If we're showing window buttons then
+            // we need to offset the window buttons.
+            let leftPadding: CGFloat = switch(self.derivedConfig.macosWindowButtons) {
+            case .hidden: 0
+            case .visible: 70
+            }
+
             // Constrain the accessory clip view (the parent of the accessory view
             // usually that clips the children) to the container view.
             clipView.translatesAutoresizingMaskIntoConstraints = false
-            clipView.leftAnchor.constraint(equalTo: container.leftAnchor, constant: 78).isActive = true
+            clipView.leftAnchor.constraint(equalTo: container.leftAnchor, constant: leftPadding).isActive = true
             clipView.rightAnchor.constraint(equalTo: container.rightAnchor).isActive = true
-            clipView.topAnchor.constraint(equalTo: container.topAnchor).isActive = true
+            clipView.topAnchor.constraint(equalTo: container.topAnchor, constant: 2).isActive = true
             clipView.heightAnchor.constraint(equalTo: container.heightAnchor).isActive = true
             clipView.needsLayout = true
 

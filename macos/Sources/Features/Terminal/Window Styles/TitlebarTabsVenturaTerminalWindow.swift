@@ -40,14 +40,11 @@ class TitlebarTabsVenturaTerminalWindow: TerminalWindow {
 
         titlebarTabs = true
 
-        // This should always be true since our super sets this up.
-        if let derivedConfig {
-            // Set the background color of the window
-            backgroundColor = derivedConfig.backgroundColor
+        // Set the background color of the window
+        backgroundColor = derivedConfig.backgroundColor
 
-            // This makes sure our titlebar renders correctly when there is a transparent background
-            titlebarColor = derivedConfig.backgroundColor.withAlphaComponent(derivedConfig.backgroundOpacity)
-        }
+        // This makes sure our titlebar renders correctly when there is a transparent background
+        titlebarColor = derivedConfig.backgroundColor.withAlphaComponent(derivedConfig.backgroundOpacity)
     }
 
     // We only need to set this once, but need to do it after the window has been created in order
@@ -160,7 +157,7 @@ class TitlebarTabsVenturaTerminalWindow: TerminalWindow {
         // Update our titlebar color
         if let preferredBackgroundColor {
             titlebarColor = preferredBackgroundColor
-        } else if let derivedConfig {
+        } else {
             titlebarColor = derivedConfig.backgroundColor.withAlphaComponent(derivedConfig.backgroundOpacity)
         }
 
