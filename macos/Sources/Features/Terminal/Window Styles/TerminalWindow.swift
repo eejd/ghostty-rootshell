@@ -12,6 +12,9 @@ class TerminalWindow: NSWindow {
     /// The view model for SwiftUI views
     private var viewModel = ViewModel()
 
+    /// Reset split zoom button in titlebar
+    private let resetZoomAccessory = NSTitlebarAccessoryViewController()
+
     /// The configuration derived from the Ghostty config so we don't need to rely on references.
     private(set) var derivedConfig: DerivedConfig = .init()
 
@@ -56,7 +59,6 @@ class TerminalWindow: NSWindow {
         }
 
         // Create our reset zoom titlebar accessory.
-        let resetZoomAccessory = NSTitlebarAccessoryViewController()
         resetZoomAccessory.layoutAttribute = .right
         resetZoomAccessory.view = NSHostingView(rootView: ResetZoomAccessoryView(
             viewModel: viewModel,
@@ -94,6 +96,18 @@ class TerminalWindow: NSWindow {
         resetZoomTabButton.contentTintColor = .secondaryLabelColor
     }
 
+    override func becomeMain() {
+        super.becomeMain()
+
+        // Its possible we miss the accessory titlebar call so we check again
+        // whenever the window becomes main. Both of these are idempotent.
+        if hasTabBar {
+            tabBarDidAppear()
+        } else {
+            tabBarDidDisappear()
+        }
+    }
+
     override func mergeAllWindows(_ sender: Any?) {
         super.mergeAllWindows(sender)
 
@@ -112,13 +126,13 @@ class TerminalWindow: NSWindow {
         // it. This has been verified to work on macOS 12 to 26
         if isTabBar(childViewController) {
             childViewController.identifier = Self.tabBarIdentifier
-            viewModel.hasTabBar = true
+            tabBarDidAppear()
         }
     }
 
     override func removeTitlebarAccessoryViewController(at index: Int) {
         if let childViewController = titlebarAccessoryViewControllers[safe: index], isTabBar(childViewController) {
-            viewModel.hasTabBar = false
+            tabBarDidDisappear()
         }
 
         super.removeTitlebarAccessoryViewController(at: index)
@@ -129,6 +143,11 @@ class TerminalWindow: NSWindow {
     /// This identifier is attached to the tab bar view controller when we detect it being
     /// added.
     private static let tabBarIdentifier: NSUserInterfaceItemIdentifier = .init("_ghosttyTabBar")
+
+    /// Returns true if there is a tab bar visible on this window.
+    var hasTabBar: Bool {
+        contentView?.firstViewFromRoot(withClassName: "NSTabBar") != nil
+    }
 
     func isTabBar(_ childViewController: NSTitlebarAccessoryViewController) -> Bool {
         if childViewController.identifier == nil {
@@ -152,6 +171,28 @@ class TerminalWindow: NSWindow {
         // View controllers should be tagged with this as soon as possible to
         // increase our accuracy. We do this manually.
         return childViewController.identifier == Self.tabBarIdentifier
+    }
+
+    /// Ensures we only run didAppear/didDisappear once per state.
+    private var tabBarDidAppearRan = false
+
+    private func tabBarDidAppear() {
+        guard !tabBarDidAppearRan else { return }
+        tabBarDidAppearRan = true
+
+        // Remove our reset zoom accessory. For some reason having a SwiftUI
+        // titlebar accessory causes our content view scaling to be wrong.
+        // Removing it fixes it, we just need to remember to add it again later.
+        if let idx = titlebarAccessoryViewControllers.firstIndex(of: resetZoomAccessory) {
+            removeTitlebarAccessoryViewController(at: idx)
+        }
+    }
+
+    private func tabBarDidDisappear() {
+        guard tabBarDidAppearRan else { return }
+        tabBarDidAppearRan = false
+
+        addTitlebarAccessoryViewController(resetZoomAccessory)
     }
 
     // MARK: Tab Key Equivalents
@@ -402,7 +443,6 @@ extension TerminalWindow {
     class ViewModel: ObservableObject {
         @Published var isSurfaceZoomed: Bool = false
         @Published var hasToolbar: Bool = false
-        @Published var hasTabBar: Bool = false
     }
 
     struct ResetZoomAccessoryView: View {
@@ -410,7 +450,7 @@ extension TerminalWindow {
         let action: () -> Void
 
         var body: some View {
-            if viewModel.isSurfaceZoomed && !viewModel.hasTabBar {
+            if viewModel.isSurfaceZoomed {
                 VStack {
                     Button(action: action) {
                         Image("ResetZoom")
