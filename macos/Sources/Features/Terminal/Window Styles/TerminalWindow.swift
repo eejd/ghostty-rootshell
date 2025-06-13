@@ -322,22 +322,23 @@ class TerminalWindow: NSWindow {
     /// change the alpha channel again manually.
     var preferredBackgroundColor: NSColor? {
         if let terminalController, !terminalController.surfaceTree.isEmpty {
+            let surface: Ghostty.SurfaceView?
+
             // If our focused surface borders the top then we prefer its background color
             if let focusedSurface = terminalController.focusedSurface,
                let treeRoot = terminalController.surfaceTree.root,
                let focusedNode = treeRoot.node(view: focusedSurface),
-               treeRoot.spatial().doesBorder(side: .up, from: focusedNode),
-               let backgroundcolor = focusedSurface.backgroundColor {
-                let alpha = focusedSurface.derivedConfig.backgroundOpacity.clamped(to: 0.001...1)
-                return NSColor(backgroundcolor).withAlphaComponent(alpha)
+               treeRoot.spatial().doesBorder(side: .up, from: focusedNode) {
+                surface = focusedSurface
+            } else {
+                // If it doesn't border the top, we use the top-left leaf
+                surface = terminalController.surfaceTree.root?.leftmostLeaf()
             }
 
-            // Doesn't border the top or we don't have a focused surface, so
-            // we try to match the top-left surface.
-            let topLeftSurface = terminalController.surfaceTree.root?.leftmostLeaf()
-            if let topLeftBgColor = topLeftSurface?.backgroundColor {
-                let alpha = topLeftSurface?.derivedConfig.backgroundOpacity.clamped(to: 0.001...1) ?? 1
-                return NSColor(topLeftBgColor).withAlphaComponent(alpha)
+            if let surface {
+                let backgroundColor = surface.backgroundColor ?? surface.derivedConfig.backgroundColor
+                let alpha = surface.derivedConfig.backgroundOpacity.clamped(to: 0.001...1)
+                return NSColor(backgroundColor).withAlphaComponent(alpha)
             }
         }
 
