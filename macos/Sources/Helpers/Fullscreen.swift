@@ -268,19 +268,15 @@ class NonNativeFullscreen: FullscreenBase, FullscreenStyle {
         // Removing the "titled" style also derefs all our accessory view controllers
         // so we need to restore those.
         for c in savedState.titlebarAccessoryViewControllers {
-            window.addTitlebarAccessoryViewController(c)
+            if window.titlebarAccessoryViewControllers.firstIndex(of: c) == nil {
+                window.addTitlebarAccessoryViewController(c)
+            }
         }
 
         // Removing "titled" also clears our toolbar
         window.toolbar = savedState.toolbar
         window.toolbarStyle = savedState.toolbarStyle
-
-        // This is a hack that I want to remove from this but for now, we need to
-        // fix up the titlebar tabs here before we do everything below.
-        if let window = window as? TitlebarTabsVenturaTerminalWindow, window.titlebarTabs {
-            window.titlebarTabs = true
-        }
-
+        
         // If the window was previously in a tab group that isn't empty now,
         // we re-add it. We have to do this because our process of doing non-native
         // fullscreen removes the window from the tab group.

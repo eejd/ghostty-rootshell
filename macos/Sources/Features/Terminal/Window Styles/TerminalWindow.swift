@@ -173,13 +173,7 @@ class TerminalWindow: NSWindow {
         return childViewController.identifier == Self.tabBarIdentifier
     }
 
-    /// Ensures we only run didAppear/didDisappear once per state.
-    private var tabBarDidAppearRan = false
-
     private func tabBarDidAppear() {
-        guard !tabBarDidAppearRan else { return }
-        tabBarDidAppearRan = true
-
         // Remove our reset zoom accessory. For some reason having a SwiftUI
         // titlebar accessory causes our content view scaling to be wrong.
         // Removing it fixes it, we just need to remember to add it again later.
@@ -189,10 +183,11 @@ class TerminalWindow: NSWindow {
     }
 
     private func tabBarDidDisappear() {
-        guard tabBarDidAppearRan else { return }
-        tabBarDidAppearRan = false
-
-        addTitlebarAccessoryViewController(resetZoomAccessory)
+        if styleMask.contains(.titled) {
+            if titlebarAccessoryViewControllers.firstIndex(of: resetZoomAccessory) == nil {
+                addTitlebarAccessoryViewController(resetZoomAccessory)
+            }
+        }
     }
 
     // MARK: Tab Key Equivalents
@@ -448,6 +443,16 @@ extension TerminalWindow {
     struct ResetZoomAccessoryView: View {
         @ObservedObject var viewModel: ViewModel
         let action: () -> Void
+        
+        // The padding from the top that the view appears. This was all just manually
+        // measured based on the OS.
+        var topPadding: CGFloat {
+            if #available(macOS 26.0, *) {
+                return viewModel.hasToolbar ? 10 : 5
+            } else {
+                return viewModel.hasToolbar ? 9 : 4
+            }
+        }
 
         var body: some View {
             if viewModel.isSurfaceZoomed {
@@ -463,7 +468,7 @@ extension TerminalWindow {
                 }
                 // With a toolbar, the window title is taller, so we need more padding
                 // to properly align.
-                .padding(.top, viewModel.hasToolbar ? 10 : 5)
+                .padding(.top, topPadding)
                 // We always need space at the end of the titlebar
                 .padding(.trailing, 10)
             }
