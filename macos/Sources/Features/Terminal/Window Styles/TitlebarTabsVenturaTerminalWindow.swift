@@ -99,9 +99,6 @@ class TitlebarTabsVenturaTerminalWindow: TerminalWindow {
             }
         }
 
-        // The remainder of this function only applies to styled tabs.
-        guard hasStyledTabs else { return }
-
 		titlebarSeparatorStyle = tabbedWindows != nil && !titlebarTabs ? .line : .none
         if titlebarTabs {
             hideToolbarOverflowButton()
@@ -169,19 +166,6 @@ class TitlebarTabsVenturaTerminalWindow: TerminalWindow {
     }
 
     // MARK: Tab Bar Styling
-
-    // This is true if we should apply styles to the titlebar or tab bar.
-    var hasStyledTabs: Bool {
-        // If we have titlebar tabs then we always style.
-        guard !titlebarTabs else { return true }
-
-        // We style the tabs if they're transparent
-        return transparentTabs
-    }
-
-    // Set to true if the background color should bleed through the titlebar/tab bar.
-    // This only applies to non-titlebar tabs.
-    var transparentTabs: Bool = false
 
     var hasVeryDarkBackground: Bool {
         backgroundColor.luminance < 0.05

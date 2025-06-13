@@ -11,6 +11,13 @@ class TransparentTitlebarTerminalWindow: TerminalWindow {
     /// KVO observation for tab group window changes.
     private var tabGroupWindowsObservation: NSKeyValueObservation?
     private var tabBarVisibleObservation: NSKeyValueObservation?
+    
+    deinit {
+        tabGroupWindowsObservation?.invalidate()
+        tabBarVisibleObservation?.invalidate()
+    }
+    
+    // MARK: NSWindow
 
     override func awakeFromNib() {
         super.awakeFromNib()
@@ -18,11 +25,6 @@ class TransparentTitlebarTerminalWindow: TerminalWindow {
         // Setup all the KVO we will use, see the docs for the respective functions
         // to learn why we need KVO.
         setupKVO()
-    }
-    
-    deinit {
-        tabGroupWindowsObservation?.invalidate()
-        tabBarVisibleObservation?.invalidate()
     }
 
     override func becomeMain() {
@@ -38,6 +40,16 @@ class TransparentTitlebarTerminalWindow: TerminalWindow {
             DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(50)) { [weak self] in
                 self?.syncAppearance(self?.lastSurfaceConfig ?? lastSurfaceConfig)
             }
+        }
+    }
+    
+    override func update() {
+        super.update()
+        
+        // On macOS 13 to 15, we need to hide the NSVisualEffectView in order to allow our
+        // titlebar to be truly transparent.
+        if #unavailable(macOS 26.0) {
+            hideEffectView()
         }
     }
 
@@ -86,6 +98,7 @@ class TransparentTitlebarTerminalWindow: TerminalWindow {
         guard let titlebarContainer else { return }
         titlebarContainer.wantsLayer = true
         titlebarContainer.layer?.backgroundColor = preferredBackgroundColor?.cgColor
+        effectViewIsHidden = false
     }
 
     // MARK: View Finders
@@ -148,5 +161,29 @@ class TransparentTitlebarTerminalWindow: TerminalWindow {
             guard let lastSurfaceConfig else { return }
             self.syncAppearance(lastSurfaceConfig)
         }
+    }
+    
+    // MARK: macOS 13 to 15
+    
+    // We only need to set this once, but need to do it after the window has been created in order
+    // to determine if the theme is using a very dark background, in which case we don't want to
+    // remove the effect view if the default tab bar is being used since the effect created in
+    // `updateTabsForVeryDarkBackgrounds` creates a confusing visual design.
+    private var effectViewIsHidden = false
+    
+    private func hideEffectView() {
+        guard !effectViewIsHidden else { return }
+        
+        // By hiding the visual effect view, we allow the window's (or titlebar's in this case)
+        // background color to show through. If we were to set `titlebarAppearsTransparent` to true
+        // the selected tab would look fine, but the unselected ones and new tab button backgrounds
+        // would be an opaque color. When the titlebar isn't transparent, however, the system applies
+        // a compositing effect to the unselected tab backgrounds, which makes them blend with the
+        // titlebar's/window's background.
+        if let effectView = titlebarContainer?.descendants(withClassName: "NSVisualEffectView").first {
+            effectView.isHidden = true
+        }
+
+        effectViewIsHidden = true
     }
 }
