@@ -268,6 +268,12 @@ class NonNativeFullscreen: FullscreenBase, FullscreenStyle {
         // Removing the "titled" style also derefs all our accessory view controllers
         // so we need to restore those.
         for c in savedState.titlebarAccessoryViewControllers {
+            // Restoring the tab bar causes all sorts of problems. Its best to just ignore it,
+            // even though this is kind of a hack.
+            if let window = window as? TerminalWindow, window.isTabBar(c) {
+                continue
+            }
+            
             if window.titlebarAccessoryViewControllers.firstIndex(of: c) == nil {
                 window.addTitlebarAccessoryViewController(c)
             }
