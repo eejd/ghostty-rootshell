@@ -8,8 +8,8 @@
 
         .libxev = .{
             // mitchellh/libxev
-            .url = "https://github.com/mitchellh/libxev/archive/3df9337a9e84450a58a2c4af434ec1a036f7b494.tar.gz",
-            .hash = "libxev-0.0.0-86vtc-ziEgDbLP0vihUn1MhsxNKY4GJEga6BEr7oyHpz",
+            .url = "https://github.com/charlesrocket/libxev/archive/16c774fb94316cb013d71a941a481b72dc0dd182.tar.gz",
+            .hash = "libxev-0.0.0-86vtc-rnEgB8nvvhU_vd7SR2-r06vOvPfaXw37EJr9RA",
             .lazy = true,
         },
         .vaxis = .{
