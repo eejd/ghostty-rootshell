@@ -25,8 +25,8 @@ class TitlebarTabsTahoeTerminalWindow: TransparentTitlebarTerminalWindow, NSTool
         didSet{
             guard toolbar != nil else { return }
 
-            // When a toolbar is added, remove the Liquid Glass look because we're
-            // abusing the toolbar as a tab bar.
+            // When a toolbar is added, remove the Liquid Glass look to have a cleaner
+            // appearance for our custom titlebar tabs.
             if let glass = titlebarContainer?.firstDescendant(withClassName: "NSGlassContainerView") {
                 glass.isHidden = true
             }
@@ -110,9 +110,9 @@ class TitlebarTabsTahoeTerminalWindow: TransparentTitlebarTerminalWindow, NSTool
     /// creates/moves (unsure which) the NSTabBar for it and shows it. When it loses main, the tab bar
     /// is removed from the view hierarchy.
     ///
-    /// We can't detect this via `addTitlebarAccessoryViewController` because AppKit
-    /// _always_ creates an accessory view controller for every window in the tab group, but puts a
-    /// zero-sized NSView into it (that the tab bar is then attached to later).
+    /// We can't reliably detect this via `addTitlebarAccessoryViewController` because AppKit
+    /// creates an accessory view controller for every window in the tab group, but only attaches
+    /// the actual NSTabBar to the main window's accessory view.
     ///
     /// The best way I've found to detect this is to search for and setup the tab bar anytime the
     /// window gains focus. There are probably edge cases to check but to resolve all this I made
@@ -167,10 +167,10 @@ class TitlebarTabsTahoeTerminalWindow: TransparentTitlebarTerminalWindow, NSTool
         clipView.needsLayout = true
         accessoryView.needsLayout = true
 
-        // We need to setup an observer for the NSTabBar frame. When we change system
-        // appearance, the tab bar temporarily becomes width/height 0 and breaks all our
-        // constraints and AppKit responds by nuking the whole tab bar cause it doesn't
-        // know what to do with it. We need to detect this before bad things happen.
+        // Setup an observer for the NSTabBar frame. When system appearance changes or
+        // other events occur, the tab bar can temporarily become zero-sized. When this
+        // happens, we need to remove our custom constraints and re-apply them once the
+        // tab bar has proper dimensions again to avoid constraint conflicts.
         tabBar.postsFrameChangedNotifications = true
         tabBarObserver = NotificationCenter.default.addObserver(
             forName: NSView.frameDidChangeNotification,
