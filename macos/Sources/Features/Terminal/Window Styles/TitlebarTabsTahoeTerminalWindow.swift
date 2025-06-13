@@ -2,7 +2,10 @@ import AppKit
 import SwiftUI
 
 /// `macos-titlebar-style = tabs` for macOS 26 (Tahoe) and later.
-class TitlebarTabsTahoeTerminalWindow: TerminalWindow, NSToolbarDelegate {
+///
+/// This inherits from transparent styling so that the titlebar matches the background color
+/// of the window.
+class TitlebarTabsTahoeTerminalWindow: TransparentTitlebarTerminalWindow, NSToolbarDelegate {
     /// The view model for SwiftUI views
     private var viewModel = ViewModel()
 
