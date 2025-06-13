@@ -142,7 +142,7 @@ class TerminalWindow: NSWindow {
 
     /// This identifier is attached to the tab bar view controller when we detect it being
     /// added.
-    private static let tabBarIdentifier: NSUserInterfaceItemIdentifier = .init("_ghosttyTabBar")
+    static let tabBarIdentifier: NSUserInterfaceItemIdentifier = .init("_ghosttyTabBar")
 
     /// Returns true if there is a tab bar visible on this window.
     var hasTabBar: Bool {

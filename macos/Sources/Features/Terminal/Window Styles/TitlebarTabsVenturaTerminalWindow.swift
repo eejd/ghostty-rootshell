@@ -196,8 +196,7 @@ class TitlebarTabsVenturaTerminalWindow: TerminalWindow {
         // We can only update titlebar tabs if there is a titlebar. Without the
         // styleMask check the app will crash (issue #1876)
         if titlebarTabs && styleMask.contains(.titled) {
-            guard let tabBarAccessoryViewController = titlebarAccessoryViewControllers.first(where: { $0.identifier == Self.TabBarController}) else { return }
-
+            guard let tabBarAccessoryViewController = titlebarAccessoryViewControllers.first(where: { $0.identifier == Self.tabBarIdentifier}) else { return }
             tabBarAccessoryViewController.layoutAttribute = .right
             pushTabsToTitlebar(tabBarAccessoryViewController)
         }
@@ -314,9 +313,6 @@ class TitlebarTabsVenturaTerminalWindow: TerminalWindow {
 
     private var windowDragHandle: WindowDragView? = nil
 
-    // The tab bar controller ID from macOS
-    static private let TabBarController = NSUserInterfaceItemIdentifier("_tabBarController")
-
     // Used by the window controller to enable/disable titlebar tabs.
     var titlebarTabs = false {
         didSet {
@@ -384,10 +380,7 @@ class TitlebarTabsVenturaTerminalWindow: TerminalWindow {
     // This is called by macOS for native tabbing in order to add the tab bar. We hook into
     // this, detect the tab bar being added, and override its behavior.
     override func addTitlebarAccessoryViewController(_ childViewController: NSTitlebarAccessoryViewController) {
-        let isTabBar = self.titlebarTabs && (
-            childViewController.layoutAttribute == .bottom ||
-            childViewController.identifier == Self.TabBarController
-        )
+        let isTabBar = self.titlebarTabs && isTabBar(childViewController)
 
         if (isTabBar) {
             // Ensure it has the right layoutAttribute to force it next to our titlebar
@@ -399,7 +392,7 @@ class TitlebarTabsVenturaTerminalWindow: TerminalWindow {
 
             // Mark the controller for future reference so we can easily find it. Otherwise
             // the tab bar has no ID by default.
-            childViewController.identifier = Self.TabBarController
+            childViewController.identifier = Self.tabBarIdentifier
         }
 
         super.addTitlebarAccessoryViewController(childViewController)
@@ -410,7 +403,7 @@ class TitlebarTabsVenturaTerminalWindow: TerminalWindow {
     }
 
     override func removeTitlebarAccessoryViewController(at index: Int) {
-        let isTabBar = titlebarAccessoryViewControllers[index].identifier == Self.TabBarController
+        let isTabBar = titlebarAccessoryViewControllers[index].identifier == Self.tabBarIdentifier
         super.removeTitlebarAccessoryViewController(at: index)
         if (isTabBar) {
             resetCustomTabBarViews()
