@@ -138,6 +138,9 @@ extension Ghostty {
         // by the user, this is set to the prior value (which may be empty, but non-nil).
         private var titleFromTerminal: String?
 
+        // The cached contents of the screen.
+        private var cachedScreenContents: CachedValue<String>
+
         /// Event monitor (see individual events for why)
         private var eventMonitor: Any? = nil
 
@@ -159,10 +162,37 @@ extension Ghostty {
                 self.derivedConfig = DerivedConfig()
             }
 
+            // We need to initialize this so it does something but we want to set
+            // it back up later so we can reference `self`. This is a hack we should
+            // fix at some point.
+            self.cachedScreenContents = .init(duration: .milliseconds(500)) { "" }
+
             // Initialize with some default frame size. The important thing is that this
             // is non-zero so that our layer bounds are non-zero so that our renderer
             // can do SOMETHING.
             super.init(frame: NSMakeRect(0, 0, 800, 600))
+
+            // Our cache of screen data
+            cachedScreenContents = .init(duration: .milliseconds(500)) { [weak self] in
+                guard let self else { return "" }
+                guard let surface = self.surface else { return "" }
+                var text = ghostty_text_s()
+                let sel = ghostty_selection_s(
+                    top_left: ghostty_point_s(
+                        tag: GHOSTTY_POINT_SCREEN,
+                        coord: GHOSTTY_POINT_COORD_TOP_LEFT,
+                        x: 0,
+                        y: 0),
+                    bottom_right: ghostty_point_s(
+                        tag: GHOSTTY_POINT_SCREEN,
+                        coord: GHOSTTY_POINT_COORD_BOTTOM_RIGHT,
+                        x: 0,
+                        y: 0),
+                    rectangle: false)
+                guard ghostty_surface_read_text(surface, sel, &text) else { return "" }
+                defer { ghostty_surface_free_text(surface, &text) }
+                return String(cString: text.text)
+            }
 
             // Set a timer to show the ghost emoji after 500ms if no title is set
             titleFallbackTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
@@ -1866,7 +1896,11 @@ extension Ghostty.SurfaceView {
     override func accessibilityHelp() -> String? {
         return "Terminal content area"
     }
-    
+
+    override func accessibilityValue() -> Any? {
+        return cachedScreenContents.get()
+    }
+
     /// Returns the range of text that is currently selected in the terminal.
     /// This allows VoiceOver and other assistive technologies to understand
     /// what text the user has selected.
@@ -1886,5 +1920,45 @@ extension Ghostty.SurfaceView {
 
         let str = String(cString: text.text)
         return str.isEmpty ? nil : str
+    }
+}
+
+/// Caches a value for some period of time, evicting it automatically when that time expires.
+/// We use this to cache our surface content. This probably should be extracted some day
+/// to a more generic helper.
+///
+// TODO:
+// - Auto-expire the data so it doesn't take memory
+fileprivate class CachedValue<T> {
+    private var value: Value?
+    private let fetch: () -> T
+    private let duration: Duration
+
+    struct Value {
+        var value: T
+        var expires: ContinuousClock.Instant
+    }
+
+    init(duration: Duration, fetch: @escaping () -> T) {
+        self.duration = duration
+        self.fetch = fetch
+    }
+
+    func get() -> T {
+        let now = ContinuousClock.now
+        if let value {
+            // If the value isn't expired just return it
+            if value.expires > now {
+                return value.value
+            }
+
+            // Value is expired, clear it
+            self.value = nil
+        }
+
+        // We don't have a value (or it expired). Fetch and store.
+        let result = fetch()
+        self.value = .init(value: result, expires: now + duration)
+        return result
     }
 }
