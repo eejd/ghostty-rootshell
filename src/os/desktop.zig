@@ -113,7 +113,7 @@ test "desktop environment" {
     switch (builtin.os.tag) {
         .macos => try testing.expectEqual(.macos, desktopEnvironment()),
         .windows => try testing.expectEqual(.windows, desktopEnvironment()),
-        .linux => {
+        .linux, .freebsd => {
             const getenv = std.posix.getenv;
             const setenv = @import("env.zig").setenv;
             const unsetenv = @import("env.zig").unsetenv;
@@ -135,9 +135,9 @@ test "desktop environment" {
             _ = unsetenv("XDG_SESSION_DESKTOP");
 
             _ = setenv("XDG_SESSION_DESKTOP", "gnome");
-            try testing.expectEqual(.gnome, desktopEnvironment());
+            try testing.expectEqual(if (builtin.os.tag == .linux) .gnome else .other, desktopEnvironment());
             _ = setenv("XDG_SESSION_DESKTOP", "gnome-xorg");
-            try testing.expectEqual(.gnome, desktopEnvironment());
+            try testing.expectEqual(if (builtin.os.tag == .linux) .gnome else .other, desktopEnvironment());
             _ = setenv("XDG_SESSION_DESKTOP", "foobar");
             try testing.expectEqual(.other, desktopEnvironment());
 
@@ -145,7 +145,7 @@ test "desktop environment" {
             try testing.expectEqual(.other, desktopEnvironment());
 
             _ = setenv("XDG_CURRENT_DESKTOP", "GNOME");
-            try testing.expectEqual(.gnome, desktopEnvironment());
+            try testing.expectEqual(if (builtin.os.tag == .linux) .gnome else .other, desktopEnvironment());
             _ = setenv("XDG_CURRENT_DESKTOP", "FOOBAR");
             try testing.expectEqual(.other, desktopEnvironment());
             _ = unsetenv("XDG_CURRENT_DESKTOP");
