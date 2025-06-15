@@ -1166,6 +1166,7 @@ pub const CAPI = struct {
     // ghostty_point_s
     const Point = extern struct {
         tag: Tag,
+        coord_tag: CoordTag,
         x: u32,
         y: u32,
 
@@ -1176,27 +1177,51 @@ pub const CAPI = struct {
             history = 3,
         };
 
-        fn core(self: Point) terminal.Point {
-            // This comes from the C API so we can't trust the input.
-            const pt_x = std.math.cast(
-                terminal.size.CellCountInt,
-                self.x,
-            ) orelse std.math.maxInt(terminal.size.CellCountInt);
+        const CoordTag = enum(c_int) {
+            exact = 0,
+            top_left = 1,
+            bottom_right = 2,
+        };
 
-            return switch (self.tag) {
-                inline else => |tag| @unionInit(
-                    terminal.Point,
+        fn pin(
+            self: Point,
+            screen: *const terminal.Screen,
+        ) ?terminal.Pin {
+            // The core point tag.
+            const tag: terminal.point.Tag = switch (self.tag) {
+                inline else => |tag| @field(
+                    terminal.point.Tag,
                     @tagName(tag),
-                    .{ .x = pt_x, .y = self.y },
                 ),
             };
-        }
 
-        fn clamp(self: Point, screen: *const terminal.Screen) Point {
             // Clamp our point to the screen bounds.
             const clamped_x = @min(self.x, screen.pages.cols -| 1);
             const clamped_y = @min(self.y, screen.pages.rows -| 1);
-            return .{ .tag = self.tag, .x = clamped_x, .y = clamped_y };
+
+            return switch (self.coord_tag) {
+                // Exact coordinates require a specific pin.
+                .exact => exact: {
+                    const pt_x = std.math.cast(
+                        terminal.size.CellCountInt,
+                        clamped_x,
+                    ) orelse std.math.maxInt(terminal.size.CellCountInt);
+
+                    const pt: terminal.Point = switch (tag) {
+                        inline else => |v| @unionInit(
+                            terminal.Point,
+                            @tagName(v),
+                            .{ .x = pt_x, .y = clamped_y },
+                        ),
+                    };
+
+                    break :exact screen.pages.pin(pt) orelse null;
+                },
+
+                .top_left => screen.pages.getTopLeft(tag),
+
+                .bottom_right => screen.pages.getBottomRight(tag),
+            };
         }
     };
 
@@ -1212,12 +1237,8 @@ pub const CAPI = struct {
         ) ?terminal.Selection {
             return .{
                 .bounds = .{ .untracked = .{
-                    .start = screen.pages.pin(
-                        self.tl.clamp(screen).core(),
-                    ) orelse return null,
-                    .end = screen.pages.pin(
-                        self.br.clamp(screen).core(),
-                    ) orelse return null,
+                    .start = self.tl.pin(screen) orelse return null,
+                    .end = self.br.pin(screen) orelse return null,
                 } },
                 .rectangle = self.rectangle,
             };

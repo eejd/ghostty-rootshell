@@ -366,8 +366,15 @@ typedef enum {
   GHOSTTY_POINT_SURFACE,
 } ghostty_point_tag_e;
 
+typedef enum {
+  GHOSTTY_POINT_COORD_EXACT,
+  GHOSTTY_POINT_COORD_TOP_LEFT,
+  GHOSTTY_POINT_COORD_BOTTOM_RIGHT,
+} ghostty_point_coord_e;
+
 typedef struct {
   ghostty_point_tag_e tag;
+  ghostty_point_coord_e coord;
   uint32_t x;
   uint32_t y;
 } ghostty_point_s;
