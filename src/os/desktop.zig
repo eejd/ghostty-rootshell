@@ -71,14 +71,14 @@ pub const DesktopEnvironment = enum {
 };
 
 /// Detect what desktop environment we are running under. This is mainly used
-/// on Linux to enable or disable certain features but there may be more uses in
+/// on Linux and BSD to enable or disable certain features but there may be more uses in
 /// the future.
 pub fn desktopEnvironment() DesktopEnvironment {
     return switch (comptime builtin.os.tag) {
         .macos => .macos,
         .windows => .windows,
-        .linux => de: {
-            if (@inComptime()) @compileError("Checking for the desktop environment on Linux must be done at runtime.");
+        .linux, .freebsd => de: {
+            if (@inComptime()) @compileError("Checking for the desktop environment on Linux/BSD must be done at runtime.");
 
             // Use $XDG_SESSION_DESKTOP to determine what DE we are using on Linux
             // https://www.freedesktop.org/software/systemd/man/latest/pam_systemd.html#desktop=
