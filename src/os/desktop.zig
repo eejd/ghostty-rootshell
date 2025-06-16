@@ -132,9 +132,9 @@ test "desktop environment" {
             _ = unsetenv("XDG_SESSION_DESKTOP");
 
             _ = setenv("XDG_SESSION_DESKTOP", "gnome");
-            try testing.expectEqual(if (builtin.os.tag == .linux) .gnome else .other, desktopEnvironment());
+            try testing.expectEqual(.gnome, desktopEnvironment());
             _ = setenv("XDG_SESSION_DESKTOP", "gnome-xorg");
-            try testing.expectEqual(if (builtin.os.tag == .linux) .gnome else .other, desktopEnvironment());
+            try testing.expectEqual(.gnome, desktopEnvironment());
             _ = setenv("XDG_SESSION_DESKTOP", "foobar");
             try testing.expectEqual(.other, desktopEnvironment());
 
@@ -142,7 +142,7 @@ test "desktop environment" {
             try testing.expectEqual(.other, desktopEnvironment());
 
             _ = setenv("XDG_CURRENT_DESKTOP", "GNOME");
-            try testing.expectEqual(if (builtin.os.tag == .linux) .gnome else .other, desktopEnvironment());
+            try testing.expectEqual(.gnome, desktopEnvironment());
             _ = setenv("XDG_CURRENT_DESKTOP", "FOOBAR");
             try testing.expectEqual(.other, desktopEnvironment());
             _ = unsetenv("XDG_CURRENT_DESKTOP");
