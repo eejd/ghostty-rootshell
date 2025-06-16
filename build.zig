@@ -46,7 +46,7 @@ pub fn build(b: *std.Build) !void {
     if (config.app_runtime != .none) {
         exe.install();
         resources.install();
-        i18n.install();
+        if (builtin.target.os.tag != .freebsd) i18n.install();
     }
 
     // Libghostty
