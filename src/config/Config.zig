@@ -2404,7 +2404,10 @@ keybind: Keybinds = .{},
 ///   * `single-instance` - Enable cgroups only for Ghostty instances launched
 ///     as single-instance applications (see gtk-single-instance).
 ///
-@"linux-cgroup": LinuxCgroup = .@"single-instance",
+@"linux-cgroup": LinuxCgroup = if (builtin.os.tag == .linux)
+    .@"single-instance"
+else
+    .never,
 
 /// Memory limit for any individual terminal process (tab, split, window,
 /// etc.) in bytes. If this is unset then no memory limit will be set.
