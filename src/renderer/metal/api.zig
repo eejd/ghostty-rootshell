@@ -366,13 +366,29 @@ pub const MTLTextureUsage = packed struct(c_ulong) {
     /// https://developer.apple.com/documentation/metal/mtltextureusage/shaderatomic?language=objc
     shader_atomic: bool = false, // TextureUsageShaderAtomic = 32,
 
-    __reserved: @Type(.{ .Int = .{
+    __reserved: @Type(.{ .int = .{
         .signedness = .unsigned,
         .bits = @bitSizeOf(c_ulong) - 6,
     } }) = 0,
 
     /// https://developer.apple.com/documentation/metal/mtltextureusage/unknown?language=objc
     const unknown: MTLTextureUsage = @bitCast(0); // TextureUsageUnknown = 0,
+};
+
+/// https://developer.apple.com/documentation/metal/mtlbarrierscope?language=objc
+pub const MTLBarrierScope = enum(c_ulong) {
+    buffers = 1,
+    textures = 2,
+    render_targets = 4,
+};
+
+/// https://developer.apple.com/documentation/metal/mtlrenderstages?language=objc
+pub const MTLRenderStage = enum(c_ulong) {
+    vertex = 1,
+    fragment = 2,
+    tile = 4,
+    object = 8,
+    mesh = 16,
 };
 
 pub const MTLClearColor = extern struct {

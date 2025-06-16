@@ -7,8 +7,8 @@ const glad = @import("glad.zig");
 
 id: c.GLuint,
 
-pub fn active(target: c.GLenum) !void {
-    glad.context.ActiveTexture.?(target);
+pub fn active(index: c_uint) !void {
+    glad.context.ActiveTexture.?(index + c.GL_TEXTURE0);
     try errors.getError();
 }
 
@@ -30,7 +30,7 @@ pub fn destroy(v: Texture) void {
     glad.context.DeleteTextures.?(1, &v.id);
 }
 
-/// Enun for possible texture binding targets.
+/// Enum for possible texture binding targets.
 pub const Target = enum(c_uint) {
     @"1D" = c.GL_TEXTURE_1D,
     @"2D" = c.GL_TEXTURE_2D,
@@ -67,11 +67,11 @@ pub const Parameter = enum(c_uint) {
 /// Internal format enum for texture images.
 pub const InternalFormat = enum(c_int) {
     red = c.GL_RED,
-    rgb = c.GL_RGB,
-    rgba = c.GL_RGBA,
+    rgb = c.GL_RGB8,
+    rgba = c.GL_RGBA8,
 
-    srgb = c.GL_SRGB,
-    srgba = c.GL_SRGB_ALPHA,
+    srgb = c.GL_SRGB8,
+    srgba = c.GL_SRGB8_ALPHA8,
 
     // There are so many more that I haven't filled in.
     _,
@@ -116,6 +116,7 @@ pub const Binding = struct {
             ),
             else => unreachable,
         }
+        try errors.getError();
     }
 
     pub fn image2D(
@@ -140,6 +141,7 @@ pub const Binding = struct {
             @intFromEnum(typ),
             data,
         );
+        try errors.getError();
     }
 
     pub fn subImage2D(
@@ -164,6 +166,7 @@ pub const Binding = struct {
             @intFromEnum(typ),
             data,
         );
+        try errors.getError();
     }
 
     pub fn copySubImage2D(
@@ -176,6 +179,16 @@ pub const Binding = struct {
         width: c.GLsizei,
         height: c.GLsizei,
     ) !void {
-        glad.context.CopyTexSubImage2D.?(@intFromEnum(b.target), level, xoffset, yoffset, x, y, width, height);
+        glad.context.CopyTexSubImage2D.?(
+            @intFromEnum(b.target),
+            level,
+            xoffset,
+            yoffset,
+            x,
+            y,
+            width,
+            height,
+        );
+        try errors.getError();
     }
 };

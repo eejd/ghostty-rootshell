@@ -266,6 +266,9 @@ pub const renamed = std.StaticStringMap([]const u8).initComptime(&.{
 /// This affects the appearance of text and of any images with transparency.
 /// Additionally, custom shaders will receive colors in the configured space.
 ///
+/// On macOS the default is `native`, on all other platforms the default is
+/// `linear-corrected`.
+///
 /// Valid values:
 ///
 /// * `native` - Perform alpha blending in the native color space for the OS.
@@ -276,12 +279,15 @@ pub const renamed = std.StaticStringMap([]const u8).initComptime(&.{
 ///   when certain color combinations are used (e.g. red / green), but makes
 ///   dark text look much thinner than normal and light text much thicker.
 ///   This is also sometimes known as "gamma correction".
-///   (Currently only supported on macOS. Has no effect on Linux.)
 ///
 /// * `linear-corrected` - Same as `linear`, but with a correction step applied
 ///   for text that makes it look nearly or completely identical to `native`,
 ///   but without any of the darkening artifacts.
-@"alpha-blending": AlphaBlending = .native,
+@"alpha-blending": AlphaBlending =
+    if (builtin.os.tag == .macos)
+        .native
+    else
+        .@"linear-corrected",
 
 /// All of the configurations behavior adjust various metrics determined by the
 /// font. The values can be integers (1, -1, etc.) or a percentage (20%, -15%,

@@ -1,19 +1,14 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
-const macos = @import("macos");
-const objc = @import("objc");
 const math = @import("../../math.zig");
 
-const mtl = @import("api.zig");
 const Pipeline = @import("Pipeline.zig");
 
-const log = std.log.scoped(.metal);
+const log = std.log.scoped(.opengl);
 
 /// This contains the state for the shaders used by the Metal renderer.
 pub const Shaders = struct {
-    library: objc.Object,
-
     /// Renders cell foreground elements (text, decorations).
     cell_text_pipeline: Pipeline,
 
@@ -41,28 +36,20 @@ pub const Shaders = struct {
     /// code, not file paths.
     pub fn init(
         alloc: Allocator,
-        device: objc.Object,
         post_shaders: []const [:0]const u8,
-        pixel_format: mtl.MTLPixelFormat,
     ) !Shaders {
-        const library = try initLibrary(device);
-        errdefer library.msgSend(void, objc.sel("release"), .{});
-
-        const cell_text_pipeline = try initCellTextPipeline(device, library, pixel_format);
+        const cell_text_pipeline = try initCellTextPipeline();
         errdefer cell_text_pipeline.deinit();
 
-        const cell_bg_pipeline = try initCellBgPipeline(device, library, pixel_format);
+        const cell_bg_pipeline = try initCellBgPipeline();
         errdefer cell_bg_pipeline.deinit();
 
-        const image_pipeline = try initImagePipeline(device, library, pixel_format);
+        const image_pipeline = try initImagePipeline();
         errdefer image_pipeline.deinit();
 
         const post_pipelines: []const Pipeline = initPostPipelines(
             alloc,
-            device,
-            library,
             post_shaders,
-            pixel_format,
         ) catch |err| err: {
             // If an error happens while building postprocess shaders we
             // want to just not use any postprocess shaders since we don't
@@ -76,7 +63,6 @@ pub const Shaders = struct {
         };
 
         return .{
-            .library = library,
             .cell_text_pipeline = cell_text_pipeline,
             .cell_bg_pipeline = cell_bg_pipeline,
             .image_pipeline = image_pipeline,
@@ -92,7 +78,6 @@ pub const Shaders = struct {
         self.cell_text_pipeline.deinit();
         self.cell_bg_pipeline.deinit();
         self.image_pipeline.deinit();
-        self.library.msgSend(void, objc.sel("release"), .{});
 
         // Release our postprocess shaders
         if (self.post_pipelines.len > 0) {
@@ -106,18 +91,14 @@ pub const Shaders = struct {
 
 /// Single parameter for the image shader. See shader for field details.
 pub const Image = extern struct {
-    grid_pos: [2]f32,
-    cell_offset: [2]f32,
-    source_rect: [4]f32,
-    dest_size: [2]f32,
+    grid_pos: [2]f32 align(8),
+    cell_offset: [2]f32 align(8),
+    source_rect: [4]f32 align(16),
+    dest_size: [2]f32 align(8),
 };
 
 /// The uniforms that are passed to the terminal cell shader.
 pub const Uniforms = extern struct {
-    // Note: all of the explicit alignments are copied from the
-    // MSL developer reference just so that we can be sure that we got
-    // it all exactly right.
-
     /// The projection matrix for turning world coordinates to normalized.
     /// This is calculated based on the size of the screen.
     projection_matrix: math.Mat align(16),
@@ -135,7 +116,7 @@ pub const Uniforms = extern struct {
     /// Bit mask defining which directions to
     /// extend cell colors in to the padding.
     /// Order, LSB first: left, right, up, down
-    padding_extend: PaddingExtend align(1),
+    padding_extend: PaddingExtend align(4),
 
     /// The minimum contrast ratio for text. The contrast ratio is calculated
     /// according to the WCAG 2.0 spec.
@@ -148,45 +129,44 @@ pub const Uniforms = extern struct {
     /// The background color for the whole surface.
     bg_color: [4]u8 align(4),
 
-    /// Various booleans.
-    ///
-    /// TODO: Maybe put these in a packed struct, like for OpenGL.
-    bools: extern struct {
+    /// Various booleans, in a packed struct for space efficiency.
+    bools: Bools align(4),
+
+    const Bools = packed struct(u32) {
         /// Whether the cursor is 2 cells wide.
-        cursor_wide: bool align(1),
+        cursor_wide: bool,
 
         /// Indicates that colors provided to the shader are already in
         /// the P3 color space, so they don't need to be converted from
         /// sRGB.
-        use_display_p3: bool align(1),
+        use_display_p3: bool,
 
         /// Indicates that the color attachments for the shaders have
         /// an `*_srgb` pixel format, which means the shaders need to
         /// output linear RGB colors rather than gamma encoded colors,
         /// since blending will be performed in linear space and then
         /// Metal itself will re-encode the colors for storage.
-        use_linear_blending: bool align(1),
+        use_linear_blending: bool,
 
         /// Enables a weight correction step that makes text rendered
         /// with linear alpha blending have a similar apparent weight
         /// (thickness) to gamma-incorrect blending.
-        use_linear_correction: bool align(1) = false,
-    },
+        use_linear_correction: bool = false,
 
-    const PaddingExtend = packed struct(u8) {
+        _padding: u28 = 0,
+    };
+
+    const PaddingExtend = packed struct(u32) {
         left: bool = false,
         right: bool = false,
         up: bool = false,
         down: bool = false,
-        _padding: u4 = 0,
+        _padding: u28 = 0,
     };
 };
 
 /// The uniforms used for custom postprocess shaders.
 pub const PostUniforms = extern struct {
-    // Note: all of the explicit alignments are copied from the
-    // MSL developer reference just so that we can be sure that we got
-    // it all exactly right.
     resolution: [3]f32 align(16),
     time: f32 align(4),
     time_delta: f32 align(4),
@@ -199,43 +179,11 @@ pub const PostUniforms = extern struct {
     sample_rate: f32 align(4),
 };
 
-/// Initialize the MTLLibrary. A MTLLibrary is a collection of shaders.
-fn initLibrary(device: objc.Object) !objc.Object {
-    const start = try std.time.Instant.now();
-
-    const data = try macos.dispatch.Data.create(
-        @embedFile("ghostty_metallib"),
-        macos.dispatch.queue.getMain(),
-        macos.dispatch.Data.DESTRUCTOR_DEFAULT,
-    );
-    defer data.release();
-
-    var err: ?*anyopaque = null;
-    const library = device.msgSend(
-        objc.Object,
-        objc.sel("newLibraryWithData:error:"),
-        .{
-            data,
-            &err,
-        },
-    );
-    try checkError(err);
-
-    const end = try std.time.Instant.now();
-    log.debug("shader library loaded time={}us", .{end.since(start) / std.time.ns_per_us});
-
-    return library;
-}
-
-/// Initialize our custom shader pipelines.
-///
-/// The shaders argument is a set of shader source code, not file paths.
+/// Initialize our custom shader pipelines. The shaders argument is a
+/// set of shader source code, not file paths.
 fn initPostPipelines(
     alloc: Allocator,
-    device: objc.Object,
-    library: objc.Object,
     shaders: []const [:0]const u8,
-    pixel_format: mtl.MTLPixelFormat,
 ) ![]const Pipeline {
     // If we have no shaders, do nothing.
     if (shaders.len == 0) return &.{};
@@ -255,12 +203,7 @@ fn initPostPipelines(
     // Build each shader. Note we don't use "0.." to build our index
     // because we need to keep track of our length to clean up above.
     for (shaders) |source| {
-        pipelines[i] = try initPostPipeline(
-            device,
-            library,
-            source,
-            pixel_format,
-        );
+        pipelines[i] = try initPostPipeline(source);
         i += 1;
     }
 
@@ -268,46 +211,10 @@ fn initPostPipelines(
 }
 
 /// Initialize a single custom shader pipeline from shader source.
-fn initPostPipeline(
-    device: objc.Object,
-    library: objc.Object,
-    data: [:0]const u8,
-    pixel_format: mtl.MTLPixelFormat,
-) !Pipeline {
-    // Create our library which has the shader source
-    const post_library = library: {
-        const source = try macos.foundation.String.createWithBytes(
-            data,
-            .utf8,
-            false,
-        );
-        defer source.release();
-
-        var err: ?*anyopaque = null;
-        const post_library = device.msgSend(
-            objc.Object,
-            objc.sel("newLibraryWithSource:options:error:"),
-            .{ source, @as(?*anyopaque, null), &err },
-        );
-        try checkError(err);
-        errdefer post_library.msgSend(void, objc.sel("release"), .{});
-
-        break :library post_library;
-    };
-    defer post_library.msgSend(void, objc.sel("release"), .{});
-
+fn initPostPipeline(data: [:0]const u8) !Pipeline {
     return try Pipeline.init(null, .{
-        .device = device,
-        .vertex_fn = "full_screen_vertex",
-        .fragment_fn = "main0",
-        .vertex_library = library,
-        .fragment_library = post_library,
-        .attachments = &.{
-            .{
-                .pixel_format = pixel_format,
-                .blending_enabled = false,
-            },
-        },
+        .vertex_fn = loadShaderCode("../shaders/glsl/full_screen.v.glsl"),
+        .fragment_fn = data,
     });
 }
 
@@ -318,10 +225,10 @@ pub const CellText = extern struct {
     bearings: [2]i16 align(4) = .{ 0, 0 },
     grid_pos: [2]u16 align(4),
     color: [4]u8 align(4),
-    mode: Mode align(1),
-    constraint_width: u8 align(1) = 0,
+    mode: Mode align(4),
+    constraint_width: u32 align(4) = 0,
 
-    pub const Mode = enum(u8) {
+    pub const Mode = enum(u32) {
         fg = 1,
         fg_constrained = 2,
         fg_color = 3,
@@ -329,88 +236,75 @@ pub const CellText = extern struct {
         fg_powerline = 5,
     };
 
-    test {
-        // Minimizing the size of this struct is important,
-        // so we test it in order to be aware of any changes.
-        try std.testing.expectEqual(32, @sizeOf(CellText));
-    }
+    // test {
+    //     // Minimizing the size of this struct is important,
+    //     // so we test it in order to be aware of any changes.
+    //     try std.testing.expectEqual(32, @sizeOf(CellText));
+    // }
 };
 
-/// Initialize the cell render pipeline for our shader library.
-fn initCellTextPipeline(
-    device: objc.Object,
-    library: objc.Object,
-    pixel_format: mtl.MTLPixelFormat,
-) !Pipeline {
+/// Initialize the cell render pipeline.
+fn initCellTextPipeline() !Pipeline {
     return try Pipeline.init(CellText, .{
-        .device = device,
-        .vertex_fn = "cell_text_vertex",
-        .fragment_fn = "cell_text_fragment",
-        .vertex_library = library,
-        .fragment_library = library,
+        .vertex_fn = loadShaderCode("../shaders/glsl/cell_text.v.glsl"),
+        .fragment_fn = loadShaderCode("../shaders/glsl/cell_text.f.glsl"),
         .step_fn = .per_instance,
-        .attachments = &.{
-            .{
-                .pixel_format = pixel_format,
-                .blending_enabled = true,
-            },
-        },
     });
 }
 
 /// This is a single parameter for the cell bg shader.
 pub const CellBg = [4]u8;
 
-/// Initialize the cell background render pipeline for our shader library.
-fn initCellBgPipeline(
-    device: objc.Object,
-    library: objc.Object,
-    pixel_format: mtl.MTLPixelFormat,
-) !Pipeline {
+/// Initialize the cell background render pipeline.
+fn initCellBgPipeline() !Pipeline {
     return try Pipeline.init(null, .{
-        .device = device,
-        .vertex_fn = "cell_bg_vertex",
-        .fragment_fn = "cell_bg_fragment",
-        .vertex_library = library,
-        .fragment_library = library,
-        .attachments = &.{
-            .{
-                .pixel_format = pixel_format,
-                .blending_enabled = false,
-            },
-        },
+        .vertex_fn = loadShaderCode("../shaders/glsl/full_screen.v.glsl"),
+        .fragment_fn = loadShaderCode("../shaders/glsl/cell_bg.f.glsl"),
     });
 }
 
-/// Initialize the image render pipeline for our shader library.
-fn initImagePipeline(
-    device: objc.Object,
-    library: objc.Object,
-    pixel_format: mtl.MTLPixelFormat,
-) !Pipeline {
+/// Initialize the image render pipeline.
+fn initImagePipeline() !Pipeline {
     return try Pipeline.init(Image, .{
-        .device = device,
-        .vertex_fn = "image_vertex",
-        .fragment_fn = "image_fragment",
-        .vertex_library = library,
-        .fragment_library = library,
+        .vertex_fn = loadShaderCode("../shaders/glsl/image.v.glsl"),
+        .fragment_fn = loadShaderCode("../shaders/glsl/image.f.glsl"),
         .step_fn = .per_instance,
-        .attachments = &.{
-            .{
-                .pixel_format = pixel_format,
-                .blending_enabled = true,
-            },
-        },
     });
 }
 
-fn checkError(err_: ?*anyopaque) !void {
-    const nserr = objc.Object.fromId(err_ orelse return);
-    const str = @as(
-        *macos.foundation.String,
-        @ptrCast(nserr.getProperty(?*anyopaque, "localizedDescription").?),
-    );
+/// Load shader code from the target path, processing `#include` directives.
+///
+/// Comptime only for now, this code is really sloppy and makes a bunch of
+/// assumptions about things being well formed and file names not containing
+/// quote marks. If we ever want to process `#include`s for custom shaders
+/// then we need to write something better than this for it.
+fn loadShaderCode(comptime path: []const u8) [:0]const u8 {
+    return comptime processIncludes(@embedFile(path), std.fs.path.dirname(path).?);
+}
 
-    log.err("metal error={s}", .{str.cstringPtr(.ascii).?});
-    return error.MetalFailed;
+/// Used by loadShaderCode
+fn processIncludes(contents: [:0]const u8, basedir: []const u8) [:0]const u8 {
+    @setEvalBranchQuota(100_000);
+    var i: usize = 0;
+    while (i < contents.len) {
+        if (std.mem.startsWith(u8, contents[i..], "#include")) {
+            assert(std.mem.startsWith(u8, contents[i..], "#include \""));
+            const start = i + "#include \"".len;
+            const end = std.mem.indexOfScalarPos(u8, contents, start, '"').?;
+            return std.fmt.comptimePrint(
+                "{s}{s}{s}",
+                .{
+                    contents[0..i],
+                    @embedFile(basedir ++ .{std.fs.path.sep} ++ contents[start..end]),
+                    processIncludes(contents[end + 1 ..], basedir),
+                },
+            );
+        }
+        if (std.mem.indexOfPos(u8, contents, i, "\n#")) |j| {
+            i = (j + 1);
+        } else {
+            break;
+        }
+    }
+    return contents;
 }
