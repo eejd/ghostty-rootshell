@@ -30,24 +30,24 @@ pub fn launchedFromDesktop() bool {
             break :macos c.getppid() == 1;
         },
 
-        // On Linux, GTK sets GIO_LAUNCHED_DESKTOP_FILE and
+        // On Linux and BSD, GTK sets GIO_LAUNCHED_DESKTOP_FILE and
         // GIO_LAUNCHED_DESKTOP_FILE_PID. We only check the latter to see if
         // we match the PID and assume that if we do, we were launched from
         // the desktop file. Pid comparing catches the scenario where
         // another terminal was launched from a desktop file and then launches
         // Ghostty and Ghostty inherits the env.
-        .linux => linux: {
+        .linux, .freebsd => ul: {
             const gio_pid_str = posix.getenv("GIO_LAUNCHED_DESKTOP_FILE_PID") orelse
-                break :linux false;
+                break :ul false;
 
             const pid = c.getpid();
             const gio_pid = std.fmt.parseInt(
                 @TypeOf(pid),
                 gio_pid_str,
                 10,
-            ) catch break :linux false;
+            ) catch break :ul false;
 
-            break :linux gio_pid == pid;
+            break :ul gio_pid == pid;
         },
 
         // TODO: This should have some logic to detect this. Perhaps std.builtin.subsystem
@@ -55,9 +55,6 @@ pub fn launchedFromDesktop() bool {
 
         // iPhone/iPad is always launched from the "desktop"
         .ios => true,
-
-        // Assume we are launching from the "desktop"
-        .freebsd => true,
 
         else => @compileError("unsupported platform"),
     };
