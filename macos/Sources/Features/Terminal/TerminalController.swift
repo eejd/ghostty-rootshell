@@ -5,7 +5,7 @@ import Combine
 import GhosttyKit
 
 /// A classic, tabbed terminal experience.
-class TerminalController: BaseTerminalController {
+class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Controller {
     override var windowNibName: NSNib.Name? {
         let defaultValue = "Terminal"
 
@@ -882,14 +882,20 @@ class TerminalController: BaseTerminalController {
         ghostty.newTab(surface: surface)
     }
 
-    //MARK: - NSWindowDelegate
+    // MARK: NSWindowDelegate
+
+    // TabGroupCloseCoordinator.Controller
+    lazy private(set) var tabGroupCloseCoordinator = TabGroupCloseCoordinator()
 
     override func windowShouldClose(_ sender: NSWindow) -> Bool {
-        // If we have tabs, then this should only close the tab.
-        if window?.tabGroup?.windows.count ?? 0 > 1 {
-            closeTab(sender)
-        } else {
-            closeWindow(sender)
+        tabGroupCloseCoordinator.windowShouldClose(sender) { [weak self] scope in
+            guard let self else { return }
+            switch (scope) {
+            case .tab: closeTab(nil)
+            case .window:
+                guard self.window?.isFirstWindowInTabGroup ?? false else { return }
+                closeWindow(nil)
+            }
         }
 
         // We will always explicitly close the window using the above
@@ -1264,4 +1270,3 @@ extension TerminalController: NSMenuItemValidation {
         }
     }
 }
-
