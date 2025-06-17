@@ -119,6 +119,7 @@
 		A5E112932AF73E6E00C6E0C2 /* ClipboardConfirmation.xib in Resources */ = {isa = PBXBuildFile; fileRef = A5E112922AF73E6E00C6E0C2 /* ClipboardConfirmation.xib */; };
 		A5E112952AF73E8A00C6E0C2 /* ClipboardConfirmationController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5E112942AF73E8A00C6E0C2 /* ClipboardConfirmationController.swift */; };
 		A5E112972AF7401B00C6E0C2 /* ClipboardConfirmationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5E112962AF7401B00C6E0C2 /* ClipboardConfirmationView.swift */; };
+		A5E4082A2E022E9E0035FEAC /* TabGroupCloseCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5E408292E022E9B0035FEAC /* TabGroupCloseCoordinator.swift */; };
 		A5FEB3002ABB69450068369E /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5FEB2FF2ABB69450068369E /* main.swift */; };
 		AEE8B3452B9AA39600260C5E /* NSPasteboard+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEE8B3442B9AA39600260C5E /* NSPasteboard+Extension.swift */; };
 		C159E81D2B66A06B00FDFE9C /* OSColor+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = C159E81C2B66A06B00FDFE9C /* OSColor+Extension.swift */; };
@@ -238,6 +239,7 @@
 		A5E112922AF73E6E00C6E0C2 /* ClipboardConfirmation.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = ClipboardConfirmation.xib; sourceTree = "<group>"; };
 		A5E112942AF73E8A00C6E0C2 /* ClipboardConfirmationController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardConfirmationController.swift; sourceTree = "<group>"; };
 		A5E112962AF7401B00C6E0C2 /* ClipboardConfirmationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardConfirmationView.swift; sourceTree = "<group>"; };
+		A5E408292E022E9B0035FEAC /* TabGroupCloseCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabGroupCloseCoordinator.swift; sourceTree = "<group>"; };
 		A5FEB2FF2ABB69450068369E /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		AEE8B3442B9AA39600260C5E /* NSPasteboard+Extension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NSPasteboard+Extension.swift"; sourceTree = "<group>"; };
 		C159E81C2B66A06B00FDFE9C /* OSColor+Extension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "OSColor+Extension.swift"; sourceTree = "<group>"; };
@@ -320,12 +322,13 @@
 				A5333E1B2B5A1CE3008AEFF7 /* CrossKit.swift */,
 				A5CBD0572C9F30860017A1AE /* Cursor.swift */,
 				A5D0AF3C2B37804400D21823 /* CodableBridge.swift */,
+				A5CBD0552C9E65A50017A1AE /* DraggableWindowView.swift */,
 				A58636702DF298F700E04A10 /* ExpiringUndoManager.swift */,
 				A52FFF582CAA4FF1000C6A5B /* Fullscreen.swift */,
 				A59630962AEE163600D64628 /* HostingWindow.swift */,
 				A5CA378B2D2A4DE800931030 /* KeyboardLayout.swift */,
 				A59FB5D02AE0DEA7009128F3 /* MetalView.swift */,
-				A5CBD0552C9E65A50017A1AE /* DraggableWindowView.swift */,
+				A5E408292E022E9B0035FEAC /* TabGroupCloseCoordinator.swift */,
 				A5CA378D2D31D6C100931030 /* Weak.swift */,
 				C1F26EE72B76CBFC00404083 /* VibrantLayer.h */,
 				C1F26EE82B76CBFC00404083 /* VibrantLayer.m */,
@@ -792,6 +795,7 @@
 				A599CDB02CF103F60049FA26 /* NSAppearance+Extension.swift in Sources */,
 				A52FFF572CA90484000C6A5B /* QuickTerminalScreen.swift in Sources */,
 				A5CC36132C9CD72D004D6760 /* SecureInputOverlay.swift in Sources */,
+				A5E4082A2E022E9E0035FEAC /* TabGroupCloseCoordinator.swift in Sources */,
 				A535B9DA299C569B0017E2E4 /* ErrorView.swift in Sources */,
 				A53A29882DB69D2F00B6E02C /* TerminalCommandPalette.swift in Sources */,
 				A51BFC202B2FB64F00E92F16 /* AboutController.swift in Sources */,
