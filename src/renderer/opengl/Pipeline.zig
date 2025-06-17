@@ -31,7 +31,6 @@ pub const Options = struct {
         per_vertex,
         per_instance,
     };
-
 };
 
 program: gl.Program,
