@@ -16,7 +16,7 @@ class TerminalController: BaseTerminalController {
         case "hidden": "TerminalHiddenTitlebar"
         case "transparent": "TerminalTransparentTitlebar"
         case "tabs":
-            if #available(macOS 26.0, *), hasLiquidGlass() {
+            if #available(macOS 26.0, *) {
                 "TerminalTabsTitlebarTahoe"
             } else {
                 "TerminalTabsTitlebarVentura"
