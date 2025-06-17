@@ -22,6 +22,9 @@ pub fn init(b: *std.Build, cfg: *const Config) !GhosttyI18n {
     defer steps.deinit();
 
     inline for (internal_os.i18n.locales) |locale| {
+        // There is no encoding suffix in the LC_MESSAGES path on FreeBSD,
+        // so we need to remove it from `locale` to have a correct destination string.
+        // (/usr/local/share/locale/en_AU/LC_MESSAGES)
         const target_locale = comptime if (builtin.target.os.tag == .freebsd)
             std.mem.trimRight(u8, locale, ".UTF-8")
         else
