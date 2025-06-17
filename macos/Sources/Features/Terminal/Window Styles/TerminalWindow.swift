@@ -447,7 +447,7 @@ extension TerminalWindow {
         // The padding from the top that the view appears. This was all just manually
         // measured based on the OS.
         var topPadding: CGFloat {
-            if #available(macOS 26.0, *), hasLiquidGlass() {
+            if #available(macOS 26.0, *) {
                 return viewModel.hasToolbar ? 10 : 5
             } else {
                 return viewModel.hasToolbar ? 9 : 4
