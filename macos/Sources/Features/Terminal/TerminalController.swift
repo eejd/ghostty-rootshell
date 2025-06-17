@@ -1001,20 +1001,14 @@ class TerminalController: BaseTerminalController {
 
     @IBAction override func closeWindow(_ sender: Any?) {
         guard let window = window else { return }
-        guard let tabGroup = window.tabGroup else {
-            // No tabs, no tab group, just perform a normal close.
-            closeWindowImmediately()
-            return
-        }
 
-        // If have one window then we just do a normal close
-        if tabGroup.windows.count == 1 {
-            closeWindowImmediately()
-            return
-        }
+        // We need to check all the windows in our tab group for confirmation
+        // if we're closing the window. If we don't have a tabgroup for any
+        // reason we check ourselves.
+        let windows: [NSWindow] = window.tabGroup?.windows ?? [window]
 
         // Check if any windows require close confirmation.
-        let needsConfirm = tabGroup.windows.contains { tabWindow in
+        let needsConfirm = windows.contains { tabWindow in
             guard let controller = tabWindow.windowController as? TerminalController else {
                 return false
             }
