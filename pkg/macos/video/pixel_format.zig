@@ -96,33 +96,33 @@ pub const PixelFormat = enum(c_int) {
     /// Component Y'CbCr 8-bit 4:2:2, full range, ordered Y'0 Cb Y'1 Cr
     @"422YpCbCr8FullRange" = c.kCVPixelFormatType_422YpCbCr8FullRange,
     /// 8 bit one component, black is zero
-    @"OneComponent8" = c.kCVPixelFormatType_OneComponent8,
+    OneComponent8 = c.kCVPixelFormatType_OneComponent8,
     /// 8 bit two component, black is zero
-    @"TwoComponent8" = c.kCVPixelFormatType_TwoComponent8,
+    TwoComponent8 = c.kCVPixelFormatType_TwoComponent8,
     /// little-endian RGB101010, 2 MSB are ignored, wide-gamut (384-895)
     @"30RGBLEPackedWideGamut" = c.kCVPixelFormatType_30RGBLEPackedWideGamut,
     /// little-endian ARGB2101010 full-range ARGB
-    @"ARGB2101010LEPacked" = c.kCVPixelFormatType_ARGB2101010LEPacked,
+    ARGB2101010LEPacked = c.kCVPixelFormatType_ARGB2101010LEPacked,
     /// little-endian ARGB10101010, each 10 bits in the MSBs of 16bits, wide-gamut (384-895, including alpha)
     @"40ARGBLEWideGamut" = c.kCVPixelFormatType_40ARGBLEWideGamut,
     /// little-endian ARGB10101010, each 10 bits in the MSBs of 16bits, wide-gamut (384-895, including alpha). Alpha premultiplied
     @"40ARGBLEWideGamutPremultiplied" = c.kCVPixelFormatType_40ARGBLEWideGamutPremultiplied,
     /// 10 bit little-endian one component, stored as 10 MSBs of 16 bits, black is zero
-    @"OneComponent10" = c.kCVPixelFormatType_OneComponent10,
+    OneComponent10 = c.kCVPixelFormatType_OneComponent10,
     /// 12 bit little-endian one component, stored as 12 MSBs of 16 bits, black is zero
-    @"OneComponent12" = c.kCVPixelFormatType_OneComponent12,
+    OneComponent12 = c.kCVPixelFormatType_OneComponent12,
     /// 16 bit little-endian one component, black is zero
-    @"OneComponent16" = c.kCVPixelFormatType_OneComponent16,
+    OneComponent16 = c.kCVPixelFormatType_OneComponent16,
     /// 16 bit little-endian two component, black is zero
-    @"TwoComponent16" = c.kCVPixelFormatType_TwoComponent16,
+    TwoComponent16 = c.kCVPixelFormatType_TwoComponent16,
     /// 16 bit one component IEEE half-precision float, 16-bit little-endian samples
-    @"OneComponent16Half" = c.kCVPixelFormatType_OneComponent16Half,
+    OneComponent16Half = c.kCVPixelFormatType_OneComponent16Half,
     /// 32 bit one component IEEE float, 32-bit little-endian samples
-    @"OneComponent32Float" = c.kCVPixelFormatType_OneComponent32Float,
+    OneComponent32Float = c.kCVPixelFormatType_OneComponent32Float,
     /// 16 bit two component IEEE half-precision float, 16-bit little-endian samples
-    @"TwoComponent16Half" = c.kCVPixelFormatType_TwoComponent16Half,
+    TwoComponent16Half = c.kCVPixelFormatType_TwoComponent16Half,
     /// 32 bit two component IEEE float, 32-bit little-endian samples
-    @"TwoComponent32Float" = c.kCVPixelFormatType_TwoComponent32Float,
+    TwoComponent32Float = c.kCVPixelFormatType_TwoComponent32Float,
     /// 64 bit RGBA IEEE half-precision float, 16-bit little-endian samples
     @"64RGBAHalf" = c.kCVPixelFormatType_64RGBAHalf,
     /// 128 bit RGBA IEEE float, 32-bit little-endian samples
@@ -136,13 +136,13 @@ pub const PixelFormat = enum(c_int) {
     /// Bayer 14-bit Little-Endian, packed in 16-bits, ordered G B G B... alternating with R G R G...
     @"14Bayer_GBRG" = c.kCVPixelFormatType_14Bayer_GBRG,
     /// IEEE754-2008 binary16 (half float), describing the normalized shift when comparing two images. Units are 1/meters: ( pixelShift / (pixelFocalLength * baselineInMeters) )
-    @"DisparityFloat16" = c.kCVPixelFormatType_DisparityFloat16,
+    DisparityFloat16 = c.kCVPixelFormatType_DisparityFloat16,
     /// IEEE754-2008 binary32 float, describing the normalized shift when comparing two images. Units are 1/meters: ( pixelShift / (pixelFocalLength * baselineInMeters) )
-    @"DisparityFloat32" = c.kCVPixelFormatType_DisparityFloat32,
+    DisparityFloat32 = c.kCVPixelFormatType_DisparityFloat32,
     /// IEEE754-2008 binary16 (half float), describing the depth (distance to an object) in meters
-    @"DepthFloat16" = c.kCVPixelFormatType_DepthFloat16,
+    DepthFloat16 = c.kCVPixelFormatType_DepthFloat16,
     /// IEEE754-2008 binary32 float, describing the depth (distance to an object) in meters
-    @"DepthFloat32" = c.kCVPixelFormatType_DepthFloat32,
+    DepthFloat32 = c.kCVPixelFormatType_DepthFloat32,
     /// 2 plane YCbCr10 4:2:0, each 10 bits in the MSBs of 16bits, video-range (luma=[64,940] chroma=[64,960])
     @"420YpCbCr10BiPlanarVideoRange" = c.kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange,
     /// 2 plane YCbCr10 4:2:2, each 10 bits in the MSBs of 16bits, video-range (luma=[64,940] chroma=[64,960])
