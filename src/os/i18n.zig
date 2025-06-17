@@ -86,7 +86,8 @@ pub fn init(resources_dir: []const u8) InitError!void {
             log.debug("binding domain={s} path={s}", .{ build_config.bundle_id, path });
             _ = bindtextdomain(build_config.bundle_id, path.ptr) orelse
                 return error.OutOfMemory;
-    }}
+        },
+    }
 }
 
 /// Set the global gettext domain to our bundle ID, allowing unqualified

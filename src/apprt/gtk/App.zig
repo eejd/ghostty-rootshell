@@ -144,7 +144,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         const result: bool = switch (config.@"async-backend") {
             .auto => unreachable,
             .epoll => if (comptime xev.dynamic) xev.prefer(.epoll) else false,
-            .io_uring =>  if (comptime xev.dynamic) xev.prefer(.io_uring) else false,
+            .io_uring => if (comptime xev.dynamic) xev.prefer(.io_uring) else false,
         };
 
         if (result) {
