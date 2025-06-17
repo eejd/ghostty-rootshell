@@ -7679,4 +7679,3 @@ test "theme specifying light/dark sets theme usage in conditional state" {
         try testing.expect(cfg._conditional_set.contains(.theme));
     }
 }
-
