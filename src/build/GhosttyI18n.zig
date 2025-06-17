@@ -1,6 +1,7 @@
 const GhosttyI18n = @This();
 
 const std = @import("std");
+const builtin = @import("builtin");
 const Config = @import("Config.zig");
 const gresource = @import("../apprt/gtk/gresource.zig");
 const internal_os = @import("../os/main.zig");
@@ -21,6 +22,11 @@ pub fn init(b: *std.Build, cfg: *const Config) !GhosttyI18n {
     defer steps.deinit();
 
     inline for (internal_os.i18n.locales) |locale| {
+        const target_locale = comptime if (builtin.target.os.tag == .freebsd)
+            std.mem.trimRight(u8, locale, ".UTF-8")
+        else
+            locale;
+
         const msgfmt = b.addSystemCommand(&.{ "msgfmt", "-o", "-" });
         msgfmt.addFileArg(b.path("po/" ++ locale ++ ".po"));
 
@@ -28,7 +34,7 @@ pub fn init(b: *std.Build, cfg: *const Config) !GhosttyI18n {
             msgfmt.captureStdOut(),
             std.fmt.comptimePrint(
                 "share/locale/{s}/LC_MESSAGES/{s}.mo",
-                .{ locale, domain },
+                .{ target_locale, domain },
             ),
         ).step);
     }

@@ -70,7 +70,7 @@ pub const InitError = error{
 pub fn init(resources_dir: []const u8) InitError!void {
     // i18n is unsupported on Windows
     switch (builtin.os.tag) {
-        .windows, .freebsd => return,
+        .windows => return,
         else => {
             // Our resources dir is always nested below the share dir that
             // is standard for translations.
