@@ -29,6 +29,10 @@ pub const imagepkg = @import("opengl/image.zig");
 
 pub const custom_shader_target: shadertoy.Target = .glsl;
 
+/// Because OpenGL's frame completion is always
+/// sync, we have no need for multi-buffering.
+pub const swap_chain_count = 1;
+
 const log = std.log.scoped(.opengl);
 
 /// We require at least OpenGL 4.3
