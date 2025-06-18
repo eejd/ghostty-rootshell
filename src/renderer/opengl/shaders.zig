@@ -295,7 +295,7 @@ fn processIncludes(contents: [:0]const u8, basedir: []const u8) [:0]const u8 {
                 "{s}{s}{s}",
                 .{
                     contents[0..i],
-                    @embedFile(basedir ++ .{std.fs.path.sep} ++ contents[start..end]),
+                    @embedFile(basedir ++ "/" ++ contents[start..end]),
                     processIncludes(contents[end + 1 ..], basedir),
                 },
             );

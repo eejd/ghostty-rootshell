@@ -70,6 +70,16 @@ pub fn glfwWindowHints(config: *const configpkg.Config) glfw.Window.Hints {
     };
 }
 
+/// 32-bit windows cross-compilation breaks with `.c` for some reason, so...
+const gl_debug_proc_callconv =
+    @typeInfo(
+        @typeInfo(
+            @typeInfo(
+                gl.c.GLDEBUGPROC,
+            ).optional.child,
+        ).pointer.child,
+    ).@"fn".calling_convention;
+
 fn glDebugMessageCallback(
     src: gl.c.GLenum,
     typ: gl.c.GLenum,
@@ -78,7 +88,7 @@ fn glDebugMessageCallback(
     len: gl.c.GLsizei,
     msg: [*c]const gl.c.GLchar,
     user_param: ?*const anyopaque,
-) callconv(.c) void {
+) callconv(gl_debug_proc_callconv) void {
     _ = user_param;
 
     const src_str: []const u8 = switch (src) {
