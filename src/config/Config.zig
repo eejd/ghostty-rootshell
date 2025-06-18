@@ -1967,9 +1967,6 @@ keybind: Keybinds = .{},
 /// causing the window to be completely black. If this happens, you can
 /// unset this configuration to disable the shader.
 ///
-/// On Linux, this requires OpenGL 4.2. Ghostty typically only requires
-/// OpenGL 3.3, but custom shaders push that requirement up to 4.2.
-///
 /// The shader API is identical to the Shadertoy API: you specify a `mainImage`
 /// function and the available uniforms match Shadertoy. The iChannel0 uniform
 /// is a texture containing the rendered terminal screen.
@@ -1983,8 +1980,7 @@ keybind: Keybinds = .{},
 /// This can be repeated multiple times to load multiple shaders. The shaders
 /// will be run in the order they are specified.
 ///
-/// Changing this value at runtime and reloading the configuration will only
-/// affect new windows, tabs, and splits.
+/// This can be changed at runtime and will affect all open terminals.
 @"custom-shader": RepeatablePath = .{},
 
 /// If `true` (default), the focused terminal surface will run an animation
@@ -2002,8 +1998,7 @@ keybind: Keybinds = .{},
 /// will use more CPU per terminal surface and can become quite expensive
 /// depending on the shader and your terminal usage.
 ///
-/// This value can be changed at runtime and will affect all currently
-/// open terminals.
+/// This can be changed at runtime and will affect all open terminals.
 @"custom-shader-animation": CustomShaderAnimation = .true,
 
 /// Bell features to enable if bell support is available in your runtime. Not
