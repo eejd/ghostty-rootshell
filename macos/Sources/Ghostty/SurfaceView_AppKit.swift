@@ -139,7 +139,8 @@ extension Ghostty {
         private var titleFromTerminal: String?
 
         // The cached contents of the screen.
-        private var cachedScreenContents: CachedValue<String>
+        private(set) var cachedScreenContents: CachedValue<String>
+        private(set) var cachedVisibleContents: CachedValue<String>
 
         /// Event monitor (see individual events for why)
         private var eventMonitor: Any? = nil
@@ -166,6 +167,7 @@ extension Ghostty {
             // it back up later so we can reference `self`. This is a hack we should
             // fix at some point.
             self.cachedScreenContents = .init(duration: .milliseconds(500)) { "" }
+            self.cachedVisibleContents = self.cachedScreenContents
 
             // Initialize with some default frame size. The important thing is that this
             // is non-zero so that our layer bounds are non-zero so that our renderer
@@ -185,6 +187,26 @@ extension Ghostty {
                         y: 0),
                     bottom_right: ghostty_point_s(
                         tag: GHOSTTY_POINT_SCREEN,
+                        coord: GHOSTTY_POINT_COORD_BOTTOM_RIGHT,
+                        x: 0,
+                        y: 0),
+                    rectangle: false)
+                guard ghostty_surface_read_text(surface, sel, &text) else { return "" }
+                defer { ghostty_surface_free_text(surface, &text) }
+                return String(cString: text.text)
+            }
+            cachedVisibleContents = .init(duration: .milliseconds(500)) { [weak self] in
+                guard let self else { return "" }
+                guard let surface = self.surface else { return "" }
+                var text = ghostty_text_s()
+                let sel = ghostty_selection_s(
+                    top_left: ghostty_point_s(
+                        tag: GHOSTTY_POINT_VIEWPORT,
+                        coord: GHOSTTY_POINT_COORD_TOP_LEFT,
+                        x: 0,
+                        y: 0),
+                    bottom_right: ghostty_point_s(
+                        tag: GHOSTTY_POINT_VIEWPORT,
                         coord: GHOSTTY_POINT_COORD_BOTTOM_RIGHT,
                         x: 0,
                         y: 0),
@@ -1979,7 +2001,7 @@ extension Ghostty.SurfaceView {
 /// Caches a value for some period of time, evicting it automatically when that time expires.
 /// We use this to cache our surface content. This probably should be extracted some day
 /// to a more generic helper.
-fileprivate class CachedValue<T> {
+class CachedValue<T> {
     private var value: T?
     private let fetch: () -> T
     private let duration: Duration

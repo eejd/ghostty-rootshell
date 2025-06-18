@@ -1,5 +1,6 @@
 import AppKit
 import AppIntents
+import SwiftUI
 
 struct TerminalEntity: AppEntity {
     let id: UUID
@@ -7,12 +8,31 @@ struct TerminalEntity: AppEntity {
     @Property(title: "Title")
     var title: String
 
+    @Property(title: "Working Directory")
+    var workingDirectory: String?
+
+    var screenshot: Image?
+
     static var typeDisplayRepresentation: TypeDisplayRepresentation {
         TypeDisplayRepresentation(name: "Terminal")
     }
 
+    @MainActor
     var displayRepresentation: DisplayRepresentation {
-        DisplayRepresentation(title: "\(title)")
+        var rep = DisplayRepresentation(title: "\(title)")
+        if let screenshot,
+           let nsImage = ImageRenderer(content: screenshot).nsImage,
+           let data = nsImage.tiffRepresentation {
+            rep.image = .init(data: data)
+        }
+
+        return rep
+    }
+
+    /// Returns the view associated with this entity. This may no longer exist.
+    @MainActor
+    var surfaceView: Ghostty.SurfaceView? {
+        Self.defaultQuery.all.first { $0.uuid == self.id }
     }
 
     static var defaultQuery = TerminalQuery()
@@ -20,6 +40,8 @@ struct TerminalEntity: AppEntity {
     init(_ view: Ghostty.SurfaceView) {
         self.id = view.uuid
         self.title = view.title
+        self.workingDirectory = view.pwd
+        self.screenshot = view.screenshot()
     }
 }
 
@@ -53,7 +75,7 @@ struct TerminalQuery: EntityStringQuery, EnumerableEntityQuery {
     }
 
     @MainActor
-    private var all: [Ghostty.SurfaceView] {
+    var all: [Ghostty.SurfaceView] {
         // Find all of our terminal windows (includes quick terminal)
         let controllers = NSApp.windows.compactMap {
             $0.windowController as? BaseTerminalController
