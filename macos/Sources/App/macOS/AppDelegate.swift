@@ -167,7 +167,7 @@ class AppDelegate: NSObject,
 
         // This registers the Ghostty => Services menu to exist.
         NSApp.servicesMenu = menuServices
-        
+
         // Setup a local event monitor for app-level keyboard shortcuts. See
         // localEventHandler for more info why.
         _ = NSEvent.addLocalMonitorForEvents(
