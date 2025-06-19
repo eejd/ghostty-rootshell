@@ -1312,8 +1312,8 @@ extension Ghostty {
                 // In this case, AppKit calls menu BEFORE calling any mouse events.
                 // If mouse capturing is enabled then we never show the context menu
                 // so that we can handle ctrl+left-click in the terminal app.
-                guard let surface = self.surface else { return nil }
-                if ghostty_surface_mouse_captured(surface) {
+                guard let surfaceModel else { return nil }
+                if surfaceModel.mouseCaptured {
                     return nil
                 }
 
@@ -1323,13 +1323,10 @@ extension Ghostty {
                 //
                 // Note this never sounds a right mouse up event but that's the
                 // same as normal right-click with capturing disabled from AppKit.
-                let mods = Ghostty.ghosttyMods(event.modifierFlags)
-                ghostty_surface_mouse_button(
-                    surface,
-                    GHOSTTY_MOUSE_PRESS,
-                    GHOSTTY_MOUSE_RIGHT,
-                    mods
-                )
+                surfaceModel.sendMouseButton(.init(
+                    action: .press,
+                    button: .right,
+                    mods: .init(nsFlags: event.modifierFlags)))
 
             default:
                 return nil

@@ -215,8 +215,123 @@ extension Ghostty.Input.Action: AppEnum {
 
     static var caseDisplayRepresentations: [Ghostty.Input.Action : DisplayRepresentation] = [
         .release: "Release",
-        .press: "Press", 
+        .press: "Press",
         .repeat: "Repeat"
+    ]
+}
+
+// MARK: Ghostty.Input.MouseEvent
+
+extension Ghostty.Input {
+    /// Represents a mouse input event with button state, button type, and modifier keys.
+    struct MouseButtonEvent {
+        let action: MouseState
+        let button: MouseButton
+        let mods: Mods
+        
+        init(
+            action: MouseState,
+            button: MouseButton,
+            mods: Mods = []
+        ) {
+            self.action = action
+            self.button = button
+            self.mods = mods
+        }
+        
+        /// Creates a MouseEvent from C enum values.
+        ///
+        /// This initializer converts C-style mouse input enums to Swift types.
+        /// Returns nil if any of the C enum values are invalid or unsupported.
+        ///
+        /// - Parameters:
+        ///   - state: The mouse button state (press/release)
+        ///   - button: The mouse button that was pressed/released
+        ///   - mods: The modifier keys held during the mouse event
+        init?(state: ghostty_input_mouse_state_e, button: ghostty_input_mouse_button_e, mods: ghostty_input_mods_e) {
+            // Convert state
+            switch state {
+            case GHOSTTY_MOUSE_RELEASE: self.action = .release
+            case GHOSTTY_MOUSE_PRESS: self.action = .press
+            default: return nil
+            }
+            
+            // Convert button
+            switch button {
+            case GHOSTTY_MOUSE_UNKNOWN: self.button = .unknown
+            case GHOSTTY_MOUSE_LEFT: self.button = .left
+            case GHOSTTY_MOUSE_RIGHT: self.button = .right
+            case GHOSTTY_MOUSE_MIDDLE: self.button = .middle
+            default: return nil
+            }
+            
+            // Convert modifiers
+            self.mods = Mods(cMods: mods)
+        }
+    }
+}
+
+// MARK: Ghostty.Input.MouseState
+
+extension Ghostty.Input {
+    /// `ghostty_input_mouse_state_e`
+    enum MouseState: String, CaseIterable {
+        case release
+        case press
+        
+        var cMouseState: ghostty_input_mouse_state_e {
+            switch self {
+            case .release: GHOSTTY_MOUSE_RELEASE
+            case .press: GHOSTTY_MOUSE_PRESS
+            }
+        }
+    }
+}
+
+extension Ghostty.Input.MouseState: AppEnum {
+    static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Mouse State")
+
+    static var caseDisplayRepresentations: [Ghostty.Input.MouseState : DisplayRepresentation] = [
+        .release: "Release",
+        .press: "Press"
+    ]
+}
+
+// MARK: Ghostty.Input.MouseButton
+
+extension Ghostty.Input {
+    /// `ghostty_input_mouse_button_e`
+    enum MouseButton: String, CaseIterable {
+        case unknown
+        case left
+        case right
+        case middle
+        
+        var cMouseButton: ghostty_input_mouse_button_e {
+            switch self {
+            case .unknown: GHOSTTY_MOUSE_UNKNOWN
+            case .left: GHOSTTY_MOUSE_LEFT
+            case .right: GHOSTTY_MOUSE_RIGHT
+            case .middle: GHOSTTY_MOUSE_MIDDLE
+            }
+        }
+    }
+}
+
+extension Ghostty.Input.MouseButton: AppEnum {
+    static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Mouse Button")
+
+    static var caseDisplayRepresentations: [Ghostty.Input.MouseButton : DisplayRepresentation] = [
+        .unknown: "Unknown",
+        .left: "Left",
+        .right: "Right",
+        .middle: "Middle"
+    ]
+
+    static var allCases: [Ghostty.Input.MouseButton] = [
+        .left,
+        .right,
+        .middle,
     ]
 }
 

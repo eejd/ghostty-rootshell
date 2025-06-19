@@ -62,6 +62,32 @@ extension Ghostty {
             }
         }
 
+        /// Whether the terminal has captured mouse input.
+        ///
+        /// When the mouse is captured, the terminal application is receiving mouse events
+        /// directly rather than the host system handling them. This typically occurs when
+        /// a terminal application enables mouse reporting mode.
+        @MainActor
+        var mouseCaptured: Bool {
+            ghostty_surface_mouse_captured(surface)
+        }
+
+        /// Send a mouse button event to the terminal.
+        ///
+        /// This sends a complete mouse button event including the button state (press/release),
+        /// which button was pressed, and any modifier keys that were held during the event.
+        /// The terminal processes this event according to its mouse handling configuration.
+        ///
+        /// - Parameter event: The mouse button event to send to the terminal
+        @MainActor
+        func sendMouseButton(_ event: Input.MouseButtonEvent) {
+            ghostty_surface_mouse_button(
+                surface,
+                event.action.cMouseState,
+                event.button.cMouseButton,
+                event.mods.cMods)
+        }
+
         /// Perform a keybinding action.
         ///
         /// The action can be any valid keybind parameter. e.g. `keybind = goto_tab:4`
