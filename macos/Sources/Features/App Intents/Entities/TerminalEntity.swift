@@ -55,6 +55,11 @@ struct TerminalEntity: AppEntity {
         Self.defaultQuery.all.first { $0.uuid == self.id }
     }
 
+    @MainActor
+    var surfaceModel: Ghostty.Surface? {
+        surfaceView?.surfaceModel
+    }
+
     static var defaultQuery = TerminalQuery()
 
     init(_ view: Ghostty.SurfaceView) {

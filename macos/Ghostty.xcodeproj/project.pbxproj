@@ -126,6 +126,8 @@
 		A5E408382E03C7DA0035FEAC /* Ghostty.Surface.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5E408372E03C7D80035FEAC /* Ghostty.Surface.swift */; };
 		A5E4083A2E0449BD0035FEAC /* Ghostty.Command.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5E408392E0449BB0035FEAC /* Ghostty.Command.swift */; };
 		A5E4083C2E044DB50035FEAC /* Ghostty.Error.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5E4083B2E044DB40035FEAC /* Ghostty.Error.swift */; };
+		A5E408402E04532C0035FEAC /* CommandEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5E4083F2E04532A0035FEAC /* CommandEntity.swift */; };
+		A5E408432E047D0B0035FEAC /* CommandPaletteIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5E408422E047D060035FEAC /* CommandPaletteIntent.swift */; };
 		A5FEB3002ABB69450068369E /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5FEB2FF2ABB69450068369E /* main.swift */; };
 		AEE8B3452B9AA39600260C5E /* NSPasteboard+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEE8B3442B9AA39600260C5E /* NSPasteboard+Extension.swift */; };
 		C159E81D2B66A06B00FDFE9C /* OSColor+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = C159E81C2B66A06B00FDFE9C /* OSColor+Extension.swift */; };
@@ -252,6 +254,8 @@
 		A5E408372E03C7D80035FEAC /* Ghostty.Surface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ghostty.Surface.swift; sourceTree = "<group>"; };
 		A5E408392E0449BB0035FEAC /* Ghostty.Command.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ghostty.Command.swift; sourceTree = "<group>"; };
 		A5E4083B2E044DB40035FEAC /* Ghostty.Error.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ghostty.Error.swift; sourceTree = "<group>"; };
+		A5E4083F2E04532A0035FEAC /* CommandEntity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandEntity.swift; sourceTree = "<group>"; };
+		A5E408422E047D060035FEAC /* CommandPaletteIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandPaletteIntent.swift; sourceTree = "<group>"; };
 		A5FEB2FF2ABB69450068369E /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		AEE8B3442B9AA39600260C5E /* NSPasteboard+Extension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NSPasteboard+Extension.swift"; sourceTree = "<group>"; };
 		C159E81C2B66A06B00FDFE9C /* OSColor+Extension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "OSColor+Extension.swift"; sourceTree = "<group>"; };
@@ -616,12 +620,22 @@
 		A5E4082C2E0237270035FEAC /* App Intents */ = {
 			isa = PBXGroup;
 			children = (
-				A5E408312E02FEDC0035FEAC /* TerminalEntity.swift */,
+				A5E408412E0453370035FEAC /* Entities */,
 				A5E4082D2E0237410035FEAC /* NewTerminalIntent.swift */,
 				A5E408332E03200F0035FEAC /* GetTerminalDetailsIntent.swift */,
+				A5E408422E047D060035FEAC /* CommandPaletteIntent.swift */,
 				A5E4082F2E0271320035FEAC /* GhosttyIntentError.swift */,
 			);
 			path = "App Intents";
+			sourceTree = "<group>";
+		};
+		A5E408412E0453370035FEAC /* Entities */ = {
+			isa = PBXGroup;
+			children = (
+				A5E408312E02FEDC0035FEAC /* TerminalEntity.swift */,
+				A5E4083F2E04532A0035FEAC /* CommandEntity.swift */,
+			);
+			path = Entities;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -750,6 +764,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A5AEB1652D5BE7D000513529 /* LastWindowPosition.swift in Sources */,
+				A5E408432E047D0B0035FEAC /* CommandPaletteIntent.swift in Sources */,
 				A514C8D62B54A16400493A16 /* Ghostty.Config.swift in Sources */,
 				A54B0CEB2D0CFB4C00CBEFF8 /* NSImage+Extension.swift in Sources */,
 				A5874D9D2DAD786100E83852 /* NSWindow+Extension.swift in Sources */,
@@ -827,6 +842,7 @@
 				A599CDB02CF103F60049FA26 /* NSAppearance+Extension.swift in Sources */,
 				A52FFF572CA90484000C6A5B /* QuickTerminalScreen.swift in Sources */,
 				A5CC36132C9CD72D004D6760 /* SecureInputOverlay.swift in Sources */,
+				A5E408402E04532C0035FEAC /* CommandEntity.swift in Sources */,
 				A5E4082A2E022E9E0035FEAC /* TabGroupCloseCoordinator.swift in Sources */,
 				A535B9DA299C569B0017E2E4 /* ErrorView.swift in Sources */,
 				A53A29882DB69D2F00B6E02C /* TerminalCommandPalette.swift in Sources */,
