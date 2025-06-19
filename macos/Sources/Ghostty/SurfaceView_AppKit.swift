@@ -115,10 +115,20 @@ extension Ghostty {
             }
         }
 
+        /// Returns the data model for this surface.
+        ///
+        /// Note: eventually, all surface access will be through this, but presently its in a transition
+        /// state so we're mixing this with direct surface access.
+        private(set) var surfaceModel: Ghostty.Surface?
+
+        /// Returns the underlying C value for the surface. See "note" on surfaceModel.
+        var surface: ghostty_surface_t? {
+            surfaceModel?.unsafeCValue
+        }
+
         // Notification identifiers associated with this surface
         var notificationIdentifiers: Set<String> = []
 
-        private(set) var surface: ghostty_surface_t?
         private var markedText: NSMutableAttributedString
         private(set) var focused: Bool = true
         private var prevPressureStage: Int = 0
@@ -282,10 +292,10 @@ extension Ghostty {
             let surface_cfg = baseConfig ?? SurfaceConfiguration()
             var surface_cfg_c = surface_cfg.ghosttyConfig(view: self)
             guard let surface = ghostty_surface_new(app, &surface_cfg_c) else {
-                self.error = AppError.surfaceCreateError
+                self.error = Ghostty.Error.apiFailed
                 return
             }
-            self.surface = surface;
+            self.surfaceModel = Ghostty.Surface(cSurface: surface)
 
             // Setup our tracking area so we get mouse moved events
             updateTrackingAreas()
@@ -340,11 +350,6 @@ extension Ghostty {
             // Remove any notifications associated with this surface
             let identifiers = Array(self.notificationIdentifiers)
             UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: identifiers)
-
-            // Free our core surface resources
-            if let surface = self.surface {
-                ghostty_surface_free(surface)
-            }
         }
 
         func focusDidChange(_ focused: Bool) {

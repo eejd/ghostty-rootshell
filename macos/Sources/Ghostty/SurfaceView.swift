@@ -79,7 +79,7 @@ extension Ghostty {
                     let pubResign = center.publisher(for: NSWindow.didResignKeyNotification)
                     #endif
 
-                    Surface(view: surfaceView, size: geo.size)
+                    SurfaceRepresentable(view: surfaceView, size: geo.size)
                         .focused($surfaceFocus)
                         .focusedValue(\.ghosttySurfacePwd, surfaceView.pwd)
                         .focusedValue(\.ghosttySurfaceView, surfaceView)
@@ -381,7 +381,7 @@ extension Ghostty {
     /// We just wrap an AppKit NSView here at the moment so that we can behave as low level as possible
     /// since that is what the Metal renderer in Ghostty expects. In the future, it may make more sense to
     /// wrap an MTKView and use that, but for legacy reasons we didn't do that to begin with.
-    struct Surface: OSViewRepresentable {
+    struct SurfaceRepresentable: OSViewRepresentable {
         /// The view to render for the terminal surface.
         let view: SurfaceView
 

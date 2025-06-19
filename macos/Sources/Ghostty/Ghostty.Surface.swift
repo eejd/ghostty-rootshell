@@ -1,0 +1,64 @@
+import GhosttyKit
+
+extension Ghostty {
+    /// Represents a single surface within Ghostty.
+    ///
+    /// NOTE(mitchellh): This is a work-in-progress class as part of a general refactor
+    /// of our Ghostty data model. At the time of writing there's still a ton of surface
+    /// functionality that is not encapsulated in this class. It is planned to migrate that
+    /// all over.
+    ///
+    /// Wraps a `ghostty_surface_t`
+    final class Surface: Sendable {
+        private let surface: ghostty_surface_t
+
+        /// Read the underlying C value for this surface. This is unsafe because the value will be
+        /// freed when the Surface class is deinitialized.
+        var unsafeCValue: ghostty_surface_t {
+            surface
+        }
+
+        /// Initialize from the C structure.
+        init(cSurface: ghostty_surface_t) {
+            self.surface = cSurface
+        }
+
+        deinit {
+            // deinit is not guaranteed to happen on the main actor and our API
+            // calls into libghostty must happen there so we capture the surface
+            // value so we don't capture `self` and then we detach it in a task.
+            // We can't wait for the task to succeed so this will happen sometime
+            // but that's okay.
+            let surface = self.surface
+            Task.detached { @MainActor in
+                ghostty_surface_free(surface)
+            }
+        }
+
+        /// Perform a keybinding action.
+        ///
+        /// The action can be any valid keybind parameter. e.g. `keybind = goto_tab:4`
+        /// you can perform `goto_tab:4` with this.
+        ///
+        /// Returns true if the action was performed. Invalid actions return false.
+        @MainActor
+        func perform(action: String) -> Bool {
+            let len = action.utf8CString.count
+            if (len == 0) { return false }
+            return action.withCString { cString in
+                ghostty_surface_binding_action(surface, cString, UInt(len - 1))
+            }
+        }
+
+        /// Command options for this surface.
+        @MainActor
+        func commands() throws -> [Command] {
+            var ptr: UnsafeMutablePointer<ghostty_command_s>? = nil
+            var count: Int = 0
+            ghostty_surface_commands(surface, &ptr, &count)
+            guard let ptr else { throw Error.apiFailed }
+            let buffer = UnsafeBufferPointer(start: ptr, count: count)
+            return Array(buffer).map { Command(cValue: $0) }.filter { $0.isSupported }
+        }
+    }
+}
