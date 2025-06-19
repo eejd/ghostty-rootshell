@@ -153,6 +153,122 @@ struct MouseButtonIntent: AppIntent {
     }
 }
 
+/// App intent to send a mouse position event.
+struct MousePosIntent: AppIntent {
+    static var title: LocalizedStringResource = "Send Mouse Position Event to Terminal"
+    static var description = IntentDescription("Send a mouse position event to the terminal. This reports the cursor position for mouse tracking.")
+
+    @Parameter(
+        title: "X Position",
+        description: "The horizontal position of the mouse cursor in pixels.",
+        default: 0
+    )
+    var x: Double
+
+    @Parameter(
+        title: "Y Position", 
+        description: "The vertical position of the mouse cursor in pixels.",
+        default: 0
+    )
+    var y: Double
+
+    @Parameter(
+        title: "Modifier(s)",
+        description: "The modifiers to send with the mouse position event.",
+        default: []
+    )
+    var mods: [KeyEventMods]
+
+    @Parameter(
+        title: "Terminal",
+        description: "The terminal to scope this action to."
+    )
+    var terminal: TerminalEntity
+
+    @available(macOS 26.0, *)
+    static var supportedModes: IntentModes = [.background, .foreground]
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        guard let surface = terminal.surfaceModel else {
+            throw GhosttyIntentError.surfaceNotFound
+        }
+
+        // Convert KeyEventMods array to Ghostty.Input.Mods
+        let ghosttyMods = mods.reduce(Ghostty.Input.Mods()) { result, mod in
+            result.union(mod.ghosttyMod)
+        }
+        
+        let mousePosEvent = Ghostty.Input.MousePosEvent(
+            x: x,
+            y: y,
+            mods: ghosttyMods
+        )
+        surface.sendMousePos(mousePosEvent)
+
+        return .result()
+    }
+}
+
+/// App intent to send a mouse scroll event.
+struct MouseScrollIntent: AppIntent {
+    static var title: LocalizedStringResource = "Send Mouse Scroll Event to Terminal"
+    static var description = IntentDescription("Send a mouse scroll event to the terminal with configurable precision and momentum.")
+
+    @Parameter(
+        title: "X Scroll Delta",
+        description: "The horizontal scroll amount.",
+        default: 0
+    )
+    var x: Double
+
+    @Parameter(
+        title: "Y Scroll Delta",
+        description: "The vertical scroll amount.",
+        default: 0
+    )
+    var y: Double
+
+    @Parameter(
+        title: "High Precision",
+        description: "Whether this is a high-precision scroll event (e.g., from trackpad).",
+        default: false
+    )
+    var precision: Bool
+
+    @Parameter(
+        title: "Momentum Phase",
+        description: "The momentum phase for inertial scrolling.",
+        default: Ghostty.Input.Momentum.none
+    )
+    var momentum: Ghostty.Input.Momentum
+
+    @Parameter(
+        title: "Terminal",
+        description: "The terminal to scope this action to."
+    )
+    var terminal: TerminalEntity
+
+    @available(macOS 26.0, *)
+    static var supportedModes: IntentModes = [.background, .foreground]
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        guard let surface = terminal.surfaceModel else {
+            throw GhosttyIntentError.surfaceNotFound
+        }
+
+        let scrollEvent = Ghostty.Input.MouseScrollEvent(
+            x: x,
+            y: y,
+            mods: .init(precision: precision, momentum: momentum)
+        )
+        surface.sendMouseScroll(scrollEvent)
+
+        return .result()
+    }
+}
+
 // MARK: Mods
 
 enum KeyEventMods: String, AppEnum, CaseIterable {

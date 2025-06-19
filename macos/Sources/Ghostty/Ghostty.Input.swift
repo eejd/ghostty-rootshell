@@ -436,6 +436,20 @@ extension Ghostty.Input {
     }
 }
 
+extension Ghostty.Input.Momentum: AppEnum {
+    static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Scroll Momentum")
+    
+    static var caseDisplayRepresentations: [Ghostty.Input.Momentum : DisplayRepresentation] = [
+        .none: "None",
+        .began: "Began",
+        .stationary: "Stationary",
+        .changed: "Changed",
+        .ended: "Ended",
+        .cancelled: "Cancelled",
+        .mayBegin: "May Begin"
+    ]
+}
+
 #if canImport(AppKit)
 import AppKit
 
