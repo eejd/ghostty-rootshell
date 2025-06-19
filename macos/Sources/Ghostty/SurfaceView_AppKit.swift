@@ -808,19 +808,23 @@ extension Ghostty {
         override func mouseEntered(with event: NSEvent) {
             super.mouseEntered(with: event)
 
-            guard let surface = self.surface else { return }
+            guard let surfaceModel else { return }
 
             // On mouse enter we need to reset our cursor position. This is
             // super important because we set it to -1/-1 on mouseExit and
             // lots of mouse logic (i.e. whether to send mouse reports) depend
             // on the position being in the viewport if it is.
             let pos = self.convert(event.locationInWindow, from: nil)
-            let mods = Ghostty.ghosttyMods(event.modifierFlags)
-            ghostty_surface_mouse_pos(surface, pos.x, frame.height - pos.y, mods)
+            let mouseEvent = Ghostty.Input.MousePosEvent(
+                x: pos.x,
+                y: frame.height - pos.y,
+                mods: .init(nsFlags: event.modifierFlags)
+            )
+            surfaceModel.sendMousePos(mouseEvent)
         }
 
         override func mouseExited(with event: NSEvent) {
-            guard let surface = self.surface else { return }
+            guard let surfaceModel else { return }
 
             // If the mouse is being dragged then we don't have to emit
             // this because we get mouse drag events even if we've already
@@ -830,17 +834,25 @@ extension Ghostty {
             }
 
             // Negative values indicate cursor has left the viewport
-            let mods = Ghostty.ghosttyMods(event.modifierFlags)
-            ghostty_surface_mouse_pos(surface, -1, -1, mods)
+            let mouseEvent = Ghostty.Input.MousePosEvent(
+                x: -1,
+                y: -1,
+                mods: .init(nsFlags: event.modifierFlags)
+            )
+            surfaceModel.sendMousePos(mouseEvent)
         }
 
         override func mouseMoved(with event: NSEvent) {
-            guard let surface = self.surface else { return }
+            guard let surfaceModel else { return }
 
             // Convert window position to view position. Note (0, 0) is bottom left.
             let pos = self.convert(event.locationInWindow, from: nil)
-            let mods = Ghostty.ghosttyMods(event.modifierFlags)
-            ghostty_surface_mouse_pos(surface, pos.x, frame.height - pos.y, mods)
+            let mouseEvent = Ghostty.Input.MousePosEvent(
+                x: pos.x,
+                y: frame.height - pos.y,
+                mods: .init(nsFlags: event.modifierFlags)
+            )
+            surfaceModel.sendMousePos(mouseEvent)
 
             // Handle focus-follows-mouse
             if let window,
@@ -866,16 +878,13 @@ extension Ghostty {
         }
 
         override func scrollWheel(with event: NSEvent) {
-            guard let surface = self.surface else { return }
-
-            // Builds up the "input.ScrollMods" bitmask
-            var mods: Int32 = 0
+            guard let surfaceModel else { return }
 
             var x = event.scrollingDeltaX
             var y = event.scrollingDeltaY
-            if event.hasPreciseScrollingDeltas {
-                mods = 1
-
+            let precision = event.hasPreciseScrollingDeltas
+            
+            if precision {
                 // We do a 2x speed multiplier. This is subjective, it "feels" better to me.
                 x *= 2;
                 y *= 2;
@@ -883,29 +892,12 @@ extension Ghostty {
                 // TODO(mitchellh): do we have to scale the x/y here by window scale factor?
             }
 
-            // Determine our momentum value
-            var momentum: ghostty_input_mouse_momentum_e = GHOSTTY_MOUSE_MOMENTUM_NONE
-            switch (event.momentumPhase) {
-            case .began:
-                momentum = GHOSTTY_MOUSE_MOMENTUM_BEGAN
-            case .stationary:
-                momentum = GHOSTTY_MOUSE_MOMENTUM_STATIONARY
-            case .changed:
-                momentum = GHOSTTY_MOUSE_MOMENTUM_CHANGED
-            case .ended:
-                momentum = GHOSTTY_MOUSE_MOMENTUM_ENDED
-            case .cancelled:
-                momentum = GHOSTTY_MOUSE_MOMENTUM_CANCELLED
-            case .mayBegin:
-                momentum = GHOSTTY_MOUSE_MOMENTUM_MAY_BEGIN
-            default:
-                break
-            }
-
-            // Pack our momentum value into the mods bitmask
-            mods |= Int32(momentum.rawValue) << 1
-
-            ghostty_surface_mouse_scroll(surface, x, y, mods)
+            let scrollEvent = Ghostty.Input.MouseScrollEvent(
+                x: x,
+                y: y,
+                mods: .init(precision: precision, momentum: .init(event.momentumPhase))
+            )
+            surfaceModel.sendMouseScroll(scrollEvent)
         }
 
         override func pressureChange(with event: NSEvent) {
