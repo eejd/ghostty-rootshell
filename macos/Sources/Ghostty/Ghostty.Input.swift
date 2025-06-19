@@ -4,6 +4,8 @@ import SwiftUI
 import GhosttyKit
 
 extension Ghostty {
+    struct Input {}
+
     // MARK: Keyboard Shortcuts
 
     /// Return the key equivalent for the given trigger.
@@ -92,7 +94,175 @@ extension Ghostty {
         GHOSTTY_KEY_BACKSPACE: .delete,
         GHOSTTY_KEY_SPACE: .space,
     ]
+}
 
+// MARK: Ghostty.Input.KeyEvent
+
+extension Ghostty.Input {
+    /// `ghostty_input_key_s`
+    struct KeyEvent {
+        let action: Action
+        let key: Key
+        let text: String?
+        let composing: Bool
+        let mods: Mods
+        let consumedMods: Mods
+        let unshiftedCodepoint: UInt32
+
+        init(
+            key: Key,
+            action: Action = .press,
+            text: String? = nil,
+            composing: Bool = false,
+            mods: Mods = [],
+            consumedMods: Mods = [],
+            unshiftedCodepoint: UInt32 = 0
+        ) {
+            self.key = key
+            self.action = action
+            self.text = text
+            self.composing = composing
+            self.mods = mods
+            self.consumedMods = consumedMods
+            self.unshiftedCodepoint = unshiftedCodepoint
+        }
+
+        init?(cValue: ghostty_input_key_s) {
+            // Convert action
+            switch cValue.action {
+            case GHOSTTY_ACTION_PRESS: self.action = .press
+            case GHOSTTY_ACTION_RELEASE: self.action = .release
+            case GHOSTTY_ACTION_REPEAT: self.action = .repeat
+            default: self.action = .press
+            }
+            
+            // Convert key from keycode
+            guard let key = Key(keyCode: UInt16(cValue.keycode)) else { return nil }
+            self.key = key
+
+            // Convert text
+            if let textPtr = cValue.text {
+                self.text = String(cString: textPtr)
+            } else {
+                self.text = nil
+            }
+            
+            // Set composing state
+            self.composing = cValue.composing
+            
+            // Convert modifiers
+            self.mods = Mods(cMods: cValue.mods)
+            self.consumedMods = Mods(cMods: cValue.consumed_mods)
+            
+            // Set unshifted codepoint
+            self.unshiftedCodepoint = cValue.unshifted_codepoint
+        }
+        
+        /// Executes a closure with a temporary C representation of this KeyEvent.
+        ///
+        /// This method safely converts the Swift KeyEntity to a C `ghostty_input_key_s` struct
+        /// and passes it to the provided closure. The C struct is only valid within the closure's
+        /// execution scope. The text field's C string pointer is managed automatically and will
+        /// be invalid after the closure returns.
+        ///
+        /// - Parameter execute: A closure that receives the C struct and returns a value
+        /// - Returns: The value returned by the closure
+        @discardableResult
+        func withCValue<T>(execute: (ghostty_input_key_s) -> T) -> T {
+            var keyEvent = ghostty_input_key_s()
+            keyEvent.action = action.cAction
+            keyEvent.keycode = UInt32(key.keyCode ?? 0)
+            keyEvent.composing = composing
+            keyEvent.mods = mods.cMods
+            keyEvent.consumed_mods = consumedMods.cMods
+            keyEvent.unshifted_codepoint = unshiftedCodepoint
+            
+            // Handle text with proper memory management
+            if let text = text {
+                return text.withCString { textPtr in
+                    keyEvent.text = textPtr
+                    return execute(keyEvent)
+                }
+            } else {
+                keyEvent.text = nil
+                return execute(keyEvent)
+            }
+        }
+    }
+}
+
+// MARK: Ghostty.Input.Action
+
+extension Ghostty.Input {
+    /// `ghostty_input_action_e`
+    enum Action: String, CaseIterable {
+        case release
+        case press
+        case `repeat`
+        
+        var cAction: ghostty_input_action_e {
+            switch self {
+            case .release: GHOSTTY_ACTION_RELEASE
+            case .press: GHOSTTY_ACTION_PRESS
+            case .repeat: GHOSTTY_ACTION_REPEAT
+            }
+        }
+    }
+}
+
+extension Ghostty.Input.Action: AppEnum {
+    static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Key Action")
+
+    static var caseDisplayRepresentations: [Ghostty.Input.Action : DisplayRepresentation] = [
+        .release: "Release",
+        .press: "Press", 
+        .repeat: "Repeat"
+    ]
+}
+
+// MARK: Ghostty.Input.Mods
+
+extension Ghostty.Input {
+    /// `ghostty_input_mods_e`
+    struct Mods: OptionSet {
+        let rawValue: UInt32
+        
+        static let none = Mods(rawValue: GHOSTTY_MODS_NONE.rawValue)
+        static let shift = Mods(rawValue: GHOSTTY_MODS_SHIFT.rawValue)
+        static let ctrl = Mods(rawValue: GHOSTTY_MODS_CTRL.rawValue)
+        static let alt = Mods(rawValue: GHOSTTY_MODS_ALT.rawValue)
+        static let `super` = Mods(rawValue: GHOSTTY_MODS_SUPER.rawValue)
+        static let caps = Mods(rawValue: GHOSTTY_MODS_CAPS.rawValue)
+        static let shiftRight = Mods(rawValue: GHOSTTY_MODS_SHIFT_RIGHT.rawValue)
+        static let ctrlRight = Mods(rawValue: GHOSTTY_MODS_CTRL_RIGHT.rawValue)
+        static let altRight = Mods(rawValue: GHOSTTY_MODS_ALT_RIGHT.rawValue)
+        static let superRight = Mods(rawValue: GHOSTTY_MODS_SUPER_RIGHT.rawValue)
+        
+        var cMods: ghostty_input_mods_e {
+            ghostty_input_mods_e(rawValue)
+        }
+        
+        init(rawValue: UInt32) {
+            self.rawValue = rawValue
+        }
+        
+        init(cMods: ghostty_input_mods_e) {
+            self.rawValue = cMods.rawValue
+        }
+        
+        init(nsFlags: NSEvent.ModifierFlags) {
+            self.init(cMods: Ghostty.ghosttyMods(nsFlags))
+        }
+        
+        var nsFlags: NSEvent.ModifierFlags {
+            Ghostty.eventModifierFlags(mods: cMods)
+        }
+    }
+}
+
+// MARK: Ghostty.Input.Key
+
+extension Ghostty.Input {
     /// `ghostty_input_key_e`
     enum Key: String {
         // Writing System Keys
@@ -146,7 +316,7 @@ extension Ghostty {
         case quote
         case semicolon
         case slash
-        
+
         // Functional Keys
         case altLeft
         case altRight
@@ -165,7 +335,7 @@ extension Ghostty {
         case convert
         case kanaMode
         case nonConvert
-        
+
         // Control Pad Section
         case delete
         case end
@@ -174,13 +344,13 @@ extension Ghostty {
         case insert
         case pageDown
         case pageUp
-        
+
         // Arrow Pad Section
         case arrowDown
         case arrowLeft
         case arrowRight
         case arrowUp
-        
+
         // Numpad Section
         case numLock
         case numpad0
@@ -223,7 +393,7 @@ extension Ghostty {
         case numpadDelete
         case numpadPageUp
         case numpadPageDown
-        
+
         // Function Section
         case escape
         case f1
@@ -256,7 +426,7 @@ extension Ghostty {
         case printScreen
         case scrollLock
         case pause
-        
+
         // Media Keys
         case browserBack
         case browserFavorites
@@ -280,7 +450,7 @@ extension Ghostty {
         case audioVolumeMute
         case audioVolumeUp
         case wakeUp
-        
+
         // Legacy, Non-standard, and Special Keys
         case copy
         case cut
@@ -349,7 +519,7 @@ extension Ghostty {
             case .quote: GHOSTTY_KEY_QUOTE
             case .semicolon: GHOSTTY_KEY_SEMICOLON
             case .slash: GHOSTTY_KEY_SLASH
-            
+
             // Functional Keys
             case .altLeft: GHOSTTY_KEY_ALT_LEFT
             case .altRight: GHOSTTY_KEY_ALT_RIGHT
@@ -368,7 +538,7 @@ extension Ghostty {
             case .convert: GHOSTTY_KEY_CONVERT
             case .kanaMode: GHOSTTY_KEY_KANA_MODE
             case .nonConvert: GHOSTTY_KEY_NON_CONVERT
-            
+
             // Control Pad Section
             case .delete: GHOSTTY_KEY_DELETE
             case .end: GHOSTTY_KEY_END
@@ -377,13 +547,13 @@ extension Ghostty {
             case .insert: GHOSTTY_KEY_INSERT
             case .pageDown: GHOSTTY_KEY_PAGE_DOWN
             case .pageUp: GHOSTTY_KEY_PAGE_UP
-            
+
             // Arrow Pad Section
             case .arrowDown: GHOSTTY_KEY_ARROW_DOWN
             case .arrowLeft: GHOSTTY_KEY_ARROW_LEFT
             case .arrowRight: GHOSTTY_KEY_ARROW_RIGHT
             case .arrowUp: GHOSTTY_KEY_ARROW_UP
-            
+
             // Numpad Section
             case .numLock: GHOSTTY_KEY_NUM_LOCK
             case .numpad0: GHOSTTY_KEY_NUMPAD_0
@@ -426,7 +596,7 @@ extension Ghostty {
             case .numpadDelete: GHOSTTY_KEY_NUMPAD_DELETE
             case .numpadPageUp: GHOSTTY_KEY_NUMPAD_PAGE_UP
             case .numpadPageDown: GHOSTTY_KEY_NUMPAD_PAGE_DOWN
-            
+
             // Function Section
             case .escape: GHOSTTY_KEY_ESCAPE
             case .f1: GHOSTTY_KEY_F1
@@ -459,7 +629,7 @@ extension Ghostty {
             case .printScreen: GHOSTTY_KEY_PRINT_SCREEN
             case .scrollLock: GHOSTTY_KEY_SCROLL_LOCK
             case .pause: GHOSTTY_KEY_PAUSE
-            
+
             // Media Keys
             case .browserBack: GHOSTTY_KEY_BROWSER_BACK
             case .browserFavorites: GHOSTTY_KEY_BROWSER_FAVORITES
@@ -483,7 +653,7 @@ extension Ghostty {
             case .audioVolumeMute: GHOSTTY_KEY_AUDIO_VOLUME_MUTE
             case .audioVolumeUp: GHOSTTY_KEY_AUDIO_VOLUME_UP
             case .wakeUp: GHOSTTY_KEY_WAKE_UP
-            
+
             // Legacy, Non-standard, and Special Keys
             case .copy: GHOSTTY_KEY_COPY
             case .cut: GHOSTTY_KEY_CUT
@@ -545,7 +715,7 @@ extension Ghostty {
             case .quote: return 0x0027
             case .semicolon: return 0x0029
             case .slash: return 0x002c
-            
+
             // Functional Keys
             case .altLeft: return 0x003a
             case .altRight: return 0x003d
@@ -564,7 +734,7 @@ extension Ghostty {
             case .convert: return nil // No Mac keycode
             case .kanaMode: return nil // No Mac keycode
             case .nonConvert: return nil // No Mac keycode
-            
+
             // Control Pad Section
             case .delete: return 0x0075
             case .end: return 0x0077
@@ -573,13 +743,13 @@ extension Ghostty {
             case .insert: return 0x0072
             case .pageDown: return 0x0079
             case .pageUp: return 0x0074
-            
+
             // Arrow Pad Section
             case .arrowDown: return 0x007d
             case .arrowLeft: return 0x007b
             case .arrowRight: return 0x007c
             case .arrowUp: return 0x007e
-            
+
             // Numpad Section
             case .numLock: return 0x0047
             case .numpad0: return 0x0052
@@ -622,7 +792,7 @@ extension Ghostty {
             case .numpadDelete: return nil // No Mac keycode
             case .numpadPageUp: return nil // No Mac keycode
             case .numpadPageDown: return nil // No Mac keycode
-            
+
             // Function Section
             case .escape: return 0x0035
             case .f1: return 0x007a
@@ -655,7 +825,7 @@ extension Ghostty {
             case .printScreen: return nil // No Mac keycode
             case .scrollLock: return nil // No Mac keycode
             case .pause: return nil // No Mac keycode
-            
+
             // Media Keys
             case .browserBack: return nil // No Mac keycode
             case .browserFavorites: return nil // No Mac keycode
@@ -679,7 +849,7 @@ extension Ghostty {
             case .audioVolumeMute: return 0x004a
             case .audioVolumeUp: return 0x0048
             case .wakeUp: return nil // No Mac keycode
-            
+
             // Legacy, Non-standard, and Special Keys
             case .copy: return nil // No Mac keycode
             case .cut: return nil // No Mac keycode
@@ -689,201 +859,142 @@ extension Ghostty {
     }
 }
 
-// MARK: Ghostty.Key AppEnum
+extension Ghostty.Input.Key: AppEnum {
+    static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Key")
 
-extension Ghostty.Key: AppEnum {
-    static var typeDisplayRepresentation: TypeDisplayRepresentation = "Key"
-    
-    static var caseDisplayRepresentations: [Ghostty.Key : DisplayRepresentation] = [
-        // Writing System Keys
-        .backquote: "Backtick (`)",
-        .backslash: "Backslash (\\)",
-        .bracketLeft: "Left Bracket ([)",
-        .bracketRight: "Right Bracket (])",
-        .comma: "Comma (,)",
-        .digit0: "0",
-        .digit1: "1",
-        .digit2: "2",
-        .digit3: "3",
-        .digit4: "4",
-        .digit5: "5",
-        .digit6: "6",
-        .digit7: "7",
-        .digit8: "8",
-        .digit9: "9",
-        .equal: "Equal (=)",
-        .intlBackslash: "International Backslash",
-        .intlRo: "International Ro",
-        .intlYen: "International Yen",
-        .a: "A",
-        .b: "B",
-        .c: "C",
-        .d: "D",
-        .e: "E",
-        .f: "F",
-        .g: "G",
-        .h: "H",
-        .i: "I",
-        .j: "J",
-        .k: "K",
-        .l: "L",
-        .m: "M",
-        .n: "N",
-        .o: "O",
-        .p: "P",
-        .q: "Q",
-        .r: "R",
-        .s: "S",
-        .t: "T",
-        .u: "U",
-        .v: "V",
-        .w: "W",
-        .x: "X",
-        .y: "Y",
-        .z: "Z",
-        .minus: "Minus (-)",
-        .period: "Period (.)",
-        .quote: "Quote (')",
-        .semicolon: "Semicolon (;)",
-        .slash: "Slash (/)",
+    // Only include keys that have Mac keycodes for App Intents
+    static var allCases: [Ghostty.Input.Key] {
+        return [
+            // Letters (A-Z)
+            .a, .b, .c, .d, .e, .f, .g, .h, .i, .j, .k, .l, .m, .n, .o, .p, .q, .r, .s, .t, .u, .v, .w, .x, .y, .z,
+            
+            // Numbers (0-9)
+            .digit0, .digit1, .digit2, .digit3, .digit4, .digit5, .digit6, .digit7, .digit8, .digit9,
+            
+            // Common Control Keys
+            .space, .enter, .tab, .backspace, .escape, .delete,
+            
+            // Arrow Keys
+            .arrowUp, .arrowDown, .arrowLeft, .arrowRight,
+            
+            // Navigation Keys
+            .home, .end, .pageUp, .pageDown, .insert,
+            
+            // Function Keys (F1-F20)
+            .f1, .f2, .f3, .f4, .f5, .f6, .f7, .f8, .f9, .f10, .f11, .f12,
+            .f13, .f14, .f15, .f16, .f17, .f18, .f19, .f20,
+            
+            // Modifier Keys
+            .shiftLeft, .shiftRight, .controlLeft, .controlRight, .altLeft, .altRight,
+            .metaLeft, .metaRight, .capsLock,
+            
+            // Punctuation & Symbols
+            .minus, .equal, .backquote, .bracketLeft, .bracketRight, .backslash,
+            .semicolon, .quote, .comma, .period, .slash,
+            
+            // Numpad
+            .numLock, .numpad0, .numpad1, .numpad2, .numpad3, .numpad4, .numpad5,
+            .numpad6, .numpad7, .numpad8, .numpad9, .numpadAdd, .numpadSubtract,
+            .numpadMultiply, .numpadDivide, .numpadDecimal, .numpadEqual,
+            .numpadEnter, .numpadComma,
+            
+            // Media Keys
+            .audioVolumeUp, .audioVolumeDown, .audioVolumeMute,
+            
+            // International Keys
+            .intlBackslash, .intlRo, .intlYen,
+            
+            // Other
+            .contextMenu
+        ]
+    }
+
+    static var caseDisplayRepresentations: [Ghostty.Input.Key : DisplayRepresentation] = [
+        // Letters (A-Z)
+        .a: "A", .b: "B", .c: "C", .d: "D", .e: "E", .f: "F", .g: "G", .h: "H", .i: "I", .j: "J",
+        .k: "K", .l: "L", .m: "M", .n: "N", .o: "O", .p: "P", .q: "Q", .r: "R", .s: "S", .t: "T",
+        .u: "U", .v: "V", .w: "W", .x: "X", .y: "Y", .z: "Z",
         
-        // Functional Keys
-        .altLeft: "Left Alt",
-        .altRight: "Right Alt",
-        .backspace: "Backspace",
-        .capsLock: "Caps Lock",
-        .contextMenu: "Context Menu",
-        .controlLeft: "Left Control",
-        .controlRight: "Right Control",
-        .enter: "Enter",
-        .metaLeft: "Left Command",
-        .metaRight: "Right Command",
-        .shiftLeft: "Left Shift",
-        .shiftRight: "Right Shift",
+        // Numbers (0-9)
+        .digit0: "0", .digit1: "1", .digit2: "2", .digit3: "3", .digit4: "4",
+        .digit5: "5", .digit6: "6", .digit7: "7", .digit8: "8", .digit9: "9",
+        
+        // Common Control Keys
         .space: "Space",
+        .enter: "Enter",
         .tab: "Tab",
-        .convert: "Convert",
-        .kanaMode: "Kana Mode",
-        .nonConvert: "Non Convert",
-        
-        // Control Pad Section
+        .backspace: "Backspace",
+        .escape: "Escape",
         .delete: "Delete",
-        .end: "End",
-        .help: "Help",
-        .home: "Home",
-        .insert: "Insert",
-        .pageDown: "Page Down",
-        .pageUp: "Page Up",
         
-        // Arrow Pad Section
+        // Arrow Keys
+        .arrowUp: "Up Arrow",
         .arrowDown: "Down Arrow",
         .arrowLeft: "Left Arrow",
         .arrowRight: "Right Arrow",
-        .arrowUp: "Up Arrow",
         
-        // Numpad Section
+        // Navigation Keys
+        .home: "Home",
+        .end: "End",
+        .pageUp: "Page Up",
+        .pageDown: "Page Down",
+        .insert: "Insert",
+        
+        // Function Keys (F1-F20)
+        .f1: "F1", .f2: "F2", .f3: "F3", .f4: "F4", .f5: "F5", .f6: "F6",
+        .f7: "F7", .f8: "F8", .f9: "F9", .f10: "F10", .f11: "F11", .f12: "F12",
+        .f13: "F13", .f14: "F14", .f15: "F15", .f16: "F16", .f17: "F17",
+        .f18: "F18", .f19: "F19", .f20: "F20",
+        
+        // Modifier Keys
+        .shiftLeft: "Left Shift",
+        .shiftRight: "Right Shift",
+        .controlLeft: "Left Control",
+        .controlRight: "Right Control",
+        .altLeft: "Left Alt",
+        .altRight: "Right Alt",
+        .metaLeft: "Left Command",
+        .metaRight: "Right Command",
+        .capsLock: "Caps Lock",
+        
+        // Punctuation & Symbols
+        .minus: "Minus (-)",
+        .equal: "Equal (=)",
+        .backquote: "Backtick (`)",
+        .bracketLeft: "Left Bracket ([)",
+        .bracketRight: "Right Bracket (])",
+        .backslash: "Backslash (\\)",
+        .semicolon: "Semicolon (;)",
+        .quote: "Quote (')",
+        .comma: "Comma (,)",
+        .period: "Period (.)",
+        .slash: "Slash (/)",
+        
+        // Numpad
         .numLock: "Num Lock",
-        .numpad0: "Numpad 0",
-        .numpad1: "Numpad 1",
-        .numpad2: "Numpad 2",
-        .numpad3: "Numpad 3",
-        .numpad4: "Numpad 4",
-        .numpad5: "Numpad 5",
-        .numpad6: "Numpad 6",
-        .numpad7: "Numpad 7",
-        .numpad8: "Numpad 8",
-        .numpad9: "Numpad 9",
+        .numpad0: "Numpad 0", .numpad1: "Numpad 1", .numpad2: "Numpad 2",
+        .numpad3: "Numpad 3", .numpad4: "Numpad 4", .numpad5: "Numpad 5",
+        .numpad6: "Numpad 6", .numpad7: "Numpad 7", .numpad8: "Numpad 8", .numpad9: "Numpad 9",
         .numpadAdd: "Numpad Add (+)",
-        .numpadBackspace: "Numpad Backspace",
-        .numpadClear: "Numpad Clear",
-        .numpadClearEntry: "Numpad Clear Entry",
-        .numpadComma: "Numpad Comma",
-        .numpadDecimal: "Numpad Decimal",
-        .numpadDivide: "Numpad Divide (÷)",
-        .numpadEnter: "Numpad Enter",
-        .numpadEqual: "Numpad Equal",
-        .numpadMemoryAdd: "Numpad Memory Add",
-        .numpadMemoryClear: "Numpad Memory Clear",
-        .numpadMemoryRecall: "Numpad Memory Recall",
-        .numpadMemoryStore: "Numpad Memory Store",
-        .numpadMemorySubtract: "Numpad Memory Subtract",
-        .numpadMultiply: "Numpad Multiply (×)",
-        .numpadParenLeft: "Numpad Left Parenthesis",
-        .numpadParenRight: "Numpad Right Parenthesis",
         .numpadSubtract: "Numpad Subtract (-)",
-        .numpadSeparator: "Numpad Separator",
-        .numpadUp: "Numpad Up",
-        .numpadDown: "Numpad Down",
-        .numpadRight: "Numpad Right",
-        .numpadLeft: "Numpad Left",
-        .numpadBegin: "Numpad Begin",
-        .numpadHome: "Numpad Home",
-        .numpadEnd: "Numpad End",
-        .numpadInsert: "Numpad Insert",
-        .numpadDelete: "Numpad Delete",
-        .numpadPageUp: "Numpad Page Up",
-        .numpadPageDown: "Numpad Page Down",
-        
-        // Function Section
-        .escape: "Escape",
-        .f1: "F1",
-        .f2: "F2",
-        .f3: "F3",
-        .f4: "F4",
-        .f5: "F5",
-        .f6: "F6",
-        .f7: "F7",
-        .f8: "F8",
-        .f9: "F9",
-        .f10: "F10",
-        .f11: "F11",
-        .f12: "F12",
-        .f13: "F13",
-        .f14: "F14",
-        .f15: "F15",
-        .f16: "F16",
-        .f17: "F17",
-        .f18: "F18",
-        .f19: "F19",
-        .f20: "F20",
-        .f21: "F21",
-        .f22: "F22",
-        .f23: "F23",
-        .f24: "F24",
-        .f25: "F25",
-        .fn: "Fn",
-        .fnLock: "Fn Lock",
-        .printScreen: "Print Screen",
-        .scrollLock: "Scroll Lock",
-        .pause: "Pause",
+        .numpadMultiply: "Numpad Multiply (×)",
+        .numpadDivide: "Numpad Divide (÷)",
+        .numpadDecimal: "Numpad Decimal",
+        .numpadEqual: "Numpad Equal",
+        .numpadEnter: "Numpad Enter",
+        .numpadComma: "Numpad Comma",
         
         // Media Keys
-        .browserBack: "Browser Back",
-        .browserFavorites: "Browser Favorites",
-        .browserForward: "Browser Forward",
-        .browserHome: "Browser Home",
-        .browserRefresh: "Browser Refresh",
-        .browserSearch: "Browser Search",
-        .browserStop: "Browser Stop",
-        .eject: "Eject",
-        .launchApp1: "Launch App 1",
-        .launchApp2: "Launch App 2",
-        .launchMail: "Launch Mail",
-        .mediaPlayPause: "Media Play/Pause",
-        .mediaSelect: "Media Select",
-        .mediaStop: "Media Stop",
-        .mediaTrackNext: "Media Next Track",
-        .mediaTrackPrevious: "Media Previous Track",
-        .power: "Power",
-        .sleep: "Sleep",
+        .audioVolumeUp: "Volume Up",
         .audioVolumeDown: "Volume Down",
         .audioVolumeMute: "Volume Mute",
-        .audioVolumeUp: "Volume Up",
-        .wakeUp: "Wake Up",
         
-        // Legacy, Non-standard, and Special Keys
-        .copy: "Copy",
-        .cut: "Cut",
-        .paste: "Paste"
+        // International Keys
+        .intlBackslash: "International Backslash",
+        .intlRo: "International Ro",
+        .intlYen: "International Yen",
+        
+        // Other
+        .contextMenu: "Context Menu"
     ]
 }

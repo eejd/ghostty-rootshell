@@ -48,6 +48,20 @@ extension Ghostty {
             }
         }
 
+        /// Send a key event to the terminal.
+        ///
+        /// This sends the full key event including modifiers, action type, and text to the terminal.
+        /// Unlike `sendText`, this method processes keyboard shortcuts, key bindings, and terminal
+        /// encoding based on the complete key event information.
+        ///
+        /// - Parameter event: The key event to send to the terminal
+        @MainActor
+        func sendKeyEvent(_ event: Input.KeyEvent) {
+            event.withCValue { cEvent in
+                ghostty_surface_key(surface, cEvent)
+            }
+        }
+
         /// Perform a keybinding action.
         ///
         /// The action can be any valid keybind parameter. e.g. `keybind = goto_tab:4`

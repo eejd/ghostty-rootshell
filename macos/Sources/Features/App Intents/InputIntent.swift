@@ -44,10 +44,25 @@ struct KeyEventIntent: AppIntent {
     static var description = IntentDescription("Simulate a keyboard event. This will not handle text encoding; use the 'Input Text' action for that.")
 
     @Parameter(
-        title: "Text",
-        description: "The key to send to the terminal."
+        title: "Key",
+        description: "The key to send to the terminal.",
+        default: .enter
     )
-    var key: Ghostty.Key
+    var key: Ghostty.Input.Key
+
+    @Parameter(
+        title: "Modifier(s)",
+        description: "The modifiers to send with the key event.",
+        default: []
+    )
+    var mods: [KeyEventMods]
+
+    @Parameter(
+        title: "Event Type",
+        description: "A key press or release.",
+        default: .press
+    )
+    var action: Ghostty.Input.Action
 
     @Parameter(
         title: "Terminal",
@@ -64,6 +79,45 @@ struct KeyEventIntent: AppIntent {
             throw GhosttyIntentError.surfaceNotFound
         }
 
+        // Convert KeyEventMods array to Ghostty.Input.Mods
+        let ghosttyMods = mods.reduce(Ghostty.Input.Mods()) { result, mod in
+            result.union(mod.ghosttyMod)
+        }
+        
+        let keyEvent = Ghostty.Input.KeyEvent(
+            key: key,
+            action: action,
+            mods: ghosttyMods
+        )
+        surface.sendKeyEvent(keyEvent)
+
         return .result()
+    }
+}
+
+// MARK: Mods
+
+enum KeyEventMods: String, AppEnum, CaseIterable {
+    case shift
+    case control
+    case option
+    case command
+    
+    static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Modifier Key")
+    
+    static var caseDisplayRepresentations: [KeyEventMods : DisplayRepresentation] = [
+        .shift: "Shift",
+        .control: "Control",
+        .option: "Option",
+        .command: "Command"
+    ]
+    
+    var ghosttyMod: Ghostty.Input.Mods {
+        switch self {
+        case .shift: .shift
+        case .control: .ctrl
+        case .option: .alt
+        case .command: .super
+        }
     }
 }
