@@ -23,15 +23,17 @@ struct NewTerminalIntent: AppIntent {
     )
     var workingDirectory: IntentFile?
 
+    @Parameter(
+        title: "Parent Terminal",
+        description: "The terminal to inherit the base configuration from."
+    )
+    var parent: TerminalEntity?
+
     @available(macOS 26.0, *)
     static var supportedModes: IntentModes = .foreground(.immediate)
 
     @available(macOS, obsoleted: 26.0, message: "Replaced by supportedModes")
     static var openAppWhenRun = true
-
-    static var parameterSummary: some ParameterSummary {
-        Summary("New Terminal \(\.$location)")
-    }
 
     @MainActor
     func perform() async throws -> some IntentResult {
@@ -47,16 +49,31 @@ struct NewTerminalIntent: AppIntent {
             config.workingDirectory = dir.path(percentEncoded: false)
         }
 
+        // Determine if we have a parent and get it
+        let parent: Ghostty.SurfaceView?
+        if let parentParam = self.parent {
+            guard let view = parentParam.surfaceView else {
+                throw GhosttyIntentError.surfaceNotFound
+            }
+
+            parent = view
+        } else if let preferred = TerminalController.preferredParent {
+            parent = preferred.focusedSurface ?? preferred.surfaceTree.root?.leftmostLeaf()
+        } else {
+            parent = nil
+        }
+
         switch location {
         case .window:
             _ = TerminalController.newWindow(
                 appDelegate.ghostty,
-                withBaseConfig: config)
+                withBaseConfig: config,
+                withParent: parent?.window)
 
         case .tab:
             _ = TerminalController.newTab(
                 appDelegate.ghostty,
-                from: TerminalController.preferredParent?.window,
+                from: parent?.window,
                 withBaseConfig: config)
         }
 
