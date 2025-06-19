@@ -32,6 +32,7 @@ pub fn resourcesDir(alloc: std.mem.Allocator) !?[]const u8 {
     const sentinels = switch (comptime builtin.target.os.tag) {
         .windows => .{"terminfo/ghostty.terminfo"},
         .macos => .{"terminfo/78/xterm-ghostty"},
+        .freebsd => .{ "site-terminfo/g/ghostty", "site-terminfo/x/xterm-ghostty" },
         else => .{ "terminfo/g/ghostty", "terminfo/x/xterm-ghostty" },
     };
 
