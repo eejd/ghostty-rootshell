@@ -128,6 +128,7 @@
 		A5E4083C2E044DB50035FEAC /* Ghostty.Error.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5E4083B2E044DB40035FEAC /* Ghostty.Error.swift */; };
 		A5E408402E04532C0035FEAC /* CommandEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5E4083F2E04532A0035FEAC /* CommandEntity.swift */; };
 		A5E408432E047D0B0035FEAC /* CommandPaletteIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5E408422E047D060035FEAC /* CommandPaletteIntent.swift */; };
+		A5E408452E0483FD0035FEAC /* KeybindIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5E408442E0483F80035FEAC /* KeybindIntent.swift */; };
 		A5FEB3002ABB69450068369E /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5FEB2FF2ABB69450068369E /* main.swift */; };
 		AEE8B3452B9AA39600260C5E /* NSPasteboard+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEE8B3442B9AA39600260C5E /* NSPasteboard+Extension.swift */; };
 		C159E81D2B66A06B00FDFE9C /* OSColor+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = C159E81C2B66A06B00FDFE9C /* OSColor+Extension.swift */; };
@@ -256,6 +257,7 @@
 		A5E4083B2E044DB40035FEAC /* Ghostty.Error.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ghostty.Error.swift; sourceTree = "<group>"; };
 		A5E4083F2E04532A0035FEAC /* CommandEntity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandEntity.swift; sourceTree = "<group>"; };
 		A5E408422E047D060035FEAC /* CommandPaletteIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandPaletteIntent.swift; sourceTree = "<group>"; };
+		A5E408442E0483F80035FEAC /* KeybindIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeybindIntent.swift; sourceTree = "<group>"; };
 		A5FEB2FF2ABB69450068369E /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		AEE8B3442B9AA39600260C5E /* NSPasteboard+Extension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NSPasteboard+Extension.swift"; sourceTree = "<group>"; };
 		C159E81C2B66A06B00FDFE9C /* OSColor+Extension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "OSColor+Extension.swift"; sourceTree = "<group>"; };
@@ -624,6 +626,7 @@
 				A5E4082D2E0237410035FEAC /* NewTerminalIntent.swift */,
 				A5E408332E03200F0035FEAC /* GetTerminalDetailsIntent.swift */,
 				A5E408422E047D060035FEAC /* CommandPaletteIntent.swift */,
+				A5E408442E0483F80035FEAC /* KeybindIntent.swift */,
 				A5E4082F2E0271320035FEAC /* GhosttyIntentError.swift */,
 			);
 			path = "App Intents";
@@ -823,6 +826,7 @@
 				A5A2A3CC2D444ABB0033CF96 /* NSApplication+Extension.swift in Sources */,
 				A5E408302E0271320035FEAC /* GhosttyIntentError.swift in Sources */,
 				A5E4083A2E0449BD0035FEAC /* Ghostty.Command.swift in Sources */,
+				A5E408452E0483FD0035FEAC /* KeybindIntent.swift in Sources */,
 				A5FEB3002ABB69450068369E /* main.swift in Sources */,
 				A53A297F2DB4480F00B6E02C /* EventModifiers+Extension.swift in Sources */,
 				A5E4082E2E0237460035FEAC /* NewTerminalIntent.swift in Sources */,
