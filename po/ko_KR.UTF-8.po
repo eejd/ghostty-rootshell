@@ -23,7 +23,7 @@ msgstr "터미널 제목 변경"
 
 #: src/apprt/gtk/ui/1.5/prompt-title-dialog.blp:6
 msgid "Leave blank to restore the default title."
-msgstr "기본 제목으로 복원하려면 비워 두세요."
+msgstr "제목란을 비워 두면 기본값으로 복원됩니다."
 
 #: src/apprt/gtk/ui/1.5/prompt-title-dialog.blp:9
 #: src/apprt/gtk/ui/1.5/ccw-paste.blp:10 src/apprt/gtk/CloseDialog.zig:44
@@ -42,7 +42,7 @@ msgstr "설정 오류"
 msgid ""
 "One or more configuration errors were found. Please review the errors below, "
 "and either reload your configuration or ignore these errors."
-msgstr "하나 이상의 설정 오류가 발견되었습니다. 아래 오류를 확인한 후 설정을 다시 로드하거나 무시하세요."
+msgstr "설정에 하나 이상의 문제가 발견되었습니다. 아래 오류(를)들을 확인한 후 설정을 다시 불러오거나 무시하세요."
 
 #: src/apprt/gtk/ui/1.5/config-errors-dialog.blp:9
 msgid "Ignore"
@@ -52,7 +52,7 @@ msgstr "무시"
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:97
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:95
 msgid "Reload Configuration"
-msgstr "설정을 다시 로드하기"
+msgstr "설정 값 다시 불러오기"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:6
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:6
@@ -145,7 +145,7 @@ msgstr "설정 열기"
 
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:85
 msgid "Terminal Inspector"
-msgstr "터미널 인스펙터"
+msgstr "터미널 조사 도구"
 
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:102
 #: src/apprt/gtk/Window.zig:960
@@ -248,11 +248,11 @@ msgstr "열린 탭 보기"
 #: src/apprt/gtk/Window.zig:295
 msgid ""
 "⚠️ You're running a debug build of Ghostty! Performance will be degraded."
-msgstr "⚠️ 디버그 빌드를 실행 중입니다! 성능이 저하될 수 있습니다."
+msgstr "⚠️ 디버그 빌드 실행 중! 성능이 저하됩니다."
 
 #: src/apprt/gtk/Window.zig:725
 msgid "Reloaded the configuration"
-msgstr "구성을 다시 로드했습니다"
+msgstr "설정값을 다시 불러왔습니다"
 
 #: src/apprt/gtk/Window.zig:941
 msgid "Ghostty Developers"
