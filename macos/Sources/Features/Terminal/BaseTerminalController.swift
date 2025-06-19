@@ -193,6 +193,46 @@ class BaseTerminalController: NSWindowController,
         }
     }
 
+    // MARK: Methods
+
+    /// Create a new split.
+    @discardableResult
+    func newSplit(
+        at oldView: Ghostty.SurfaceView,
+        direction: SplitTree<Ghostty.SurfaceView>.NewDirection,
+        baseConfig config: Ghostty.SurfaceConfiguration? = nil
+    ) -> Ghostty.SurfaceView? {
+        // We can only create new splits for surfaces in our tree.
+        guard surfaceTree.root?.node(view: oldView) != nil else { return nil }
+
+        // Create a new surface view
+        guard let ghostty_app = ghostty.app else { return nil }
+        let newView = Ghostty.SurfaceView(ghostty_app, baseConfig: config)
+
+        // Do the split
+        let newTree: SplitTree<Ghostty.SurfaceView>
+        do {
+            newTree = try surfaceTree.insert(
+                view: newView,
+                at: oldView,
+                direction: direction)
+        } catch {
+            // If splitting fails for any reason (it should not), then we just log
+            // and return. The new view we created will be deinitialized and its
+            // no big deal.
+            Ghostty.logger.warning("failed to insert split: \(error)")
+            return nil
+        }
+
+        replaceSurfaceTree(
+            newTree,
+            moveFocusTo: newView,
+            moveFocusFrom: oldView,
+            undoAction: "New Split")
+
+        return newView
+    }
+
     /// Called when the surfaceTree variable changed.
     ///
     /// Subclasses should call super first.
@@ -477,30 +517,7 @@ class BaseTerminalController: NSWindowController,
         default: return
         }
 
-        // Create a new surface view
-        guard let ghostty_app = ghostty.app else { return }
-        let newView = Ghostty.SurfaceView(ghostty_app, baseConfig: config)
-
-        // Do the split
-        let newTree: SplitTree<Ghostty.SurfaceView>
-        do {
-            newTree = try surfaceTree.insert(
-                view: newView,
-                at: oldView,
-                direction: splitDirection)
-        } catch {
-            // If splitting fails for any reason (it should not), then we just log
-            // and return. The new view we created will be deinitialized and its
-            // no big deal.
-            Ghostty.logger.warning("failed to insert split: \(error)")
-            return
-        }
-
-        replaceSurfaceTree(
-            newTree,
-            moveFocusTo: newView,
-            moveFocusFrom: oldView,
-            undoAction: "New Split")
+        newSplit(at: oldView, direction: splitDirection, baseConfig: config)
     }
 
     @objc private func ghosttyDidEqualizeSplits(_ notification: Notification) {
