@@ -47,7 +47,7 @@ struct KeyEventIntent: AppIntent {
         title: "Text",
         description: "The key to send to the terminal."
     )
-    var key: KeyIntentKey
+    var key: Ghostty.Key
 
     @Parameter(
         title: "Terminal",
@@ -64,29 +64,6 @@ struct KeyEventIntent: AppIntent {
             throw GhosttyIntentError.surfaceNotFound
         }
 
-        surface.sendText(text)
         return .result()
     }
-}
-
-// MARK: TerminalDetail
-
-enum KeyIntentKey: String {
-    case title
-    case workingDirectory
-    case allContents
-    case selectedText
-    case visibleText
-}
-
-extension KeyIntentKey: AppEnum {
-    static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Terminal Detail")
-
-    static var caseDisplayRepresentations: [Self: DisplayRepresentation] = [
-        .title: .init(title: "Title"),
-        .workingDirectory: .init(title: "Working Directory"),
-        .allContents: .init(title: "Full Contents"),
-        .selectedText: .init(title: "Selected Text"),
-        .visibleText: .init(title: "Visible Text"),
-    ]
 }
