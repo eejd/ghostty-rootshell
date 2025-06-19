@@ -1,13 +1,12 @@
 import AppKit
 import AppIntents
 
-/// App intent that invokes a command palette entry.
 struct KeybindIntent: AppIntent {
     static var title: LocalizedStringResource = "Invoke a Keybind Action"
 
     @Parameter(
         title: "Terminal",
-        description: "The terminal to base available commands from."
+        description: "The terminal to invoke the action on."
     )
     var terminal: TerminalEntity
 

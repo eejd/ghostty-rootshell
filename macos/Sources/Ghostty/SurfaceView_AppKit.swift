@@ -1700,7 +1700,7 @@ extension Ghostty.SurfaceView: NSTextInputClient {
     func insertText(_ string: Any, replacementRange: NSRange) {
         // We must have an associated event
         guard NSApp.currentEvent != nil else { return }
-        guard let surface = self.surface else { return }
+        guard let surfaceModel else { return }
 
         // We want the string view of the any value
         var chars = ""
@@ -1724,13 +1724,7 @@ extension Ghostty.SurfaceView: NSTextInputClient {
             return
         }
 
-        let len = chars.utf8CString.count
-        if (len == 0) { return }
-
-        chars.withCString { ptr in
-            // len includes the null terminator so we do len - 1
-            ghostty_surface_text(surface, ptr, UInt(len - 1))
-        }
+        surfaceModel.sendText(chars)
     }
 
     /// This function needs to exist for two reasons:

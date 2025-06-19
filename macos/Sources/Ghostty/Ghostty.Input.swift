@@ -208,4 +208,15 @@ extension Ghostty {
         0x43: GHOSTTY_KEY_NUMPAD_MULTIPLY,
         0x4E: GHOSTTY_KEY_NUMPAD_SUBTRACT,
     ];
+
+    /// `ghostty_input_key_e`
+    enum Key: String {
+        case undentified
+
+        var cKey: ghostty_input_key_e {
+            switch self {
+            case .undentified: GHOSTTY_KEY_UNIDENTIFIED
+            }
+        }
+    }
 }

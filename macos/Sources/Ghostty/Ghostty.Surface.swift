@@ -35,6 +35,19 @@ extension Ghostty {
             }
         }
 
+        /// Send text to the terminal as if it was typed. This doesn't send the key events so keyboard
+        /// shortcuts and other encodings do not take effect.
+        @MainActor
+        func sendText(_ text: String) {
+            let len = text.utf8CString.count
+            if (len == 0) { return }
+
+            text.withCString { ptr in
+                // len includes the null terminator so we do len - 1
+                ghostty_surface_text(surface, ptr, UInt(len - 1))
+            }
+        }
+
         /// Perform a keybinding action.
         ///
         /// The action can be any valid keybind parameter. e.g. `keybind = goto_tab:4`
