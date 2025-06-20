@@ -58,6 +58,8 @@
 		A54B0CED2D0CFB7700CBEFF8 /* ColorizedGhosttyIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = A54B0CEC2D0CFB7300CBEFF8 /* ColorizedGhosttyIcon.swift */; };
 		A54B0CEF2D0D2E2800CBEFF8 /* ColorizedGhosttyIconImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = A54B0CEE2D0D2E2400CBEFF8 /* ColorizedGhosttyIconImage.swift */; };
 		A54D786C2CA7978E001B19B1 /* BaseTerminalController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A54D786B2CA79788001B19B1 /* BaseTerminalController.swift */; };
+		A553F4062E05E93000257779 /* Optional+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = A51194122E05D003007258CC /* Optional+Extension.swift */; };
+		A553F4072E05E93D00257779 /* Array+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = A586366A2DF0A98900E04A10 /* Array+Extension.swift */; };
 		A5593FDF2DF8D57C00B47B10 /* TerminalWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5593FDE2DF8D57100B47B10 /* TerminalWindow.swift */; };
 		A5593FE12DF8D74000B47B10 /* HiddenTitlebarTerminalWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5593FE02DF8D73400B47B10 /* HiddenTitlebarTerminalWindow.swift */; };
 		A5593FE32DF8D78600B47B10 /* TerminalHiddenTitlebar.xib in Resources */ = {isa = PBXBuildFile; fileRef = A5593FE22DF8D78600B47B10 /* TerminalHiddenTitlebar.xib */; };
@@ -892,6 +894,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A5CBD0592C9F37B10017A1AE /* Backport.swift in Sources */,
+				A553F4062E05E93000257779 /* Optional+Extension.swift in Sources */,
 				A53D0C942B53B43700305CE6 /* iOSApp.swift in Sources */,
 				A514C8D72B54A16400493A16 /* Ghostty.Config.swift in Sources */,
 				A5333E232B5A219A008AEFF7 /* SurfaceView.swift in Sources */,
@@ -901,6 +904,7 @@
 				A53D0C9B2B543F3B00305CE6 /* Ghostty.App.swift in Sources */,
 				A5333E242B5A22D9008AEFF7 /* Ghostty.Shell.swift in Sources */,
 				A5985CD82C320C4500C57AD3 /* String+Extension.swift in Sources */,
+				A553F4072E05E93D00257779 /* Array+Extension.swift in Sources */,
 				C159E89D2B69A2EF00FDFE9C /* OSColor+Extension.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
