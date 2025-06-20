@@ -61,6 +61,9 @@ blending: configpkg.Config.AlphaBlending,
 /// the "shared" storage mode, instead we have to use the "managed" mode.
 default_storage_mode: mtl.MTLResourceOptions.StorageMode,
 
+/// We start an AutoreleasePool before `drawFrame` and end it afterwards.
+autorelease_pool: ?*objc.AutoreleasePool = null,
+
 pub fn init(alloc: Allocator, opts: rendererpkg.Options) !Metal {
     comptime switch (builtin.os.tag) {
         .macos, .ios => {},
@@ -183,6 +186,23 @@ fn displayCallback(renderer: *Renderer) align(8) void {
     renderer.drawFrame(true) catch |err| {
         log.warn("Error drawing frame in display callback, err={}", .{err});
     };
+}
+
+/// Actions taken before doing anything in `drawFrame`.
+///
+/// Right now we use this to start an AutoreleasePool.
+pub fn drawFrameStart(self: *Metal) void {
+    assert(self.autorelease_pool == null);
+    self.autorelease_pool = .init();
+}
+
+/// Actions taken after `drawFrame` is done.
+///
+/// Right now we use this to end our AutoreleasePool.
+pub fn drawFrameEnd(self: *Metal) void {
+    assert(self.autorelease_pool != null);
+    self.autorelease_pool.?.deinit();
+    self.autorelease_pool = null;
 }
 
 pub fn initShaders(

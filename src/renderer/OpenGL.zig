@@ -289,6 +289,20 @@ pub fn displayRealized(self: *const OpenGL) void {
     }
 }
 
+/// Actions taken before doing anything in `drawFrame`.
+///
+/// Right now there's nothing we need to do for OpenGL.
+pub fn drawFrameStart(self: *OpenGL) void {
+    _ = self;
+}
+
+/// Actions taken after `drawFrame` is done.
+///
+/// Right now there's nothing we need to do for OpenGL.
+pub fn drawFrameEnd(self: *OpenGL) void {
+    _ = self;
+}
+
 pub fn initShaders(
     self: *const OpenGL,
     alloc: Allocator,

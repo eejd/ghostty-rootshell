@@ -1241,15 +1241,10 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             self.draw_mutex.lock();
             defer self.draw_mutex.unlock();
 
-            // There's probably a more elegant way to do this...
-            //
-            // This is effectively an @autoreleasepool{} block, which we need in
-            // order to ensure that autoreleased objects are properly released.
-            const pool = if (builtin.os.tag.isDarwin())
-                @import("objc").AutoreleasePool.init()
-            else
-                void;
-            defer if (builtin.os.tag.isDarwin()) pool.deinit();
+            // Let our graphics API do any bookkeeping, etc.
+            // that it needs to do before / after `drawFrame`.
+            self.api.drawFrameStart();
+            defer self.api.drawFrameEnd();
 
             // Retrieve the most up-to-date surface size from the Graphics API
             const surface_size = try self.api.surfaceSize();
