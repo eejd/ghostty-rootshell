@@ -16,6 +16,8 @@
 		A511940F2E050595007258CC /* CloseTerminalIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A511940E2E050590007258CC /* CloseTerminalIntent.swift */; };
 		A51194112E05A483007258CC /* QuickTerminalIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A51194102E05A480007258CC /* QuickTerminalIntent.swift */; };
 		A51194132E05D006007258CC /* Optional+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = A51194122E05D003007258CC /* Optional+Extension.swift */; };
+		A51194172E05D964007258CC /* PermissionRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = A51194162E05D95E007258CC /* PermissionRequest.swift */; };
+		A51194192E05DFC4007258CC /* IntentPermission.swift in Sources */ = {isa = PBXBuildFile; fileRef = A51194182E05DFBB007258CC /* IntentPermission.swift */; };
 		A514C8D62B54A16400493A16 /* Ghostty.Config.swift in Sources */ = {isa = PBXBuildFile; fileRef = A514C8D52B54A16400493A16 /* Ghostty.Config.swift */; };
 		A514C8D72B54A16400493A16 /* Ghostty.Config.swift in Sources */ = {isa = PBXBuildFile; fileRef = A514C8D52B54A16400493A16 /* Ghostty.Config.swift */; };
 		A514C8D82B54DC6800493A16 /* Ghostty.App.swift in Sources */ = {isa = PBXBuildFile; fileRef = A53D0C992B543F3B00305CE6 /* Ghostty.App.swift */; };
@@ -155,6 +157,8 @@
 		A511940E2E050590007258CC /* CloseTerminalIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloseTerminalIntent.swift; sourceTree = "<group>"; };
 		A51194102E05A480007258CC /* QuickTerminalIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickTerminalIntent.swift; sourceTree = "<group>"; };
 		A51194122E05D003007258CC /* Optional+Extension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Optional+Extension.swift"; sourceTree = "<group>"; };
+		A51194162E05D95E007258CC /* PermissionRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionRequest.swift; sourceTree = "<group>"; };
+		A51194182E05DFBB007258CC /* IntentPermission.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntentPermission.swift; sourceTree = "<group>"; };
 		A514C8D52B54A16400493A16 /* Ghostty.Config.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ghostty.Config.swift; sourceTree = "<group>"; };
 		A51544FD2DFB1110009E85D8 /* TitlebarTabsTahoeTerminalWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TitlebarTabsTahoeTerminalWindow.swift; sourceTree = "<group>"; };
 		A51544FF2DFB112E009E85D8 /* TerminalTabsTitlebarTahoe.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = TerminalTabsTitlebarTahoe.xib; sourceTree = "<group>"; };
@@ -355,6 +359,7 @@
 				A59630962AEE163600D64628 /* HostingWindow.swift */,
 				A5CA378B2D2A4DE800931030 /* KeyboardLayout.swift */,
 				A59FB5D02AE0DEA7009128F3 /* MetalView.swift */,
+				A51194162E05D95E007258CC /* PermissionRequest.swift */,
 				A5E408292E022E9B0035FEAC /* TabGroupCloseCoordinator.swift */,
 				A5CA378D2D31D6C100931030 /* Weak.swift */,
 				C1F26EE72B76CBFC00404083 /* VibrantLayer.h */,
@@ -640,6 +645,7 @@
 				A5E408462E0485270035FEAC /* InputIntent.swift */,
 				A5E408442E0483F80035FEAC /* KeybindIntent.swift */,
 				A5E4082F2E0271320035FEAC /* GhosttyIntentError.swift */,
+				A51194182E05DFBB007258CC /* IntentPermission.swift */,
 			);
 			path = "App Intents";
 			sourceTree = "<group>";
@@ -821,6 +827,8 @@
 				A51BFC2B2B30F6BE00E92F16 /* UpdateDelegate.swift in Sources */,
 				A5CBD06B2CA322430017A1AE /* GlobalEventTap.swift in Sources */,
 				AEE8B3452B9AA39600260C5E /* NSPasteboard+Extension.swift in Sources */,
+				A51194172E05D964007258CC /* PermissionRequest.swift in Sources */,
+				A51194192E05DFC4007258CC /* IntentPermission.swift in Sources */,
 				A52FFF5D2CAB4D08000C6A5B /* NSScreen+Extension.swift in Sources */,
 				A53426352A7DA53D00EBB7A2 /* AppDelegate.swift in Sources */,
 				A5CBD0582C9F30960017A1AE /* Cursor.swift in Sources */,

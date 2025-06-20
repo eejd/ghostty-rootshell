@@ -29,6 +29,10 @@ struct InputTextIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
+        guard await requestIntentPermission() else {
+            throw GhosttyIntentError.permissionDenied
+        }
+        
         guard let surface = terminal.surfaceModel else {
             throw GhosttyIntentError.surfaceNotFound
         }
@@ -75,6 +79,10 @@ struct KeyEventIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
+        guard await requestIntentPermission() else {
+            throw GhosttyIntentError.permissionDenied
+        }
+        
         guard let surface = terminal.surfaceModel else {
             throw GhosttyIntentError.surfaceNotFound
         }
@@ -133,6 +141,10 @@ struct MouseButtonIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
+        guard await requestIntentPermission() else {
+            throw GhosttyIntentError.permissionDenied
+        }
+        
         guard let surface = terminal.surfaceModel else {
             throw GhosttyIntentError.surfaceNotFound
         }
@@ -190,6 +202,10 @@ struct MousePosIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
+        guard await requestIntentPermission() else {
+            throw GhosttyIntentError.permissionDenied
+        }
+        
         guard let surface = terminal.surfaceModel else {
             throw GhosttyIntentError.surfaceNotFound
         }
@@ -254,6 +270,10 @@ struct MouseScrollIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
+        guard await requestIntentPermission() else {
+            throw GhosttyIntentError.permissionDenied
+        }
+        
         guard let surface = terminal.surfaceModel else {
             throw GhosttyIntentError.surfaceNotFound
         }

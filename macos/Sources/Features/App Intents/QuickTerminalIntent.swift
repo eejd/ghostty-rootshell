@@ -10,6 +10,10 @@ struct QuickTerminalIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ReturnsValue<[TerminalEntity]> {
+        guard await requestIntentPermission() else {
+            throw GhosttyIntentError.permissionDenied
+        }
+        
         guard let delegate = NSApp.delegate as? AppDelegate else {
             throw GhosttyIntentError.appUnavailable
         }

@@ -24,6 +24,10 @@ struct CommandPaletteIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ReturnsValue<Bool> {
+        guard await requestIntentPermission() else {
+            throw GhosttyIntentError.permissionDenied
+        }
+        
         guard let surface = terminal.surfaceModel else {
             throw GhosttyIntentError.surfaceNotFound
         }
