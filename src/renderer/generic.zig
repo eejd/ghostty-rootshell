@@ -68,23 +68,23 @@ const log = std.log.scoped(.generic_renderer);
 /// [ Texture ] - An abstraction over a GPU texture.
 ///
 pub fn Renderer(comptime GraphicsAPI: type) type {
-    const Target = GraphicsAPI.Target;
-    const Buffer = GraphicsAPI.Buffer;
-    const Texture = GraphicsAPI.Texture;
-    const RenderPass = GraphicsAPI.RenderPass;
-    const shaderpkg = GraphicsAPI.shaders;
-
-    const cellpkg = GraphicsAPI.cellpkg;
-    const imagepkg = GraphicsAPI.imagepkg;
-    const Image = imagepkg.Image;
-    const ImageMap = imagepkg.ImageMap;
-
-    const Shaders = shaderpkg.Shaders;
-
-    const ImagePlacementList = std.ArrayListUnmanaged(imagepkg.Placement);
-
     return struct {
         const Self = @This();
+
+        const Target = GraphicsAPI.Target;
+        const Buffer = GraphicsAPI.Buffer;
+        const Texture = GraphicsAPI.Texture;
+        const RenderPass = GraphicsAPI.RenderPass;
+        const shaderpkg = GraphicsAPI.shaders;
+
+        const cellpkg = GraphicsAPI.cellpkg;
+        const imagepkg = GraphicsAPI.imagepkg;
+        const Image = imagepkg.Image;
+        const ImageMap = imagepkg.ImageMap;
+
+        const Shaders = shaderpkg.Shaders;
+
+        const ImagePlacementList = std.ArrayListUnmanaged(imagepkg.Placement);
 
         /// Allocator that can be used
         alloc: std.mem.Allocator,
