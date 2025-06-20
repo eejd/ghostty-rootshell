@@ -300,6 +300,46 @@ class BaseTerminalController: NSWindowController,
         self.alert = alert
     }
 
+    /// Close a surface from a view.
+    func closeSurface(
+        _ view: Ghostty.SurfaceView,
+        withConfirmation: Bool = true
+    ) {
+        guard let node = surfaceTree.root?.node(view: view) else { return }
+        closeSurface(node, withConfirmation: withConfirmation)
+    }
+
+    /// Close a surface node (which may contain splits), requesting confirmation if necessary.
+    ///
+    /// This will also insert the proper undo stack information in.
+    func closeSurface(
+        _ node: SplitTree<Ghostty.SurfaceView>.Node,
+        withConfirmation: Bool = true
+    ) {
+        // This node must be part of our tree
+        guard surfaceTree.contains(node) else { return }
+
+        // If the child process is not alive, then we exit immediately
+        guard withConfirmation else {
+            removeSurfaceNode(node)
+            return
+        }
+
+        // Confirm close. We use an NSAlert instead of a SwiftUI confirmationDialog
+        // due to SwiftUI bugs (see Ghostty #560). To repeat from #560, the bug is that
+        // confirmationDialog allows the user to Cmd-W close the alert, but when doing
+        // so SwiftUI does not update any of the bindings to note that window is no longer
+        // being shown, and provides no callback to detect this.
+        confirmClose(
+            messageText: "Close Terminal?",
+            informativeText: "The terminal still has a running process. If you close the terminal the process will be killed."
+        ) { [weak self] in
+            if let self {
+                self.removeSurfaceNode(node)
+            }
+        }
+    }
+
     // MARK: Split Tree Management
 
     /// Find the next surface to focus when a node is being closed.
@@ -460,40 +500,9 @@ class BaseTerminalController: NSWindowController,
     @objc private func ghosttyDidCloseSurface(_ notification: Notification) {
         guard let target = notification.object as? Ghostty.SurfaceView else { return }
         guard let node = surfaceTree.root?.node(view: target) else { return }
-        closeSurfaceNode(
+        closeSurface(
             node,
             withConfirmation: (notification.userInfo?["process_alive"] as? Bool) ?? false)
-    }
-
-    /// Close a surface node (which may contain splits), requesting confirmation if necessary.
-    ///
-    /// This will also insert the proper undo stack information in.
-    func closeSurfaceNode(
-        _ node: SplitTree<Ghostty.SurfaceView>.Node,
-        withConfirmation: Bool = true
-    ) {
-        // This node must be part of our tree
-        guard surfaceTree.contains(node) else { return }
-
-        // If the child process is not alive, then we exit immediately
-        guard withConfirmation else {
-            removeSurfaceNode(node)
-            return
-        }
-
-        // Confirm close. We use an NSAlert instead of a SwiftUI confirmationDialog
-        // due to SwiftUI bugs (see Ghostty #560). To repeat from #560, the bug is that
-        // confirmationDialog allows the user to Cmd-W close the alert, but when doing
-        // so SwiftUI does not update any of the bindings to note that window is no longer
-        // being shown, and provides no callback to detect this.
-        confirmClose(
-            messageText: "Close Terminal?",
-            informativeText: "The terminal still has a running process. If you close the terminal the process will be killed."
-        ) { [weak self] in
-            if let self {
-                self.removeSurfaceNode(node)
-            }
-        }
     }
 
     @objc private func ghosttyDidNewSplit(_ notification: Notification) {

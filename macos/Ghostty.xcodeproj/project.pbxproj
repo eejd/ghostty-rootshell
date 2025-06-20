@@ -13,6 +13,7 @@
 		857F63812A5E64F200CA4815 /* MainMenu.xib in Resources */ = {isa = PBXBuildFile; fileRef = 857F63802A5E64F200CA4815 /* MainMenu.xib */; };
 		9351BE8E3D22937F003B3499 /* nvim in Resources */ = {isa = PBXBuildFile; fileRef = 9351BE8E2D22937F003B3499 /* nvim */; };
 		A50297352DFA0F3400B4E924 /* Double+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50297342DFA0F3300B4E924 /* Double+Extension.swift */; };
+		A511940F2E050595007258CC /* CloseTerminalIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A511940E2E050590007258CC /* CloseTerminalIntent.swift */; };
 		A514C8D62B54A16400493A16 /* Ghostty.Config.swift in Sources */ = {isa = PBXBuildFile; fileRef = A514C8D52B54A16400493A16 /* Ghostty.Config.swift */; };
 		A514C8D72B54A16400493A16 /* Ghostty.Config.swift in Sources */ = {isa = PBXBuildFile; fileRef = A514C8D52B54A16400493A16 /* Ghostty.Config.swift */; };
 		A514C8D82B54DC6800493A16 /* Ghostty.App.swift in Sources */ = {isa = PBXBuildFile; fileRef = A53D0C992B543F3B00305CE6 /* Ghostty.App.swift */; };
@@ -149,6 +150,7 @@
 		857F63802A5E64F200CA4815 /* MainMenu.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = MainMenu.xib; sourceTree = "<group>"; };
 		9351BE8E2D22937F003B3499 /* nvim */ = {isa = PBXFileReference; lastKnownFileType = folder; name = nvim; path = "../zig-out/share/nvim"; sourceTree = "<group>"; };
 		A50297342DFA0F3300B4E924 /* Double+Extension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Double+Extension.swift"; sourceTree = "<group>"; };
+		A511940E2E050590007258CC /* CloseTerminalIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloseTerminalIntent.swift; sourceTree = "<group>"; };
 		A514C8D52B54A16400493A16 /* Ghostty.Config.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ghostty.Config.swift; sourceTree = "<group>"; };
 		A51544FD2DFB1110009E85D8 /* TitlebarTabsTahoeTerminalWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TitlebarTabsTahoeTerminalWindow.swift; sourceTree = "<group>"; };
 		A51544FF2DFB112E009E85D8 /* TerminalTabsTitlebarTahoe.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = TerminalTabsTitlebarTahoe.xib; sourceTree = "<group>"; };
@@ -625,6 +627,7 @@
 			isa = PBXGroup;
 			children = (
 				A5E408412E0453370035FEAC /* Entities */,
+				A511940E2E050590007258CC /* CloseTerminalIntent.swift */,
 				A5E4082D2E0237410035FEAC /* NewTerminalIntent.swift */,
 				A5E408332E03200F0035FEAC /* GetTerminalDetailsIntent.swift */,
 				A5E408422E047D060035FEAC /* CommandPaletteIntent.swift */,
@@ -793,6 +796,7 @@
 				A5CBD0602CA0C90A0017A1AE /* QuickTerminalWindow.swift in Sources */,
 				A5CBD05E2CA0C5EC0017A1AE /* QuickTerminalController.swift in Sources */,
 				A5CF66D72D29DDB500139794 /* Ghostty.Event.swift in Sources */,
+				A511940F2E050595007258CC /* CloseTerminalIntent.swift in Sources */,
 				A5E408382E03C7DA0035FEAC /* Ghostty.Surface.swift in Sources */,
 				A5593FE72DF927D200B47B10 /* TransparentTitlebarTerminalWindow.swift in Sources */,
 				A5A2A3CA2D4445E30033CF96 /* Dock.swift in Sources */,

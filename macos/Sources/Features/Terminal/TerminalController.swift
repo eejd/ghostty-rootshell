@@ -519,13 +519,13 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
     }
 
     /// This is called anytime a node in the surface tree is being removed.
-    override func closeSurfaceNode(
+    override func closeSurface(
         _ node: SplitTree<Ghostty.SurfaceView>.Node,
         withConfirmation: Bool = true
     ) {
         // If this isn't the root then we're dealing with a split closure.
         if surfaceTree.root != node {
-            super.closeSurfaceNode(node, withConfirmation: withConfirmation)
+            super.closeSurface(node, withConfirmation: withConfirmation)
             return
         }
 
