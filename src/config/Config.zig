@@ -2355,6 +2355,30 @@ keybind: Keybinds = .{},
 ///
 @"macos-icon-screen-color": ?ColorList = null,
 
+/// Whether macOS Shortcuts are allowed to control Ghostty.
+///
+/// Ghostty exposes a number of actions that allow Shortcuts to
+/// control and interact with Ghostty. This includes creating new
+/// terminals, sending text to terminals, running commands, invoking
+/// any keybind action, etc.
+///
+/// This is a powerful feature but can be a security risk if a malicious
+/// shortcut is able to be installed and executed. Therefore, this
+/// configuration allows you to disable this feature.
+///
+/// Valid values are:
+///
+/// * `ask` - Ask the user whether for permission. Ghostty will by default
+///   cache the user's choice for 10 minutes since we can't determine
+///   when a single workflow begins or ends. The user also has an option
+///   in the GUI to allow for the remainder of the day.
+///
+/// * `allow` - Allow Shortcuts to control Ghostty without asking.
+///
+/// * `deny` - Deny Shortcuts from controlling Ghostty.
+///
+@"macos-shortcuts": MacShortcuts = .ask,
+
 /// Put every surface (tab, split, window) into a dedicated Linux cgroup.
 ///
 /// This makes it so that resource management can be done on a per-surface
@@ -5959,6 +5983,13 @@ pub const MacAppIconFrame = enum {
     beige,
     plastic,
     chrome,
+};
+
+/// See macos-shortcuts
+pub const MacShortcuts = enum {
+    allow,
+    deny,
+    ask,
 };
 
 /// See gtk-single-instance

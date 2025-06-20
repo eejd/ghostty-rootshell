@@ -1,5 +1,7 @@
+import AppKit
+
 /// Requests permission for Shortcuts app to interact with Ghostty
-/// 
+///
 /// This function displays a permission dialog asking the user to allow Shortcuts
 /// to interact with Ghostty. The permission is automatically cached for 10 minutes
 /// if the user selects "Allow", meaning subsequent intent calls won't show the dialog
@@ -25,6 +27,23 @@
 func requestIntentPermission() async -> Bool {
     await withCheckedContinuation { continuation in
         Task { @MainActor in
+            if let delegate = NSApp.delegate as? AppDelegate {
+                switch (delegate.ghostty.config.macosShortcuts) {
+                case .allow:
+                    continuation.resume(returning: true)
+                    return
+
+                case .deny:
+                    continuation.resume(returning: false)
+                    return
+
+                case .ask:
+                    // Continue with the permission dialog
+                    break
+                }
+            }
+
+
             PermissionRequest.show(
                 "org.mitchellh.ghostty.shortcutsPermission",
                 message: "Allow Shortcuts to interact with Ghostty for the next 10 minutes?",
