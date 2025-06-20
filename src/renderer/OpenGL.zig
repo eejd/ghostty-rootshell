@@ -384,7 +384,10 @@ pub inline fn textureOptions(self: OpenGL) Texture.Options {
 }
 
 /// Initializes a Texture suitable for the provided font atlas.
-pub fn initAtlasTexture(self: *const OpenGL, atlas: *const font.Atlas) !Texture {
+pub fn initAtlasTexture(
+    self: *const OpenGL,
+    atlas: *const font.Atlas,
+) Texture.Error!Texture {
     _ = self;
     const format: gl.Texture.Format, const internal_format: gl.Texture.InternalFormat =
         switch (atlas.format) {
@@ -393,7 +396,7 @@ pub fn initAtlasTexture(self: *const OpenGL, atlas: *const font.Atlas) !Texture 
             else => @panic("unsupported atlas format for OpenGL texture"),
         };
 
-    return Texture.init(
+    return try Texture.init(
         .{
             .format = format,
             .internal_format = internal_format,

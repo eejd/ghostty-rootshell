@@ -7,15 +7,16 @@ const glad = @import("glad.zig");
 
 id: c.GLuint,
 
-pub fn active(index: c_uint) !void {
+pub fn active(index: c_uint) errors.Error!void {
     glad.context.ActiveTexture.?(index + c.GL_TEXTURE0);
     try errors.getError();
 }
 
 /// Create a single texture.
-pub fn create() !Texture {
+pub fn create() errors.Error!Texture {
     var id: c.GLuint = undefined;
     glad.context.GenTextures.?(1, &id);
+    try errors.getError();
     return .{ .id = id };
 }
 
@@ -107,7 +108,7 @@ pub const Binding = struct {
         glad.context.GenerateMipmap.?(@intFromEnum(b.target));
     }
 
-    pub fn parameter(b: Binding, name: Parameter, value: anytype) !void {
+    pub fn parameter(b: Binding, name: Parameter, value: anytype) errors.Error!void {
         switch (@TypeOf(value)) {
             c.GLint => glad.context.TexParameteri.?(
                 @intFromEnum(b.target),
@@ -129,7 +130,7 @@ pub const Binding = struct {
         format: Format,
         typ: DataType,
         data: ?*const anyopaque,
-    ) !void {
+    ) errors.Error!void {
         glad.context.TexImage2D.?(
             @intFromEnum(b.target),
             level,
@@ -154,7 +155,7 @@ pub const Binding = struct {
         format: Format,
         typ: DataType,
         data: ?*const anyopaque,
-    ) !void {
+    ) errors.Error!void {
         glad.context.TexSubImage2D.?(
             @intFromEnum(b.target),
             level,
@@ -178,7 +179,7 @@ pub const Binding = struct {
         y: c.GLint,
         width: c.GLsizei,
         height: c.GLsizei,
-    ) !void {
+    ) errors.Error!void {
         glad.context.CopyTexSubImage2D.?(
             @intFromEnum(b.target),
             level,

@@ -31,13 +31,18 @@ height: usize,
 /// Bytes per pixel for this texture.
 bpp: usize,
 
+pub const Error = error{
+    /// A Metal API call failed.
+    MetalFailed,
+};
+
 /// Initialize a texture
 pub fn init(
     opts: Options,
     width: usize,
     height: usize,
     data: ?[]const u8,
-) !Self {
+) Error!Self {
     // Create our descriptor
     const desc = init: {
         const Class = objc.getClass("MTLTextureDescriptor").?;
@@ -90,7 +95,7 @@ pub fn replaceRegion(
     width: usize,
     height: usize,
     data: []const u8,
-) !void {
+) error{}!void {
     self.texture.msgSend(
         void,
         objc.sel("replaceRegion:mipmapLevel:withBytes:bytesPerRow:"),

@@ -31,23 +31,28 @@ format: gl.Texture.Format,
 /// Target for this texture.
 target: gl.Texture.Target,
 
+pub const Error = error{
+    /// An OpenGL API call failed.
+    OpenGLFailed,
+};
+
 /// Initialize a texture
 pub fn init(
     opts: Options,
     width: usize,
     height: usize,
     data: ?[]const u8,
-) !Self {
-    const tex = try gl.Texture.create();
+) Error!Self {
+    const tex = gl.Texture.create() catch return error.OpenGLFailed;
     errdefer tex.destroy();
     {
-        const texbind = try tex.bind(opts.target);
+        const texbind = tex.bind(opts.target) catch return error.OpenGLFailed;
         defer texbind.unbind();
-        try texbind.parameter(.WrapS, gl.c.GL_CLAMP_TO_EDGE);
-        try texbind.parameter(.WrapT, gl.c.GL_CLAMP_TO_EDGE);
-        try texbind.parameter(.MinFilter, gl.c.GL_LINEAR);
-        try texbind.parameter(.MagFilter, gl.c.GL_LINEAR);
-        try texbind.image2D(
+        texbind.parameter(.WrapS, gl.c.GL_CLAMP_TO_EDGE) catch return error.OpenGLFailed;
+        texbind.parameter(.WrapT, gl.c.GL_CLAMP_TO_EDGE) catch return error.OpenGLFailed;
+        texbind.parameter(.MinFilter, gl.c.GL_LINEAR) catch return error.OpenGLFailed;
+        texbind.parameter(.MagFilter, gl.c.GL_LINEAR) catch return error.OpenGLFailed;
+        texbind.image2D(
             0,
             opts.internal_format,
             @intCast(width),
@@ -56,7 +61,7 @@ pub fn init(
             opts.format,
             .UnsignedByte,
             if (data) |d| @ptrCast(d.ptr) else null,
-        );
+        ) catch return error.OpenGLFailed;
     }
 
     return .{
@@ -82,10 +87,10 @@ pub fn replaceRegion(
     width: usize,
     height: usize,
     data: []const u8,
-) !void {
-    const texbind = try self.texture.bind(self.target);
+) Error!void {
+    const texbind = self.texture.bind(self.target) catch return error.OpenGLFailed;
     defer texbind.unbind();
-    try texbind.subImage2D(
+    texbind.subImage2D(
         0,
         @intCast(x),
         @intCast(y),
@@ -94,5 +99,5 @@ pub fn replaceRegion(
         self.format,
         .UnsignedByte,
         data.ptr,
-    );
+    ) catch return error.OpenGLFailed;
 }

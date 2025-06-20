@@ -284,14 +284,17 @@ pub inline fn textureOptions(self: Metal) Texture.Options {
 }
 
 /// Initializes a Texture suitable for the provided font atlas.
-pub fn initAtlasTexture(self: *const Metal, atlas: *const font.Atlas) !Texture {
+pub fn initAtlasTexture(
+    self: *const Metal,
+    atlas: *const font.Atlas,
+) Texture.Error!Texture {
     const pixel_format: mtl.MTLPixelFormat = switch (atlas.format) {
         .grayscale => .r8unorm,
         .rgba => .bgra8unorm,
         else => @panic("unsupported atlas format for Metal texture"),
     };
 
-    return Texture.init(
+    return try Texture.init(
         .{
             .device = self.device,
             .pixel_format = pixel_format,
