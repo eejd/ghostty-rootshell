@@ -300,23 +300,30 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 var uniforms = try UniformBuffer.init(api.uniformBufferOptions(), 1);
                 errdefer uniforms.deinit();
 
-                // Create the buffers for our vertex data. The preallocation size
-                // is likely too small but our first frame update will resize it.
-                var cells = try CellTextBuffer.init(api.fgBufferOptions(), 10 * 10);
+                // Create GPU buffers for our cells.
+                //
+                // We start them off with a size of 1, which will of course be
+                // too small, but they will be resized as needed. This is a bit
+                // wasteful but since it's a one-time thing it's not really a
+                // huge concern.
+                var cells = try CellTextBuffer.init(api.fgBufferOptions(), 1);
                 errdefer cells.deinit();
-                var cells_bg = try CellBgBuffer.init(api.bgBufferOptions(), 10 * 10);
+                var cells_bg = try CellBgBuffer.init(api.bgBufferOptions(), 1);
                 errdefer cells_bg.deinit();
 
                 // Initialize our textures for our font atlas.
+                //
+                // As with the buffers above, we start these off as small
+                // as possible since they'll inevitably be resized anyway.
                 const grayscale = try api.initAtlasTexture(&.{
                     .data = undefined,
-                    .size = 8,
+                    .size = 1,
                     .format = .grayscale,
                 });
                 errdefer grayscale.deinit();
                 const color = try api.initAtlasTexture(&.{
                     .data = undefined,
-                    .size = 8,
+                    .size = 1,
                     .format = .rgba,
                 });
                 errdefer color.deinit();
@@ -328,8 +335,8 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                         null;
                 errdefer if (custom_shader_state) |*state| state.deinit();
 
-                // Initialize the target at 1x1 px, this is slightly
-                // wasteful but it's only done once so whatever.
+                // Initialize the target. Just as with the other resources,
+                // start it off as small as we can since it'll be resized.
                 const target = try api.initTarget(1, 1);
 
                 return .{
