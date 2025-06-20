@@ -11,6 +11,9 @@ struct TerminalEntity: AppEntity {
     @Property(title: "Working Directory")
     var workingDirectory: String?
 
+    @Property(title: "Kind")
+    var kind: Kind
+
     @MainActor
     @DeferredProperty(title: "Full Contents")
     @available(macOS 26.0, *)
@@ -67,6 +70,27 @@ struct TerminalEntity: AppEntity {
         self.title = view.title
         self.workingDirectory = view.pwd
         self.screenshot = view.screenshot()
+        
+        // Determine the kind based on the window controller type
+        if view.window?.windowController is QuickTerminalController {
+            self.kind = .quick
+        } else {
+            self.kind = .normal
+        }
+    }
+}
+
+extension TerminalEntity {
+    enum Kind: String, AppEnum {
+        case normal
+        case quick
+        
+        static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Terminal Kind")
+        
+        static var caseDisplayRepresentations: [Self: DisplayRepresentation] = [
+            .normal: .init(title: "Normal"),
+            .quick: .init(title: "Quick")
+        ]
     }
 }
 
@@ -101,7 +125,8 @@ struct TerminalQuery: EntityStringQuery, EnumerableEntityQuery {
 
     @MainActor
     var all: [Ghostty.SurfaceView] {
-        // Find all of our terminal windows (includes quick terminal)
+        // Find all of our terminal windows. This will include the quick terminal
+        // but only if it was previously opened.
         let controllers = NSApp.windows.compactMap {
             $0.windowController as? BaseTerminalController
         }

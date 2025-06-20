@@ -42,7 +42,11 @@ class QuickTerminalController: BaseTerminalController {
     ) {
         self.position = position
         self.derivedConfig = DerivedConfig(ghostty.config)
-        super.init(ghostty, baseConfig: base, surfaceTree: tree)
+
+        // Important detail here: we initialize with an empty surface tree so
+        // that we don't start a terminal process. This gets started when the
+        // first terminal is shown in `animateIn`.
+        super.init(ghostty, baseConfig: base, surfaceTree: .init())
 
         // Setup our notifications for behaviors
         let center = NotificationCenter.default

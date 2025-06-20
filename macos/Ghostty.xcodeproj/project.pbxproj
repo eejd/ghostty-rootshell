@@ -14,6 +14,7 @@
 		9351BE8E3D22937F003B3499 /* nvim in Resources */ = {isa = PBXBuildFile; fileRef = 9351BE8E2D22937F003B3499 /* nvim */; };
 		A50297352DFA0F3400B4E924 /* Double+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50297342DFA0F3300B4E924 /* Double+Extension.swift */; };
 		A511940F2E050595007258CC /* CloseTerminalIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A511940E2E050590007258CC /* CloseTerminalIntent.swift */; };
+		A51194112E05A483007258CC /* QuickTerminalIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A51194102E05A480007258CC /* QuickTerminalIntent.swift */; };
 		A514C8D62B54A16400493A16 /* Ghostty.Config.swift in Sources */ = {isa = PBXBuildFile; fileRef = A514C8D52B54A16400493A16 /* Ghostty.Config.swift */; };
 		A514C8D72B54A16400493A16 /* Ghostty.Config.swift in Sources */ = {isa = PBXBuildFile; fileRef = A514C8D52B54A16400493A16 /* Ghostty.Config.swift */; };
 		A514C8D82B54DC6800493A16 /* Ghostty.App.swift in Sources */ = {isa = PBXBuildFile; fileRef = A53D0C992B543F3B00305CE6 /* Ghostty.App.swift */; };
@@ -151,6 +152,7 @@
 		9351BE8E2D22937F003B3499 /* nvim */ = {isa = PBXFileReference; lastKnownFileType = folder; name = nvim; path = "../zig-out/share/nvim"; sourceTree = "<group>"; };
 		A50297342DFA0F3300B4E924 /* Double+Extension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Double+Extension.swift"; sourceTree = "<group>"; };
 		A511940E2E050590007258CC /* CloseTerminalIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloseTerminalIntent.swift; sourceTree = "<group>"; };
+		A51194102E05A480007258CC /* QuickTerminalIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickTerminalIntent.swift; sourceTree = "<group>"; };
 		A514C8D52B54A16400493A16 /* Ghostty.Config.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ghostty.Config.swift; sourceTree = "<group>"; };
 		A51544FD2DFB1110009E85D8 /* TitlebarTabsTahoeTerminalWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TitlebarTabsTahoeTerminalWindow.swift; sourceTree = "<group>"; };
 		A51544FF2DFB112E009E85D8 /* TerminalTabsTitlebarTahoe.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = TerminalTabsTitlebarTahoe.xib; sourceTree = "<group>"; };
@@ -630,6 +632,7 @@
 				A511940E2E050590007258CC /* CloseTerminalIntent.swift */,
 				A5E4082D2E0237410035FEAC /* NewTerminalIntent.swift */,
 				A5E408332E03200F0035FEAC /* GetTerminalDetailsIntent.swift */,
+				A51194102E05A480007258CC /* QuickTerminalIntent.swift */,
 				A5E408422E047D060035FEAC /* CommandPaletteIntent.swift */,
 				A5E408462E0485270035FEAC /* InputIntent.swift */,
 				A5E408442E0483F80035FEAC /* KeybindIntent.swift */,
@@ -806,6 +809,7 @@
 				A53A29812DB44A6100B6E02C /* KeyboardShortcut+Extension.swift in Sources */,
 				A50297352DFA0F3400B4E924 /* Double+Extension.swift in Sources */,
 				A5CBD0562C9E65B80017A1AE /* DraggableWindowView.swift in Sources */,
+				A51194112E05A483007258CC /* QuickTerminalIntent.swift in Sources */,
 				C1F26EE92B76CBFC00404083 /* VibrantLayer.m in Sources */,
 				A5593FDF2DF8D57C00B47B10 /* TerminalWindow.swift in Sources */,
 				A58636712DF298FB00E04A10 /* ExpiringUndoManager.swift in Sources */,

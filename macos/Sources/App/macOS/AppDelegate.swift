@@ -92,7 +92,10 @@ class AppDelegate: NSObject,
     lazy var undoManager = ExpiringUndoManager()
 
     /// Our quick terminal. This starts out uninitialized and only initializes if used.
-    private var quickController: QuickTerminalController? = nil
+    private(set) lazy var quickController = QuickTerminalController(
+        ghostty,
+        position: derivedConfig.quickTerminalPosition
+    )
 
     /// Manages updates
     let updaterController: SPUStandardUpdaterController
@@ -286,7 +289,7 @@ class AppDelegate: NSObject,
         // NOTE(mitchellh): I don't think we need this check at all anymore. I'm keeping it
         // here because I don't want to remove it in a patch release cycle but we should
         // target removing it soon.
-        if (self.quickController == nil && windows.allSatisfy { !$0.isVisible }) {
+        if (windows.allSatisfy { !$0.isVisible }) {
             return .terminateNow
         }
 
@@ -919,14 +922,6 @@ class AppDelegate: NSObject,
     }
 
     @IBAction func toggleQuickTerminal(_ sender: Any) {
-        if quickController == nil {
-            quickController = QuickTerminalController(
-                ghostty,
-                position: derivedConfig.quickTerminalPosition
-            )
-        }
-
-        guard let quickController = self.quickController else { return }
         quickController.toggle()
     }
 
