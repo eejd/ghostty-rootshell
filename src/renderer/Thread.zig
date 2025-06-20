@@ -452,7 +452,7 @@ fn drainMailbox(self: *Thread) !void {
                 self.renderer.markDirty();
             },
 
-            .resize => {}, //|v| try self.renderer.setScreenSize(v),
+            .resize => |v| self.renderer.setScreenSize(v),
 
             .change_config => |config| {
                 defer config.alloc.destroy(config.thread);
