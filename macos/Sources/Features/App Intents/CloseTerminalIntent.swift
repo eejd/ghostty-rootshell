@@ -12,13 +12,6 @@ struct CloseTerminalIntent: AppIntent {
     )
     var terminal: TerminalEntity
 
-    @Parameter(
-        title: "Command",
-        description: "Command to execute instead of the default shell.",
-        default: true
-    )
-    var confirm: Bool
-
     @available(macOS 26.0, *)
     static var supportedModes: IntentModes = .background
 
@@ -32,7 +25,7 @@ struct CloseTerminalIntent: AppIntent {
             return .result()
         }
 
-        controller.closeSurface(surfaceView, withConfirmation: confirm)
+        controller.closeSurface(surfaceView, withConfirmation: false)
         return .result()
     }
 }
