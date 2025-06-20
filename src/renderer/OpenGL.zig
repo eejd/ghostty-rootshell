@@ -357,7 +357,7 @@ pub fn present(self: *OpenGL, target: Target) !void {
 }
 
 /// Present the last presented target again.
-pub fn repeat(self: *OpenGL) !void {
+pub fn presentLastTarget(self: *OpenGL) !void {
     if (self.last_target) |target| try self.present(target);
 }
 

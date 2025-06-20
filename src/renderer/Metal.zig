@@ -242,7 +242,7 @@ pub inline fn present(self: *Metal, target: Target, sync: bool) !void {
 }
 
 /// Present the last presented target again. (noop for Metal)
-pub inline fn repeat(self: *Metal) !void {
+pub inline fn presentLastTarget(self: *Metal) !void {
     _ = self;
 }
 

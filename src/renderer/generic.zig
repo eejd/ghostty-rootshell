@@ -1274,7 +1274,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 // We still need to present the last target again, because the
                 // apprt may be swapping buffers and display an outdated frame
                 // if we don't draw something new.
-                try self.api.repeat();
+                try self.api.presentLastTarget();
                 return;
             }
             self.cells_rebuilt = false;
