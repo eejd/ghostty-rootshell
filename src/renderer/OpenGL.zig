@@ -47,7 +47,10 @@ blending: configpkg.Config.AlphaBlending,
 /// The most recently presented target, in case we need to present it again.
 last_target: ?Target = null,
 
-pub fn init(alloc: Allocator, opts: rendererpkg.Options) !OpenGL {
+/// NOTE: This is an error{}!OpenGL instead of just OpenGL for parity with
+///       Metal, since it needs to be fallible so does this, even though it
+///       can't actually fail.
+pub fn init(alloc: Allocator, opts: rendererpkg.Options) error{}!OpenGL {
     return .{
         .alloc = alloc,
         .blending = opts.config.blending,
