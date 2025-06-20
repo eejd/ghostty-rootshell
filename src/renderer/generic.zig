@@ -1027,12 +1027,9 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         /// Update the frame data.
         pub fn updateFrame(
             self: *Self,
-            surface: *apprt.Surface,
             state: *renderer.State,
             cursor_blink_visible: bool,
         ) !void {
-            _ = surface;
-
             // Data we extract out of the critical area.
             const Critical = struct {
                 bg: terminal.color.RGB,

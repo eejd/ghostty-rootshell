@@ -605,7 +605,6 @@ fn renderCallback(
 
     // Update our frame data
     t.renderer.updateFrame(
-        t.surface,
         t.state,
         t.flags.cursor_blink_visible,
     ) catch |err|
