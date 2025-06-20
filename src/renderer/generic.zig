@@ -217,6 +217,10 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
             /// Set to true when deinited, if you try to deinit a defunct
             /// swap chain it will just be ignored, to prevent double-free.
+            ///
+            /// This is required because of `displayUnrealized`, since it
+            /// `deinits` the swapchain, which leads to a double-free if
+            /// the renderer is deinited after that.
             defunct: bool = false,
 
             pub fn init(api: GraphicsAPI, custom_shaders: bool) !SwapChain {
