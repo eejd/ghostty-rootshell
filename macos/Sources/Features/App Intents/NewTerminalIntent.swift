@@ -31,6 +31,13 @@ struct NewTerminalIntent: AppIntent {
     var workingDirectory: IntentFile?
 
     @Parameter(
+        title: "Environment Variables",
+        description: "Environment variables in `KEY=VALUE` format.",
+        default: []
+    )
+    var env: [String]
+
+    @Parameter(
         title: "Parent Terminal",
         description: "The terminal to inherit the base configuration from."
     )
@@ -56,6 +63,15 @@ struct NewTerminalIntent: AppIntent {
         if let url = workingDirectory?.fileURL {
             let dir = url.hasDirectoryPath ? url : url.deletingLastPathComponent()
             config.workingDirectory = dir.path(percentEncoded: false)
+        }
+
+        // Parse environment variables from KEY=VALUE format
+        for envVar in env {
+            if let separatorIndex = envVar.firstIndex(of: "=") {
+                let key = String(envVar[..<separatorIndex])
+                let value = String(envVar[envVar.index(after: separatorIndex)...])
+                config.environmentVariables[key] = value
+            }
         }
 
         // Determine if we have a parent and get it
