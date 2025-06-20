@@ -204,15 +204,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             // If this is one then we don't do any double+ buffering at all.
             // This is comptime because there isn't a good reason to change
             // this at runtime and there is a lot of complexity to support it.
-            const buf_count = count: {
-                if (@hasDecl(GraphicsAPI, "swap_chain_count")) {
-                    break :count GraphicsAPI.swap_chain_count;
-                }
-
-                // Default to triple buffering if
-                // graphics API has no preference.
-                break :count 3;
-            };
+            const buf_count = GraphicsAPI.swap_chain_count;
 
             /// `buf_count` structs that can hold the
             /// data needed by the GPU to draw a frame.

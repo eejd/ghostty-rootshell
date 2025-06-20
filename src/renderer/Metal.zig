@@ -34,6 +34,9 @@ pub const imagepkg = @import("metal/image.zig");
 
 pub const custom_shader_target: shadertoy.Target = .msl;
 
+/// Triple buffering.
+pub const swap_chain_count = 3;
+
 const log = std.log.scoped(.metal);
 
 // Get native API access on certain platforms so we can do more customization.
