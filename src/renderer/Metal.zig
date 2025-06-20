@@ -165,9 +165,7 @@ pub fn init(alloc: Allocator, opts: rendererpkg.Options) !Metal {
 pub fn deinit(self: *Metal) void {
     self.queue.release();
     self.device.release();
-
-    // NOTE: We don't release the layer here because that should be taken
-    //       care of automatically when the hosting view is destroyed.
+    self.layer.release();
 }
 
 pub fn loopEnter(self: *Metal) void {

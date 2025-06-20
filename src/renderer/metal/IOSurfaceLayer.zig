@@ -21,11 +21,14 @@ var Subclass: ?objc.Class = null;
 layer: objc.Object,
 
 pub fn init() !IOSurfaceLayer {
+    // The layer returned by `[CALayer layer]` is autoreleased, which means
+    // that at the end of the current autorelease pool it will be deallocated
+    // if it isn't retained, so we retain it here manually an extra time.
     const layer = (try getSubclass()).msgSend(
         objc.Object,
         objc.sel("layer"),
         .{},
-    );
+    ).retain();
     errdefer layer.release();
 
     // The layer gravity is set to top-left so that the contents aren't
