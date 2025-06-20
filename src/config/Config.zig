@@ -3004,6 +3004,11 @@ pub fn loadRecursiveFiles(self: *Config, alloc_gpa: Allocator) !void {
     }
 }
 
+/// Get the arena allocator associated with the configuration.
+pub fn arenaAlloc(self: *Config) Allocator {
+    return self._arena.?.allocator();
+}
+
 /// Change the state of conditionals and reload the configuration
 /// based on the new state. This returns a new configuration based
 /// on the new state. The caller must free the old configuration if they
