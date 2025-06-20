@@ -633,7 +633,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             const font_critical: struct {
                 metrics: font.Metrics,
             } = font_critical: {
-                const grid = options.font_grid;
+                const grid: *font.SharedGrid = options.font_grid;
                 grid.lock.lockShared();
                 defer grid.lock.unlockShared();
                 break :font_critical .{
