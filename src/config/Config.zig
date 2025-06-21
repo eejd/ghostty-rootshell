@@ -1823,7 +1823,7 @@ keybind: Keybinds = .{},
 /// Automatically hide the quick terminal when focus shifts to another window.
 /// Set it to false for the quick terminal to remain open even when it loses focus.
 ///
-/// Defaults to true on macOS and on false on Linux. This is because global
+/// Defaults to true on macOS and on false on Linux/BSD. This is because global
 /// shortcuts on Linux require system configuration and are considerably less
 /// accessible than on macOS, meaning that it is more preferable to keep the
 /// quick terminal open until the user has completed their task.
@@ -2404,7 +2404,10 @@ keybind: Keybinds = .{},
 ///   * `single-instance` - Enable cgroups only for Ghostty instances launched
 ///     as single-instance applications (see gtk-single-instance).
 ///
-@"linux-cgroup": LinuxCgroup = .@"single-instance",
+@"linux-cgroup": LinuxCgroup = if (builtin.os.tag == .linux)
+    .@"single-instance"
+else
+    .never,
 
 /// Memory limit for any individual terminal process (tab, split, window,
 /// etc.) in bytes. If this is unset then no memory limit will be set.
@@ -2817,7 +2820,7 @@ pub fn loadCliArgs(self: *Config, alloc_gpa: Allocator) !void {
         .windows => {},
 
         // Fast-path if we are Linux and have no args.
-        .linux => if (std.os.argv.len <= 1) return,
+        .linux, .freebsd => if (std.os.argv.len <= 1) return,
 
         // Everything else we have to at least try because it may
         // not use std.os.argv.
@@ -2835,7 +2838,7 @@ pub fn loadCliArgs(self: *Config, alloc_gpa: Allocator) !void {
     //     styling, etc. based on the command.
     //
     // See: https://github.com/Vladimir-csp/xdg-terminal-exec
-    if (comptime builtin.os.tag == .linux) {
+    if ((comptime builtin.os.tag == .linux) or (comptime builtin.os.tag == .freebsd)) {
         if (internal_os.xdg.parseTerminalExec(std.os.argv)) |args| {
             const arena_alloc = self._arena.?.allocator();
 
