@@ -11,14 +11,13 @@ msgstr ""
 "POT-Creation-Date: 2025-04-22 08:57-0700\n"
 "PO-Revision-Date: 2025-06-20 10:19-0300\n"
 "Last-Translator: Mário Victor Ribeiro Silva <mariovictorrs@gmail.com>\n"
-"Language-Team: Brazilian Portuguese <ldpbr-"
-"translation@lists.sourceforge.net>\n"
+"Language-Team: Brazilian Portuguese <ldpbr-translation@lists.sourceforge."
+"net>\n"
 "Language: pt_BR\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n > 1);\n"
-"X-Generator: Poedit 3.6\n"
 
 #: src/apprt/gtk/ui/1.5/prompt-title-dialog.blp:5
 msgid "Change Terminal Title"
@@ -175,8 +174,8 @@ msgid ""
 "An application is attempting to read from the clipboard. The current "
 "clipboard contents are shown below."
 msgstr ""
-"Uma aplicação está tentando ler da área de transferência. O conteúdo atual da "
-"área de transferência está sendo exibido abaixo."
+"Uma aplicação está tentando ler da área de transferência. O conteúdo atual "
+"da área de transferência está sendo exibido abaixo."
 
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-read.blp:10
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-write.blp:10
@@ -190,8 +189,8 @@ msgstr "Permitir"
 
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-write.blp:7
 msgid ""
-"An application is attempting to write to the clipboard. The current clipboard "
-"contents are shown below."
+"An application is attempting to write to the clipboard. The current "
+"clipboard contents are shown below."
 msgstr ""
 "Uma aplicação está tentando escrever na área de transferência. O conteúdo "
 "atual da área de transferência está aparecendo abaixo."
@@ -221,7 +220,8 @@ msgid "New Split"
 msgstr "Nova divisão"
 
 #: src/apprt/gtk/Window.zig:312
-msgid "⚠️ You're running a debug build of Ghostty! Performance will be degraded."
+msgid ""
+"⚠️ You're running a debug build of Ghostty! Performance will be degraded."
 msgstr ""
 "⚠️ Você está rodando uma build de debug do Ghostty! O desempenho será afetado."
 
