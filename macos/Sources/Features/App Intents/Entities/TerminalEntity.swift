@@ -130,10 +130,10 @@ struct TerminalQuery: EntityStringQuery, EnumerableEntityQuery {
         let controllers = NSApp.windows.compactMap {
             $0.windowController as? BaseTerminalController
         }
-
+        
         // Get all our surfaces
-        return controllers.reduce([]) { result, c in
-            result + (c.surfaceTree.root?.leaves() ?? [])
+        return controllers.flatMap {
+            $0.surfaceTree.root?.leaves() ?? []
         }
     }
 }
