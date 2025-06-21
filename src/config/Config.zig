@@ -2368,10 +2368,9 @@ keybind: Keybinds = .{},
 ///
 /// Valid values are:
 ///
-/// * `ask` - Ask the user whether for permission. Ghostty will by default
-///   cache the user's choice for 10 minutes since we can't determine
-///   when a single workflow begins or ends. The user also has an option
-///   in the GUI to allow for the remainder of the day.
+/// * `ask` - Ask the user whether for permission. Ghostty will remember
+///   this choice and never ask again. This is similar to other macOS
+///   permissions such as microphone access, camera access, etc.
 ///
 /// * `allow` - Allow Shortcuts to control Ghostty without asking.
 ///
