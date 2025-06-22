@@ -28,6 +28,8 @@ pub const cellpkg = @import("opengl/cell.zig");
 pub const imagepkg = @import("opengl/image.zig");
 
 pub const custom_shader_target: shadertoy.Target = .glsl;
+// The fragCoord for OpenGL shaders is +Y = up.
+pub const custom_shader_y_is_down = false;
 
 /// Because OpenGL's frame completion is always
 /// sync, we have no need for multi-buffering.

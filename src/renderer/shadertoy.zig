@@ -21,6 +21,9 @@ pub const Uniforms = extern struct {
     mouse: [4]f32 align(16),
     date: [4]f32 align(16),
     sample_rate: f32 align(4),
+    current_cursor: [4]f32 align(16),
+    previous_cursor: [4]f32 align(16),
+    cursor_change_time: f32 align(4),
 };
 
 /// The target to load shaders for.

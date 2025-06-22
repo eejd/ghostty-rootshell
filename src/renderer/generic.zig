@@ -675,6 +675,9 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     .mouse = @splat(0), // not currently updated
                     .date = @splat(0), // not currently updated
                     .sample_rate = 0, // N/A, we don't have any audio
+                    .current_cursor = @splat(0),
+                    .previous_cursor = @splat(0),
+                    .cursor_change_time = 0,
                 },
 
                 // Fonts
@@ -1966,17 +1969,70 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
             self.custom_shader_uniforms.frame += 1;
 
+            const screen = self.size.screen;
+            const padding = self.size.padding;
+            const cell = self.size.cell;
+
             self.custom_shader_uniforms.resolution = .{
-                @floatFromInt(self.size.screen.width),
-                @floatFromInt(self.size.screen.height),
+                @floatFromInt(screen.width),
+                @floatFromInt(screen.height),
                 1,
             };
             self.custom_shader_uniforms.channel_resolution[0] = .{
-                @floatFromInt(self.size.screen.width),
-                @floatFromInt(self.size.screen.height),
+                @floatFromInt(screen.width),
+                @floatFromInt(screen.height),
                 1,
                 0,
             };
+
+            // Update custom cursor uniforms, if we have a cursor.
+            if (self.cells.fg_rows.lists[0].items.len > 0) {
+                const cursor: shaderpkg.CellText =
+                    self.cells.fg_rows.lists[0].items[0];
+
+                const cursor_width: f32 = @floatFromInt(cursor.glyph_size[0]);
+                const cursor_height: f32 = @floatFromInt(cursor.glyph_size[1]);
+
+                var pixel_x: f32 = @floatFromInt(
+                    cursor.grid_pos[0] * cell.width + padding.left,
+                );
+                var pixel_y: f32 = @floatFromInt(
+                    cursor.grid_pos[1] * cell.height + padding.top,
+                );
+
+                pixel_x += @floatFromInt(cursor.bearings[0]);
+                pixel_y += @floatFromInt(cursor.bearings[1]);
+
+                // If +Y is up in our shaders, we need to flip the coordinate.
+                if (!GraphicsAPI.custom_shader_y_is_down) {
+                    pixel_y = @as(f32, @floatFromInt(screen.height)) - pixel_y;
+                    // We need to add the cursor height because we need the +Y
+                    // edge for the Y coordinate, and flipping means that it's
+                    // the -Y edge now.
+                    pixel_y += cursor_height;
+                }
+
+                const cursor_changed: bool =
+                    pixel_x != self.custom_shader_uniforms.current_cursor[0] or
+                    pixel_y != self.custom_shader_uniforms.current_cursor[1] or
+                    cursor_width != self.custom_shader_uniforms.current_cursor[2] or
+                    cursor_height != self.custom_shader_uniforms.current_cursor[3];
+
+                if (cursor_changed) {
+                    self.custom_shader_uniforms.previous_cursor =
+                        self.custom_shader_uniforms.current_cursor;
+
+                    self.custom_shader_uniforms.current_cursor = .{
+                        pixel_x,
+                        pixel_y,
+                        cursor_width,
+                        cursor_height,
+                    };
+
+                    self.custom_shader_uniforms.cursor_change_time =
+                        self.custom_shader_uniforms.time;
+                }
+            }
         }
 
         /// Convert the terminal state to GPU cells stored in CPU memory. These
