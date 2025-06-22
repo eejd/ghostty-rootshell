@@ -25,7 +25,9 @@ pub fn create(b: *std.Build, opts: Options) ?*MetallibStep {
     const sdk = switch (opts.target.result.os.tag) {
         .macos => "macosx",
         .ios => switch (opts.target.result.abi) {
-            .simulator => "iphonesimulator",
+            // The iOS simulator uses the same SDK for Metal as the device,
+            // but the minimum version tag causes different behaviors.
+            .simulator => "iphoneos",
             else => "iphoneos",
         },
         else => return null,
