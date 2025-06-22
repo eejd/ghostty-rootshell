@@ -182,23 +182,6 @@ pub const Uniforms = extern struct {
     };
 };
 
-/// The uniforms used for custom postprocess shaders.
-pub const PostUniforms = extern struct {
-    // Note: all of the explicit alignments are copied from the
-    // MSL developer reference just so that we can be sure that we got
-    // it all exactly right.
-    resolution: [3]f32 align(16),
-    time: f32 align(4),
-    time_delta: f32 align(4),
-    frame_rate: f32 align(4),
-    frame: i32 align(4),
-    channel_time: [4][4]f32 align(16),
-    channel_resolution: [4][4]f32 align(16),
-    mouse: [4]f32 align(16),
-    date: [4]f32 align(16),
-    sample_rate: f32 align(4),
-};
-
 /// Initialize the MTLLibrary. A MTLLibrary is a collection of shaders.
 fn initLibrary(device: objc.Object) !objc.Object {
     const start = try std.time.Instant.now();

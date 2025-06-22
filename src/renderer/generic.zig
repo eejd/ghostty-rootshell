@@ -156,6 +156,19 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         /// The current GPU uniform values.
         uniforms: shaderpkg.Uniforms,
 
+        /// Custom shader uniform values.
+        custom_shader_uniforms: shadertoy.Uniforms,
+
+        /// Timestamp we rendered out first frame.
+        ///
+        /// This is used when updating custom shader uniforms.
+        first_frame_time: ?std.time.Instant = null,
+
+        /// Timestamp when we rendered out more recent frame.
+        ///
+        /// This is used when updating custom shader uniforms.
+        last_frame_time: ?std.time.Instant = null,
+
         /// The font structures.
         font_grid: *font.SharedGrid,
         font_shaper: font.Shaper,
@@ -382,16 +395,6 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             front_texture: Texture,
             back_texture: Texture,
 
-            uniforms: shaderpkg.PostUniforms,
-
-            /// The first time a frame was drawn.
-            /// This is used to update the time uniform.
-            first_frame_time: std.time.Instant,
-
-            /// The last time a frame was drawn.
-            /// This is used to update the time uniform.
-            last_frame_time: std.time.Instant,
-
             /// Swap the front and back textures.
             pub fn swap(self: *CustomShaderState) void {
                 std.mem.swap(Texture, &self.front_texture, &self.back_texture);
@@ -417,22 +420,6 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 return .{
                     .front_texture = front_texture,
                     .back_texture = back_texture,
-
-                    .uniforms = .{
-                        .resolution = .{ 0, 0, 1 },
-                        .time = 1,
-                        .time_delta = 1,
-                        .frame_rate = 1,
-                        .frame = 1,
-                        .channel_time = @splat(@splat(0)),
-                        .channel_resolution = @splat(@splat(0)),
-                        .mouse = .{ 0, 0, 0, 0 },
-                        .date = .{ 0, 0, 0, 0 },
-                        .sample_rate = 1,
-                    },
-
-                    .first_frame_time = try std.time.Instant.now(),
-                    .last_frame_time = try std.time.Instant.now(),
                 };
             }
 
@@ -467,18 +454,6 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
                 self.front_texture = front_texture;
                 self.back_texture = back_texture;
-
-                self.uniforms.resolution = .{
-                    @floatFromInt(width),
-                    @floatFromInt(height),
-                    1,
-                };
-                self.uniforms.channel_resolution[0] = .{
-                    @floatFromInt(width),
-                    @floatFromInt(height),
-                    1,
-                    0,
-                };
             }
         };
 
@@ -688,6 +663,23 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                         .use_linear_blending = options.config.blending.isLinear(),
                         .use_linear_correction = options.config.blending == .@"linear-corrected",
                     },
+                },
+                .custom_shader_uniforms = .{
+                    .resolution = .{ 0, 0, 1 },
+                    .time = 0,
+                    .time_delta = 0,
+                    .frame_rate = 60, // not currently updated
+                    .frame = 0,
+                    .channel_time = @splat(@splat(0)),
+                    .channel_resolution = @splat(@splat(0)),
+                    .mouse = @splat(0), // not currently updated
+                    .date = @splat(0), // not currently updated
+                    .sample_rate = 0, // N/A, we don't have any audio
+                    .current_cursor = @splat(0),
+                    .previous_cursor = @splat(0),
+                    .current_cursor_color = @splat(0),
+                    .previous_cursor_color = @splat(0),
+                    .cursor_change_time = 0,
                 },
 
                 // Fonts
@@ -1359,20 +1351,13 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 }
             }
 
+            // Update custom shader uniforms if necessary.
+            try self.updateCustomShaderUniforms();
+
             // Setup our frame data
             try frame.uniforms.sync(&.{self.uniforms});
             try frame.cells_bg.sync(self.cells.bg_cells);
             const fg_count = try frame.cells.syncFromArrayLists(self.cells.fg_rows.lists);
-
-            // If we have custom shaders, update the animation time.
-            if (frame.custom_shader_state) |*state| {
-                const now = std.time.Instant.now() catch state.first_frame_time;
-                const since_ns: f32 = @floatFromInt(now.since(state.first_frame_time));
-                const delta_ns: f32 = @floatFromInt(now.since(state.last_frame_time));
-                state.uniforms.time = since_ns / std.time.ns_per_s;
-                state.uniforms.time_delta = delta_ns / std.time.ns_per_s;
-                state.last_frame_time = now;
-            }
 
             // If our font atlas changed, sync the texture data
             texture: {
@@ -1446,10 +1431,10 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             if (frame.custom_shader_state) |*state| {
                 // We create a buffer on the GPU for our post uniforms.
                 // TODO: This should be a part of the frame state tbqh.
-                const PostBuffer = Buffer(shaderpkg.PostUniforms);
+                const PostBuffer = Buffer(shadertoy.Uniforms);
                 const uniform_buffer = try PostBuffer.initFill(
                     self.api.bufferOptions(),
-                    &.{state.uniforms},
+                    &.{self.custom_shader_uniforms},
                 );
                 defer uniform_buffer.deinit();
 
@@ -1959,6 +1944,103 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 @floatFromInt(blank.bottom),
                 @floatFromInt(blank.left),
             };
+        }
+
+        /// Update uniforms for the custom shaders, if necessary.
+        ///
+        /// This should be called exactly once per frame, inside `drawFrame`.
+        fn updateCustomShaderUniforms(
+            self: *Self,
+        ) !void {
+            // We only need to do this if we have custom shaders.
+            if (!self.has_custom_shaders) return;
+
+            const now = try std.time.Instant.now();
+            defer self.last_frame_time = now;
+            const first_frame_time = self.first_frame_time orelse t: {
+                self.first_frame_time = now;
+                break :t now;
+            };
+            const last_frame_time = self.last_frame_time orelse now;
+
+            const since_ns: f32 = @floatFromInt(now.since(first_frame_time));
+            self.custom_shader_uniforms.time = since_ns / std.time.ns_per_s;
+
+            const delta_ns: f32 = @floatFromInt(now.since(last_frame_time));
+            self.custom_shader_uniforms.time_delta = delta_ns / std.time.ns_per_s;
+
+            self.custom_shader_uniforms.frame += 1;
+
+            const screen = self.size.screen;
+            const padding = self.size.padding;
+            const cell = self.size.cell;
+
+            self.custom_shader_uniforms.resolution = .{
+                @floatFromInt(screen.width),
+                @floatFromInt(screen.height),
+                1,
+            };
+            self.custom_shader_uniforms.channel_resolution[0] = .{
+                @floatFromInt(screen.width),
+                @floatFromInt(screen.height),
+                1,
+                0,
+            };
+
+            // Update custom cursor uniforms, if we have a cursor.
+            if (self.cells.fg_rows.lists[0].items.len > 0) {
+                const cursor: shaderpkg.CellText =
+                    self.cells.fg_rows.lists[0].items[0];
+
+                const cursor_width: f32 = @floatFromInt(cursor.glyph_size[0]);
+                const cursor_height: f32 = @floatFromInt(cursor.glyph_size[1]);
+
+                var pixel_x: f32 = @floatFromInt(
+                    cursor.grid_pos[0] * cell.width + padding.left,
+                );
+                var pixel_y: f32 = @floatFromInt(
+                    cursor.grid_pos[1] * cell.height + padding.top,
+                );
+
+                pixel_x += @floatFromInt(cursor.bearings[0]);
+                pixel_y += @floatFromInt(cursor.bearings[1]);
+
+                // If +Y is up in our shaders, we need to flip the coordinate.
+                if (!GraphicsAPI.custom_shader_y_is_down) {
+                    pixel_y = @as(f32, @floatFromInt(screen.height)) - pixel_y;
+                    // We need to add the cursor height because we need the +Y
+                    // edge for the Y coordinate, and flipping means that it's
+                    // the -Y edge now.
+                    pixel_y += cursor_height;
+                }
+
+                const new_cursor: [4]f32 = .{
+                    pixel_x,
+                    pixel_y,
+                    cursor_width,
+                    cursor_height,
+                };
+                const cursor_color: [4]f32 = .{
+                    @as(f32, @floatFromInt(cursor.color[0])) / 255.0,
+                    @as(f32, @floatFromInt(cursor.color[1])) / 255.0,
+                    @as(f32, @floatFromInt(cursor.color[2])) / 255.0,
+                    @as(f32, @floatFromInt(cursor.color[3])) / 255.0,
+                };
+
+                const uniforms = &self.custom_shader_uniforms;
+
+                const cursor_changed: bool =
+                    !std.meta.eql(new_cursor, uniforms.current_cursor) or
+                    !std.meta.eql(cursor_color, uniforms.current_cursor_color);
+
+                if (cursor_changed) {
+                    uniforms.previous_cursor = uniforms.current_cursor;
+                    uniforms.previous_cursor_color = uniforms.current_cursor_color;
+                    uniforms.current_cursor = new_cursor;
+                    uniforms.current_cursor_color = cursor_color;
+                    uniforms.cursor_change_time = uniforms.time;
+                }
+            }
         }
 
         /// Convert the terminal state to GPU cells stored in CPU memory. These

@@ -33,6 +33,8 @@ pub const cellpkg = @import("metal/cell.zig");
 pub const imagepkg = @import("metal/image.zig");
 
 pub const custom_shader_target: shadertoy.Target = .msl;
+// The fragCoord for Metal shaders is +Y = down.
+pub const custom_shader_y_is_down = true;
 
 /// Triple buffering.
 pub const swap_chain_count = 3;
