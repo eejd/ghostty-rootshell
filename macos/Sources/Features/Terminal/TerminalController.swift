@@ -11,6 +11,13 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
 
         guard let appDelegate = NSApp.delegate as? AppDelegate else { return defaultValue }
         let config = appDelegate.ghostty.config
+
+        // If we have no window decorations, there's no reason to do anything but
+        // the default titlebar (because there will be no titlebar).
+        if !config.windowDecorations {
+            return defaultValue
+        }
+
         let nib = switch config.macosTitlebarStyle {
         case "native": "Terminal"
         case "hidden": "TerminalHiddenTitlebar"

@@ -58,16 +58,19 @@ class TerminalWindow: NSWindow {
             hideWindowButtons()
         }
 
-        // Create our reset zoom titlebar accessory.
-        resetZoomAccessory.layoutAttribute = .right
-        resetZoomAccessory.view = NSHostingView(rootView: ResetZoomAccessoryView(
-            viewModel: viewModel,
-            action: { [weak self] in
-                guard let self else { return }
-                self.terminalController?.splitZoom(self)
-            }))
-        addTitlebarAccessoryViewController(resetZoomAccessory)
-        resetZoomAccessory.view.translatesAutoresizingMaskIntoConstraints = false
+        // Create our reset zoom titlebar accessory. We have to have a title
+        // to do this or AppKit triggers an assertion.
+        if styleMask.contains(.titled) {
+            resetZoomAccessory.layoutAttribute = .right
+            resetZoomAccessory.view = NSHostingView(rootView: ResetZoomAccessoryView(
+                viewModel: viewModel,
+                action: { [weak self] in
+                    guard let self else { return }
+                    self.terminalController?.splitZoom(self)
+                }))
+            addTitlebarAccessoryViewController(resetZoomAccessory)
+            resetZoomAccessory.view.translatesAutoresizingMaskIntoConstraints = false
+        }
 
         // Setup the accessory view for tabs that shows our keyboard shortcuts,
         // zoomed state, etc. Note I tried to use SwiftUI here but ran into issues
