@@ -1967,9 +1967,59 @@ keybind: Keybinds = .{},
 /// causing the window to be completely black. If this happens, you can
 /// unset this configuration to disable the shader.
 ///
-/// The shader API is identical to the Shadertoy API: you specify a `mainImage`
-/// function and the available uniforms match Shadertoy. The iChannel0 uniform
-/// is a texture containing the rendered terminal screen.
+/// Custom shader support is based on and compatible with the Shadertoy shaders.
+/// Shaders should specify a `mainImage` function and the available uniforms
+/// largely match Shadertoy, with some caveats and Ghostty-specific extensions.
+///
+/// The uniform values available to shaders are as follows:
+///
+///  * `sampler2D iChannel0` - Input texture.
+///
+///     A texture containing the current terminal screen. If multiple custom
+///     shaders are specified, the output of previous shaders is written to
+///     this texture, to allow combining multiple effects.
+///
+///  * `vec3 iResolution` - Output texture size, `[width, height, 1]` (in px).
+///
+///  * `float iTime` - Time in seconds since first frame was rendered.
+///
+///  * `float iTimeDelta` - Time in seconds since previous frame was rendered.
+///
+///  * `float iFrameRate` - Average framerate. (NOT CURRENTLY SUPPORTED)
+///
+///  * `int iFrame` - Number of frames that have been rendered so far.
+///
+///  * `float iChannelTime[4]` - Current time for video or sound input. (N/A)
+///
+///  * `vec3 iChannelResolution[4]` - Resolutions of the 4 input samplers.
+///
+///    Currently only `iChannel0` exists, and `iChannelResolution[0]` is
+///    identical to `iResolution`.
+///
+///  * `vec4 iMouse` - Mouse input info. (NOT CURRENTLY SUPPORTED)
+///
+///  * `vec4 iDate` - Date/time info. (NOT CURRENTLY SUPPORTED)
+///
+///  * `float iSampleRate` - Sample rate for audio. (N/A)
+///
+/// Ghostty-specific extensions:
+///
+///  * `vec4 iCurrentCursor` - Info about the terminal cursor.
+///
+///    - `iCurrentCursor.xy` is the -X, +Y corner of the current cursor.
+///    - `iCurrentCursor.zw` is the width and height of the current cursor.
+///
+///  * `vec4 iPreviousCursor` - Info about the previous terminal cursor.
+///
+///  * `vec4 iCurrentCursorColor` - Color of the terminal cursor.
+///
+///  * `vec4 iPreviousCursorColor` - Color of the previous terminal cursor.
+///
+///  * `float iTimeCursorChange` - Timestamp of terminal cursor change.
+///
+///    When the terminal cursor changes position or color, this is set to
+///    the same time as the `iTime` uniform, allowing you to compute the
+///    time since the change by subtracting this from `iTime`.
 ///
 /// If the shader fails to compile, the shader will be ignored. Any errors
 /// related to shader compilation will not show up as configuration errors

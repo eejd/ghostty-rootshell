@@ -670,7 +670,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     .time_delta = 0,
                     .frame_rate = 60, // not currently updated
                     .frame = 0,
-                    .channel_time = @splat(@splat(0)),
+                    .channel_time = @splat(@splat(0)), // not currently updated
                     .channel_resolution = @splat(@splat(0)),
                     .mouse = @splat(0), // not currently updated
                     .date = @splat(0), // not currently updated
