@@ -13,6 +13,8 @@ layout(binding = 1, std140) uniform Globals {
     uniform float iSampleRate;
     uniform vec4  iCurrentCursor;
     uniform vec4  iPreviousCursor;
+    uniform vec4  iCurrentCursorColor;
+    uniform vec4  iPreviousCursorColor;
     uniform float iTimeCursorChange;
 };
 

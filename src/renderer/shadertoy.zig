@@ -23,6 +23,8 @@ pub const Uniforms = extern struct {
     sample_rate: f32 align(4),
     current_cursor: [4]f32 align(16),
     previous_cursor: [4]f32 align(16),
+    current_cursor_color: [4]f32 align(16),
+    previous_cursor_color: [4]f32 align(16),
     cursor_change_time: f32 align(4),
 };
 

@@ -677,6 +677,8 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     .sample_rate = 0, // N/A, we don't have any audio
                     .current_cursor = @splat(0),
                     .previous_cursor = @splat(0),
+                    .current_cursor_color = @splat(0),
+                    .previous_cursor_color = @splat(0),
                     .cursor_change_time = 0,
                 },
 
@@ -2012,25 +2014,31 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     pixel_y += cursor_height;
                 }
 
+                const new_cursor: [4]f32 = .{
+                    pixel_x,
+                    pixel_y,
+                    cursor_width,
+                    cursor_height,
+                };
+                const cursor_color: [4]f32 = .{
+                    @as(f32, @floatFromInt(cursor.color[0])) / 255.0,
+                    @as(f32, @floatFromInt(cursor.color[1])) / 255.0,
+                    @as(f32, @floatFromInt(cursor.color[2])) / 255.0,
+                    @as(f32, @floatFromInt(cursor.color[3])) / 255.0,
+                };
+
+                const uniforms = &self.custom_shader_uniforms;
+
                 const cursor_changed: bool =
-                    pixel_x != self.custom_shader_uniforms.current_cursor[0] or
-                    pixel_y != self.custom_shader_uniforms.current_cursor[1] or
-                    cursor_width != self.custom_shader_uniforms.current_cursor[2] or
-                    cursor_height != self.custom_shader_uniforms.current_cursor[3];
+                    !std.meta.eql(new_cursor, uniforms.current_cursor) or
+                    !std.meta.eql(cursor_color, uniforms.current_cursor_color);
 
                 if (cursor_changed) {
-                    self.custom_shader_uniforms.previous_cursor =
-                        self.custom_shader_uniforms.current_cursor;
-
-                    self.custom_shader_uniforms.current_cursor = .{
-                        pixel_x,
-                        pixel_y,
-                        cursor_width,
-                        cursor_height,
-                    };
-
-                    self.custom_shader_uniforms.cursor_change_time =
-                        self.custom_shader_uniforms.time;
+                    uniforms.previous_cursor = uniforms.current_cursor;
+                    uniforms.previous_cursor_color = uniforms.current_cursor_color;
+                    uniforms.current_cursor = new_cursor;
+                    uniforms.current_cursor_color = cursor_color;
+                    uniforms.cursor_change_time = uniforms.time;
                 }
             }
         }
