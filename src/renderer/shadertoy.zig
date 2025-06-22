@@ -9,6 +9,20 @@ const configpkg = @import("../config.zig");
 
 const log = std.log.scoped(.shadertoy);
 
+/// The uniform struct used for shadertoy shaders.
+pub const Uniforms = extern struct {
+    resolution: [3]f32 align(16),
+    time: f32 align(4),
+    time_delta: f32 align(4),
+    frame_rate: f32 align(4),
+    frame: i32 align(4),
+    channel_time: [4][4]f32 align(16),
+    channel_resolution: [4][4]f32 align(16),
+    mouse: [4]f32 align(16),
+    date: [4]f32 align(16),
+    sample_rate: f32 align(4),
+};
+
 /// The target to load shaders for.
 pub const Target = enum { glsl, msl };
 
