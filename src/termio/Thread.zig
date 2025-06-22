@@ -146,6 +146,8 @@ pub fn threadMain(self: *Thread, io: *termio.Termio) void {
         // have "OpenptyFailed".
         const Err = @TypeOf(err) || error{
             OpenptyFailed,
+            InputNotFound,
+            InputFailed,
         };
 
         switch (@as(Err, @errorCast(err))) {
@@ -159,6 +161,24 @@ pub fn threadMain(self: *Thread, io: *termio.Termio) void {
                     \\many pty devices.
                     \\
                     \\Please free up some pty devices and try again.
+                ;
+
+                t.eraseDisplay(.complete, false);
+                t.printString(str) catch {};
+            },
+
+            error.InputNotFound,
+            error.InputFailed,
+            => {
+                const str =
+                    \\A configured `input` path was not found, was not readable,
+                    \\was too large, or the underlying pty failed to accept
+                    \\the write.
+                    \\
+                    \\Ghostty can't continue since it can't guarantee that
+                    \\initial terminal state will be as desired. Please review
+                    \\the value of `input` in your configuration file and
+                    \\ensure that all the path values exist and are readable.
                 ;
 
                 t.eraseDisplay(.complete, false);
