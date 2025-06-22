@@ -34,6 +34,7 @@ const ErrorList = @import("ErrorList.zig");
 const MetricModifier = fontpkg.Metrics.Modifier;
 const help_strings = @import("help_strings");
 pub const Command = @import("command.zig").Command;
+const RepeatableReadableIO = @import("io.zig").RepeatableReadableIO;
 const RepeatableStringMap = @import("RepeatableStringMap.zig");
 pub const Path = @import("path.zig").Path;
 pub const RepeatablePath = @import("path.zig").RepeatablePath;
@@ -806,6 +807,47 @@ command: ?Command = null,
 /// for other purposes, like `open` or `xdg-open` used to open URLs in your
 /// browser.
 env: RepeatableStringMap = .{},
+
+/// Data to send as input to the command on startup.
+///
+/// The configured `command` will be launched using the typical rules,
+/// then the data specified as this input will be written to the pty
+/// before any other input can be provided.
+///
+/// The bytes are sent as-is with no additional encoding. Therefore, be
+/// cautious about input that can contain control characters, because this
+/// can be used to execute programs in a shell.
+///
+/// The format of this value is:
+///
+///   * `raw:<string>` - Send raw text as-is. This uses Zig string literal
+///     syntax so you can specify control characters and other standard
+///     escapes.
+///
+///   * `path:<path>` - Read a filepath and send the contents. The path
+///     must be to a file with finite length. e.g. don't use a device
+///     such as `/dev/stdin` or `/dev/urandom` as these will block
+///     terminal startup indefinitely. Files are limited to 10MB
+///     in size to prevent excessive memory usage. If you have files
+///     larger than this you should write a script to read the file
+///     and send it to the terminal.
+///
+/// If no valid prefix is found, it is assumed to be a `raw:` input.
+/// This is an ergonomic choice to allow you to simply write
+/// `input = "Hello, world!"` (a common case) without needing to prefix
+/// every value with `raw:`.
+///
+/// This can be repeated multiple times to send more data. The data
+/// is concatenated directly with no separator characters in between
+/// (e.g. no newline).
+///
+/// If any of the input sources do not exist, then none of the input
+/// will be sent. Input sources are not verified until the terminal
+/// is starting, so missing paths will not show up in config validation.
+///
+/// Changing this configuration at runtime will only affect new
+/// terminals.
+input: RepeatableReadableIO = .{},
 
 /// If true, keep the terminal open after the command exits. Normally, the
 /// terminal window closes when the running command (such as a shell) exits.
