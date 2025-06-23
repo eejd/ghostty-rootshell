@@ -24,7 +24,6 @@ pub const Buffer = bufferpkg.Buffer;
 pub const Texture = @import("opengl/Texture.zig");
 pub const shaders = @import("opengl/shaders.zig");
 
-pub const cellpkg = @import("opengl/cell.zig");
 pub const imagepkg = @import("opengl/image.zig");
 
 pub const custom_shader_target: shadertoy.Target = .glsl;

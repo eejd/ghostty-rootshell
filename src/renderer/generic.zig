@@ -11,8 +11,9 @@ const renderer = @import("../renderer.zig");
 const math = @import("../math.zig");
 const Surface = @import("../Surface.zig");
 const link = @import("link.zig");
-const fgMode = @import("cell.zig").fgMode;
-const isCovering = @import("cell.zig").isCovering;
+const cellpkg = @import("cell.zig");
+const fgMode = cellpkg.fgMode;
+const isCovering = cellpkg.isCovering;
 const shadertoy = @import("shadertoy.zig");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
@@ -71,13 +72,14 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
     return struct {
         const Self = @This();
 
+        pub const API = GraphicsAPI;
+
         const Target = GraphicsAPI.Target;
         const Buffer = GraphicsAPI.Buffer;
         const Texture = GraphicsAPI.Texture;
         const RenderPass = GraphicsAPI.RenderPass;
         const shaderpkg = GraphicsAPI.shaders;
 
-        const cellpkg = GraphicsAPI.cellpkg;
         const imagepkg = GraphicsAPI.imagepkg;
         const Image = imagepkg.Image;
         const ImageMap = imagepkg.ImageMap;
@@ -2769,7 +2771,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 return;
             }
 
-            const mode: shaderpkg.CellText.Mode = switch (try fgMode(
+            const mode: shaderpkg.CellText.Mode = switch (fgMode(
                 render.presentation,
                 cell_pin,
             )) {

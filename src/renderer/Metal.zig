@@ -29,7 +29,6 @@ pub const Buffer = bufferpkg.Buffer;
 pub const Texture = @import("metal/Texture.zig");
 pub const shaders = @import("metal/shaders.zig");
 
-pub const cellpkg = @import("metal/cell.zig");
 pub const imagepkg = @import("metal/image.zig");
 
 pub const custom_shader_target: shadertoy.Target = .msl;
