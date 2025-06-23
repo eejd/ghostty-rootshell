@@ -19,7 +19,7 @@ struct NewTerminalIntent: AppIntent {
 
     @Parameter(
         title: "Command",
-        description: "Command to execute instead of the default shell."
+        description: "Command to execute within your configured shell.",
     )
     var command: String?
 
@@ -60,7 +60,12 @@ struct NewTerminalIntent: AppIntent {
         let ghostty = appDelegate.ghostty
 
         var config = Ghostty.SurfaceConfiguration()
-        config.command = command
+
+        // We don't run command as "command" and instead use "initialInput" so
+        // that we can get all the login scripts to setup things like PATH.
+        if let command {
+            config.initialInput = "\(command); exit\n"
+        }
 
         // If we were given a working directory then open that directory
         if let url = workingDirectory?.fileURL {

@@ -430,6 +430,9 @@ pub const Surface = struct {
         /// Extra environment variables to set for the surface.
         env_vars: ?[*]EnvVar = null,
         env_var_count: usize = 0,
+
+        /// Input to send to the command after it is started.
+        initial_input: ?[*:0]const u8 = null,
     };
 
     pub fn init(self: *Surface, app: *App, opts: Options) !void {
@@ -508,6 +511,19 @@ pub const Surface = struct {
                     try alloc.dupeZ(u8, value),
                 );
             }
+        }
+
+        // If we have an initial input then we set it.
+        if (opts.initial_input) |c_input| {
+            const alloc = config.arenaAlloc();
+            config.input.list.clearRetainingCapacity();
+            try config.input.list.append(
+                alloc,
+                .{ .raw = try alloc.dupeZ(u8, std.mem.sliceTo(
+                    c_input,
+                    0,
+                )) },
+            );
         }
 
         // Initialize our surface right away. We're given a view that is

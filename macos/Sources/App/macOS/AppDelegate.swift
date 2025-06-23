@@ -384,10 +384,17 @@ class AppDelegate: NSObject,
             config.workingDirectory = filename
             _ = TerminalController.newTab(ghostty, withBaseConfig: config)
         } else {
-            // When opening a file, open a new window with that file as the command,
-            // and its parent directory as the working directory.
-            config.command = filename
+            // When opening a file, we want to execute the file. To do this, we
+            // don't override the command directly, because it won't load the
+            // profile/rc files for the shell, which is super important on macOS
+            // due to things like Homebrew. Instead, we set the command to
+            // `<filename>; exit` which is what Terminal and iTerm2 do.
+            config.initialInput = "\(filename); exit\n"
+
+            // Set the parent directory to our working directory so that relative
+            // paths in scripts work.
             config.workingDirectory = (filename as NSString).deletingLastPathComponent
+
             _ = TerminalController.newWindow(ghostty, withBaseConfig: config)
         }
 

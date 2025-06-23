@@ -422,6 +422,9 @@ extension Ghostty {
         /// Environment variables to set for the terminal
         var environmentVariables: [String: String] = [:]
 
+        /// Extra input to send as stdin
+        var initialInput: String? = nil
+
         init() {}
 
         init(from config: ghostty_surface_config_s) {
@@ -450,13 +453,13 @@ extension Ghostty {
         func withCValue<T>(view: SurfaceView, _ body: (inout ghostty_surface_config_s) throws -> T) rethrows -> T {
             var config = ghostty_surface_config_new()
             config.userdata = Unmanaged.passUnretained(view).toOpaque()
-            #if os(macOS)
+#if os(macOS)
             config.platform_tag = GHOSTTY_PLATFORM_MACOS
             config.platform = ghostty_platform_u(macos: ghostty_platform_macos_s(
                 nsview: Unmanaged.passUnretained(view).toOpaque()
             ))
             config.scale_factor = NSScreen.main!.backingScaleFactor
-            #elseif os(iOS)
+#elseif os(iOS)
             config.platform_tag = GHOSTTY_PLATFORM_IOS
             config.platform = ghostty_platform_u(ios: ghostty_platform_ios_s(
                 uiview: Unmanaged.passUnretained(view).toOpaque()
@@ -466,9 +469,9 @@ extension Ghostty {
             // probably set this to some default, then modify the scale factor through
             // libghostty APIs when a UIView is attached to a window/scene. TODO.
             config.scale_factor = UIScreen.main.scale
-            #else
-            #error("unsupported target")
-            #endif
+#else
+#error("unsupported target")
+#endif
 
             // Zero is our default value that means to inherit the font size.
             config.font_size = fontSize ?? 0
@@ -480,27 +483,31 @@ extension Ghostty {
                 return try command.withCString { cCommand in
                     config.command = cCommand
 
-                    // Convert dictionary to arrays for easier processing
-                    let keys = Array(environmentVariables.keys)
-                    let values = Array(environmentVariables.values)
+                    return try initialInput.withCString { cInput in
+                        config.initial_input = cInput
 
-                    // Create C strings for all keys and values
-                    return try keys.withCStrings { keyCStrings in
-                        return try values.withCStrings { valueCStrings in
-                            // Create array of ghostty_env_var_s
-                            var envVars = Array<ghostty_env_var_s>()
-                            envVars.reserveCapacity(environmentVariables.count)
-                            for i in 0..<environmentVariables.count {
-                                envVars.append(ghostty_env_var_s(
-                                    key: keyCStrings[i],
-                                    value: valueCStrings[i]
-                                ))
-                            }
+                        // Convert dictionary to arrays for easier processing
+                        let keys = Array(environmentVariables.keys)
+                        let values = Array(environmentVariables.values)
 
-                            return try envVars.withUnsafeMutableBufferPointer { buffer in
-                                config.env_vars = buffer.baseAddress
-                                config.env_var_count = environmentVariables.count
-                                return try body(&config)
+                        // Create C strings for all keys and values
+                        return try keys.withCStrings { keyCStrings in
+                            return try values.withCStrings { valueCStrings in
+                                // Create array of ghostty_env_var_s
+                                var envVars = Array<ghostty_env_var_s>()
+                                envVars.reserveCapacity(environmentVariables.count)
+                                for i in 0..<environmentVariables.count {
+                                    envVars.append(ghostty_env_var_s(
+                                        key: keyCStrings[i],
+                                        value: valueCStrings[i]
+                                    ))
+                                }
+
+                                return try envVars.withUnsafeMutableBufferPointer { buffer in
+                                    config.env_vars = buffer.baseAddress
+                                    config.env_var_count = environmentVariables.count
+                                    return try body(&config)
+                                }
                             }
                         }
                     }
