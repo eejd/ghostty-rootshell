@@ -925,7 +925,7 @@ test "color emoji" {
     var lib = try Library.init(alloc);
     defer lib.deinit();
 
-    var atlas = try font.Atlas.init(alloc, 512, .rgba);
+    var atlas = try font.Atlas.init(alloc, 512, .bgra);
     defer atlas.deinit(alloc);
 
     var ft_font = try Face.init(
@@ -973,14 +973,14 @@ test "color emoji" {
     }
 }
 
-test "mono to rgba" {
+test "mono to bgra" {
     const alloc = testing.allocator;
     const testFont = font.embedded.emoji;
 
     var lib = try Library.init(alloc);
     defer lib.deinit();
 
-    var atlas = try font.Atlas.init(alloc, 512, .rgba);
+    var atlas = try font.Atlas.init(alloc, 512, .bgra);
     defer atlas.deinit(alloc);
 
     var ft_font = try Face.init(lib, testFont, .{ .size = .{ .points = 12, .xdpi = 72, .ydpi = 72 } });
