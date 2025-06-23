@@ -14,6 +14,10 @@ const link = @import("link.zig");
 const cellpkg = @import("cell.zig");
 const fgMode = cellpkg.fgMode;
 const isCovering = cellpkg.isCovering;
+const imagepkg = @import("image.zig");
+const Image = imagepkg.Image;
+const ImageMap = imagepkg.ImageMap;
+const ImagePlacementList = std.ArrayListUnmanaged(imagepkg.Placement);
 const shadertoy = @import("shadertoy.zig");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
@@ -78,15 +82,9 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         const Buffer = GraphicsAPI.Buffer;
         const Texture = GraphicsAPI.Texture;
         const RenderPass = GraphicsAPI.RenderPass;
+
         const shaderpkg = GraphicsAPI.shaders;
-
-        const imagepkg = GraphicsAPI.imagepkg;
-        const Image = imagepkg.Image;
-        const ImageMap = imagepkg.ImageMap;
-
         const Shaders = shaderpkg.Shaders;
-
-        const ImagePlacementList = std.ArrayListUnmanaged(imagepkg.Placement);
 
         /// Allocator that can be used
         alloc: std.mem.Allocator,

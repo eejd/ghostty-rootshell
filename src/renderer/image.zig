@@ -1,16 +1,14 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
-const objc = @import("objc");
 const wuffs = @import("wuffs");
 
-const Metal = @import("../Metal.zig");
-const Texture = Metal.Texture;
+const Renderer = @import("../renderer.zig").Renderer;
+const GraphicsAPI = Renderer.API;
+const Texture = GraphicsAPI.Texture;
 
-const mtl = @import("api.zig");
-
-/// Represents a single image placement on the grid. A placement is a
-/// request to render an instance of an image.
+/// Represents a single image placement on the grid.
+/// A placement is a request to render an instance of an image.
 pub const Placement = struct {
     /// The image being rendered. This MUST be in the image map.
     image_id: u32,
@@ -174,8 +172,8 @@ pub const Image = union(enum) {
         // scenarios where there is no existing texture and we can modify
         // the self pointer directly.
         const existing: Texture = switch (self.*) {
-            // For pending, we can free the old data and become pending
-            // ourselves.
+            // For pending, we can free the old
+            // data and become pending ourselves.
             .pending_gray => |p| {
                 alloc.free(p.dataSlice(1));
                 self.* = img;
@@ -214,8 +212,8 @@ pub const Image = union(enum) {
                 break :existing r[1];
             },
 
-            // If we were already pending a replacement, then we free our
-            // existing pending data and use the same texture.
+            // If we were already pending a replacement, then we free
+            // our existing pending data and use the same texture.
             .replace_gray => |r| existing: {
                 alloc.free(r.pending.dataSlice(1));
                 break :existing r.texture;
@@ -236,9 +234,9 @@ pub const Image = union(enum) {
                 break :existing r.texture;
             },
 
-            // For both ready and unload_ready, we need to replace the
-            // texture. We can't do that here, so we just mark ourselves
-            // for replacement.
+            // For both ready and unload_ready, we need to replace
+            // the texture. We can't do that here, so we just mark
+            // ourselves for replacement.
             .ready, .unload_ready => |tex| tex,
         };
 
@@ -281,6 +279,8 @@ pub const Image = union(enum) {
             => true,
 
             .ready,
+            .pending_gray,
+            .pending_gray_alpha,
             .pending_rgb,
             .pending_rgba,
             => false,
@@ -290,7 +290,10 @@ pub const Image = union(enum) {
     /// Converts the image data to a format that can be uploaded to the GPU.
     /// If the data is already in a format that can be uploaded, this is a
     /// no-op.
-    pub fn convert(self: *Image, alloc: Allocator) !void {
+    pub fn convert(self: *Image, alloc: Allocator) wuffs.Error!void {
+        // As things stand, we currently convert all images to RGBA before
+        // uploading to the GPU. This just makes things easier. In the future
+        // we may want to support other formats.
         switch (self.*) {
             .ready,
             .unload_pending,
@@ -302,8 +305,6 @@ pub const Image = union(enum) {
             .replace_rgba,
             => {}, // ready
 
-            // RGB needs to be converted to RGBA because Metal textures
-            // don't support RGB.
             .pending_rgb => |*p| {
                 const data = p.dataSlice(3);
                 const rgba = try wuffs.swizzle.rgbToRgba(alloc, data);
@@ -320,7 +321,6 @@ pub const Image = union(enum) {
                 self.* = .{ .replace_rgba = r.* };
             },
 
-            // Gray and Gray+Alpha need to be converted to RGBA, too.
             .pending_gray => |*p| {
                 const data = p.dataSlice(1);
                 const rgba = try wuffs.swizzle.gToRgba(alloc, data);
@@ -360,11 +360,8 @@ pub const Image = union(enum) {
     pub fn upload(
         self: *Image,
         alloc: Allocator,
-        metal: *const Metal,
+        api: *const GraphicsAPI,
     ) !void {
-        const device = metal.device;
-        const storage_mode = metal.default_storage_mode;
-
         // Convert our data if we have to
         try self.convert(alloc);
 
@@ -373,15 +370,7 @@ pub const Image = union(enum) {
 
         // Create our texture
         const texture = try Texture.init(
-            .{
-                .device = device,
-                .pixel_format = .rgba8unorm_srgb,
-                .resource_options = .{
-                    // Indicate that the CPU writes to this resource but never reads it.
-                    .cpu_cache_mode = .write_combined,
-                    .storage_mode = storage_mode,
-                },
-            },
+            api.imageTextureOptions(.rgba, true),
             @intCast(p.width),
             @intCast(p.height),
             p.data[0 .. p.width * p.height * self.depth()],
