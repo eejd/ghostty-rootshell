@@ -1334,32 +1334,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             }
 
             // Upload images to the GPU as necessary.
-            {
-                var image_it = self.images.iterator();
-                while (image_it.next()) |kv| {
-                    switch (kv.value_ptr.image) {
-                        .ready => {},
-
-                        .pending_gray,
-                        .pending_gray_alpha,
-                        .pending_rgb,
-                        .pending_rgba,
-                        .replace_gray,
-                        .replace_gray_alpha,
-                        .replace_rgb,
-                        .replace_rgba,
-                        => try kv.value_ptr.image.upload(self.alloc, &self.api),
-
-                        .unload_pending,
-                        .unload_replace,
-                        .unload_ready,
-                        => {
-                            kv.value_ptr.image.deinit(self.alloc);
-                            self.images.removeByPtr(kv.key_ptr);
-                        },
-                    }
-                }
-            }
+            try self.uploadKittyImages();
 
             // Update custom shader uniforms if necessary.
             try self.updateCustomShaderUniforms();
@@ -1579,8 +1554,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         }
 
         /// This goes through the Kitty graphic placements and accumulates the
-        /// placements we need to render on our viewport. It also ensures that
-        /// the visible images are loaded on the GPU.
+        /// placements we need to render on our viewport.
         fn prepKittyGraphics(
             self: *Self,
             t: *terminal.Terminal,
@@ -1617,7 +1591,8 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             const top_y = t.screen.pages.pointFromPin(.screen, top).?.screen.y;
             const bot_y = t.screen.pages.pointFromPin(.screen, bot).?.screen.y;
 
-            // Go through the placements and ensure the image is loaded on the GPU.
+            // Go through the placements and ensure the image is
+            // on the GPU or else is ready to be sent to the GPU.
             var it = storage.placements.iterator();
             while (it.next()) |kv| {
                 const p = kv.value_ptr;
@@ -1738,7 +1713,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 unreachable;
             };
 
-            // Send our image to the GPU and store the placement for rendering.
+            // Prepare the image for the GPU and store the placement.
             try self.prepKittyImage(&image);
             try self.image_placements.append(self.alloc, .{
                 .image_id = image.id,
@@ -1756,6 +1731,8 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             });
         }
 
+        /// Get the viewport-relative position for this
+        /// placement and add it to the placements list.
         fn prepKittyPlacement(
             self: *Self,
             t: *terminal.Terminal,
@@ -1819,6 +1796,8 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             }
         }
 
+        /// Prepare the provided image for upload to the GPU by copying its
+        /// data with our allocator and setting it to the pending state.
         fn prepKittyImage(
             self: *Self,
             image: *const terminal.kitty.graphics.Image,
@@ -1864,6 +1843,35 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             }
 
             gop.value_ptr.transmit_time = image.transmit_time;
+        }
+
+        /// Upload any images to the GPU that need to be uploaded,
+        /// and remove any images that are no longer needed on the GPU.
+        fn uploadKittyImages(self: *Self) !void {
+            var image_it = self.images.iterator();
+            while (image_it.next()) |kv| {
+                switch (kv.value_ptr.image) {
+                    .ready => {},
+
+                    .pending_gray,
+                    .pending_gray_alpha,
+                    .pending_rgb,
+                    .pending_rgba,
+                    .replace_gray,
+                    .replace_gray_alpha,
+                    .replace_rgb,
+                    .replace_rgba,
+                    => try kv.value_ptr.image.upload(self.alloc, &self.api),
+
+                    .unload_pending,
+                    .unload_replace,
+                    .unload_ready,
+                    => {
+                        kv.value_ptr.image.deinit(self.alloc);
+                        self.images.removeByPtr(kv.key_ptr);
+                    },
+                }
+            }
         }
 
         /// Update the configuration.
