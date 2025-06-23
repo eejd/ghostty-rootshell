@@ -1391,23 +1391,43 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 }});
                 defer pass.complete();
 
-                // bg images
-                try self.drawImagePlacements(&pass, self.image_placements.items[0..self.image_bg_end]);
-                // bg
+                // First we draw the background color.
+                //
+                // NOTE: We don't use the clear_color for this because that
+                //       would require us to do color space conversion on the
+                //       CPU-side. In the future when we have utilities for
+                //       that we should remove this step and use clear_color.
                 pass.step(.{
-                    .pipeline = self.shaders.cell_bg_pipeline,
+                    .pipeline = self.shaders.pipelines.bg_color,
                     .uniforms = frame.uniforms.buffer,
                     .buffers = &.{ null, frame.cells_bg.buffer },
-                    .draw = .{
-                        .type = .triangle,
-                        .vertex_count = 3,
-                    },
+                    .draw = .{ .type = .triangle, .vertex_count = 3 },
                 });
-                // mg images
-                try self.drawImagePlacements(&pass, self.image_placements.items[self.image_bg_end..self.image_text_end]);
-                // text
+
+                // Then we draw any kitty images that need
+                // to be behind text AND cell backgrounds.
+                try self.drawImagePlacements(
+                    &pass,
+                    self.image_placements.items[0..self.image_bg_end],
+                );
+
+                // Then we draw any opaque cell backgrounds.
                 pass.step(.{
-                    .pipeline = self.shaders.cell_text_pipeline,
+                    .pipeline = self.shaders.pipelines.cell_bg,
+                    .uniforms = frame.uniforms.buffer,
+                    .buffers = &.{ null, frame.cells_bg.buffer },
+                    .draw = .{ .type = .triangle, .vertex_count = 3 },
+                });
+
+                // Kitty images between cell backgrounds and text.
+                try self.drawImagePlacements(
+                    &pass,
+                    self.image_placements.items[self.image_bg_end..self.image_text_end],
+                );
+
+                // Text.
+                pass.step(.{
+                    .pipeline = self.shaders.pipelines.cell_text,
                     .uniforms = frame.uniforms.buffer,
                     .buffers = &.{
                         frame.cells.buffer,
@@ -1423,8 +1443,12 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                         .instance_count = fg_count,
                     },
                 });
-                // fg images
-                try self.drawImagePlacements(&pass, self.image_placements.items[self.image_text_end..]);
+
+                // Kitty images in front of text.
+                try self.drawImagePlacements(
+                    &pass,
+                    self.image_placements.items[self.image_text_end..],
+                );
             }
 
             // If we have custom shaders, then we render them.
@@ -1539,7 +1563,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 defer buf.deinit();
 
                 pass.step(.{
-                    .pipeline = self.shaders.image_pipeline,
+                    .pipeline = self.shaders.pipelines.image,
                     .buffers = &.{buf.buffer},
                     .textures = &.{texture},
                     .draw = .{
@@ -2378,8 +2402,6 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                         const bg_alpha: u8 = bg_alpha: {
                             const default: u8 = 255;
 
-                            if (self.config.background_opacity >= 1) break :bg_alpha default;
-
                             // Cells that are selected should be fully opaque.
                             if (selected) break :bg_alpha default;
 
@@ -2387,12 +2409,12 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                             if (style.flags.inverse) break :bg_alpha default;
 
                             // Cells that have an explicit bg color should be fully opaque.
-                            if (bg_style != null) {
-                                break :bg_alpha default;
-                            }
+                            if (bg_style != null) break :bg_alpha default;
 
-                            // Otherwise, we use the configured background opacity.
-                            break :bg_alpha @intFromFloat(@round(self.config.background_opacity * 255.0));
+                            // Otherwise, we won't draw the bg for this cell,
+                            // we'll let the already-drawn background color
+                            // show through.
+                            break :bg_alpha 0;
                         };
 
                         self.cells.bgCell(y, x).* = .{
