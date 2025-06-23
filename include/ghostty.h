@@ -413,6 +413,7 @@ typedef struct {
   const char* command;
   ghostty_env_var_s* env_vars;
   size_t env_var_count;
+  const char* initial_input;
 } ghostty_surface_config_s;
 
 typedef struct {
