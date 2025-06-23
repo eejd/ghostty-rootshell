@@ -336,7 +336,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 const color = try api.initAtlasTexture(&.{
                     .data = undefined,
                     .size = 1,
-                    .format = .rgba,
+                    .format = .bgra,
                 });
                 errdefer color.deinit();
 

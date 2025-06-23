@@ -553,19 +553,19 @@ fragment float4 cell_text_fragment(
     }
 
     case MODE_TEXT_COLOR: {
-      // For now, we assume that color glyphs are
-      // already premultiplied Display P3 colors.
+      // For now, we assume that color glyphs
+      // are already premultiplied linear colors.
       float4 color = textureColor.sample(textureSampler, in.tex_coord);
 
-      // If we aren't doing linear blending, we can return this right away.
-      if (!uniforms.use_linear_blending) {
+      // If we're doing linear blending, we can return this right away.
+      if (uniforms.use_linear_blending) {
         return color;
       }
 
-      // Otherwise we need to linearize the color. Since the alpha is
-      // premultiplied, we need to divide it out before linearizing.
+      // Otherwise we need to unlinearize the color. Since the alpha is
+      // premultiplied, we need to divide it out before unlinearizing.
       color.rgb /= color.a;
-      color = linearize(color);
+      color = unlinearize(color);
       color.rgb *= color.a;
 
       return color;

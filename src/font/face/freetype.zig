@@ -391,7 +391,7 @@ pub const Face = struct {
         const format: ?font.Atlas.Format = switch (bitmap_ft.pixel_mode) {
             freetype.c.FT_PIXEL_MODE_MONO => null,
             freetype.c.FT_PIXEL_MODE_GRAY => .grayscale,
-            freetype.c.FT_PIXEL_MODE_BGRA => .rgba,
+            freetype.c.FT_PIXEL_MODE_BGRA => .bgra,
             else => {
                 log.warn("glyph={} pixel mode={}", .{ glyph_index, bitmap_ft.pixel_mode });
                 @panic("unsupported pixel mode");

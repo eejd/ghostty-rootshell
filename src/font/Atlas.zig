@@ -50,15 +50,18 @@ modified: std.atomic.Value(usize) = .{ .raw = 0 },
 resized: std.atomic.Value(usize) = .{ .raw = 0 },
 
 pub const Format = enum(u8) {
+    /// 1 byte per pixel grayscale.
     grayscale = 0,
-    rgb = 1,
-    rgba = 2,
+    /// 3 bytes per pixel BGR.
+    bgr = 1,
+    /// 4 bytes per pixel BGRA.
+    bgra = 2,
 
     pub fn depth(self: Format) u8 {
         return switch (self) {
             .grayscale => 1,
-            .rgb => 3,
-            .rgba => 4,
+            .bgr => 3,
+            .bgra => 4,
         };
     }
 };
