@@ -301,7 +301,6 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             /// Custom shader state, this is null if we have no custom shaders.
             custom_shader_state: ?CustomShaderState = null,
 
-            /// A buffer containing the uniform data.
             const UniformBuffer = Buffer(shaderpkg.Uniforms);
             const CellBgBuffer = Buffer(shaderpkg.CellBg);
             const CellTextBuffer = Buffer(shaderpkg.CellText);
@@ -395,12 +394,20 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             front_texture: Texture,
             back_texture: Texture,
 
+            uniforms: UniformBuffer,
+
+            const UniformBuffer = Buffer(shadertoy.Uniforms);
+
             /// Swap the front and back textures.
             pub fn swap(self: *CustomShaderState) void {
                 std.mem.swap(Texture, &self.front_texture, &self.back_texture);
             }
 
             pub fn init(api: GraphicsAPI) !CustomShaderState {
+                // Create a GPU buffer to hold our uniforms.
+                var uniforms = try UniformBuffer.init(api.uniformBufferOptions(), 1);
+                errdefer uniforms.deinit();
+
                 // Initialize the front and back textures at 1x1 px, this
                 // is slightly wasteful but it's only done once so whatever.
                 const front_texture = try Texture.init(
@@ -417,15 +424,18 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     null,
                 );
                 errdefer back_texture.deinit();
+
                 return .{
                     .front_texture = front_texture,
                     .back_texture = back_texture,
+                    .uniforms = uniforms,
                 };
             }
 
             pub fn deinit(self: *CustomShaderState) void {
                 self.front_texture.deinit();
                 self.back_texture.deinit();
+                self.uniforms.deinit();
             }
 
             pub fn resize(
@@ -1453,14 +1463,8 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
             // If we have custom shaders, then we render them.
             if (frame.custom_shader_state) |*state| {
-                // We create a buffer on the GPU for our post uniforms.
-                // TODO: This should be a part of the frame state tbqh.
-                const PostBuffer = Buffer(shadertoy.Uniforms);
-                const uniform_buffer = try PostBuffer.initFill(
-                    self.api.bufferOptions(),
-                    &.{self.custom_shader_uniforms},
-                );
-                defer uniform_buffer.deinit();
+                // Sync our uniforms.
+                try state.uniforms.sync(&.{self.custom_shader_uniforms});
 
                 for (self.shaders.post_pipelines, 0..) |pipeline, i| {
                     defer state.swap();
@@ -1476,7 +1480,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
                     pass.step(.{
                         .pipeline = pipeline,
-                        .uniforms = uniform_buffer.buffer,
+                        .uniforms = state.uniforms.buffer,
                         .textures = &.{state.back_texture},
                         .draw = .{
                             .type = .triangle,
