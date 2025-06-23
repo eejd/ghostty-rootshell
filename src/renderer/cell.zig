@@ -6,6 +6,7 @@ const font = @import("../font/main.zig");
 const terminal = @import("../terminal/main.zig");
 const renderer = @import("../renderer.zig");
 const shaderpkg = renderer.Renderer.API.shaders;
+const ArrayListPool = @import("../datastruct/array_list_pool.zig").ArrayListPool;
 
 /// The possible cell content keys that exist.
 pub const Key = enum {
@@ -28,48 +29,6 @@ pub const Key = enum {
         };
     }
 };
-
-/// A pool of ArrayLists with methods for bulk operations.
-fn ArrayListPool(comptime T: type) type {
-    return struct {
-        const Self = ArrayListPool(T);
-        const ArrayListT = std.ArrayListUnmanaged(T);
-
-        // An array containing the lists that belong to this pool.
-        lists: []ArrayListT = &[_]ArrayListT{},
-
-        // The pool will be initialized with empty ArrayLists.
-        pub fn init(
-            alloc: Allocator,
-            list_count: usize,
-            initial_capacity: usize,
-        ) Allocator.Error!Self {
-            const self: Self = .{
-                .lists = try alloc.alloc(ArrayListT, list_count),
-            };
-
-            for (self.lists) |*list| {
-                list.* = try .initCapacity(alloc, initial_capacity);
-            }
-
-            return self;
-        }
-
-        pub fn deinit(self: *Self, alloc: Allocator) void {
-            for (self.lists) |*list| {
-                list.deinit(alloc);
-            }
-            alloc.free(self.lists);
-        }
-
-        /// Clear all lists in the pool.
-        pub fn reset(self: *Self) void {
-            for (self.lists) |*list| {
-                list.clearRetainingCapacity();
-            }
-        }
-    };
-}
 
 /// The contents of all the cells in the terminal.
 ///
