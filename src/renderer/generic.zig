@@ -1672,8 +1672,8 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 }.lessThan,
             );
 
-            // Find our indices. The values are sorted by z so we can find the
-            // first placement out of bounds to find the limits.
+            // Find our indices. The values are sorted by z so we can
+            // find the first placement out of bounds to find the limits.
             var bg_end: ?u32 = null;
             var text_end: ?u32 = null;
             const bg_limit = std.math.minInt(i32) / 2;
@@ -1686,8 +1686,14 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 }
             }
 
-            self.image_bg_end = bg_end orelse 0;
-            self.image_text_end = text_end orelse self.image_bg_end;
+            // If we didn't see any images with a z > the bg limit,
+            // then our bg end is the end of our placement list.
+            self.image_bg_end =
+                bg_end orelse @intCast(self.image_placements.items.len);
+
+            // Same idea for the image_text_end.
+            self.image_text_end =
+                text_end orelse @intCast(self.image_placements.items.len);
         }
 
         fn prepKittyVirtualPlacement(
