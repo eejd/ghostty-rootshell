@@ -47,6 +47,10 @@ modules:
         --prefix /app
         --search-prefix /app
         --system $PWD/vendor/p
+
+      # Remove references to the user service. Flatpak does not export those.
+      - sed -i '/^SystemdService=/d'
+        /app/share/dbus-1/services/com.mitchellh.ghostty.service
     sources:
       - type: dir
         path: ..
