@@ -1975,10 +1975,19 @@ keybind: Keybinds = .{},
 ///   * `ssh-env` - Enable SSH environment variable compatibility. Automatically
 ///     converts TERM from `xterm-ghostty` to `xterm-256color` when connecting to
 ///     remote hosts and propagates COLORTERM, TERM_PROGRAM, and TERM_PROGRAM_VERSION.
+///     Whether or not these variables will be accepted by the remote host(s) will
+///     depend on whether or not the variables are allowed in their sshd_config.
 ///
 ///   * `ssh-terminfo` - Enable automatic terminfo installation on remote hosts.
 ///     Attempts to install Ghostty's terminfo entry using `infocmp` and `tic` when
-///     connecting to hosts that lack it.
+///     connecting to hosts that lack it. Requires `infocmp` and `tic` to be available
+///     locally. Provides `ghostty ssh-cache-list` and `ghostty ssh-cache-clear`
+///     utilities for managing the installation cache.
+///
+/// SSH features work independently and can be combined for optimal experience:
+/// when both `ssh-env` and `ssh-terminfo` are enabled, Ghostty will install its
+/// terminfo on remote hosts and use `xterm-ghostty` as TERM, falling back to
+/// `xterm-256color` with environment variables if terminfo installation fails.
 ///
 /// Example: `cursor`, `no-cursor`, `sudo`, `no-sudo`, `title`, `no-title`
 @"shell-integration-features": ShellIntegrationFeatures = .{},
