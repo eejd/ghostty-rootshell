@@ -244,156 +244,106 @@ _ghostty_deferred_init() {
       }
     fi
 
-    # SSH
-    if [[ -n "$GHOSTTY_SSH_INTEGRATION" ]]; then
-      # Cache file for tracking hosts with terminfo installed
-      _ghostty_cache_file="${GHOSTTY_RESOURCES_DIR:-$HOME/.config/ghostty}/terminfo_hosts"
+    # SSH Integration
+    if [[ "$GHOSTTY_SHELL_FEATURES" =~ ssh-(env|terminfo) ]]; then
+      # Only define cache functions and variable if ssh-terminfo is enabled
+      if [[ "$GHOSTTY_SHELL_FEATURES" =~ ssh-terminfo ]]; then
+        _cache="${XDG_STATE_HOME:-$HOME/.local/state}/ghostty/terminfo_hosts"
 
-      # Extract target host from SSH arguments
-      _ghostty_get_ssh_target() {
-        local target=""
-        local skip_next=false
+        # Cache operations and utilities
+        _ghst_cache() {
+          case $2 in
+          chk) [[ -f $_cache ]] && grep -qFx "$1" "$_cache" 2>/dev/null ;;
+          add)
+            mkdir -p "${_cache:h}"
+            {
+              [[ -f $_cache ]] && cat "$_cache"
+              builtin echo "$1"
+            } | sort -u >"$_cache.tmp" && mv "$_cache.tmp" "$_cache" && chmod 600 "$_cache"
+            ;;
+          esac
+        }
 
-        for arg in "$@"; do
-          if [[ "$skip_next" == "true" ]]; then
-            skip_next=false
-            continue
-          fi
+        ghostty_ssh_cache_clear() { 
+          rm -f "$_cache" 2>/dev/null && builtin echo "Ghostty SSH terminfo cache cleared." || builtin echo "No Ghostty SSH terminfo cache found."
+        }
 
-          # Skip flags that take arguments
-          if [[ "$arg" =~ ^-[bcDEeFIiJLlmOopQRSWw]$ ]]; then
-            skip_next=true
-            continue
-          fi
+        ghostty_ssh_cache_list() { 
+          [[ -s $_cache ]] && builtin echo "Hosts with Ghostty terminfo installed:" && cat "$_cache" || builtin echo "No cached hosts found."
+        }
+      fi
 
-          # Skip other flags
-          if [[ "$arg" =~ ^- ]]; then
-            continue
-          fi
-
-          # This should be the target
-          target="$arg"
-          break
-        done
-
-        echo "$target"
-      }
-
-      # Check if host has terminfo installed
-      _ghostty_host_has_terminfo() {
-        local target="$1"
-        [[ -f "$_ghostty_cache_file" ]] && grep -qFx "$target" "$_ghostty_cache_file" 2>/dev/null
-      }
-
-      # Add host to terminfo cache
-      _ghostty_cache_host() {
-        local target="$1"
-        local cache_dir
-        cache_dir="$(dirname "$_ghostty_cache_file")"
-
-        # Create cache directory if needed
-        [[ ! -d "$cache_dir" ]] && mkdir -p "$cache_dir"
-
-        # Atomic write to cache file
-        {
-          if [[ -f "$_ghostty_cache_file" ]]; then
-            cat "$_ghostty_cache_file"
-          fi
-          echo "$target"
-        } | sort -u > "$_ghostty_cache_file.tmp" && mv "$_ghostty_cache_file.tmp" "$_ghostty_cache_file"
-
-        # Secure permissions
-        chmod 600 "$_ghostty_cache_file" 2>/dev/null
-      }
-
-      # Wrap `ssh` command to provide Ghostty SSH integration
+      # SSH wrapper
       ssh() {
-        case "$GHOSTTY_SSH_INTEGRATION" in
-          "term-only")
-            _ghostty_ssh_term-only "$@"
-            ;;
-          "basic")
-            _ghostty_ssh_basic "$@"
-            ;;
-          "full")
-            _ghostty_ssh_full "$@"
-            ;;
-          *)
-            # Unknown level, fall back to basic
-            _ghostty_ssh_basic "$@"
-            ;;
-        esac
-      }
+        local -a e o c
+        local t
 
-      # Level: term-only - Just fix TERM compatibility
-      _ghostty_ssh_term-only() {
-        if [[ "$TERM" == "xterm-ghostty" ]]; then
-          TERM=xterm-256color builtin command ssh "$@"
-        else
-          builtin command ssh "$@"
-        fi
-      }
-
-      # Level: basic - TERM fix + environment variable propagation
-      _ghostty_ssh_basic() {
-        local env_vars=()
-
-        # Fix TERM compatibility
-        if [[ "$TERM" == "xterm-ghostty" ]]; then
-          env_vars+=("TERM=xterm-256color")
+        # Get target (only if ssh-terminfo enabled for caching)
+        if [[ "$GHOSTTY_SHELL_FEATURES" =~ ssh-terminfo ]]; then
+          t=$(builtin command ssh -G "$@" 2>/dev/null | awk '/^(user|hostname) /{print $2}' | paste -sd'@')
         fi
 
-        # Propagate Ghostty shell integration environment variables
-        [[ -n "$GHOSTTY_SHELL_FEATURES" ]] && env_vars+=("GHOSTTY_SHELL_FEATURES=$GHOSTTY_SHELL_FEATURES")
-
-        # Execute with environment variables if any were set
-        if [[ ${#env_vars[@]} -gt 0 ]]; then
-          env "${env_vars[@]}" ssh "$@"
-        else
-          builtin command ssh "$@"
-        fi
-      }
-
-      # Level: full - All features
-      _ghostty_ssh_full() {
-        local target
-        target="$(_ghostty_get_ssh_target "$@")"
-
-        # Check if we already know this host has terminfo
-        if [[ -n "$target" ]] && _ghostty_host_has_terminfo "$target"; then
-          # Direct connection with xterm-ghostty
-          local env_vars=("TERM=xterm-ghostty")
-          [[ -n "$GHOSTTY_SHELL_FEATURES" ]] && env_vars+=("GHOSTTY_SHELL_FEATURES=$GHOSTTY_SHELL_FEATURES")
-          env "${env_vars[@]}" ssh "$@"
-          return 0
+        # Set up env vars first so terminfo installation inherits them
+        if [[ "$GHOSTTY_SHELL_FEATURES" =~ ssh-env ]]; then
+          builtin export COLORTERM=${COLORTERM:-truecolor} TERM_PROGRAM=${TERM_PROGRAM:-ghostty} ${GHOSTTY_VERSION:+TERM_PROGRAM_VERSION=$GHOSTTY_VERSION}
+          for v in COLORTERM=truecolor TERM_PROGRAM=ghostty ${GHOSTTY_VERSION:+TERM_PROGRAM_VERSION=$GHOSTTY_VERSION}; do
+            o+=(-o "SendEnv ${v%=*}" -o "SetEnv $v")
+          done
         fi
 
-        # Full integration: Install terminfo if needed
-        if builtin command -v infocmp >/dev/null 2>&1; then
-          # Install terminfo only if needed
-          if infocmp -x xterm-ghostty 2>/dev/null | builtin command ssh "$@" '
-              if ! infocmp xterm-ghostty >/dev/null 2>&1; then
-                  echo "Installing Ghostty terminfo..." >&2
-                  tic -x - 2>/dev/null
-              fi
-          '; then
-            echo "Connecting with full Ghostty support..." >&2
-
-            # Cache this host for future connections
-            [[ -n "$target" ]] && _ghostty_cache_host "$target"
-
-            # Connect with xterm-ghostty since terminfo is available
-            local env_vars=("TERM=xterm-ghostty")
-            [[ -n "$GHOSTTY_SHELL_FEATURES" ]] && env_vars+=("GHOSTTY_SHELL_FEATURES=$GHOSTTY_SHELL_FEATURES")
-            env "${env_vars[@]}" ssh "$@"
-            builtin return 0
+        # Install terminfo if needed, reuse control connection for main session
+        if [[ "$GHOSTTY_SHELL_FEATURES" =~ ssh-terminfo ]]; then
+          if [[ -n $t ]] && _ghst_cache "$t" chk; then
+            e+=(TERM=xterm-ghostty)
+          elif builtin command -v infocmp >/dev/null 2>&1; then
+            local ti
+            ti=$(infocmp -x xterm-ghostty 2>/dev/null) || builtin echo "Warning: xterm-ghostty terminfo not found locally." >&2
+            if [[ -n $ti ]]; then
+              builtin echo "Setting up Ghostty terminfo on remote host..." >&2
+              local cp
+              cp="/tmp/ghostty-ssh-$USER-$RANDOM-$(date +%s)"
+              case $(builtin echo "$ti" | builtin command ssh "${o[@]}" -o ControlMaster=yes -o ControlPath="$cp" -o ControlPersist=60s "$@" '
+                infocmp xterm-ghostty >/dev/null 2>&1 && echo OK && exit
+                command -v tic >/dev/null 2>&1 || { echo NO_TIC; exit 1; }
+                mkdir -p ~/.terminfo 2>/dev/null && tic -x - 2>/dev/null && echo OK || echo FAIL
+              ') in
+              OK)
+                builtin echo "Terminfo setup complete." >&2
+                [[ -n $t ]] && _ghst_cache "$t" add
+                e+=(TERM=xterm-ghostty)
+                c+=(-o "ControlPath=$cp")
+                ;;
+              *) builtin echo "Warning: Failed to install terminfo." >&2 ;;
+              esac
+            fi
+          else
+            builtin echo "Warning: infocmp not found locally. Terminfo installation unavailable." >&2
           fi
-          echo "Terminfo installation failed. Using basic integration." >&2
         fi
 
-        # Fallback to basic integration
-        _ghostty_ssh_basic "$@"
+        # Fallback TERM only if terminfo didn't set it
+        if [[ "$GHOSTTY_SHELL_FEATURES" =~ ssh-env ]]; then
+          [[ $TERM == xterm-ghostty && ! " ${(j: :)e} " =~ " TERM=" ]] && e+=(TERM=xterm-256color)
+        fi
+
+        # Execute
+        if (( ${#e} > 0 )); then
+          env "${e[@]}" ssh "${o[@]}" "${c[@]}" "$@"
+        else
+          builtin command ssh "${o[@]}" "${c[@]}" "$@"
+        fi
       }
+
+      # Wrap ghostty command only if ssh-terminfo is enabled
+      if [[ "$GHOSTTY_SHELL_FEATURES" =~ ssh-terminfo ]]; then
+        ghostty() {
+          case "$1" in
+            ssh-cache-list) ghostty_ssh_cache_list ;;
+            ssh-cache-clear) ghostty_ssh_cache_clear ;;
+            *) builtin command ghostty "$@" ;;
+          esac
+        }
+      fi
     fi
 
     # Some zsh users manually run `source ~/.zshrc` in order to apply rc file

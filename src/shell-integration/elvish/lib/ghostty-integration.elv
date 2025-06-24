@@ -99,175 +99,166 @@
   }
 
   # SSH Integration
-  # Cache file for tracking hosts with terminfo installed
-  var ghostty-cache-file = (if (has-env GHOSTTY_RESOURCES_DIR) { put $E:GHOSTTY_RESOURCES_DIR"/terminfo_hosts" } else { put $E:HOME"/.config/ghostty/terminfo_hosts" })
+  use str
+  use path
+  use re
 
-  # Extract target host from SSH arguments
-  fn ghostty-get-ssh-target {|@args|
-    var target = ""
-    var skip-next = $false
+  if (re:match 'ssh-(env|terminfo)' $E:GHOSTTY_SHELL_FEATURES) {
+      # Only define cache functions and variable if ssh-terminfo is enabled
+      if (re:match 'ssh-terminfo' $E:GHOSTTY_SHELL_FEATURES) {
+          var _cache = (path:join (or $E:XDG_STATE_HOME $E:HOME/.local/state) ghostty terminfo_hosts)
 
-    for arg $args {
-      if (eq $skip-next $true) {
-        set skip-next = $false
-        continue
+          # Cache operations and utilities
+          fn _ghst_cache {|target action|
+              if (eq $action chk) {
+                  if (path:is-regular $_cache) {
+                      try {
+                          grep -qFx $target $_cache 2>/dev/null
+                      } catch e {
+                          fail
+                      }
+                  } else {
+                      fail
+                  }
+              } elif (eq $action add) {
+                  mkdir -p (path:dir $_cache)
+                  var tmpfile = $_cache.tmp
+                  {
+                      if (path:is-regular $_cache) {
+                          cat $_cache
+                      }
+                      echo $target
+                  } | sort -u > $tmpfile
+                  mv $tmpfile $_cache
+                  chmod 600 $_cache
+              }
+          }
+
+          fn ghostty_ssh_cache_clear {
+              try {
+                  rm -f $_cache 2>/dev/null
+                  echo "Ghostty SSH terminfo cache cleared."
+              } catch e {
+                  echo "No Ghostty SSH terminfo cache found."
+              }
+          }
+
+          fn ghostty_ssh_cache_list {
+              if (and (path:is-regular $_cache) (> (wc -c < $_cache | str:trim-space) 0)) {
+                  echo "Hosts with Ghostty terminfo installed:"
+                  cat $_cache
+              } else {
+                  echo "No cached hosts found."
+              }
+          }
       }
 
-      # Skip flags that take arguments
-      if (re:match '^-[bcDEeFIiJLlmOopQRSWw]$' $arg) {
-        set skip-next = $true
-        continue
+      # SSH wrapper
+      fn ssh {|@args|
+          var e = []
+          var o = []
+          var c = []
+          var t = ""
+
+          # Get target (only if ssh-terminfo enabled for caching)
+          if (re:match 'ssh-terminfo' $E:GHOSTTY_SHELL_FEATURES) {
+              try {
+                  set t = (e:ssh -G $@args 2>/dev/null | awk '/^(user|hostname) /{print $2}' | paste -sd'@' | str:trim-space)
+              } catch e {
+                  # Ignore errors
+              }
+          }
+
+          # Set up env vars first so terminfo installation inherits them
+          if (re:match 'ssh-env' $E:GHOSTTY_SHELL_FEATURES) {
+              set-env COLORTERM (or $E:COLORTERM truecolor)
+              set-env TERM_PROGRAM (or $E:TERM_PROGRAM ghostty)
+              if (has-env GHOSTTY_VERSION) {
+                  set-env TERM_PROGRAM_VERSION $E:GHOSTTY_VERSION
+              }
+
+              var vars = [COLORTERM=truecolor TERM_PROGRAM=ghostty]
+              if (has-env GHOSTTY_VERSION) {
+                  set vars = [$@vars TERM_PROGRAM_VERSION=$E:GHOSTTY_VERSION]
+              }
+              for v $vars {
+                  var varname = (str:split &max=2 '=' $v | take 1)
+                  set o = [$@o -o "SendEnv "$varname -o "SetEnv "$v]
+              }
+          }
+
+          # Install terminfo if needed, reuse control connection for main session
+          if (re:match 'ssh-terminfo' $E:GHOSTTY_SHELL_FEATURES) {
+              if (and (not-eq $t "") (try { _ghst_cache $t chk } catch e { put $false })) {
+                  set e = [$@e TERM=xterm-ghostty]
+              } elif (has-external infocmp) {
+                  var ti = ""
+                  try {
+                      set ti = (infocmp -x xterm-ghostty 2>/dev/null | slurp)
+                  } catch e {
+                      echo "Warning: xterm-ghostty terminfo not found locally." >&2
+                  }
+                  if (not-eq $ti "") {
+                      echo "Setting up Ghostty terminfo on remote host..." >&2
+                      var cp = "/tmp/ghostty-ssh-"$E:USER"-"(randint 10000)"-"(date +%s | str:trim-space)
+                      var result = (echo $ti | e:ssh $@o -o ControlMaster=yes -o ControlPath=$cp -o ControlPersist=60s $@args '
+                          infocmp xterm-ghostty >/dev/null 2>&1 && echo OK && exit
+                          command -v tic >/dev/null 2>&1 || { echo NO_TIC; exit 1; }
+                          mkdir -p ~/.terminfo 2>/dev/null && tic -x - 2>/dev/null && echo OK || echo FAIL
+                      ' | str:trim-space)
+                      if (eq $result OK) {
+                          echo "Terminfo setup complete." >&2
+                          if (not-eq $t "") {
+                              _ghst_cache $t add
+                          }
+                          set e = [$@e TERM=xterm-ghostty]
+                          set c = [$@c -o ControlPath=$cp]
+                      } else {
+                          echo "Warning: Failed to install terminfo." >&2
+                      }
+                  }
+              } else {
+                  echo "Warning: infocmp not found locally. Terminfo installation unavailable." >&2
+              }
+          }
+
+          # Fallback TERM only if terminfo didn't set it
+          if (re:match 'ssh-env' $E:GHOSTTY_SHELL_FEATURES) {
+              if (and (eq $E:TERM xterm-ghostty) (not (re:match 'TERM=' (str:join ' ' $e)))) {
+                  set e = [$@e TERM=xterm-256color]
+              }
+          }
+
+          # Execute
+          if (> (count $e) 0) {
+              e:env $@e e:ssh $@o $@c $@args
+          } else {
+              e:ssh $@o $@c $@args
+          }
       }
 
-      # Skip other flags
-      if (re:match '^-' $arg) {
-        continue
+      # Wrap ghostty command only if ssh-terminfo is enabled
+      if (re:match 'ssh-terminfo' $E:GHOSTTY_SHELL_FEATURES) {
+          fn ghostty {|@args|
+              if (eq $args[0] ssh-cache-list) {
+                  ghostty_ssh_cache_list
+              } elif (eq $args[0] ssh-cache-clear) {
+                  ghostty_ssh_cache_clear  
+              } else {
+                  (external ghostty) $@args
+              }
+          }
+
+          edit:add-var ghostty~ $ghostty~
+
+          # Export cache functions for global use
+          set edit:add-var[ghostty_ssh_cache_clear] = $ghostty_ssh_cache_clear~
+          set edit:add-var[ghostty_ssh_cache_list] = $ghostty_ssh_cache_list~
       }
 
-      # This should be the target
-      set target = $arg
-      break
-    }
-
-    put $target
+      # Export ssh function for global use
+      set edit:add-var[ssh] = $ssh~
   }
-
-  # Check if host has terminfo installed
-  fn ghostty-host-has-terminfo {|target|
-    and (path:is-regular $ghostty-cache-file) ?(grep -qFx $target $ghostty-cache-file 2>/dev/null)
-  }
-
-  # Add host to terminfo cache
-  fn ghostty-cache-host {|target|
-    var cache-dir = (path:dir $ghostty-cache-file)
-
-    # Create cache directory if needed
-    if (not (path:is-dir $cache-dir)) {
-      mkdir -p $cache-dir
-    }
-
-    # Atomic write to cache file
-    var temp-file = $ghostty-cache-file".tmp"
-
-    {
-      if (path:is-regular $ghostty-cache-file) {
-        cat $ghostty-cache-file
-      }
-      echo $target
-    } | sort -u > $temp-file
-
-    mv $temp-file $ghostty-cache-file
-
-    # Secure permissions
-    ?chmod 600 $ghostty-cache-file 2>/dev/null
-  }
-
-  fn ssh-with-ghostty-integration {|@args|
-    if (has-env GHOSTTY_SSH_INTEGRATION) {
-      if (eq "term-only" $E:GHOSTTY_SSH_INTEGRATION) {
-        ssh-term-only $@args
-      } elif (eq "basic" $E:GHOSTTY_SSH_INTEGRATION) {
-        ssh-basic $@args  
-      } elif (eq "full" $E:GHOSTTY_SSH_INTEGRATION) {
-        ssh-full $@args
-      } else {
-        # Unknown level, fall back to basic
-        ssh-basic $@args
-      }
-    } else {
-      (external ssh) $@args
-    }
-  }
-
-  fn ssh-term-only {|@args|
-    # Level: term-only - Just fix TERM compatibility
-    if (eq "xterm-ghostty" $E:TERM) {
-      (external env) TERM=xterm-256color ssh $@args
-    } else {
-      (external ssh) $@args
-    }
-  }
-
-  fn ssh-basic {|@args|
-    # Level: basic - TERM fix + environment variable propagation
-    var env-vars = []
-
-    # Fix TERM compatibility
-    if (eq "xterm-ghostty" $E:TERM) {
-      set env-vars = (conj $env-vars TERM=xterm-256color)
-    }
-
-    # Propagate Ghostty shell integration environment variables
-    if (not-eq "" $E:GHOSTTY_SHELL_FEATURES) {
-      set env-vars = (conj $env-vars GHOSTTY_SHELL_FEATURES=$E:GHOSTTY_SHELL_FEATURES)
-    }
-
-    # Execute with environment variables if any were set
-    if (> (count $env-vars) 0) {
-      (external env) $@env-vars ssh $@args
-    } else {
-      (external ssh) $@args
-    }
-  }
-
-  fn ssh-full {|@args|
-    var target = (ghostty-get-ssh-target $@args)
-
-    # Check if we already know this host has terminfo
-    if (and (not-eq "" $target) (ghostty-host-has-terminfo $target)) {
-      # Direct connection with xterm-ghostty
-      var env-vars = [TERM=xterm-ghostty]
-
-      # Propagate Ghostty shell integration environment variables
-      if (not-eq "" $E:GHOSTTY_SHELL_FEATURES) {
-        set env-vars = (conj $env-vars GHOSTTY_SHELL_FEATURES=$E:GHOSTTY_SHELL_FEATURES)
-      }
-
-      (external env) $@env-vars ssh $@args
-      return
-    }
-
-    # Full integration: Install terminfo if needed
-    if (has-external infocmp) {
-      try {
-        # Install terminfo only if needed
-        infocmp -x xterm-ghostty 2>/dev/null | (external ssh) $@args '
-          if ! infocmp xterm-ghostty >/dev/null 2>&1; then
-            echo "Installing Ghostty terminfo..." >&2
-            tic -x - 2>/dev/null
-          fi
-        '
-        echo "Connecting with full Ghostty support..." >&2
-
-        # Cache this host for future connections
-        if (not-eq "" $target) {
-          ghostty-cache-host $target
-        }
-
-        # Connect with xterm-ghostty since terminfo is available
-        var env-vars = [TERM=xterm-ghostty]
-
-        # Propagate Ghostty shell integration environment variables
-        if (not-eq "" $E:GHOSTTY_SHELL_FEATURES) {
-          set env-vars = (conj $env-vars GHOSTTY_SHELL_FEATURES=$E:GHOSTTY_SHELL_FEATURES)
-        }
-
-        # Normal SSH connection with Ghostty terminfo available
-        (external env) $@env-vars ssh $@args
-        return
-      } catch e {
-        echo "Terminfo installation failed. Using basic integration." >&2
-      }
-    }
-
-    # Fallback to basic integration
-    ssh-basic $@args
-  }
-
-  # Register SSH integration if enabled
-  if (and (has-env GHOSTTY_SSH_INTEGRATION) (has-external ssh)) {
-    edit:add-var ssh~ $ssh-with-ghostty-integration~
-  } 
 
   defer {
     mark-prompt-start
