@@ -2809,24 +2809,20 @@ pub fn loadIter(
 /// `path` must be resolved and absolute.
 pub fn loadFile(self: *Config, alloc: Allocator, path: []const u8) !void {
     assert(std.fs.path.isAbsolute(path));
-
-    var file = try std.fs.openFileAbsolute(path, .{});
-    defer file.close();
-
-    const stat = try file.stat();
-    switch (stat.kind) {
-        .file => {},
-        else => |kind| {
-            log.warn("config-file {s}: not reading because file type is {s}", .{
-                path,
-                @tagName(kind),
-            });
+    var file = openFile(path) catch |err| switch (err) {
+        error.NotAFile => {
+            log.warn(
+                "config-file {s}: not reading because it is not a file",
+                .{path},
+            );
             return;
         },
-    }
+
+        else => return err,
+    };
+    defer file.close();
 
     std.log.info("reading configuration file path={s}", .{path});
-
     var buf_reader = std.io.bufferedReader(file.reader());
     const reader = buf_reader.reader();
     const Iter = cli.args.LineIterator(@TypeOf(reader));
@@ -2881,13 +2877,13 @@ fn writeConfigTemplate(path: []const u8) !void {
 /// is also loaded.
 pub fn loadDefaultFiles(self: *Config, alloc: Allocator) !void {
     // Load XDG first
-    const xdg_path = try internal_os.xdg.config(alloc, .{ .subdir = "ghostty/config" });
+    const xdg_path = try defaultXdgPath(alloc);
     defer alloc.free(xdg_path);
     const xdg_action = self.loadOptionalFile(alloc, xdg_path);
 
     // On macOS load the app support directory as well
     if (comptime builtin.os.tag == .macos) {
-        const app_support_path = try internal_os.macos.appSupportDir(alloc, "config");
+        const app_support_path = try defaultAppSupportPath(alloc);
         defer alloc.free(app_support_path);
         const app_support_action = self.loadOptionalFile(alloc, app_support_path);
 
@@ -2905,6 +2901,102 @@ pub fn loadDefaultFiles(self: *Config, alloc: Allocator) !void {
             };
         }
     }
+}
+
+/// Default path for the XDG home configuration file. Returned value
+/// must be freed by the caller.
+fn defaultXdgPath(alloc: Allocator) ![]const u8 {
+    return try internal_os.xdg.config(
+        alloc,
+        .{ .subdir = "ghostty/config" },
+    );
+}
+
+/// Default path for the macOS Application Support configuration file.
+/// Returned value must be freed by the caller.
+fn defaultAppSupportPath(alloc: Allocator) ![]const u8 {
+    return try internal_os.macos.appSupportDir(alloc, "config");
+}
+
+/// Returns the path to the preferred default configuration file.
+/// This is the file where users should place their configuration.
+///
+/// This doesn't create or populate the file with any default
+/// contents; downstream callers must handle this.
+///
+/// The returned value must be freed by the caller.
+pub fn preferredDefaultFilePath(alloc: Allocator) ![]const u8 {
+    switch (builtin.os.tag) {
+        .macos => {
+            // macOS prefers the Application Support directory
+            // if it exists.
+            const app_support_path = try defaultAppSupportPath(alloc);
+            if (openFile(app_support_path)) |f| {
+                f.close();
+                return app_support_path;
+            } else |_| {}
+
+            // Try the XDG path if it exists
+            const xdg_path = try defaultXdgPath(alloc);
+            if (openFile(xdg_path)) |f| {
+                f.close();
+                alloc.free(app_support_path);
+                return xdg_path;
+            } else |_| {}
+            defer alloc.free(xdg_path);
+
+            // Neither exist, use app support
+            return app_support_path;
+        },
+
+        // All other platforms use XDG only
+        else => return try defaultXdgPath(alloc),
+    }
+}
+
+const OpenFileError = error{
+    FileNotFound,
+    FileIsEmpty,
+    FileOpenFailed,
+    NotAFile,
+};
+
+/// Opens the file at the given path and returns the file handle
+/// if it exists and is non-empty. This also constrains the possible
+/// errors to a smaller set that we can explicitly handle.
+fn openFile(path: []const u8) OpenFileError!std.fs.File {
+    assert(std.fs.path.isAbsolute(path));
+
+    var file = std.fs.openFileAbsolute(
+        path,
+        .{},
+    ) catch |err| switch (err) {
+        error.FileNotFound => return OpenFileError.FileNotFound,
+        else => {
+            log.warn("unexpected file open error path={s} err={}", .{
+                path,
+                err,
+            });
+            return OpenFileError.FileOpenFailed;
+        },
+    };
+    errdefer file.close();
+
+    const stat = file.stat() catch |err| {
+        log.warn("error getting file stat path={s} err={}", .{
+            path,
+            err,
+        });
+        return OpenFileError.FileOpenFailed;
+    };
+    switch (stat.kind) {
+        .file => {},
+        else => return OpenFileError.NotAFile,
+    }
+
+    if (stat.size == 0) return OpenFileError.FileIsEmpty;
+
+    return file;
 }
 
 /// Load and parse the CLI args.
