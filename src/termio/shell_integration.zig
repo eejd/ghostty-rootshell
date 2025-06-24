@@ -45,7 +45,6 @@ pub fn setup(
     env: *EnvMap,
     force_shell: ?Shell,
     features: config.ShellIntegrationFeatures,
-    ssh_integration: config.SSHIntegration,
 ) !?ShellIntegration {
     const exe = if (force_shell) |shell| switch (shell) {
         .bash => "bash",
@@ -71,9 +70,8 @@ pub fn setup(
         exe,
     );
 
-    // Setup our feature env vars and SSH integration
+    // Setup our feature env vars
     try setupFeatures(env, features);
-    try setupSSHIntegration(env, ssh_integration);
 
     return result;
 }
@@ -161,7 +159,6 @@ test "force shell" {
             &env,
             shell,
             .{},
-            .off,
         );
         try testing.expectEqual(shell, result.?.shell);
     }
@@ -224,15 +221,6 @@ test "setup features" {
 
         try setupFeatures(&env, .{ .cursor = false, .sudo = true, .title = false });
         try testing.expectEqualStrings("sudo", env.get("GHOSTTY_SHELL_FEATURES").?);
-    }
-}
-
-pub fn setupSSHIntegration(
-    env: *EnvMap,
-    ssh_integration: config.SSHIntegration,
-) !void {
-    if (ssh_integration != .off) {
-        try env.put("GHOSTTY_SSH_INTEGRATION", @tagName(ssh_integration));
     }
 }
 

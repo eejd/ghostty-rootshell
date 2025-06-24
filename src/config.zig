@@ -33,7 +33,6 @@ pub const RepeatableStringMap = @import("config/RepeatableStringMap.zig");
 pub const RepeatablePath = Config.RepeatablePath;
 pub const Path = Config.Path;
 pub const ShellIntegrationFeatures = Config.ShellIntegrationFeatures;
-pub const SSHIntegration = Config.SSHIntegration;
 pub const WindowPaddingColor = Config.WindowPaddingColor;
 pub const BackgroundImagePosition = Config.BackgroundImagePosition;
 pub const BackgroundImageFit = Config.BackgroundImageFit;
