@@ -11,8 +11,13 @@ const renderer = @import("../renderer.zig");
 const math = @import("../math.zig");
 const Surface = @import("../Surface.zig");
 const link = @import("link.zig");
-const fgMode = @import("cell.zig").fgMode;
-const isCovering = @import("cell.zig").isCovering;
+const cellpkg = @import("cell.zig");
+const fgMode = cellpkg.fgMode;
+const isCovering = cellpkg.isCovering;
+const imagepkg = @import("image.zig");
+const Image = imagepkg.Image;
+const ImageMap = imagepkg.ImageMap;
+const ImagePlacementList = std.ArrayListUnmanaged(imagepkg.Placement);
 const shadertoy = @import("shadertoy.zig");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
@@ -71,20 +76,15 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
     return struct {
         const Self = @This();
 
+        pub const API = GraphicsAPI;
+
         const Target = GraphicsAPI.Target;
         const Buffer = GraphicsAPI.Buffer;
         const Texture = GraphicsAPI.Texture;
         const RenderPass = GraphicsAPI.RenderPass;
+
         const shaderpkg = GraphicsAPI.shaders;
-
-        const cellpkg = GraphicsAPI.cellpkg;
-        const imagepkg = GraphicsAPI.imagepkg;
-        const Image = imagepkg.Image;
-        const ImageMap = imagepkg.ImageMap;
-
         const Shaders = shaderpkg.Shaders;
-
-        const ImagePlacementList = std.ArrayListUnmanaged(imagepkg.Placement);
 
         /// Allocator that can be used
         alloc: std.mem.Allocator,
@@ -301,7 +301,6 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             /// Custom shader state, this is null if we have no custom shaders.
             custom_shader_state: ?CustomShaderState = null,
 
-            /// A buffer containing the uniform data.
             const UniformBuffer = Buffer(shaderpkg.Uniforms);
             const CellBgBuffer = Buffer(shaderpkg.CellBg);
             const CellTextBuffer = Buffer(shaderpkg.CellText);
@@ -337,7 +336,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 const color = try api.initAtlasTexture(&.{
                     .data = undefined,
                     .size = 1,
-                    .format = .rgba,
+                    .format = .bgra,
                 });
                 errdefer color.deinit();
 
@@ -395,12 +394,20 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             front_texture: Texture,
             back_texture: Texture,
 
+            uniforms: UniformBuffer,
+
+            const UniformBuffer = Buffer(shadertoy.Uniforms);
+
             /// Swap the front and back textures.
             pub fn swap(self: *CustomShaderState) void {
                 std.mem.swap(Texture, &self.front_texture, &self.back_texture);
             }
 
             pub fn init(api: GraphicsAPI) !CustomShaderState {
+                // Create a GPU buffer to hold our uniforms.
+                var uniforms = try UniformBuffer.init(api.uniformBufferOptions(), 1);
+                errdefer uniforms.deinit();
+
                 // Initialize the front and back textures at 1x1 px, this
                 // is slightly wasteful but it's only done once so whatever.
                 const front_texture = try Texture.init(
@@ -417,15 +424,18 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     null,
                 );
                 errdefer back_texture.deinit();
+
                 return .{
                     .front_texture = front_texture,
                     .back_texture = back_texture,
+                    .uniforms = uniforms,
                 };
             }
 
             pub fn deinit(self: *CustomShaderState) void {
                 self.front_texture.deinit();
                 self.back_texture.deinit();
+                self.uniforms.deinit();
             }
 
             pub fn resize(
@@ -1324,32 +1334,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             }
 
             // Upload images to the GPU as necessary.
-            {
-                var image_it = self.images.iterator();
-                while (image_it.next()) |kv| {
-                    switch (kv.value_ptr.image) {
-                        .ready => {},
-
-                        .pending_gray,
-                        .pending_gray_alpha,
-                        .pending_rgb,
-                        .pending_rgba,
-                        .replace_gray,
-                        .replace_gray_alpha,
-                        .replace_rgb,
-                        .replace_rgba,
-                        => try kv.value_ptr.image.upload(self.alloc, &self.api),
-
-                        .unload_pending,
-                        .unload_replace,
-                        .unload_ready,
-                        => {
-                            kv.value_ptr.image.deinit(self.alloc);
-                            self.images.removeByPtr(kv.key_ptr);
-                        },
-                    }
-                }
-            }
+            try self.uploadKittyImages();
 
             // Update custom shader uniforms if necessary.
             try self.updateCustomShaderUniforms();
@@ -1391,23 +1376,43 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 }});
                 defer pass.complete();
 
-                // bg images
-                try self.drawImagePlacements(&pass, self.image_placements.items[0..self.image_bg_end]);
-                // bg
+                // First we draw the background color.
+                //
+                // NOTE: We don't use the clear_color for this because that
+                //       would require us to do color space conversion on the
+                //       CPU-side. In the future when we have utilities for
+                //       that we should remove this step and use clear_color.
                 pass.step(.{
-                    .pipeline = self.shaders.cell_bg_pipeline,
+                    .pipeline = self.shaders.pipelines.bg_color,
                     .uniforms = frame.uniforms.buffer,
                     .buffers = &.{ null, frame.cells_bg.buffer },
-                    .draw = .{
-                        .type = .triangle,
-                        .vertex_count = 3,
-                    },
+                    .draw = .{ .type = .triangle, .vertex_count = 3 },
                 });
-                // mg images
-                try self.drawImagePlacements(&pass, self.image_placements.items[self.image_bg_end..self.image_text_end]);
-                // text
+
+                // Then we draw any kitty images that need
+                // to be behind text AND cell backgrounds.
+                try self.drawImagePlacements(
+                    &pass,
+                    self.image_placements.items[0..self.image_bg_end],
+                );
+
+                // Then we draw any opaque cell backgrounds.
                 pass.step(.{
-                    .pipeline = self.shaders.cell_text_pipeline,
+                    .pipeline = self.shaders.pipelines.cell_bg,
+                    .uniforms = frame.uniforms.buffer,
+                    .buffers = &.{ null, frame.cells_bg.buffer },
+                    .draw = .{ .type = .triangle, .vertex_count = 3 },
+                });
+
+                // Kitty images between cell backgrounds and text.
+                try self.drawImagePlacements(
+                    &pass,
+                    self.image_placements.items[self.image_bg_end..self.image_text_end],
+                );
+
+                // Text.
+                pass.step(.{
+                    .pipeline = self.shaders.pipelines.cell_text,
                     .uniforms = frame.uniforms.buffer,
                     .buffers = &.{
                         frame.cells.buffer,
@@ -1423,20 +1428,18 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                         .instance_count = fg_count,
                     },
                 });
-                // fg images
-                try self.drawImagePlacements(&pass, self.image_placements.items[self.image_text_end..]);
+
+                // Kitty images in front of text.
+                try self.drawImagePlacements(
+                    &pass,
+                    self.image_placements.items[self.image_text_end..],
+                );
             }
 
             // If we have custom shaders, then we render them.
             if (frame.custom_shader_state) |*state| {
-                // We create a buffer on the GPU for our post uniforms.
-                // TODO: This should be a part of the frame state tbqh.
-                const PostBuffer = Buffer(shadertoy.Uniforms);
-                const uniform_buffer = try PostBuffer.initFill(
-                    self.api.bufferOptions(),
-                    &.{self.custom_shader_uniforms},
-                );
-                defer uniform_buffer.deinit();
+                // Sync our uniforms.
+                try state.uniforms.sync(&.{self.custom_shader_uniforms});
 
                 for (self.shaders.post_pipelines, 0..) |pipeline, i| {
                     defer state.swap();
@@ -1452,7 +1455,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
                     pass.step(.{
                         .pipeline = pipeline,
-                        .uniforms = uniform_buffer.buffer,
+                        .uniforms = state.uniforms.buffer,
                         .textures = &.{state.back_texture},
                         .draw = .{
                             .type = .triangle,
@@ -1539,7 +1542,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 defer buf.deinit();
 
                 pass.step(.{
-                    .pipeline = self.shaders.image_pipeline,
+                    .pipeline = self.shaders.pipelines.image,
                     .buffers = &.{buf.buffer},
                     .textures = &.{texture},
                     .draw = .{
@@ -1551,8 +1554,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         }
 
         /// This goes through the Kitty graphic placements and accumulates the
-        /// placements we need to render on our viewport. It also ensures that
-        /// the visible images are loaded on the GPU.
+        /// placements we need to render on our viewport.
         fn prepKittyGraphics(
             self: *Self,
             t: *terminal.Terminal,
@@ -1589,7 +1591,8 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             const top_y = t.screen.pages.pointFromPin(.screen, top).?.screen.y;
             const bot_y = t.screen.pages.pointFromPin(.screen, bot).?.screen.y;
 
-            // Go through the placements and ensure the image is loaded on the GPU.
+            // Go through the placements and ensure the image is
+            // on the GPU or else is ready to be sent to the GPU.
             var it = storage.placements.iterator();
             while (it.next()) |kv| {
                 const p = kv.value_ptr;
@@ -1648,8 +1651,8 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 }.lessThan,
             );
 
-            // Find our indices. The values are sorted by z so we can find the
-            // first placement out of bounds to find the limits.
+            // Find our indices. The values are sorted by z so we can
+            // find the first placement out of bounds to find the limits.
             var bg_end: ?u32 = null;
             var text_end: ?u32 = null;
             const bg_limit = std.math.minInt(i32) / 2;
@@ -1662,8 +1665,14 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 }
             }
 
-            self.image_bg_end = bg_end orelse 0;
-            self.image_text_end = text_end orelse self.image_bg_end;
+            // If we didn't see any images with a z > the bg limit,
+            // then our bg end is the end of our placement list.
+            self.image_bg_end =
+                bg_end orelse @intCast(self.image_placements.items.len);
+
+            // Same idea for the image_text_end.
+            self.image_text_end =
+                text_end orelse @intCast(self.image_placements.items.len);
         }
 
         fn prepKittyVirtualPlacement(
@@ -1704,7 +1713,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 unreachable;
             };
 
-            // Send our image to the GPU and store the placement for rendering.
+            // Prepare the image for the GPU and store the placement.
             try self.prepKittyImage(&image);
             try self.image_placements.append(self.alloc, .{
                 .image_id = image.id,
@@ -1722,6 +1731,8 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             });
         }
 
+        /// Get the viewport-relative position for this
+        /// placement and add it to the placements list.
         fn prepKittyPlacement(
             self: *Self,
             t: *terminal.Terminal,
@@ -1785,6 +1796,8 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             }
         }
 
+        /// Prepare the provided image for upload to the GPU by copying its
+        /// data with our allocator and setting it to the pending state.
         fn prepKittyImage(
             self: *Self,
             image: *const terminal.kitty.graphics.Image,
@@ -1830,6 +1843,35 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             }
 
             gop.value_ptr.transmit_time = image.transmit_time;
+        }
+
+        /// Upload any images to the GPU that need to be uploaded,
+        /// and remove any images that are no longer needed on the GPU.
+        fn uploadKittyImages(self: *Self) !void {
+            var image_it = self.images.iterator();
+            while (image_it.next()) |kv| {
+                switch (kv.value_ptr.image) {
+                    .ready => {},
+
+                    .pending_gray,
+                    .pending_gray_alpha,
+                    .pending_rgb,
+                    .pending_rgba,
+                    .replace_gray,
+                    .replace_gray_alpha,
+                    .replace_rgb,
+                    .replace_rgba,
+                    => try kv.value_ptr.image.upload(self.alloc, &self.api),
+
+                    .unload_pending,
+                    .unload_replace,
+                    .unload_ready,
+                    => {
+                        kv.value_ptr.image.deinit(self.alloc);
+                        self.images.removeByPtr(kv.key_ptr);
+                    },
+                }
+            }
         }
 
         /// Update the configuration.
@@ -2378,8 +2420,6 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                         const bg_alpha: u8 = bg_alpha: {
                             const default: u8 = 255;
 
-                            if (self.config.background_opacity >= 1) break :bg_alpha default;
-
                             // Cells that are selected should be fully opaque.
                             if (selected) break :bg_alpha default;
 
@@ -2387,12 +2427,12 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                             if (style.flags.inverse) break :bg_alpha default;
 
                             // Cells that have an explicit bg color should be fully opaque.
-                            if (bg_style != null) {
-                                break :bg_alpha default;
-                            }
+                            if (bg_style != null) break :bg_alpha default;
 
-                            // Otherwise, we use the configured background opacity.
-                            break :bg_alpha @intFromFloat(@round(self.config.background_opacity * 255.0));
+                            // Otherwise, we won't draw the bg for this cell,
+                            // we'll let the already-drawn background color
+                            // show through.
+                            break :bg_alpha 0;
                         };
 
                         self.cells.bgCell(y, x).* = .{
@@ -2769,7 +2809,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 return;
             }
 
-            const mode: shaderpkg.CellText.Mode = switch (try fgMode(
+            const mode: shaderpkg.CellText.Mode = switch (fgMode(
                 render.presentation,
                 cell_pin,
             )) {

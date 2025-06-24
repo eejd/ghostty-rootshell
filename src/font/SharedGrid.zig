@@ -79,7 +79,7 @@ pub fn init(
 
     var atlas_grayscale = try Atlas.init(alloc, 512, .grayscale);
     errdefer atlas_grayscale.deinit(alloc);
-    var atlas_color = try Atlas.init(alloc, 512, .rgba);
+    var atlas_color = try Atlas.init(alloc, 512, .bgra);
     errdefer atlas_color.deinit(alloc);
 
     var result: SharedGrid = .{

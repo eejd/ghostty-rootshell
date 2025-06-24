@@ -216,45 +216,34 @@ vertex FullScreenVertexOut full_screen_vertex(
 }
 
 //-------------------------------------------------------------------
-// Cell Background Shader
+// Background Color Shader
 //-------------------------------------------------------------------
-#pragma mark - Cell BG Shader
+#pragma mark - BG Color Shader
 
-struct CellBgVertexOut {
-  float4 position [[position]];
-  float4 bg_color;
-};
-
-vertex CellBgVertexOut cell_bg_vertex(
-  uint vid [[vertex_id]],
+fragment float4 bg_color_fragment(
+  FullScreenVertexOut in [[stage_in]],
   constant Uniforms& uniforms [[buffer(1)]]
 ) {
-  CellBgVertexOut out;
-
-  float4 position;
-  position.x = (vid == 2) ? 3.0 : -1.0;
-  position.y = (vid == 0) ? -3.0 : 1.0;
-  position.zw = 1.0;
-  out.position = position;
-
-  // Convert the background color to Display P3
-  out.bg_color = load_color(
+  return load_color(
     uniforms.bg_color,
     uniforms.use_display_p3,
     uniforms.use_linear_blending
   );
-
-  return out;
 }
 
+//-------------------------------------------------------------------
+// Cell Background Shader
+//-------------------------------------------------------------------
+#pragma mark - Cell BG Shader
+
 fragment float4 cell_bg_fragment(
-  CellBgVertexOut in [[stage_in]],
+  FullScreenVertexOut in [[stage_in]],
   constant Uniforms& uniforms [[buffer(1)]],
   constant uchar4 *cells [[buffer(2)]]
 ) {
   int2 grid_pos = int2(floor((in.position.xy - uniforms.grid_padding.wx) / uniforms.cell_size));
 
-  float4 bg = in.bg_color;
+  float4 bg = float4(0.0);
 
   // Clamp x position, extends edge bg colors in to padding on sides.
   if (grid_pos.x < 0) {
@@ -289,16 +278,7 @@ fragment float4 cell_bg_fragment(
   // Load the color for the cell.
   uchar4 cell_color = cells[grid_pos.y * uniforms.grid_size.x + grid_pos.x];
 
-  // We have special case handling for when the cell color matches the bg color.
-  if (all(cell_color == uniforms.bg_color)) {
-    return bg;
-  }
-
   // Convert the color and return it.
-  //
-  // TODO: We may want to blend the color with the background
-  //       color, rather than purely replacing it, this needs
-  //       some consideration about config options though.
   //
   // TODO: It might be a good idea to do a pass before this
   //       to convert all of the bg colors, so we don't waste
@@ -462,6 +442,13 @@ vertex CellTextVertexOut cell_text_vertex(
     uniforms.use_display_p3,
     true
   );
+  // Blend it with the global bg color
+  float4 global_bg = load_color(
+    uniforms.bg_color,
+    uniforms.use_display_p3,
+    true
+  );
+  out.bg_color += global_bg * (1.0 - out.bg_color.a);
 
   // If we have a minimum contrast, we need to check if we need to
   // change the color of the text to ensure it has enough contrast
@@ -566,19 +553,19 @@ fragment float4 cell_text_fragment(
     }
 
     case MODE_TEXT_COLOR: {
-      // For now, we assume that color glyphs are
-      // already premultiplied Display P3 colors.
+      // For now, we assume that color glyphs
+      // are already premultiplied linear colors.
       float4 color = textureColor.sample(textureSampler, in.tex_coord);
 
-      // If we aren't doing linear blending, we can return this right away.
-      if (!uniforms.use_linear_blending) {
+      // If we're doing linear blending, we can return this right away.
+      if (uniforms.use_linear_blending) {
         return color;
       }
 
-      // Otherwise we need to linearize the color. Since the alpha is
-      // premultiplied, we need to divide it out before linearizing.
+      // Otherwise we need to unlinearize the color. Since the alpha is
+      // premultiplied, we need to divide it out before unlinearizing.
       color.rgb /= color.a;
-      color = linearize(color);
+      color = unlinearize(color);
       color.rgb *= color.a;
 
       return color;

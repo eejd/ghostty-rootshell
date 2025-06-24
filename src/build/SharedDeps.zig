@@ -75,7 +75,7 @@ fn initTarget(
     self.metallib = .create(b, .{
         .name = "Ghostty",
         .target = target,
-        .sources = &.{b.path("src/renderer/shaders/cell.metal")},
+        .sources = &.{b.path("src/renderer/shaders/shaders.metal")},
     });
 
     // Change our config
