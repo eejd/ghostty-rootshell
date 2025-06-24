@@ -1753,9 +1753,9 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             if (img_top_y > bot_y) return;
             if (img_bot_y < top_y) return;
 
-            // We need to prep this image for upload if it isn't in the cache OR
-            // it is in the cache but the transmit time doesn't match meaning this
-            // image is different.
+            // We need to prep this image for upload if it isn't in the
+            // cache OR it is in the cache but the transmit time doesn't
+            // match meaning this image is different.
             try self.prepKittyImage(image);
 
             // Calculate the dimensions of our image, taking in to
@@ -1819,16 +1819,17 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             const pending: Image.Pending = .{
                 .width = image.width,
                 .height = image.height,
+                .pixel_format = switch (image.format) {
+                    .gray => .gray,
+                    .gray_alpha => .gray_alpha,
+                    .rgb => .rgb,
+                    .rgba => .rgba,
+                    .png => unreachable, // should be decoded by now
+                },
                 .data = data.ptr,
             };
 
-            const new_image: Image = switch (image.format) {
-                .gray => .{ .pending_gray = pending },
-                .gray_alpha => .{ .pending_gray_alpha = pending },
-                .rgb => .{ .pending_rgb = pending },
-                .rgba => .{ .pending_rgba = pending },
-                .png => unreachable, // should be decoded by now
-            };
+            const new_image: Image = .{ .pending = pending };
 
             if (!gop.found_existing) {
                 gop.value_ptr.* = .{
@@ -1842,6 +1843,8 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 );
             }
 
+            try gop.value_ptr.image.prepForUpload(self.alloc);
+
             gop.value_ptr.transmit_time = image.transmit_time;
         }
 
@@ -1850,27 +1853,13 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         fn uploadKittyImages(self: *Self) !void {
             var image_it = self.images.iterator();
             while (image_it.next()) |kv| {
-                switch (kv.value_ptr.image) {
-                    .ready => {},
-
-                    .pending_gray,
-                    .pending_gray_alpha,
-                    .pending_rgb,
-                    .pending_rgba,
-                    .replace_gray,
-                    .replace_gray_alpha,
-                    .replace_rgb,
-                    .replace_rgba,
-                    => try kv.value_ptr.image.upload(self.alloc, &self.api),
-
-                    .unload_pending,
-                    .unload_replace,
-                    .unload_ready,
-                    => {
-                        kv.value_ptr.image.deinit(self.alloc);
-                        self.images.removeByPtr(kv.key_ptr);
-                    },
+                const img = &kv.value_ptr.image;
+                if (img.isUnloading()) {
+                    img.deinit(self.alloc);
+                    self.images.removeByPtr(kv.key_ptr);
+                    return;
                 }
+                if (img.isPending()) try img.upload(self.alloc, &self.api);
             }
         }
 

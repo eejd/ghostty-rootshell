@@ -40,34 +40,27 @@ pub const ImageMap = std.AutoHashMapUnmanaged(u32, struct {
     transmit_time: std.time.Instant,
 });
 
-/// The state for a single image that is to be rendered. The image can be
-/// pending upload or ready to use with a texture.
+/// The state for a single image that is to be rendered.
 pub const Image = union(enum) {
-    /// The image is pending upload to the GPU. The different keys are
-    /// different formats since some formats aren't accepted by the GPU
-    /// and require conversion.
+    /// The image data is pending upload to the GPU.
     ///
-    /// This data is owned by this union so it must be freed once the
-    /// image is uploaded.
-    pending_gray: Pending,
-    pending_gray_alpha: Pending,
-    pending_rgb: Pending,
-    pending_rgba: Pending,
+    /// This data is owned by this union so it must be freed once uploaded.
+    pending: Pending,
 
-    /// This is the same as the pending states but there is a texture
-    /// already allocated that we want to replace.
-    replace_gray: Replace,
-    replace_gray_alpha: Replace,
-    replace_rgb: Replace,
-    replace_rgba: Replace,
+    /// This is the same as the pending states but there is
+    /// a texture already allocated that we want to replace.
+    replace: Replace,
 
     /// The image is uploaded and ready to be used.
     ready: Texture,
 
-    /// The image is uploaded but is scheduled to be unloaded.
-    unload_pending: []u8,
+    /// The image isn't uploaded yet but is scheduled to be unloaded.
+    unload_pending: Pending,
+    /// The image is uploaded and is scheduled to be unloaded.
     unload_ready: Texture,
-    unload_replace: struct { []u8, Texture },
+    /// The image is uploaded and scheduled to be replaced
+    /// with new data, but it's also scheduled to be unloaded.
+    unload_replace: Replace,
 
     pub const Replace = struct {
         texture: Texture,
@@ -78,51 +71,56 @@ pub const Image = union(enum) {
     pub const Pending = struct {
         height: u32,
         width: u32,
+        pixel_format: PixelFormat,
 
-        /// Data is always expected to be (width * height * depth). Depth
-        /// is based on the union key.
+        /// Data is always expected to be (width * height * bpp).
         data: [*]u8,
 
-        pub fn dataSlice(self: Pending, d: u32) []u8 {
-            return self.data[0..self.len(d)];
+        pub fn dataSlice(self: Pending) []u8 {
+            return self.data[0..self.len()];
         }
 
-        pub fn len(self: Pending, d: u32) u32 {
-            return self.width * self.height * d;
+        pub fn len(self: Pending) usize {
+            return self.width * self.height * self.pixel_format.bpp();
         }
+
+        pub const PixelFormat = enum {
+            /// 1 byte per pixel grayscale.
+            gray,
+            /// 2 bytes per pixel grayscale + alpha.
+            gray_alpha,
+            /// 3 bytes per pixel RGB.
+            rgb,
+            /// 3 bytes per pixel BGR.
+            bgr,
+            /// 4 byte per pixel RGBA.
+            rgba,
+            /// 4 byte per pixel BGRA.
+            bgra,
+
+            /// Get bytes per pixel for this format.
+            pub inline fn bpp(self: PixelFormat) usize {
+                return switch (self) {
+                    .gray => 1,
+                    .gray_alpha => 2,
+                    .rgb => 3,
+                    .bgr => 3,
+                    .rgba => 4,
+                    .bgra => 4,
+                };
+            }
+        };
     };
 
     pub fn deinit(self: Image, alloc: Allocator) void {
         switch (self) {
-            .pending_gray => |p| alloc.free(p.dataSlice(1)),
-            .pending_gray_alpha => |p| alloc.free(p.dataSlice(2)),
-            .pending_rgb => |p| alloc.free(p.dataSlice(3)),
-            .pending_rgba => |p| alloc.free(p.dataSlice(4)),
-            .unload_pending => |data| alloc.free(data),
+            .pending,
+            .unload_pending,
+            => |p| alloc.free(p.dataSlice()),
 
-            .replace_gray => |r| {
-                alloc.free(r.pending.dataSlice(1));
+            .replace, .unload_replace => |r| {
+                alloc.free(r.pending.dataSlice());
                 r.texture.deinit();
-            },
-
-            .replace_gray_alpha => |r| {
-                alloc.free(r.pending.dataSlice(2));
-                r.texture.deinit();
-            },
-
-            .replace_rgb => |r| {
-                alloc.free(r.pending.dataSlice(3));
-                r.texture.deinit();
-            },
-
-            .replace_rgba => |r| {
-                alloc.free(r.pending.dataSlice(4));
-                r.texture.deinit();
-            },
-
-            .unload_replace => |r| {
-                alloc.free(r[0]);
-                r[1].deinit();
             },
 
             .ready,
@@ -139,150 +137,55 @@ pub const Image = union(enum) {
             .unload_ready,
             => return,
 
-            .ready => |obj| .{ .unload_ready = obj },
-            .pending_gray => |p| .{ .unload_pending = p.dataSlice(1) },
-            .pending_gray_alpha => |p| .{ .unload_pending = p.dataSlice(2) },
-            .pending_rgb => |p| .{ .unload_pending = p.dataSlice(3) },
-            .pending_rgba => |p| .{ .unload_pending = p.dataSlice(4) },
-            .replace_gray => |r| .{ .unload_replace = .{
-                r.pending.dataSlice(1), r.texture,
-            } },
-            .replace_gray_alpha => |r| .{ .unload_replace = .{
-                r.pending.dataSlice(2), r.texture,
-            } },
-            .replace_rgb => |r| .{ .unload_replace = .{
-                r.pending.dataSlice(3), r.texture,
-            } },
-            .replace_rgba => |r| .{ .unload_replace = .{
-                r.pending.dataSlice(4), r.texture,
-            } },
+            .ready => |t| .{ .unload_ready = t },
+            .pending => |p| .{ .unload_pending = p },
+            .replace => |r| .{ .unload_replace = r },
         };
     }
 
-    /// Replace the currently pending image with a new one. This will
-    /// attempt to update the existing texture if it is already allocated.
-    /// If the texture is not allocated, this will act like a new upload.
-    ///
-    /// This function only marks the image for replace. The actual logic
-    /// to replace is done later.
+    /// Mark the current image to be replaced with a pending one. This will
+    /// attempt to update the existing texture if we have one, otherwise it
+    /// will act like a new upload.
     pub fn markForReplace(self: *Image, alloc: Allocator, img: Image) !void {
-        assert(img.pending() != null);
+        assert(img.isPending());
 
-        // Get our existing texture. This switch statement will also handle
-        // scenarios where there is no existing texture and we can modify
-        // the self pointer directly.
-        const existing: Texture = switch (self.*) {
-            // For pending, we can free the old
-            // data and become pending ourselves.
-            .pending_gray => |p| {
-                alloc.free(p.dataSlice(1));
-                self.* = img;
-                return;
-            },
-
-            .pending_gray_alpha => |p| {
-                alloc.free(p.dataSlice(2));
-                self.* = img;
-                return;
-            },
-
-            .pending_rgb => |p| {
-                alloc.free(p.dataSlice(3));
-                self.* = img;
-                return;
-            },
-
-            .pending_rgba => |p| {
-                alloc.free(p.dataSlice(4));
-                self.* = img;
-                return;
-            },
-
-            // If we're marked for unload but we just have pending data,
-            // this behaves the same as a normal "pending": free the data,
-            // become new pending.
-            .unload_pending => |data| {
-                alloc.free(data);
-                self.* = img;
-                return;
-            },
-
-            .unload_replace => |r| existing: {
-                alloc.free(r[0]);
-                break :existing r[1];
-            },
-
-            // If we were already pending a replacement, then we free
-            // our existing pending data and use the same texture.
-            .replace_gray => |r| existing: {
-                alloc.free(r.pending.dataSlice(1));
-                break :existing r.texture;
-            },
-
-            .replace_gray_alpha => |r| existing: {
-                alloc.free(r.pending.dataSlice(2));
-                break :existing r.texture;
-            },
-
-            .replace_rgb => |r| existing: {
-                alloc.free(r.pending.dataSlice(3));
-                break :existing r.texture;
-            },
-
-            .replace_rgba => |r| existing: {
-                alloc.free(r.pending.dataSlice(4));
-                break :existing r.texture;
-            },
-
-            // For both ready and unload_ready, we need to replace
-            // the texture. We can't do that here, so we just mark
-            // ourselves for replacement.
-            .ready, .unload_ready => |tex| tex,
-        };
-
-        // We now have an existing texture, so set the proper replace key.
-        self.* = switch (img) {
-            .pending_gray => |p| .{ .replace_gray = .{
-                .texture = existing,
-                .pending = p,
-            } },
-
-            .pending_gray_alpha => |p| .{ .replace_gray_alpha = .{
-                .texture = existing,
-                .pending = p,
-            } },
-
-            .pending_rgb => |p| .{ .replace_rgb = .{
-                .texture = existing,
-                .pending = p,
-            } },
-
-            .pending_rgba => |p| .{ .replace_rgba = .{
-                .texture = existing,
-                .pending = p,
-            } },
-
-            else => unreachable,
-        };
+        // If we have pending data right now, free it.
+        if (self.getPending()) |p| {
+            alloc.free(p.dataSlice());
+        }
+        // If we have an existing texture, use it in the replace.
+        if (self.getTexture()) |t| {
+            self.* = .{ .replace = .{
+                .texture = t,
+                .pending = img.getPending().?,
+            } };
+            return;
+        }
+        // Otherwise we just become a pending image.
+        self.* = .{ .pending = img.getPending().? };
     }
 
     /// Returns true if this image is pending upload.
     pub fn isPending(self: Image) bool {
-        return self.pending() != null;
+        return self.getPending() != null;
     }
 
-    /// Returns true if this image is pending an unload.
+    /// Returns true if this image has an associated texture.
+    pub fn hasTexture(self: Image) bool {
+        return self.getTexture() != null;
+    }
+
+    /// Returns true if this image is marked for unload.
     pub fn isUnloading(self: Image) bool {
         return switch (self) {
             .unload_pending,
+            .unload_replace,
             .unload_ready,
             => true,
 
+            .pending,
+            .replace,
             .ready,
-            .pending_gray,
-            .pending_gray_alpha,
-            .pending_rgb,
-            .pending_rgba,
             => false,
         };
     }
@@ -291,121 +194,107 @@ pub const Image = union(enum) {
     /// If the data is already in a format that can be uploaded, this is a
     /// no-op.
     pub fn convert(self: *Image, alloc: Allocator) wuffs.Error!void {
+        const p = self.getPendingPointer().?;
         // As things stand, we currently convert all images to RGBA before
         // uploading to the GPU. This just makes things easier. In the future
         // we may want to support other formats.
-        switch (self.*) {
-            .ready,
-            .unload_pending,
-            .unload_replace,
-            .unload_ready,
-            => unreachable, // invalid
-
-            .pending_rgba,
-            .replace_rgba,
-            => {}, // ready
-
-            .pending_rgb => |*p| {
-                const data = p.dataSlice(3);
-                const rgba = try wuffs.swizzle.rgbToRgba(alloc, data);
-                alloc.free(data);
-                p.data = rgba.ptr;
-                self.* = .{ .pending_rgba = p.* };
-            },
-
-            .replace_rgb => |*r| {
-                const data = r.pending.dataSlice(3);
-                const rgba = try wuffs.swizzle.rgbToRgba(alloc, data);
-                alloc.free(data);
-                r.pending.data = rgba.ptr;
-                self.* = .{ .replace_rgba = r.* };
-            },
-
-            .pending_gray => |*p| {
-                const data = p.dataSlice(1);
-                const rgba = try wuffs.swizzle.gToRgba(alloc, data);
-                alloc.free(data);
-                p.data = rgba.ptr;
-                self.* = .{ .pending_rgba = p.* };
-            },
-
-            .replace_gray => |*r| {
-                const data = r.pending.dataSlice(2);
-                const rgba = try wuffs.swizzle.gToRgba(alloc, data);
-                alloc.free(data);
-                r.pending.data = rgba.ptr;
-                self.* = .{ .replace_rgba = r.* };
-            },
-
-            .pending_gray_alpha => |*p| {
-                const data = p.dataSlice(2);
-                const rgba = try wuffs.swizzle.gaToRgba(alloc, data);
-                alloc.free(data);
-                p.data = rgba.ptr;
-                self.* = .{ .pending_rgba = p.* };
-            },
-
-            .replace_gray_alpha => |*r| {
-                const data = r.pending.dataSlice(2);
-                const rgba = try wuffs.swizzle.gaToRgba(alloc, data);
-                alloc.free(data);
-                r.pending.data = rgba.ptr;
-                self.* = .{ .replace_rgba = r.* };
-            },
-        }
+        if (p.pixel_format == .rgba) return;
+        // If the pending data isn't RGBA we'll need to swizzle it.
+        const data = p.dataSlice();
+        const rgba = try switch (p.pixel_format) {
+            .gray => wuffs.swizzle.gToRgba(alloc, data),
+            .gray_alpha => wuffs.swizzle.gaToRgba(alloc, data),
+            .rgb => wuffs.swizzle.rgbToRgba(alloc, data),
+            .bgr => wuffs.swizzle.bgrToRgba(alloc, data),
+            .rgba => unreachable,
+            .bgra => wuffs.swizzle.bgraToRgba(alloc, data),
+        };
+        alloc.free(data);
+        p.data = rgba.ptr;
+        p.pixel_format = .rgba;
     }
 
-    /// Upload the pending image to the GPU and change the state of this
-    /// image to ready.
+    /// Prepare the pending image data for upload to the GPU.
+    /// This doesn't need GPU access so is safe to call any time.
+    pub fn prepForUpload(self: *Image, alloc: Allocator) !void {
+        assert(self.isPending());
+
+        try self.convert(alloc);
+    }
+
+    /// Upload the pending image to the GPU and
+    /// change the state of this image to ready.
     pub fn upload(
         self: *Image,
         alloc: Allocator,
         api: *const GraphicsAPI,
     ) !void {
-        // Convert our data if we have to
-        try self.convert(alloc);
+        assert(self.isPending());
+
+        try self.prepForUpload(alloc);
 
         // Get our pending info
-        const p = self.pending().?;
+        const p = self.getPending().?;
 
         // Create our texture
         const texture = try Texture.init(
             api.imageTextureOptions(.rgba, true),
             @intCast(p.width),
             @intCast(p.height),
-            p.data[0 .. p.width * p.height * self.depth()],
+            p.dataSlice(),
         );
 
         // Uploaded. We can now clear our data and change our state.
         //
-        // NOTE: For "replace_*" states, this will free the old texture.
-        // We don't currently actually replace the existing texture in-place
-        // but that is an optimization we can do later.
+        // NOTE: For the `replace` state, this will free the old texture.
+        //       We don't currently actually replace the existing texture
+        //       in-place but that is an optimization we can do later.
         self.deinit(alloc);
         self.* = .{ .ready = texture };
     }
 
-    /// Our pixel depth
-    fn depth(self: Image) u32 {
+    /// Returns any pending image data for this image that requires upload.
+    ///
+    /// If there is no pending data to upload, returns null.
+    fn getPending(self: Image) ?Pending {
         return switch (self) {
-            .pending_rgb => 3,
-            .pending_rgba => 4,
-            .replace_rgb => 3,
-            .replace_rgba => 4,
-            else => unreachable,
+            .pending,
+            .unload_pending,
+            => |p| p,
+
+            .replace,
+            .unload_replace,
+            => |r| r.pending,
+
+            else => null,
         };
     }
 
-    /// Returns true if this image is in a pending state and requires upload.
-    fn pending(self: Image) ?Pending {
+    /// Returns the texture for this image.
+    ///
+    /// If there is no texture for it yet, returns null.
+    fn getTexture(self: Image) ?Texture {
         return switch (self) {
-            .pending_rgb,
-            .pending_rgba,
-            => |p| p,
+            .ready,
+            .unload_ready,
+            => |t| t,
 
-            .replace_rgb,
-            .replace_rgba,
-            => |r| r.pending,
+            .replace,
+            .unload_replace,
+            => |r| r.texture,
+
+            else => null,
+        };
+    }
+
+    // Same as getPending but returns a pointer instead of a copy.
+    fn getPendingPointer(self: *Image) ?*Pending {
+        return switch (self.*) {
+            .pending => return &self.pending,
+            .unload_pending => return &self.unload_pending,
+
+            .replace => return &self.replace.pending,
+            .unload_replace => return &self.unload_replace.pending,
 
             else => null,
         };
