@@ -8,7 +8,7 @@ msgstr ""
 "Project-Id-Version: com.mitchellh.ghostty\n"
 "Report-Msgid-Bugs-To: m@mitchellh.com\n"
 "POT-Creation-Date: 2025-04-23 16:58+0800\n"
-"PO-Revision-Date: 2025-06-24 09:21+0100\n"
+"PO-Revision-Date: 2025-06-24 12:42+0100\n"
 "Last-Translator: Aindriú Mac Giolla Eoin <aindriu80@gmail.com>\n"
 "Language-Team: Irish <gaeilge-gnulinux@lists.sourceforge.net>\n"
 "Language: ga\n"
@@ -118,18 +118,18 @@ msgstr "Athraigh teideal…"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:59
 msgid "Tab"
-msgstr "Cluaisín"
+msgstr "Táb"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:62
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:30
 #: src/apprt/gtk/Window.zig:255
 msgid "New Tab"
-msgstr "Cluaisín nua"
+msgstr "Táb nua"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:67
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:35
 msgid "Close Tab"
-msgstr "Dún cluaisín"
+msgstr "Dún táb"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:73
 msgid "Window"
@@ -220,7 +220,7 @@ msgstr "Príomh-Roghchlár"
 
 #: src/apprt/gtk/Window.zig:229
 msgid "View Open Tabs"
-msgstr "Féach ar na cluaisíní oscailte"
+msgstr "Féach ar na táib oscailte"
 
 #: src/apprt/gtk/Window.zig:256
 msgid "New Split"
@@ -258,7 +258,7 @@ msgstr "Dún fuinneog?"
 
 #: src/apprt/gtk/CloseDialog.zig:89
 msgid "Close Tab?"
-msgstr "Dún cluaisín?"
+msgstr "Dún táb?"
 
 #: src/apprt/gtk/CloseDialog.zig:90
 msgid "Close Split?"
@@ -274,7 +274,7 @@ msgstr "Cuirfear deireadh le gach seisiún teirminéil san fhuinneog seo."
 
 #: src/apprt/gtk/CloseDialog.zig:98
 msgid "All terminal sessions in this tab will be terminated."
-msgstr "Cuirfear deireadh le gach seisiún críochfoirt sa chluaisín seo."
+msgstr "Cuirfear deireadh le gach seisiún teirminéil sa táb seo."
 
 #: src/apprt/gtk/CloseDialog.zig:99
 msgid "The currently running process in this split will be terminated."
