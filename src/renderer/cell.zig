@@ -6,7 +6,7 @@ const font = @import("../font/main.zig");
 const terminal = @import("../terminal/main.zig");
 const renderer = @import("../renderer.zig");
 const shaderpkg = renderer.Renderer.API.shaders;
-const ArrayListPool = @import("../datastruct/array_list_pool.zig").ArrayListPool;
+const ArrayListCollection = @import("../datastruct/array_list_collection.zig").ArrayListCollection;
 
 /// The possible cell content keys that exist.
 pub const Key = enum {
@@ -49,9 +49,9 @@ pub const Contents = struct {
     /// of directly indexing in order to avoid integer size bugs.
     bg_cells: []shaderpkg.CellBg = undefined,
 
-    /// The ArrayListPool which holds all of the foreground cells. When sized
-    /// with Contents.resize the individual ArrayLists are given enough room
-    /// that they can hold a single row with #cols glyphs, underlines, and
+    /// The ArrayListCollection which holds all of the foreground cells. When
+    /// sized with Contents.resize the individual ArrayLists are given enough
+    /// room that they can hold a single row with #cols glyphs, underlines, and
     /// strikethroughs; however, appendAssumeCapacity MUST NOT be used since
     /// it is possible to exceed this with combining glyphs that add a glyph
     /// but take up no column since they combine with the previous one, as
@@ -65,12 +65,12 @@ pub const Contents = struct {
     /// composite.
     ///
     /// Rows are indexed as Contents.fg_rows[y + 1], because the first list in
-    /// the pool is reserved for the cursor, which must be the first item in
-    /// the buffer.
+    /// the collection is reserved for the cursor, which must be the first item
+    /// in the buffer.
     ///
     /// Must be initialized by calling resize on the Contents struct before
     /// calling any operations.
-    fg_rows: ArrayListPool(shaderpkg.CellText) = .{},
+    fg_rows: ArrayListCollection(shaderpkg.CellText) = .{ .lists = &.{} },
 
     pub fn deinit(self: *Contents, alloc: Allocator) void {
         alloc.free(self.bg_cells);
@@ -105,7 +105,7 @@ pub const Contents = struct {
         //
         // We have size.rows + 1 lists because index 0 is used for a special
         // list containing the cursor cell which needs to be first in the buffer.
-        var fg_rows = try ArrayListPool(shaderpkg.CellText).init(
+        var fg_rows = try ArrayListCollection(shaderpkg.CellText).init(
             alloc,
             size.rows + 1,
             size.columns * 3,
@@ -174,8 +174,8 @@ pub const Contents = struct {
             .strikethrough,
             .overline,
             // We have a special list containing the cursor cell at the start
-            // of our fg row pool, so we need to add 1 to the y to get the
-            // correct index.
+            // of our fg row collection, so we need to add 1 to the y to get
+            // the correct index.
             => try self.fg_rows.lists[y + 1].append(alloc, cell),
         }
     }
@@ -187,8 +187,8 @@ pub const Contents = struct {
         @memset(self.bg_cells[@as(usize, y) * self.size.columns ..][0..self.size.columns], .{ 0, 0, 0, 0 });
 
         // We have a special list containing the cursor cell at the start
-        // of our fg row pool, so we need to add 1 to the y to get the
-        // correct index.
+        // of our fg row collection, so we need to add 1 to the y to get
+        // the correct index.
         self.fg_rows.lists[y + 1].clearRetainingCapacity();
     }
 };
