@@ -4962,25 +4962,29 @@ pub const Keybinds = struct {
                 .{ .key = .{ .unicode = 'w' }, .mods = .{ .ctrl = true, .shift = true } },
                 .{ .close_tab = {} },
             );
-            try self.set.put(
+            try self.set.putFlags(
                 alloc,
                 .{ .key = .{ .physical = .arrow_left }, .mods = .{ .ctrl = true, .shift = true } },
                 .{ .previous_tab = {} },
+                .{ .performable = true },
             );
-            try self.set.put(
+            try self.set.putFlags(
                 alloc,
                 .{ .key = .{ .physical = .arrow_right }, .mods = .{ .ctrl = true, .shift = true } },
                 .{ .next_tab = {} },
+                .{ .performable = true },
             );
-            try self.set.put(
+            try self.set.putFlags(
                 alloc,
                 .{ .key = .{ .physical = .page_up }, .mods = .{ .ctrl = true } },
                 .{ .previous_tab = {} },
+                .{ .performable = true },
             );
-            try self.set.put(
+            try self.set.putFlags(
                 alloc,
                 .{ .key = .{ .physical = .page_down }, .mods = .{ .ctrl = true } },
                 .{ .next_tab = {} },
+                .{ .performable = true },
             );
             try self.set.put(
                 alloc,
@@ -4992,57 +4996,67 @@ pub const Keybinds = struct {
                 .{ .key = .{ .unicode = 'e' }, .mods = .{ .ctrl = true, .shift = true } },
                 .{ .new_split = .down },
             );
-            try self.set.put(
+            try self.set.putFlags(
                 alloc,
                 .{ .key = .{ .physical = .bracket_left }, .mods = .{ .ctrl = true, .super = true } },
                 .{ .goto_split = .previous },
+                .{ .performable = true },
             );
-            try self.set.put(
+            try self.set.putFlags(
                 alloc,
                 .{ .key = .{ .physical = .bracket_right }, .mods = .{ .ctrl = true, .super = true } },
                 .{ .goto_split = .next },
+                .{ .performable = true },
             );
-            try self.set.put(
+            try self.set.putFlags(
                 alloc,
                 .{ .key = .{ .physical = .arrow_up }, .mods = .{ .ctrl = true, .alt = true } },
                 .{ .goto_split = .up },
+                .{ .performable = true },
             );
-            try self.set.put(
+            try self.set.putFlags(
                 alloc,
                 .{ .key = .{ .physical = .arrow_down }, .mods = .{ .ctrl = true, .alt = true } },
                 .{ .goto_split = .down },
+                .{ .performable = true },
             );
-            try self.set.put(
+            try self.set.putFlags(
                 alloc,
                 .{ .key = .{ .physical = .arrow_left }, .mods = .{ .ctrl = true, .alt = true } },
                 .{ .goto_split = .left },
+                .{ .performable = true },
             );
-            try self.set.put(
+            try self.set.putFlags(
                 alloc,
                 .{ .key = .{ .physical = .arrow_right }, .mods = .{ .ctrl = true, .alt = true } },
                 .{ .goto_split = .right },
+                .{ .performable = true },
             );
 
             // Resizing splits
-            try self.set.put(
+            try self.set.putFlags(
                 alloc,
                 .{ .key = .{ .physical = .arrow_up }, .mods = .{ .super = true, .ctrl = true, .shift = true } },
                 .{ .resize_split = .{ .up, 10 } },
+                .{ .performable = true },
             );
-            try self.set.put(
+            try self.set.putFlags(
                 alloc,
                 .{ .key = .{ .physical = .arrow_down }, .mods = .{ .super = true, .ctrl = true, .shift = true } },
                 .{ .resize_split = .{ .down, 10 } },
+                .{ .performable = true },
             );
-            try self.set.put(
+            try self.set.putFlags(
                 alloc,
                 .{ .key = .{ .physical = .arrow_left }, .mods = .{ .super = true, .ctrl = true, .shift = true } },
                 .{ .resize_split = .{ .left, 10 } },
+                .{ .performable = true },
             );
-            try self.set.put(
+            try self.set.putFlags(
                 alloc,
                 .{ .key = .{ .physical = .arrow_right }, .mods = .{ .super = true, .ctrl = true, .shift = true } },
                 .{ .resize_split = .{ .right, 10 } },
+                .{ .performable = true },
             );
 
             // Viewport scrolling
@@ -5113,22 +5127,24 @@ pub const Keybinds = struct {
             const end: u21 = '8';
             var i: u21 = start;
             while (i <= end) : (i += 1) {
-                try self.set.put(
+                try self.set.putFlags(
                     alloc,
                     .{
                         .key = .{ .unicode = i },
                         .mods = mods,
                     },
                     .{ .goto_tab = (i - start) + 1 },
+                    .{ .performable = true },
                 );
             }
-            try self.set.put(
+            try self.set.putFlags(
                 alloc,
                 .{
                     .key = .{ .unicode = '9' },
                     .mods = mods,
                 },
                 .{ .last_tab = {} },
+                .{ .performable = true },
             );
         }
 
