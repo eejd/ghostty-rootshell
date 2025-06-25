@@ -228,7 +228,7 @@ pub fn init(b: *std.Build, cfg: *const Config) !GhosttyResources {
             formatService(
                 b,
                 cfg,
-                b.path("dist/linux/app.desktop"),
+                b.path("dist/linux/app.desktop.in"),
                 b.fmt(
                     "share/applications/com.mitchellh.ghostty{s}.desktop",
                     .{
@@ -245,7 +245,7 @@ pub fn init(b: *std.Build, cfg: *const Config) !GhosttyResources {
             formatService(
                 b,
                 cfg,
-                b.path("dist/linux/dbus.service"),
+                b.path("dist/linux/dbus.service.in"),
                 b.fmt(
                     "share/dbus-1/services/com.mitchellh.ghostty{s}.service",
                     .{
@@ -263,7 +263,7 @@ pub fn init(b: *std.Build, cfg: *const Config) !GhosttyResources {
                 formatService(
                     b,
                     cfg,
-                    b.path("dist/linux/systemd.service"),
+                    b.path("dist/linux/systemd.service.in"),
                     b.fmt(
                         "{s}/systemd/user/com.mitchellh.ghostty{s}.service",
                         .{
@@ -282,7 +282,7 @@ pub fn init(b: *std.Build, cfg: *const Config) !GhosttyResources {
             formatService(
                 b,
                 cfg,
-                b.path("dist/linux/com.mitchellh.ghostty.metainfo.xml"),
+                b.path("dist/linux/com.mitchellh.ghostty.metainfo.xml.in"),
                 b.fmt(
                     "share/metainfo/com.mitchellh.ghostty{s}.metainfo.xml",
                     .{
