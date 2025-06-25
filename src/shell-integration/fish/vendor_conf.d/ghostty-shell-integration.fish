@@ -87,89 +87,86 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
     end
 
     # SSH Integration
-    if string match -qr 'ssh-(env|terminfo)' "$GHOSTTY_SHELL_FEATURES"
-        if string match -qr ssh-terminfo "$GHOSTTY_SHELL_FEATURES"
-            set -g _cache_script "$GHOSTTY_RESOURCES_DIR/shell-integration/shared/ghostty-ssh-cache"
+    if string match -qr 'ssh-(env|terminfo)' $GHOSTTY_SHELL_FEATURES
 
-            # Wrap ghostty command to provide cache management commands
-            function ghostty -d "Wrap ghostty to provide cache management commands"
-                switch "$argv[1]"
-                    case ssh-cache-list
-                        command "$_cache_script" list
-                    case ssh-cache-clear
-                        command "$_cache_script" clear
-                    case "*"
-                        command ghostty $argv
-                end
-            end
+        if string match -q '*ssh-terminfo*' $GHOSTTY_SHELL_FEATURES
+            set -g _CACHE "$GHOSTTY_RESOURCES_DIR/shell-integration/shared/ghostty-ssh-cache"
         end
 
         # SSH wrapper
         function ssh
-            set -l e
-            set -l o
-            set -l c
+            set -l env
+            set -l opts
+            set -l ctrl
 
             # Set up env vars first so terminfo installation inherits them
-            if string match -qr ssh-env "$GHOSTTY_SHELL_FEATURES"
-                set -gx COLORTERM (test -n "$COLORTERM" && echo "$COLORTERM" || echo "truecolor")
-                set -gx TERM_PROGRAM (test -n "$TERM_PROGRAM" && echo "$TERM_PROGRAM" || echo "ghostty")
-                test -n "$GHOSTTY_VERSION" && set -gx TERM_PROGRAM_VERSION "$GHOSTTY_VERSION"
+            if string match -q '*ssh-env*' $GHOSTTY_SHELL_FEATURES
+                set -l vars \
+                    COLORTERM=truecolor \
+                    TERM_PROGRAM=ghostty
 
-                set -l vars COLORTERM=truecolor TERM_PROGRAM=ghostty
-                test -n "$GHOSTTY_VERSION" && set vars $vars "TERM_PROGRAM_VERSION=$GHOSTTY_VERSION"
+                if test -n "$GHOSTTY_VERSION"
+                    set -a vars "TERM_PROGRAM_VERSION=$GHOSTTY_VERSION"
+                end
 
                 for v in $vars
-                    set -l varname (string split -m1 '=' "$v")[1]
-                    set o $o -o "SendEnv $varname" -o "SetEnv $v"
+                    set -l parts (string split = $v)
+                    set -gx $parts[1] $parts[2]
+                    set -a opts -o "SendEnv $parts[1]" -o "SetEnv $v"
                 end
             end
 
             # Install terminfo if needed, reuse control connection for main session
-            if string match -qr ssh-terminfo "$GHOSTTY_SHELL_FEATURES"
-                # Get target (only when needed for terminfo)
-                set -l t (builtin command ssh -G $argv 2>/dev/null | awk '/^(user|hostname) /{print $2}' | paste -sd'@')
+            if string match -q '*ssh-terminfo*' $GHOSTTY_SHELL_FEATURES
+                # Get target
+                set -l target (command ssh -G $argv 2>/dev/null | awk '/^(user|hostname) /{print $2}' | paste -sd'@')
 
-                if test -n "$t" && command "$_cache_script" chk "$t"
-                    set e $e TERM=xterm-ghostty
+                if test -n "$target" -a ("$_CACHE" chk "$target")
+                    set -a env TERM=xterm-ghostty
                 else if command -v infocmp >/dev/null 2>&1
-                    set -l ti
-                    set ti (infocmp -x xterm-ghostty 2>/dev/null) || builtin echo "Warning: xterm-ghostty terminfo not found locally." >&2
-                    if test -n "$ti"
-                        builtin echo "Setting up Ghostty terminfo on remote host..." >&2
-                        set -l cp "/tmp/ghostty-ssh-$USER-"(random)"-"(date +%s)
-                        set -l result (builtin echo "$ti" | builtin command ssh $o -o ControlMaster=yes -o ControlPath="$cp" -o ControlPersist=60s $argv '
+                    set -l tinfo (infocmp -x xterm-ghostty 2>/dev/null)
+                    set -l status_code $status
+
+                    if test $status_code -ne 0
+                        echo "Warning: xterm-ghostty terminfo not found locally." >&2
+                    end
+
+                    if test -n "$tinfo"
+                        echo "Setting up Ghostty terminfo on remote host..." >&2
+                        set -l cpath "/tmp/ghostty-ssh-$USER-"(random)"-"(date +%s)
+                        set -l result (echo "$tinfo" | command ssh $opts -o ControlMaster=yes -o ControlPath="$cpath" -o ControlPersist=60s $argv '
                             infocmp xterm-ghostty >/dev/null 2>&1 && echo OK && exit
                             command -v tic >/dev/null 2>&1 || { echo NO_TIC; exit 1; }
                             mkdir -p ~/.terminfo 2>/dev/null && tic -x - 2>/dev/null && echo OK || echo FAIL
                         ')
+
                         switch $result
                             case OK
-                                builtin echo "Terminfo setup complete." >&2
-                                test -n "$t" && command "$_cache_script" add "$t"
-                                set e $e TERM=xterm-ghostty
-                                set c $c -o "ControlPath=$cp"
+                                echo "Terminfo setup complete." >&2
+                                test -n "$target" && "$_CACHE" add "$target"
+                                set -a env TERM=xterm-ghostty
+                                set -a ctrl -o "ControlPath=$cpath"
                             case '*'
-                                builtin echo "Warning: Failed to install terminfo." >&2
+                                echo "Warning: Failed to install terminfo." >&2
                         end
                     end
                 else
-                    builtin echo "Warning: infocmp not found locally. Terminfo installation unavailable." >&2
+                    echo "Warning: infocmp not found locally. Terminfo installation unavailable." >&2
                 end
             end
 
             # Fallback TERM only if terminfo didn't set it
-            if string match -qr ssh-env "$GHOSTTY_SHELL_FEATURES"
-                if test "$TERM" = xterm-ghostty && not string match -q '*TERM=*' "$e"
-                    set e $e TERM=xterm-256color
+            if string match -q '*ssh-env*' $GHOSTTY_SHELL_FEATURES
+                if test "$TERM" = xterm-ghostty -a ! (string join ' ' $env | string match -q '*TERM=*')
+                    set -a env TERM=xterm-256color
                 end
             end
 
             # Execute
-            if test (count $e) -gt 0
-                env $e ssh $o $c $argv
+            if test (count $env) -gt 0
+                env $env command ssh $opts $ctrl $argv
             else
-                builtin command ssh $o $c $argv
+                command ssh $opts $ctrl $argv
             end
         end
     end
