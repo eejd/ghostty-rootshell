@@ -223,20 +223,31 @@ pub fn init(b: *std.Build, cfg: *const Config) !GhosttyResources {
     if (cfg.target.result.os.tag == .linux) {
         // https://developer.gnome.org/documentation/guidelines/maintainer/integrating.html
 
+        const name = b.fmt("Ghostty{s}", .{
+            switch (cfg.optimize) {
+                .Debug, .ReleaseSafe => " (Debug)",
+                .ReleaseFast, .ReleaseSmall => "",
+            },
+        });
+
+        const app_id = b.fmt("com.mitchellh.ghostty{s}", .{
+            switch (cfg.optimize) {
+                .Debug, .ReleaseSafe => "-debug",
+                .ReleaseFast, .ReleaseSmall => "",
+            },
+        });
+
         // Desktop file so that we have an icon and other metadata
         try steps.append(
             formatService(
                 b,
                 cfg,
+                name,
+                app_id,
                 b.path("dist/linux/app.desktop.in"),
                 b.fmt(
-                    "share/applications/com.mitchellh.ghostty{s}.desktop",
-                    .{
-                        switch (cfg.optimize) {
-                            .Debug, .ReleaseSafe => "-debug",
-                            .ReleaseFast, .ReleaseSmall => "",
-                        },
-                    },
+                    "share/applications/{s}.desktop",
+                    .{app_id},
                 ),
             ),
         );
@@ -245,15 +256,12 @@ pub fn init(b: *std.Build, cfg: *const Config) !GhosttyResources {
             formatService(
                 b,
                 cfg,
+                name,
+                app_id,
                 b.path("dist/linux/dbus.service.in"),
                 b.fmt(
-                    "share/dbus-1/services/com.mitchellh.ghostty{s}.service",
-                    .{
-                        switch (cfg.optimize) {
-                            .Debug, .ReleaseSafe => "-debug",
-                            .ReleaseFast, .ReleaseSmall => "",
-                        },
-                    },
+                    "share/dbus-1/services/{s}.service",
+                    .{app_id},
                 ),
             ),
         );
@@ -263,15 +271,14 @@ pub fn init(b: *std.Build, cfg: *const Config) !GhosttyResources {
                 formatService(
                     b,
                     cfg,
+                    name,
+                    app_id,
                     b.path("dist/linux/systemd.service.in"),
                     b.fmt(
-                        "{s}/systemd/user/com.mitchellh.ghostty{s}.service",
+                        "{s}/systemd/user/{s}.service",
                         .{
                             if (b.graph.system_package_mode) "lib" else "share",
-                            switch (cfg.optimize) {
-                                .Debug, .ReleaseSafe => "-debug",
-                                .ReleaseFast, .ReleaseSmall => "",
-                            },
+                            app_id,
                         },
                     ),
                 ),
@@ -282,15 +289,12 @@ pub fn init(b: *std.Build, cfg: *const Config) !GhosttyResources {
             formatService(
                 b,
                 cfg,
+                name,
+                app_id,
                 b.path("dist/linux/com.mitchellh.ghostty.metainfo.xml.in"),
                 b.fmt(
-                    "share/metainfo/com.mitchellh.ghostty{s}.metainfo.xml",
-                    .{
-                        switch (cfg.optimize) {
-                            .Debug, .ReleaseSafe => "-debug",
-                            .ReleaseFast, .ReleaseSmall => "",
-                        },
-                    },
+                    "share/metainfo/{s}.metainfo.xml",
+                    .{app_id},
                 ),
             ),
         );
@@ -364,28 +368,25 @@ pub fn install(self: *const GhosttyResources) void {
     for (self.steps) |step| b.getInstallStep().dependOn(step);
 }
 
-pub fn formatService(b: *std.Build, cfg: *const Config, src: std.Build.LazyPath, dest: []const u8) *std.Build.Step {
+pub fn formatService(
+    b: *std.Build,
+    cfg: *const Config,
+    name: []const u8,
+    app_id: []const u8,
+    src: std.Build.LazyPath,
+    dest: []const u8,
+) *std.Build.Step {
     var cmd = b.addSystemCommand(&.{"sed"});
     cmd.setStdIn(.{ .lazy_path = src });
     const output = cmd.captureStdOut();
 
     cmd.addArg(b.fmt(
         "-e s!@@NAME@@!{s}!g",
-        .{
-            switch (cfg.optimize) {
-                .Debug, .ReleaseSafe => " (Debug)",
-                .ReleaseFast, .ReleaseSmall => "",
-            },
-        },
+        .{name},
     ));
     cmd.addArg(b.fmt(
-        "-e s!@@DEBUG@@!{s}!g",
-        .{
-            switch (cfg.optimize) {
-                .Debug, .ReleaseSafe => "-debug",
-                .ReleaseFast, .ReleaseSmall => "",
-            },
-        },
+        "-e s!@@APPID@@!{s}!g",
+        .{app_id},
     ));
     cmd.addArg(b.fmt(
         "-e s!@@GHOSTTY@@!{s}/bin/ghostty!g",

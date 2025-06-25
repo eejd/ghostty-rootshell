@@ -1,6 +1,6 @@
 [Desktop Entry]
 Version=1.0
-Name=Ghostty@@NAME@@
+Name=@@NAME@@
 Type=Application
 Comment=A terminal emulator
 TryExec=@@GHOSTTY@@
@@ -9,7 +9,7 @@ Icon=com.mitchellh.ghostty
 Categories=System;TerminalEmulator;
 Keywords=terminal;tty;pty;
 StartupNotify=true
-StartupWMClass=com.mitchellh.ghostty@@DEBUG@@
+StartupWMClass=@@APPID@@
 Terminal=false
 Actions=new-window;
 X-GNOME-UsesNotifications=true

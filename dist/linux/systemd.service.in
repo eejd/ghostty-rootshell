@@ -1,7 +1,7 @@
 [Unit]
-Description=Ghostty@@NAME@@
+Description=@@NAME@@
 
 [Service]
 Type=dbus
-BusName=com.mitchellh.ghostty@@DEBUG@@
+BusName=@@APPID@@
 ExecStart=@@GHOSTTY@@ --launched-from=systemd

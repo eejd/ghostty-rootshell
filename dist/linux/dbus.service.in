@@ -1,4 +1,4 @@
 [D-BUS Service]
-Name=com.mitchellh.ghostty@@DEBUG@@
-SystemdService=com.mitchellh.ghostty@@DEBUG@@.service
+Name=@@APPID@@
+SystemdService=@@APPID@@.service
 Exec=@@GHOSTTY@@ --launched-from=dbus
