@@ -405,15 +405,11 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
     // This just calls the `activate` signal but its part of the normal startup
     // routine so we just call it, but only if the config allows it (this allows
     // for launching Ghostty in the "background" without immediately opening
-    // a window). An initial window will not be immediately created if we were
-    // launched by D-Bus activation or systemd.  D-Bus activation will send it's
-    // own `activate` or `new-window` signal later.
+    // a window)
     //
     // https://gitlab.gnome.org/GNOME/glib/-/blob/bd2ccc2f69ecfd78ca3f34ab59e42e2b462bad65/gio/gapplication.c#L2302
-    if (config.@"initial-window") switch (config.@"launched-from".?) {
-        .desktop, .cli => gio_app.activate(),
-        .dbus, .systemd => {},
-    };
+    if (config.@"initial-window")
+        gio_app.activate();
 
     // Internally, GTK ensures that only one instance of this provider exists in the provider list
     // for the display.
@@ -1687,17 +1683,6 @@ fn gtkActionShowGTKInspector(
     };
 }
 
-fn gtkActionNewWindow(
-    _: *gio.SimpleAction,
-    _: ?*glib.Variant,
-    self: *App,
-) callconv(.c) void {
-    log.info("received new window action", .{});
-    _ = self.core_app.mailbox.push(.{
-        .new_window = .{},
-    }, .{ .forever = {} });
-}
-
 /// This is called to setup the action map that this application supports.
 /// This should be called only once on startup.
 fn initActions(self: *App) void {
@@ -1717,9 +1702,7 @@ fn initActions(self: *App) void {
         .{ "reload-config", gtkActionReloadConfig, null },
         .{ "present-surface", gtkActionPresentSurface, t },
         .{ "show-gtk-inspector", gtkActionShowGTKInspector, null },
-        .{ "new-window", gtkActionNewWindow, null },
     };
-
     inline for (actions) |entry| {
         const action = gio.SimpleAction.new(entry[0], entry[2]);
         defer action.unref();
