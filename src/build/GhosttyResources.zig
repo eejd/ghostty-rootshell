@@ -376,24 +376,26 @@ pub fn formatService(
     src: std.Build.LazyPath,
     dest: []const u8,
 ) *std.Build.Step {
-    var cmd = b.addSystemCommand(&.{"sed"});
-    cmd.setStdIn(.{ .lazy_path = src });
-    const output = cmd.captureStdOut();
+    var cmd = b.addExecutable(
+        .{
+            .name = "desktop-template",
+            .root_source_file = b.path("src/build/desktop_template.zig"),
+            .target = b.graph.host,
+        },
+    );
 
-    cmd.addArg(b.fmt(
-        "-e s!@@NAME@@!{s}!g",
-        .{name},
-    ));
-    cmd.addArg(b.fmt(
-        "-e s!@@APPID@@!{s}!g",
-        .{app_id},
-    ));
-    cmd.addArg(b.fmt(
-        "-e s!@@GHOSTTY@@!{s}/bin/ghostty!g",
-        .{b.install_prefix},
-    ));
-    if (cfg.flatpak)
-        cmd.addArg("-e /^SystemdService=/d");
+    const options = b.addOptions();
+
+    options.addOption([]const u8, "app_id", app_id);
+    options.addOption([]const u8, "name", name);
+    options.addOption([]const u8, "ghostty", b.fmt("{s}/bin/ghostty", .{b.install_prefix}));
+    options.addOption(bool, "flatpak", cfg.flatpak);
+
+    cmd.root_module.addOptions("cfg", options);
+
+    const run = b.addRunArtifact(cmd);
+    run.setStdIn(.{ .lazy_path = src });
+    const output = run.captureStdOut();
 
     return &b.addInstallFile(output, dest).step;
 }
