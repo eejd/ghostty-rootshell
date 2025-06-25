@@ -258,15 +258,34 @@ pub fn init(b: *std.Build, cfg: *const Config) !GhosttyResources {
             ),
         );
         // systemd user service
+        if (!cfg.flatpak)
+            try steps.append(
+                formatService(
+                    b,
+                    cfg,
+                    b.path("dist/linux/systemd.service"),
+                    b.fmt(
+                        "{s}/systemd/user/com.mitchellh.ghostty{s}.service",
+                        .{
+                            if (cfg.system_package) "lib" else "share",
+                            switch (cfg.optimize) {
+                                .Debug, .ReleaseSafe => "-debug",
+                                .ReleaseFast, .ReleaseSmall => "",
+                            },
+                        },
+                    ),
+                ),
+            );
+
+        // AppStream metainfo so that application has rich metadata within app stores
         try steps.append(
             formatService(
                 b,
                 cfg,
-                b.path("dist/linux/systemd.service"),
+                b.path("dist/linux/com.mitchellh.ghostty.metainfo.xml"),
                 b.fmt(
-                    "{s}/systemd/user/com.mitchellh.ghostty{s}.service",
+                    "share/metainfo/com.mitchellh.ghostty{s}.metainfo.xml",
                     .{
-                        if (cfg.system_package) "lib" else "share",
                         switch (cfg.optimize) {
                             .Debug, .ReleaseSafe => "-debug",
                             .ReleaseFast, .ReleaseSmall => "",
@@ -275,12 +294,6 @@ pub fn init(b: *std.Build, cfg: *const Config) !GhosttyResources {
                 ),
             ),
         );
-
-        // AppStream metainfo so that application has rich metadata within app stores
-        try steps.append(&b.addInstallFile(
-            b.path("dist/linux/com.mitchellh.ghostty.metainfo.xml"),
-            "share/metainfo/com.mitchellh.ghostty.metainfo.xml",
-        ).step);
 
         // Right click menu action for Plasma desktop
         try steps.append(&b.addInstallFile(
@@ -360,7 +373,7 @@ pub fn formatService(b: *std.Build, cfg: *const Config, src: std.Build.LazyPath,
         "-e s!@@NAME@@!{s}!g",
         .{
             switch (cfg.optimize) {
-                .Debug, .ReleaseSafe => " Debug",
+                .Debug, .ReleaseSafe => " (Debug)",
                 .ReleaseFast, .ReleaseSmall => "",
             },
         },
@@ -378,6 +391,8 @@ pub fn formatService(b: *std.Build, cfg: *const Config, src: std.Build.LazyPath,
         "-e s!@@GHOSTTY@@!{s}/bin/ghostty!g",
         .{b.install_prefix},
     ));
+    if (cfg.flatpak)
+        cmd.addArg("-e /^SystemdService=/d");
 
     return &b.addInstallFile(output, dest).step;
 }
