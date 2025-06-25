@@ -466,6 +466,93 @@ background: Color = .{ .r = 0x28, .g = 0x2C, .b = 0x34 },
 /// Specified as either hex (`#RRGGBB` or `RRGGBB`) or a named X11 color.
 foreground: Color = .{ .r = 0xFF, .g = 0xFF, .b = 0xFF },
 
+/// Background image for the terminal.
+///
+/// This should be a path to a PNG or JPEG file, other image formats are
+/// not yet supported.
+///
+/// The background image is currently per-terminal, not per-window. If
+/// you are a heavy split user, the background image will be repeated across
+/// splits. A future improvement to Ghostty will address this.
+///
+/// WARNING: Background images are currently duplicated in VRAM per-terminal.
+/// For sufficiently large images, this could lead to a large increase in
+/// memory usage (specifically VRAM usage). A future Ghostty improvement
+/// will resolve this by sharing image textures across terminals.
+@"background-image": ?Path = null,
+
+/// Background image opacity.
+///
+/// This is relative to the value of `background-opacity`.
+///
+/// A value of `1.0` (the default) will result in the background image being
+/// placed on top of the general background color, and then the combined result
+/// will be adjusted to the opacity specified by `background-opacity`.
+///
+/// A value less than `1.0` will result in the background image being mixed
+/// with the general background color before the combined result is adjusted
+/// to the configured `background-opacity`.
+///
+/// A value greater than `1.0` will result in the background image having a
+/// higher opacity than the general background color. For instance, if the
+/// configured `background-opacity` is `0.5` and `background-image-opacity`
+/// is set to `1.5`, then the final opacity of the background image will be
+/// `0.5 * 1.5 = 0.75`.
+@"background-image-opacity": f32 = 1.0,
+
+/// Background image position.
+///
+/// Valid values are:
+///   * `top-left`
+///   * `top-center`
+///   * `top-right`
+///   * `center-left`
+///   * `center`
+///   * `center-right`
+///   * `bottom-left`
+///   * `bottom-center`
+///   * `bottom-right`
+///
+/// The default value is `center`.
+@"background-image-position": BackgroundImagePosition = .center,
+
+/// Background image fit.
+///
+/// Valid values are:
+///
+///  * `contain`
+///
+///     Preserving the aspect ratio, scale the background image to the largest
+///     size that can still be contained within the terminal, so that the whole
+///     image is visible.
+///
+///  * `cover`
+///
+///     Preserving the aspect ratio, scale the background image to the smallest
+///     size that can completely cover the terminal. This may result in one or
+///     more edges of the image being clipped by the edge of the terminal.
+///
+///  * `stretch`
+///
+///     Stretch the background image to the full size of the terminal, without
+///     preserving the aspect ratio.
+///
+///  * `none`
+///
+///     Don't scale the background image.
+///
+/// The default value is `contain`.
+@"background-image-fit": BackgroundImageFit = .contain,
+
+/// Whether to repeat the background image or not.
+///
+/// If this is set to true, the background image will be repeated if there
+/// would otherwise be blank space around it because it doesn't completely
+/// fill the terminal area.
+///
+/// The default value is `false`.
+@"background-image-repeat": bool = false,
+
 /// The foreground and background color for selection. If this is not set, then
 /// the selection color is just the inverted window background and foreground
 /// (note: not to be confused with the cell bg/fg).
@@ -1964,6 +2051,8 @@ keybind: Keybinds = .{},
 /// its default value is used, so you must explicitly disable features you don't
 /// want. You can also use `true` or `false` to turn all features on or off.
 ///
+/// Example: `cursor`, `no-cursor`, `sudo`, `no-sudo`, `title`, `no-title`
+///
 /// Available features:
 ///
 ///   * `cursor` - Set the cursor to a blinking bar at the prompt.
@@ -1989,9 +2078,29 @@ keybind: Keybinds = .{},
 /// when both `ssh-env` and `ssh-terminfo` are enabled, Ghostty will install its
 /// terminfo on remote hosts and use `xterm-ghostty` as TERM, falling back to
 /// `xterm-256color` with environment variables if terminfo installation fails.
-///
-/// Example: `cursor`, `no-cursor`, `sudo`, `no-sudo`, `title`, `no-title`
 @"shell-integration-features": ShellIntegrationFeatures = .{},
+
+/// Custom entries into the command palette.
+///
+/// Each entry requires the title, the corresponding action, and an optional
+/// description. Each field should be prefixed with the field name, a colon
+/// (`:`), and then the specified value. The syntax for actions is identical
+/// to the one for keybind actions. Whitespace in between fields is ignored.
+///
+/// ```ini
+/// command-palette-entry = title:Reset Font Style, action:csi:0m
+/// command-palette-entry = title:Crash on Main Thread,description:Causes a crash on the main (UI) thread.,action:crash:main
+/// ```
+///
+/// By default, the command palette is preloaded with most actions that might
+/// be useful in an interactive setting yet do not have easily accessible or
+/// memorizable shortcuts. The default entries can be cleared by setting this
+/// setting to an empty value:
+///
+/// ```ini
+/// command-palette-entry =
+/// ```
+@"command-palette-entry": RepeatableCommand = .{},
 
 /// Sets the reporting format for OSC sequences that request color information.
 /// Ghostty currently supports OSC 10 (foreground), OSC 11 (background), and
@@ -2802,6 +2911,9 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
     // Add our default keybindings
     try result.keybind.init(alloc);
 
+    // Add our default command palette entries
+    try result.@"command-palette-entry".init(alloc);
+
     // Add our default link for URL detection
     try result.link.links.append(alloc, .{
         .regex = url.regex,
@@ -3315,6 +3427,15 @@ fn expandPaths(self: *Config, base: []const u8) !void {
                     base,
                     &self._diagnostics,
                 );
+            },
+            ?RepeatablePath, ?Path => {
+                if (@field(self, field.name)) |*path| {
+                    try path.expand(
+                        arena_alloc,
+                        base,
+                        &self._diagnostics,
+                    );
+                }
             },
             else => {},
         }
@@ -4980,25 +5101,29 @@ pub const Keybinds = struct {
                 .{ .key = .{ .unicode = 'w' }, .mods = .{ .ctrl = true, .shift = true } },
                 .{ .close_tab = {} },
             );
-            try self.set.put(
+            try self.set.putFlags(
                 alloc,
                 .{ .key = .{ .physical = .arrow_left }, .mods = .{ .ctrl = true, .shift = true } },
                 .{ .previous_tab = {} },
+                .{ .performable = true },
             );
-            try self.set.put(
+            try self.set.putFlags(
                 alloc,
                 .{ .key = .{ .physical = .arrow_right }, .mods = .{ .ctrl = true, .shift = true } },
                 .{ .next_tab = {} },
+                .{ .performable = true },
             );
-            try self.set.put(
+            try self.set.putFlags(
                 alloc,
                 .{ .key = .{ .physical = .page_up }, .mods = .{ .ctrl = true } },
                 .{ .previous_tab = {} },
+                .{ .performable = true },
             );
-            try self.set.put(
+            try self.set.putFlags(
                 alloc,
                 .{ .key = .{ .physical = .page_down }, .mods = .{ .ctrl = true } },
                 .{ .next_tab = {} },
+                .{ .performable = true },
             );
             try self.set.put(
                 alloc,
@@ -5010,57 +5135,67 @@ pub const Keybinds = struct {
                 .{ .key = .{ .unicode = 'e' }, .mods = .{ .ctrl = true, .shift = true } },
                 .{ .new_split = .down },
             );
-            try self.set.put(
+            try self.set.putFlags(
                 alloc,
                 .{ .key = .{ .physical = .bracket_left }, .mods = .{ .ctrl = true, .super = true } },
                 .{ .goto_split = .previous },
+                .{ .performable = true },
             );
-            try self.set.put(
+            try self.set.putFlags(
                 alloc,
                 .{ .key = .{ .physical = .bracket_right }, .mods = .{ .ctrl = true, .super = true } },
                 .{ .goto_split = .next },
+                .{ .performable = true },
             );
-            try self.set.put(
+            try self.set.putFlags(
                 alloc,
                 .{ .key = .{ .physical = .arrow_up }, .mods = .{ .ctrl = true, .alt = true } },
                 .{ .goto_split = .up },
+                .{ .performable = true },
             );
-            try self.set.put(
+            try self.set.putFlags(
                 alloc,
                 .{ .key = .{ .physical = .arrow_down }, .mods = .{ .ctrl = true, .alt = true } },
                 .{ .goto_split = .down },
+                .{ .performable = true },
             );
-            try self.set.put(
+            try self.set.putFlags(
                 alloc,
                 .{ .key = .{ .physical = .arrow_left }, .mods = .{ .ctrl = true, .alt = true } },
                 .{ .goto_split = .left },
+                .{ .performable = true },
             );
-            try self.set.put(
+            try self.set.putFlags(
                 alloc,
                 .{ .key = .{ .physical = .arrow_right }, .mods = .{ .ctrl = true, .alt = true } },
                 .{ .goto_split = .right },
+                .{ .performable = true },
             );
 
             // Resizing splits
-            try self.set.put(
+            try self.set.putFlags(
                 alloc,
                 .{ .key = .{ .physical = .arrow_up }, .mods = .{ .super = true, .ctrl = true, .shift = true } },
                 .{ .resize_split = .{ .up, 10 } },
+                .{ .performable = true },
             );
-            try self.set.put(
+            try self.set.putFlags(
                 alloc,
                 .{ .key = .{ .physical = .arrow_down }, .mods = .{ .super = true, .ctrl = true, .shift = true } },
                 .{ .resize_split = .{ .down, 10 } },
+                .{ .performable = true },
             );
-            try self.set.put(
+            try self.set.putFlags(
                 alloc,
                 .{ .key = .{ .physical = .arrow_left }, .mods = .{ .super = true, .ctrl = true, .shift = true } },
                 .{ .resize_split = .{ .left, 10 } },
+                .{ .performable = true },
             );
-            try self.set.put(
+            try self.set.putFlags(
                 alloc,
                 .{ .key = .{ .physical = .arrow_right }, .mods = .{ .super = true, .ctrl = true, .shift = true } },
                 .{ .resize_split = .{ .right, 10 } },
+                .{ .performable = true },
             );
 
             // Viewport scrolling
@@ -5131,22 +5266,24 @@ pub const Keybinds = struct {
             const end: u21 = '8';
             var i: u21 = start;
             while (i <= end) : (i += 1) {
-                try self.set.put(
+                try self.set.putFlags(
                     alloc,
                     .{
                         .key = .{ .unicode = i },
                         .mods = mods,
                     },
                     .{ .goto_tab = (i - start) + 1 },
+                    .{ .performable = true },
                 );
             }
-            try self.set.put(
+            try self.set.putFlags(
                 alloc,
                 .{
                     .key = .{ .unicode = '9' },
                     .mods = mods,
                 },
                 .{ .last_tab = {} },
+                .{ .performable = true },
             );
         }
 
@@ -6118,6 +6255,150 @@ pub const ShellIntegrationFeatures = packed struct {
     @"ssh-terminfo": bool = false,
 };
 
+pub const RepeatableCommand = struct {
+    value: std.ArrayListUnmanaged(inputpkg.Command) = .empty,
+
+    pub fn init(self: *RepeatableCommand, alloc: Allocator) !void {
+        self.value = .empty;
+        try self.value.appendSlice(alloc, inputpkg.command.defaults);
+    }
+
+    pub fn parseCLI(
+        self: *RepeatableCommand,
+        alloc: Allocator,
+        input_: ?[]const u8,
+    ) !void {
+        // Unset or empty input clears the list
+        const input = input_ orelse "";
+        if (input.len == 0) {
+            self.value.clearRetainingCapacity();
+            return;
+        }
+
+        const cmd = try cli.args.parseAutoStruct(
+            inputpkg.Command,
+            alloc,
+            input,
+        );
+        try self.value.append(alloc, cmd);
+    }
+
+    /// Deep copy of the struct. Required by Config.
+    pub fn clone(self: *const RepeatableCommand, alloc: Allocator) Allocator.Error!RepeatableCommand {
+        const value = try self.value.clone(alloc);
+        for (value.items) |*item| {
+            item.* = try item.clone(alloc);
+        }
+
+        return .{ .value = value };
+    }
+
+    /// Compare if two of our value are equal. Required by Config.
+    pub fn equal(self: RepeatableCommand, other: RepeatableCommand) bool {
+        if (self.value.items.len != other.value.items.len) return false;
+        for (self.value.items, other.value.items) |a, b| {
+            if (!a.equal(b)) return false;
+        }
+
+        return true;
+    }
+
+    /// Used by Formatter
+    pub fn formatEntry(self: RepeatableCommand, formatter: anytype) !void {
+        if (self.value.items.len == 0) {
+            try formatter.formatEntry(void, {});
+            return;
+        }
+
+        var buf: [4096]u8 = undefined;
+        for (self.value.items) |item| {
+            const str = if (item.description.len > 0) std.fmt.bufPrint(
+                &buf,
+                "title:{s},description:{s},action:{}",
+                .{ item.title, item.description, item.action },
+            ) else std.fmt.bufPrint(
+                &buf,
+                "title:{s},action:{}",
+                .{ item.title, item.action },
+            );
+            try formatter.formatEntry([]const u8, str catch return error.OutOfMemory);
+        }
+    }
+
+    test "RepeatableCommand parseCLI" {
+        const testing = std.testing;
+        var arena = ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        var list: RepeatableCommand = .{};
+        try list.parseCLI(alloc, "title:Foo,action:ignore");
+        try list.parseCLI(alloc, "title:Bar,description:bobr,action:text:ale bydle");
+        try list.parseCLI(alloc, "title:Quux,description:boo,action:increase_font_size:2.5");
+
+        try testing.expectEqual(@as(usize, 3), list.value.items.len);
+
+        try testing.expectEqual(inputpkg.Binding.Action.ignore, list.value.items[0].action);
+        try testing.expectEqualStrings("Foo", list.value.items[0].title);
+
+        try testing.expect(list.value.items[1].action == .text);
+        try testing.expectEqualStrings("ale bydle", list.value.items[1].action.text);
+        try testing.expectEqualStrings("Bar", list.value.items[1].title);
+        try testing.expectEqualStrings("bobr", list.value.items[1].description);
+
+        try testing.expectEqual(
+            inputpkg.Binding.Action{ .increase_font_size = 2.5 },
+            list.value.items[2].action,
+        );
+        try testing.expectEqualStrings("Quux", list.value.items[2].title);
+        try testing.expectEqualStrings("boo", list.value.items[2].description);
+
+        try list.parseCLI(alloc, "");
+        try testing.expectEqual(@as(usize, 0), list.value.items.len);
+    }
+
+    test "RepeatableCommand formatConfig empty" {
+        const testing = std.testing;
+        var buf = std.ArrayList(u8).init(testing.allocator);
+        defer buf.deinit();
+
+        var list: RepeatableCommand = .{};
+        try list.formatEntry(formatterpkg.entryFormatter("a", buf.writer()));
+        try std.testing.expectEqualSlices(u8, "a = \n", buf.items);
+    }
+
+    test "RepeatableCommand formatConfig single item" {
+        const testing = std.testing;
+        var buf = std.ArrayList(u8).init(testing.allocator);
+        defer buf.deinit();
+
+        var arena = ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        var list: RepeatableCommand = .{};
+        try list.parseCLI(alloc, "title:Bobr, action:text:Bober");
+        try list.formatEntry(formatterpkg.entryFormatter("a", buf.writer()));
+        try std.testing.expectEqualSlices(u8, "a = title:Bobr,action:text:Bober\n", buf.items);
+    }
+
+    test "RepeatableCommand formatConfig multiple items" {
+        const testing = std.testing;
+        var buf = std.ArrayList(u8).init(testing.allocator);
+        defer buf.deinit();
+
+        var arena = ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        var list: RepeatableCommand = .{};
+        try list.parseCLI(alloc, "title:Bobr, action:text:kurwa");
+        try list.parseCLI(alloc, "title:Ja,   description: pierdole,  action:text:jakie bydle");
+        try list.formatEntry(formatterpkg.entryFormatter("a", buf.writer()));
+        try std.testing.expectEqualSlices(u8, "a = title:Bobr,action:text:kurwa\na = title:Ja,description:pierdole,action:text:jakie bydle\n", buf.items);
+    }
+};
+
 /// OSC 4, 10, 11, and 12 default color reporting format.
 pub const OSCColorReportFormat = enum {
     none,
@@ -6571,6 +6852,28 @@ pub const AlphaBlending = enum {
             .linear, .@"linear-corrected" => true,
         };
     }
+};
+
+/// See background-image-position
+pub const BackgroundImagePosition = enum {
+    @"top-left",
+    @"top-center",
+    @"top-right",
+    @"center-left",
+    @"center-center",
+    @"center-right",
+    @"bottom-left",
+    @"bottom-center",
+    @"bottom-right",
+    center,
+};
+
+/// See background-image-fit
+pub const BackgroundImageFit = enum {
+    contain,
+    cover,
+    stretch,
+    none,
 };
 
 /// See freetype-load-flag
