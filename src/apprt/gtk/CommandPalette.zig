@@ -94,9 +94,8 @@ pub fn deinit(self: *CommandPalette) void {
 
 pub fn toggle(self: *CommandPalette) void {
     self.dialog.present(self.window.window.as(gtk.Widget));
-
     // Focus on the search bar when opening the dialog
-    self.dialog.setFocus(self.search.as(gtk.Widget));
+    _ = self.search.as(gtk.Widget).grabFocus();
 }
 
 pub fn updateConfig(self: *CommandPalette, config: *const configpkg.Config) !void {
