@@ -63,14 +63,14 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
 
     # When using sudo shell integration feature, ensure $TERMINFO is set
     # and `sudo` is not already a function or alias
-    if contains sudo $features; and test -n "$TERMINFO"; and test "file" = (type -t sudo 2> /dev/null; or echo "x")
+    if contains sudo $features; and test -n "$TERMINFO"; and test file = (type -t sudo 2> /dev/null; or echo "x")
         # Wrap `sudo` command to ensure Ghostty terminfo is preserved
         function sudo -d "Wrap sudo to preserve terminfo"
-            set --function sudo_has_sudoedit_flags "no"
+            set --function sudo_has_sudoedit_flags no
             for arg in $argv
                 # Check if argument is '-e' or '--edit' (sudoedit flags)
-                if string match -q -- "-e" "$arg"; or string match -q -- "--edit" "$arg"
-                    set --function sudo_has_sudoedit_flags "yes"
+                if string match -q -- -e "$arg"; or string match -q -- --edit "$arg"
+                    set --function sudo_has_sudoedit_flags yes
                     break
                 end
                 # Check if argument is neither an option nor a key-value pair
@@ -78,7 +78,7 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
                     break
                 end
             end
-            if test "$sudo_has_sudoedit_flags" = "yes"
+            if test "$sudo_has_sudoedit_flags" = yes
                 command sudo $argv
             else
                 command sudo TERMINFO="$TERMINFO" $argv
@@ -88,30 +88,19 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
 
     # SSH Integration
     if string match -qr 'ssh-(env|terminfo)' "$GHOSTTY_SHELL_FEATURES"
-        # Only define cache functions and variable if ssh-terminfo is enabled
-        if string match -qr 'ssh-terminfo' "$GHOSTTY_SHELL_FEATURES"
-            set -g _cache (test -n "$XDG_STATE_HOME" && echo "$XDG_STATE_HOME" || echo "$HOME/.local/state")/ghostty/terminfo_hosts
+        if string match -qr ssh-terminfo "$GHOSTTY_SHELL_FEATURES"
+            set -g _cache_script "$GHOSTTY_RESOURCES_DIR/shell-integration/shared/ghostty-ssh-cache"
 
-            # Cache operations and utilities
-            function _ghst_cache
-                switch $argv[2]
-                    case chk
-                        test -f $_cache && grep -qFx "$argv[1]" "$_cache" 2>/dev/null
-                    case add
-                        mkdir -p (dirname "$_cache")
-                        begin
-                            test -f $_cache && cat "$_cache"
-                            builtin echo "$argv[1]"
-                        end | sort -u >"$_cache.tmp" && mv "$_cache.tmp" "$_cache" && chmod 600 "$_cache"
+            # Wrap ghostty command to provide cache management commands
+            function ghostty -d "Wrap ghostty to provide cache management commands"
+                switch "$argv[1]"
+                    case ssh-cache-list
+                        command "$_cache_script" list
+                    case ssh-cache-clear
+                        command "$_cache_script" clear
+                    case "*"
+                        command ghostty $argv
                 end
-            end
-
-            function ghostty_ssh_cache_clear -d "Clear Ghostty SSH terminfo cache"
-                rm -f "$_cache" 2>/dev/null && builtin echo "Ghostty SSH terminfo cache cleared." || builtin echo "No Ghostty SSH terminfo cache found."
-            end
-
-            function ghostty_ssh_cache_list -d "List hosts with Ghostty terminfo installed"
-                test -s $_cache && builtin echo "Hosts with Ghostty terminfo installed:" && cat "$_cache" || builtin echo "No cached hosts found."
             end
         end
 
@@ -120,28 +109,28 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
             set -l e
             set -l o
             set -l c
-            set -l t
-
-            # Get target (only if ssh-terminfo enabled for caching)
-            if string match -qr 'ssh-terminfo' "$GHOSTTY_SHELL_FEATURES"
-                set t (builtin command ssh -G $argv 2>/dev/null | awk '/^(user|hostname) /{print $2}' | paste -sd'@')
-            end
 
             # Set up env vars first so terminfo installation inherits them
-            if string match -qr 'ssh-env' "$GHOSTTY_SHELL_FEATURES"
+            if string match -qr ssh-env "$GHOSTTY_SHELL_FEATURES"
                 set -gx COLORTERM (test -n "$COLORTERM" && echo "$COLORTERM" || echo "truecolor")
                 set -gx TERM_PROGRAM (test -n "$TERM_PROGRAM" && echo "$TERM_PROGRAM" || echo "ghostty")
                 test -n "$GHOSTTY_VERSION" && set -gx TERM_PROGRAM_VERSION "$GHOSTTY_VERSION"
 
-                for v in COLORTERM=truecolor TERM_PROGRAM=ghostty (test -n "$GHOSTTY_VERSION" && echo "TERM_PROGRAM_VERSION=$GHOSTTY_VERSION")
+                set -l vars COLORTERM=truecolor TERM_PROGRAM=ghostty
+                test -n "$GHOSTTY_VERSION" && set vars $vars "TERM_PROGRAM_VERSION=$GHOSTTY_VERSION"
+
+                for v in $vars
                     set -l varname (string split -m1 '=' "$v")[1]
                     set o $o -o "SendEnv $varname" -o "SetEnv $v"
                 end
             end
 
             # Install terminfo if needed, reuse control connection for main session
-            if string match -qr 'ssh-terminfo' "$GHOSTTY_SHELL_FEATURES"
-                if test -n "$t" && _ghst_cache "$t" chk
+            if string match -qr ssh-terminfo "$GHOSTTY_SHELL_FEATURES"
+                # Get target (only when needed for terminfo)
+                set -l t (builtin command ssh -G $argv 2>/dev/null | awk '/^(user|hostname) /{print $2}' | paste -sd'@')
+
+                if test -n "$t" && command "$_cache_script" chk "$t"
                     set e $e TERM=xterm-ghostty
                 else if command -v infocmp >/dev/null 2>&1
                     set -l ti
@@ -157,7 +146,7 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
                         switch $result
                             case OK
                                 builtin echo "Terminfo setup complete." >&2
-                                test -n "$t" && _ghst_cache "$t" add
+                                test -n "$t" && command "$_cache_script" add "$t"
                                 set e $e TERM=xterm-ghostty
                                 set c $c -o "ControlPath=$cp"
                             case '*'
@@ -170,7 +159,7 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
             end
 
             # Fallback TERM only if terminfo didn't set it
-            if string match -qr 'ssh-env' "$GHOSTTY_SHELL_FEATURES"
+            if string match -qr ssh-env "$GHOSTTY_SHELL_FEATURES"
                 if test "$TERM" = xterm-ghostty && not string match -q '*TERM=*' "$e"
                     set e $e TERM=xterm-256color
                 end
@@ -181,20 +170,6 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
                 env $e ssh $o $c $argv
             else
                 builtin command ssh $o $c $argv
-            end
-        end
-
-        # Wrap ghostty command only if ssh-terminfo is enabled
-        if string match -qr 'ssh-terminfo' "$GHOSTTY_SHELL_FEATURES"
-            function ghostty -d "Wrap ghostty to provide cache management commands"
-                switch "$argv[1]"
-                    case ssh-cache-list
-                        ghostty_ssh_cache_list
-                    case ssh-cache-clear
-                        ghostty_ssh_cache_clear
-                    case "*"
-                        command ghostty $argv
-                end
             end
         end
     end

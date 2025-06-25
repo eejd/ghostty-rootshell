@@ -97,56 +97,48 @@ fi
 
 # SSH Integration
 if [[ "$GHOSTTY_SHELL_FEATURES" =~ ssh-(env|terminfo) ]]; then
-  # Only define cache functions and variable if ssh-terminfo is enabled
+
   if [[ "$GHOSTTY_SHELL_FEATURES" =~ ssh-terminfo ]]; then
-    _cache="${XDG_STATE_HOME:-$HOME/.local/state}/ghostty/terminfo_hosts"
-
-    # Cache operations and utilities
-    _ghst_cache() {
-      case $2 in
-      chk) [[ -f $_cache ]] && grep -qFx "$1" "$_cache" 2>/dev/null ;;
-      add)
-        mkdir -p "${_cache%/*}"
-        {
-          [[ -f $_cache ]] && cat "$_cache"
-          builtin echo "$1"
-        } | sort -u >"$_cache.tmp" && mv "$_cache.tmp" "$_cache" && chmod 600 "$_cache"
-        ;;
+    readonly _CACHE="${GHOSTTY_RESOURCES_DIR}/shell-integration/shared/ghostty-ssh-cache"
+    # If 'ssh-terminfo' flag is enabled, wrap ghostty to provide cache management commands
+    ghostty() {
+      case "$1" in
+        ssh-cache-list) "$_CACHE" list ;;
+        ssh-cache-clear) "$_CACHE" clear ;;
+        *) builtin command ghostty "$@" ;;
       esac
-    }
-
-    function ghostty_ssh_cache_clear() { 
-      rm -f "$_cache" 2>/dev/null && builtin echo "Ghostty SSH terminfo cache cleared." || builtin echo "No Ghostty SSH terminfo cache found."
-    }
-
-    function ghostty_ssh_cache_list() { 
-      [[ -s $_cache ]] && builtin echo "Hosts with Ghostty terminfo installed:" && cat "$_cache" || builtin echo "No cached hosts found."
     }
   fi
 
   # SSH wrapper
   ssh() {
-    local e=() o=() c=() t
-
-    # Get target
-    t=$(builtin command ssh -G "$@" 2>/dev/null | awk '/^(user|hostname) /{print $2}' | paste -sd'@')
+    local e=() o=() c=()  # Removed 't' from here
 
     # Set up env vars first so terminfo installation inherits them
     if [[ "$GHOSTTY_SHELL_FEATURES" =~ ssh-env ]]; then
-      builtin export COLORTERM=${COLORTERM:-truecolor} TERM_PROGRAM=${TERM_PROGRAM:-ghostty} ${GHOSTTY_VERSION:+TERM_PROGRAM_VERSION=$GHOSTTY_VERSION}
-      for v in COLORTERM=truecolor TERM_PROGRAM=ghostty ${GHOSTTY_VERSION:+TERM_PROGRAM_VERSION=$GHOSTTY_VERSION}; do
+      local vars=(
+        COLORTERM=truecolor 
+        TERM_PROGRAM=ghostty
+        ${GHOSTTY_VERSION:+TERM_PROGRAM_VERSION=$GHOSTTY_VERSION}
+      )
+      for v in "${vars[@]}"; do
+        builtin export "${v?}"
         o+=(-o "SendEnv ${v%=*}" -o "SetEnv $v")
       done
     fi
 
     # Install terminfo if needed, reuse control connection for main session
     if [[ "$GHOSTTY_SHELL_FEATURES" =~ ssh-terminfo ]]; then
-      if [[ -n $t ]] && _ghst_cache "$t" chk; then
+      # Get target (only when needed for terminfo)
+      builtin local t
+      t=$(builtin command ssh -G "$@" 2>/dev/null | awk '/^(user|hostname) /{print $2}' | paste -sd'@')
+      
+      if [[ -n "$t" ]] && "$_CACHE" chk "$t"; then
         e+=(TERM=xterm-ghostty)
       elif builtin command -v infocmp >/dev/null 2>&1; then
         builtin local ti
         ti=$(infocmp -x xterm-ghostty 2>/dev/null) || builtin echo "Warning: xterm-ghostty terminfo not found locally." >&2
-        if [[ -n $ti ]]; then
+        if [[ -n "$ti" ]]; then
           builtin echo "Setting up Ghostty terminfo on remote host..." >&2
           builtin local cp
           cp="/tmp/ghostty-ssh-$USER-$RANDOM-$(date +%s)"
@@ -157,7 +149,7 @@ if [[ "$GHOSTTY_SHELL_FEATURES" =~ ssh-(env|terminfo) ]]; then
           ') in
           OK)
             builtin echo "Terminfo setup complete." >&2
-            [[ -n $t ]] && _ghst_cache "$t" add
+            [[ -n "$t" ]] && "$_CACHE" add "$t"
             e+=(TERM=xterm-ghostty)
             c+=(-o "ControlPath=$cp")
             ;;
@@ -181,17 +173,6 @@ if [[ "$GHOSTTY_SHELL_FEATURES" =~ ssh-(env|terminfo) ]]; then
       builtin command ssh "${o[@]}" "${c[@]}" "$@"
     fi
   }
-
-  # If 'ssh-terminfo' flag is enabled, wrap ghostty to provide 'ghostty ssh-cache-list' and `ghostty ssh-cache-clear` utility commands
-  if [[ "$GHOSTTY_SHELL_FEATURES" =~ ssh-terminfo ]]; then
-    ghostty() {
-      case "$1" in
-        ssh-cache-list) ghostty_ssh_cache_list ;;
-        ssh-cache-clear) ghostty_ssh_cache_clear ;;
-        *) builtin command ghostty "$@" ;;
-      esac
-    }
-  fi
 fi
 
 # Import bash-preexec, safe to do multiple times

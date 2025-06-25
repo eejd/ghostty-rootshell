@@ -246,54 +246,43 @@ _ghostty_deferred_init() {
 
     # SSH Integration
     if [[ "$GHOSTTY_SHELL_FEATURES" =~ ssh-(env|terminfo) ]]; then
-      # Only define cache functions and variable if ssh-terminfo is enabled
       if [[ "$GHOSTTY_SHELL_FEATURES" =~ ssh-terminfo ]]; then
-        _cache="${XDG_STATE_HOME:-$HOME/.local/state}/ghostty/terminfo_hosts"
-
-        # Cache operations and utilities
-        _ghst_cache() {
-          case $2 in
-          chk) [[ -f $_cache ]] && grep -qFx "$1" "$_cache" 2>/dev/null ;;
-          add)
-            mkdir -p "${_cache:h}"
-            {
-              [[ -f $_cache ]] && cat "$_cache"
-              builtin echo "$1"
-            } | sort -u >"$_cache.tmp" && mv "$_cache.tmp" "$_cache" && chmod 600 "$_cache"
-            ;;
+        readonly _cache_script="${GHOSTTY_RESOURCES_DIR}/shell-integration/shared/ghostty-ssh-cache"
+        
+        # Wrap ghostty command to provide cache management commands
+        ghostty() {
+          case "$1" in
+            ssh-cache-list) "$_cache_script" list ;;
+            ssh-cache-clear) "$_cache_script" clear ;;
+            *) builtin command ghostty "$@" ;;
           esac
-        }
-
-        ghostty_ssh_cache_clear() { 
-          rm -f "$_cache" 2>/dev/null && builtin echo "Ghostty SSH terminfo cache cleared." || builtin echo "No Ghostty SSH terminfo cache found."
-        }
-
-        ghostty_ssh_cache_list() { 
-          [[ -s $_cache ]] && builtin echo "Hosts with Ghostty terminfo installed:" && cat "$_cache" || builtin echo "No cached hosts found."
         }
       fi
 
       # SSH wrapper
       ssh() {
         local -a e o c
-        local t
-
-        # Get target (only if ssh-terminfo enabled for caching)
-        if [[ "$GHOSTTY_SHELL_FEATURES" =~ ssh-terminfo ]]; then
-          t=$(builtin command ssh -G "$@" 2>/dev/null | awk '/^(user|hostname) /{print $2}' | paste -sd'@')
-        fi
-
+        
         # Set up env vars first so terminfo installation inherits them
         if [[ "$GHOSTTY_SHELL_FEATURES" =~ ssh-env ]]; then
-          builtin export COLORTERM=${COLORTERM:-truecolor} TERM_PROGRAM=${TERM_PROGRAM:-ghostty} ${GHOSTTY_VERSION:+TERM_PROGRAM_VERSION=$GHOSTTY_VERSION}
-          for v in COLORTERM=truecolor TERM_PROGRAM=ghostty ${GHOSTTY_VERSION:+TERM_PROGRAM_VERSION=$GHOSTTY_VERSION}; do
+          local vars=(
+            COLORTERM=truecolor 
+            TERM_PROGRAM=ghostty
+            ${GHOSTTY_VERSION:+TERM_PROGRAM_VERSION=$GHOSTTY_VERSION}
+          )
+          for v in "${vars[@]}"; do
+            builtin export "${v?}"
             o+=(-o "SendEnv ${v%=*}" -o "SetEnv $v")
           done
         fi
 
         # Install terminfo if needed, reuse control connection for main session
         if [[ "$GHOSTTY_SHELL_FEATURES" =~ ssh-terminfo ]]; then
-          if [[ -n $t ]] && _ghst_cache "$t" chk; then
+          # Get target (only when needed for terminfo)
+          builtin local t
+          t=$(builtin command ssh -G "$@" 2>/dev/null | awk '/^(user|hostname) /{print $2}' | paste -sd'@')
+          
+          if [[ -n $t ]] && "$_cache_script" chk "$t"; then
             e+=(TERM=xterm-ghostty)
           elif builtin command -v infocmp >/dev/null 2>&1; then
             local ti
@@ -309,7 +298,7 @@ _ghostty_deferred_init() {
               ') in
               OK)
                 builtin echo "Terminfo setup complete." >&2
-                [[ -n $t ]] && _ghst_cache "$t" add
+                [[ -n $t ]] && "$_cache_script" add "$t"
                 e+=(TERM=xterm-ghostty)
                 c+=(-o "ControlPath=$cp")
                 ;;
@@ -333,17 +322,6 @@ _ghostty_deferred_init() {
           builtin command ssh "${o[@]}" "${c[@]}" "$@"
         fi
       }
-
-      # Wrap ghostty command only if ssh-terminfo is enabled
-      if [[ "$GHOSTTY_SHELL_FEATURES" =~ ssh-terminfo ]]; then
-        ghostty() {
-          case "$1" in
-            ssh-cache-list) ghostty_ssh_cache_list ;;
-            ssh-cache-clear) ghostty_ssh_cache_clear ;;
-            *) builtin command ghostty "$@" ;;
-          esac
-        }
-      fi
     fi
 
     # Some zsh users manually run `source ~/.zshrc` in order to apply rc file
