@@ -466,6 +466,93 @@ background: Color = .{ .r = 0x28, .g = 0x2C, .b = 0x34 },
 /// Specified as either hex (`#RRGGBB` or `RRGGBB`) or a named X11 color.
 foreground: Color = .{ .r = 0xFF, .g = 0xFF, .b = 0xFF },
 
+/// Background image for the terminal.
+///
+/// This should be a path to a PNG or JPEG file, other image formats are
+/// not yet supported.
+///
+/// The background image is currently per-terminal, not per-window. If
+/// you are a heavy split user, the background image will be repeated across
+/// splits. A future improvement to Ghostty will address this.
+///
+/// WARNING: Background images are currently duplicated in VRAM per-terminal.
+/// For sufficiently large images, this could lead to a large increase in
+/// memory usage (specifically VRAM usage). A future Ghostty improvement
+/// will resolve this by sharing image textures across terminals.
+@"background-image": ?Path = null,
+
+/// Background image opacity.
+///
+/// This is relative to the value of `background-opacity`.
+///
+/// A value of `1.0` (the default) will result in the background image being
+/// placed on top of the general background color, and then the combined result
+/// will be adjusted to the opacity specified by `background-opacity`.
+///
+/// A value less than `1.0` will result in the background image being mixed
+/// with the general background color before the combined result is adjusted
+/// to the configured `background-opacity`.
+///
+/// A value greater than `1.0` will result in the background image having a
+/// higher opacity than the general background color. For instance, if the
+/// configured `background-opacity` is `0.5` and `background-image-opacity`
+/// is set to `1.5`, then the final opacity of the background image will be
+/// `0.5 * 1.5 = 0.75`.
+@"background-image-opacity": f32 = 1.0,
+
+/// Background image position.
+///
+/// Valid values are:
+///   * `top-left`
+///   * `top-center`
+///   * `top-right`
+///   * `center-left`
+///   * `center`
+///   * `center-right`
+///   * `bottom-left`
+///   * `bottom-center`
+///   * `bottom-right`
+///
+/// The default value is `center`.
+@"background-image-position": BackgroundImagePosition = .center,
+
+/// Background image fit.
+///
+/// Valid values are:
+///
+///  * `contain`
+///
+///     Preserving the aspect ratio, scale the background image to the largest
+///     size that can still be contained within the terminal, so that the whole
+///     image is visible.
+///
+///  * `cover`
+///
+///     Preserving the aspect ratio, scale the background image to the smallest
+///     size that can completely cover the terminal. This may result in one or
+///     more edges of the image being clipped by the edge of the terminal.
+///
+///  * `stretch`
+///
+///     Stretch the background image to the full size of the terminal, without
+///     preserving the aspect ratio.
+///
+///  * `none`
+///
+///     Don't scale the background image.
+///
+/// The default value is `contain`.
+@"background-image-fit": BackgroundImageFit = .contain,
+
+/// Whether to repeat the background image or not.
+///
+/// If this is set to true, the background image will be repeated if there
+/// would otherwise be blank space around it because it doesn't completely
+/// fill the terminal area.
+///
+/// The default value is `false`.
+@"background-image-repeat": bool = false,
+
 /// The foreground and background color for selection. If this is not set, then
 /// the selection color is just the inverted window background and foreground
 /// (note: not to be confused with the cell bg/fg).
@@ -3297,6 +3384,15 @@ fn expandPaths(self: *Config, base: []const u8) !void {
                     base,
                     &self._diagnostics,
                 );
+            },
+            ?RepeatablePath, ?Path => {
+                if (@field(self, field.name)) |*path| {
+                    try path.expand(
+                        arena_alloc,
+                        base,
+                        &self._diagnostics,
+                    );
+                }
             },
             else => {},
         }
@@ -6567,6 +6663,28 @@ pub const AlphaBlending = enum {
             .linear, .@"linear-corrected" => true,
         };
     }
+};
+
+/// See background-image-position
+pub const BackgroundImagePosition = enum {
+    @"top-left",
+    @"top-center",
+    @"top-right",
+    @"center-left",
+    @"center-center",
+    @"center-right",
+    @"bottom-left",
+    @"bottom-center",
+    @"bottom-right",
+    center,
+};
+
+/// See background-image-fit
+pub const BackgroundImageFit = enum {
+    contain,
+    cover,
+    stretch,
+    none,
 };
 
 /// See freetype-load-flag

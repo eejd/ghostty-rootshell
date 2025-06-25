@@ -388,13 +388,14 @@ pub const uniformBufferOptions = bufferOptions;
 pub const fgBufferOptions = bufferOptions;
 pub const bgBufferOptions = bufferOptions;
 pub const imageBufferOptions = bufferOptions;
+pub const bgImageBufferOptions = bufferOptions;
 
 /// Returns the options to use when constructing textures.
 pub inline fn textureOptions(self: OpenGL) Texture.Options {
     _ = self;
     return .{
         .format = .rgba,
-        .internal_format = .srgba,
+        .internal_format = .srgba_compressed,
         .target = .@"2D",
     };
 }
