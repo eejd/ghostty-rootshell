@@ -52,13 +52,6 @@ modules:
         --prefix /app
         --search-prefix /app
         --system $PWD/vendor/p
-
-      # Rename to match service and drop systemd references
-      - sed -e 's/^Name=.*/\0-debug/'
-        -e '/^SystemdService=/d'
-        /app/share/dbus-1/services/com.mitchellh.ghostty.service
-        > /app/share/dbus-1/services/com.mitchellh.ghostty-debug.service
-      - rm /app/share/dbus-1/services/com.mitchellh.ghostty.service
     sources:
       - type: dir
         path: ..
