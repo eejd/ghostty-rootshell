@@ -45,7 +45,6 @@ version: std.SemanticVersion = .{ .major = 0, .minor = 0, .patch = 0 },
 pie: bool = false,
 strip: bool = false,
 patch_rpath: ?[]const u8 = null,
-system_package: bool = false,
 
 /// Artifacts
 flatpak: bool = false,
@@ -88,11 +87,7 @@ pub fn init(b: *std.Build) !Config {
     // This is set to true when we're building a system package. For now
     // this is trivially detected using the "system_package_mode" bool
     // but we may want to make this more sophisticated in the future.
-    const system_package = b.option(
-        bool,
-        "system-package",
-        "Controls whether we build a system package",
-    ) orelse b.graph.system_package_mode;
+    const system_package = b.graph.system_package_mode;
 
     // This specifies our target wasm runtime. For now only one semi-usable
     // one exists so this is hardcoded.
@@ -265,8 +260,6 @@ pub fn init(b: *std.Build) !Config {
         .ReleaseSafe => false,
         .ReleaseFast, .ReleaseSmall => true,
     };
-
-    config.system_package = system_package;
 
     //---------------------------------------------------------------
     // Artifacts to Emit

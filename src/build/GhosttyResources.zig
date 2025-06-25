@@ -267,7 +267,7 @@ pub fn init(b: *std.Build, cfg: *const Config) !GhosttyResources {
                     b.fmt(
                         "{s}/systemd/user/com.mitchellh.ghostty{s}.service",
                         .{
-                            if (cfg.system_package) "lib" else "share",
+                            if (b.graph.system_package_mode) "lib" else "share",
                             switch (cfg.optimize) {
                                 .Debug, .ReleaseSafe => "-debug",
                                 .ReleaseFast, .ReleaseSmall => "",

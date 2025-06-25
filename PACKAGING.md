@@ -83,8 +83,7 @@ zig build \
   --prefix /usr \
   --system /tmp/offline-cache/p \
   -Doptimize=ReleaseFast \
-  -Dcpu=baseline \
-  -Dsystem-package=true
+  -Dcpu=baseline
 ```
 
 The build options are covered in the next section, but this will build
