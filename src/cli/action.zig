@@ -43,7 +43,7 @@ pub const Action = enum {
     /// List keybind actions
     @"list-actions",
 
-    /// List hosts with Ghostty SSH terminfo installed
+    /// List hosts cached by SSH shell integration for terminfo installation
     @"list-ssh-cache",
 
     /// Clear Ghostty SSH terminfo cache

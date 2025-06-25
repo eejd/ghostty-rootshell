@@ -21,6 +21,9 @@ pub const Options = struct {
 /// This command shows all remote hosts where Ghostty's terminfo has been successfully
 /// installed through the SSH integration. The cache is automatically maintained when
 /// connecting to remote hosts with `shell-integration-features = ssh-terminfo` enabled.
+///
+/// Use `+clear-ssh-cache` to remove cached entries if you need to force terminfo
+/// reinstallation or clean up stale host entries.
 pub fn run(alloc: Allocator) !u8 {
     var opts: Options = .{};
     defer opts.deinit();
