@@ -110,6 +110,11 @@ pub fn updateConfig(self: *CommandPalette, config: *const configpkg.Config) !voi
         switch (command.action) {
             .close_all_windows,
             .toggle_secure_input,
+            .check_for_updates,
+            .redo,
+            .undo,
+            .reset_window_size,
+            .toggle_window_float_on_top,
             => continue,
 
             else => {},
