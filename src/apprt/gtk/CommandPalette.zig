@@ -104,7 +104,7 @@ pub fn updateConfig(self: *CommandPalette, config: *const configpkg.Config) !voi
     _ = self.arena.reset(.retain_capacity);
 
     // TODO: Allow user-configured palette entries
-    for (inputpkg.command.defaults) |command| {
+    for (config.@"command-palette-entry".value.items) |command| {
         // Filter out actions that are not implemented
         // or don't make sense for GTK
         switch (command.action) {
