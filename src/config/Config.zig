@@ -6147,12 +6147,23 @@ pub const RepeatableCommand = struct {
         try self.value.appendSlice(alloc, inputpkg.command.defaults);
     }
 
-    pub fn parseCLI(self: *RepeatableCommand, alloc: Allocator, input: ?[]const u8) !void {
-        const input_ = input orelse {
+    pub fn parseCLI(
+        self: *RepeatableCommand,
+        alloc: Allocator,
+        input_: ?[]const u8,
+    ) !void {
+        // Unset or empty input clears the list
+        const input = input_ orelse "";
+        if (input.len == 0) {
             self.value.clearRetainingCapacity();
             return;
-        };
-        const cmd = try cli.args.parseAutoStruct(inputpkg.Command, alloc, input_);
+        }
+
+        const cmd = try cli.args.parseAutoStruct(
+            inputpkg.Command,
+            alloc,
+            input,
+        );
         try self.value.append(alloc, cmd);
     }
 
@@ -6214,16 +6225,14 @@ pub const RepeatableCommand = struct {
         try testing.expectEqual(inputpkg.Binding.Action.ignore, list.value.items[0].action);
         try testing.expectEqualStrings("Foo", list.value.items[0].title);
 
-        try testing.expectEqual(
-            inputpkg.Binding.Action{ .text = "ale bydle" },
-            list.value.items[0].action,
-        );
+        try testing.expect(list.value.items[1].action == .text);
+        try testing.expectEqualStrings("ale bydle", list.value.items[1].action.text);
         try testing.expectEqualStrings("Bar", list.value.items[1].title);
         try testing.expectEqualStrings("bobr", list.value.items[1].description);
 
         try testing.expectEqual(
             inputpkg.Binding.Action{ .increase_font_size = 2.5 },
-            list.value.items[0].action,
+            list.value.items[2].action,
         );
         try testing.expectEqualStrings("Quux", list.value.items[2].title);
         try testing.expectEqualStrings("boo", list.value.items[2].description);
@@ -6270,7 +6279,7 @@ pub const RepeatableCommand = struct {
         try list.parseCLI(alloc, "title:Bobr, action:text:kurwa");
         try list.parseCLI(alloc, "title:Ja,   description: pierdole,  action:text:jakie bydle");
         try list.formatEntry(formatterpkg.entryFormatter("a", buf.writer()));
-        try std.testing.expectEqualSlices(u8, "a = title:bobr,action:text:kurwa\na = title:Ja,description:pierdole,action:text:jakie bydle\n", buf.items);
+        try std.testing.expectEqualSlices(u8, "a = title:Bobr,action:text:kurwa\na = title:Ja,description:pierdole,action:text:jakie bydle\n", buf.items);
     }
 };
 
