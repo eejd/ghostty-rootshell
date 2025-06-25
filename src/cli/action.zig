@@ -46,7 +46,7 @@ pub const Action = enum {
     /// List hosts cached by SSH shell integration for terminfo installation
     @"list-ssh-cache",
 
-    /// Clear Ghostty SSH terminfo cache
+    /// Clear hosts cached by SSH shell integration for terminfo installation
     @"clear-ssh-cache",
 
     /// Edit the config file in the configured terminal editor.
