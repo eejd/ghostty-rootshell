@@ -36,6 +36,13 @@ const pipeline_descs: []const struct { [:0]const u8, PipelineDescription } =
             .step_fn = .per_instance,
             .blending_enabled = true,
         } },
+        .{ "bg_image", .{
+            .vertex_attributes = BgImage,
+            .vertex_fn = "bg_image_vertex",
+            .fragment_fn = "bg_image_fragment",
+            .step_fn = .per_instance,
+            .blending_enabled = true,
+        } },
     };
 
 /// All the comptime-known info about a pipeline, so that
@@ -192,6 +199,9 @@ pub const Uniforms = extern struct {
     /// This is calculated based on the size of the screen.
     projection_matrix: math.Mat align(16),
 
+    /// Size of the screen (render target) in pixels.
+    screen_size: [2]f32 align(8),
+
     /// Size of a single cell in pixels, unscaled.
     cell_size: [2]f32 align(8),
 
@@ -286,6 +296,38 @@ pub const Image = extern struct {
     cell_offset: [2]f32,
     source_rect: [4]f32,
     dest_size: [2]f32,
+};
+
+/// Single parameter for the bg image shader.
+pub const BgImage = extern struct {
+    opacity: f32 align(4),
+    info: Info align(1),
+
+    pub const Info = packed struct(u8) {
+        position: Position,
+        fit: Fit,
+        repeat: bool,
+        _padding: u1 = 0,
+
+        pub const Position = enum(u4) {
+            tl = 0,
+            tc = 1,
+            tr = 2,
+            ml = 3,
+            mc = 4,
+            mr = 5,
+            bl = 6,
+            bc = 7,
+            br = 8,
+        };
+
+        pub const Fit = enum(u2) {
+            contain = 0,
+            cover = 1,
+            stretch = 2,
+            none = 3,
+        };
+    };
 };
 
 /// Initialize the MTLLibrary. A MTLLibrary is a collection of shaders.

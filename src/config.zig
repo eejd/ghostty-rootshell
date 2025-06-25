@@ -31,8 +31,11 @@ pub const RepeatableFontVariation = Config.RepeatableFontVariation;
 pub const RepeatableString = Config.RepeatableString;
 pub const RepeatableStringMap = @import("config/RepeatableStringMap.zig");
 pub const RepeatablePath = Config.RepeatablePath;
+pub const Path = Config.Path;
 pub const ShellIntegrationFeatures = Config.ShellIntegrationFeatures;
 pub const WindowPaddingColor = Config.WindowPaddingColor;
+pub const BackgroundImagePosition = Config.BackgroundImagePosition;
+pub const BackgroundImageFit = Config.BackgroundImageFit;
 
 // Alternate APIs
 pub const CAPI = @import("config/CAPI.zig");
