@@ -224,10 +224,57 @@ pub fn init(b: *std.Build, cfg: *const Config) !GhosttyResources {
         // https://developer.gnome.org/documentation/guidelines/maintainer/integrating.html
 
         // Desktop file so that we have an icon and other metadata
-        try steps.append(&b.addInstallFile(
-            b.path("dist/linux/app.desktop"),
-            "share/applications/com.mitchellh.ghostty.desktop",
-        ).step);
+        try steps.append(
+            formatService(
+                b,
+                cfg,
+                b.path("dist/linux/app.desktop"),
+                b.fmt(
+                    "share/applications/com.mitchellh.ghostty{s}.desktop",
+                    .{
+                        switch (cfg.optimize) {
+                            .Debug, .ReleaseSafe => "-debug",
+                            .ReleaseFast, .ReleaseSmall => "",
+                        },
+                    },
+                ),
+            ),
+        );
+        // Service for DBus activation.
+        try steps.append(
+            formatService(
+                b,
+                cfg,
+                b.path("dist/linux/dbus.service"),
+                b.fmt(
+                    "share/dbus-1/services/com.mitchellh.ghostty{s}.service",
+                    .{
+                        switch (cfg.optimize) {
+                            .Debug, .ReleaseSafe => "-debug",
+                            .ReleaseFast, .ReleaseSmall => "",
+                        },
+                    },
+                ),
+            ),
+        );
+        // systemd user service
+        try steps.append(
+            formatService(
+                b,
+                cfg,
+                b.path("dist/linux/systemd.service"),
+                b.fmt(
+                    "{s}/systemd/user/com.mitchellh.ghostty{s}.service",
+                    .{
+                        if (cfg.system_package) "lib" else "share",
+                        switch (cfg.optimize) {
+                            .Debug, .ReleaseSafe => "-debug",
+                            .ReleaseFast, .ReleaseSmall => "",
+                        },
+                    },
+                ),
+            ),
+        );
 
         // AppStream metainfo so that application has rich metadata within app stores
         try steps.append(&b.addInstallFile(
@@ -302,4 +349,35 @@ pub fn init(b: *std.Build, cfg: *const Config) !GhosttyResources {
 pub fn install(self: *const GhosttyResources) void {
     const b = self.steps[0].owner;
     for (self.steps) |step| b.getInstallStep().dependOn(step);
+}
+
+pub fn formatService(b: *std.Build, cfg: *const Config, src: std.Build.LazyPath, dest: []const u8) *std.Build.Step {
+    var cmd = b.addSystemCommand(&.{"sed"});
+    cmd.setStdIn(.{ .lazy_path = src });
+    const output = cmd.captureStdOut();
+
+    cmd.addArg(b.fmt(
+        "-e s!@@NAME@@!{s}!g",
+        .{
+            switch (cfg.optimize) {
+                .Debug, .ReleaseSafe => " Debug",
+                .ReleaseFast, .ReleaseSmall => "",
+            },
+        },
+    ));
+    cmd.addArg(b.fmt(
+        "-e s!@@DEBUG@@!{s}!g",
+        .{
+            switch (cfg.optimize) {
+                .Debug, .ReleaseSafe => "-debug",
+                .ReleaseFast, .ReleaseSmall => "",
+            },
+        },
+    ));
+    cmd.addArg(b.fmt(
+        "-e s!@@GHOSTTY@@!{s}/bin/ghostty!g",
+        .{b.install_prefix},
+    ));
+
+    return &b.addInstallFile(output, dest).step;
 }
