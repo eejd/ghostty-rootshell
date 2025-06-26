@@ -1,6 +1,6 @@
 #include "common.glsl"
 
-layout(binding = 0) uniform sampler2DRect image;
+layout(binding = 0) uniform sampler2D image;
 
 layout(location = 0) in float in_opacity;
 layout(location = 1) in uint info;
@@ -64,7 +64,7 @@ void main() {
     repeat = info & BG_IMAGE_REPEAT;
 
     vec2 screen_size = screen_size;
-    vec2 tex_size = textureSize(image);
+    vec2 tex_size = textureSize(image, 0);
 
     vec2 dest_size = tex_size;
     switch (info & BG_IMAGE_FIT) {

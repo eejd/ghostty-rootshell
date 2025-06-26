@@ -4,7 +4,7 @@
 // so as to align with our texture's directionality.
 layout(origin_upper_left) in vec4 gl_FragCoord;
 
-layout(binding = 0) uniform sampler2DRect image;
+layout(binding = 0) uniform sampler2D image;
 
 flat in vec4 bg_color;
 flat in vec2 offset;
@@ -23,7 +23,7 @@ void main() {
     // size of the texture to the dest rect size.
     vec2 tex_coord = (gl_FragCoord.xy - offset) * scale;
 
-    vec2 tex_size = textureSize(image);
+    vec2 tex_size = textureSize(image, 0);
 
     // If we need to repeat the texture, wrap the coordinates.
     if (repeat != 0) {
@@ -38,7 +38,8 @@ void main() {
     {
         rgba = vec4(0.0);
     } else {
-        rgba = texture(image, tex_coord);
+        // We divide by the texture size to normalize for sampling.
+        rgba = texture(image, tex_coord / tex_size);
 
         if (!use_linear_blending) {
             rgba = unlinearize(rgba);
