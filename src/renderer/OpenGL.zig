@@ -395,7 +395,7 @@ pub inline fn textureOptions(self: OpenGL) Texture.Options {
     _ = self;
     return .{
         .format = .rgba,
-        .internal_format = .srgba_compressed,
+        .internal_format = .srgba,
         .target = .@"2D",
     };
 }
