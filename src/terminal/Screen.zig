@@ -402,8 +402,8 @@ pub fn clonePool(
         };
 
         const start_pin = pin_remap.get(ordered.tl) orelse start: {
-            // No start means it is outside the cloned area. We change it
-            // to the top-left.
+            // No start means it is outside the cloned area.
+            // We move it back in bounds to the top row.
 
             // If we have no end pin then either
             // (1) our whole selection is outside the cloned area or
@@ -417,14 +417,17 @@ pub fn clonePool(
                 if (!sel.contains(self, clone_top)) break :sel null;
             }
 
-            break :start try pages.trackPin(.{ .node = pages.pages.first.? });
+            break :start try pages.trackPin(.{
+                .node = pages.pages.first.?,
+                .x = if (sel.rectangle) ordered.tl.x else 0,
+            });
         };
 
         const end_pin = pin_remap.get(ordered.br) orelse end: {
-            // No end means it is outside the cloned area. We change it
-            // to the bottom-right.
+            // No end means it is outside the cloned area.
+            // We move it back in bounds to the bottom row.
             break :end try pages.trackPin(pages.pin(.{ .active = .{
-                .x = pages.cols - 1,
+                .x = if (sel.rectangle) ordered.br.x else pages.cols - 1,
                 .y = pages.rows - 1,
             } }) orelse break :sel null);
         };
