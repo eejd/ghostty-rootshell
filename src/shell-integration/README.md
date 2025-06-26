@@ -93,12 +93,18 @@ fi
 
 The `shared/` directory contains utilities available to all shell integrations:
 
-- `ghostty-ssh-cache`: A standalone script that manages the SSH terminfo host
-  cache for the `ssh-terminfo` shell integration feature. This script handles
-  cache file operations (list, clear, check, add) and is called by all shell
-  integrations when `ssh-terminfo` is enabled. It is also called by the
-  `+list-ssh-cache` and `+clear-ssh-cache` CLI actions, providing users with
-  direct cache management capabilities.
+### ghostty-ssh-cache
+
+> [!NOTE]
+>
+> This script requires `bash` to be available in the system PATH.
+
+This is a standalone script that manages the SSH terminfo host cache for the
+`ssh-terminfo` shell integration feature. This script handles cache file
+operations (list, clear, check, add) and is called by all shell integrations
+when `ssh-terminfo` is enabled. It is also called by the `+list-ssh-cache`
+and `+clear-ssh-cache` CLI actions, providing users with direct cache
+management capabilities.
 
 The shared approach maintains separation of concerns by keeping shell-specific
 integration files independent of secondary logic.
