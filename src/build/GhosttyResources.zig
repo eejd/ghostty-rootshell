@@ -321,8 +321,13 @@ fn addLinuxAppResources(
             .GHOSTTY = exe_abs_path,
         });
 
+        // Template output has a single header line we want to remove.
+        // We use `tail` to do it since its part of the POSIX standard.
+        const tail = b.addSystemCommand(&.{ "tail", "-n", "+2" });
+        tail.setStdIn(.{ .lazy_path = tpl.getOutput() });
+
         const copy = b.addInstallFile(
-            tpl.getOutput(),
+            tail.captureStdOut(),
             template[1],
         );
 
