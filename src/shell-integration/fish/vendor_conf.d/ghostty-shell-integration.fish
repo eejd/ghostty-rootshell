@@ -105,8 +105,8 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
                     COLORTERM=truecolor \
                     TERM_PROGRAM=ghostty
 
-                if test -n "$GHOSTTY_VERSION"
-                    set -a vars "TERM_PROGRAM_VERSION=$GHOSTTY_VERSION"
+                if test -n "$TERM_PROGRAM_VERSION"
+                    set -a vars "TERM_PROGRAM_VERSION=$TERM_PROGRAM_VERSION"
                 end
 
                 for v in $vars

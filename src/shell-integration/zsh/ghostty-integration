@@ -264,7 +264,7 @@ _ghostty_deferred_init() {
           vars=(
             COLORTERM=truecolor 
             TERM_PROGRAM=ghostty
-            ${GHOSTTY_VERSION:+TERM_PROGRAM_VERSION=$GHOSTTY_VERSION}
+            ${TERM_PROGRAM_VERSION:+TERM_PROGRAM_VERSION=$TERM_PROGRAM_VERSION}
           )
           for v in "${vars[@]}"; do
             export "${v?}"
@@ -277,7 +277,7 @@ _ghostty_deferred_init() {
           # Get target (only when needed for terminfo)
           local target
           target=$(command ssh -G "$@" 2>/dev/null | awk '/^(user|hostname) /{print $2}' | paste -sd'@')
-          
+
           if [[ -n "$target" ]] && "$_CACHE" chk "$target"; then
             env+=(TERM=xterm-ghostty)
           elif command -v infocmp >/dev/null 2>&1; then

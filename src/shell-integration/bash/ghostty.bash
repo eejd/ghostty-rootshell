@@ -111,7 +111,7 @@ if [[ "$GHOSTTY_SHELL_FEATURES" =~ ssh-(env|terminfo) ]]; then
       local vars=(
         COLORTERM=truecolor 
         TERM_PROGRAM=ghostty
-        ${GHOSTTY_VERSION:+TERM_PROGRAM_VERSION=$GHOSTTY_VERSION}
+        ${TERM_PROGRAM_VERSION:+TERM_PROGRAM_VERSION=$TERM_PROGRAM_VERSION}
       )
       for v in "${vars[@]}"; do
         builtin export "${v?}"

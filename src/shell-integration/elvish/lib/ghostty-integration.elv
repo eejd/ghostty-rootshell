@@ -119,10 +119,10 @@
           COLORTERM=truecolor
           TERM_PROGRAM=ghostty
         ]
-        if (not-eq $E:GHOSTTY_VERSION '') {
-          set vars = [$@vars TERM_PROGRAM_VERSION=$E:GHOSTTY_VERSION]
+        if (not-eq $E:TERM_PROGRAM_VERSION '') {
+          set vars = [$@vars TERM_PROGRAM_VERSION=$E:TERM_PROGRAM_VERSION]
         }
-        
+
         for v $vars {
           set-env (str:split = $v | take 1) (str:split = $v | drop 1 | str:join =)
           var varname = (str:split = $v | take 1)
@@ -147,7 +147,7 @@
           } catch {
             echo "Warning: xterm-ghostty terminfo not found locally." >&2
           }
-          
+
           if (not-eq $tinfo '') {
             echo "Setting up Ghostty terminfo on remote host..." >&2
             var cpath = '/tmp/ghostty-ssh-'$E:USER'-'(randint 0 32767)'-'(date +%s)
@@ -156,7 +156,7 @@
               command -v tic >/dev/null 2>&1 || { echo NO_TIC; exit 1; }
               mkdir -p ~/.terminfo 2>/dev/null && tic -x - 2>/dev/null && echo OK || echo FAIL
             ')
-            
+ 
             if (eq $result OK) {
               echo "Terminfo setup complete." >&2
               if (not-eq $target '') { $_CACHE add $target }
