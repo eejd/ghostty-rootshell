@@ -428,7 +428,7 @@ pub inline fn imageTextureOptions(
     return .{
         .format = format.toPixelFormat(),
         .internal_format = if (srgb) .srgba else .rgba,
-        .target = .Rectangle,
+        .target = .@"2D",
     };
 }
 
