@@ -87,7 +87,7 @@ pub fn init(b: *std.Build) !Config {
     // This is set to true when we're building a system package. For now
     // this is trivially detected using the "system_package_mode" bool
     // but we may want to make this more sophisticated in the future.
-    const system_package: bool = b.graph.system_package_mode;
+    const system_package = b.graph.system_package_mode;
 
     // This specifies our target wasm runtime. For now only one semi-usable
     // one exists so this is hardcoded.
