@@ -43,8 +43,9 @@ pub const Message = union(enum) {
     close: void,
 
     /// The child process running in the surface has exited. This may trigger
-    /// a surface close, it may not.
-    child_exited: void,
+    /// a surface close, it may not. Additional details about the child
+    /// command are given in the `ChildExited` struct.
+    child_exited: ChildExited,
 
     /// Show a desktop notification.
     desktop_notification: struct {
@@ -88,6 +89,11 @@ pub const Message = union(enum) {
         csi_21_t,
 
         // This enum is a placeholder for future title styles.
+    };
+
+    pub const ChildExited = struct {
+        exit_code: u32,
+        runtime_ms: u64,
     };
 };
 
