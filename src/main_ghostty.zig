@@ -103,7 +103,7 @@ pub fn main() !MainReturn {
 
     // Create our runtime app
     var app_runtime: apprt.App = undefined;
-    try app_runtime.init(&app, .{});
+    try app_runtime.init(app, .{});
     defer app_runtime.terminate();
 
     // Since - by definition - there are no surfaces when first started, the
