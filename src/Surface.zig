@@ -3094,15 +3094,33 @@ pub fn mouseButtonCallback(
         }
     }
 
-    // Handle link clicking. We want to do this before we do mouse
-    // reporting or any other mouse handling because a successfully
-    // clicked link will swallow the event.
-    if (button == .left and action == .release and self.mouse.over_link) {
-        const pos = try self.rt_surface.getCursorPos();
-        if (self.processLinks(pos)) |processed| {
-            if (processed) return true;
-        } else |err| {
-            log.warn("error processing links err={}", .{err});
+    if (button == .left and action == .release) {
+        // The selection clipboard is only updated for left-click drag when
+        // the left button is released. This is to avoid the clipboard
+        // being updated on every mouse move which would be noisy.
+        if (self.config.copy_on_select != .false) {
+            self.renderer_state.mutex.lock();
+            defer self.renderer_state.mutex.unlock();
+            const prev_ = self.io.terminal.screen.selection;
+            if (prev_) |prev| {
+                try self.setSelection(terminal.Selection.init(
+                    prev.start(),
+                    prev.end(),
+                    false,
+                ));
+            }
+        }
+
+        // Handle link clicking. We want to do this before we do mouse
+        // reporting or any other mouse handling because a successfully
+        // clicked link will swallow the event.
+        if (self.mouse.over_link) {
+            const pos = try self.rt_surface.getCursorPos();
+            if (self.processLinks(pos)) |processed| {
+                if (processed) return true;
+            } else |err| {
+                log.warn("error processing links err={}", .{err});
+            }
         }
     }
 
@@ -3238,12 +3256,16 @@ pub fn mouseButtonCallback(
             log.err("error reading time, mouse multi-click won't work err={}", .{err});
         }
 
+        // In all cases below, we set the selection directly rather than use
+        // `setSelection` because we want to avoid copying the selection
+        // to the selection clipboard. For left mouse clicks we only set
+        // the clipboard on release.
         switch (self.mouse.left_click_count) {
             // Single click
             1 => {
                 // If we have a selection, clear it. This always happens.
                 if (self.io.terminal.screen.selection != null) {
-                    try self.setSelection(null);
+                    try self.io.terminal.screen.select(null);
                     try self.queueRender();
                 }
             },
@@ -3252,7 +3274,7 @@ pub fn mouseButtonCallback(
             2 => {
                 const sel_ = self.io.terminal.screen.selectWord(pin.*);
                 if (sel_) |sel| {
-                    try self.setSelection(sel);
+                    try self.io.terminal.screen.select(sel);
                     try self.queueRender();
                 }
             },
@@ -3264,7 +3286,7 @@ pub fn mouseButtonCallback(
                 else
                     self.io.terminal.screen.selectLine(.{ .pin = pin.* });
                 if (sel_) |sel| {
-                    try self.setSelection(sel);
+                    try self.io.terminal.screen.select(sel);
                     try self.queueRender();
                 }
             },
@@ -3549,7 +3571,7 @@ pub fn mousePressureCallback(
         // to handle state inconsistency here.
         const pin = self.mouse.left_click_pin orelse break :select;
         const sel = self.io.terminal.screen.selectWord(pin.*) orelse break :select;
-        try self.setSelection(sel);
+        try self.io.terminal.screen.select(sel);
         try self.queueRender();
     }
 }
@@ -3768,13 +3790,13 @@ fn dragLeftClickDouble(
     // If our current mouse position is before the starting position,
     // then the selection start is the word nearest our current position.
     if (drag_pin.before(click_pin)) {
-        try self.setSelection(terminal.Selection.init(
+        try self.io.terminal.screen.select(.init(
             word_current.start(),
             word_start.end(),
             false,
         ));
     } else {
-        try self.setSelection(terminal.Selection.init(
+        try self.io.terminal.screen.select(.init(
             word_start.start(),
             word_current.end(),
             false,
@@ -3806,7 +3828,7 @@ fn dragLeftClickTriple(
     } else {
         sel.endPtr().* = line.end();
     }
-    try self.setSelection(sel);
+    try self.io.terminal.screen.select(sel);
 }
 
 fn dragLeftClickSingle(
@@ -3815,7 +3837,7 @@ fn dragLeftClickSingle(
     drag_x: f64,
 ) !void {
     // This logic is in a separate function so that it can be unit tested.
-    try self.setSelection(mouseSelection(
+    try self.io.terminal.screen.select(mouseSelection(
         self.mouse.left_click_pin.?.*,
         drag_pin,
         @intFromFloat(@max(0.0, self.mouse.left_click_xpos)),
