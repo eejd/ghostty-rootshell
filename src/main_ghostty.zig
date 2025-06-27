@@ -98,9 +98,8 @@ pub fn main() !MainReturn {
     }
 
     // Create our app state
-    var app: App = undefined;
-    try app.init(alloc);
-    defer app.deinit();
+    const app: *App = try App.create(alloc);
+    defer app.destroy();
 
     // Create our runtime app
     var app_runtime: apprt.App = undefined;

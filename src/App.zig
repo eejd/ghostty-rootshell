@@ -76,6 +76,15 @@ first: bool = true,
 
 pub const CreateError = Allocator.Error || font.SharedGridSet.InitError;
 
+/// Create a new app instance. This returns a stable pointer to the app
+/// instance which is required for callbacks.
+pub fn create(alloc: Allocator) CreateError!*App {
+    var app = try alloc.create(App);
+    errdefer alloc.destroy(app);
+    try app.init(alloc);
+    return app;
+}
+
 /// Initialize the main app instance. This creates the main window, sets
 /// up the renderer state, compiles the shaders, etc. This is the primary
 /// "startup" logic.
@@ -109,6 +118,14 @@ pub fn deinit(self: *App) void {
     // should gracefully close all surfaces.
     assert(self.font_grid_set.count() == 0);
     self.font_grid_set.deinit();
+}
+
+pub fn destroy(self: *App) void {
+    // Deinitialize the app
+    self.deinit();
+
+    // Free the app memory
+    self.alloc.destroy(self);
 }
 
 /// Tick ticks the app loop. This will drain our mailbox and process those

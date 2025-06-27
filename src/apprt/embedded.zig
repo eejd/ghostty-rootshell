@@ -1317,12 +1317,8 @@ pub const CAPI = struct {
         opts: *const apprt.runtime.App.Options,
         config: *const Config,
     ) !*App {
-        var core_app = try global.alloc.create(CoreApp);
-        try core_app.init(global.alloc);
-        errdefer {
-            core_app.deinit();
-            global.alloc.destroy(core_app);
-        }
+        const core_app = try CoreApp.create(global.alloc);
+        errdefer core_app.destroy();
 
         // Create our runtime app
         var app = try global.alloc.create(App);
@@ -1350,8 +1346,7 @@ pub const CAPI = struct {
         const core_app = v.core_app;
         v.terminate();
         global.alloc.destroy(v);
-        core_app.deinit();
-        global.alloc.destroy(core_app);
+        core_app.destroy();
     }
 
     /// Update the focused state of the app.
