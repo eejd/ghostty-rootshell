@@ -1,6 +1,7 @@
 const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
+const apprt = @import("../apprt.zig");
 const renderer = @import("../renderer.zig");
 const terminal = @import("../terminal/main.zig");
 const termio = @import("../termio.zig");
@@ -57,15 +58,6 @@ pub const Message = union(enum) {
 
     /// Enable or disable linefeed mode (mode 20).
     linefeed_mode: bool,
-
-    /// The child exited abnormally. The termio state is marked
-    /// as process exited but the surface hasn't been notified to
-    /// close because termio can use this to update the terminal
-    /// with an error message.
-    child_exited_abnormally: struct {
-        exit_code: u32,
-        runtime_ms: u64,
-    },
 
     /// The surface gained or lost focus.
     focused: bool,

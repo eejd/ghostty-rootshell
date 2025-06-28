@@ -22,13 +22,26 @@ step: *Step,
 output: LazyPath,
 
 pub fn create(b: *std.Build, opts: Options) ?*MetallibStep {
-    const self = b.allocator.create(MetallibStep) catch @panic("OOM");
-
     const sdk = switch (opts.target.result.os.tag) {
         .macos => "macosx",
-        .ios => "iphoneos",
+        .ios => switch (opts.target.result.abi) {
+            // The iOS simulator uses the same SDK for Metal as the device,
+            // but the minimum version tag causes different behaviors.
+            .simulator => "iphoneos",
+            else => "iphoneos",
+        },
         else => return null,
     };
+    const platform_version_arg = switch (opts.target.result.os.tag) {
+        .macos => "-mmacos-version-min",
+        .ios => switch (opts.target.result.abi) {
+            .simulator => "-mios-simulator-version-min",
+            else => "-mios-version-min",
+        },
+        else => null,
+    };
+
+    const self = b.allocator.create(MetallibStep) catch @panic("OOM");
 
     const min_version = if (opts.target.query.os_version_min) |v|
         b.fmt("{}", .{v.semver})
@@ -46,16 +59,11 @@ pub fn create(b: *std.Build, opts: Options) ?*MetallibStep {
     const output_ir = run_ir.addOutputFileArg(b.fmt("{s}.ir", .{opts.name}));
     run_ir.addArgs(&.{"-c"});
     for (opts.sources) |source| run_ir.addFileArg(source);
-    switch (opts.target.result.os.tag) {
-        .ios => run_ir.addArgs(&.{b.fmt(
-            "-mios-version-min={s}",
-            .{min_version},
-        )}),
-        .macos => run_ir.addArgs(&.{b.fmt(
-            "-mmacos-version-min={s}",
-            .{min_version},
-        )}),
-        else => {},
+    if (platform_version_arg) |arg| {
+        run_ir.addArgs(&.{b.fmt(
+            "{s}={s}",
+            .{ arg, min_version },
+        )});
     }
 
     const run_lib = RunStep.create(

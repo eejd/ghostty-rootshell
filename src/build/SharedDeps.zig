@@ -24,9 +24,9 @@ pub const LazyPathList = std.ArrayList(std.Build.LazyPath);
 pub fn init(b: *std.Build, cfg: *const Config) !SharedDeps {
     var result: SharedDeps = .{
         .config = cfg,
-        .help_strings = try HelpStrings.init(b, cfg),
-        .unicode_tables = try UnicodeTables.init(b),
-        .framedata = try GhosttyFrameData.init(b),
+        .help_strings = try .init(b, cfg),
+        .unicode_tables = try .init(b),
+        .framedata = try .init(b),
 
         // Setup by retarget
         .options = undefined,
@@ -60,6 +60,9 @@ pub fn changeEntrypoint(
 
     var result = self.*;
     result.config = config;
+    result.options = b.addOptions();
+    try config.addOptions(result.options);
+
     return result;
 }
 
@@ -69,10 +72,10 @@ fn initTarget(
     target: std.Build.ResolvedTarget,
 ) !void {
     // Update our metallib
-    self.metallib = MetallibStep.create(b, .{
+    self.metallib = .create(b, .{
         .name = "Ghostty",
         .target = target,
-        .sources = &.{b.path("src/renderer/shaders/cell.metal")},
+        .sources = &.{b.path("src/renderer/shaders/shaders.metal")},
     });
 
     // Change our config
@@ -374,7 +377,7 @@ pub fn add(
     // We always require the system SDK so that our system headers are available.
     // This makes things like `os/log.h` available for cross-compiling.
     if (step.rootModuleTarget().os.tag.isDarwin()) {
-        try @import("apple_sdk").addPaths(b, step.root_module);
+        try @import("apple_sdk").addPaths(b, step);
 
         const metallib = self.metallib.?;
         metallib.output.addStepDependencies(&step.step);
@@ -606,21 +609,23 @@ fn addGTK(
             .wayland_protocols = wayland_protocols_dep.path(""),
         });
 
-        // FIXME: replace with `zxdg_decoration_v1` once GTK merges https://gitlab.gnome.org/GNOME/gtk/-/merge_requests/6398
         scanner.addCustomProtocol(
             plasma_wayland_protocols_dep.path("src/protocols/blur.xml"),
         );
+        // FIXME: replace with `zxdg_decoration_v1` once GTK merges https://gitlab.gnome.org/GNOME/gtk/-/merge_requests/6398
         scanner.addCustomProtocol(
             plasma_wayland_protocols_dep.path("src/protocols/server-decoration.xml"),
         );
         scanner.addCustomProtocol(
             plasma_wayland_protocols_dep.path("src/protocols/slide.xml"),
         );
+        scanner.addSystemProtocol("staging/xdg-activation/xdg-activation-v1.xml");
 
         scanner.generate("wl_compositor", 1);
         scanner.generate("org_kde_kwin_blur_manager", 1);
         scanner.generate("org_kde_kwin_server_decoration_manager", 1);
         scanner.generate("org_kde_kwin_slide_manager", 1);
+        scanner.generate("xdg_activation_v1", 1);
 
         step.root_module.addImport("wayland", b.createModule(.{
             .root_source_file = scanner.result,
@@ -647,14 +652,13 @@ fn addGTK(
             // IMPORTANT: gtk4-layer-shell must be linked BEFORE
             // wayland-client, as it relies on shimming libwayland's APIs.
             if (b.systemIntegrationOption("gtk4-layer-shell", .{})) {
-                step.linkSystemLibrary2(
-                    "gtk4-layer-shell-0",
-                    dynamic_link_opts,
-                );
+                step.linkSystemLibrary2("gtk4-layer-shell-0", dynamic_link_opts);
             } else {
                 // gtk4-layer-shell *must* be dynamically linked,
                 // so we don't add it as a static library
-                step.linkLibrary(gtk4_layer_shell.artifact("gtk4-layer-shell"));
+                const shared_lib = gtk4_layer_shell.artifact("gtk4-layer-shell");
+                b.installArtifact(shared_lib);
+                step.linkLibrary(shared_lib);
             }
         }
 
@@ -662,34 +666,6 @@ fn addGTK(
     }
 
     {
-        // For our actual build, we validate our GTK builder files if we can.
-        {
-            const gtk_builder_check = b.addExecutable(.{
-                .name = "gtk_builder_check",
-                .root_source_file = b.path("src/apprt/gtk/builder_check.zig"),
-                .target = b.graph.host,
-            });
-            gtk_builder_check.root_module.addOptions("build_options", self.options);
-            if (gobject_) |gobject| {
-                gtk_builder_check.root_module.addImport(
-                    "gtk",
-                    gobject.module("gtk4"),
-                );
-                gtk_builder_check.root_module.addImport(
-                    "adw",
-                    gobject.module("adw1"),
-                );
-            }
-
-            for (gresource.dependencies) |pathname| {
-                const extension = std.fs.path.extension(pathname);
-                if (!std.mem.eql(u8, extension, ".ui")) continue;
-                const check = b.addRunArtifact(gtk_builder_check);
-                check.addFileArg(b.path(pathname));
-                step.step.dependOn(&check.step);
-            }
-        }
-
         // Get our gresource c/h files and add them to our build.
         const dist = gtkDistResources(b);
         step.addCSourceFile(.{ .file = dist.resources_c.path(b), .flags = &.{} });

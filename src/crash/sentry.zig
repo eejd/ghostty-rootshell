@@ -81,6 +81,13 @@ pub fn init(gpa: Allocator) !void {
 fn initThread(gpa: Allocator) !void {
     if (comptime !build_options.sentry) return;
 
+    // Right now, on Darwin, `std.Thread.setName` can only name the current
+    // thread, and we have no way to get the current thread from within it,
+    // so instead we use this code to name the thread instead.
+    if (builtin.os.tag.isDarwin()) {
+        internal_os.macos.pthread_setname_np(&"sentry-init".*);
+    }
+
     var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -166,7 +173,7 @@ fn beforeSend(
     event_val: sentry.c.sentry_value_t,
     _: ?*anyopaque,
     _: ?*anyopaque,
-) callconv(.C) sentry.c.sentry_value_t {
+) callconv(.c) sentry.c.sentry_value_t {
     // The native SDK at the time of writing doesn't support thread-local
     // scopes. The full SDK has one global scope. So we use the beforeSend
     // handler to set thread-specific data such as window size, grid size,
@@ -237,7 +244,7 @@ fn beforeSend(
 }
 
 pub const Transport = struct {
-    pub fn send(envelope: *sentry.Envelope, ud: ?*anyopaque) callconv(.C) void {
+    pub fn send(envelope: *sentry.Envelope, ud: ?*anyopaque) callconv(.c) void {
         _ = ud;
         defer envelope.deinit();
 

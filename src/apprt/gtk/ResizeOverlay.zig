@@ -50,12 +50,12 @@ first: bool = true,
 pub fn init(self: *ResizeOverlay, surface: *Surface, config: *const configpkg.Config) void {
     self.* = .{
         .surface = surface,
-        .config = DerivedConfig.init(config),
+        .config = .init(config),
     };
 }
 
 pub fn updateConfig(self: *ResizeOverlay, config: *const configpkg.Config) void {
-    self.config = DerivedConfig.init(config);
+    self.config = .init(config);
 }
 
 /// De-initialize the ResizeOverlay. This removes any pending idlers/timers that
@@ -104,7 +104,7 @@ pub fn maybeShow(self: *ResizeOverlay) void {
 
 /// Actually update the overlay widget. This should only be called from a GTK
 /// idle handler.
-fn gtkUpdate(ud: ?*anyopaque) callconv(.C) c_int {
+fn gtkUpdate(ud: ?*anyopaque) callconv(.c) c_int {
     const self: *ResizeOverlay = @ptrCast(@alignCast(ud orelse return 0));
 
     // No matter what our idler is complete with this callback
@@ -198,7 +198,7 @@ fn setPosition(label: *gtk.Label, config: *DerivedConfig) void {
 
 /// If this fires, it means that the delay period has expired and the resize
 /// overlay widget should be hidden.
-fn gtkTimerExpired(ud: ?*anyopaque) callconv(.C) c_int {
+fn gtkTimerExpired(ud: ?*anyopaque) callconv(.c) c_int {
     const self: *ResizeOverlay = @ptrCast(@alignCast(ud orelse return 0));
     self.timer = null;
     if (self.label) |label| hide(label);

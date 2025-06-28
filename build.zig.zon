@@ -8,8 +8,8 @@
 
         .libxev = .{
             // mitchellh/libxev
-            .url = "https://github.com/mitchellh/libxev/archive/3df9337a9e84450a58a2c4af434ec1a036f7b494.tar.gz",
-            .hash = "libxev-0.0.0-86vtc-ziEgDbLP0vihUn1MhsxNKY4GJEga6BEr7oyHpz",
+            .url = "https://github.com/mitchellh/libxev/archive/9bc52324d4f0c036a3b244e992680a9fb217bbd3.tar.gz",
+            .hash = "libxev-0.0.0-86vtc5b1EgB7vFmt9Tk7ySteR5AeEHW7xcR6gK9dMUD3",
             .lazy = true,
         },
         .vaxis = .{
@@ -20,8 +20,8 @@
         },
         .z2d = .{
             // vancluever/z2d
-            .url = "https://github.com/vancluever/z2d/archive/1e89605a624940c310c7a1d81b46a7c5c05919e3.tar.gz",
-            .hash = "z2d-0.6.0-j5P_HvLdCABu-dXpCeRM7Uk4m16vULg1980lMNCQj4_C",
+            .url = "https://github.com/vancluever/z2d/archive/1bf4bc81819385f4b24596445c9a7cf3b3592b08.tar.gz",
+            .hash = "z2d-0.6.1-j5P_HlerCgBokMgrkl9QhJUKXuZWBGdPnH7cSXwv_ScW",
             .lazy = true,
         },
         .zig_objc = .{
@@ -103,8 +103,8 @@
         // Other
         .apple_sdk = .{ .path = "./pkg/apple-sdk" },
         .iterm2_themes = .{
-            .url = "https://github.com/mbadolato/iTerm2-Color-Schemes/archive/8650079de477e80a5983646e3e4d24cda1dbaefa.tar.gz",
-            .hash = "N-V-__8AADk6LwSAbK3OMyGiadf6aeyztHNV4-zKaLy6IZa6",
+            .url = "https://github.com/mbadolato/iTerm2-Color-Schemes/archive/e436898274ecb89c055da476a8188aa4f79ffb17.tar.gz",
+            .hash = "N-V-__8AAHncWgThrlpsuJJ2BIINQ6L7SO6SUOT1pEL8UQaX",
             .lazy = true,
         },
     },

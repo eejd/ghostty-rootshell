@@ -281,7 +281,7 @@ pub inline fn setGamma(self: Monitor, gamma: f32) void {
 /// see also: monitor_gamma
 pub inline fn getGammaRamp(self: Monitor) ?GammaRamp {
     internal_debug.assertInitialized();
-    if (c.glfwGetGammaRamp(self.handle)) |ramp| return GammaRamp.fromC(ramp.*);
+    if (c.glfwGetGammaRamp(self.handle)) |ramp| return .fromC(ramp.*);
     return null;
 }
 
@@ -389,7 +389,7 @@ pub inline fn setCallback(comptime callback: ?fn (monitor: Monitor, event: Event
 
     if (callback) |user_callback| {
         const CWrapper = struct {
-            pub fn monitorCallbackWrapper(monitor: ?*c.GLFWmonitor, event: c_int) callconv(.C) void {
+            pub fn monitorCallbackWrapper(monitor: ?*c.GLFWmonitor, event: c_int) callconv(.c) void {
                 @call(.always_inline, user_callback, .{
                     Monitor{ .handle = monitor.? },
                     @as(Event, @enumFromInt(event)),

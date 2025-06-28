@@ -107,6 +107,9 @@ pub const Action = union(Key) {
     /// Toggle the quick terminal in or out.
     toggle_quick_terminal,
 
+    /// Toggle the command palette. This currently only works on macOS.
+    toggle_command_palette,
+
     /// Toggle the visibility of all Ghostty terminal windows.
     toggle_visibility,
 
@@ -162,6 +165,9 @@ pub const Action = union(Key) {
     /// Control whether the inspector is shown or hidden.
     inspector: Inspector,
 
+    /// Show the GTK inspector.
+    show_gtk_inspector,
+
     /// The inspector for the given target has changes and should be
     /// rendered at the next opportunity.
     render_inspector,
@@ -201,6 +207,10 @@ pub const Action = union(Key) {
     /// another quit_timer action with "stop". Multiple "starts" shouldn't
     /// happen and can be ignored or cause a restart it isn't that important.
     quit_timer: QuitTimer,
+
+    /// Set the window floating state. A floating window is one that is
+    /// always on top of other windows even when not focused.
+    float_window: FloatWindow,
 
     /// Set the secure input functionality on or off. "Secure input" means
     /// that the user is currently at some sort of prompt where they may be
@@ -244,6 +254,19 @@ pub const Action = union(Key) {
     /// Closes the currently focused window.
     close_window,
 
+    /// Called when the bell character is seen. The apprt should do whatever
+    /// it needs to ring the bell. This is usually a sound or visual effect.
+    ring_bell,
+
+    /// Undo the last action. See the "undo" keybinding for more
+    /// details on what can and cannot be undone.
+    undo,
+
+    /// Redo the last undone action.
+    redo,
+
+    check_for_updates,
+
     /// Sync with: ghostty_action_tag_e
     pub const Key = enum(c_int) {
         quit,
@@ -257,6 +280,7 @@ pub const Action = union(Key) {
         toggle_tab_overview,
         toggle_window_decorations,
         toggle_quick_terminal,
+        toggle_command_palette,
         toggle_visibility,
         move_tab,
         goto_tab,
@@ -270,6 +294,7 @@ pub const Action = union(Key) {
         initial_size,
         cell_size,
         inspector,
+        show_gtk_inspector,
         render_inspector,
         desktop_notification,
         set_title,
@@ -281,12 +306,17 @@ pub const Action = union(Key) {
         renderer_health,
         open_config,
         quit_timer,
+        float_window,
         secure_input,
         key_sequence,
         color_change,
         reload_config,
         config_change,
         close_window,
+        ring_bell,
+        undo,
+        redo,
+        check_for_updates,
     };
 
     /// Sync with: ghostty_action_u
@@ -311,7 +341,7 @@ pub const Action = union(Key) {
 
         break :cvalue @Type(.{ .@"union" = .{
             .layout = .@"extern",
-            .tag_type = Key,
+            .tag_type = null,
             .fields = &union_fields,
             .decls = &.{},
         } });
@@ -322,6 +352,13 @@ pub const Action = union(Key) {
         key: Key,
         value: CValue,
     };
+
+    comptime {
+        // For ABI compatibility, we expect that this is our union size.
+        // At the time of writing, we don't promise ABI compatibility
+        // so we can change this but I want to be aware of it.
+        assert(@sizeOf(CValue) == 16);
+    }
 
     /// Returns the value type for the given key.
     pub fn Value(comptime key: Key) type {
@@ -407,6 +444,12 @@ pub const Fullscreen = enum(c_int) {
     macos_non_native,
     macos_non_native_visible_menu,
     macos_non_native_padded_notch,
+};
+
+pub const FloatWindow = enum(c_int) {
+    on,
+    off,
+    toggle,
 };
 
 pub const SecureInput = enum(c_int) {

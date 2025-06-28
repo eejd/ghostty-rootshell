@@ -70,20 +70,18 @@ parts:
     plugin: nil
     build-attributes: [enable-patchelf]
     build-packages:
-      - blueprint-compiler
       - libgtk-4-dev
       - libadwaita-1-dev
-      # TODO: Add when the Snap is updated to Ubuntu 24.10+
-      # - gtk4-layer-shell
       - libxml2-utils
       - git
       - patchelf
       - gettext
+    # TODO: Remove -fno-sys=gtk4-layer-shell when we upgrade to a version that packages it Ubuntu 24.10+
     override-build: |
-      craftctl set version=$(git describe --abbrev=8)
-      $CRAFT_PART_SRC/../../zig/src/zig build -Dpatch-rpath=\$ORIGIN/../usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR:/snap/core24/current/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR -Doptimize=ReleaseFast
+      craftctl set version=$(cat VERSION)
+      $CRAFT_PART_SRC/../../zig/src/zig build -Dpatch-rpath=\$ORIGIN/../usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR:/snap/core24/current/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR -Doptimize=ReleaseFast -Dcpu=baseline -fno-sys=gtk4-layer-shell
       cp -rp zig-out/* $CRAFT_PART_INSTALL/
-      sed -i 's|Icon=com.mitchellh.ghostty|Icon=/snap/ghostty/current/share/icons/hicolor/512x512/apps/com.mitchellh.ghostty.png|g' $CRAFT_PART_INSTALL/share/applications/com.mitchellh.ghostty.desktop
+      sed -i 's|Icon=com.mitchellh.ghostty|Icon=${SNAP}/share/icons/hicolor/512x512/apps/com.mitchellh.ghostty.png|g' $CRAFT_PART_INSTALL/share/applications/com.mitchellh.ghostty.desktop
 
   libs:
     plugin: nil

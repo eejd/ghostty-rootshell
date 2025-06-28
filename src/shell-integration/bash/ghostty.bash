@@ -15,10 +15,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-# We need to be in interactive mode and we need to have the Ghostty
-# resources dir set which also tells us we're running in Ghostty.
+# We need to be in interactive mode to proceed.
 if [[ "$-" != *i* ]] ; then builtin return; fi
-if [ -z "$GHOSTTY_RESOURCES_DIR" ]; then builtin return; fi
 
 # When automatic shell integration is active, we were started in POSIX
 # mode and need to manually recreate the bash startup sequence.
@@ -70,7 +68,7 @@ if [ -n "$GHOSTTY_BASH_INJECT" ]; then
 fi
 
 # Sudo
-if [[ "$GHOSTTY_SHELL_INTEGRATION_NO_SUDO" != "1" && -n "$TERMINFO" ]]; then
+if [[ "$GHOSTTY_SHELL_FEATURES" == *"sudo"* && -n "$TERMINFO" ]]; then
   # Wrap `sudo` command to ensure Ghostty terminfo is preserved.
   #
   # This approach supports wrapping a `sudo` alias, but the alias definition
@@ -98,7 +96,7 @@ if [[ "$GHOSTTY_SHELL_INTEGRATION_NO_SUDO" != "1" && -n "$TERMINFO" ]]; then
 fi
 
 # Import bash-preexec, safe to do multiple times
-builtin source "$GHOSTTY_RESOURCES_DIR/shell-integration/bash/bash-preexec.sh"
+builtin source "$(dirname -- "${BASH_SOURCE[0]}")/bash-preexec.sh"
 
 # This is set to 1 when we're executing a command so that we don't
 # send prompt marks multiple times.
@@ -124,13 +122,13 @@ function __ghostty_precmd() {
       fi
 
       # Cursor
-      if test "$GHOSTTY_SHELL_INTEGRATION_NO_CURSOR" != "1"; then
+      if [[ "$GHOSTTY_SHELL_FEATURES" == *"cursor"* ]]; then
         PS1=$PS1'\[\e[5 q\]'
         PS0=$PS0'\[\e[0 q\]'
       fi
 
       # Title (working directory)
-      if [[ "$GHOSTTY_SHELL_INTEGRATION_NO_TITLE" != 1 ]]; then
+      if [[ "$GHOSTTY_SHELL_FEATURES" == *"title"* ]]; then
         PS1=$PS1'\[\e]2;\w\a\]'
       fi
     fi
@@ -161,7 +159,7 @@ function __ghostty_preexec() {
     PS2="$_GHOSTTY_SAVE_PS2"
 
     # Title (current command)
-    if [[ -n $cmd && "$GHOSTTY_SHELL_INTEGRATION_NO_TITLE" != 1 ]]; then
+    if [[ -n $cmd && "$GHOSTTY_SHELL_FEATURES" == *"title"* ]]; then
       builtin printf "\e]2;%s\a" "${cmd//[[:cntrl:]]}"
     fi
 

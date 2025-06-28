@@ -25,6 +25,7 @@ const input = @import("../../input.zig");
 const CoreSurface = @import("../../Surface.zig");
 
 const App = @import("App.zig");
+const Builder = @import("Builder.zig");
 const Color = configpkg.Config.Color;
 const Surface = @import("Surface.zig");
 const Menu = @import("menu.zig").Menu;
@@ -33,6 +34,7 @@ const gtk_key = @import("key.zig");
 const TabView = @import("TabView.zig");
 const HeaderBar = @import("headerbar.zig");
 const CloseDialog = @import("CloseDialog.zig");
+const CommandPalette = @import("CommandPalette.zig");
 const winprotopkg = @import("winproto.zig");
 const gtk_version = @import("gtk_version.zig");
 const adw_version = @import("adw_version.zig");
@@ -53,6 +55,9 @@ window: *adw.ApplicationWindow,
 /// The header bar for the window.
 headerbar: HeaderBar,
 
+/// The tab bar for the window.
+tab_bar: *adw.TabBar,
+
 /// The tab overview for the window. This is possibly null since there is no
 /// taboverview without a AdwApplicationWindow (libadwaita >= 1.4.0).
 tab_overview: ?*adw.TabOverview,
@@ -65,6 +70,9 @@ titlebar_menu: Menu(Window, "titlebar_menu", true),
 
 /// The libadwaita widget for receiving toast send requests.
 toast_overlay: *adw.ToastOverlay,
+
+/// The command palette.
+command_palette: CommandPalette,
 
 /// See adwTabOverviewOpen for why we have this.
 adw_tab_overview_focus_timer: ?c_uint = null,
@@ -81,10 +89,12 @@ pub const DerivedConfig = struct {
     gtk_tabs_location: configpkg.Config.GtkTabsLocation,
     gtk_wide_tabs: bool,
     gtk_toolbar_style: configpkg.Config.GtkToolbarStyle,
+    window_show_tab_bar: configpkg.Config.WindowShowTabBar,
 
     quick_terminal_position: configpkg.Config.QuickTerminalPosition,
     quick_terminal_size: configpkg.Config.QuickTerminalSize,
     quick_terminal_autohide: bool,
+    quick_terminal_keyboard_interactivity: configpkg.Config.QuickTerminalKeyboardInteractivity,
 
     maximize: bool,
     fullscreen: bool,
@@ -100,10 +110,12 @@ pub const DerivedConfig = struct {
             .gtk_tabs_location = config.@"gtk-tabs-location",
             .gtk_wide_tabs = config.@"gtk-wide-tabs",
             .gtk_toolbar_style = config.@"gtk-toolbar-style",
+            .window_show_tab_bar = config.@"window-show-tab-bar",
 
             .quick_terminal_position = config.@"quick-terminal-position",
             .quick_terminal_size = config.@"quick-terminal-size",
             .quick_terminal_autohide = config.@"quick-terminal-autohide",
+            .quick_terminal_keyboard_interactivity = config.@"quick-terminal-keyboard-interactivity",
 
             .maximize = config.maximize,
             .fullscreen = config.fullscreen,
@@ -131,18 +143,20 @@ pub fn init(self: *Window, app: *App) !void {
     self.* = .{
         .app = app,
         .last_config = @intFromPtr(&app.config),
-        .config = DerivedConfig.init(&app.config),
+        .config = .init(&app.config),
         .window = undefined,
         .headerbar = undefined,
+        .tab_bar = undefined,
         .tab_overview = null,
         .notebook = undefined,
         .titlebar_menu = undefined,
         .toast_overlay = undefined,
+        .command_palette = undefined,
         .winproto = .none,
     };
 
     // Create the window
-    self.window = adw.ApplicationWindow.new(app.app.as(gtk.Application));
+    self.window = .new(app.app.as(gtk.Application));
     const gtk_window = self.window.as(gtk.Window);
     const gtk_widget = self.window.as(gtk.Widget);
     errdefer gtk_window.destroy();
@@ -165,6 +179,8 @@ pub fn init(self: *Window, app: *App) !void {
 
     // Setup our notebook
     self.notebook.init(self);
+
+    if (adw_version.supportsDialogs()) try self.command_palette.init(self);
 
     // If we are using Adwaita, then we can support the tab overview.
     self.tab_overview = if (adw_version.supportsTabOverview()) overview: {
@@ -215,8 +231,9 @@ pub fn init(self: *Window, app: *App) !void {
     // If we're using an AdwWindow then we can support the tab overview.
     if (self.tab_overview) |tab_overview| {
         if (!adw_version.supportsTabOverview()) unreachable;
-        const btn = switch (self.config.gtk_tabs_location) {
-            .top, .bottom => btn: {
+
+        const btn = switch (self.config.window_show_tab_bar) {
+            .always, .auto => btn: {
                 const btn = gtk.ToggleButton.new();
                 btn.as(gtk.Widget).setTooltipText(i18n._("View Open Tabs"));
                 btn.as(gtk.Button).setIconName("view-grid-symbolic");
@@ -228,8 +245,7 @@ pub fn init(self: *Window, app: *App) !void {
                 );
                 break :btn btn.as(gtk.Widget);
             },
-
-            .hidden => btn: {
+            .never => btn: {
                 const btn = adw.TabButton.new();
                 btn.setView(self.notebook.tab_view);
                 btn.as(gtk.Actionable).setActionName("overview.open");
@@ -242,12 +258,19 @@ pub fn init(self: *Window, app: *App) !void {
     }
 
     {
-        const btn = gtk.Button.newFromIconName("tab-new-symbolic");
+        const btn = adw.SplitButton.new();
+        btn.setIconName("tab-new-symbolic");
         btn.as(gtk.Widget).setTooltipText(i18n._("New Tab"));
-        _ = gtk.Button.signals.clicked.connect(
+        btn.setDropdownTooltip(i18n._("New Split"));
+
+        var builder = Builder.init("menu-headerbar-split_menu", 1, 0);
+        defer builder.deinit();
+        btn.setMenuModel(builder.getObject(gio.MenuModel, "menu"));
+
+        _ = adw.SplitButton.signals.clicked.connect(
             btn,
             *Window,
-            gtkTabNewClick,
+            adwNewTabClick,
             self,
             .{},
         );
@@ -281,6 +304,15 @@ pub fn init(self: *Window, app: *App) !void {
             .detail = "is-active",
         },
     );
+    _ = gobject.Object.signals.notify.connect(
+        self.window,
+        *Window,
+        gtkWindowUpdateScaleFactor,
+        self,
+        .{
+            .detail = "scale-factor",
+        },
+    );
 
     // If Adwaita is enabled and is older than 1.4.0 we don't have the tab overview and so we
     // need to stick the headerbar into the content box.
@@ -309,7 +341,7 @@ pub fn init(self: *Window, app: *App) !void {
     }
 
     // Setup our toast overlay if we have one
-    self.toast_overlay = adw.ToastOverlay.new();
+    self.toast_overlay = .new();
     self.toast_overlay.setChild(self.notebook.asWidget());
     box.append(self.toast_overlay.as(gtk.Widget));
 
@@ -359,21 +391,16 @@ pub fn init(self: *Window, app: *App) !void {
     // Our actions for the menu
     initActions(self);
 
+    self.tab_bar = adw.TabBar.new();
+    self.tab_bar.setView(self.notebook.tab_view);
+
     if (adw_version.supportsToolbarView()) {
         const toolbar_view = adw.ToolbarView.new();
         toolbar_view.addTopBar(self.headerbar.asWidget());
 
-        if (self.config.gtk_tabs_location != .hidden) {
-            const tab_bar = adw.TabBar.new();
-            tab_bar.setView(self.notebook.tab_view);
-
-            if (!self.config.gtk_wide_tabs) tab_bar.setExpandTabs(0);
-
-            switch (self.config.gtk_tabs_location) {
-                .top => toolbar_view.addTopBar(tab_bar.as(gtk.Widget)),
-                .bottom => toolbar_view.addBottomBar(tab_bar.as(gtk.Widget)),
-                .hidden => unreachable,
-            }
+        switch (self.config.gtk_tabs_location) {
+            .top => toolbar_view.addTopBar(self.tab_bar.as(gtk.Widget)),
+            .bottom => toolbar_view.addBottomBar(self.tab_bar.as(gtk.Widget)),
         }
         toolbar_view.setContent(box.as(gtk.Widget));
 
@@ -388,23 +415,18 @@ pub fn init(self: *Window, app: *App) !void {
         // Set our application window content.
         self.tab_overview.?.setChild(toolbar_view.as(gtk.Widget));
         self.window.setContent(self.tab_overview.?.as(gtk.Widget));
-    } else tab_bar: {
-        if (self.config.gtk_tabs_location == .hidden) break :tab_bar;
+    } else {
         // In earlier adwaita versions, we need to add the tabbar manually since we do not use
         // an AdwToolbarView.
-        const tab_bar = adw.TabBar.new();
-        tab_bar.as(gtk.Widget).addCssClass("inline");
+        self.tab_bar.as(gtk.Widget).addCssClass("inline");
+
         switch (self.config.gtk_tabs_location) {
             .top => box.insertChildAfter(
-                tab_bar.as(gtk.Widget),
+                self.tab_bar.as(gtk.Widget),
                 self.headerbar.asWidget(),
             ),
-            .bottom => box.append(tab_bar.as(gtk.Widget)),
-            .hidden => unreachable,
+            .bottom => box.append(self.tab_bar.as(gtk.Widget)),
         }
-        tab_bar.setView(self.notebook.tab_view);
-
-        if (!self.config.gtk_wide_tabs) tab_bar.setExpandTabs(0);
     }
 
     // If we want the window to be maximized, we do that here.
@@ -439,10 +461,13 @@ pub fn updateConfig(
     if (self.last_config == this_config) return;
     self.last_config = this_config;
 
-    self.config = DerivedConfig.init(config);
+    self.config = .init(config);
 
     // We always resync our appearance whenever the config changes.
     try self.syncAppearance();
+
+    // Update binds inside the command palette
+    try self.command_palette.updateConfig(config);
 }
 
 /// Updates appearance based on config settings. Will be called once upon window
@@ -526,6 +551,16 @@ pub fn syncAppearance(self: *Window) !void {
         }
     }
 
+    self.tab_bar.setExpandTabs(@intFromBool(self.config.gtk_wide_tabs));
+    self.tab_bar.setAutohide(switch (self.config.window_show_tab_bar) {
+        .auto, .never => @intFromBool(true),
+        .always => @intFromBool(false),
+    });
+    self.tab_bar.as(gtk.Widget).setVisible(switch (self.config.window_show_tab_bar) {
+        .always, .auto => @intFromBool(true),
+        .never => @intFromBool(false),
+    });
+
     self.winproto.syncAppearance() catch |err| {
         log.warn("failed to sync winproto appearance error={}", .{err});
     };
@@ -560,6 +595,7 @@ fn initActions(self: *Window) void {
         .{ "split-left", gtkActionSplitLeft },
         .{ "split-up", gtkActionSplitUp },
         .{ "toggle-inspector", gtkActionToggleInspector },
+        .{ "toggle-command-palette", gtkActionToggleCommandPalette },
         .{ "copy", gtkActionCopy },
         .{ "paste", gtkActionPaste },
         .{ "reset", gtkActionReset },
@@ -583,6 +619,7 @@ fn initActions(self: *Window) void {
 
 pub fn deinit(self: *Window) void {
     self.winproto.deinit(self.app.core_app.alloc);
+    if (adw_version.supportsDialogs()) self.command_palette.deinit();
 
     if (self.adw_tab_overview_focus_timer) |timer| {
         _ = glib.Source.remove(timer);
@@ -712,6 +749,15 @@ pub fn toggleWindowDecorations(self: *Window) void {
     };
 }
 
+/// Toggle the window decorations for this window.
+pub fn toggleCommandPalette(self: *Window) void {
+    if (adw_version.supportsDialogs()) {
+        self.command_palette.toggle();
+    } else {
+        log.warn("libadwaita 1.5+ is required for the command palette", .{});
+    }
+}
+
 /// Grabs focus on the currently selected tab.
 pub fn focusCurrentTab(self: *Window) void {
     const tab = self.notebook.currentTab() orelse return;
@@ -775,23 +821,53 @@ fn gtkWindowNotifyIsActive(
     _: *adw.ApplicationWindow,
     _: *gobject.ParamSpec,
     self: *Window,
-) callconv(.C) void {
-    if (!self.isQuickTerminal()) return;
+) callconv(.c) void {
+    self.winproto.setUrgent(false) catch |err| {
+        log.err("failed to unrequest user attention={}", .{err});
+    };
 
-    // Hide when we're unfocused
-    if (self.config.quick_terminal_autohide and self.window.as(gtk.Window).isActive() == 0) {
-        self.toggleVisibility();
+    if (self.isQuickTerminal()) {
+        // Hide when we're unfocused
+        if (self.config.quick_terminal_autohide and self.window.as(gtk.Window).isActive() == 0) {
+            self.toggleVisibility();
+        }
     }
 }
 
-// Note: we MUST NOT use the GtkButton parameter because gtkActionNewTab
-// sends an undefined value.
-fn gtkTabNewClick(_: *gtk.Button, self: *Window) callconv(.c) void {
+fn gtkWindowUpdateScaleFactor(
+    _: *adw.ApplicationWindow,
+    _: *gobject.ParamSpec,
+    self: *Window,
+) callconv(.c) void {
+    // On some platforms (namely X11) we need to refresh our appearance when
+    // the scale factor changes. In theory this could be more fine-grained as
+    // a full refresh could be expensive, but a) this *should* be rare, and
+    // b) quite noticeable visual bugs would occur if this is not present.
+    self.winproto.syncAppearance() catch |err| {
+        log.err(
+            "failed to sync appearance after scale factor has been updated={}",
+            .{err},
+        );
+        return;
+    };
+}
+
+/// Perform a binding action on the window's action surface.
+pub fn performBindingAction(self: *Window, action: input.Binding.Action) void {
     const surface = self.actionSurface() orelse return;
-    _ = surface.performBindingAction(.{ .new_tab = {} }) catch |err| {
+    _ = surface.performBindingAction(action) catch |err| {
         log.warn("error performing binding action error={}", .{err});
         return;
     };
+}
+
+fn gtkTabNewClick(_: *gtk.Button, self: *Window) callconv(.c) void {
+    self.performBindingAction(.{ .new_tab = {} });
+}
+
+/// Create a new surface (tab or split).
+fn adwNewTabClick(_: *adw.SplitButton, self: *Window) callconv(.c) void {
+    self.performBindingAction(.{ .new_tab = {} });
 }
 
 /// Create a new tab from the AdwTabOverview. We can't copy gtkTabNewClick
@@ -840,7 +916,7 @@ fn adwTabOverviewOpen(
 
 fn adwTabOverviewFocusTimer(
     ud: ?*anyopaque,
-) callconv(.C) c_int {
+) callconv(.c) c_int {
     if (!adw_version.supportsTabOverview()) unreachable;
     const self: *Window = @ptrCast(@alignCast(ud orelse return 0));
     self.adw_tab_overview_focus_timer = null;
@@ -927,7 +1003,7 @@ fn gtkActionAbout(
     _: *gio.SimpleAction,
     _: ?*glib.Variant,
     self: *Window,
-) callconv(.C) void {
+) callconv(.c) void {
     const name = "Ghostty";
     const icon = "com.mitchellh.ghostty";
     const website = "https://ghostty.org";
@@ -971,7 +1047,7 @@ fn gtkActionClose(
     _: *gio.SimpleAction,
     _: ?*glib.Variant,
     self: *Window,
-) callconv(.C) void {
+) callconv(.c) void {
     self.closeWithConfirmation();
 }
 
@@ -979,153 +1055,112 @@ fn gtkActionNewWindow(
     _: *gio.SimpleAction,
     _: ?*glib.Variant,
     self: *Window,
-) callconv(.C) void {
-    const surface = self.actionSurface() orelse return;
-    _ = surface.performBindingAction(.{ .new_window = {} }) catch |err| {
-        log.warn("error performing binding action error={}", .{err});
-        return;
-    };
+) callconv(.c) void {
+    self.performBindingAction(.{ .new_window = {} });
 }
 
 fn gtkActionNewTab(
     _: *gio.SimpleAction,
     _: ?*glib.Variant,
     self: *Window,
-) callconv(.C) void {
-    // We can use undefined because the button is not used.
-    gtkTabNewClick(undefined, self);
+) callconv(.c) void {
+    self.performBindingAction(.{ .new_tab = {} });
 }
 
 fn gtkActionCloseTab(
     _: *gio.SimpleAction,
     _: ?*glib.Variant,
     self: *Window,
-) callconv(.C) void {
-    const surface = self.actionSurface() orelse return;
-    _ = surface.performBindingAction(.{ .close_tab = {} }) catch |err| {
-        log.warn("error performing binding action error={}", .{err});
-        return;
-    };
+) callconv(.c) void {
+    self.performBindingAction(.{ .close_tab = {} });
 }
 
 fn gtkActionSplitRight(
     _: *gio.SimpleAction,
     _: ?*glib.Variant,
     self: *Window,
-) callconv(.C) void {
-    const surface = self.actionSurface() orelse return;
-    _ = surface.performBindingAction(.{ .new_split = .right }) catch |err| {
-        log.warn("error performing binding action error={}", .{err});
-        return;
-    };
+) callconv(.c) void {
+    self.performBindingAction(.{ .new_split = .right });
 }
 
 fn gtkActionSplitDown(
     _: *gio.SimpleAction,
     _: ?*glib.Variant,
     self: *Window,
-) callconv(.C) void {
-    const surface = self.actionSurface() orelse return;
-    _ = surface.performBindingAction(.{ .new_split = .down }) catch |err| {
-        log.warn("error performing binding action error={}", .{err});
-        return;
-    };
+) callconv(.c) void {
+    self.performBindingAction(.{ .new_split = .down });
 }
 
 fn gtkActionSplitLeft(
     _: *gio.SimpleAction,
     _: ?*glib.Variant,
     self: *Window,
-) callconv(.C) void {
-    const surface = self.actionSurface() orelse return;
-    _ = surface.performBindingAction(.{ .new_split = .left }) catch |err| {
-        log.warn("error performing binding action error={}", .{err});
-        return;
-    };
+) callconv(.c) void {
+    self.performBindingAction(.{ .new_split = .left });
 }
 
 fn gtkActionSplitUp(
     _: *gio.SimpleAction,
     _: ?*glib.Variant,
     self: *Window,
-) callconv(.C) void {
-    const surface = self.actionSurface() orelse return;
-    _ = surface.performBindingAction(.{ .new_split = .up }) catch |err| {
-        log.warn("error performing binding action error={}", .{err});
-        return;
-    };
+) callconv(.c) void {
+    self.performBindingAction(.{ .new_split = .up });
 }
 
 fn gtkActionToggleInspector(
     _: *gio.SimpleAction,
     _: ?*glib.Variant,
     self: *Window,
+) callconv(.c) void {
+    self.performBindingAction(.{ .inspector = .toggle });
+}
+
+fn gtkActionToggleCommandPalette(
+    _: *gio.SimpleAction,
+    _: ?*glib.Variant,
+    self: *Window,
 ) callconv(.C) void {
-    const surface = self.actionSurface() orelse return;
-    _ = surface.performBindingAction(.{ .inspector = .toggle }) catch |err| {
-        log.warn("error performing binding action error={}", .{err});
-        return;
-    };
+    self.performBindingAction(.toggle_command_palette);
 }
 
 fn gtkActionCopy(
     _: *gio.SimpleAction,
     _: ?*glib.Variant,
     self: *Window,
-) callconv(.C) void {
-    const surface = self.actionSurface() orelse return;
-    _ = surface.performBindingAction(.{ .copy_to_clipboard = {} }) catch |err| {
-        log.warn("error performing binding action error={}", .{err});
-        return;
-    };
+) callconv(.c) void {
+    self.performBindingAction(.{ .copy_to_clipboard = {} });
 }
 
 fn gtkActionPaste(
     _: *gio.SimpleAction,
     _: ?*glib.Variant,
     self: *Window,
-) callconv(.C) void {
-    const surface = self.actionSurface() orelse return;
-    _ = surface.performBindingAction(.{ .paste_from_clipboard = {} }) catch |err| {
-        log.warn("error performing binding action error={}", .{err});
-        return;
-    };
+) callconv(.c) void {
+    self.performBindingAction(.{ .paste_from_clipboard = {} });
 }
 
 fn gtkActionReset(
     _: *gio.SimpleAction,
     _: ?*glib.Variant,
     self: *Window,
-) callconv(.C) void {
-    const surface = self.actionSurface() orelse return;
-    _ = surface.performBindingAction(.{ .reset = {} }) catch |err| {
-        log.warn("error performing binding action error={}", .{err});
-        return;
-    };
+) callconv(.c) void {
+    self.performBindingAction(.{ .reset = {} });
 }
 
 fn gtkActionClear(
     _: *gio.SimpleAction,
     _: ?*glib.Variant,
     self: *Window,
-) callconv(.C) void {
-    const surface = self.actionSurface() orelse return;
-    _ = surface.performBindingAction(.{ .clear_screen = {} }) catch |err| {
-        log.warn("error performing binding action error={}", .{err});
-        return;
-    };
+) callconv(.c) void {
+    self.performBindingAction(.{ .clear_screen = {} });
 }
 
 fn gtkActionPromptTitle(
     _: *gio.SimpleAction,
     _: ?*glib.Variant,
     self: *Window,
-) callconv(.C) void {
-    const surface = self.actionSurface() orelse return;
-    _ = surface.performBindingAction(.{ .prompt_surface_title = {} }) catch |err| {
-        log.warn("error performing binding action error={}", .{err});
-        return;
-    };
+) callconv(.c) void {
+    self.performBindingAction(.{ .prompt_surface_title = {} });
 }
 
 /// Returns the surface to use for an action.
@@ -1139,7 +1174,7 @@ fn gtkTitlebarMenuActivate(
     btn: *gtk.MenuButton,
     _: *gobject.ParamSpec,
     self: *Window,
-) callconv(.C) void {
+) callconv(.c) void {
     // debian 12 is stuck on GTK 4.8
     if (!gtk_version.atLeast(4, 10, 0)) return;
     const active = btn.getActive() != 0;

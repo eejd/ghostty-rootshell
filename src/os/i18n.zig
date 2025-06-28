@@ -23,13 +23,29 @@ const log = std.log.scoped(.i18n);
 ///
 ///   3. Most preferred locale for a language without a country code.
 ///
+/// Note for "most common" locales, this is subjective and based on
+/// the perceived userbase of Ghostty, which may not be representative
+/// of general populations or global language distribution. Also note
+/// that ordering may be weird when we first merge a new locale since
+/// we don't have a good way to determine this. We can always reorder
+/// with some data.
 pub const locales = [_][:0]const u8{
-    "de_DE.UTF-8",
     "zh_CN.UTF-8",
+    "de_DE.UTF-8",
+    "fr_FR.UTF-8",
+    "ja_JP.UTF-8",
+    "nl_NL.UTF-8",
     "nb_NO.UTF-8",
+    "ru_RU.UTF-8",
     "uk_UA.UTF-8",
     "pl_PL.UTF-8",
     "ko_KR.UTF-8",
+    "mk_MK.UTF-8",
+    "tr_TR.UTF-8",
+    "id_ID.UTF-8",
+    "es_BO.UTF-8",
+    "pt_BR.UTF-8",
+    "ca_ES.UTF-8",
 };
 
 /// Set for faster membership lookup of locales.
@@ -53,23 +69,27 @@ pub const InitError = error{
 /// want to set the domain for the entire application since this is also
 /// used by libghostty.
 pub fn init(resources_dir: []const u8) InitError!void {
-    // i18n is unsupported on Windows
-    if (builtin.os.tag == .windows) return;
+    switch (builtin.os.tag) {
+        // i18n is unsupported on Windows
+        .windows => return,
 
-    // Our resources dir is always nested below the share dir that
-    // is standard for translations.
-    const share_dir = std.fs.path.dirname(resources_dir) orelse
-        return error.InvalidResourcesDir;
+        else => {
+            // Our resources dir is always nested below the share dir that
+            // is standard for translations.
+            const share_dir = std.fs.path.dirname(resources_dir) orelse
+                return error.InvalidResourcesDir;
 
-    // Build our locale path
-    var buf: [std.fs.max_path_bytes]u8 = undefined;
-    const path = std.fmt.bufPrintZ(&buf, "{s}/locale", .{share_dir}) catch
-        return error.OutOfMemory;
+            // Build our locale path
+            var buf: [std.fs.max_path_bytes]u8 = undefined;
+            const path = std.fmt.bufPrintZ(&buf, "{s}/locale", .{share_dir}) catch
+                return error.OutOfMemory;
 
-    // Bind our bundle ID to the given locale path
-    log.debug("binding domain={s} path={s}", .{ build_config.bundle_id, path });
-    _ = bindtextdomain(build_config.bundle_id, path.ptr) orelse
-        return error.OutOfMemory;
+            // Bind our bundle ID to the given locale path
+            log.debug("binding domain={s} path={s}", .{ build_config.bundle_id, path });
+            _ = bindtextdomain(build_config.bundle_id, path.ptr) orelse
+                return error.OutOfMemory;
+        },
+    }
 }
 
 /// Set the global gettext domain to our bundle ID, allowing unqualified

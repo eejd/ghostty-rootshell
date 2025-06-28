@@ -45,10 +45,6 @@ protocol FullscreenDelegate: AnyObject {
     func fullscreenDidChange()
 }
 
-extension FullscreenDelegate {
-    func fullscreenDidChange() {}
-}
-
 /// The base class for fullscreen implementations, cannot be used as a FullscreenStyle on its own.
 class FullscreenBase {
     let window: NSWindow
@@ -78,10 +74,12 @@ class FullscreenBase {
     }
 
     @objc private func didEnterFullScreenNotification(_ notification: Notification) {
+        NotificationCenter.default.post(name: .fullscreenDidEnter, object: self)
         delegate?.fullscreenDidChange()
     }
 
     @objc private func didExitFullScreenNotification(_ notification: Notification) {
+        NotificationCenter.default.post(name: .fullscreenDidExit, object: self)
         delegate?.fullscreenDidChange()
     }
 }
@@ -150,6 +148,26 @@ class NonNativeFullscreen: FullscreenBase, FullscreenStyle {
 
     private var savedState: SavedState?
 
+    required init?(_ window: NSWindow) {
+        super.init(window)
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(windowWillCloseNotification),
+            name: NSWindow.willCloseNotification,
+            object: window)
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    @objc private func windowWillCloseNotification(_ notification: Notification) {
+        // When the window closes we need to explicitly exit non-native fullscreen
+        // otherwise some state like the menu bar can remain hidden.
+        exit()
+    }
+
     func enter() {
         // If we are in fullscreen we don't do it again.
         guard !isFullscreen else { return }
@@ -171,6 +189,13 @@ class NonNativeFullscreen: FullscreenBase, FullscreenStyle {
         guard let savedState = SavedState(window) else { return }
         self.savedState = savedState
 
+        // Get our current first responder on this window. For non-native fullscreen
+        // we have to restore this because for some reason the operations below
+        // lose it (see: https://github.com/ghostty-org/ghostty/issues/6999).
+        // I don't know the root cause here so if we can figure that out there may
+        // be a nicer way than this.
+        let firstResponder = window.firstResponder
+
         // We hide the dock if the window is on a screen with the dock.
         // We must hide the dock FIRST then hide the menu:
         // If you specify autoHideMenuBar, it must be accompanied by either hideDock or autoHideDock.
@@ -180,7 +205,7 @@ class NonNativeFullscreen: FullscreenBase, FullscreenStyle {
         }
 
         // Hide the menu if requested
-        if (properties.hideMenu) {
+        if (properties.hideMenu && savedState.menu) {
             hideMenu()
         }
 
@@ -207,6 +232,11 @@ class NonNativeFullscreen: FullscreenBase, FullscreenStyle {
         // https://github.com/ghostty-org/ghostty/issues/1996
         DispatchQueue.main.async {
             self.window.setFrame(self.fullscreenFrame(screen), display: true)
+            if let firstResponder {
+                self.window.makeFirstResponder(firstResponder)
+            }
+
+            NotificationCenter.default.post(name: .fullscreenDidEnter, object: self)
             self.delegate?.fullscreenDidChange()
         }
     }
@@ -220,23 +250,39 @@ class NonNativeFullscreen: FullscreenBase, FullscreenStyle {
         let center = NotificationCenter.default
         center.removeObserver(self, name: NSWindow.didChangeScreenNotification, object: window)
 
+        // See enter where we do the same thing to understand why.
+        let firstResponder = window.firstResponder
+
         // Unhide our elements
         if savedState.dock {
             unhideDock()
         }
-        unhideMenu()
+        if (properties.hideMenu && savedState.menu) {
+            unhideMenu()
+        }
 
         // Restore our saved state
         window.styleMask = savedState.styleMask
         window.setFrame(window.frameRect(forContentRect: savedState.contentFrame), display: true)
 
-        // This is a hack that I want to remove from this but for now, we need to
-        // fix up the titlebar tabs here before we do everything below.
-        if let window = window as? TerminalWindow,
-           window.titlebarTabs {
-            window.titlebarTabs = true
+        // Removing the "titled" style also derefs all our accessory view controllers
+        // so we need to restore those.
+        for c in savedState.titlebarAccessoryViewControllers {
+            // Restoring the tab bar causes all sorts of problems. Its best to just ignore it,
+            // even though this is kind of a hack.
+            if let window = window as? TerminalWindow, window.isTabBar(c) {
+                continue
+            }
+            
+            if window.titlebarAccessoryViewControllers.firstIndex(of: c) == nil {
+                window.addTitlebarAccessoryViewController(c)
+            }
         }
 
+        // Removing "titled" also clears our toolbar
+        window.toolbar = savedState.toolbar
+        window.toolbarStyle = savedState.toolbarStyle
+        
         // If the window was previously in a tab group that isn't empty now,
         // we re-add it. We have to do this because our process of doing non-native
         // fullscreen removes the window from the tab group.
@@ -256,6 +302,10 @@ class NonNativeFullscreen: FullscreenBase, FullscreenStyle {
             }
         }
 
+        if let firstResponder {
+            window.makeFirstResponder(firstResponder)
+        }
+
         // Unset our saved state, we're restored!
         self.savedState = nil
 
@@ -263,6 +313,7 @@ class NonNativeFullscreen: FullscreenBase, FullscreenStyle {
         window.makeKeyAndOrderFront(nil)
 
         // Notify the delegate
+        NotificationCenter.default.post(name: .fullscreenDidExit, object: self)
         self.delegate?.fullscreenDidChange()
     }
 
@@ -273,7 +324,8 @@ class NonNativeFullscreen: FullscreenBase, FullscreenStyle {
         // calculate this ourselves.
         var frame = screen.frame
 
-        if (!properties.hideMenu) {
+        if (!NSApp.presentationOptions.contains(.autoHideMenuBar) &&
+            !NSApp.presentationOptions.contains(.hideMenuBar)) {
             // We need to subtract the menu height since we're still showing it.
             frame.size.height -= NSApp.mainMenu?.menuBarHeight ?? 0
 
@@ -339,7 +391,11 @@ class NonNativeFullscreen: FullscreenBase, FullscreenStyle {
         let tabGroupIndex: Int?
         let contentFrame: NSRect
         let styleMask: NSWindow.StyleMask
+        let toolbar: NSToolbar?
+        let toolbarStyle: NSWindow.ToolbarStyle
+        let titlebarAccessoryViewControllers: [NSTitlebarAccessoryViewController]
         let dock: Bool
+        let menu: Bool
 
         init?(_ window: NSWindow) {
             guard let contentView = window.contentView else { return nil }
@@ -349,7 +405,29 @@ class NonNativeFullscreen: FullscreenBase, FullscreenStyle {
             self.tabGroupIndex = window.tabGroup?.windows.firstIndex(of: window)
             self.contentFrame = window.convertToScreen(contentView.frame)
             self.styleMask = window.styleMask
+            self.toolbar = window.toolbar
+            self.toolbarStyle = window.toolbarStyle
+            self.titlebarAccessoryViewControllers = window.titlebarAccessoryViewControllers
             self.dock = window.screen?.hasDock ?? false
+
+            if let cgWindowId = window.cgWindowId {
+                // We hide the menu only if this window is not on any fullscreen
+                // spaces. We do this because fullscreen spaces already hide the
+                // menu and if we insert/remove this presentation option we get
+                // issues (see #7075)
+                let activeSpace = CGSSpace.active()
+                let spaces = CGSSpace.list(for: cgWindowId)
+                if spaces.contains(activeSpace) {
+                    self.menu = activeSpace.type != .fullscreen
+                } else {
+                    self.menu = spaces.allSatisfy { $0.type != .fullscreen }
+                }
+            } else {
+                // Window doesn't have a window device, its not visible or something.
+                // In this case, we assume we can hide the menu. We may want to do
+                // something more sophisticated but this works for now.
+                self.menu = true
+            }
         }
     }
 }
@@ -360,4 +438,9 @@ class NonNativeFullscreenVisibleMenu: NonNativeFullscreen {
 
 class NonNativeFullscreenPaddedNotch: NonNativeFullscreen {
     override var properties: Properties { Properties(paddedNotch: true) }
+}
+
+extension Notification.Name {
+    static let fullscreenDidEnter = Notification.Name("com.mitchellh.fullscreenDidEnter")
+    static let fullscreenDidExit = Notification.Name("com.mitchellh.fullscreenDidExit")
 }

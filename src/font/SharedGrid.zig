@@ -40,7 +40,7 @@ const log = std.log.scoped(.font_shared_grid);
 codepoints: std.AutoHashMapUnmanaged(CodepointKey, ?Collection.Index) = .{},
 
 /// Cache for glyph renders into the atlas.
-glyphs: std.AutoHashMapUnmanaged(GlyphKey, Render) = .{},
+glyphs: std.HashMapUnmanaged(GlyphKey, Render, GlyphKey.Context, 80) = .{},
 
 /// The texture atlas to store renders in. The Glyph data in the glyphs
 /// cache is dependent on the atlas matching.
@@ -79,7 +79,7 @@ pub fn init(
 
     var atlas_grayscale = try Atlas.init(alloc, 512, .grayscale);
     errdefer atlas_grayscale.deinit(alloc);
-    var atlas_color = try Atlas.init(alloc, 512, .rgba);
+    var atlas_color = try Atlas.init(alloc, 512, .bgra);
     errdefer atlas_color.deinit(alloc);
 
     var result: SharedGrid = .{
@@ -307,6 +307,39 @@ const GlyphKey = struct {
     index: Collection.Index,
     glyph: u32,
     opts: RenderOptions,
+
+    const Context = struct {
+        pub fn hash(_: Context, key: GlyphKey) u64 {
+            return @bitCast(Packed.from(key));
+        }
+
+        pub fn eql(_: Context, a: GlyphKey, b: GlyphKey) bool {
+            return Packed.from(a) == Packed.from(b);
+        }
+    };
+
+    const Packed = packed struct(u64) {
+        index: Collection.Index,
+        glyph: u32,
+        opts: packed struct(u16) {
+            cell_width: u2,
+            thicken: bool,
+            thicken_strength: u8,
+            _padding: u5 = 0,
+        },
+
+        inline fn from(key: GlyphKey) Packed {
+            return .{
+                .index = key.index,
+                .glyph = key.glyph,
+                .opts = .{
+                    .cell_width = key.opts.cell_width orelse 0,
+                    .thicken = key.opts.thicken,
+                    .thicken_strength = key.opts.thicken_strength,
+                },
+            };
+        }
+    };
 };
 
 const TestMode = enum { normal };
@@ -319,7 +352,7 @@ fn testGrid(mode: TestMode, alloc: Allocator, lib: Library) !SharedGrid {
 
     switch (mode) {
         .normal => {
-            _ = try c.add(alloc, .regular, .{ .loaded = try Face.init(
+            _ = try c.add(alloc, .regular, .{ .loaded = try .init(
                 lib,
                 testFont,
                 .{ .size = .{ .points = 12, .xdpi = 96, .ydpi = 96 } },
@@ -338,7 +371,7 @@ test getIndex {
     const alloc = testing.allocator;
     // const testEmoji = @import("test.zig").fontEmoji;
 
-    var lib = try Library.init();
+    var lib = try Library.init(alloc);
     defer lib.deinit();
 
     var grid = try testGrid(.normal, alloc, lib);

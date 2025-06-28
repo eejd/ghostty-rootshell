@@ -138,7 +138,7 @@ const Window = struct {
         };
 
         // Create the window
-        self.window = gtk.ApplicationWindow.new(inspector.surface.app.app.as(gtk.Application));
+        self.window = .new(inspector.surface.app.app.as(gtk.Application));
         errdefer self.window.as(gtk.Window).destroy();
 
         self.window.as(gtk.Window).setTitle(i18n._("Ghostty: Terminal Inspector"));
@@ -177,7 +177,7 @@ const Window = struct {
     }
 
     /// "destroy" signal for the window
-    fn gtkDestroy(_: *gtk.ApplicationWindow, self: *Window) callconv(.C) void {
+    fn gtkDestroy(_: *gtk.ApplicationWindow, self: *Window) callconv(.c) void {
         log.debug("window destroy", .{});
         self.deinit();
     }

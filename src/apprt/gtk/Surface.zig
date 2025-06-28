@@ -41,10 +41,6 @@ const adw_version = @import("adw_version.zig");
 
 const log = std.log.scoped(.gtk_surface);
 
-/// This is detected by the OpenGL renderer to move to a single-threaded
-/// draw operation. This basically puts locks around our draw path.
-pub const opengl_single_threaded_draw = true;
-
 pub const Options = struct {
     /// The parent surface to inherit settings such as font size, working
     /// directory, etc. from.
@@ -394,7 +390,10 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
 
     // Various other GL properties
     gl_area_widget.setCursorFromName("text");
-    gl_area.setRequiredVersion(3, 3);
+    gl_area.setRequiredVersion(
+        renderer.OpenGL.MIN_VERSION_MAJOR,
+        renderer.OpenGL.MIN_VERSION_MINOR,
+    );
     gl_area.setHasStencilBuffer(0);
     gl_area.setHasDepthBuffer(0);
     gl_area.setUseEs(0);
@@ -683,12 +682,13 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
 
 fn realize(self: *Surface) !void {
     // If this surface has already been realized, then we don't need to
-    // reinitialize. This can happen if a surface is moved from one GDK surface
-    // to another (i.e. a tab is pulled out into a window).
+    // reinitialize. This can happen if a surface is moved from one GDK
+    // surface to another (i.e. a tab is pulled out into a window).
     if (self.realized) {
         // If we have no OpenGL state though, we do need to reinitialize.
-        // We allow the renderer to figure that out
-        try self.core_surface.renderer.displayRealize();
+        // We allow the renderer to figure that out, and then queue a draw.
+        try self.core_surface.renderer.displayRealized();
+        self.redraw();
         return;
     }
 
@@ -746,7 +746,21 @@ pub fn deinit(self: *Surface) void {
     self.core_surface.deinit();
     self.core_surface = undefined;
 
-    if (self.cgroup_path) |path| self.app.core_app.alloc.free(path);
+    // Remove the cgroup if we have one. We do this after deiniting the core
+    // surface to ensure all processes have exited.
+    if (self.cgroup_path) |path| {
+        internal_os.cgroup.remove(path) catch |err| {
+            // We don't want this to be fatal in any way so we just log
+            // and continue. A dangling empty cgroup is not a big deal
+            // and this should be rare.
+            log.warn(
+                "failed to remove cgroup for surface path={s} err={}",
+                .{ path, err },
+            );
+        };
+
+        self.app.core_app.alloc.free(path);
+    }
 
     // Free all our GTK stuff
     //
@@ -780,7 +794,7 @@ pub fn primaryWidget(self: *Surface) *gtk.Widget {
 }
 
 fn render(self: *Surface) !void {
-    try self.core_surface.renderer.drawFrame(self);
+    try self.core_surface.renderer.drawFrame(true);
 }
 
 /// Called by core surface to get the cgroup.
@@ -1025,7 +1039,7 @@ pub fn setTitle(self: *Surface, slice: [:0]const u8, source: SetTitleSource) !vo
     self.update_title_timer = glib.timeoutAdd(75, updateTitleTimerExpired, self);
 }
 
-fn updateTitleTimerExpired(ud: ?*anyopaque) callconv(.C) c_int {
+fn updateTitleTimerExpired(ud: ?*anyopaque) callconv(.c) c_int {
     const self: *Surface = @ptrCast(@alignCast(ud.?));
 
     self.updateTitleLabels();
@@ -1061,7 +1075,7 @@ pub fn promptTitle(self: *Surface) !void {
     if (!adw_version.atLeast(1, 5, 0)) return;
     const window = self.container.window() orelse return;
 
-    var builder = Builder.init("prompt-title-dialog", 1, 5, .blp);
+    var builder = Builder.init("prompt-title-dialog", 1, 5);
     defer builder.deinit();
 
     const entry = builder.getObject(gtk.Entry, "title_entry").?;
@@ -1191,7 +1205,7 @@ pub fn mouseOverLink(self: *Surface, uri_: ?[]const u8) void {
         return;
     }
 
-    self.url_widget = URLWidget.init(self.overlay, uriZ);
+    self.url_widget = .init(self.overlay, uriZ);
 }
 
 pub fn supportsClipboard(
@@ -1265,7 +1279,7 @@ fn gtkClipboardRead(
     source: ?*gobject.Object,
     res: *gio.AsyncResult,
     ud: ?*anyopaque,
-) callconv(.C) void {
+) callconv(.c) void {
     const clipboard = gobject.ext.cast(gdk.Clipboard, source orelse return) orelse return;
     const req: *ClipboardRequest = @ptrCast(@alignCast(ud orelse return));
     const self = req.self;
@@ -1349,7 +1363,7 @@ pub fn showDesktopNotification(
     app.sendNotification(body.ptr, notification);
 }
 
-fn gtkRealize(gl_area: *gtk.GLArea, self: *Surface) callconv(.C) void {
+fn gtkRealize(gl_area: *gtk.GLArea, self: *Surface) callconv(.c) void {
     log.debug("gl surface realized", .{});
 
     // We need to make the context current so we can call GL functions.
@@ -1377,7 +1391,7 @@ fn gtkRealize(gl_area: *gtk.GLArea, self: *Surface) callconv(.C) void {
 
 /// This is called when the underlying OpenGL resources must be released.
 /// This is usually due to the OpenGL area changing GDK surfaces.
-fn gtkUnrealize(gl_area: *gtk.GLArea, self: *Surface) callconv(.C) void {
+fn gtkUnrealize(gl_area: *gtk.GLArea, self: *Surface) callconv(.c) void {
     log.debug("gl surface unrealized", .{});
 
     // See gtkRealize for why we do this here.
@@ -1405,7 +1419,7 @@ fn gtkUnrealize(gl_area: *gtk.GLArea, self: *Surface) callconv(.C) void {
 }
 
 /// render signal
-fn gtkRender(_: *gtk.GLArea, _: *gdk.GLContext, self: *Surface) callconv(.C) c_int {
+fn gtkRender(_: *gtk.GLArea, _: *gdk.GLContext, self: *Surface) callconv(.c) c_int {
     self.render() catch |err| {
         log.err("surface failed to render: {}", .{err});
         return 0;
@@ -1415,7 +1429,7 @@ fn gtkRender(_: *gtk.GLArea, _: *gdk.GLContext, self: *Surface) callconv(.C) c_i
 }
 
 /// resize signal
-fn gtkResize(gl_area: *gtk.GLArea, width: c_int, height: c_int, self: *Surface) callconv(.C) void {
+fn gtkResize(gl_area: *gtk.GLArea, width: c_int, height: c_int, self: *Surface) callconv(.c) void {
     // Some debug output to help understand what GTK is telling us.
     {
         const scale_factor = scale: {
@@ -1471,7 +1485,7 @@ fn gtkResize(gl_area: *gtk.GLArea, width: c_int, height: c_int, self: *Surface) 
 }
 
 /// "destroy" signal for surface
-fn gtkDestroy(_: *gtk.GLArea, self: *Surface) callconv(.C) void {
+fn gtkDestroy(_: *gtk.GLArea, self: *Surface) callconv(.c) void {
     log.debug("gl destroy", .{});
 
     const alloc = self.app.core_app.alloc;
@@ -1505,7 +1519,7 @@ fn gtkMouseDown(
     x: f64,
     y: f64,
     self: *Surface,
-) callconv(.C) void {
+) callconv(.c) void {
     const event = gesture.as(gtk.EventController).getCurrentEvent() orelse return;
 
     const gtk_mods = event.getModifierState();
@@ -1538,7 +1552,7 @@ fn gtkMouseUp(
     _: f64,
     _: f64,
     self: *Surface,
-) callconv(.C) void {
+) callconv(.c) void {
     const event = gesture.as(gtk.EventController).getCurrentEvent() orelse return;
 
     const gtk_mods = event.getModifierState();
@@ -1557,13 +1571,13 @@ fn gtkMouseMotion(
     x: f64,
     y: f64,
     self: *Surface,
-) callconv(.C) void {
+) callconv(.c) void {
     const event = ec.as(gtk.EventController).getCurrentEvent() orelse return;
 
     const scaled = self.scaledCoordinates(x, y);
 
     const pos: apprt.CursorPos = .{
-        .x = @floatCast(@max(0, scaled.x)),
+        .x = @floatCast(scaled.x),
         .y = @floatCast(scaled.y),
     };
 
@@ -1603,7 +1617,7 @@ fn gtkMouseMotion(
 fn gtkMouseLeave(
     ec_motion: *gtk.EventControllerMotion,
     self: *Surface,
-) callconv(.C) void {
+) callconv(.c) void {
     const event = ec_motion.as(gtk.EventController).getCurrentEvent() orelse return;
 
     // Get our modifiers
@@ -1618,14 +1632,14 @@ fn gtkMouseLeave(
 fn gtkMouseScrollPrecisionBegin(
     _: *gtk.EventControllerScroll,
     self: *Surface,
-) callconv(.C) void {
+) callconv(.c) void {
     self.precision_scroll = true;
 }
 
 fn gtkMouseScrollPrecisionEnd(
     _: *gtk.EventControllerScroll,
     self: *Surface,
-) callconv(.C) void {
+) callconv(.c) void {
     self.precision_scroll = false;
 }
 
@@ -1634,7 +1648,7 @@ fn gtkMouseScroll(
     x: f64,
     y: f64,
     self: *Surface,
-) callconv(.C) c_int {
+) callconv(.c) c_int {
     const scaled = self.scaledCoordinates(x, y);
 
     // GTK doesn't support any of the scroll mods.
@@ -1664,7 +1678,7 @@ fn gtkKeyPressed(
     keycode: c_uint,
     gtk_mods: gdk.ModifierType,
     self: *Surface,
-) callconv(.C) c_int {
+) callconv(.c) c_int {
     return @intFromBool(self.keyEvent(
         .press,
         ec_key,
@@ -1680,7 +1694,7 @@ fn gtkKeyReleased(
     keycode: c_uint,
     state: gdk.ModifierType,
     self: *Surface,
-) callconv(.C) void {
+) callconv(.c) void {
     _ = self.keyEvent(
         .release,
         ec_key,
@@ -1840,7 +1854,7 @@ pub fn keyEvent(
     // (These are keybinds explicitly marked as requesting physical mapping).
     const physical_key = keycode: for (input.keycodes.entries) |entry| {
         if (entry.native == keycode) break :keycode entry.key;
-    } else .invalid;
+    } else .unidentified;
 
     // Get our modifier for the event
     const mods: input.Mods = gtk_key.eventMods(
@@ -1860,52 +1874,6 @@ pub fn keyEvent(
         const masked = @as(I, @bitCast(key_event.getConsumedModifiers())) & @as(I, gdk.MODIFIER_MASK);
         break :consumed gtk_key.translateMods(@bitCast(masked));
     };
-
-    // If we're not in a dead key state, we want to translate our text
-    // to some input.Key.
-    const key = if (!self.im_composing) key: {
-        // First, try to convert the keyval directly to a key. This allows the
-        // use of key remapping and identification of keypad numerics (as
-        // opposed to their ASCII counterparts)
-        if (gtk_key.keyFromKeyval(keyval)) |key| {
-            break :key key;
-        }
-
-        // A completed key. If the length of the key is one then we can
-        // attempt to translate it to a key enum and call the key
-        // callback. First try plain ASCII.
-        if (self.im_len > 0) {
-            if (input.Key.fromASCII(self.im_buf[0])) |key| {
-                break :key key;
-            }
-        }
-
-        // If that doesn't work then we try to translate the kevval..
-        if (keyval_unicode != 0) {
-            if (std.math.cast(u8, keyval_unicode)) |byte| {
-                if (input.Key.fromASCII(byte)) |key| {
-                    break :key key;
-                }
-            }
-        }
-
-        // If that doesn't work we use the unshifted value...
-        if (std.math.cast(u8, keyval_unicode_unshifted)) |ascii| {
-            if (input.Key.fromASCII(ascii)) |key| {
-                break :key key;
-            }
-        }
-
-        // If we have im text then this is invalid. This means that
-        // the keypress generated some character that we don't know about
-        // in our key enum. We don't want to use the physical key because
-        // it can be simply wrong. For example on "Turkish Q" the "i" key
-        // on a US layout results in "ı" which is not the same as "i" so
-        // we shouldn't use the physical key.
-        if (self.im_len > 0 or keyval_unicode_unshifted != 0) break :key .invalid;
-
-        break :key physical_key;
-    } else .invalid;
 
     // log.debug("key pressed key={} keyval={x} physical_key={} composing={} text_len={} mods={}", .{
     //     key,
@@ -1936,8 +1904,7 @@ pub fn keyEvent(
     // Invoke the core Ghostty logic to handle this input.
     const effect = self.core_surface.keyCallback(.{
         .action = action,
-        .key = key,
-        .physical_key = physical_key,
+        .key = physical_key,
         .mods = mods,
         .consumed_mods = consumed_mods,
         .composing = self.im_composing,
@@ -1971,7 +1938,7 @@ pub fn keyEvent(
 fn gtkInputPreeditStart(
     _: *gtk.IMMulticontext,
     self: *Surface,
-) callconv(.C) void {
+) callconv(.c) void {
     // log.warn("GTKIM: preedit start", .{});
 
     // Start our composing state for the input method and reset our
@@ -1983,7 +1950,7 @@ fn gtkInputPreeditStart(
 fn gtkInputPreeditChanged(
     ctx: *gtk.IMMulticontext,
     self: *Surface,
-) callconv(.C) void {
+) callconv(.c) void {
     // Any preedit change should mark that we're composing. Its possible this
     // is false using fcitx5-hangul and typing "dkssud<space>" ("안녕"). The
     // second "s" results in a "commit" for "안" which sets composing to false,
@@ -2009,7 +1976,7 @@ fn gtkInputPreeditChanged(
 fn gtkInputPreeditEnd(
     _: *gtk.IMMulticontext,
     self: *Surface,
-) callconv(.C) void {
+) callconv(.c) void {
     // log.warn("GTKIM: preedit end", .{});
 
     // End our composing state for GTK, allowing us to commit the text.
@@ -2025,7 +1992,7 @@ fn gtkInputCommit(
     _: *gtk.IMMulticontext,
     bytes: [*:0]u8,
     self: *Surface,
-) callconv(.C) void {
+) callconv(.c) void {
     const str = std.mem.sliceTo(bytes, 0);
 
     // log.debug("GTKIM: input commit composing={} keyevent={} str={s}", .{
@@ -2088,8 +2055,7 @@ fn gtkInputCommit(
     // invalid key, which should produce no PTY encoding).
     _ = self.core_surface.keyCallback(.{
         .action = .press,
-        .key = .invalid,
-        .physical_key = .invalid,
+        .key = .unidentified,
         .mods = .{},
         .consumed_mods = .{},
         .composing = false,
@@ -2100,7 +2066,7 @@ fn gtkInputCommit(
     };
 }
 
-fn gtkFocusEnter(_: *gtk.EventControllerFocus, self: *Surface) callconv(.C) void {
+fn gtkFocusEnter(_: *gtk.EventControllerFocus, self: *Surface) callconv(.c) void {
     if (!self.realized) return;
 
     // Notify our IM context
@@ -2125,7 +2091,7 @@ fn gtkFocusEnter(_: *gtk.EventControllerFocus, self: *Surface) callconv(.C) void
     };
 }
 
-fn gtkFocusLeave(_: *gtk.EventControllerFocus, self: *Surface) callconv(.C) void {
+fn gtkFocusLeave(_: *gtk.EventControllerFocus, self: *Surface) callconv(.c) void {
     if (!self.realized) return;
 
     // Notify our IM context
@@ -2243,7 +2209,7 @@ fn gtkDrop(
     _: f64,
     _: f64,
     self: *Surface,
-) callconv(.C) c_int {
+) callconv(.c) c_int {
     const alloc = self.app.core_app.alloc;
 
     if (g_value_holds(value, gdk.FileList.getGObjectType())) {
@@ -2359,6 +2325,15 @@ pub fn defaultTermioEnv(self: *Surface) !std.process.EnvMap {
     env.remove("GDK_DISABLE");
     env.remove("GSK_RENDERER");
 
+    // Remove some environment variables that are set when Ghostty is launched
+    // from a `.desktop` file, by D-Bus activation, or systemd.
+    env.remove("GIO_LAUNCHED_DESKTOP_FILE");
+    env.remove("GIO_LAUNCHED_DESKTOP_FILE_PID");
+    env.remove("DBUS_STARTER_ADDRESS");
+    env.remove("DBUS_STARTER_BUS_TYPE");
+    env.remove("INVOCATION_ID");
+    env.remove("JOURNAL_STREAM");
+
     // Unset environment varies set by snaps if we're running in a snap.
     // This allows Ghostty to further launch additional snaps.
     if (env.get("SNAP")) |_| {
@@ -2395,7 +2370,7 @@ fn g_value_holds(value_: ?*gobject.Value, g_type: gobject.Type) bool {
     return false;
 }
 
-fn gtkPromptTitleResponse(source_object: ?*gobject.Object, result: *gio.AsyncResult, ud: ?*anyopaque) callconv(.C) void {
+fn gtkPromptTitleResponse(source_object: ?*gobject.Object, result: *gio.AsyncResult, ud: ?*anyopaque) callconv(.c) void {
     if (!adw_version.supportsDialogs()) return;
     const dialog = gobject.ext.cast(adw.AlertDialog, source_object.?).?;
     const self: *Surface = @ptrCast(@alignCast(ud));
@@ -2438,4 +2413,92 @@ pub fn setSecureInput(self: *Surface, value: apprt.action.SecureInput) void {
         .off => self.is_secure_input = false,
         .toggle => self.is_secure_input = !self.is_secure_input,
     }
+}
+
+pub fn ringBell(self: *Surface) !void {
+    const features = self.app.config.@"bell-features";
+    const window = self.container.window() orelse {
+        log.warn("failed to ring bell: surface is not attached to any window", .{});
+        return;
+    };
+
+    // System beep
+    if (features.system) system: {
+        const surface = window.window.as(gtk.Native).getSurface() orelse break :system;
+        surface.beep();
+    }
+
+    if (features.audio) audio: {
+        // Play a user-specified audio file.
+
+        const pathname, const required = switch (self.app.config.@"bell-audio-path" orelse break :audio) {
+            .optional => |path| .{ path, false },
+            .required => |path| .{ path, true },
+        };
+
+        const volume = std.math.clamp(self.app.config.@"bell-audio-volume", 0.0, 1.0);
+
+        std.debug.assert(std.fs.path.isAbsolute(pathname));
+        const media_file = gtk.MediaFile.newForFilename(pathname);
+
+        if (required) {
+            _ = gobject.Object.signals.notify.connect(
+                media_file,
+                ?*anyopaque,
+                gtkStreamError,
+                null,
+                .{ .detail = "error" },
+            );
+        }
+        _ = gobject.Object.signals.notify.connect(
+            media_file,
+            ?*anyopaque,
+            gtkStreamEnded,
+            null,
+            .{ .detail = "ended" },
+        );
+
+        const media_stream = media_file.as(gtk.MediaStream);
+        media_stream.setVolume(volume);
+        media_stream.play();
+    }
+
+    if (features.attention) {
+        // Request user attention
+        window.winproto.setUrgent(true) catch |err| {
+            log.err("failed to request user attention={}", .{err});
+        };
+    }
+
+    // Mark tab as needing attention
+    if (self.container.tab()) |tab| tab: {
+        const page = window.notebook.getTabPage(tab) orelse break :tab;
+
+        // Need attention if we're not the currently selected tab
+        if (page.getSelected() == 0) page.setNeedsAttention(@intFromBool(true));
+    }
+}
+
+/// Handle a stream that is in an error state.
+fn gtkStreamError(media_file: *gtk.MediaFile, _: *gobject.ParamSpec, _: ?*anyopaque) callconv(.c) void {
+    const path = path: {
+        const file = media_file.getFile() orelse break :path null;
+        break :path file.getPath();
+    };
+    defer if (path) |p| glib.free(p);
+
+    const media_stream = media_file.as(gtk.MediaStream);
+    const err = media_stream.getError() orelse return;
+
+    log.warn("error playing bell from {s}: {s} {d} {s}", .{
+        path orelse "<<unknown>>",
+        glib.quarkToString(err.f_domain),
+        err.f_code,
+        err.f_message orelse "",
+    });
+}
+
+/// Stream is finished, release the memory.
+fn gtkStreamEnded(media_file: *gtk.MediaFile, _: *gobject.ParamSpec, _: ?*anyopaque) callconv(.c) void {
+    media_file.unref();
 }

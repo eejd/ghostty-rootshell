@@ -40,6 +40,7 @@ const Window = @import("Window.zig");
 const ConfigErrorsDialog = @import("ConfigErrorsDialog.zig");
 const ClipboardConfirmationWindow = @import("ClipboardConfirmationWindow.zig");
 const CloseDialog = @import("CloseDialog.zig");
+const GlobalShortcuts = @import("GlobalShortcuts.zig");
 const Split = @import("Split.zig");
 const inspector = @import("inspector.zig");
 const key = @import("key.zig");
@@ -53,6 +54,11 @@ pub const c = @cImport({
 });
 
 const log = std.log.scoped(.gtk);
+
+/// This is detected by the Renderer, in which case it sends a `redraw_surface`
+/// message so that we can call `drawFrame` ourselves from the app thread,
+/// because GTK's `GLArea` does not support drawing from a different thread.
+pub const must_draw_from_app_thread = true;
 
 pub const Options = struct {};
 
@@ -74,6 +80,9 @@ cursor_none: ?*gdk.Cursor,
 /// The clipboard confirmation window, if it is currently open.
 clipboard_confirmation_window: ?*ClipboardConfirmationWindow = null,
 
+/// The config errors dialog, if it is currently open.
+config_errors_dialog: ?ConfigErrorsDialog = null,
+
 /// The window containing the quick terminal.
 /// Null when never initialized.
 quick_terminal: ?*Window = null,
@@ -92,6 +101,8 @@ css_provider: *gtk.CssProvider,
 /// Providers for loading custom stylesheets defined by user
 custom_css_providers: std.ArrayListUnmanaged(*gtk.CssProvider) = .{},
 
+global_shortcuts: ?GlobalShortcuts,
+
 /// The timer used to quit the application after the last window is closed.
 quit_timer: union(enum) {
     off: void,
@@ -99,7 +110,7 @@ quit_timer: union(enum) {
     expired: void,
 } = .{ .off = {} },
 
-pub fn init(core_app: *CoreApp, opts: Options) !App {
+pub fn init(self: *App, core_app: *CoreApp, opts: Options) !void {
     _ = opts;
 
     // Log our GTK version
@@ -137,8 +148,8 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
     if (config.@"async-backend" != .auto) {
         const result: bool = switch (config.@"async-backend") {
             .auto => unreachable,
-            .epoll => xev.prefer(.epoll),
-            .io_uring => xev.prefer(.io_uring),
+            .epoll => if (comptime xev.dynamic) xev.prefer(.epoll) else false,
+            .io_uring => if (comptime xev.dynamic) xev.prefer(.io_uring) else false,
         };
 
         if (result) {
@@ -159,6 +170,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         opengl: bool = false,
         /// disable GLES, Ghostty can't use GLES
         @"gl-disable-gles": bool = false,
+        // GTK's new renderer can cause blurry font when using fractional scaling.
         @"gl-no-fractional": bool = false,
         /// Disabling Vulkan can improve startup times by hundreds of
         /// milliseconds on some systems. We don't use Vulkan so we can just
@@ -190,7 +202,6 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
             // For the remainder of "why" see the 4.14 comment below.
             gdk_disable.@"gles-api" = true;
             gdk_disable.vulkan = true;
-            gdk_debug.@"gl-no-fractional" = true;
             break :environment;
         }
         if (gtk_version.runtimeAtLeast(4, 14, 0)) {
@@ -201,8 +212,12 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
             //
             // Upstream issue: https://gitlab.gnome.org/GNOME/gtk/-/issues/6589
             gdk_debug.@"gl-disable-gles" = true;
-            gdk_debug.@"gl-no-fractional" = true;
             gdk_debug.@"vulkan-disable" = true;
+
+            if (gtk_version.runtimeUntil(4, 17, 5)) {
+                // Removed at GTK v4.17.5
+                gdk_debug.@"gl-no-fractional" = true;
+            }
             break :environment;
         }
         // Versions prior to 4.14 are a bit of an unknown for Ghostty. It
@@ -263,7 +278,10 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
     const single_instance = switch (config.@"gtk-single-instance") {
         .true => true,
         .false => false,
-        .desktop => internal_os.launchedFromDesktop(),
+        .desktop => switch (config.@"launched-from".?) {
+            .desktop, .systemd, .dbus => true,
+            .cli => false,
+        },
     };
 
     // Setup the flags for our application.
@@ -278,7 +296,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
     // can develop Ghostty in Ghostty.
     const app_id: [:0]const u8 = app_id: {
         if (config.class) |class| {
-            if (isValidAppId(class)) {
+            if (gio.Application.idIsValid(class) != 0) {
                 break :app_id class;
             } else {
                 log.warn("invalid 'class' in config, ignoring", .{});
@@ -314,8 +332,8 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
                     .prefer_dark;
             },
             .system => .prefer_light,
-            .dark => .prefer_dark,
-            .light => .force_dark,
+            .dark => .force_dark,
+            .light => .force_light,
         },
     );
 
@@ -387,11 +405,15 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
     // This just calls the `activate` signal but its part of the normal startup
     // routine so we just call it, but only if the config allows it (this allows
     // for launching Ghostty in the "background" without immediately opening
-    // a window)
+    // a window). An initial window will not be immediately created if we were
+    // launched by D-Bus activation or systemd.  D-Bus activation will send it's
+    // own `activate` or `new-window` signal later.
     //
     // https://gitlab.gnome.org/GNOME/glib/-/blob/bd2ccc2f69ecfd78ca3f34ab59e42e2b462bad65/gio/gapplication.c#L2302
-    if (config.@"initial-window")
-        gio_app.activate();
+    if (config.@"initial-window") switch (config.@"launched-from".?) {
+        .desktop, .cli => gio_app.activate(),
+        .dbus, .systemd => {},
+    };
 
     // Internally, GTK ensures that only one instance of this provider exists in the provider list
     // for the display.
@@ -402,7 +424,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 3,
     );
 
-    return .{
+    self.* = .{
         .core_app = core_app,
         .app = adw_app,
         .config = config,
@@ -415,6 +437,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         // our "activate" call above will open a window.
         .running = gio_app.getIsRemote() == 0,
         .css_provider = css_provider,
+        .global_shortcuts = .init(core_app.alloc, gio_app),
     };
 }
 
@@ -435,6 +458,8 @@ pub fn terminate(self: *App) void {
     self.custom_css_providers.deinit(self.core_app.alloc);
 
     self.winproto.deinit(self.core_app.alloc);
+
+    if (self.global_shortcuts) |*shortcuts| shortcuts.deinit();
 
     self.config.deinit();
 }
@@ -468,6 +493,7 @@ pub fn performAction(
         .config_change => self.configChange(target, value.config),
         .reload_config => try self.reloadConfig(target, value),
         .inspector => self.controlInspector(target, value),
+        .show_gtk_inspector => self.showGTKInspector(),
         .desktop_notification => self.showDesktopNotification(target, value),
         .set_title => try self.setTitle(target, value),
         .pwd => try self.setPwd(target, value),
@@ -484,9 +510,12 @@ pub fn performAction(
         .prompt_title => try self.promptTitle(target),
         .toggle_quick_terminal => return try self.toggleQuickTerminal(),
         .secure_input => self.setSecureInput(target, value),
+        .ring_bell => try self.ringBell(target),
+        .toggle_command_palette => try self.toggleCommandPalette(target),
 
         // Unimplemented
         .close_all_windows,
+        .float_window,
         .toggle_visibility,
         .cell_size,
         .key_sequence,
@@ -494,6 +523,9 @@ pub fn performAction(
         .renderer_health,
         .color_change,
         .reset_window_size,
+        .check_for_updates,
+        .undo,
+        .redo,
         => {
             log.warn("unimplemented action={}", .{action});
             return false;
@@ -670,6 +702,12 @@ fn controlInspector(
     surface.controlInspector(mode);
 }
 
+fn showGTKInspector(
+    _: *const App,
+) void {
+    gtk.Window.setInteractiveDebugging(@intFromBool(true));
+}
+
 fn toggleMaximize(_: *App, target: apprt.Target) void {
     switch (target) {
         .app => {},
@@ -740,7 +778,7 @@ fn toggleWindowDecorations(
         .surface => |v| {
             const window = v.rt_surface.container.window() orelse {
                 log.info(
-                    "toggleFullscreen invalid for container={s}",
+                    "toggleWindowDecorations invalid for container={s}",
                     .{@tagName(v.rt_surface.container)},
                 );
                 return;
@@ -773,6 +811,30 @@ fn toggleQuickTerminal(self: *App) !bool {
     try qt.newTab(null);
     qt.present();
     return true;
+}
+
+fn ringBell(_: *App, target: apprt.Target) !void {
+    switch (target) {
+        .app => {},
+        .surface => |surface| try surface.rt_surface.ringBell(),
+    }
+}
+
+fn toggleCommandPalette(_: *App, target: apprt.Target) !void {
+    switch (target) {
+        .app => {},
+        .surface => |surface| {
+            const window = surface.rt_surface.container.window() orelse {
+                log.info(
+                    "toggleCommandPalette invalid for container={s}",
+                    .{@tagName(surface.rt_surface.container)},
+                );
+                return;
+            };
+
+            window.toggleCommandPalette();
+        },
+    }
 }
 
 fn quitTimer(self: *App, mode: apprt.action.QuitTimer) void {
@@ -995,6 +1057,12 @@ fn syncConfigChanges(self: *App, window: ?*Window) !void {
     ConfigErrorsDialog.maybePresent(self, window);
     try self.syncActionAccelerators();
 
+    if (self.global_shortcuts) |*shortcuts| {
+        shortcuts.refreshSession(self) catch |err| {
+            log.warn("failed to refresh global shortcuts={}", .{err});
+        };
+    }
+
     // Load our runtime and custom CSS. If this fails then our window is just stuck
     // with the old CSS but we don't want to fail the entire sync operation.
     self.loadRuntimeCss() catch |err| switch (err) {
@@ -1013,6 +1081,8 @@ fn syncActionAccelerators(self: *App) !void {
     try self.syncActionAccelerator("app.open-config", .{ .open_config = {} });
     try self.syncActionAccelerator("app.reload-config", .{ .reload_config = {} });
     try self.syncActionAccelerator("win.toggle-inspector", .{ .inspector = .toggle });
+    try self.syncActionAccelerator("app.show-gtk-inspector", .show_gtk_inspector);
+    try self.syncActionAccelerator("win.toggle-command-palette", .toggle_command_palette);
     try self.syncActionAccelerator("win.close", .{ .close_window = {} });
     try self.syncActionAccelerator("win.new-window", .{ .new_window = {} });
     try self.syncActionAccelerator("win.new-tab", .{ .new_tab = {} });
@@ -1282,6 +1352,13 @@ pub fn run(self: *App) !void {
     // Setup our actions
     self.initActions();
 
+    // On startup, we want to check for configuration errors right away
+    // so we can show our error window. We also need to setup other initial
+    // state.
+    self.syncConfigChanges(null) catch |err| {
+        log.warn("error handling configuration changes err={}", .{err});
+    };
+
     while (self.running) {
         _ = glib.MainContext.iteration(self.ctx, 1);
 
@@ -1506,7 +1583,7 @@ fn adwNotifyDark(
     style_manager: *adw.StyleManager,
     _: *gobject.ParamSpec,
     self: *App,
-) callconv(.C) void {
+) callconv(.c) void {
     const color_scheme: apprt.ColorScheme = if (style_manager.getDark() == 0)
         .light
     else
@@ -1600,6 +1677,27 @@ fn gtkActionPresentSurface(
     );
 }
 
+fn gtkActionShowGTKInspector(
+    _: *gio.SimpleAction,
+    _: ?*glib.Variant,
+    self: *App,
+) callconv(.c) void {
+    self.core_app.performAction(self, .show_gtk_inspector) catch |err| {
+        log.err("error showing GTK inspector err={}", .{err});
+    };
+}
+
+fn gtkActionNewWindow(
+    _: *gio.SimpleAction,
+    _: ?*glib.Variant,
+    self: *App,
+) callconv(.c) void {
+    log.info("received new window action", .{});
+    _ = self.core_app.mailbox.push(.{
+        .new_window = .{},
+    }, .{ .forever = {} });
+}
+
 /// This is called to setup the action map that this application supports.
 /// This should be called only once on startup.
 fn initActions(self: *App) void {
@@ -1618,7 +1716,10 @@ fn initActions(self: *App) void {
         .{ "open-config", gtkActionOpenConfig, null },
         .{ "reload-config", gtkActionReloadConfig, null },
         .{ "present-surface", gtkActionPresentSurface, t },
+        .{ "show-gtk-inspector", gtkActionShowGTKInspector, null },
+        .{ "new-window", gtkActionNewWindow, null },
     };
+
     inline for (actions) |entry| {
         const action = gio.SimpleAction.new(entry[0], entry[2]);
         defer action.unref();
@@ -1632,33 +1733,4 @@ fn initActions(self: *App) void {
         const action_map = self.app.as(gio.ActionMap);
         action_map.addAction(action.as(gio.Action));
     }
-}
-
-fn isValidAppId(app_id: [:0]const u8) bool {
-    if (app_id.len > 255 or app_id.len == 0) return false;
-    if (app_id[0] == '.') return false;
-    if (app_id[app_id.len - 1] == '.') return false;
-
-    var hasDot = false;
-    for (app_id) |char| {
-        switch (char) {
-            'a'...'z', 'A'...'Z', '0'...'9', '_', '-' => {},
-            '.' => hasDot = true,
-            else => return false,
-        }
-    }
-    if (!hasDot) return false;
-
-    return true;
-}
-
-test "isValidAppId" {
-    try testing.expect(isValidAppId("foo.bar"));
-    try testing.expect(isValidAppId("foo.bar.baz"));
-    try testing.expect(!isValidAppId("foo"));
-    try testing.expect(!isValidAppId("foo.bar?"));
-    try testing.expect(!isValidAppId("foo."));
-    try testing.expect(!isValidAppId(".foo"));
-    try testing.expect(!isValidAppId(""));
-    try testing.expect(!isValidAppId("foo" ** 86));
 }

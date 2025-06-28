@@ -84,7 +84,7 @@ pub fn parse(
         // If the arena is unset, we create it. We mark that we own it
         // only so that we can clean it up on error.
         if (dst._arena == null) {
-            dst._arena = ArenaAllocator.init(alloc);
+            dst._arena = .init(alloc);
             arena_owned = true;
         }
 
@@ -414,7 +414,7 @@ pub fn parseIntoField(
     return error.InvalidField;
 }
 
-fn parseTaggedUnion(comptime T: type, alloc: Allocator, v: []const u8) !T {
+pub fn parseTaggedUnion(comptime T: type, alloc: Allocator, v: []const u8) !T {
     const info = @typeInfo(T).@"union";
     assert(@typeInfo(info.tag_type.?) == .@"enum");
 
@@ -481,7 +481,7 @@ pub fn parseAutoStruct(comptime T: type, alloc: Allocator, v: []const u8) !T {
     // Keep track of which fields were set so we can error if a required
     // field was not set.
     const FieldSet = std.StaticBitSet(info.fields.len);
-    var fields_set: FieldSet = FieldSet.initEmpty();
+    var fields_set: FieldSet = .initEmpty();
 
     // We split each value by ","
     var iter = std.mem.splitSequence(u8, v, ",");
@@ -1090,6 +1090,7 @@ test "parseIntoField: tagged union" {
             b: u8,
             c: void,
             d: []const u8,
+            e: [:0]const u8,
         } = undefined,
     } = .{};
 
@@ -1108,6 +1109,10 @@ test "parseIntoField: tagged union" {
     // Set string field
     try parseIntoField(@TypeOf(data), alloc, &data, "value", "d:hello");
     try testing.expectEqualStrings("hello", data.value.d);
+
+    // Set sentinel string field
+    try parseIntoField(@TypeOf(data), alloc, &data, "value", "e:hello");
+    try testing.expectEqualStrings("hello", data.value.e);
 }
 
 test "parseIntoField: tagged union unknown filed" {

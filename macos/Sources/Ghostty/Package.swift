@@ -19,6 +19,15 @@ struct Ghostty {
     static let userNotificationActionShow = "com.mitchellh.ghostty.userNotification.Show"
 }
 
+// MARK: C Extensions
+
+/// A command is fully self-contained so it is Sendable.
+extension ghostty_command_s: @unchecked @retroactive Sendable {}
+
+/// A surface is sendable because it is just a reference type. Using the surface in parameters
+/// may be unsafe but the value itself is safe to send across threads.
+extension ghostty_surface_t: @unchecked @retroactive Sendable {}
+
 // MARK: Build Info
 
 extension Ghostty {
@@ -42,6 +51,28 @@ extension Ghostty {
 // MARK: Swift Types for C Types
 
 extension Ghostty {
+    enum SetFloatWIndow {
+        case on
+        case off
+        case toggle
+
+        static func from(_ c: ghostty_action_float_window_e) -> Self? {
+            switch (c) {
+            case GHOSTTY_FLOAT_WINDOW_ON:
+                return .on
+
+            case GHOSTTY_FLOAT_WINDOW_OFF:
+                return .off
+
+            case GHOSTTY_FLOAT_WINDOW_TOGGLE:
+                return .toggle
+
+            default:
+                return nil
+            }
+        }
+    }
+
     enum SetSecureInput {
         case on
         case off
@@ -217,6 +248,12 @@ extension Ghostty {
         case chrome
     }
 
+    /// Enum for the macos-window-buttons config option
+    enum MacOSWindowButtons: String {
+        case visible
+        case hidden
+    }
+
     /// Enum for the macos-titlebar-proxy-icon config option
     enum MacOSTitlebarProxyIcon: String {
         case visible
@@ -248,8 +285,18 @@ extension Notification.Name {
     /// Close tab
     static let ghosttyCloseTab = Notification.Name("com.mitchellh.ghostty.closeTab")
 
+    /// Close window
+    static let ghosttyCloseWindow = Notification.Name("com.mitchellh.ghostty.closeWindow")
+
     /// Resize the window to a default size.
     static let ghosttyResetWindowSize = Notification.Name("com.mitchellh.ghostty.resetWindowSize")
+
+    /// Ring the bell
+    static let ghosttyBellDidRing = Notification.Name("com.mitchellh.ghostty.ghosttyBellDidRing")
+    static let ghosttyCommandPaletteDidToggle = Notification.Name("com.mitchellh.ghostty.commandPaletteDidToggle")
+
+    /// Toggle maximize of current window
+    static let ghosttyMaximizeDidToggle = Notification.Name("com.mitchellh.ghostty.maximizeDidToggle")
 }
 
 // NOTE: I am moving all of these to Notification.Name extensions over time. This
