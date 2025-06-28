@@ -7911,7 +7911,7 @@ test "Screen: selectOutput" {
         try s.testWriteString("input2\n");                        // 3
         try s.testWriteString("output2output2output2output2\n");  // 4, 5, 6 due to overflow
         try s.testWriteString("output2\n");                       // 7
-        try s.testWriteString("prompt3$ input3\n");               // 8
+        try s.testWriteString("$ input3\n");                      // 8
         try s.testWriteString("output3\n");                       // 9
         try s.testWriteString("output3\n");                       // 10
         try s.testWriteString("output3");                         // 11
@@ -7999,14 +7999,14 @@ test "Screen: selectOutput" {
         } }, s.pages.pointFromPin(.active, sel.start()).?);
         try testing.expectEqual(point.Point{ .active = .{
             .x = 9,
-            .y = 12,
+            .y = 11,
         } }, s.pages.pointFromPin(.active, sel.end()).?);
     }
     // input / prompt at y = 0, pt.y = 0
     {
         s.deinit();
         s = try init(alloc, 10, 5, 0);
-        try s.testWriteString("prompt1$ input1\n");
+        try s.testWriteString("$ input1\n");
         try s.testWriteString("output1\n");
         try s.testWriteString("prompt2\n");
         {
@@ -8042,7 +8042,7 @@ test "Screen: selectPrompt basics" {
         try s.testWriteString("input2\n");          // 3
         try s.testWriteString("output2\n");         // 4
         try s.testWriteString("output2\n");         // 5
-        try s.testWriteString("prompt3$ input3\n"); // 6
+        try s.testWriteString("$ input3\n");        // 6
         try s.testWriteString("output3\n");         // 7
         try s.testWriteString("output3\n");         // 8
         try s.testWriteString("output3");           // 9
@@ -8257,7 +8257,7 @@ test "Screen: promptPath" {
         try s.testWriteString("input2\n");          // 3
         try s.testWriteString("output2\n");         // 4
         try s.testWriteString("output2\n");         // 5
-        try s.testWriteString("prompt3$ input3\n"); // 6
+        try s.testWriteString("$ input3\n");        // 6
         try s.testWriteString("output3\n");         // 7
         try s.testWriteString("output3\n");         // 8
         try s.testWriteString("output3");           // 9
