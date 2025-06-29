@@ -5034,6 +5034,12 @@ pub const Keybinds = struct {
 
         try self.set.put(
             alloc,
+            .{ .key = .{ .unicode = 'j' }, .mods = .{ .shift = true, .ctrl = true, .super = true } },
+            .{ .write_screen_file = .copy },
+        );
+
+        try self.set.put(
+            alloc,
             .{ .key = .{ .unicode = 'j' }, .mods = inputpkg.ctrlOrSuper(.{ .shift = true }) },
             .{ .write_screen_file = .paste },
         );
