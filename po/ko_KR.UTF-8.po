@@ -145,7 +145,7 @@ msgstr "설정 열기"
 
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:85
 msgid "Terminal Inspector"
-msgstr "터미널 조사 도구"
+msgstr "터미널 인스펙터"
 
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:102
 #: src/apprt/gtk/Window.zig:960
