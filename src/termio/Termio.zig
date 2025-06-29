@@ -168,6 +168,7 @@ pub const DerivedConfig = struct {
     foreground: configpkg.Config.Color,
     background: configpkg.Config.Color,
     osc_color_report_format: configpkg.Config.OSCColorReportFormat,
+    clipboard_write: configpkg.ClipboardAccess,
     enquiry_response: []const u8,
 
     pub fn init(
@@ -188,6 +189,7 @@ pub const DerivedConfig = struct {
             .foreground = config.foreground,
             .background = config.background,
             .osc_color_report_format = config.@"osc-color-report-format",
+            .clipboard_write = config.@"clipboard-write",
             .enquiry_response = try alloc.dupe(u8, config.@"enquiry-response"),
 
             // This has to be last so that we copy AFTER the arena allocations
@@ -278,6 +280,7 @@ pub fn init(self: *Termio, alloc: Allocator, opts: termio.Options) !void {
             .size = &self.size,
             .terminal = &self.terminal,
             .osc_color_report_format = opts.config.osc_color_report_format,
+            .clipboard_write = opts.config.clipboard_write,
             .enquiry_response = opts.config.enquiry_response,
             .default_foreground_color = opts.config.foreground.toTerminalRGB(),
             .default_background_color = opts.config.background.toTerminalRGB(),
