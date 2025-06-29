@@ -132,14 +132,20 @@ pub fn parse(
             break :value null;
         };
 
-        parseIntoField(T, arena_alloc, dst, key, value) catch |err| {
+        parseIntoField(T, arena_alloc, dst, key, value) catch |err| err: {
             // If we get an error parsing a field, then we try to fall
             // back to compatibility handlers if able.
             if (@hasDecl(T, "compatibility")) {
                 // If we have a compatibility handler for this key, then
                 // we call it and see if it handles the error.
                 if (T.compatibility.get(key)) |handler| {
-                    if (handler(dst, arena_alloc, key, value)) return;
+                    if (handler(dst, arena_alloc, key, value)) {
+                        log.info(
+                            "compatibility handler for {s} handled error, you may be using a deprecated field: {}",
+                            .{ key, err },
+                        );
+                        break :err;
+                    }
                 }
             }
 
@@ -838,6 +844,7 @@ test "parse: compatibility renamed" {
 
     var data: struct {
         a: bool = false,
+        b: bool = false,
         _arena: ?ArenaAllocator = null,
 
         pub const compatibility: std.StaticStringMap(
@@ -850,12 +857,13 @@ test "parse: compatibility renamed" {
 
     var iter = try std.process.ArgIteratorGeneral(.{}).init(
         testing.allocator,
-        "--old=true",
+        "--old=true --b=true",
     );
     defer iter.deinit();
     try parse(@TypeOf(data), testing.allocator, &data, &iter);
     try testing.expect(data._arena != null);
     try testing.expect(data.a);
+    try testing.expect(data.b);
 }
 
 test "parseIntoField: ignore underscore-prefixed fields" {
