@@ -8,7 +8,7 @@ msgstr ""
 "Project-Id-Version: com.mitchellh.ghostty\n"
 "Report-Msgid-Bugs-To: m@mitchellh.com\n"
 "POT-Creation-Date: 2025-04-23 16:58+0800\n"
-"PO-Revision-Date: 2025-06-24 12:42+0100\n"
+"PO-Revision-Date: 2025-06-29 21:15+0100\n"
 "Last-Translator: Aindriú Mac Giolla Eoin <aindriu80@gmail.com>\n"
 "Language-Team: Irish <gaeilge-gnulinux@lists.sourceforge.net>\n"
 "Language: ga\n"
@@ -16,7 +16,7 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=3; plural=n==1 ? 0 : n==2 ? 1 : 2;\n"
-"X-Generator: Poedit 3.4.2\n"
+"X-Generator: Poedit 3.4.4\n"
 
 #: src/apprt/gtk/ui/1.5/prompt-title-dialog.blp:5
 msgid "Change Terminal Title"
@@ -212,7 +212,7 @@ msgid ""
 "commands may be executed."
 msgstr ""
 "D’fhéadfadh sé a bheith contúirteach an téacs seo a ghreamú isteach sa "
-"chríochfort mar is cosúil go bhféadfaí roinnt orduithe a fhorghníomhú."
+"teirminéal, toisc go d'fhéadfadh roinnt orduithe a fhorghníomhú."
 
 #: src/apprt/gtk/Window.zig:208
 msgid "Main Menu"
@@ -234,7 +234,7 @@ msgstr ""
 
 #: src/apprt/gtk/Window.zig:765
 msgid "Reloaded the configuration"
-msgstr "Athluchtaigh an chumraíocht"
+msgstr "Tá an chumraíocht athlódáilte"
 
 #: src/apprt/gtk/Window.zig:1005
 msgid "Ghostty Developers"
