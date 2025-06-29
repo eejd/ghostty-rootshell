@@ -81,6 +81,10 @@
 # - @ghostty-org/localization/* - Anything related to localization
 #   for a specific locale.
 #
+# - @ghosty-org/localization/manager - Manage all localization tasks
+#   and tooling. They are not responsible for any specific locale but
+#   are responsible for the overall localization process and tooling.
+#
 # - @ghostty-org/macos - The Ghostty macOS app and any macOS-specific
 #   features, configurations, etc.
 #

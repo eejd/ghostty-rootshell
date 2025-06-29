@@ -170,11 +170,11 @@ in
       };
     }
     {
-      name = "N-V-__8AANf-XQSCQIcmjPV_GQZLPBxaAgzzw_3UWOmkDUXn";
+      name = "N-V-__8AAGHcWgTaKLjwmFkxToNT4jgz5VXUHR7hz8TQ2_AS";
       path = fetchZigArtifact {
         name = "iterm2_themes";
-        url = "https://github.com/mbadolato/iTerm2-Color-Schemes/archive/f979d8b1959d004390acede9f298be389cb9a1e0.tar.gz";
-        hash = "sha256-DKWVUxZEZA8x+3njPaTucr/u/Mmhef0YwhwOnOWn/N4=";
+        url = "https://github.com/mbadolato/iTerm2-Color-Schemes/archive/6fa671fdc1daf1fcfa025cb960ffa3e7373a2ed8.tar.gz";
+        hash = "sha256-g9o2CIc/TfWYoUS/l/HP5KZECD7qNsdQUlFruaKkVz4=";
       };
     }
     {
@@ -186,11 +186,11 @@ in
       };
     }
     {
-      name = "libxev-0.0.0-86vtc-ziEgDbLP0vihUn1MhsxNKY4GJEga6BEr7oyHpz";
+      name = "libxev-0.0.0-86vtc5b1EgB7vFmt9Tk7ySteR5AeEHW7xcR6gK9dMUD3";
       path = fetchZigArtifact {
         name = "libxev";
-        url = "https://github.com/mitchellh/libxev/archive/3df9337a9e84450a58a2c4af434ec1a036f7b494.tar.gz";
-        hash = "sha256-oKZqA9d79jHnp/HsqJWQE33Ffn5Ee5G4VnlQepQuY4o=";
+        url = "https://github.com/mitchellh/libxev/archive/9bc52324d4f0c036a3b244e992680a9fb217bbd3.tar.gz";
+        hash = "sha256-VwFByDoptqiN5UkolFQ7TbRhwMERReD9Er2pjxTCYIU=";
       };
     }
     {

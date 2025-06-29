@@ -18,7 +18,7 @@ const Action = @import("Binding.zig").Action;
 pub const Command = struct {
     action: Action,
     title: [:0]const u8,
-    description: [:0]const u8,
+    description: [:0]const u8 = "",
 
     /// ghostty_command_s
     pub const C = extern struct {
@@ -27,6 +27,21 @@ pub const Command = struct {
         title: [*:0]const u8,
         description: [*:0]const u8,
     };
+
+    pub fn clone(self: *const Command, alloc: Allocator) Allocator.Error!Command {
+        return .{
+            .action = try self.action.clone(alloc),
+            .title = try alloc.dupeZ(u8, self.title),
+            .description = try alloc.dupeZ(u8, self.description),
+        };
+    }
+
+    pub fn equal(self: Command, other: Command) bool {
+        if (self.action.hash() != other.action.hash()) return false;
+        if (!std.mem.eql(u8, self.title, other.title)) return false;
+        if (!std.mem.eql(u8, self.description, other.description)) return false;
+        return true;
+    }
 
     /// Convert this command to a C struct.
     pub fn comptimeCval(self: Command) C {
@@ -119,7 +134,7 @@ fn actionCommands(action: Action.Key) []const Command {
         .paste_from_clipboard => comptime &.{.{
             .action = .paste_from_clipboard,
             .title = "Paste from Clipboard",
-            .description = "Paste the contents of the clipboard.",
+            .description = "Paste the contents of the main clipboard.",
         }},
 
         .paste_from_selection => comptime &.{.{
@@ -190,6 +205,11 @@ fn actionCommands(action: Action.Key) []const Command {
 
         .write_screen_file => comptime &.{
             .{
+                .action = .{ .write_screen_file = .copy },
+                .title = "Copy Screen to Temporary File and Copy Path",
+                .description = "Copy the screen contents to a temporary file and copy the path to the clipboard.",
+            },
+            .{
                 .action = .{ .write_screen_file = .paste },
                 .title = "Copy Screen to Temporary File and Paste Path",
                 .description = "Copy the screen contents to a temporary file and paste the path to the file.",
@@ -202,6 +222,11 @@ fn actionCommands(action: Action.Key) []const Command {
         },
 
         .write_selection_file => comptime &.{
+            .{
+                .action = .{ .write_selection_file = .copy },
+                .title = "Copy Selection to Temporary File and Copy Path",
+                .description = "Copy the selection contents to a temporary file and copy the path to the clipboard.",
+            },
             .{
                 .action = .{ .write_selection_file = .paste },
                 .title = "Copy Selection to Temporary File and Paste Path",
@@ -274,6 +299,39 @@ fn actionCommands(action: Action.Key) []const Command {
             },
         },
 
+        .goto_split => comptime &.{
+            .{
+                .action = .{ .goto_split = .previous },
+                .title = "Focus Split: Previous",
+                .description = "Focus the previous split, if any.",
+            },
+            .{
+                .action = .{ .goto_split = .next },
+                .title = "Focus Split: Next",
+                .description = "Focus the next split, if any.",
+            },
+            .{
+                .action = .{ .goto_split = .left },
+                .title = "Focus Split: Left",
+                .description = "Focus the split to the left, if it exists.",
+            },
+            .{
+                .action = .{ .goto_split = .right },
+                .title = "Focus Split: Right",
+                .description = "Focus the split to the right, if it exists.",
+            },
+            .{
+                .action = .{ .goto_split = .up },
+                .title = "Focus Split: Up",
+                .description = "Focus the split above, if it exists.",
+            },
+            .{
+                .action = .{ .goto_split = .down },
+                .title = "Focus Split: Down",
+                .description = "Focus the split below, if it exists.",
+            },
+        },
+
         .toggle_split_zoom => comptime &.{.{
             .action = .toggle_split_zoom,
             .title = "Toggle Split Zoom",
@@ -296,6 +354,12 @@ fn actionCommands(action: Action.Key) []const Command {
             .action = .{ .inspector = .toggle },
             .title = "Toggle Inspector",
             .description = "Toggle the inspector.",
+        }},
+
+        .show_gtk_inspector => comptime &.{.{
+            .action = .show_gtk_inspector,
+            .title = "Show the GTK Inspector",
+            .description = "Show the GTK inspector.",
         }},
 
         .open_config => comptime &.{.{
@@ -370,6 +434,18 @@ fn actionCommands(action: Action.Key) []const Command {
             .description = "Check for updates to the application.",
         }},
 
+        .undo => comptime &.{.{
+            .action = .undo,
+            .title = "Undo",
+            .description = "Undo the last action.",
+        }},
+
+        .redo => comptime &.{.{
+            .action = .redo,
+            .title = "Redo",
+            .description = "Redo the last undone action.",
+        }},
+
         .quit => comptime &.{.{
             .action = .quit,
             .title = "Quit",
@@ -390,7 +466,6 @@ fn actionCommands(action: Action.Key) []const Command {
         .jump_to_prompt,
         .write_scrollback_file,
         .goto_tab,
-        .goto_split,
         .resize_split,
         .crash,
         => comptime &.{},

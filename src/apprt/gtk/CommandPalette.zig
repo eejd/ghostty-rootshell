@@ -43,6 +43,7 @@ pub fn init(self: *CommandPalette, window: *Window) !void {
     _ = Command.getGObjectType();
 
     var builder = Builder.init("command-palette", 1, 5);
+    defer builder.deinit();
 
     self.* = .{
         .window = window,
@@ -93,9 +94,8 @@ pub fn deinit(self: *CommandPalette) void {
 
 pub fn toggle(self: *CommandPalette) void {
     self.dialog.present(self.window.window.as(gtk.Widget));
-
     // Focus on the search bar when opening the dialog
-    self.dialog.setFocus(self.search.as(gtk.Widget));
+    _ = self.search.as(gtk.Widget).grabFocus();
 }
 
 pub fn updateConfig(self: *CommandPalette, config: *const configpkg.Config) !void {
@@ -103,13 +103,17 @@ pub fn updateConfig(self: *CommandPalette, config: *const configpkg.Config) !voi
     self.source.removeAll();
     _ = self.arena.reset(.retain_capacity);
 
-    // TODO: Allow user-configured palette entries
-    for (inputpkg.command.defaults) |command| {
+    for (config.@"command-palette-entry".value.items) |command| {
         // Filter out actions that are not implemented
         // or don't make sense for GTK
         switch (command.action) {
             .close_all_windows,
             .toggle_secure_input,
+            .check_for_updates,
+            .redo,
+            .undo,
+            .reset_window_size,
+            .toggle_window_float_on_top,
             => continue,
 
             else => {},
@@ -120,7 +124,9 @@ pub fn updateConfig(self: *CommandPalette, config: *const configpkg.Config) !voi
             command,
             config.keybind.set,
         );
-        self.source.append(cmd.as(gobject.Object));
+        const cmd_ref = cmd.as(gobject.Object);
+        self.source.append(cmd_ref);
+        cmd_ref.unref();
     }
 }
 

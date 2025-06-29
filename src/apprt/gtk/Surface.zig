@@ -41,10 +41,6 @@ const adw_version = @import("adw_version.zig");
 
 const log = std.log.scoped(.gtk_surface);
 
-/// This is detected by the OpenGL renderer to move to a single-threaded
-/// draw operation. This basically puts locks around our draw path.
-pub const opengl_single_threaded_draw = true;
-
 pub const Options = struct {
     /// The parent surface to inherit settings such as font size, working
     /// directory, etc. from.
@@ -394,7 +390,10 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
 
     // Various other GL properties
     gl_area_widget.setCursorFromName("text");
-    gl_area.setRequiredVersion(3, 3);
+    gl_area.setRequiredVersion(
+        renderer.OpenGL.MIN_VERSION_MAJOR,
+        renderer.OpenGL.MIN_VERSION_MINOR,
+    );
     gl_area.setHasStencilBuffer(0);
     gl_area.setHasDepthBuffer(0);
     gl_area.setUseEs(0);
@@ -683,12 +682,13 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
 
 fn realize(self: *Surface) !void {
     // If this surface has already been realized, then we don't need to
-    // reinitialize. This can happen if a surface is moved from one GDK surface
-    // to another (i.e. a tab is pulled out into a window).
+    // reinitialize. This can happen if a surface is moved from one GDK
+    // surface to another (i.e. a tab is pulled out into a window).
     if (self.realized) {
         // If we have no OpenGL state though, we do need to reinitialize.
-        // We allow the renderer to figure that out
-        try self.core_surface.renderer.displayRealize();
+        // We allow the renderer to figure that out, and then queue a draw.
+        try self.core_surface.renderer.displayRealized();
+        self.redraw();
         return;
     }
 
@@ -746,7 +746,21 @@ pub fn deinit(self: *Surface) void {
     self.core_surface.deinit();
     self.core_surface = undefined;
 
-    if (self.cgroup_path) |path| self.app.core_app.alloc.free(path);
+    // Remove the cgroup if we have one. We do this after deiniting the core
+    // surface to ensure all processes have exited.
+    if (self.cgroup_path) |path| {
+        internal_os.cgroup.remove(path) catch |err| {
+            // We don't want this to be fatal in any way so we just log
+            // and continue. A dangling empty cgroup is not a big deal
+            // and this should be rare.
+            log.warn(
+                "failed to remove cgroup for surface path={s} err={}",
+                .{ path, err },
+            );
+        };
+
+        self.app.core_app.alloc.free(path);
+    }
 
     // Free all our GTK stuff
     //
@@ -780,7 +794,7 @@ pub fn primaryWidget(self: *Surface) *gtk.Widget {
 }
 
 fn render(self: *Surface) !void {
-    try self.core_surface.renderer.drawFrame(self);
+    try self.core_surface.renderer.drawFrame(true);
 }
 
 /// Called by core surface to get the cgroup.
@@ -1191,7 +1205,7 @@ pub fn mouseOverLink(self: *Surface, uri_: ?[]const u8) void {
         return;
     }
 
-    self.url_widget = URLWidget.init(self.overlay, uriZ);
+    self.url_widget = .init(self.overlay, uriZ);
 }
 
 pub fn supportsClipboard(
@@ -1563,7 +1577,7 @@ fn gtkMouseMotion(
     const scaled = self.scaledCoordinates(x, y);
 
     const pos: apprt.CursorPos = .{
-        .x = @floatCast(@max(0, scaled.x)),
+        .x = @floatCast(scaled.x),
         .y = @floatCast(scaled.y),
     };
 
@@ -2311,6 +2325,15 @@ pub fn defaultTermioEnv(self: *Surface) !std.process.EnvMap {
     env.remove("GDK_DISABLE");
     env.remove("GSK_RENDERER");
 
+    // Remove some environment variables that are set when Ghostty is launched
+    // from a `.desktop` file, by D-Bus activation, or systemd.
+    env.remove("GIO_LAUNCHED_DESKTOP_FILE");
+    env.remove("GIO_LAUNCHED_DESKTOP_FILE_PID");
+    env.remove("DBUS_STARTER_ADDRESS");
+    env.remove("DBUS_STARTER_BUS_TYPE");
+    env.remove("INVOCATION_ID");
+    env.remove("JOURNAL_STREAM");
+
     // Unset environment varies set by snaps if we're running in a snap.
     // This allows Ghostty to further launch additional snaps.
     if (env.get("SNAP")) |_| {
@@ -2438,6 +2461,13 @@ pub fn ringBell(self: *Surface) !void {
         const media_stream = media_file.as(gtk.MediaStream);
         media_stream.setVolume(volume);
         media_stream.play();
+    }
+
+    if (features.attention) {
+        // Request user attention
+        window.winproto.setUrgent(true) catch |err| {
+            log.err("failed to request user attention={}", .{err});
+        };
     }
 
     // Mark tab as needing attention

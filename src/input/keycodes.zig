@@ -11,7 +11,7 @@ pub const entries: []const Entry = entries: {
     const native_idx = switch (builtin.os.tag) {
         .ios, .macos => 4, // mac
         .windows => 3, // win
-        .linux => 2, // xkb
+        .freebsd, .linux => 2, // xkb
         else => @compileError("unsupported platform"),
     };
 
@@ -130,6 +130,9 @@ const code_to_key = code_to_key: {
         .{ "PageUp", .page_up },
         .{ "Delete", .delete },
         .{ "End", .end },
+        .{ "Copy", .copy },
+        .{ "Cut", .cut },
+        .{ "Paste", .paste },
         .{ "PageDown", .page_down },
         .{ "ArrowRight", .arrow_right },
         .{ "ArrowLeft", .arrow_left },

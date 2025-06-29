@@ -3,6 +3,7 @@ const builtin = @import("builtin");
 const formatter = @import("config/formatter.zig");
 pub const Config = @import("config/Config.zig");
 pub const conditional = @import("config/conditional.zig");
+pub const io = @import("config/io.zig");
 pub const string = @import("config/string.zig");
 pub const edit = @import("config/edit.zig");
 pub const url = @import("config/url.zig");
@@ -30,8 +31,11 @@ pub const RepeatableFontVariation = Config.RepeatableFontVariation;
 pub const RepeatableString = Config.RepeatableString;
 pub const RepeatableStringMap = @import("config/RepeatableStringMap.zig");
 pub const RepeatablePath = Config.RepeatablePath;
+pub const Path = Config.Path;
 pub const ShellIntegrationFeatures = Config.ShellIntegrationFeatures;
 pub const WindowPaddingColor = Config.WindowPaddingColor;
+pub const BackgroundImagePosition = Config.BackgroundImagePosition;
+pub const BackgroundImageFit = Config.BackgroundImageFit;
 
 // Alternate APIs
 pub const CAPI = @import("config/CAPI.zig");

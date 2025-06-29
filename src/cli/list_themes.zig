@@ -77,7 +77,7 @@ const ThemeListElement = struct {
 /// Two different directories will be searched for themes.
 ///
 /// The first directory is the `themes` subdirectory of your Ghostty
-/// configuration directory. This is `$XDG_CONFIG_DIR/ghostty/themes` or
+/// configuration directory. This is `$XDG_CONFIG_HOME/ghostty/themes` or
 /// `~/.config/ghostty/themes`.
 ///
 /// The second directory is the `themes` subdirectory of the Ghostty resources
@@ -115,7 +115,8 @@ pub fn run(gpa_alloc: std.mem.Allocator) !u8 {
     const stderr = std.io.getStdErr().writer();
     const stdout = std.io.getStdOut().writer();
 
-    if (global_state.resources_dir == null)
+    const resources_dir = global_state.resources_dir.app();
+    if (resources_dir == null)
         try stderr.print("Could not find the Ghostty resources directory. Please ensure " ++
             "that Ghostty is installed correctly.\n", .{});
 

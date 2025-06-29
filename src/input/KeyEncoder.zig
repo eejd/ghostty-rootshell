@@ -164,7 +164,7 @@ fn kitty(
         var seq: KittySequence = .{
             .key = entry.code,
             .final = entry.final,
-            .mods = KittyMods.fromInput(
+            .mods = .fromInput(
                 self.event.action,
                 self.event.key,
                 all_mods,

@@ -323,7 +323,7 @@ fn setupFd(src: File.Handle, target: i32) !void {
                 }
             }
         },
-        .ios, .macos => {
+        .freebsd, .ios, .macos => {
             // Mac doesn't support dup3 so we use dup2. We purposely clear
             // CLO_ON_EXEC for this fd.
             const flags = try posix.fcntl(src, posix.F.GETFD, 0);
@@ -370,7 +370,7 @@ pub fn wait(self: Command, block: bool) !Exit {
         }
     };
 
-    return Exit.init(res.status);
+    return .init(res.status);
 }
 
 /// Sets command->data to data.

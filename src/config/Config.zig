@@ -34,6 +34,7 @@ const ErrorList = @import("ErrorList.zig");
 const MetricModifier = fontpkg.Metrics.Modifier;
 const help_strings = @import("help_strings");
 pub const Command = @import("command.zig").Command;
+const RepeatableReadableIO = @import("io.zig").RepeatableReadableIO;
 const RepeatableStringMap = @import("RepeatableStringMap.zig");
 pub const Path = @import("path.zig").Path;
 pub const RepeatablePath = @import("path.zig").RepeatablePath;
@@ -45,14 +46,22 @@ const c = @cImport({
     @cInclude("unistd.h");
 });
 
-/// Renamed fields, used by cli.parse
-pub const renamed = std.StaticStringMap([]const u8).initComptime(&.{
+pub const compatibility = std.StaticStringMap(
+    cli.CompatibilityHandler(Config),
+).initComptime(&.{
     // Ghostty 1.1 introduced background-blur support for Linux which
     // doesn't support a specific radius value. The renaming is to let
     // one field be used for both platforms (macOS retained the ability
     // to set a radius).
-    .{ "background-blur-radius", "background-blur" },
-    .{ "adw-toolbar-style", "gtk-toolbar-style" },
+    .{ "background-blur-radius", cli.compatibilityRenamed(Config, "background-blur") },
+
+    // Ghostty 1.2 renamed all our adw options to gtk because we now have
+    // a hard dependency on libadwaita.
+    .{ "adw-toolbar-style", cli.compatibilityRenamed(Config, "gtk-toolbar-style") },
+
+    // Ghostty 1.2 removed the `hidden` value from `gtk-tabs-location` and
+    // moved it to `window-show-tab-bar`.
+    .{ "gtk-tabs-location", compatGtkTabsLocation },
 });
 
 /// The font families to use.
@@ -266,6 +275,9 @@ pub const renamed = std.StaticStringMap([]const u8).initComptime(&.{
 /// This affects the appearance of text and of any images with transparency.
 /// Additionally, custom shaders will receive colors in the configured space.
 ///
+/// On macOS the default is `native`, on all other platforms the default is
+/// `linear-corrected`.
+///
 /// Valid values:
 ///
 /// * `native` - Perform alpha blending in the native color space for the OS.
@@ -276,12 +288,15 @@ pub const renamed = std.StaticStringMap([]const u8).initComptime(&.{
 ///   when certain color combinations are used (e.g. red / green), but makes
 ///   dark text look much thinner than normal and light text much thicker.
 ///   This is also sometimes known as "gamma correction".
-///   (Currently only supported on macOS. Has no effect on Linux.)
 ///
 /// * `linear-corrected` - Same as `linear`, but with a correction step applied
 ///   for text that makes it look nearly or completely identical to `native`,
 ///   but without any of the darkening artifacts.
-@"alpha-blending": AlphaBlending = .native,
+@"alpha-blending": AlphaBlending =
+    if (builtin.os.tag == .macos)
+        .native
+    else
+        .@"linear-corrected",
 
 /// All of the configurations behavior adjust various metrics determined by the
 /// font. The values can be integers (1, -1, etc.) or a percentage (20%, -15%,
@@ -410,7 +425,7 @@ pub const renamed = std.StaticStringMap([]const u8).initComptime(&.{
 /// include path separators unless it is an absolute pathname.
 ///
 /// The first directory is the `themes` subdirectory of your Ghostty
-/// configuration directory. This is `$XDG_CONFIG_DIR/ghostty/themes` or
+/// configuration directory. This is `$XDG_CONFIG_HOME/ghostty/themes` or
 /// `~/.config/ghostty/themes`.
 ///
 /// The second directory is the `themes` subdirectory of the Ghostty resources
@@ -458,6 +473,93 @@ background: Color = .{ .r = 0x28, .g = 0x2C, .b = 0x34 },
 /// Foreground color for the window.
 /// Specified as either hex (`#RRGGBB` or `RRGGBB`) or a named X11 color.
 foreground: Color = .{ .r = 0xFF, .g = 0xFF, .b = 0xFF },
+
+/// Background image for the terminal.
+///
+/// This should be a path to a PNG or JPEG file, other image formats are
+/// not yet supported.
+///
+/// The background image is currently per-terminal, not per-window. If
+/// you are a heavy split user, the background image will be repeated across
+/// splits. A future improvement to Ghostty will address this.
+///
+/// WARNING: Background images are currently duplicated in VRAM per-terminal.
+/// For sufficiently large images, this could lead to a large increase in
+/// memory usage (specifically VRAM usage). A future Ghostty improvement
+/// will resolve this by sharing image textures across terminals.
+@"background-image": ?Path = null,
+
+/// Background image opacity.
+///
+/// This is relative to the value of `background-opacity`.
+///
+/// A value of `1.0` (the default) will result in the background image being
+/// placed on top of the general background color, and then the combined result
+/// will be adjusted to the opacity specified by `background-opacity`.
+///
+/// A value less than `1.0` will result in the background image being mixed
+/// with the general background color before the combined result is adjusted
+/// to the configured `background-opacity`.
+///
+/// A value greater than `1.0` will result in the background image having a
+/// higher opacity than the general background color. For instance, if the
+/// configured `background-opacity` is `0.5` and `background-image-opacity`
+/// is set to `1.5`, then the final opacity of the background image will be
+/// `0.5 * 1.5 = 0.75`.
+@"background-image-opacity": f32 = 1.0,
+
+/// Background image position.
+///
+/// Valid values are:
+///   * `top-left`
+///   * `top-center`
+///   * `top-right`
+///   * `center-left`
+///   * `center`
+///   * `center-right`
+///   * `bottom-left`
+///   * `bottom-center`
+///   * `bottom-right`
+///
+/// The default value is `center`.
+@"background-image-position": BackgroundImagePosition = .center,
+
+/// Background image fit.
+///
+/// Valid values are:
+///
+///  * `contain`
+///
+///     Preserving the aspect ratio, scale the background image to the largest
+///     size that can still be contained within the terminal, so that the whole
+///     image is visible.
+///
+///  * `cover`
+///
+///     Preserving the aspect ratio, scale the background image to the smallest
+///     size that can completely cover the terminal. This may result in one or
+///     more edges of the image being clipped by the edge of the terminal.
+///
+///  * `stretch`
+///
+///     Stretch the background image to the full size of the terminal, without
+///     preserving the aspect ratio.
+///
+///  * `none`
+///
+///     Don't scale the background image.
+///
+/// The default value is `contain`.
+@"background-image-fit": BackgroundImageFit = .contain,
+
+/// Whether to repeat the background image or not.
+///
+/// If this is set to true, the background image will be repeated if there
+/// would otherwise be blank space around it because it doesn't completely
+/// fill the terminal area.
+///
+/// The default value is `false`.
+@"background-image-repeat": bool = false,
 
 /// The foreground and background color for selection. If this is not set, then
 /// the selection color is just the inverted window background and foreground
@@ -801,6 +903,47 @@ command: ?Command = null,
 /// browser.
 env: RepeatableStringMap = .{},
 
+/// Data to send as input to the command on startup.
+///
+/// The configured `command` will be launched using the typical rules,
+/// then the data specified as this input will be written to the pty
+/// before any other input can be provided.
+///
+/// The bytes are sent as-is with no additional encoding. Therefore, be
+/// cautious about input that can contain control characters, because this
+/// can be used to execute programs in a shell.
+///
+/// The format of this value is:
+///
+///   * `raw:<string>` - Send raw text as-is. This uses Zig string literal
+///     syntax so you can specify control characters and other standard
+///     escapes.
+///
+///   * `path:<path>` - Read a filepath and send the contents. The path
+///     must be to a file with finite length. e.g. don't use a device
+///     such as `/dev/stdin` or `/dev/urandom` as these will block
+///     terminal startup indefinitely. Files are limited to 10MB
+///     in size to prevent excessive memory usage. If you have files
+///     larger than this you should write a script to read the file
+///     and send it to the terminal.
+///
+/// If no valid prefix is found, it is assumed to be a `raw:` input.
+/// This is an ergonomic choice to allow you to simply write
+/// `input = "Hello, world!"` (a common case) without needing to prefix
+/// every value with `raw:`.
+///
+/// This can be repeated multiple times to send more data. The data
+/// is concatenated directly with no separator characters in between
+/// (e.g. no newline).
+///
+/// If any of the input sources do not exist, then none of the input
+/// will be sent. Input sources are not verified until the terminal
+/// is starting, so missing paths will not show up in config validation.
+///
+/// Changing this configuration at runtime will only affect new
+/// terminals.
+input: RepeatableReadableIO = .{},
+
 /// If true, keep the terminal open after the command exits. Normally, the
 /// terminal window closes when the running command (such as a shell) exits.
 /// With this true, the terminal window will stay open until any keypress is
@@ -894,11 +1037,16 @@ title: ?[:0]const u8 = null,
 /// The setting that will change the application class value.
 ///
 /// This controls the class field of the `WM_CLASS` X11 property (when running
-/// under X11), and the Wayland application ID (when running under Wayland).
+/// under X11), the Wayland application ID (when running under Wayland), and the
+/// bus name that Ghostty uses to connect to DBus.
 ///
 /// Note that changing this value between invocations will create new, separate
 /// instances, of Ghostty when running with `gtk-single-instance=true`. See that
 /// option for more details.
+///
+/// Changing this value may break launching Ghostty from `.desktop` files, via
+/// DBus activation, or systemd user services as the system is expecting Ghostty
+/// to connect to DBus using the default `class` when it is launched.
 ///
 /// The class name must follow the requirements defined [in the GTK
 /// documentation](https://docs.gtk.org/gio/type_func.Application.id_is_valid.html).
@@ -1446,6 +1594,27 @@ keybind: Keybinds = .{},
 ///   * `end` - Insert the new tab at the end of the tab list.
 @"window-new-tab-position": WindowNewTabPosition = .current,
 
+/// Whether to show the tab bar.
+///
+/// Valid values:
+///
+///  - `always`
+///
+///    Always display the tab bar, even when there's only one tab.
+///
+///  - `auto` *(default)*
+///
+///    Automatically show and hide the tab bar. The tab bar is only
+///    shown when there are two or more tabs present.
+///
+///  - `never`
+///
+///    Never show the tab bar. Tabs are only accessible via the tab
+///    overview or by keybind actions.
+///
+/// Currently only supported on Linux (GTK).
+@"window-show-tab-bar": WindowShowTabBar = .auto,
+
 /// Background color for the window titlebar. This only takes effect if
 /// window-theme is set to ghostty. Currently only supported in the GTK app
 /// runtime.
@@ -1705,6 +1874,52 @@ keybind: Keybinds = .{},
 /// window is ever created. Only implemented on Linux and macOS.
 @"initial-window": bool = true,
 
+/// The duration that undo operations remain available. After this
+/// time, the operation will be removed from the undo stack and
+/// cannot be undone.
+///
+/// The default value is 5 seconds.
+///
+/// This timeout applies per operation, meaning that if you perform
+/// multiple operations, each operation will have its own timeout.
+/// New operations do not reset the timeout of previous operations.
+///
+/// A timeout of zero will effectively disable undo operations. It is
+/// not possible to set an infinite timeout, but you can set a very
+/// large timeout to effectively disable the timeout (on the order of years).
+/// This is highly discouraged, as it will cause the undo stack to grow
+/// indefinitely, memory usage to grow unbounded, and terminal sessions
+/// to never actually quit.
+///
+/// The duration is specified as a series of numbers followed by time units.
+/// Whitespace is allowed between numbers and units. Each number and unit will
+/// be added together to form the total duration.
+///
+/// The allowed time units are as follows:
+///
+///   * `y` - 365 SI days, or 8760 hours, or 31536000 seconds. No adjustments
+///     are made for leap years or leap seconds.
+///   * `d` - one SI day, or 86400 seconds.
+///   * `h` - one hour, or 3600 seconds.
+///   * `m` - one minute, or 60 seconds.
+///   * `s` - one second.
+///   * `ms` - one millisecond, or 0.001 second.
+///   * `us` or `µs` - one microsecond, or 0.000001 second.
+///   * `ns` - one nanosecond, or 0.000000001 second.
+///
+/// Examples:
+///   * `1h30m`
+///   * `45s`
+///
+/// Units can be repeated and will be added together. This means that
+/// `1h1h` is equivalent to `2h`. This is confusing and should be avoided.
+/// A future update may disallow this.
+///
+/// This configuration is only supported on macOS. Linux doesn't
+/// support undo operations at all so this configuration has no
+/// effect.
+@"undo-timeout": Duration = .{ .duration = 5 * std.time.ns_per_s },
+
 /// The position of the "quick" terminal window. To learn more about the
 /// quick terminal, see the documentation for the `toggle_quick_terminal`
 /// binding action.
@@ -1777,7 +1992,7 @@ keybind: Keybinds = .{},
 /// Automatically hide the quick terminal when focus shifts to another window.
 /// Set it to false for the quick terminal to remain open even when it loses focus.
 ///
-/// Defaults to true on macOS and on false on Linux. This is because global
+/// Defaults to true on macOS and on false on Linux/BSD. This is because global
 /// shortcuts on Linux require system configuration and are considerably less
 /// accessible than on macOS, meaning that it is more preferable to keep the
 /// quick terminal open until the user has completed their task.
@@ -1807,6 +2022,34 @@ keybind: Keybinds = .{},
 /// Only implemented on macOS.
 /// On Linux the behavior is always equivalent to `move`.
 @"quick-terminal-space-behavior": QuickTerminalSpaceBehavior = .move,
+
+/// Determines under which circumstances that the quick terminal should receive
+/// keyboard input. See the corresponding [Wayland documentation](https://wayland.app/protocols/wlr-layer-shell-unstable-v1#zwlr_layer_surface_v1:enum:keyboard_interactivity)
+/// for a more detailed explanation of the behavior of each option.
+///
+/// > [!NOTE]
+/// > The exact behavior of each option may differ significantly across
+/// > compositors -- experiment with them on your system to find one that
+/// > suits your liking!
+///
+/// Valid values are:
+///
+///  * `none`
+///
+///    The quick terminal will not receive any keyboard input.
+///
+///  * `on-demand` (default)
+///
+///    The quick terminal would only receive keyboard input when it is focused.
+///
+///  * `exclusive`
+///
+///    The quick terminal will always receive keyboard input, even when another
+///    window is currently focused.
+///
+/// Only has an effect on Linux Wayland.
+/// On macOS the behavior is always equivalent to `on-demand`.
+@"quick-terminal-keyboard-interactivity": QuickTerminalKeyboardInteractivity = .@"on-demand",
 
 /// Whether to enable shell integration auto-injection or not. Shell integration
 /// greatly enhances the terminal experience by enabling a number of features:
@@ -1853,6 +2096,28 @@ keybind: Keybinds = .{},
 /// Example: `cursor`, `no-cursor`, `sudo`, `no-sudo`, `title`, `no-title`
 @"shell-integration-features": ShellIntegrationFeatures = .{},
 
+/// Custom entries into the command palette.
+///
+/// Each entry requires the title, the corresponding action, and an optional
+/// description. Each field should be prefixed with the field name, a colon
+/// (`:`), and then the specified value. The syntax for actions is identical
+/// to the one for keybind actions. Whitespace in between fields is ignored.
+///
+/// ```ini
+/// command-palette-entry = title:Reset Font Style, action:csi:0m
+/// command-palette-entry = title:Crash on Main Thread,description:Causes a crash on the main (UI) thread.,action:crash:main
+/// ```
+///
+/// By default, the command palette is preloaded with most actions that might
+/// be useful in an interactive setting yet do not have easily accessible or
+/// memorizable shortcuts. The default entries can be cleared by setting this
+/// setting to an empty value:
+///
+/// ```ini
+/// command-palette-entry =
+/// ```
+@"command-palette-entry": RepeatableCommand = .{},
+
 /// Sets the reporting format for OSC sequences that request color information.
 /// Ghostty currently supports OSC 10 (foreground), OSC 11 (background), and
 /// OSC 4 (256 color palette) queries, and by default the reported values
@@ -1887,12 +2152,59 @@ keybind: Keybinds = .{},
 /// causing the window to be completely black. If this happens, you can
 /// unset this configuration to disable the shader.
 ///
-/// On Linux, this requires OpenGL 4.2. Ghostty typically only requires
-/// OpenGL 3.3, but custom shaders push that requirement up to 4.2.
+/// Custom shader support is based on and compatible with the Shadertoy shaders.
+/// Shaders should specify a `mainImage` function and the available uniforms
+/// largely match Shadertoy, with some caveats and Ghostty-specific extensions.
 ///
-/// The shader API is identical to the Shadertoy API: you specify a `mainImage`
-/// function and the available uniforms match Shadertoy. The iChannel0 uniform
-/// is a texture containing the rendered terminal screen.
+/// The uniform values available to shaders are as follows:
+///
+///  * `sampler2D iChannel0` - Input texture.
+///
+///     A texture containing the current terminal screen. If multiple custom
+///     shaders are specified, the output of previous shaders is written to
+///     this texture, to allow combining multiple effects.
+///
+///  * `vec3 iResolution` - Output texture size, `[width, height, 1]` (in px).
+///
+///  * `float iTime` - Time in seconds since first frame was rendered.
+///
+///  * `float iTimeDelta` - Time in seconds since previous frame was rendered.
+///
+///  * `float iFrameRate` - Average framerate. (NOT CURRENTLY SUPPORTED)
+///
+///  * `int iFrame` - Number of frames that have been rendered so far.
+///
+///  * `float iChannelTime[4]` - Current time for video or sound input. (N/A)
+///
+///  * `vec3 iChannelResolution[4]` - Resolutions of the 4 input samplers.
+///
+///    Currently only `iChannel0` exists, and `iChannelResolution[0]` is
+///    identical to `iResolution`.
+///
+///  * `vec4 iMouse` - Mouse input info. (NOT CURRENTLY SUPPORTED)
+///
+///  * `vec4 iDate` - Date/time info. (NOT CURRENTLY SUPPORTED)
+///
+///  * `float iSampleRate` - Sample rate for audio. (N/A)
+///
+/// Ghostty-specific extensions:
+///
+///  * `vec4 iCurrentCursor` - Info about the terminal cursor.
+///
+///    - `iCurrentCursor.xy` is the -X, +Y corner of the current cursor.
+///    - `iCurrentCursor.zw` is the width and height of the current cursor.
+///
+///  * `vec4 iPreviousCursor` - Info about the previous terminal cursor.
+///
+///  * `vec4 iCurrentCursorColor` - Color of the terminal cursor.
+///
+///  * `vec4 iPreviousCursorColor` - Color of the previous terminal cursor.
+///
+///  * `float iTimeCursorChange` - Timestamp of terminal cursor change.
+///
+///    When the terminal cursor changes position or color, this is set to
+///    the same time as the `iTime` uniform, allowing you to compute the
+///    time since the change by subtracting this from `iTime`.
 ///
 /// If the shader fails to compile, the shader will be ignored. Any errors
 /// related to shader compilation will not show up as configuration errors
@@ -1903,8 +2215,7 @@ keybind: Keybinds = .{},
 /// This can be repeated multiple times to load multiple shaders. The shaders
 /// will be run in the order they are specified.
 ///
-/// Changing this value at runtime and reloading the configuration will only
-/// affect new windows, tabs, and splits.
+/// This can be changed at runtime and will affect all open terminals.
 @"custom-shader": RepeatablePath = .{},
 
 /// If `true` (default), the focused terminal surface will run an animation
@@ -1922,8 +2233,7 @@ keybind: Keybinds = .{},
 /// will use more CPU per terminal surface and can become quite expensive
 /// depending on the shader and your terminal usage.
 ///
-/// This value can be changed at runtime and will affect all currently
-/// open terminals.
+/// This can be changed at runtime and will affect all open terminals.
 @"custom-shader-animation": CustomShaderAnimation = .true,
 
 /// Bell features to enable if bell support is available in your runtime. Not
@@ -1935,7 +2245,7 @@ keybind: Keybinds = .{},
 ///
 ///  * `system`
 ///
-///    Instructs the system to notify the user using built-in system functions.
+///    Instruct the system to notify the user using built-in system functions.
 ///    This could result in an audiovisual effect, a notification, or something
 ///    else entirely. Changing these effects require altering system settings:
 ///    for instance under the "Sound > Alert Sound" setting in GNOME,
@@ -1945,15 +2255,31 @@ keybind: Keybinds = .{},
 ///
 ///    Play a custom sound. (GTK only)
 ///
-/// Example: `audio`, `no-audio`, `system`, `no-system`:
+///  * `attention` *(enabled by default)*
 ///
-/// On macOS, if the app is unfocused, it will bounce the app icon in the dock
-/// once. Additionally, the title of the window with the alerted terminal
-/// surface will contain a bell emoji (🔔) until the terminal is focused
-/// or a key is pressed. These are not currently configurable since they're
-/// considered unobtrusive.
+///    Request the user's attention when Ghostty is unfocused, until it has
+///    received focus again. On macOS, this will bounce the app icon in the
+///    dock once. On Linux, the behavior depends on the desktop environment
+///    and/or the window manager/compositor:
 ///
-/// By default, no bell features are enabled.
+///    - On KDE, the background of the desktop icon in the task bar would be
+///      highlighted;
+///
+///    - On GNOME, you may receive a notification that, when clicked, would
+///      bring the Ghostty window into focus;
+///
+///    - On Sway, the window may be decorated with a distinctly colored border;
+///
+///    - On other systems this may have no effect at all.
+///
+///  * `title` *(enabled by default)*
+///
+///    Prepend a bell emoji (🔔) to the title of the alerted surface until the
+///    terminal is re-focused or interacted with (such as on keyboard input).
+///
+///    Only implemented on macOS.
+///
+/// Example: `audio`, `no-audio`, `system`, `no-system`
 @"bell-features": BellFeatures = .{},
 
 /// If `audio` is an enabled bell feature, this is a path to an audio file. If
@@ -2024,6 +2350,25 @@ keybind: Keybinds = .{},
 /// time the window is made fullscreen. If a window is already fullscreen,
 /// it will retain the previous setting until fullscreen is exited.
 @"macos-non-native-fullscreen": NonNativeFullscreen = .false,
+
+/// Whether the window buttons in the macOS titlebar are visible. The window
+/// buttons are the colored buttons in the upper left corner of most macOS apps,
+/// also known as the traffic lights, that allow you to close, miniaturize, and
+/// zoom the window.
+///
+/// This setting has no effect when `window-decoration = false` or
+/// `macos-titlebar-style = hidden`, as the window buttons are always hidden in
+/// these modes.
+///
+/// Valid values are:
+///
+///   * `visible` - Show the window buttons.
+///   * `hidden` - Hide the window buttons.
+///
+/// The default value is `visible`.
+///
+/// Changing this option at runtime only applies to new windows.
+@"macos-window-buttons": MacWindowButtons = .visible,
 
 /// The style of the macOS titlebar. Available values are: "native",
 /// "transparent", "tabs", and "hidden".
@@ -2246,6 +2591,29 @@ keybind: Keybinds = .{},
 ///
 @"macos-icon-screen-color": ?ColorList = null,
 
+/// Whether macOS Shortcuts are allowed to control Ghostty.
+///
+/// Ghostty exposes a number of actions that allow Shortcuts to
+/// control and interact with Ghostty. This includes creating new
+/// terminals, sending text to terminals, running commands, invoking
+/// any keybind action, etc.
+///
+/// This is a powerful feature but can be a security risk if a malicious
+/// shortcut is able to be installed and executed. Therefore, this
+/// configuration allows you to disable this feature.
+///
+/// Valid values are:
+///
+/// * `ask` - Ask the user whether for permission. Ghostty will remember
+///   this choice and never ask again. This is similar to other macOS
+///   permissions such as microphone access, camera access, etc.
+///
+/// * `allow` - Allow Shortcuts to control Ghostty without asking.
+///
+/// * `deny` - Deny Shortcuts from controlling Ghostty.
+///
+@"macos-shortcuts": MacShortcuts = .ask,
+
 /// Put every surface (tab, split, window) into a dedicated Linux cgroup.
 ///
 /// This makes it so that resource management can be done on a per-surface
@@ -2272,7 +2640,10 @@ keybind: Keybinds = .{},
 ///   * `single-instance` - Enable cgroups only for Ghostty instances launched
 ///     as single-instance applications (see gtk-single-instance).
 ///
-@"linux-cgroup": LinuxCgroup = .@"single-instance",
+@"linux-cgroup": LinuxCgroup = if (builtin.os.tag == .linux)
+    .@"single-instance"
+else
+    .never,
 
 /// Memory limit for any individual terminal process (tab, split, window,
 /// etc.) in bytes. If this is unset then no memory limit will be set.
@@ -2399,6 +2770,23 @@ term: []const u8 = "xterm-ghostty",
 /// String to send when we receive `ENQ` (`0x05`) from the command that we are
 /// running. Defaults to an empty string if not set.
 @"enquiry-response": []const u8 = "",
+
+/// The mechanism used to launch Ghostty. This should generally not be
+/// set by users, see the warning below.
+///
+/// WARNING: This is a low-level configuration that is not intended to be
+/// modified by users. All the values will be automatically detected as they
+/// are needed by Ghostty. This is only here in case our detection logic is
+/// incorrect for your environment or for developers who want to test
+/// Ghostty's behavior in different, forced environments.
+///
+/// This is set using the standard `no-[value]`, `[value]` syntax separated
+/// by commas. Example: "no-desktop,systemd". Specific details about the
+/// available values are documented on LaunchProperties in the code. Since
+/// this isn't intended to be modified by users, the documentation is
+/// lighter than the other configurations and users are expected to
+/// refer to the code for details.
+@"launched-from": ?LaunchSource = null,
 
 /// Configures the low-level API to use for async IO, eventing, etc.
 ///
@@ -2531,13 +2919,16 @@ pub fn load(alloc_gpa: Allocator) !Config {
 pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
     // Build up our basic config
     var result: Config = .{
-        ._arena = ArenaAllocator.init(alloc_gpa),
+        ._arena = .init(alloc_gpa),
     };
     errdefer result.deinit();
     const alloc = result._arena.?.allocator();
 
     // Add our default keybindings
     try result.keybind.init(alloc);
+
+    // Add our default command palette entries
+    try result.@"command-palette-entry".init(alloc);
 
     // Add our default link for URL detection
     try result.link.links.append(alloc, .{
@@ -2564,24 +2955,20 @@ pub fn loadIter(
 /// `path` must be resolved and absolute.
 pub fn loadFile(self: *Config, alloc: Allocator, path: []const u8) !void {
     assert(std.fs.path.isAbsolute(path));
-
-    var file = try std.fs.openFileAbsolute(path, .{});
-    defer file.close();
-
-    const stat = try file.stat();
-    switch (stat.kind) {
-        .file => {},
-        else => |kind| {
-            log.warn("config-file {s}: not reading because file type is {s}", .{
-                path,
-                @tagName(kind),
-            });
+    var file = openFile(path) catch |err| switch (err) {
+        error.NotAFile => {
+            log.warn(
+                "config-file {s}: not reading because it is not a file",
+                .{path},
+            );
             return;
         },
-    }
+
+        else => return err,
+    };
+    defer file.close();
 
     std.log.info("reading configuration file path={s}", .{path});
-
     var buf_reader = std.io.bufferedReader(file.reader());
     const reader = buf_reader.reader();
     const Iter = cli.args.LineIterator(@TypeOf(reader));
@@ -2636,13 +3023,13 @@ fn writeConfigTemplate(path: []const u8) !void {
 /// is also loaded.
 pub fn loadDefaultFiles(self: *Config, alloc: Allocator) !void {
     // Load XDG first
-    const xdg_path = try internal_os.xdg.config(alloc, .{ .subdir = "ghostty/config" });
+    const xdg_path = try defaultXdgPath(alloc);
     defer alloc.free(xdg_path);
     const xdg_action = self.loadOptionalFile(alloc, xdg_path);
 
     // On macOS load the app support directory as well
     if (comptime builtin.os.tag == .macos) {
-        const app_support_path = try internal_os.macos.appSupportDir(alloc, "config");
+        const app_support_path = try defaultAppSupportPath(alloc);
         defer alloc.free(app_support_path);
         const app_support_action = self.loadOptionalFile(alloc, app_support_path);
 
@@ -2662,13 +3049,109 @@ pub fn loadDefaultFiles(self: *Config, alloc: Allocator) !void {
     }
 }
 
+/// Default path for the XDG home configuration file. Returned value
+/// must be freed by the caller.
+fn defaultXdgPath(alloc: Allocator) ![]const u8 {
+    return try internal_os.xdg.config(
+        alloc,
+        .{ .subdir = "ghostty/config" },
+    );
+}
+
+/// Default path for the macOS Application Support configuration file.
+/// Returned value must be freed by the caller.
+fn defaultAppSupportPath(alloc: Allocator) ![]const u8 {
+    return try internal_os.macos.appSupportDir(alloc, "config");
+}
+
+/// Returns the path to the preferred default configuration file.
+/// This is the file where users should place their configuration.
+///
+/// This doesn't create or populate the file with any default
+/// contents; downstream callers must handle this.
+///
+/// The returned value must be freed by the caller.
+pub fn preferredDefaultFilePath(alloc: Allocator) ![]const u8 {
+    switch (builtin.os.tag) {
+        .macos => {
+            // macOS prefers the Application Support directory
+            // if it exists.
+            const app_support_path = try defaultAppSupportPath(alloc);
+            if (openFile(app_support_path)) |f| {
+                f.close();
+                return app_support_path;
+            } else |_| {}
+
+            // Try the XDG path if it exists
+            const xdg_path = try defaultXdgPath(alloc);
+            if (openFile(xdg_path)) |f| {
+                f.close();
+                alloc.free(app_support_path);
+                return xdg_path;
+            } else |_| {}
+            defer alloc.free(xdg_path);
+
+            // Neither exist, use app support
+            return app_support_path;
+        },
+
+        // All other platforms use XDG only
+        else => return try defaultXdgPath(alloc),
+    }
+}
+
+const OpenFileError = error{
+    FileNotFound,
+    FileIsEmpty,
+    FileOpenFailed,
+    NotAFile,
+};
+
+/// Opens the file at the given path and returns the file handle
+/// if it exists and is non-empty. This also constrains the possible
+/// errors to a smaller set that we can explicitly handle.
+fn openFile(path: []const u8) OpenFileError!std.fs.File {
+    assert(std.fs.path.isAbsolute(path));
+
+    var file = std.fs.openFileAbsolute(
+        path,
+        .{},
+    ) catch |err| switch (err) {
+        error.FileNotFound => return OpenFileError.FileNotFound,
+        else => {
+            log.warn("unexpected file open error path={s} err={}", .{
+                path,
+                err,
+            });
+            return OpenFileError.FileOpenFailed;
+        },
+    };
+    errdefer file.close();
+
+    const stat = file.stat() catch |err| {
+        log.warn("error getting file stat path={s} err={}", .{
+            path,
+            err,
+        });
+        return OpenFileError.FileOpenFailed;
+    };
+    switch (stat.kind) {
+        .file => {},
+        else => return OpenFileError.NotAFile,
+    }
+
+    if (stat.size == 0) return OpenFileError.FileIsEmpty;
+
+    return file;
+}
+
 /// Load and parse the CLI args.
 pub fn loadCliArgs(self: *Config, alloc_gpa: Allocator) !void {
     switch (builtin.os.tag) {
         .windows => {},
 
         // Fast-path if we are Linux and have no args.
-        .linux => if (std.os.argv.len <= 1) return,
+        .linux, .freebsd => if (std.os.argv.len <= 1) return,
 
         // Everything else we have to at least try because it may
         // not use std.os.argv.
@@ -2686,7 +3169,7 @@ pub fn loadCliArgs(self: *Config, alloc_gpa: Allocator) !void {
     //     styling, etc. based on the command.
     //
     // See: https://github.com/Vladimir-csp/xdg-terminal-exec
-    if (comptime builtin.os.tag == .linux) {
+    if ((comptime builtin.os.tag == .linux) or (comptime builtin.os.tag == .freebsd)) {
         if (internal_os.xdg.parseTerminalExec(std.os.argv)) |args| {
             const arena_alloc = self._arena.?.allocator();
 
@@ -2722,19 +3205,18 @@ pub fn loadCliArgs(self: *Config, alloc_gpa: Allocator) !void {
     // can replay if we are discarding the default files.
     const replay_len_start = self._replay_steps.items.len;
 
-    // Keep track of font families because if they are set from the CLI
-    // then we clear the previously set values. This avoids a UX oddity
-    // where on the CLI you have to specify `font-family=""` to clear the
-    // font families before setting a new one.
+    // font-family settings set via the CLI overwrite any prior values
+    // rather than append. This avoids a UX oddity where you have to
+    // specify `font-family=""` to clear the font families.
     const fields = &[_][]const u8{
         "font-family",
         "font-family-bold",
         "font-family-italic",
         "font-family-bold-italic",
     };
-    var counter: [fields.len]usize = undefined;
-    inline for (fields, 0..) |field, i| {
-        counter[i] = @field(self, field).list.items.len;
+    inline for (fields) |field| @field(self, field).overwrite_next = true;
+    defer {
+        inline for (fields) |field| @field(self, field).overwrite_next = false;
     }
 
     // Initialize our CLI iterator.
@@ -2759,28 +3241,6 @@ pub fn loadCliArgs(self: *Config, alloc_gpa: Allocator) !void {
         try new_config.loadIter(alloc_gpa, &it);
         self.deinit();
         self.* = new_config;
-    } else {
-        // If any of our font family settings were changed, then we
-        // replace the entire list with the new list.
-        inline for (fields, 0..) |field, i| {
-            const v = &@field(self, field);
-
-            // The list can be empty if it was reset, i.e. --font-family=""
-            if (v.list.items.len > 0) {
-                const len = v.list.items.len - counter[i];
-                if (len > 0) {
-                    // Note: we don't have to worry about freeing the memory
-                    // that we overwrite or cut off here because its all in
-                    // an arena.
-                    v.list.replaceRangeAssumeCapacity(
-                        0,
-                        len,
-                        v.list.items[counter[i]..],
-                    );
-                    v.list.items.len = len;
-                }
-            }
-        }
     }
 
     // Any paths referenced from the CLI are relative to the current working
@@ -2901,6 +3361,11 @@ pub fn loadRecursiveFiles(self: *Config, alloc_gpa: Allocator) !void {
     }
 }
 
+/// Get the arena allocator associated with the configuration.
+pub fn arenaAlloc(self: *Config) Allocator {
+    return self._arena.?.allocator();
+}
+
 /// Change the state of conditionals and reload the configuration
 /// based on the new state. This returns a new configuration based
 /// on the new state. The caller must free the old configuration if they
@@ -2978,6 +3443,15 @@ fn expandPaths(self: *Config, base: []const u8) !void {
                     base,
                     &self._diagnostics,
                 );
+            },
+            ?RepeatablePath, ?Path => {
+                if (@field(self, field.name)) |*path| {
+                    try path.expand(
+                        arena_alloc,
+                        base,
+                        &self._diagnostics,
+                    );
+                }
             },
             else => {},
         }
@@ -3106,6 +3580,11 @@ pub fn finalize(self: *Config) !void {
 
     const alloc = self._arena.?.allocator();
 
+    // Ensure our launch source is properly set.
+    if (self.@"launched-from" == null) {
+        self.@"launched-from" = .detect();
+    }
+
     // If we have a font-family set and don't set the others, default
     // the others to the font family. This way, if someone does
     // --font-family=foo, then we try to get the stylized versions of
@@ -3130,14 +3609,11 @@ pub fn finalize(self: *Config) !void {
     }
 
     // The default for the working directory depends on the system.
-    const wd = self.@"working-directory" orelse wd: {
+    const wd = self.@"working-directory" orelse switch (self.@"launched-from".?) {
         // If we have no working directory set, our default depends on
-        // whether we were launched from the desktop or CLI.
-        if (internal_os.launchedFromDesktop()) {
-            break :wd "home";
-        }
-
-        break :wd "inherit";
+        // whether we were launched from the desktop or elsewhere.
+        .desktop => "home",
+        .cli, .dbus, .systemd => "inherit",
     };
 
     // If we are missing either a command or home directory, we need
@@ -3160,7 +3636,10 @@ pub fn finalize(self: *Config) !void {
                 // If we were launched from the desktop, our SHELL env var
                 // will represent our SHELL at login time. We want to use the
                 // latest shell from /etc/passwd or directory services.
-                if (internal_os.launchedFromDesktop()) break :shell_env;
+                switch (self.@"launched-from".?) {
+                    .desktop, .dbus, .systemd => break :shell_env,
+                    .cli => {},
+                }
 
                 if (std.process.getEnvVarOwned(alloc, "SHELL")) |value| {
                     log.info("default shell source=env value={s}", .{value});
@@ -3321,6 +3800,27 @@ pub fn parseManuallyHook(
     return true;
 }
 
+/// parseFieldManuallyFallback is a fallback called only when
+/// parsing the field directly failed. It can be used to implement
+/// backward compatibility. Since this is only called when parsing
+/// fails, it doesn't impact happy-path performance.
+fn compatGtkTabsLocation(
+    self: *Config,
+    alloc: Allocator,
+    key: []const u8,
+    value: ?[]const u8,
+) bool {
+    _ = alloc;
+    assert(std.mem.eql(u8, key, "gtk-tabs-location"));
+
+    if (std.mem.eql(u8, value orelse "", "hidden")) {
+        self.@"window-show-tab-bar" = .never;
+        return true;
+    }
+
+    return false;
+}
+
 /// Create a shallow copy of this config. This will share all the memory
 /// allocated with the previous config but will have a new arena for
 /// any changes or new allocations. The config should have `deinit`
@@ -3332,7 +3832,7 @@ pub fn parseManuallyHook(
 /// be deallocated while shallow clones exist.
 pub fn shallowClone(self: *const Config, alloc_gpa: Allocator) Config {
     var result = self.*;
-    result._arena = ArenaAllocator.init(alloc_gpa);
+    result._arena = .init(alloc_gpa);
     return result;
 }
 
@@ -4172,6 +4672,11 @@ pub const RepeatableString = struct {
     // Allocator for the list is the arena for the parent config.
     list: std.ArrayListUnmanaged([:0]const u8) = .{},
 
+    // If true, then the next value will clear the list and start over
+    // rather than append. This is a bit of a hack but is here to make
+    // the font-family set of configurations work with CLI parsing.
+    overwrite_next: bool = false,
+
     pub fn parseCLI(self: *Self, alloc: Allocator, input: ?[]const u8) !void {
         const value = input orelse return error.ValueRequired;
 
@@ -4179,6 +4684,12 @@ pub const RepeatableString = struct {
         if (value.len == 0) {
             self.list.clearRetainingCapacity();
             return;
+        }
+
+        // If we're overwriting then we clear before appending
+        if (self.overwrite_next) {
+            self.list.clearRetainingCapacity();
+            self.overwrite_next = false;
         }
 
         const copy = try alloc.dupeZ(u8, value);
@@ -4245,6 +4756,24 @@ pub const RepeatableString = struct {
 
         try list.parseCLI(alloc, "");
         try testing.expectEqual(@as(usize, 0), list.list.items.len);
+    }
+
+    test "parseCLI overwrite" {
+        const testing = std.testing;
+        var arena = ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        var list: Self = .{};
+        try list.parseCLI(alloc, "A");
+
+        // Set our overwrite flag
+        list.overwrite_next = true;
+
+        try list.parseCLI(alloc, "B");
+        try testing.expectEqual(@as(usize, 1), list.list.items.len);
+        try list.parseCLI(alloc, "C");
+        try testing.expectEqual(@as(usize, 2), list.list.items.len);
     }
 
     test "formatConfig empty" {
@@ -4505,6 +5034,12 @@ pub const Keybinds = struct {
 
         try self.set.put(
             alloc,
+            .{ .key = .{ .unicode = 'j' }, .mods = .{ .shift = true, .ctrl = true, .super = true } },
+            .{ .write_screen_file = .copy },
+        );
+
+        try self.set.put(
+            alloc,
             .{ .key = .{ .unicode = 'j' }, .mods = inputpkg.ctrlOrSuper(.{ .shift = true }) },
             .{ .write_screen_file = .paste },
         );
@@ -4609,25 +5144,29 @@ pub const Keybinds = struct {
                 .{ .key = .{ .unicode = 'w' }, .mods = .{ .ctrl = true, .shift = true } },
                 .{ .close_tab = {} },
             );
-            try self.set.put(
+            try self.set.putFlags(
                 alloc,
                 .{ .key = .{ .physical = .arrow_left }, .mods = .{ .ctrl = true, .shift = true } },
                 .{ .previous_tab = {} },
+                .{ .performable = true },
             );
-            try self.set.put(
+            try self.set.putFlags(
                 alloc,
                 .{ .key = .{ .physical = .arrow_right }, .mods = .{ .ctrl = true, .shift = true } },
                 .{ .next_tab = {} },
+                .{ .performable = true },
             );
-            try self.set.put(
+            try self.set.putFlags(
                 alloc,
                 .{ .key = .{ .physical = .page_up }, .mods = .{ .ctrl = true } },
                 .{ .previous_tab = {} },
+                .{ .performable = true },
             );
-            try self.set.put(
+            try self.set.putFlags(
                 alloc,
                 .{ .key = .{ .physical = .page_down }, .mods = .{ .ctrl = true } },
                 .{ .next_tab = {} },
+                .{ .performable = true },
             );
             try self.set.put(
                 alloc,
@@ -4639,57 +5178,67 @@ pub const Keybinds = struct {
                 .{ .key = .{ .unicode = 'e' }, .mods = .{ .ctrl = true, .shift = true } },
                 .{ .new_split = .down },
             );
-            try self.set.put(
+            try self.set.putFlags(
                 alloc,
                 .{ .key = .{ .physical = .bracket_left }, .mods = .{ .ctrl = true, .super = true } },
                 .{ .goto_split = .previous },
+                .{ .performable = true },
             );
-            try self.set.put(
+            try self.set.putFlags(
                 alloc,
                 .{ .key = .{ .physical = .bracket_right }, .mods = .{ .ctrl = true, .super = true } },
                 .{ .goto_split = .next },
+                .{ .performable = true },
             );
-            try self.set.put(
+            try self.set.putFlags(
                 alloc,
                 .{ .key = .{ .physical = .arrow_up }, .mods = .{ .ctrl = true, .alt = true } },
                 .{ .goto_split = .up },
+                .{ .performable = true },
             );
-            try self.set.put(
+            try self.set.putFlags(
                 alloc,
                 .{ .key = .{ .physical = .arrow_down }, .mods = .{ .ctrl = true, .alt = true } },
                 .{ .goto_split = .down },
+                .{ .performable = true },
             );
-            try self.set.put(
+            try self.set.putFlags(
                 alloc,
                 .{ .key = .{ .physical = .arrow_left }, .mods = .{ .ctrl = true, .alt = true } },
                 .{ .goto_split = .left },
+                .{ .performable = true },
             );
-            try self.set.put(
+            try self.set.putFlags(
                 alloc,
                 .{ .key = .{ .physical = .arrow_right }, .mods = .{ .ctrl = true, .alt = true } },
                 .{ .goto_split = .right },
+                .{ .performable = true },
             );
 
             // Resizing splits
-            try self.set.put(
+            try self.set.putFlags(
                 alloc,
                 .{ .key = .{ .physical = .arrow_up }, .mods = .{ .super = true, .ctrl = true, .shift = true } },
                 .{ .resize_split = .{ .up, 10 } },
+                .{ .performable = true },
             );
-            try self.set.put(
+            try self.set.putFlags(
                 alloc,
                 .{ .key = .{ .physical = .arrow_down }, .mods = .{ .super = true, .ctrl = true, .shift = true } },
                 .{ .resize_split = .{ .down, 10 } },
+                .{ .performable = true },
             );
-            try self.set.put(
+            try self.set.putFlags(
                 alloc,
                 .{ .key = .{ .physical = .arrow_left }, .mods = .{ .super = true, .ctrl = true, .shift = true } },
                 .{ .resize_split = .{ .left, 10 } },
+                .{ .performable = true },
             );
-            try self.set.put(
+            try self.set.putFlags(
                 alloc,
                 .{ .key = .{ .physical = .arrow_right }, .mods = .{ .super = true, .ctrl = true, .shift = true } },
                 .{ .resize_split = .{ .right, 10 } },
+                .{ .performable = true },
             );
 
             // Viewport scrolling
@@ -4760,22 +5309,24 @@ pub const Keybinds = struct {
             const end: u21 = '8';
             var i: u21 = start;
             while (i <= end) : (i += 1) {
-                try self.set.put(
+                try self.set.putFlags(
                     alloc,
                     .{
                         .key = .{ .unicode = i },
                         .mods = mods,
                     },
                     .{ .goto_tab = (i - start) + 1 },
+                    .{ .performable = true },
                 );
             }
-            try self.set.put(
+            try self.set.putFlags(
                 alloc,
                 .{
                     .key = .{ .unicode = '9' },
                     .mods = mods,
                 },
                 .{ .last_tab = {} },
+                .{ .performable = true },
             );
         }
 
@@ -4817,6 +5368,26 @@ pub const Keybinds = struct {
                 alloc,
                 .{ .key = .{ .unicode = 'a' }, .mods = .{ .super = true } },
                 .{ .select_all = {} },
+            );
+
+            // Undo/redo
+            try self.set.putFlags(
+                alloc,
+                .{ .key = .{ .unicode = 't' }, .mods = .{ .super = true, .shift = true } },
+                .{ .undo = {} },
+                .{ .performable = true },
+            );
+            try self.set.putFlags(
+                alloc,
+                .{ .key = .{ .unicode = 'z' }, .mods = .{ .super = true } },
+                .{ .undo = {} },
+                .{ .performable = true },
+            );
+            try self.set.putFlags(
+                alloc,
+                .{ .key = .{ .unicode = 'z' }, .mods = .{ .super = true, .shift = true } },
+                .{ .redo = {} },
+                .{ .performable = true },
             );
 
             // Viewport scrolling
@@ -5725,6 +6296,150 @@ pub const ShellIntegrationFeatures = packed struct {
     title: bool = true,
 };
 
+pub const RepeatableCommand = struct {
+    value: std.ArrayListUnmanaged(inputpkg.Command) = .empty,
+
+    pub fn init(self: *RepeatableCommand, alloc: Allocator) !void {
+        self.value = .empty;
+        try self.value.appendSlice(alloc, inputpkg.command.defaults);
+    }
+
+    pub fn parseCLI(
+        self: *RepeatableCommand,
+        alloc: Allocator,
+        input_: ?[]const u8,
+    ) !void {
+        // Unset or empty input clears the list
+        const input = input_ orelse "";
+        if (input.len == 0) {
+            self.value.clearRetainingCapacity();
+            return;
+        }
+
+        const cmd = try cli.args.parseAutoStruct(
+            inputpkg.Command,
+            alloc,
+            input,
+        );
+        try self.value.append(alloc, cmd);
+    }
+
+    /// Deep copy of the struct. Required by Config.
+    pub fn clone(self: *const RepeatableCommand, alloc: Allocator) Allocator.Error!RepeatableCommand {
+        const value = try self.value.clone(alloc);
+        for (value.items) |*item| {
+            item.* = try item.clone(alloc);
+        }
+
+        return .{ .value = value };
+    }
+
+    /// Compare if two of our value are equal. Required by Config.
+    pub fn equal(self: RepeatableCommand, other: RepeatableCommand) bool {
+        if (self.value.items.len != other.value.items.len) return false;
+        for (self.value.items, other.value.items) |a, b| {
+            if (!a.equal(b)) return false;
+        }
+
+        return true;
+    }
+
+    /// Used by Formatter
+    pub fn formatEntry(self: RepeatableCommand, formatter: anytype) !void {
+        if (self.value.items.len == 0) {
+            try formatter.formatEntry(void, {});
+            return;
+        }
+
+        var buf: [4096]u8 = undefined;
+        for (self.value.items) |item| {
+            const str = if (item.description.len > 0) std.fmt.bufPrint(
+                &buf,
+                "title:{s},description:{s},action:{}",
+                .{ item.title, item.description, item.action },
+            ) else std.fmt.bufPrint(
+                &buf,
+                "title:{s},action:{}",
+                .{ item.title, item.action },
+            );
+            try formatter.formatEntry([]const u8, str catch return error.OutOfMemory);
+        }
+    }
+
+    test "RepeatableCommand parseCLI" {
+        const testing = std.testing;
+        var arena = ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        var list: RepeatableCommand = .{};
+        try list.parseCLI(alloc, "title:Foo,action:ignore");
+        try list.parseCLI(alloc, "title:Bar,description:bobr,action:text:ale bydle");
+        try list.parseCLI(alloc, "title:Quux,description:boo,action:increase_font_size:2.5");
+
+        try testing.expectEqual(@as(usize, 3), list.value.items.len);
+
+        try testing.expectEqual(inputpkg.Binding.Action.ignore, list.value.items[0].action);
+        try testing.expectEqualStrings("Foo", list.value.items[0].title);
+
+        try testing.expect(list.value.items[1].action == .text);
+        try testing.expectEqualStrings("ale bydle", list.value.items[1].action.text);
+        try testing.expectEqualStrings("Bar", list.value.items[1].title);
+        try testing.expectEqualStrings("bobr", list.value.items[1].description);
+
+        try testing.expectEqual(
+            inputpkg.Binding.Action{ .increase_font_size = 2.5 },
+            list.value.items[2].action,
+        );
+        try testing.expectEqualStrings("Quux", list.value.items[2].title);
+        try testing.expectEqualStrings("boo", list.value.items[2].description);
+
+        try list.parseCLI(alloc, "");
+        try testing.expectEqual(@as(usize, 0), list.value.items.len);
+    }
+
+    test "RepeatableCommand formatConfig empty" {
+        const testing = std.testing;
+        var buf = std.ArrayList(u8).init(testing.allocator);
+        defer buf.deinit();
+
+        var list: RepeatableCommand = .{};
+        try list.formatEntry(formatterpkg.entryFormatter("a", buf.writer()));
+        try std.testing.expectEqualSlices(u8, "a = \n", buf.items);
+    }
+
+    test "RepeatableCommand formatConfig single item" {
+        const testing = std.testing;
+        var buf = std.ArrayList(u8).init(testing.allocator);
+        defer buf.deinit();
+
+        var arena = ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        var list: RepeatableCommand = .{};
+        try list.parseCLI(alloc, "title:Bobr, action:text:Bober");
+        try list.formatEntry(formatterpkg.entryFormatter("a", buf.writer()));
+        try std.testing.expectEqualSlices(u8, "a = title:Bobr,action:text:Bober\n", buf.items);
+    }
+
+    test "RepeatableCommand formatConfig multiple items" {
+        const testing = std.testing;
+        var buf = std.ArrayList(u8).init(testing.allocator);
+        defer buf.deinit();
+
+        var arena = ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        var list: RepeatableCommand = .{};
+        try list.parseCLI(alloc, "title:Bobr, action:text:kurwa");
+        try list.parseCLI(alloc, "title:Ja,   description: pierdole,  action:text:jakie bydle");
+        try list.formatEntry(formatterpkg.entryFormatter("a", buf.writer()));
+        try std.testing.expectEqualSlices(u8, "a = title:Bobr,action:text:kurwa\na = title:Ja,description:pierdole,action:text:jakie bydle\n", buf.items);
+    }
+};
+
 /// OSC 4, 10, 11, and 12 default color reporting format.
 pub const OSCColorReportFormat = enum {
     none,
@@ -5745,6 +6460,12 @@ pub const WindowTheme = enum {
 pub const WindowColorspace = enum {
     srgb,
     @"display-p3",
+};
+
+/// See macos-window-buttons
+pub const MacWindowButtons = enum {
+    visible,
+    hidden,
 };
 
 /// See macos-titlebar-style
@@ -5793,6 +6514,13 @@ pub const MacAppIconFrame = enum {
     chrome,
 };
 
+/// See macos-shortcuts
+pub const MacShortcuts = enum {
+    allow,
+    deny,
+    ask,
+};
+
 /// See gtk-single-instance
 pub const GtkSingleInstance = enum {
     desktop,
@@ -5804,7 +6532,6 @@ pub const GtkSingleInstance = enum {
 pub const GtkTabsLocation = enum {
     top,
     bottom,
-    hidden,
 };
 
 /// See gtk-toolbar-style
@@ -5823,6 +6550,8 @@ pub const AppNotifications = packed struct {
 pub const BellFeatures = packed struct {
     system: bool = false,
     audio: bool = false,
+    attention: bool = true,
+    title: bool = true,
 };
 
 /// See mouse-shift-capture
@@ -5851,6 +6580,13 @@ pub const WindowSaveState = enum {
 pub const WindowNewTabPosition = enum {
     current,
     end,
+};
+
+/// See window-show-tab-bar
+pub const WindowShowTabBar = enum {
+    always,
+    auto,
+    never,
 };
 
 /// See resize-overlay
@@ -5975,7 +6711,7 @@ pub const QuickTerminalSize = struct {
             it.next() orelse return error.ValueRequired,
             cli.args.whitespace,
         );
-        self.primary = try Size.parse(primary);
+        self.primary = try .parse(primary);
 
         self.secondary = secondary: {
             const secondary = std.mem.trim(
@@ -5983,7 +6719,7 @@ pub const QuickTerminalSize = struct {
                 it.next() orelse break :secondary null,
                 cli.args.whitespace,
             );
-            break :secondary try Size.parse(secondary);
+            break :secondary try .parse(secondary);
         };
 
         if (it.next()) |_| return error.TooManyArguments;
@@ -6138,6 +6874,13 @@ pub const QuickTerminalSpaceBehavior = enum {
     move,
 };
 
+/// See quick-terminal-keyboard-interactivity
+pub const QuickTerminalKeyboardInteractivity = enum {
+    none,
+    @"on-demand",
+    exclusive,
+};
+
 /// See grapheme-width-method
 pub const GraphemeWidthMethod = enum {
     legacy,
@@ -6156,6 +6899,28 @@ pub const AlphaBlending = enum {
             .linear, .@"linear-corrected" => true,
         };
     }
+};
+
+/// See background-image-position
+pub const BackgroundImagePosition = enum {
+    @"top-left",
+    @"top-center",
+    @"top-right",
+    @"center-left",
+    @"center-center",
+    @"center-right",
+    @"bottom-left",
+    @"bottom-center",
+    @"bottom-right",
+    center,
+};
+
+/// See background-image-fit
+pub const BackgroundImageFit = enum {
+    contain,
+    cover,
+    stretch,
+    none,
 };
 
 /// See freetype-load-flag
@@ -6465,7 +7230,7 @@ pub const Duration = struct {
             if (remaining.len == 0) break;
 
             // Find the longest number
-            const number = number: {
+            const number: u64 = number: {
                 var prev_number: ?u64 = null;
                 var prev_remaining: ?[]const u8 = null;
                 for (1..remaining.len + 1) |index| {
@@ -6479,8 +7244,17 @@ pub const Duration = struct {
                 break :number prev_number;
             } orelse return error.InvalidValue;
 
-            // A number without a unit is invalid
-            if (remaining.len == 0) return error.InvalidValue;
+            // A number without a unit is invalid unless the number is
+            // exactly zero. In that case, the unit is unambiguous since
+            // its all the same.
+            if (remaining.len == 0) {
+                if (number == 0) {
+                    value = 0;
+                    break;
+                }
+
+                return error.InvalidValue;
+            }
 
             // Find the longest matching unit. Needs to be the longest matching
             // to distinguish 'm' from 'ms'.
@@ -6551,6 +7325,34 @@ pub const Duration = struct {
             std.time.ns_per_ms,
         ) catch std.math.maxInt(c_uint);
         return std.math.cast(c_uint, ms) orelse std.math.maxInt(c_uint);
+    }
+};
+
+pub const LaunchSource = enum {
+    /// Ghostty was launched via the CLI. This is the default if
+    /// no other source is detected.
+    cli,
+
+    /// Ghostty was launched in a desktop environment (not via the CLI).
+    /// This is used to determine some behaviors such as how to read
+    /// settings, whether single instance defaults to true, etc.
+    desktop,
+
+    /// Ghostty was started via dbus activation.
+    dbus,
+
+    /// Ghostty was started via systemd activation.
+    systemd,
+
+    pub fn detect() LaunchSource {
+        return if (internal_os.launchedFromDesktop())
+            .desktop
+        else if (internal_os.launchedByDbusActivation())
+            .dbus
+        else if (internal_os.launchedBySystemd())
+            .systemd
+        else
+            .cli;
     }
 };
 
@@ -6660,6 +7462,11 @@ test "parse duration" {
         const t = try std.fmt.bufPrint(&buf, "1{s}", .{unit.name});
         const d = try Duration.parseCLI(t);
         try std.testing.expectEqual(unit.factor, d.duration);
+    }
+
+    {
+        const d = try Duration.parseCLI("0");
+        try std.testing.expectEqual(@as(u64, 0), d.duration);
     }
 
     {
