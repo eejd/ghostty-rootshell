@@ -37,6 +37,7 @@ pub const ShellIntegrationFeatures = Config.ShellIntegrationFeatures;
 pub const WindowPaddingColor = Config.WindowPaddingColor;
 pub const BackgroundImagePosition = Config.BackgroundImagePosition;
 pub const BackgroundImageFit = Config.BackgroundImageFit;
+pub const LinkPreviews = Config.LinkPreviews;
 
 // Alternate APIs
 pub const CAPI = @import("config/CAPI.zig");
