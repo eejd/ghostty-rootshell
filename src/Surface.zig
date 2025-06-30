@@ -138,6 +138,9 @@ child_exited: bool = false,
 /// to let us know.
 focused: bool = true,
 
+/// Used to determine whether to continuously scroll.
+selection_scroll_active: bool = false,
+
 /// The effect of an input event. This can be used by callers to take
 /// the appropriate action after an input event. For example, key
 /// input can be forwarded to the OS for further processing if it
@@ -945,7 +948,49 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
                 log.warn("apprt failed to ring bell={}", .{err});
             };
         },
+
+        .selection_scroll_tick => |active| {
+            self.selection_scroll_active = active;
+            try self.selectionScrollTick();
+        },
     }
+}
+
+fn selectionScrollTick(self: *Surface) !void {
+    // If we're no longer active then we don't do anything.
+    if (!self.selection_scroll_active) return;
+
+    // If we don't have a left mouse button down then we
+    // don't do anything.
+    if (self.mouse.left_click_count == 0) return;
+
+    const pos = try self.rt_surface.getCursorPos();
+    const pos_vp = self.posToViewport(pos.x, pos.y);
+    const delta: isize = if (pos.y < 0) -1 else 1;
+
+    // We need our locked state for the remainder
+    self.renderer_state.mutex.lock();
+    defer self.renderer_state.mutex.unlock();
+    const t: *terminal.Terminal = self.renderer_state.terminal;
+
+    // Scroll the viewport as required
+    try t.scrollViewport(.{ .delta = delta });
+
+    // Next, trigger our drag behavior
+    const pin = t.screen.pages.pin(.{
+        .viewport = .{
+            .x = pos_vp.x,
+            .y = pos_vp.y,
+        },
+    }) orelse {
+        if (comptime std.debug.runtime_safety) unreachable;
+        return;
+    };
+    try self.dragLeftClickSingle(pin, pos.x);
+
+    // We modified our viewport and selection so we need to queue
+    // a render.
+    try self.queueRender();
 }
 
 fn childExited(self: *Surface, info: apprt.surface.Message.ChildExited) void {
@@ -3233,6 +3278,15 @@ pub fn mouseButtonCallback(
     }
 
     if (button == .left and action == .release) {
+        // Stop selection scrolling when releasing the left mouse button
+        // but only when selection scrolling is active.
+        if (self.selection_scroll_active) {
+            self.io.queueMessage(
+                .{ .selection_scroll = false },
+                .unlocked,
+            );
+        }
+
         // The selection clipboard is only updated for left-click drag when
         // the left button is released. This is to avoid the clipboard
         // being updated on every mouse move which would be noisy.
@@ -3786,6 +3840,15 @@ pub fn cursorPosCallback(
     self.renderer_state.mutex.lock();
     defer self.renderer_state.mutex.unlock();
 
+    // Stop selection scrolling when inside the viewport within a 1px buffer
+    // for fullscreen windows, but only when selection scrolling is active.
+    if (pos.x >= 1 and pos.y >= 1 and self.selection_scroll_active) {
+        self.io.queueMessage(
+            .{ .selection_scroll = false },
+            .locked,
+        );
+    }
+
     // Update our mouse state. We set this to null initially because we only
     // want to set it when we're not selecting or doing any other mouse
     // event.
@@ -3868,13 +3931,16 @@ pub fn cursorPosCallback(
         // Note: one day, we can change this from distance to time based if we want.
         //log.warn("CURSOR POS: {} {}", .{ pos, self.size.screen });
         const max_y: f32 = @floatFromInt(self.size.screen.height);
-        if (pos.y <= 1 or pos.y > max_y - 1) {
-            const delta: isize = if (pos.y < 0) -1 else 1;
-            try self.io.terminal.scrollViewport(.{ .delta = delta });
 
-            // TODO: We want a timer or something to repeat while we're still
-            // at this cursor position. Right now, the user has to jiggle their
-            // mouse in order to scroll.
+        // If the mouse is outside the viewport and we have the left
+        // mouse button pressed then we need to start the scroll timer.
+        if ((pos.y <= 1 or pos.y > max_y - 1) and
+            !self.selection_scroll_active)
+        {
+            self.io.queueMessage(
+                .{ .selection_scroll = true },
+                .locked,
+            );
         }
 
         // Convert to points

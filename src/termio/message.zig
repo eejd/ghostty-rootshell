@@ -48,6 +48,12 @@ pub const Message = union(enum) {
     /// Scroll the viewport
     scroll_viewport: terminal.Terminal.ScrollViewport,
 
+    /// Selection scrolling. If this is set to true then the termio
+    /// thread starts a timer that will trigger a `selection_scroll_tick`
+    /// message back to the surface. This ping/pong is because the
+    /// surface thread doesn't have access to an event loop from libghostty.
+    selection_scroll: bool,
+
     /// Jump forward/backward n prompts.
     jump_to_prompt: isize,
 
