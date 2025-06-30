@@ -79,9 +79,9 @@
   },
   {
     "type": "archive",
-    "url": "https://github.com/mitchellh/libxev/archive/9bc52324d4f0c036a3b244e992680a9fb217bbd3.tar.gz",
-    "dest": "vendor/p/libxev-0.0.0-86vtc5b1EgB7vFmt9Tk7ySteR5AeEHW7xcR6gK9dMUD3",
-    "sha256": "570141c83a29b6a88de5492894543b4db461c0c11145e0fd12bda98f14c26085"
+    "url": "https://github.com/mitchellh/libxev/archive/75a10d0fb374e8eb84948dcfc68d865e755e59c2.tar.gz",
+    "dest": "vendor/p/libxev-0.0.0-86vtcyMBEwA-UpcjfOICyI2GYG8o6MiRbinS1_8g1_rw",
+    "sha256": "fc248a4ae6597e7d1a2109556743bc721e4ee2009a8d80534eea1eb51768d27e"
   },
   {
     "type": "archive",
