@@ -248,7 +248,7 @@ msgstr "열린 탭 보기"
 #: src/apprt/gtk/Window.zig:295
 msgid ""
 "⚠️ You're running a debug build of Ghostty! Performance will be degraded."
-msgstr "⚠️ 디버그 빌드 실행 중! 성능이 저하됩니다."
+msgstr "⚠️ Ghostty는 디버그 빌드 실행 중! 성능이 저하됩니다."
 
 #: src/apprt/gtk/Window.zig:725
 msgid "Reloaded the configuration"
