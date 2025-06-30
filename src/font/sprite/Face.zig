@@ -216,7 +216,7 @@ pub fn renderGlyph(
     // Write the drawing to the atlas
     const region = try canvas.writeAtlas(alloc, atlas);
 
-    return font.Glyph{
+    return .{
         .width = region.width,
         .height = region.height,
         .offset_x = @as(i32, @intCast(canvas.clip_left)) - @as(i32, @intCast(padding_x)),
@@ -224,6 +224,7 @@ pub fn renderGlyph(
         .atlas_x = region.x,
         .atlas_y = region.y,
         .advance_x = @floatFromInt(width),
+        .sprite = true,
     };
 }
 
