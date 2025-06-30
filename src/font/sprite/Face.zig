@@ -54,7 +54,7 @@ const Range = struct {
 
 /// Automatically collect ranges for functions with names
 /// in the format `draw<CP>` or `draw<MIN>_<MAX>`.
-const ranges = ranges: {
+const ranges: []const Range = ranges: {
     @setEvalBranchQuota(1_000_000);
 
     // Structs containing drawing functions for codepoint ranges.
@@ -137,7 +137,11 @@ const ranges = ranges: {
         i = n.max;
     }
 
-    break :ranges r;
+    // We need to copy in to a const rather than a var in order to take
+    // the reference at comptime so that we can break with a slice here.
+    const fixed = r;
+
+    break :ranges &fixed;
 };
 
 fn getDrawFn(cp: u32) ?*const DrawFn {
