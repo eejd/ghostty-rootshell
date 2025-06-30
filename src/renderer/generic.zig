@@ -513,6 +513,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             font_thicken_strength: u8,
             font_features: std.ArrayListUnmanaged([:0]const u8),
             font_styles: font.CodepointResolver.StyleStatus,
+            font_shaping_break: configpkg.FontShapingBreak,
             cursor_color: ?terminal.color.RGB,
             cursor_invert: bool,
             cursor_opacity: f64,
@@ -578,6 +579,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     .font_thicken_strength = config.@"font-thicken-strength",
                     .font_features = font_features.list,
                     .font_styles = font_styles,
+                    .font_shaping_break = config.@"font-shaping-break",
 
                     .cursor_color = if (!cursor_invert and config.@"cursor-color" != null)
                         config.@"cursor-color".?.toTerminalRGB()
@@ -2467,13 +2469,15 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 }
 
                 // Iterator of runs for shaping.
-                var run_iter = self.font_shaper.runIterator(
-                    self.font_grid,
-                    screen,
-                    row,
-                    row_selection,
-                    if (shape_cursor) screen.cursor.x else null,
-                );
+                var run_iter_opts: font.shape.RunOptions = .{
+                    .grid = self.font_grid,
+                    .screen = screen,
+                    .row = row,
+                    .selection = row_selection,
+                    .cursor_x = if (shape_cursor) screen.cursor.x else null,
+                };
+                run_iter_opts.applyBreakConfig(self.config.font_shaping_break);
+                var run_iter = self.font_shaper.runIterator(run_iter_opts);
                 var shaper_run: ?font.shape.TextRun = try run_iter.next(self.alloc);
                 var shaper_cells: ?[]const font.shape.Cell = null;
                 var shaper_cells_i: usize = 0;
