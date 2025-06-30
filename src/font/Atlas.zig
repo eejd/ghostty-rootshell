@@ -587,6 +587,35 @@ test "writing data" {
     try testing.expectEqual(@as(u8, 4), atlas.data[66]);
 }
 
+test "writing data from a larger source" {
+    const alloc = testing.allocator;
+    var atlas = try init(alloc, 32, .grayscale);
+    defer atlas.deinit(alloc);
+
+    const reg = try atlas.reserve(alloc, 2, 2);
+    const old = atlas.modified.load(.monotonic);
+    // zig fmt: off
+    atlas.setFromLarger(reg, &[_]u8{
+        8, 8, 8, 8, 8,
+        8, 8, 1, 2, 8,
+        8, 8, 3, 4, 8,
+        8, 8, 8, 8, 8,
+    }, 5, 2, 1);
+    // zig fmt: on
+    const new = atlas.modified.load(.monotonic);
+    try testing.expect(new > old);
+
+    // 33 because of the 1px border and so on
+    try testing.expectEqual(@as(u8, 1), atlas.data[33]);
+    try testing.expectEqual(@as(u8, 2), atlas.data[34]);
+    try testing.expectEqual(@as(u8, 3), atlas.data[65]);
+    try testing.expectEqual(@as(u8, 4), atlas.data[66]);
+
+    // None of the `8`s from the source data outside of the
+    // specified region should have made it on to the atlas.
+    try testing.expectEqual(null, std.mem.indexOfScalar(u8, atlas.data, 8));
+}
+
 test "grow" {
     const alloc = testing.allocator;
     var atlas = try init(alloc, 4, .grayscale); // +2 for 1px border
