@@ -52,7 +52,7 @@ msgstr "Игнорирай"
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:97
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:100
 msgid "Reload Configuration"
-msgstr "Презареди на конфигурацията"
+msgstr "Презареди конфигурацията"
 
 #: src/apprt/gtk/ui/1.0/menu-headerbar-split_menu.blp:6
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:38
