@@ -61,6 +61,8 @@ const xHalfs = common.xHalfs;
 const yQuads = common.yQuads;
 const rect = common.rect;
 
+const box = @import("box.zig");
+
 const font = @import("../../main.zig");
 
 const octant_min = 0x1cd00;
@@ -242,6 +244,81 @@ pub fn draw1CC30_1CC3F(
         0x1CC3E => try circlePiece(canvas, width, height, metrics, 2, 3, 2, 2),
         // 𜰿 LOWER RIGHT TWELFTH CIRCLE
         0x1CC3F => try circlePiece(canvas, width, height, metrics, 3, 3, 2, 2),
+        else => unreachable,
+    }
+}
+
+/// TODO: These two characters should be easy, but it's not clear how they're
+///       meant to align with adjacent cells, what characters they're meant to
+///       be used with:
+///       - 1CC1F 𜰟 BOX DRAWINGS DOUBLE DIAGONAL UPPER RIGHT TO LOWER LEFT
+///       - 1CC20 𜰠 BOX DRAWINGS DOUBLE DIAGONAL UPPER LEFT TO LOWER RIGHT
+pub fn draw1CC1B_1CC1E(
+    cp: u32,
+    canvas: *font.sprite.Canvas,
+    width: u32,
+    height: u32,
+    metrics: font.Metrics,
+) !void {
+    const w: i32 = @intCast(width);
+    const h: i32 = @intCast(height);
+    const t: i32 = @intCast(metrics.box_thickness);
+    switch (cp) {
+        // 𜰛 BOX DRAWINGS LIGHT HORIZONTAL AND UPPER RIGHT
+        0x1CC1B => {
+            box.linesChar(metrics, canvas, .{ .left = .light, .right = .light });
+            canvas.box(w - t, 0, w, @divFloor(h, 2), .on);
+        },
+        // 𜰜 BOX DRAWINGS LIGHT HORIZONTAL AND LOWER RIGHT
+        0x1CC1C => {
+            box.linesChar(metrics, canvas, .{ .left = .light, .right = .light });
+            canvas.box(w - t, @divFloor(h, 2), w, h, .on);
+        },
+        // 𜰝 BOX DRAWINGS LIGHT TOP AND UPPER LEFT
+        0x1CC1D => {
+            canvas.box(0, 0, w, t, .on);
+            canvas.box(0, 0, t, @divFloor(h, 2), .on);
+        },
+        // 𜰞 BOX DRAWINGS LIGHT BOTTOM AND LOWER LEFT
+        0x1CC1E => {
+            canvas.box(0, h - t, w, h, .on);
+            canvas.box(0, @divFloor(h, 2), t, h, .on);
+        },
+        else => unreachable,
+    }
+}
+
+pub fn draw1CE16_1CE19(
+    cp: u32,
+    canvas: *font.sprite.Canvas,
+    width: u32,
+    height: u32,
+    metrics: font.Metrics,
+) !void {
+    const w: i32 = @intCast(width);
+    const h: i32 = @intCast(height);
+    const t: i32 = @intCast(metrics.box_thickness);
+    switch (cp) {
+        // 𜸖 BOX DRAWINGS LIGHT VERTICAL AND TOP RIGHT
+        0x1CE16 => {
+            box.linesChar(metrics, canvas, .{ .up = .light, .down = .light });
+            canvas.box(@divFloor(w, 2), 0, w, t, .on);
+        },
+        // 𜸗 BOX DRAWINGS LIGHT VERTICAL AND BOTTOM RIGHT
+        0x1CE17 => {
+            box.linesChar(metrics, canvas, .{ .up = .light, .down = .light });
+            canvas.box(@divFloor(w, 2), h - t, w, h, .on);
+        },
+        // 𜸘 BOX DRAWINGS LIGHT VERTICAL AND TOP LEFT
+        0x1CE18 => {
+            box.linesChar(metrics, canvas, .{ .up = .light, .down = .light });
+            canvas.box(0, 0, @divFloor(w, 2), t, .on);
+        },
+        // 𜸙 BOX DRAWINGS LIGHT VERTICAL AND BOTTOM LEFT
+        0x1CE19 => {
+            box.linesChar(metrics, canvas, .{ .up = .light, .down = .light });
+            canvas.box(0, h - t, @divFloor(w, 2), h, .on);
+        },
         else => unreachable,
     }
 }
