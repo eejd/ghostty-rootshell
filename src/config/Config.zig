@@ -46,14 +46,22 @@ const c = @cImport({
     @cInclude("unistd.h");
 });
 
-/// Renamed fields, used by cli.parse
-pub const renamed = std.StaticStringMap([]const u8).initComptime(&.{
+pub const compatibility = std.StaticStringMap(
+    cli.CompatibilityHandler(Config),
+).initComptime(&.{
     // Ghostty 1.1 introduced background-blur support for Linux which
     // doesn't support a specific radius value. The renaming is to let
     // one field be used for both platforms (macOS retained the ability
     // to set a radius).
-    .{ "background-blur-radius", "background-blur" },
-    .{ "adw-toolbar-style", "gtk-toolbar-style" },
+    .{ "background-blur-radius", cli.compatibilityRenamed(Config, "background-blur") },
+
+    // Ghostty 1.2 renamed all our adw options to gtk because we now have
+    // a hard dependency on libadwaita.
+    .{ "adw-toolbar-style", cli.compatibilityRenamed(Config, "gtk-toolbar-style") },
+
+    // Ghostty 1.2 removed the `hidden` value from `gtk-tabs-location` and
+    // moved it to `window-show-tab-bar`.
+    .{ "gtk-tabs-location", compatGtkTabsLocation },
 });
 
 /// The font families to use.
@@ -3792,6 +3800,27 @@ pub fn parseManuallyHook(
     return true;
 }
 
+/// parseFieldManuallyFallback is a fallback called only when
+/// parsing the field directly failed. It can be used to implement
+/// backward compatibility. Since this is only called when parsing
+/// fails, it doesn't impact happy-path performance.
+fn compatGtkTabsLocation(
+    self: *Config,
+    alloc: Allocator,
+    key: []const u8,
+    value: ?[]const u8,
+) bool {
+    _ = alloc;
+    assert(std.mem.eql(u8, key, "gtk-tabs-location"));
+
+    if (std.mem.eql(u8, value orelse "", "hidden")) {
+        self.@"window-show-tab-bar" = .never;
+        return true;
+    }
+
+    return false;
+}
+
 /// Create a shallow copy of this config. This will share all the memory
 /// allocated with the previous config but will have a new arena for
 /// any changes or new allocations. The config should have `deinit`
@@ -5001,6 +5030,12 @@ pub const Keybinds = struct {
             alloc,
             .{ .key = .{ .unicode = '0' }, .mods = inputpkg.ctrlOrSuper(.{}) },
             .{ .reset_font_size = {} },
+        );
+
+        try self.set.put(
+            alloc,
+            .{ .key = .{ .unicode = 'j' }, .mods = .{ .shift = true, .ctrl = true, .super = true } },
+            .{ .write_screen_file = .copy },
         );
 
         try self.set.put(

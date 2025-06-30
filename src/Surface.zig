@@ -4845,6 +4845,11 @@ fn writeScreenFile(
     const path = try tmp_dir.dir.realpath(filename, &path_buf);
 
     switch (write_action) {
+        .copy => {
+            const pathZ = try self.alloc.dupeZ(u8, path);
+            defer self.alloc.free(pathZ);
+            try self.rt_surface.setClipboardString(pathZ, .standard, false);
+        },
         .open => try internal_os.open(self.alloc, .text, path),
         .paste => self.io.queueMessage(try termio.Message.writeReq(
             self.alloc,

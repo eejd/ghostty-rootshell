@@ -1,299 +1,285 @@
-# Chinese translations for com.mitchellh.ghostty package
-# com.mitchellh.ghostty 软件包的简体中文翻译.
-# Copyright (C) 2025 Mitchell Hashimoto, Ghostty contributors
+# Spanish translations for com.mitchellh.ghostty package.
+# Copyright (C) 2025 Mitchell Hashimoto
 # This file is distributed under the same license as the com.mitchellh.ghostty package.
-# Leah <hi@pluie.me>, 2025.
+# Alan Moyano <alanmoyano203@gmail.com>, 2025.
 #
 msgid ""
 msgstr ""
 "Project-Id-Version: com.mitchellh.ghostty\n"
 "Report-Msgid-Bugs-To: m@mitchellh.com\n"
-"POT-Creation-Date: 2025-06-28 17:01+0200\n"
-"PO-Revision-Date: 2025-02-27 09:16+0100\n"
-"Last-Translator: Leah <hi@pluie.me>\n"
-"Language-Team: Chinese (simplified) <i18n-zh@googlegroups.com>\n"
-"Language: zh_CN\n"
+"POT-Creation-Date: 2025-04-23 16:58+0800\n"
+"PO-Revision-Date: 2025-05-19 20:17-0300\n"
+"Last-Translator: Alan Moyano <alanmoyano203@gmail.com>\n"
+"Language-Team: Argentinian <es@tp.org.es>\n"
+"Language: es_AR\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
 
 #: src/apprt/gtk/ui/1.5/prompt-title-dialog.blp:5
 msgid "Change Terminal Title"
-msgstr "更改终端标题"
+msgstr "Cambiar el título de la terminal"
 
 #: src/apprt/gtk/ui/1.5/prompt-title-dialog.blp:6
 msgid "Leave blank to restore the default title."
-msgstr "留空以重置至默认标题。"
+msgstr "Dejar en blanco para restaurar el título predeterminado."
 
 #: src/apprt/gtk/ui/1.5/prompt-title-dialog.blp:9
-#: src/apprt/gtk/ui/1.5/ccw-paste.blp:10 src/apprt/gtk/ui/1.2/ccw-paste.blp:10
-#: src/apprt/gtk/CloseDialog.zig:44
+#: src/apprt/gtk/ui/1.5/ccw-paste.blp:10 src/apprt/gtk/CloseDialog.zig:44
 msgid "Cancel"
-msgstr "取消"
+msgstr "Cancelar"
 
 #: src/apprt/gtk/ui/1.5/prompt-title-dialog.blp:10
 msgid "OK"
-msgstr "确认"
+msgstr "Aceptar"
 
 #: src/apprt/gtk/ui/1.5/config-errors-dialog.blp:5
-#: src/apprt/gtk/ui/1.2/config-errors-dialog.blp:5
 msgid "Configuration Errors"
-msgstr "配置错误"
+msgstr "Errores de configuración"
 
 #: src/apprt/gtk/ui/1.5/config-errors-dialog.blp:6
-#: src/apprt/gtk/ui/1.2/config-errors-dialog.blp:6
 msgid ""
 "One or more configuration errors were found. Please review the errors below, "
 "and either reload your configuration or ignore these errors."
 msgstr ""
-"加载配置时发现了以下错误。请仔细阅读错误信息，并选择忽略或重新加载配置文件。"
+"Se encontraron uno o más errores de configuración. Por favor revisá los "
+"errores a continuación, y recargá tu configuración o ignorá estos errores."
 
 #: src/apprt/gtk/ui/1.5/config-errors-dialog.blp:9
-#: src/apprt/gtk/ui/1.2/config-errors-dialog.blp:9
 msgid "Ignore"
-msgstr "忽略"
+msgstr "Ignorar"
 
 #: src/apprt/gtk/ui/1.5/config-errors-dialog.blp:10
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:97
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:100
-#: src/apprt/gtk/ui/1.2/config-errors-dialog.blp:10
 msgid "Reload Configuration"
-msgstr "重新加载配置"
+msgstr "Recargar configuración"
 
 #: src/apprt/gtk/ui/1.0/menu-headerbar-split_menu.blp:6
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:38
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:50
 msgid "Split Up"
-msgstr "向上分屏"
+msgstr "Dividir arriba"
 
 #: src/apprt/gtk/ui/1.0/menu-headerbar-split_menu.blp:11
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:43
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:55
 msgid "Split Down"
-msgstr "向下分屏"
+msgstr "Dividir abajo"
 
 #: src/apprt/gtk/ui/1.0/menu-headerbar-split_menu.blp:16
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:48
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:60
 msgid "Split Left"
-msgstr "向左分屏"
+msgstr "Dividir a la izquierda"
 
 #: src/apprt/gtk/ui/1.0/menu-headerbar-split_menu.blp:21
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:53
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:65
 msgid "Split Right"
-msgstr "向右分屏"
+msgstr "Dividir a la derecha"
 
 #: src/apprt/gtk/ui/1.5/command-palette.blp:16
 msgid "Execute a command…"
-msgstr "选择要执行的命令……"
+msgstr "Ejecutar un comando…"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:6
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:6
 msgid "Copy"
-msgstr "复制"
+msgstr "Copiar"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:11
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:11
-#: src/apprt/gtk/ui/1.5/ccw-paste.blp:11 src/apprt/gtk/ui/1.2/ccw-paste.blp:11
+#: src/apprt/gtk/ui/1.5/ccw-paste.blp:11
 msgid "Paste"
-msgstr "粘贴"
+msgstr "Pegar"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:18
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:73
 msgid "Clear"
-msgstr "清除屏幕"
+msgstr "Limpiar"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:23
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:78
 msgid "Reset"
-msgstr "重置终端"
+msgstr "Reiniciar"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:30
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:42
 msgid "Split"
-msgstr "分屏"
+msgstr "Dividir"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:33
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:45
 msgid "Change Title…"
-msgstr "更改标题……"
+msgstr "Cambiar título…"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:59
 msgid "Tab"
-msgstr "标签页"
+msgstr "Pestaña"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:62
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:30
-#: src/apprt/gtk/Window.zig:263
+#: src/apprt/gtk/Window.zig:255
 msgid "New Tab"
-msgstr "新建标签页"
+msgstr "Nueva pestaña"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:67
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:35
 msgid "Close Tab"
-msgstr "关闭标签页"
+msgstr "Cerrar pestaña"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:73
 msgid "Window"
-msgstr "窗口"
+msgstr "Ventana"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:76
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:18
 msgid "New Window"
-msgstr "新建窗口"
+msgstr "Nueva ventana"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:81
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:23
 msgid "Close Window"
-msgstr "关闭窗口"
+msgstr "Cerrar ventana"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:89
 msgid "Config"
-msgstr "配置"
+msgstr "Configuración"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:92
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:95
 msgid "Open Configuration"
-msgstr "打开配置文件"
+msgstr "Abrir configuración"
 
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:85
 msgid "Command Palette"
-msgstr "命令面板"
+msgstr "Paleta de comandos"
 
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:90
 msgid "Terminal Inspector"
-msgstr "终端调试器"
+msgstr "Inspector de la terminal"
 
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:107
-#: src/apprt/gtk/Window.zig:1036
+#: src/apprt/gtk/Window.zig:1024
 msgid "About Ghostty"
-msgstr "关于 Ghostty"
+msgstr "Acerca de Ghostty"
 
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:112
 msgid "Quit"
-msgstr "退出"
+msgstr "Salir"
 
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-read.blp:6
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-write.blp:6
-#: src/apprt/gtk/ui/1.2/ccw-osc-52-read.blp:6
-#: src/apprt/gtk/ui/1.2/ccw-osc-52-write.blp:6
 msgid "Authorize Clipboard Access"
-msgstr "剪贴板访问授权"
+msgstr "Autorizar acceso al portapapeles"
 
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-read.blp:7
-#: src/apprt/gtk/ui/1.2/ccw-osc-52-read.blp:7
 msgid ""
 "An application is attempting to read from the clipboard. The current "
 "clipboard contents are shown below."
-msgstr "一个应用正在试图从剪贴板读取内容。剪贴板目前的内容如下："
+msgstr ""
+"Una aplicación está intentando leer desde el portapapeles. El contenido "
+"actual del portapapeles se muestra a continuación."
 
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-read.blp:10
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-write.blp:10
-#: src/apprt/gtk/ui/1.2/ccw-osc-52-read.blp:10
-#: src/apprt/gtk/ui/1.2/ccw-osc-52-write.blp:10
 msgid "Deny"
-msgstr "拒绝"
+msgstr "Denegar"
 
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-read.blp:11
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-write.blp:11
-#: src/apprt/gtk/ui/1.2/ccw-osc-52-read.blp:11
-#: src/apprt/gtk/ui/1.2/ccw-osc-52-write.blp:11
 msgid "Allow"
-msgstr "允许"
-
-#: src/apprt/gtk/ui/1.5/ccw-osc-52-read.blp:81
-#: src/apprt/gtk/ui/1.5/ccw-osc-52-write.blp:77
-msgid "Remember choice for this split"
-msgstr "为本分屏记住当前选择"
-
-#: src/apprt/gtk/ui/1.5/ccw-osc-52-read.blp:82
-#: src/apprt/gtk/ui/1.5/ccw-osc-52-write.blp:78
-msgid "Reload configuration to show this prompt again"
-msgstr "本提示将在重载配置后再次出现"
+msgstr "Permitir"
 
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-write.blp:7
-#: src/apprt/gtk/ui/1.2/ccw-osc-52-write.blp:7
 msgid ""
 "An application is attempting to write to the clipboard. The current "
 "clipboard contents are shown below."
-msgstr "一个应用正在试图向剪贴板写入内容。剪贴板目前的内容如下："
+msgstr ""
+"Una aplicación está intentando escribir en el portapapeles. El contenido "
+"actual del portapapeles se muestra a continuación."
 
-#: src/apprt/gtk/ui/1.5/ccw-paste.blp:6 src/apprt/gtk/ui/1.2/ccw-paste.blp:6
+#: src/apprt/gtk/ui/1.5/ccw-paste.blp:6
 msgid "Warning: Potentially Unsafe Paste"
-msgstr "警告：粘贴内容可能不安全"
+msgstr "Advertencia: Pegado potencialmente inseguro"
 
-#: src/apprt/gtk/ui/1.5/ccw-paste.blp:7 src/apprt/gtk/ui/1.2/ccw-paste.blp:7
+#: src/apprt/gtk/ui/1.5/ccw-paste.blp:7
 msgid ""
 "Pasting this text into the terminal may be dangerous as it looks like some "
 "commands may be executed."
-msgstr "将以下内容粘贴至终端内将可能执行有害命令。"
+msgstr ""
+"Pegar este texto en la terminal puede ser peligroso ya que parece que "
+"algunos comandos podrían ejecutarse."
 
-#: src/apprt/gtk/Window.zig:216
+#: src/apprt/gtk/Window.zig:208
 msgid "Main Menu"
-msgstr "主菜单"
+msgstr "Menú principal"
 
-#: src/apprt/gtk/Window.zig:238
+#: src/apprt/gtk/Window.zig:229
 msgid "View Open Tabs"
-msgstr "浏览标签页"
+msgstr "Ver pestañas abiertas"
 
-#: src/apprt/gtk/Window.zig:264
+#: src/apprt/gtk/Window.zig:256
 msgid "New Split"
-msgstr "新建分屏"
+msgstr "Nueva división"
 
-#: src/apprt/gtk/Window.zig:327
+#: src/apprt/gtk/Window.zig:319
 msgid ""
 "⚠️ You're running a debug build of Ghostty! Performance will be degraded."
-msgstr "⚠️ Ghostty 正在以调试模式运行！性能将大打折扣。"
+msgstr ""
+"⚠️ Estás ejecutando una versión de depuración de Ghostty. El rendimiento no "
+"será óptimo."
 
-#: src/apprt/gtk/Window.zig:773
+#: src/apprt/gtk/Window.zig:765
 msgid "Reloaded the configuration"
-msgstr "已重新加载配置"
+msgstr "Configuración recargada"
 
-#: src/apprt/gtk/Window.zig:1017
+#: src/apprt/gtk/Window.zig:1005
 msgid "Ghostty Developers"
-msgstr "Ghostty 开发团队"
+msgstr "Desarrolladores de Ghostty"
 
 #: src/apprt/gtk/inspector.zig:144
 msgid "Ghostty: Terminal Inspector"
-msgstr "Ghostty 终端调试器"
+msgstr "Ghostty: Inspector de la terminal"
 
 #: src/apprt/gtk/CloseDialog.zig:47
 msgid "Close"
-msgstr "关闭"
+msgstr "Cerrar"
 
 #: src/apprt/gtk/CloseDialog.zig:87
 msgid "Quit Ghostty?"
-msgstr "退出 Ghostty 吗？"
+msgstr "¿Salir de Ghostty?"
 
 #: src/apprt/gtk/CloseDialog.zig:88
 msgid "Close Window?"
-msgstr "关闭窗口吗？"
+msgstr "¿Cerrar ventana?"
 
 #: src/apprt/gtk/CloseDialog.zig:89
 msgid "Close Tab?"
-msgstr "关闭标签页吗？"
+msgstr "¿Cerrar pestaña?"
 
 #: src/apprt/gtk/CloseDialog.zig:90
 msgid "Close Split?"
-msgstr "关闭分屏吗？"
+msgstr "¿Cerrar división?"
 
 #: src/apprt/gtk/CloseDialog.zig:96
 msgid "All terminal sessions will be terminated."
-msgstr "终端内所有运行中的进程将被终止。"
+msgstr "Todas las sesiones de terminal serán terminadas."
 
 #: src/apprt/gtk/CloseDialog.zig:97
 msgid "All terminal sessions in this window will be terminated."
-msgstr "窗口内所有运行中的进程将被终止。"
+msgstr "Todas las sesiones de terminal en esta ventana serán terminadas."
 
 #: src/apprt/gtk/CloseDialog.zig:98
 msgid "All terminal sessions in this tab will be terminated."
-msgstr "标签页内所有运行中的进程将被终止。"
+msgstr "Todas las sesiones de terminal en esta pestaña serán terminadas."
 
 #: src/apprt/gtk/CloseDialog.zig:99
 msgid "The currently running process in this split will be terminated."
-msgstr "分屏内正在运行中的进程将被终止。"
+msgstr "El proceso actualmente en ejecución en esta división será terminado."
 
-#: src/apprt/gtk/Surface.zig:1257
+#: src/apprt/gtk/Surface.zig:1243
 msgid "Copied to clipboard"
-msgstr "已复制至剪贴板"
+msgstr "Copiado al portapapeles"
