@@ -19,20 +19,27 @@ class HiddenTitlebarTerminalWindow: TerminalWindow {
         NotificationCenter.default.removeObserver(self)
     }
 
+    private let hiddenStyleMask: NSWindow.StyleMask = [
+        // We need `titled` in the mask to get the normal window frame
+        .titled,
+
+        // Full size content view so we can extend
+        // content in to the hidden titlebar's area
+        .fullSizeContentView,
+
+        .resizable,
+        .closable,
+        .miniaturizable,
+    ]
+
     /// Apply the hidden titlebar style.
     private func reapplyHiddenStyle() {
-        styleMask = [
-            // We need `titled` in the mask to get the normal window frame
-            .titled,
-
-            // Full size content view so we can extend
-            // content in to the hidden titlebar's area
-            .fullSizeContentView,
-
-            .resizable,
-            .closable,
-            .miniaturizable,
-        ]
+        // Apply our style mask while preserving the .fullScreen option
+        if styleMask.contains(.fullScreen) {
+            styleMask = hiddenStyleMask.union([.fullScreen])
+        } else {
+            styleMask = hiddenStyleMask
+        }
 
         // Hide the title
         titleVisibility = .hidden
