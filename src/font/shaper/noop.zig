@@ -3,7 +3,6 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const trace = @import("tracy").trace;
 const font = @import("../main.zig");
-const config = @import("../../config.zig");
 const Face = font.Face;
 const Collection = font.Collection;
 const DeferredFace = font.DeferredFace;
@@ -71,21 +70,11 @@ pub const Shaper = struct {
 
     pub fn runIterator(
         self: *Shaper,
-        grid: *SharedGrid,
-        screen: *const terminal.Screen,
-        row: terminal.Pin,
-        selection: ?terminal.Selection,
-        cursor_x: ?usize,
-        break_config: config.FontShapingBreak,
+        opts: font.shape.RunOptions,
     ) font.shape.RunIterator {
         return .{
             .hooks = .{ .shaper = self },
-            .grid = grid,
-            .screen = screen,
-            .row = row,
-            .selection = selection,
-            .cursor_x = cursor_x,
-            .break_config = break_config,
+            .opts = opts,
         };
     }
 

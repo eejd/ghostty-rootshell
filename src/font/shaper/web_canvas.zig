@@ -4,7 +4,6 @@ const Allocator = std.mem.Allocator;
 const ziglyph = @import("ziglyph");
 const font = @import("../main.zig");
 const terminal = @import("../../terminal/main.zig");
-const config = @import("../../config.zig");
 
 const log = std.log.scoped(.font_shaper);
 
@@ -62,19 +61,11 @@ pub const Shaper = struct {
     /// for a Shaper struct since they share state.
     pub fn runIterator(
         self: *Shaper,
-        group: *font.GroupCache,
-        row: terminal.Screen.Row,
-        selection: ?terminal.Selection,
-        cursor_x: ?usize,
-        break_config: config.FontShapingBreak,
+        opts: font.shape.RunOptions,
     ) font.shape.RunIterator {
         return .{
             .hooks = .{ .shaper = self },
-            .group = group,
-            .row = row,
-            .selection = selection,
-            .cursor_x = cursor_x,
-            .break_config = break_config,
+            .opts = opts,
         };
     }
 
