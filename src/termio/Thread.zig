@@ -472,7 +472,14 @@ fn startScrollTimer(self: *Thread, cb: *CallbackData) void {
     self.scroll_active = true;
 
     // Start the timer which loops
-    self.scroll.run(&self.loop, &self.scroll_c, selection_scroll_ms, CallbackData, cb, selectionScrollCallback);
+    self.scroll.run(
+        &self.loop,
+        &self.scroll_c,
+        selection_scroll_ms,
+        CallbackData,
+        cb,
+        selectionScrollCallback,
+    );
 }
 
 fn stopScrollTimer(self: *Thread) void {
@@ -497,14 +504,20 @@ fn selectionScrollCallback(
     const cb = cb_ orelse return .disarm;
     const self = cb.self;
 
-    _ = cb.io.surface_mailbox.push(.{ .selection_scroll = self.scroll_active }, .{ .instant = {} });
+    // Send the tick to the main surface
+    _ = cb.io.surface_mailbox.push(
+        .{ .selection_scroll_tick = self.scroll_active },
+        .{ .instant = {} },
+    );
 
-    // Notify the renderer that it should repaint immediately after scrolling
-    cb.io.renderer_wakeup.notify() catch {};
-
-    if (self.scroll_active) {
-        self.scroll.run(&self.loop, &self.scroll_c, selection_scroll_ms, CallbackData, cb, selectionScrollCallback);
-    }
+    if (self.scroll_active) self.scroll.run(
+        &self.loop,
+        &self.scroll_c,
+        selection_scroll_ms,
+        CallbackData,
+        cb,
+        selectionScrollCallback,
+    );
 
     return .disarm;
 }

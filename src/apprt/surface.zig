@@ -79,8 +79,12 @@ pub const Message = union(enum) {
         color: terminal.color.RGB,
     },
 
-    // Tell the surface to perform selection scrolling.
-    selection_scroll: bool,
+    /// Notifies the surface that a tick of the timer that is timing
+    /// out selection scrolling has occurred. "selection scrolling"
+    /// is when the user has clicked and dragged the mouse outside
+    /// the viewport of the terminal and the terminal is scrolling
+    /// the viewport to follow the mouse cursor.
+    selection_scroll_tick: bool,
 
     /// The terminal has reported a change in the working directory.
     pwd_change: WriteReq,
