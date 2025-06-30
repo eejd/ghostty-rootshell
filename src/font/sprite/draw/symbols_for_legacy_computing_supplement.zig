@@ -192,6 +192,60 @@ pub fn draw1CC21_1CC2F(
     );
 }
 
+/// Twelfth and Quarter circle pieces.
+/// 𜰰 𜰱 𜰲 𜰳 𜰴 𜰵 𜰶 𜰷 𜰸 𜰹 𜰺 𜰻 𜰼 𜰽 𜰾 𜰿
+///
+/// 𜰰𜰱𜰲𜰳
+/// 𜰴𜰵𜰶𜰷
+/// 𜰸𜰹𜰺𜰻
+/// 𜰼𜰽𜰾𜰿
+///
+/// These are actually ellipses, sized to touch
+/// the edge of their enclosing set of cells.
+pub fn draw1CC30_1CC3F(
+    cp: u32,
+    canvas: *font.sprite.Canvas,
+    width: u32,
+    height: u32,
+    metrics: font.Metrics,
+) !void {
+    switch (cp) {
+        // 𜰰 UPPER LEFT TWELFTH CIRCLE
+        0x1CC30 => try circlePiece(canvas, width, height, metrics, 0, 0, 2, 2),
+        // 𜰱 UPPER CENTRE LEFT TWELFTH CIRCLE
+        0x1CC31 => try circlePiece(canvas, width, height, metrics, 1, 0, 2, 2),
+        // 𜰲 UPPER CENTRE RIGHT TWELFTH CIRCLE
+        0x1CC32 => try circlePiece(canvas, width, height, metrics, 2, 0, 2, 2),
+        // 𜰳 UPPER RIGHT TWELFTH CIRCLE
+        0x1CC33 => try circlePiece(canvas, width, height, metrics, 3, 0, 2, 2),
+        // 𜰴 UPPER MIDDLE LEFT TWELFTH CIRCLE
+        0x1CC34 => try circlePiece(canvas, width, height, metrics, 0, 1, 2, 2),
+        // 𜰵 UPPER LEFT QUARTER CIRCLE
+        0x1CC35 => try circlePiece(canvas, width, height, metrics, 0, 0, 1, 1),
+        // 𜰶 UPPER RIGHT QUARTER CIRCLE
+        0x1CC36 => try circlePiece(canvas, width, height, metrics, 1, 0, 1, 1),
+        // 𜰷 UPPER MIDDLE RIGHT TWELFTH CIRCLE
+        0x1CC37 => try circlePiece(canvas, width, height, metrics, 3, 1, 2, 2),
+        // 𜰸 LOWER MIDDLE LEFT TWELFTH CIRCLE
+        0x1CC38 => try circlePiece(canvas, width, height, metrics, 0, 2, 2, 2),
+        // 𜰹 LOWER LEFT QUARTER CIRCLE
+        0x1CC39 => try circlePiece(canvas, width, height, metrics, 0, 1, 1, 1),
+        // 𜰺 LOWER RIGHT QUARTER CIRCLE
+        0x1CC3A => try circlePiece(canvas, width, height, metrics, 1, 1, 1, 1),
+        // 𜰻 LOWER MIDDLE RIGHT TWELFTH CIRCLE
+        0x1CC3B => try circlePiece(canvas, width, height, metrics, 3, 2, 2, 2),
+        // 𜰼 LOWER LEFT TWELFTH CIRCLE
+        0x1CC3C => try circlePiece(canvas, width, height, metrics, 0, 3, 2, 2),
+        // 𜰽 LOWER CENTRE LEFT TWELFTH CIRCLE
+        0x1CC3D => try circlePiece(canvas, width, height, metrics, 1, 3, 2, 2),
+        // 𜰾 LOWER CENTRE RIGHT TWELFTH CIRCLE
+        0x1CC3E => try circlePiece(canvas, width, height, metrics, 2, 3, 2, 2),
+        // 𜰿 LOWER RIGHT TWELFTH CIRCLE
+        0x1CC3F => try circlePiece(canvas, width, height, metrics, 3, 3, 2, 2),
+        else => unreachable,
+    }
+}
+
 /// Separated Block Sextants
 pub fn draw1CE51_1CE8F(
     cp: u32,
@@ -270,4 +324,94 @@ pub fn draw1CE51_1CE8F(
         gap + h + mid_gap_y + h_m + mid_gap_y + h,
         .on,
     );
+}
+
+fn circlePiece(
+    canvas: *font.sprite.Canvas,
+    width: u32,
+    height: u32,
+    metrics: font.Metrics,
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+) !void {
+    // Radius in pixels of the arc we need to draw.
+    const wdth: f64 = @as(f64, @floatFromInt(width)) * w;
+    const hght: f64 = @as(f64, @floatFromInt(height)) * h;
+
+    // Position in pixels (rather than cells) for x/y
+    const xp: f64 = @as(f64, @floatFromInt(width)) * x;
+    const yp: f64 = @as(f64, @floatFromInt(height)) * y;
+
+    // Set the clip so we don't include anything outside of the cell.
+    canvas.clip_left = canvas.padding_x;
+    canvas.clip_right = canvas.padding_x;
+    canvas.clip_top = canvas.padding_y;
+    canvas.clip_bottom = canvas.padding_y;
+
+    // Coefficient for approximating a circular arc.
+    const c: f64 = (std.math.sqrt2 - 1.0) * 4.0 / 3.0;
+    const cw = c * wdth;
+    const ch = c * hght;
+
+    const thick: f64 = @floatFromInt(metrics.box_thickness);
+    const ht = thick * 0.5;
+
+    var path = canvas.staticPath(2);
+
+    if (xp < wdth) {
+        if (yp < hght) {
+            // Upper left arc.
+            path.moveTo(wdth - xp, ht - yp);
+            path.curveTo(
+                wdth - cw - xp,
+                ht - yp,
+                ht - xp,
+                hght - ch - yp,
+                ht - xp,
+                hght - yp,
+            );
+        } else {
+            // Lower left arc.
+            path.moveTo(ht - xp, hght - yp);
+            path.curveTo(
+                ht - xp,
+                hght + ch - yp,
+                wdth - cw - xp,
+                hght * 2 - ht - yp,
+                wdth - xp,
+                hght * 2 - ht - yp,
+            );
+        }
+    } else {
+        if (yp < hght) {
+            // Upper right arc.
+            path.moveTo(wdth - xp, ht - yp);
+            path.curveTo(
+                wdth + cw - xp,
+                ht - yp,
+                wdth * 2 - ht - xp,
+                hght - ch - yp,
+                wdth * 2 - ht - xp,
+                hght - yp,
+            );
+        } else {
+            // Lower right arc.
+            path.moveTo(wdth * 2 - ht - xp, hght - yp);
+            path.curveTo(
+                wdth * 2 - ht - xp,
+                hght + ch - yp,
+                wdth + cw - xp,
+                hght * 2 - ht - yp,
+                wdth - xp,
+                hght * 2 - ht - yp,
+            );
+        }
+    }
+
+    try canvas.strokePath(path.wrapped_path, .{
+        .line_cap_mode = .butt,
+        .line_width = @floatFromInt(metrics.box_thickness),
+    }, .on);
 }
