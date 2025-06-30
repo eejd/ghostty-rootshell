@@ -19,7 +19,7 @@ class HiddenTitlebarTerminalWindow: TerminalWindow {
         NotificationCenter.default.removeObserver(self)
     }
 
-    private let hiddenStyleMask: NSWindow.StyleMask = [
+    private static let hiddenStyleMask: NSWindow.StyleMask = [
         // We need `titled` in the mask to get the normal window frame
         .titled,
 
@@ -36,9 +36,9 @@ class HiddenTitlebarTerminalWindow: TerminalWindow {
     private func reapplyHiddenStyle() {
         // Apply our style mask while preserving the .fullScreen option
         if styleMask.contains(.fullScreen) {
-            styleMask = hiddenStyleMask.union([.fullScreen])
+            styleMask = Self.hiddenStyleMask.union([.fullScreen])
         } else {
-            styleMask = hiddenStyleMask
+            styleMask = Self.hiddenStyleMask
         }
 
         // Hide the title
