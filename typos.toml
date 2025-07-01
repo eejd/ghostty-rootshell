@@ -39,8 +39,6 @@ extend-ignore-re = [
 [default.extend-words]
 Pn = "Pn"
 thr = "thr"
-# Should be "halves", but for now skip it as it would make diff huge
-halfs = "halfs"
 # Swift oddities
 Requestor = "Requestor"
 iterm = "iterm"

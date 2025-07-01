@@ -122,22 +122,203 @@ pub const Alignment = struct {
     pub const bottom_right = lower_right;
 };
 
-/// Fill a rect, clamped to within the cell boundaries.
+/// A value that indicates some fraction across
+/// the cell either horizontally or vertically.
 ///
-/// TODO: Eliminate usages of this, prefer `canvas.box`.
-pub fn rect(
+/// This has some redundant names in it so that you can
+/// use whichever one feels most semantically appropriate.
+pub const Fraction = enum {
+    // Names for the min edge
+    start,
+    left,
+    top,
+    zero,
+
+    // Names based on eighths
+    eighth,
+    one_eighth,
+    two_eighths,
+    three_eighths,
+    four_eighths,
+    five_eighths,
+    six_eighths,
+    seven_eighths,
+
+    // Names based on quarters
+    quarter,
+    one_quarter,
+    two_quarters,
+    three_quarters,
+
+    // Names based on thirds
+    third,
+    one_third,
+    two_thirds,
+
+    // Names based on halves
+    half,
+    one_half,
+
+    // Alternative names for 1/2
+    center,
+    middle,
+
+    // Names for the max edge
+    end,
+    right,
+    bottom,
+    one,
+    full,
+
+    /// This can be indexed to get the fraction for `i/8`.
+    pub const eighths: [9]Fraction = .{
+        .zero,
+        .one_eighth,
+        .two_eighths,
+        .three_eighths,
+        .four_eighths,
+        .five_eighths,
+        .six_eighths,
+        .seven_eighths,
+        .one,
+    };
+
+    /// This can be indexed to get the fraction for `i/4`.
+    pub const quarters: [5]Fraction = .{
+        .zero,
+        .one_quarter,
+        .two_quarters,
+        .three_quarters,
+        .one,
+    };
+
+    /// This can be indexed to get the fraction for `i/3`.
+    pub const thirds: [4]Fraction = .{
+        .zero,
+        .one_third,
+        .two_thirds,
+        .one,
+    };
+
+    /// This can be indexed to get the fraction for `i/2`.
+    pub const halves: [3]Fraction = .{
+        .zero,
+        .one_half,
+        .one,
+    };
+
+    /// Get the x position for this fraction across a particular
+    /// size (width or height), assuming it will be used as the
+    /// min (left/top) coordinate for a block.
+    ///
+    /// `size` can be any integer type, since it will be coerced
+    pub inline fn min(self: Fraction, size: anytype) i32 {
+        const s: f64 = @as(f64, @floatFromInt(size));
+        // For min coordinates, we want to align with the complementary
+        // fraction taken from the end, this ensures that rounding evens
+        // out, so that for example, if `size` is `7`, and we're looking
+        // at the `half` line, `size - round((1 - 0.5) * size)` => `3`;
+        // whereas the max coordinate directly rounds, which means that
+        // both `start` -> `half` and `half` -> `end` will be 4px, from
+        // `0` -> `4` and `3` -> `7`.
+        return @intFromFloat(s - @round((1.0 - self.fraction()) * s));
+    }
+
+    /// Get the x position for this fraction across a particular
+    /// size (width or height), assuming it will be used as the
+    /// max (right/bottom) coordinate for a block.
+    ///
+    /// `size` can be any integer type, since it will be coerced
+    /// with `@floatFromInt`.
+    pub inline fn max(self: Fraction, size: anytype) i32 {
+        const s: f64 = @as(f64, @floatFromInt(size));
+        // See explanation of why these are different in `min`.
+        return @intFromFloat(@round(self.fraction() * s));
+    }
+
+    /// Get this fraction across a particular size (width/height).
+    /// If you need an integer, use `min` or `max` instead, since
+    /// they contain special logic for consistent alignment. This
+    /// is for when you're drawing with paths and don't care about
+    /// pixel alignment.
+    ///
+    /// `size` can be any integer type, since it will be coerced
+    /// with `@floatFromInt`.
+    pub inline fn float(self: Fraction, size: anytype) f64 {
+        return self.fraction() * @as(f64, @floatFromInt(size));
+    }
+
+    /// Get a float for the fraction this represents.
+    pub inline fn fraction(self: Fraction) f64 {
+        return switch (self) {
+            .start,
+            .left,
+            .top,
+            .zero,
+            => 0.0,
+
+            .eighth,
+            .one_eighth,
+            => 0.125,
+
+            .quarter,
+            .one_quarter,
+            .two_eighths,
+            => 0.25,
+
+            .third,
+            .one_third,
+            => 1.0 / 3.0,
+
+            .three_eighths,
+            => 0.375,
+
+            .half,
+            .one_half,
+            .two_quarters,
+            .four_eighths,
+            .center,
+            .middle,
+            => 0.5,
+
+            .five_eighths,
+            => 0.625,
+
+            .two_thirds,
+            => 2.0 / 3.0,
+
+            .three_quarters,
+            .six_eighths,
+            => 0.75,
+
+            .seven_eighths,
+            => 0.875,
+
+            .end,
+            .right,
+            .bottom,
+            .one,
+            .full,
+            => 1.0,
+        };
+    }
+};
+
+/// Fill a section of the cell, specified by a
+/// horizontal and vertical pair of fraction lines.
+pub fn fill(
     metrics: font.Metrics,
     canvas: *font.sprite.Canvas,
-    x1: u32,
-    y1: u32,
-    x2: u32,
-    y2: u32,
+    x0: Fraction,
+    x1: Fraction,
+    y0: Fraction,
+    y1: Fraction,
 ) void {
     canvas.box(
-        @intCast(@min(@max(x1, 0), metrics.cell_width)),
-        @intCast(@min(@max(y1, 0), metrics.cell_height)),
-        @intCast(@min(@max(x2, 0), metrics.cell_width)),
-        @intCast(@min(@max(y2, 0), metrics.cell_height)),
+        x0.min(metrics.cell_width),
+        y0.min(metrics.cell_height),
+        x1.max(metrics.cell_width),
+        y1.max(metrics.cell_height),
         .on,
     );
 }
@@ -194,59 +375,4 @@ pub fn hline(
     thickness_px: u32,
 ) void {
     canvas.box(x1, y, x2, y + @as(i32, @intCast(thickness_px)), .on);
-}
-
-/// xHalfs[0] should be used as the right edge of a left-aligned half.
-/// xHalfs[1] should be used as the left edge of a right-aligned half.
-pub fn xHalfs(metrics: font.Metrics) [2]u32 {
-    const float_width: f64 = @floatFromInt(metrics.cell_width);
-    const half_width: u32 = @intFromFloat(@round(0.5 * float_width));
-    return .{ half_width, metrics.cell_width - half_width };
-}
-
-/// yHalfs[0] should be used as the bottom edge of a top-aligned half.
-/// yHalfs[1] should be used as the top edge of a bottom-aligned half.
-pub fn yHalfs(metrics: font.Metrics) [2]u32 {
-    const float_height: f64 = @floatFromInt(metrics.cell_height);
-    const half_height: u32 = @intFromFloat(@round(0.5 * float_height));
-    return .{ half_height, metrics.cell_height - half_height };
-}
-
-/// Use these values as such:
-/// yThirds[0] bottom edge of the first third.
-/// yThirds[1] top edge of the second third.
-/// yThirds[2] bottom edge of the second third.
-/// yThirds[3] top edge of the final third.
-pub fn yThirds(metrics: font.Metrics) [4]u32 {
-    const float_height: f64 = @floatFromInt(metrics.cell_height);
-    const one_third_height: u32 = @intFromFloat(@round(one_third * float_height));
-    const two_thirds_height: u32 = @intFromFloat(@round(two_thirds * float_height));
-    return .{
-        one_third_height,
-        metrics.cell_height - two_thirds_height,
-        two_thirds_height,
-        metrics.cell_height - one_third_height,
-    };
-}
-
-/// Use these values as such:
-/// yQuads[0] bottom edge of first quarter.
-/// yQuads[1] top edge of second quarter.
-/// yQuads[2] bottom edge of second quarter.
-/// yQuads[3] top edge of third quarter.
-/// yQuads[4] bottom edge of third quarter
-/// yQuads[5] top edge of fourth quarter.
-pub fn yQuads(metrics: font.Metrics) [6]u32 {
-    const float_height: f64 = @floatFromInt(metrics.cell_height);
-    const quarter_height: u32 = @intFromFloat(@round(0.25 * float_height));
-    const half_height: u32 = @intFromFloat(@round(0.50 * float_height));
-    const three_quarters_height: u32 = @intFromFloat(@round(0.75 * float_height));
-    return .{
-        quarter_height,
-        metrics.cell_height - three_quarters_height,
-        half_height,
-        metrics.cell_height - half_height,
-        three_quarters_height,
-        metrics.cell_height - quarter_height,
-    };
 }
