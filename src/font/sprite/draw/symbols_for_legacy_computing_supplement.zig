@@ -61,6 +61,7 @@ const Shade = common.Shade;
 const fill = common.fill;
 
 const box = @import("box.zig");
+const sflc = @import("symbols_for_legacy_computing.zig");
 
 const font = @import("../../main.zig");
 
@@ -210,37 +211,37 @@ pub fn draw1CC30_1CC3F(
 ) !void {
     switch (cp) {
         // 𜰰 UPPER LEFT TWELFTH CIRCLE
-        0x1CC30 => try circlePiece(canvas, width, height, metrics, 0, 0, 2, 2),
+        0x1CC30 => try circlePiece(canvas, width, height, metrics, 0, 0, 2, 2, .tl),
         // 𜰱 UPPER CENTRE LEFT TWELFTH CIRCLE
-        0x1CC31 => try circlePiece(canvas, width, height, metrics, 1, 0, 2, 2),
+        0x1CC31 => try circlePiece(canvas, width, height, metrics, 1, 0, 2, 2, .tl),
         // 𜰲 UPPER CENTRE RIGHT TWELFTH CIRCLE
-        0x1CC32 => try circlePiece(canvas, width, height, metrics, 2, 0, 2, 2),
+        0x1CC32 => try circlePiece(canvas, width, height, metrics, 2, 0, 2, 2, .tr),
         // 𜰳 UPPER RIGHT TWELFTH CIRCLE
-        0x1CC33 => try circlePiece(canvas, width, height, metrics, 3, 0, 2, 2),
+        0x1CC33 => try circlePiece(canvas, width, height, metrics, 3, 0, 2, 2, .tr),
         // 𜰴 UPPER MIDDLE LEFT TWELFTH CIRCLE
-        0x1CC34 => try circlePiece(canvas, width, height, metrics, 0, 1, 2, 2),
+        0x1CC34 => try circlePiece(canvas, width, height, metrics, 0, 1, 2, 2, .tl),
         // 𜰵 UPPER LEFT QUARTER CIRCLE
-        0x1CC35 => try circlePiece(canvas, width, height, metrics, 0, 0, 1, 1),
+        0x1CC35 => try circlePiece(canvas, width, height, metrics, 0, 0, 1, 1, .tl),
         // 𜰶 UPPER RIGHT QUARTER CIRCLE
-        0x1CC36 => try circlePiece(canvas, width, height, metrics, 1, 0, 1, 1),
+        0x1CC36 => try circlePiece(canvas, width, height, metrics, 1, 0, 1, 1, .tr),
         // 𜰷 UPPER MIDDLE RIGHT TWELFTH CIRCLE
-        0x1CC37 => try circlePiece(canvas, width, height, metrics, 3, 1, 2, 2),
+        0x1CC37 => try circlePiece(canvas, width, height, metrics, 3, 1, 2, 2, .tr),
         // 𜰸 LOWER MIDDLE LEFT TWELFTH CIRCLE
-        0x1CC38 => try circlePiece(canvas, width, height, metrics, 0, 2, 2, 2),
+        0x1CC38 => try circlePiece(canvas, width, height, metrics, 0, 2, 2, 2, .bl),
         // 𜰹 LOWER LEFT QUARTER CIRCLE
-        0x1CC39 => try circlePiece(canvas, width, height, metrics, 0, 1, 1, 1),
+        0x1CC39 => try circlePiece(canvas, width, height, metrics, 0, 1, 1, 1, .bl),
         // 𜰺 LOWER RIGHT QUARTER CIRCLE
-        0x1CC3A => try circlePiece(canvas, width, height, metrics, 1, 1, 1, 1),
+        0x1CC3A => try circlePiece(canvas, width, height, metrics, 1, 1, 1, 1, .br),
         // 𜰻 LOWER MIDDLE RIGHT TWELFTH CIRCLE
-        0x1CC3B => try circlePiece(canvas, width, height, metrics, 3, 2, 2, 2),
+        0x1CC3B => try circlePiece(canvas, width, height, metrics, 3, 2, 2, 2, .br),
         // 𜰼 LOWER LEFT TWELFTH CIRCLE
-        0x1CC3C => try circlePiece(canvas, width, height, metrics, 0, 3, 2, 2),
+        0x1CC3C => try circlePiece(canvas, width, height, metrics, 0, 3, 2, 2, .bl),
         // 𜰽 LOWER CENTRE LEFT TWELFTH CIRCLE
-        0x1CC3D => try circlePiece(canvas, width, height, metrics, 1, 3, 2, 2),
+        0x1CC3D => try circlePiece(canvas, width, height, metrics, 1, 3, 2, 2, .bl),
         // 𜰾 LOWER CENTRE RIGHT TWELFTH CIRCLE
-        0x1CC3E => try circlePiece(canvas, width, height, metrics, 2, 3, 2, 2),
+        0x1CC3E => try circlePiece(canvas, width, height, metrics, 2, 3, 2, 2, .br),
         // 𜰿 LOWER RIGHT TWELFTH CIRCLE
-        0x1CC3F => try circlePiece(canvas, width, height, metrics, 3, 3, 2, 2),
+        0x1CC3F => try circlePiece(canvas, width, height, metrics, 3, 3, 2, 2, .br),
         else => unreachable,
     }
 }
@@ -283,6 +284,62 @@ pub fn draw1CC1B_1CC1E(
         },
         else => unreachable,
     }
+}
+
+/// 𜸀 RIGHT HALF AND LEFT HALF WHITE CIRCLE
+pub fn draw1CE00(
+    cp: u32,
+    canvas: *font.sprite.Canvas,
+    width: u32,
+    height: u32,
+    metrics: font.Metrics,
+) !void {
+    _ = cp;
+    _ = width;
+    _ = height;
+    sflc.circle(metrics, canvas, .left, false);
+    sflc.circle(metrics, canvas, .right, false);
+}
+
+/// 𜸁 LOWER HALF AND UPPER HALF WHITE CIRCLE
+pub fn draw1CE01(
+    cp: u32,
+    canvas: *font.sprite.Canvas,
+    width: u32,
+    height: u32,
+    metrics: font.Metrics,
+) !void {
+    _ = cp;
+    _ = width;
+    _ = height;
+    sflc.circle(metrics, canvas, .top, false);
+    sflc.circle(metrics, canvas, .bottom, false);
+}
+
+/// 𜸋 LEFT HALF WHITE ELLIPSE
+pub fn draw1CE0B(
+    cp: u32,
+    canvas: *font.sprite.Canvas,
+    width: u32,
+    height: u32,
+    metrics: font.Metrics,
+) !void {
+    _ = cp;
+    try circlePiece(canvas, width, height, metrics, 0, 0, 1, 0.5, .tl);
+    try circlePiece(canvas, width, height, metrics, 0, 0, 1, 0.5, .bl);
+}
+
+/// 𜸌 RIGHT HALF WHITE ELLIPSE
+pub fn draw1CE0C(
+    cp: u32,
+    canvas: *font.sprite.Canvas,
+    width: u32,
+    height: u32,
+    metrics: font.Metrics,
+) !void {
+    _ = cp;
+    try circlePiece(canvas, width, height, metrics, 1, 0, 1, 0.5, .tr);
+    try circlePiece(canvas, width, height, metrics, 1, 0, 1, 0.5, .br);
 }
 
 pub fn draw1CE16_1CE19(
@@ -491,6 +548,7 @@ fn circlePiece(
     y: f64,
     w: f64,
     h: f64,
+    corner: Corner,
 ) !void {
     // Radius in pixels of the arc we need to draw.
     const wdth: f64 = @as(f64, @floatFromInt(width)) * w;
@@ -516,9 +574,8 @@ fn circlePiece(
 
     var path = canvas.staticPath(2);
 
-    if (xp < wdth) {
-        if (yp < hght) {
-            // Upper left arc.
+    switch (corner) {
+        .tl => {
             path.moveTo(wdth - xp, ht - yp);
             path.curveTo(
                 wdth - cw - xp,
@@ -528,8 +585,19 @@ fn circlePiece(
                 ht - xp,
                 hght - yp,
             );
-        } else {
-            // Lower left arc.
+        },
+        .tr => {
+            path.moveTo(wdth - xp, ht - yp);
+            path.curveTo(
+                wdth + cw - xp,
+                ht - yp,
+                wdth * 2 - ht - xp,
+                hght - ch - yp,
+                wdth * 2 - ht - xp,
+                hght - yp,
+            );
+        },
+        .bl => {
             path.moveTo(ht - xp, hght - yp);
             path.curveTo(
                 ht - xp,
@@ -539,21 +607,8 @@ fn circlePiece(
                 wdth - xp,
                 hght * 2 - ht - yp,
             );
-        }
-    } else {
-        if (yp < hght) {
-            // Upper right arc.
-            path.moveTo(wdth - xp, ht - yp);
-            path.curveTo(
-                wdth + cw - xp,
-                ht - yp,
-                wdth * 2 - ht - xp,
-                hght - ch - yp,
-                wdth * 2 - ht - xp,
-                hght - yp,
-            );
-        } else {
-            // Lower right arc.
+        },
+        .br => {
             path.moveTo(wdth * 2 - ht - xp, hght - yp);
             path.curveTo(
                 wdth * 2 - ht - xp,
@@ -563,7 +618,7 @@ fn circlePiece(
                 wdth - xp,
                 hght * 2 - ht - yp,
             );
-        }
+        },
     }
 
     try canvas.strokePath(path.wrapped_path, .{

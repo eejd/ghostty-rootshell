@@ -1367,7 +1367,7 @@ fn checkerboardFill(
     }
 }
 
-fn circle(
+pub fn circle(
     metrics: font.Metrics,
     canvas: *font.sprite.Canvas,
     comptime position: Alignment,
