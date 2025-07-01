@@ -55,6 +55,7 @@ const z2d = @import("z2d");
 
 const common = @import("common.zig");
 const Thickness = common.Thickness;
+const Fraction = common.Fraction;
 const Corner = common.Corner;
 const Shade = common.Shade;
 const fill = common.fill;
@@ -397,6 +398,88 @@ pub fn draw1CE51_1CE8F(
         gap + h + mid_gap_y + h_m + mid_gap_y + h,
         .on,
     );
+}
+
+/// Sixteenth Blocks
+pub fn draw1CE90_1CEAF(
+    cp: u32,
+    canvas: *font.sprite.Canvas,
+    width: u32,
+    height: u32,
+    metrics: font.Metrics,
+) !void {
+    _ = width;
+    _ = height;
+    const q = Fraction.quarters;
+    switch (cp) {
+        // 𜺐 UPPER LEFT ONE SIXTEENTH BLOCK
+        0x1CE90 => fill(metrics, canvas, q[0], q[1], q[0], q[1]),
+        // 𜺑 UPPER CENTRE LEFT ONE SIXTEENTH BLOCK
+        0x1CE91 => fill(metrics, canvas, q[1], q[2], q[0], q[1]),
+        // 𜺒 UPPER CENTRE RIGHT ONE SIXTEENTH BLOCK
+        0x1CE92 => fill(metrics, canvas, q[2], q[3], q[0], q[1]),
+        // 𜺓 UPPER RIGHT ONE SIXTEENTH BLOCK
+        0x1CE93 => fill(metrics, canvas, q[3], q[4], q[0], q[1]),
+        // 𜺔 UPPER MIDDLE LEFT ONE SIXTEENTH BLOCK
+        0x1CE94 => fill(metrics, canvas, q[0], q[1], q[1], q[2]),
+        // 𜺕 UPPER MIDDLE CENTRE LEFT ONE SIXTEENTH BLOCK
+        0x1CE95 => fill(metrics, canvas, q[1], q[2], q[1], q[2]),
+        // 𜺖 UPPER MIDDLE CENTRE RIGHT ONE SIXTEENTH BLOCK
+        0x1CE96 => fill(metrics, canvas, q[2], q[3], q[1], q[2]),
+        // 𜺗 UPPER MIDDLE RIGHT ONE SIXTEENTH BLOCK
+        0x1CE97 => fill(metrics, canvas, q[3], q[4], q[1], q[2]),
+        // 𜺘 LOWER MIDDLE LEFT ONE SIXTEENTH BLOCK
+        0x1CE98 => fill(metrics, canvas, q[0], q[1], q[2], q[3]),
+        // 𜺙 LOWER MIDDLE CENTRE LEFT ONE SIXTEENTH BLOCK
+        0x1CE99 => fill(metrics, canvas, q[1], q[2], q[2], q[3]),
+        // 𜺚 LOWER MIDDLE CENTRE RIGHT ONE SIXTEENTH BLOCK
+        0x1CE9A => fill(metrics, canvas, q[2], q[3], q[2], q[3]),
+        // 𜺛 LOWER MIDDLE RIGHT ONE SIXTEENTH BLOCK
+        0x1CE9B => fill(metrics, canvas, q[3], q[4], q[2], q[3]),
+        // 𜺜 LOWER LEFT ONE SIXTEENTH BLOCK
+        0x1CE9C => fill(metrics, canvas, q[0], q[1], q[3], q[4]),
+        // 𜺝 LOWER CENTRE LEFT ONE SIXTEENTH BLOCK
+        0x1CE9D => fill(metrics, canvas, q[1], q[2], q[3], q[4]),
+        // 𜺞 LOWER CENTRE RIGHT ONE SIXTEENTH BLOCK
+        0x1CE9E => fill(metrics, canvas, q[2], q[3], q[3], q[4]),
+        // 𜺟 LOWER RIGHT ONE SIXTEENTH BLOCK
+        0x1CE9F => fill(metrics, canvas, q[3], q[4], q[3], q[4]),
+
+        // 𜺠 RIGHT HALF LOWER ONE QUARTER BLOCK
+        0x1CEA0 => fill(metrics, canvas, q[2], q[4], q[3], q[4]),
+        // 𜺡 RIGHT THREE QUARTERS LOWER ONE QUARTER BLOCK
+        0x1CEA1 => fill(metrics, canvas, q[1], q[4], q[3], q[4]),
+        // 𜺢 LEFT THREE QUARTERS LOWER ONE QUARTER BLOCK
+        0x1CEA2 => fill(metrics, canvas, q[0], q[3], q[3], q[4]),
+        // 𜺣 LEFT HALF LOWER ONE QUARTER BLOCK
+        0x1CEA3 => fill(metrics, canvas, q[0], q[2], q[3], q[4]),
+        // 𜺤 LOWER HALF LEFT ONE QUARTER BLOCK
+        0x1CEA4 => fill(metrics, canvas, q[0], q[1], q[2], q[4]),
+        // 𜺥 LOWER THREE QUARTERS LEFT ONE QUARTER BLOCK
+        0x1CEA5 => fill(metrics, canvas, q[0], q[1], q[1], q[4]),
+        // 𜺦 UPPER THREE QUARTERS LEFT ONE QUARTER BLOCK
+        0x1CEA6 => fill(metrics, canvas, q[0], q[1], q[0], q[3]),
+        // 𜺧 UPPER HALF LEFT ONE QUARTER BLOCK
+        0x1CEA7 => fill(metrics, canvas, q[0], q[1], q[0], q[2]),
+        // 𜺨 LEFT HALF UPPER ONE QUARTER BLOCK
+        0x1CEA8 => fill(metrics, canvas, q[0], q[2], q[0], q[1]),
+        // 𜺩 LEFT THREE QUARTERS UPPER ONE QUARTER BLOCK
+        0x1CEA9 => fill(metrics, canvas, q[0], q[3], q[0], q[1]),
+        // 𜺪 RIGHT THREE QUARTERS UPPER ONE QUARTER BLOCK
+        0x1CEAA => fill(metrics, canvas, q[1], q[4], q[0], q[1]),
+        // 𜺫 RIGHT HALF UPPER ONE QUARTER BLOCK
+        0x1CEAB => fill(metrics, canvas, q[2], q[4], q[0], q[1]),
+        // 𜺬 UPPER HALF RIGHT ONE QUARTER BLOCK
+        0x1CEAC => fill(metrics, canvas, q[3], q[4], q[0], q[2]),
+        // 𜺭 UPPER THREE QUARTERS RIGHT ONE QUARTER BLOCK
+        0x1CEAD => fill(metrics, canvas, q[3], q[4], q[0], q[3]),
+        // 𜺮 LOWER THREE QUARTERS RIGHT ONE QUARTER BLOCK
+        0x1CEAE => fill(metrics, canvas, q[3], q[4], q[1], q[4]),
+        // 𜺯 LOWER HALF RIGHT ONE QUARTER BLOCK
+        0x1CEAF => fill(metrics, canvas, q[3], q[4], q[2], q[4]),
+
+        else => unreachable,
+    }
 }
 
 fn circlePiece(
