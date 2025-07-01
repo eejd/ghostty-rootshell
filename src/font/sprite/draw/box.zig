@@ -24,7 +24,6 @@ const Quads = common.Quads;
 const Corner = common.Corner;
 const Edge = common.Edge;
 const Alignment = common.Alignment;
-const rect = common.rect;
 const hline = common.hline;
 const vline = common.vline;
 const hlineMiddle = common.hlineMiddle;
@@ -693,20 +692,6 @@ pub fn lightDiagonalCross(
 ) void {
     lightDiagonalUpperRightToLowerLeft(metrics, canvas);
     lightDiagonalUpperLeftToLowerRight(metrics, canvas);
-}
-
-fn quadrant(
-    metrics: font.Metrics,
-    canvas: *font.sprite.Canvas,
-    comptime quads: Quads,
-) void {
-    const center_x = metrics.cell_width / 2 + metrics.cell_width % 2;
-    const center_y = metrics.cell_height / 2 + metrics.cell_height % 2;
-
-    if (quads.tl) rect(metrics, canvas, 0, 0, center_x, center_y);
-    if (quads.tr) rect(metrics, canvas, center_x, 0, metrics.cell_width, center_y);
-    if (quads.bl) rect(metrics, canvas, 0, center_y, center_x, metrics.cell_height);
-    if (quads.br) rect(metrics, canvas, center_x, center_y, metrics.cell_width, metrics.cell_height);
 }
 
 pub fn arc(

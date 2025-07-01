@@ -57,9 +57,7 @@ const common = @import("common.zig");
 const Thickness = common.Thickness;
 const Corner = common.Corner;
 const Shade = common.Shade;
-const xHalfs = common.xHalfs;
-const yQuads = common.yQuads;
-const rect = common.rect;
+const fill = common.fill;
 
 const box = @import("box.zig");
 
@@ -122,17 +120,15 @@ pub fn draw1CD00_1CDE5(
         break :octants result;
     };
 
-    const x_halfs = xHalfs(metrics);
-    const y_quads = yQuads(metrics);
     const oct = octants[cp - octant_min];
-    if (oct.@"1") rect(metrics, canvas, 0, 0, x_halfs[0], y_quads[0]);
-    if (oct.@"2") rect(metrics, canvas, x_halfs[1], 0, metrics.cell_width, y_quads[0]);
-    if (oct.@"3") rect(metrics, canvas, 0, y_quads[1], x_halfs[0], y_quads[2]);
-    if (oct.@"4") rect(metrics, canvas, x_halfs[1], y_quads[1], metrics.cell_width, y_quads[2]);
-    if (oct.@"5") rect(metrics, canvas, 0, y_quads[3], x_halfs[0], y_quads[4]);
-    if (oct.@"6") rect(metrics, canvas, x_halfs[1], y_quads[3], metrics.cell_width, y_quads[4]);
-    if (oct.@"7") rect(metrics, canvas, 0, y_quads[5], x_halfs[0], metrics.cell_height);
-    if (oct.@"8") rect(metrics, canvas, x_halfs[1], y_quads[5], metrics.cell_width, metrics.cell_height);
+    if (oct.@"1") fill(metrics, canvas, .zero, .half, .zero, .one_quarter);
+    if (oct.@"2") fill(metrics, canvas, .half, .full, .zero, .one_quarter);
+    if (oct.@"3") fill(metrics, canvas, .zero, .half, .one_quarter, .two_quarters);
+    if (oct.@"4") fill(metrics, canvas, .half, .full, .one_quarter, .two_quarters);
+    if (oct.@"5") fill(metrics, canvas, .zero, .half, .two_quarters, .three_quarters);
+    if (oct.@"6") fill(metrics, canvas, .half, .full, .two_quarters, .three_quarters);
+    if (oct.@"7") fill(metrics, canvas, .zero, .half, .three_quarters, .end);
+    if (oct.@"8") fill(metrics, canvas, .half, .full, .three_quarters, .end);
 }
 
 // Separated Block Quadrants

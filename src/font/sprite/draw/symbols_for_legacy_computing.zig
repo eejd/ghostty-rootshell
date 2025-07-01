@@ -28,13 +28,12 @@ const z2d = @import("z2d");
 const common = @import("common.zig");
 const Thickness = common.Thickness;
 const Alignment = common.Alignment;
+const Fraction = common.Fraction;
 const Corner = common.Corner;
 const Quads = common.Quads;
 const Edge = common.Edge;
 const Shade = common.Shade;
-const xHalfs = common.xHalfs;
-const yThirds = common.yThirds;
-const rect = common.rect;
+const fill = common.fill;
 
 const box = @import("box.zig");
 const block = @import("block.zig");
@@ -121,16 +120,12 @@ pub fn draw1FB00_1FB3B(
     const sex: Sextants = @bitCast(@as(u6, @intCast(
         idx + (idx / 0x14) + 1,
     )));
-
-    const x_halfs = xHalfs(metrics);
-    const y_thirds = yThirds(metrics);
-
-    if (sex.tl) rect(metrics, canvas, 0, 0, x_halfs[0], y_thirds[0]);
-    if (sex.tr) rect(metrics, canvas, x_halfs[1], 0, metrics.cell_width, y_thirds[0]);
-    if (sex.ml) rect(metrics, canvas, 0, y_thirds[1], x_halfs[0], y_thirds[2]);
-    if (sex.mr) rect(metrics, canvas, x_halfs[1], y_thirds[1], metrics.cell_width, y_thirds[2]);
-    if (sex.bl) rect(metrics, canvas, 0, y_thirds[3], x_halfs[0], metrics.cell_height);
-    if (sex.br) rect(metrics, canvas, x_halfs[1], y_thirds[3], metrics.cell_width, metrics.cell_height);
+    if (sex.tl) fill(metrics, canvas, .zero, .half, .zero, .one_third);
+    if (sex.tr) fill(metrics, canvas, .half, .full, .zero, .one_third);
+    if (sex.ml) fill(metrics, canvas, .zero, .half, .one_third, .two_thirds);
+    if (sex.mr) fill(metrics, canvas, .half, .full, .one_third, .two_thirds);
+    if (sex.bl) fill(metrics, canvas, .zero, .half, .two_thirds, .end);
+    if (sex.br) fill(metrics, canvas, .half, .full, .two_thirds, .end);
 }
 
 /// Smooth Mosaics
@@ -465,17 +460,12 @@ pub fn draw1FB3C_1FB67(
         else => unreachable,
     };
 
-    const y_thirds = yThirds(metrics);
     const top: f64 = 0.0;
-    // We average the edge positions for the y_thirds boundaries here
-    // rather than having to deal with varying alignments depending on
-    // the surrounding pieces. The most this will be off by is half of
-    // a pixel, so hopefully it's not noticeable.
-    const upper: f64 = 0.5 * (@as(f64, @floatFromInt(y_thirds[0])) + @as(f64, @floatFromInt(y_thirds[1])));
-    const lower: f64 = 0.5 * (@as(f64, @floatFromInt(y_thirds[2])) + @as(f64, @floatFromInt(y_thirds[3])));
+    const upper: f64 = Fraction.one_third.float(metrics.cell_height);
+    const lower: f64 = Fraction.two_thirds.float(metrics.cell_height);
     const bottom: f64 = @floatFromInt(metrics.cell_height);
     const left: f64 = 0.0;
-    const center: f64 = @round(@as(f64, @floatFromInt(metrics.cell_width)) / 2);
+    const center: f64 = Fraction.half.float(metrics.cell_width);
     const right: f64 = @floatFromInt(metrics.cell_width);
 
     var path = canvas.staticPath(12); // nodes.len = 0
@@ -571,13 +561,14 @@ pub fn draw1FB70_1FB75(
 
     const n = cp + 1 - 0x1fb70;
 
-    const x: u32 = @intFromFloat(
-        @round(@as(f64, @floatFromInt(n)) * @as(f64, @floatFromInt(metrics.cell_width)) / 8),
+    fill(
+        metrics,
+        canvas,
+        Fraction.eighths[n],
+        Fraction.eighths[n + 1],
+        .top,
+        .bottom,
     );
-    const w: u32 = @intFromFloat(
-        @round(@as(f64, @floatFromInt(metrics.cell_width)) / 8),
-    );
-    rect(metrics, canvas, x, 0, x + w, metrics.cell_height);
 }
 
 /// Horizontal one eighth blocks
@@ -593,21 +584,14 @@ pub fn draw1FB76_1FB7B(
 
     const n = cp + 1 - 0x1fb76;
 
-    const h = @as(
-        u32,
-        @intFromFloat(@round(@as(f64, @floatFromInt(metrics.cell_height)) / 8)),
+    fill(
+        metrics,
+        canvas,
+        .left,
+        .right,
+        Fraction.eighths[n],
+        Fraction.eighths[n + 1],
     );
-    const y = @min(
-        metrics.cell_height -| h,
-        @as(
-            u32,
-            @intFromFloat(
-                @round(@as(f64, @floatFromInt(n)) *
-                    @as(f64, @floatFromInt(metrics.cell_height)) / 8),
-            ),
-        ),
-    );
-    rect(metrics, canvas, 0, y, metrics.cell_width, y + h);
 }
 
 pub fn draw1FB7C_1FB97(

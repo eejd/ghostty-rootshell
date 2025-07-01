@@ -15,9 +15,7 @@ const common = @import("common.zig");
 const Shade = common.Shade;
 const Quads = common.Quads;
 const Alignment = common.Alignment;
-const xHalfs = common.xHalfs;
-const yHalfs = common.yHalfs;
-const rect = common.rect;
+const fill = common.fill;
 
 const font = @import("../../main.zig");
 const Sprite = @import("../../sprite.zig").Sprite;
@@ -176,11 +174,8 @@ fn quadrant(
     canvas: *font.sprite.Canvas,
     comptime quads: Quads,
 ) void {
-    const x_halfs = xHalfs(metrics);
-    const y_halfs = yHalfs(metrics);
-
-    if (quads.tl) rect(metrics, canvas, 0, 0, x_halfs[0], y_halfs[0]);
-    if (quads.tr) rect(metrics, canvas, x_halfs[1], 0, metrics.cell_width, y_halfs[0]);
-    if (quads.bl) rect(metrics, canvas, 0, y_halfs[1], x_halfs[0], metrics.cell_height);
-    if (quads.br) rect(metrics, canvas, x_halfs[1], y_halfs[1], metrics.cell_width, metrics.cell_height);
+    if (quads.tl) fill(metrics, canvas, .zero, .half, .zero, .half);
+    if (quads.tr) fill(metrics, canvas, .half, .full, .zero, .half);
+    if (quads.bl) fill(metrics, canvas, .zero, .half, .half, .full);
+    if (quads.br) fill(metrics, canvas, .half, .full, .half, .full);
 }
