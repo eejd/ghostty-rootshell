@@ -204,6 +204,14 @@ pub fn xHalfs(metrics: font.Metrics) [2]u32 {
     return .{ half_width, metrics.cell_width - half_width };
 }
 
+/// yHalfs[0] should be used as the bottom edge of a top-aligned half.
+/// yHalfs[1] should be used as the top edge of a bottom-aligned half.
+pub fn yHalfs(metrics: font.Metrics) [2]u32 {
+    const float_height: f64 = @floatFromInt(metrics.cell_height);
+    const half_height: u32 = @intFromFloat(@round(0.5 * float_height));
+    return .{ half_height, metrics.cell_height - half_height };
+}
+
 /// Use these values as such:
 /// yThirds[0] bottom edge of the first third.
 /// yThirds[1] top edge of the second third.
