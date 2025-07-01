@@ -122,6 +122,162 @@ pub const Alignment = struct {
     pub const bottom_right = lower_right;
 };
 
+/// A value that indicates some fraction across
+/// the cell either horizontally or vertically.
+///
+/// This has some redundant names in it so that you can
+/// use whichever one feels most semantically appropriate.
+pub const Fraction = enum {
+    // Names for the min edge
+    start,
+    left,
+    top,
+    zero,
+
+    // Names based on eighths
+    one_eighth,
+    two_eighths,
+    three_eighths,
+    four_eighths,
+    five_eighths,
+    six_eighths,
+    seven_eighths,
+
+    // Names based on quarters
+    one_quarter,
+    two_quarters,
+    three_quarters,
+
+    // Names based on thirds
+    one_third,
+    two_thirds,
+
+    // Names based on halves
+    one_half,
+    half,
+
+    // Alternative names for 1/2
+    center,
+    middle,
+
+    // Names for the max edge
+    end,
+    right,
+    bottom,
+    one,
+    full,
+
+    /// Get the x position for this fraction across a particular
+    /// size (width or height), assuming it will be used as the
+    /// min (left/top) coordinate for a block.
+    ///
+    /// `size` can be any integer type, since it will be coerced
+    pub inline fn min(self: Fraction, size: anytype) i32 {
+        const s: f64 = @as(f64, @floatFromInt(size));
+        // For min coordinates, we want to align with the complementary
+        // fraction taken from the end, this ensures that rounding evens
+        // out, so that for example, if `size` is `7`, and we're looking
+        // at the `half` line, `size - round((1 - 0.5) * size)` => `3`;
+        // whereas the max coordinate directly rounds, which means that
+        // both `start` -> `half` and `half` -> `end` will be 4px, from
+        // `0` -> `4` and `3` -> `7`.
+        return @intFromFloat(s - @round((1.0 - self.fraction()) * s));
+    }
+
+    /// Get the x position for this fraction across a particular
+    /// size (width or height), assuming it will be used as the
+    /// max (right/bottom) coordinate for a block.
+    ///
+    /// `size` can be any integer type, since it will be coerced
+    /// with `@floatFromInt`.
+    pub inline fn max(self: Fraction, size: anytype) i32 {
+        const s: f64 = @as(f64, @floatFromInt(size));
+        // See explanation of why these are different in `min`.
+        return @intFromFloat(@round(self.fraction() * s));
+    }
+
+    pub inline fn fraction(self: Fraction) f64 {
+        return switch (self) {
+            .start,
+            .left,
+            .top,
+            .zero,
+            => 0.0,
+
+            .one_eighth,
+            => 0.125,
+
+            .one_quarter,
+            .two_eighths,
+            => 0.25,
+
+            .one_third,
+            => 1.0 / 3.0,
+
+            .three_eighths,
+            => 0.375,
+
+            .one_half,
+            .two_quarters,
+            .four_eighths,
+            .half,
+            .center,
+            .middle,
+            => 0.5,
+
+            .five_eighths,
+            => 0.625,
+
+            .two_thirds,
+            => 2.0 / 3.0,
+
+            .three_quarters,
+            .six_eighths,
+            => 0.75,
+
+            .seven_eighths,
+            => 0.875,
+
+            .end,
+            .right,
+            .bottom,
+            .one,
+            .full,
+            => 1.0,
+        };
+    }
+};
+
+test "sprite font fraction" {
+    const testing = std.testing;
+
+    for (4..64) |s| {
+        const metrics: font.Metrics = .calc(.{
+            .cell_width = @floatFromInt(s),
+            .ascent = @floatFromInt(s),
+            .descent = 0.0,
+            .line_gap = 0.0,
+            .underline_thickness = 2.0,
+            .strikethrough_thickness = 2.0,
+        });
+
+        try testing.expectEqual(@as(i32, @intCast(xHalfs(metrics)[0])), Fraction.half.max(s));
+        try testing.expectEqual(@as(i32, @intCast(xHalfs(metrics)[1])), Fraction.half.min(s));
+
+        try testing.expectEqual(@as(i32, @intCast(yThirds(metrics)[0])), Fraction.one_third.max(s));
+        try testing.expectEqual(@as(i32, @intCast(yThirds(metrics)[1])), Fraction.one_third.min(s));
+        try testing.expectEqual(@as(i32, @intCast(yThirds(metrics)[2])), Fraction.two_thirds.max(s));
+        try testing.expectEqual(@as(i32, @intCast(yThirds(metrics)[3])), Fraction.two_thirds.min(s));
+
+        try testing.expectEqual(@as(i32, @intCast(yQuads(metrics)[0])), Fraction.one_quarter.max(s));
+        try testing.expectEqual(@as(i32, @intCast(yQuads(metrics)[1])), Fraction.one_quarter.min(s));
+        try testing.expectEqual(@as(i32, @intCast(yQuads(metrics)[2])), Fraction.two_quarters.max(s));
+        try testing.expectEqual(@as(i32, @intCast(yQuads(metrics)[3])), Fraction.two_quarters.min(s));
+        try testing.expectEqual(@as(i32, @intCast(yQuads(metrics)[4])), Fraction.three_quarters.max(s));
+        try testing.expectEqual(@as(i32, @intCast(yQuads(metrics)[5])), Fraction.three_quarters.min(s));
+    }
+}
+
 /// Fill a rect, clamped to within the cell boundaries.
 ///
 /// TODO: Eliminate usages of this, prefer `canvas.box`.
