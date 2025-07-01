@@ -1003,7 +1003,7 @@ fn childExited(self: *Surface, info: apprt.surface.Message.ChildExited) void {
         // On macOS, our exit code detection doesn't work, possibly
         // because of our `login` wrapper. More investigation required.
         if (comptime !builtin.target.os.tag.isDarwin()) {
-            // If the exit code is 0 then we it was a good exit.
+            // If the exit code is 0 then it was a good exit.
             if (info.exit_code == 0) break :runtime;
         }
 
