@@ -2070,9 +2070,10 @@ keybind: Keybinds = .{},
 ///   * `ssh-terminfo` - Enable automatic terminfo installation on remote hosts.
 ///     Attempts to install Ghostty's terminfo entry using `infocmp` and `tic` when
 ///     connecting to hosts that lack it. Requires `infocmp` to be available locally
-///     and `tic` to be available on remote hosts. Provides `+list-ssh-cache` and
-///     `+clear-ssh-cache` CLI actions for managing the installation cache (caching
-///     is otherwise automatic and requires no user intervention).
+///     and `tic` to be available on remote hosts. Once terminfo is installed on a
+///     remote host, it will be automatically "cached" to avoid repeat installations.
+///     If desired, the `+ssh-cache` CLI action can be used to manage the installation
+///     cache manually using various arguments.
 ///
 /// SSH features work independently and can be combined for optimal experience:
 /// when both `ssh-env` and `ssh-terminfo` are enabled, Ghostty will install its
