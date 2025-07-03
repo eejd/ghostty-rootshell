@@ -133,7 +133,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         /// This is cursor color as set in the user's config, if any. If no cursor color
         /// is set in the user's config, then the cursor color is determined by the
         /// current foreground color.
-        default_cursor_color: ?configpkg.Config.DynamicColor,
+        default_cursor_color: ?configpkg.Config.TerminalColor,
 
         /// The current set of cells to render. This is rebuilt on every frame
         /// but we keep this around so that we don't reallocate. Each set of
@@ -509,14 +509,14 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             font_features: std.ArrayListUnmanaged([:0]const u8),
             font_styles: font.CodepointResolver.StyleStatus,
             font_shaping_break: configpkg.FontShapingBreak,
-            cursor_color: ?configpkg.Config.DynamicColor,
+            cursor_color: ?configpkg.Config.TerminalColor,
             cursor_opacity: f64,
-            cursor_text: ?configpkg.Config.DynamicColor,
+            cursor_text: ?configpkg.Config.TerminalColor,
             background: terminal.color.RGB,
             background_opacity: f64,
             foreground: terminal.color.RGB,
-            selection_background: ?configpkg.Config.DynamicColor,
-            selection_foreground: ?configpkg.Config.DynamicColor,
+            selection_background: ?configpkg.Config.TerminalColor,
+            selection_foreground: ?configpkg.Config.TerminalColor,
             bold_is_bright: bool,
             min_contrast: f32,
             padding_color: configpkg.WindowPaddingColor,
@@ -2548,21 +2548,31 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     else
                         false;
 
+                    // The `_style` suffixed values are the colors based on
+                    // the cell style (SGR), before applying any additional
+                    // configuration, inversions, selections, etc.
                     const bg_style = style.bg(cell, color_palette);
-                    const fg_style = style.fg(color_palette, self.config.bold_is_bright) orelse self.foreground_color orelse self.default_foreground_color;
+                    const fg_style = style.fg(
+                        color_palette,
+                        self.config.bold_is_bright,
+                    ) orelse self.foreground_color orelse self.default_foreground_color;
 
                     // The final background color for the cell.
                     const bg = bg: {
                         if (selected) {
-                            break :bg if (self.config.selection_background) |selection_color|
-                                // Use the selection background if set, otherwise the default fg color.
-                                switch (selection_color) {
-                                    .color => selection_color.color.toTerminalRGB(),
+                            // If we have an explicit selection background color
+                            // specified int he config, use that
+                            if (self.config.selection_background) |v| {
+                                break :bg switch (v) {
+                                    .color => |color| color.toTerminalRGB(),
                                     .@"cell-foreground" => if (style.flags.inverse) bg_style else fg_style,
                                     .@"cell-background" => if (style.flags.inverse) fg_style else bg_style,
-                                }
-                            else
-                                self.foreground_color orelse self.default_foreground_color;
+                                };
+                            }
+
+                            // If no configuration, then our selection background
+                            // is our foreground color.
+                            break :bg self.foreground_color orelse self.default_foreground_color;
                         }
 
                         // Not selected
@@ -2582,22 +2592,27 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     };
 
                     const fg = fg: {
-                        const final_bg = bg_style orelse self.background_color orelse self.default_background_color;
+                        // Our happy-path non-selection background color
+                        // is our style or our configured defaults.
+                        const final_bg = bg_style orelse
+                            self.background_color orelse
+                            self.default_background_color;
 
                         // Whether we need to use the bg color as our fg color:
                         // - Cell is selected, inverted, and set to cell-foreground
                         // - Cell is selected, not inverted, and set to cell-background
                         // - Cell is inverted and not selected
                         if (selected) {
-                            // Use the selection foreground if set, otherwise the default bg color.
-                            break :fg if (self.config.selection_foreground) |selection_color|
-                                switch (selection_color) {
-                                    .color => selection_color.color.toTerminalRGB(),
+                            // Use the selection foreground if set
+                            if (self.config.selection_foreground) |v| {
+                                break :fg switch (v) {
+                                    .color => |color| color.toTerminalRGB(),
                                     .@"cell-foreground" => if (style.flags.inverse) final_bg else fg_style,
                                     .@"cell-background" => if (style.flags.inverse) fg_style else final_bg,
-                                }
-                            else
-                                self.background_color orelse self.default_background_color;
+                                };
+                            }
+
+                            break :fg self.background_color orelse self.default_background_color;
                         }
 
                         break :fg if (style.flags.inverse)
@@ -2787,25 +2802,36 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
                 // Prepare the cursor cell contents.
                 const style = cursor_style_ orelse break :cursor;
-                const cursor_color = self.cursor_color orelse if (self.default_cursor_color) |color| color: {
-                    // If cursor-color is set, then compute the correct color.
-                    // Otherwise, use the foreground color
-                    if (color == .color) {
-                        // Use the color set by cursor-color, if any.
-                        break :color color.color.toTerminalRGB();
-                    }
+                const cursor_color = cursor_color: {
+                    // If an explicit cursor color was set by OSC 12, use that.
+                    if (self.cursor_color) |v| break :cursor_color v;
 
-                    const sty = screen.cursor.page_pin.style(screen.cursor.page_cell);
-                    const fg_style = sty.fg(color_palette, self.config.bold_is_bright) orelse self.foreground_color orelse self.default_foreground_color;
-                    const bg_style = sty.bg(screen.cursor.page_cell, color_palette) orelse self.background_color orelse self.default_background_color;
+                    // Use our configured color if specified
+                    if (self.default_cursor_color) |v| switch (v) {
+                        .color => |color| break :cursor_color color.toTerminalRGB(),
+                        inline .@"cell-foreground",
+                        .@"cell-background",
+                        => |_, tag| {
+                            const sty = screen.cursor.page_pin.style(screen.cursor.page_cell);
+                            const fg_style = sty.fg(
+                                color_palette,
+                                self.config.bold_is_bright,
+                            ) orelse self.foreground_color orelse self.default_foreground_color;
+                            const bg_style = sty.bg(
+                                screen.cursor.page_cell,
+                                color_palette,
+                            ) orelse self.background_color orelse self.default_background_color;
 
-                    break :color switch (color) {
-                        // If the cell is reversed, use the opposite cell color instead.
-                        .@"cell-foreground" => if (sty.flags.inverse) bg_style else fg_style,
-                        .@"cell-background" => if (sty.flags.inverse) fg_style else bg_style,
-                        else => unreachable,
+                            break :cursor_color switch (tag) {
+                                .color => unreachable,
+                                .@"cell-foreground" => if (sty.flags.inverse) bg_style else fg_style,
+                                .@"cell-background" => if (sty.flags.inverse) fg_style else bg_style,
+                            };
+                        },
                     };
-                } else self.foreground_color orelse self.default_foreground_color;
+
+                    break :cursor_color self.foreground_color orelse self.default_foreground_color;
+                };
 
                 self.addCursor(screen, style, cursor_color);
 

@@ -163,7 +163,7 @@ pub const DerivedConfig = struct {
     image_storage_limit: usize,
     cursor_style: terminalpkg.CursorStyle,
     cursor_blink: ?bool,
-    cursor_color: ?configpkg.Config.DynamicColor,
+    cursor_color: ?configpkg.Config.TerminalColor,
     foreground: configpkg.Config.Color,
     background: configpkg.Config.Color,
     osc_color_report_format: configpkg.Config.OSCColorReportFormat,
@@ -263,13 +263,16 @@ pub fn init(self: *Termio, alloc: Allocator, opts: termio.Options) !void {
     // Create our stream handler. This points to memory in self so it
     // isn't safe to use until self.* is set.
     const handler: StreamHandler = handler: {
-        const default_cursor_color = if (opts.config.cursor_color) |color|
-            switch (color) {
-                .color => color.color.toTerminalRGB(),
-                else => null,
-            }
-        else
-            null;
+        const default_cursor_color: ?terminalpkg.color.RGB = color: {
+            if (opts.config.cursor_color) |color| switch (color) {
+                .color => break :color color.color.toTerminalRGB(),
+                .@"cell-foreground",
+                .@"cell-background",
+                => {},
+            };
+
+            break :color null;
+        };
 
         break :handler .{
             .alloc = alloc,

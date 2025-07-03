@@ -601,8 +601,8 @@ foreground: Color = .{ .r = 0xFF, .g = 0xFF, .b = 0xFF },
 /// Since version 1.2.0, this can also be set to `cell-foreground` to match
 /// the cell foreground color, or `cell-background` to match the cell
 /// background color.
-@"selection-foreground": ?DynamicColor = null,
-@"selection-background": ?DynamicColor = null,
+@"selection-foreground": ?TerminalColor = null,
+@"selection-background": ?TerminalColor = null,
 
 /// Whether to clear selected text when typing. This defaults to `true`.
 /// This is typical behavior for most terminal emulators as well as
@@ -659,7 +659,7 @@ palette: Palette = .{},
 ///   * `cell-background` - Match the cell background color.
 ///     (Available since version 1.2.0)
 ///
-@"cursor-color": ?DynamicColor = null,
+@"cursor-color": ?TerminalColor = null,
 
 /// The opacity level (opposite of transparency) of the cursor. A value of 1
 /// is fully opaque and a value of 0 is fully transparent. A value less than 0
@@ -712,7 +712,7 @@ palette: Palette = .{},
 /// Since version 1.2.0, this can also be set to `cell-foreground` to match
 /// the cell foreground color, or `cell-background` to match the cell
 /// background color.
-@"cursor-text": ?DynamicColor = null,
+@"cursor-text": ?TerminalColor = null,
 
 /// Enables the ability to move the cursor at prompts by using `alt+click` on
 /// Linux and `option+click` on macOS.
@@ -4463,16 +4463,14 @@ pub const Color = struct {
     }
 };
 
-/// Represents the color values that can be set to a non-static value.
-///
-/// Can either be a Color or one of the special values
-/// "cell-foreground" or "cell-background".
-pub const DynamicColor = union(enum) {
+/// Represents color values that can also reference special color
+/// values such as "cell-foreground" or "cell-background".
+pub const TerminalColor = union(enum) {
     color: Color,
     @"cell-foreground",
     @"cell-background",
 
-    pub fn parseCLI(input_: ?[]const u8) !DynamicColor {
+    pub fn parseCLI(input_: ?[]const u8) !TerminalColor {
         const input = input_ orelse return error.ValueRequired;
         if (std.mem.eql(u8, input, "cell-foreground")) return .@"cell-foreground";
         if (std.mem.eql(u8, input, "cell-background")) return .@"cell-background";
@@ -4480,7 +4478,7 @@ pub const DynamicColor = union(enum) {
     }
 
     /// Used by Formatter
-    pub fn formatEntry(self: DynamicColor, formatter: anytype) !void {
+    pub fn formatEntry(self: TerminalColor, formatter: anytype) !void {
         switch (self) {
             .color => try self.color.formatEntry(formatter),
 
@@ -4494,23 +4492,23 @@ pub const DynamicColor = union(enum) {
         const testing = std.testing;
 
         try testing.expectEqual(
-            DynamicColor{ .color = Color{ .r = 78, .g = 42, .b = 132 } },
-            try DynamicColor.parseCLI("#4e2a84"),
+            TerminalColor{ .color = Color{ .r = 78, .g = 42, .b = 132 } },
+            try TerminalColor.parseCLI("#4e2a84"),
         );
         try testing.expectEqual(
-            DynamicColor{ .color = Color{ .r = 0, .g = 0, .b = 0 } },
-            try DynamicColor.parseCLI("black"),
+            TerminalColor{ .color = Color{ .r = 0, .g = 0, .b = 0 } },
+            try TerminalColor.parseCLI("black"),
         );
         try testing.expectEqual(
-            DynamicColor{.@"cell-foreground"},
-            try DynamicColor.parseCLI("cell-foreground"),
+            TerminalColor{.@"cell-foreground"},
+            try TerminalColor.parseCLI("cell-foreground"),
         );
         try testing.expectEqual(
-            DynamicColor{.@"cell-background"},
-            try DynamicColor.parseCLI("cell-background"),
+            TerminalColor{.@"cell-background"},
+            try TerminalColor.parseCLI("cell-background"),
         );
 
-        try testing.expectError(error.InvalidValue, DynamicColor.parseCLI("a"));
+        try testing.expectError(error.InvalidValue, TerminalColor.parseCLI("a"));
     }
 
     test "formatConfig" {
@@ -4518,7 +4516,7 @@ pub const DynamicColor = union(enum) {
         var buf = std.ArrayList(u8).init(testing.allocator);
         defer buf.deinit();
 
-        var sc: DynamicColor = .{.@"cell-foreground"};
+        var sc: TerminalColor = .{.@"cell-foreground"};
         try sc.formatEntry(formatterpkg.entryFormatter("a", buf.writer()));
         try testing.expectEqualSlices(u8, "a = cell-foreground\n", buf.items);
     }
@@ -8172,11 +8170,11 @@ test "compatibility: removed cursor-invert-fg-bg" {
         try cfg.finalize();
 
         try testing.expectEqual(
-            DynamicColor.@"cell-foreground",
+            TerminalColor.@"cell-foreground",
             cfg.@"cursor-color",
         );
         try testing.expectEqual(
-            DynamicColor.@"cell-background",
+            TerminalColor.@"cell-background",
             cfg.@"cursor-text",
         );
     }
@@ -8196,11 +8194,11 @@ test "compatibility: removed selection-invert-fg-bg" {
         try cfg.finalize();
 
         try testing.expectEqual(
-            DynamicColor.@"cell-background",
+            TerminalColor.@"cell-background",
             cfg.@"selection-foreground",
         );
         try testing.expectEqual(
-            DynamicColor.@"cell-foreground",
+            TerminalColor.@"cell-foreground",
             cfg.@"selection-background",
         );
     }
