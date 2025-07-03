@@ -5455,7 +5455,14 @@ pub const Keybinds = struct {
                         .mods = mods,
                     },
                     .{ .goto_tab = (i - start) + 1 },
-                    .{ .performable = true },
+                    .{
+                        // On macOS we keep this not performable so that the
+                        // keyboard shortcuts in tabs work. In the future the
+                        // correct fix is to fix the reverse mapping lookup
+                        // to allow us to lookup performable keybinds
+                        // conditionally.
+                        .performable = !builtin.target.os.tag.isDarwin(),
+                    },
                 );
             }
             try self.set.putFlags(
@@ -5465,7 +5472,10 @@ pub const Keybinds = struct {
                     .mods = mods,
                 },
                 .{ .last_tab = {} },
-                .{ .performable = true },
+                .{
+                    // See comment above with the numeric goto_tab
+                    .performable = !builtin.target.os.tag.isDarwin(),
+                },
             );
         }
 
