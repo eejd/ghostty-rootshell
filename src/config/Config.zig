@@ -62,6 +62,13 @@ pub const compatibility = std.StaticStringMap(
     // Ghostty 1.2 removed the `hidden` value from `gtk-tabs-location` and
     // moved it to `window-show-tab-bar`.
     .{ "gtk-tabs-location", compatGtkTabsLocation },
+
+    // Ghostty 1.2 lets you set `cell-foreground` and `cell-background`
+    // to match the cell foreground and background colors, respectively.
+    // This can be used with `cursor-color` and `cursor-text` to recreate
+    // this behavior. This applies to selection too.
+    .{ "cursor-invert-fg-bg", compatCursorInvertFgBg },
+    .{ "selection-invert-fg-bg", compatSelectionInvertFgBg },
 });
 
 /// The font families to use.
@@ -597,18 +604,6 @@ foreground: Color = .{ .r = 0xFF, .g = 0xFF, .b = 0xFF },
 @"selection-foreground": ?DynamicColor = null,
 @"selection-background": ?DynamicColor = null,
 
-/// Swap the foreground and background colors of cells for selection. This
-/// option overrides the `selection-foreground` and `selection-background`
-/// options.
-///
-/// If you select across cells with differing foregrounds and backgrounds, the
-/// selection color will vary across the selection.
-///
-/// Warning: This option has been deprecated as of version 1.2.0. Instead,
-/// users should set `selection-foreground` and `selection-background` to
-/// `cell-background` and `cell-foreground`, respectively.
-@"selection-invert-fg-bg": bool = false,
-
 /// Whether to clear selected text when typing. This defaults to `true`.
 /// This is typical behavior for most terminal emulators as well as
 /// text input fields. If you set this to `false`, then the selected text
@@ -651,19 +646,20 @@ foreground: Color = .{ .r = 0xFF, .g = 0xFF, .b = 0xFF },
 palette: Palette = .{},
 
 /// The color of the cursor. If this is not set, a default will be chosen.
-/// Specified as either hex (`#RRGGBB` or `RRGGBB`) or a named X11 color.
-/// Since version 1.2.0, this can also be set to `cell-foreground` to match
-/// the cell foreground color, or `cell-background` to match the cell
-/// background color.
-@"cursor-color": ?DynamicColor = null,
-
-/// Swap the foreground and background colors of the cell under the cursor. This
-/// option overrides the `cursor-color` and `cursor-text` options.
 ///
-/// Warning: This option has been deprecated as of version 1.2.0. Instead,
-/// users should set `cursor-color` and `cursor-text` to `cell-foreground` and
-/// `cell-background`, respectively.
-@"cursor-invert-fg-bg": bool = false,
+/// Direct colors can be specified as either hex (`#RRGGBB` or `RRGGBB`)
+/// or a named X11 color.
+///
+/// Additionally, special values can be used to set the color to match
+/// other colors at runtime:
+///
+///   * `cell-foreground` - Match the cell foreground color.
+///     (Available since version 1.2.0)
+///
+///   * `cell-background` - Match the cell background color.
+///     (Available since version 1.2.0)
+///
+@"cursor-color": ?DynamicColor = null,
 
 /// The opacity level (opposite of transparency) of the cursor. A value of 1
 /// is fully opaque and a value of 0 is fully transparent. A value less than 0
@@ -3843,10 +3839,6 @@ pub fn parseManuallyHook(
     return true;
 }
 
-/// parseFieldManuallyFallback is a fallback called only when
-/// parsing the field directly failed. It can be used to implement
-/// backward compatibility. Since this is only called when parsing
-/// fails, it doesn't impact happy-path performance.
 fn compatGtkTabsLocation(
     self: *Config,
     alloc: Allocator,
@@ -3862,6 +3854,51 @@ fn compatGtkTabsLocation(
     }
 
     return false;
+}
+
+fn compatCursorInvertFgBg(
+    self: *Config,
+    alloc: Allocator,
+    key: []const u8,
+    value_: ?[]const u8,
+) bool {
+    _ = alloc;
+    assert(std.mem.eql(u8, key, "cursor-invert-fg-bg"));
+
+    // We don't do anything if the value is unset, which is technically
+    // not EXACTLY the same as prior behavior since it would fallback
+    // to doing whatever cursor-color/cursor-text were set to, but
+    // I don't want to store what that is separately so this is close
+    // enough.
+    //
+    // Realistically, these fields were mutually exclusive so anyone
+    // relying on that behavior should just upgrade to the new
+    // cursor-color/cursor-text fields.
+    const set = cli.args.parseBool(value_ orelse "t") catch return false;
+    if (set) {
+        self.@"cursor-color" = .@"cell-foreground";
+        self.@"cursor-text" = .@"cell-background";
+    }
+
+    return true;
+}
+
+fn compatSelectionInvertFgBg(
+    self: *Config,
+    alloc: Allocator,
+    key: []const u8,
+    value_: ?[]const u8,
+) bool {
+    _ = alloc;
+    assert(std.mem.eql(u8, key, "selection-invert-fg-bg"));
+
+    const set = cli.args.parseBool(value_ orelse "t") catch return false;
+    if (set) {
+        self.@"selection-foreground" = .@"cell-background";
+        self.@"selection-background" = .@"cell-foreground";
+    }
+
+    return true;
 }
 
 /// Create a shallow copy of this config. This will share all the memory
@@ -4437,28 +4474,41 @@ pub const DynamicColor = union(enum) {
 
     pub fn parseCLI(input_: ?[]const u8) !DynamicColor {
         const input = input_ orelse return error.ValueRequired;
-
         if (std.mem.eql(u8, input, "cell-foreground")) return .@"cell-foreground";
         if (std.mem.eql(u8, input, "cell-background")) return .@"cell-background";
-
-        return DynamicColor{ .color = try Color.parseCLI(input) };
+        return .{ .color = try Color.parseCLI(input) };
     }
 
     /// Used by Formatter
     pub fn formatEntry(self: DynamicColor, formatter: anytype) !void {
         switch (self) {
             .color => try self.color.formatEntry(formatter),
-            .@"cell-foreground", .@"cell-background" => try formatter.formatEntry([:0]const u8, @tagName(self)),
+
+            .@"cell-foreground",
+            .@"cell-background",
+            => try formatter.formatEntry([:0]const u8, @tagName(self)),
         }
     }
 
     test "parseCLI" {
         const testing = std.testing;
 
-        try testing.expectEqual(DynamicColor{ .color = Color{ .r = 78, .g = 42, .b = 132 } }, try DynamicColor.parseCLI("#4e2a84"));
-        try testing.expectEqual(DynamicColor{ .color = Color{ .r = 0, .g = 0, .b = 0 } }, try DynamicColor.parseCLI("black"));
-        try testing.expectEqual(DynamicColor{.@"cell-foreground"}, try DynamicColor.parseCLI("cell-foreground"));
-        try testing.expectEqual(DynamicColor{.@"cell-background"}, try DynamicColor.parseCLI("cell-background"));
+        try testing.expectEqual(
+            DynamicColor{ .color = Color{ .r = 78, .g = 42, .b = 132 } },
+            try DynamicColor.parseCLI("#4e2a84"),
+        );
+        try testing.expectEqual(
+            DynamicColor{ .color = Color{ .r = 0, .g = 0, .b = 0 } },
+            try DynamicColor.parseCLI("black"),
+        );
+        try testing.expectEqual(
+            DynamicColor{.@"cell-foreground"},
+            try DynamicColor.parseCLI("cell-foreground"),
+        );
+        try testing.expectEqual(
+            DynamicColor{.@"cell-background"},
+            try DynamicColor.parseCLI("cell-background"),
+        );
 
         try testing.expectError(error.InvalidValue, DynamicColor.parseCLI("a"));
     }
@@ -8105,5 +8155,53 @@ test "theme specifying light/dark sets theme usage in conditional state" {
 
         try testing.expect(cfg.@"window-theme" == .system);
         try testing.expect(cfg._conditional_set.contains(.theme));
+    }
+}
+
+test "compatibility: removed cursor-invert-fg-bg" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    {
+        var cfg = try Config.default(alloc);
+        defer cfg.deinit();
+        var it: TestIterator = .{ .data = &.{
+            "--cursor-invert-fg-bg",
+        } };
+        try cfg.loadIter(alloc, &it);
+        try cfg.finalize();
+
+        try testing.expectEqual(
+            DynamicColor.@"cell-foreground",
+            cfg.@"cursor-color",
+        );
+        try testing.expectEqual(
+            DynamicColor.@"cell-background",
+            cfg.@"cursor-text",
+        );
+    }
+}
+
+test "compatibility: removed selection-invert-fg-bg" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    {
+        var cfg = try Config.default(alloc);
+        defer cfg.deinit();
+        var it: TestIterator = .{ .data = &.{
+            "--selection-invert-fg-bg",
+        } };
+        try cfg.loadIter(alloc, &it);
+        try cfg.finalize();
+
+        try testing.expectEqual(
+            DynamicColor.@"cell-background",
+            cfg.@"selection-foreground",
+        );
+        try testing.expectEqual(
+            DynamicColor.@"cell-foreground",
+            cfg.@"selection-background",
+        );
     }
 }
