@@ -4500,11 +4500,11 @@ pub const TerminalColor = union(enum) {
             try TerminalColor.parseCLI("black"),
         );
         try testing.expectEqual(
-            TerminalColor{.@"cell-foreground"},
+            TerminalColor.@"cell-foreground",
             try TerminalColor.parseCLI("cell-foreground"),
         );
         try testing.expectEqual(
-            TerminalColor{.@"cell-background"},
+            TerminalColor.@"cell-background",
             try TerminalColor.parseCLI("cell-background"),
         );
 
@@ -4516,7 +4516,7 @@ pub const TerminalColor = union(enum) {
         var buf = std.ArrayList(u8).init(testing.allocator);
         defer buf.deinit();
 
-        var sc: TerminalColor = .{.@"cell-foreground"};
+        var sc: TerminalColor = .@"cell-foreground";
         try sc.formatEntry(formatterpkg.entryFormatter("a", buf.writer()));
         try testing.expectEqualSlices(u8, "a = cell-foreground\n", buf.items);
     }
