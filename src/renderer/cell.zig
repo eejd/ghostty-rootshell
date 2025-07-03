@@ -223,6 +223,60 @@ pub const FgMode = enum {
     powerline,
 };
 
+/// Returns the appropriate `constraint_width` for
+/// the provided cell when rendering its glyph(s).
+pub fn constraintWidth(cell_pin: terminal.Pin) u2 {
+    const cell = cell_pin.rowAndCell().cell;
+    const cp = cell.codepoint();
+
+    if (!ziglyph.general_category.isPrivateUse(cp) and
+        !ziglyph.blocks.isDingbats(cp))
+    {
+        return cell.gridWidth();
+    }
+
+    // If we are at the end of the screen it must be constrained to one cell.
+    if (cell_pin.x == cell_pin.node.data.size.cols - 1) return 1;
+
+    // If we have a previous cell and it was PUA then we need to
+    // also constrain. This is so that multiple PUA glyphs align.
+    // As an exception, we ignore powerline glyphs since they are
+    // used for box drawing and we consider them whitespace.
+    if (cell_pin.x > 0) prev: {
+        const prev_cp = prev_cp: {
+            var copy = cell_pin;
+            copy.x -= 1;
+            const prev_cell = copy.rowAndCell().cell;
+            break :prev_cp prev_cell.codepoint();
+        };
+
+        // We consider powerline glyphs whitespace.
+        if (isPowerline(prev_cp)) break :prev;
+
+        if (ziglyph.general_category.isPrivateUse(prev_cp)) {
+            return 1;
+        }
+    }
+
+    // If the next cell is whitespace, then
+    // we allow it to be up to two cells wide.
+    const next_cp = next_cp: {
+        var copy = cell_pin;
+        copy.x += 1;
+        const next_cell = copy.rowAndCell().cell;
+        break :next_cp next_cell.codepoint();
+    };
+    if (next_cp == 0 or
+        isSpace(next_cp) or
+        isPowerline(next_cp))
+    {
+        return 2;
+    }
+
+    // Must be constrained
+    return 1;
+}
+
 /// Returns the appropriate foreground mode for the given cell. This is
 /// meant to be called from the typical updateCell function within a
 /// renderer.

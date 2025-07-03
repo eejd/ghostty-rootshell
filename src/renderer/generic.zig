@@ -14,6 +14,7 @@ const Surface = @import("../Surface.zig");
 const link = @import("link.zig");
 const cellpkg = @import("cell.zig");
 const fgMode = cellpkg.fgMode;
+const constraintWidth = cellpkg.constraintWidth;
 const isCovering = cellpkg.isCovering;
 const imagepkg = @import("image.zig");
 const Image = imagepkg.Image;
@@ -25,6 +26,8 @@ const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 const Terminal = terminal.Terminal;
 const Health = renderer.Health;
+
+const getConstraint = @import("../font/nerd_font_attributes.zig").getConstraint;
 
 const FileType = @import("../file_type.zig").FileType;
 
@@ -3030,6 +3033,9 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     .grid_metrics = self.grid_metrics,
                     .thicken = self.config.font_thicken,
                     .thicken_strength = self.config.font_thicken_strength,
+                    .cell_width = cell.gridWidth(),
+                    .constraint = getConstraint(cell.codepoint()),
+                    .constraint_width = constraintWidth(cell_pin),
                 },
             );
 
