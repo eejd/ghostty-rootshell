@@ -847,6 +847,15 @@ const Subprocess = struct {
         else
             null;
 
+        // Propagate the current working directory (CWD) to the shell, enabling
+        // the shell to display the current directory name rather than the
+        // resolved path for symbolic links. This is important and based
+        // on the same behavior in Konsole and Kitty (see the linked issues):
+        // https://bugs.kde.org/show_bug.cgi?id=242114
+        // https://github.com/kovidgoyal/kitty/issues/1595
+        // https://github.com/ghostty-org/ghostty/discussions/7769
+        if (cwd) |pwd| try env.put("PWD", pwd);
+
         // If we have a cgroup, then we copy that into our arena so the
         // memory remains valid when we start.
         const linux_cgroup: Command.LinuxCgroup = cgroup: {
