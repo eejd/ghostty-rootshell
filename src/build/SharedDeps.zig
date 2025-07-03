@@ -520,6 +520,14 @@ pub fn add(
             "jetbrains_mono_bold_italic",
             .{ .root_source_file = jb_mono.path("fonts/ttf/JetBrainsMono-BoldItalic.ttf") },
         );
+        step.root_module.addAnonymousImport(
+            "jetbrains_mono_variable",
+            .{ .root_source_file = jb_mono.path("fonts/variable/JetBrainsMono[wght].ttf") },
+        );
+        step.root_module.addAnonymousImport(
+            "jetbrains_mono_variable_italic",
+            .{ .root_source_file = jb_mono.path("fonts/variable/JetBrainsMono-Italic[wght].ttf") },
+        );
 
         // Symbols-only nerd font
         const nf_symbols = b.dependency("nerd_fonts_symbols_only", .{});
