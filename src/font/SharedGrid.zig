@@ -265,13 +265,36 @@ pub fn renderGlyph(
         .emoji => &self.atlas_color,
     };
 
+    var render_opts = opts;
+
+    // Always use these constraints for emoji.
+    if (p == .emoji) {
+        render_opts.constraint = .{
+            // Make the emoji as wide as possible, scaling proportionally,
+            // but then scale it down as necessary if its new size exceeds
+            // the cell height.
+            .size_horizontal = .cover,
+            .size_vertical = .fit,
+
+            // Center the emoji in its cells.
+            .align_horizontal = .center,
+            .align_vertical = .center,
+
+            // Add a small bit of padding so the emoji
+            // doesn't quite touch the edges of the cells.
+            .pad_left = 0.025,
+            .pad_right = 0.025,
+        };
+    }
+
+
     // Render into the atlas
     const glyph = self.resolver.renderGlyph(
         alloc,
         atlas,
         index,
         glyph_index,
-        opts,
+        render_opts,
     ) catch |err| switch (err) {
         // If the atlas is full, we resize it
         error.AtlasFull => blk: {
@@ -281,7 +304,7 @@ pub fn renderGlyph(
                 atlas,
                 index,
                 glyph_index,
-                opts,
+                render_opts,
             );
         },
 
