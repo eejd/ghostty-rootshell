@@ -1,4 +1,5 @@
 const std = @import("std");
+const assert = std.debug.assert;
 const builtin = @import("builtin");
 const buildpkg = @import("src/build/main.zig");
 
@@ -47,6 +48,25 @@ pub fn build(b: *std.Build) !void {
         exe.install();
         resources.install();
         i18n.install();
+
+        // Run runs the Ghostty exe. We only do this if we are building
+        // an apprt.
+        {
+            const run_cmd = b.addRunArtifact(exe.exe);
+            if (b.args) |args| run_cmd.addArgs(args);
+
+            // Set the proper resources dir so things like shell integration
+            // work correctly. If we're running `zig build run` in Ghostty,
+            // this also ensures it overwrites the release one with our debug
+            // build.
+            run_cmd.setEnvironmentVariable(
+                "GHOSTTY_RESOURCES_DIR",
+                b.getInstallPath(.prefix, "share/ghostty"),
+            );
+
+            const run_step = b.step("run", "Run the app");
+            run_step.dependOn(&run_cmd.step);
+        }
     }
 
     // Libghostty
@@ -55,52 +75,53 @@ pub fn build(b: *std.Build) !void {
     // heavily by Ghostty on macOS but it isn't built to be reusable yet.
     // As such, these build steps are lacking. For example, the Darwin
     // build only produces an xcframework.
-    if (config.app_runtime == .none) {
-        if (config.target.result.os.tag.isDarwin()) darwin: {
-            if (!config.emit_xcframework) break :darwin;
-
-            // Build the xcframework
-            const xcframework = try buildpkg.GhosttyXCFramework.init(b, &deps);
-            xcframework.install();
-
-            // The xcframework build always installs resources because our
-            // macOS xcode project contains references to them.
-            resources.install();
-            i18n.install();
-
-            // If we aren't emitting docs we need to emit a placeholder so
-            // our macOS xcodeproject builds.
-            if (!config.emit_docs) {
-                var wf = b.addWriteFiles();
-                const path = "share/man/.placeholder";
-                const placeholder = wf.add(path, "emit-docs not true so no man pages");
-                b.getInstallStep().dependOn(&b.addInstallFile(placeholder, path).step);
-            }
-        } else {
-            const libghostty_shared = try buildpkg.GhosttyLib.initShared(b, &deps);
-            const libghostty_static = try buildpkg.GhosttyLib.initStatic(b, &deps);
+    if (config.app_runtime == .none) none: {
+        if (!config.target.result.os.tag.isDarwin()) {
+            const libghostty_shared = try buildpkg.GhosttyLib.initShared(
+                b,
+                &deps,
+            );
+            const libghostty_static = try buildpkg.GhosttyLib.initStatic(
+                b,
+                &deps,
+            );
             libghostty_shared.installHeader(); // Only need one header
             libghostty_shared.install("libghostty.so");
             libghostty_static.install("libghostty.a");
+            break :none;
         }
-    }
 
-    // Run runs the Ghostty exe
-    {
-        const run_cmd = b.addRunArtifact(exe.exe);
-        if (b.args) |args| run_cmd.addArgs(args);
+        assert(config.target.result.os.tag.isDarwin());
+        if (!config.emit_xcframework) break :none;
 
-        // Set the proper resources dir so things like shell integration
-        // work correctly. If we're running `zig build run` in Ghostty,
-        // this also ensures it overwrites the release one with our debug
-        // build.
-        run_cmd.setEnvironmentVariable(
-            "GHOSTTY_RESOURCES_DIR",
-            b.getInstallPath(.prefix, "share/ghostty"),
+        // Build the xcframework
+        const xcframework = try buildpkg.GhosttyXCFramework.init(b, &deps);
+        xcframework.install();
+
+        // The xcframework build always installs resources because our
+        // macOS xcode project contains references to them.
+        resources.install();
+        i18n.install();
+
+        // If we aren't emitting docs we need to emit a placeholder so
+        // our macOS xcodeproject builds.
+        if (!config.emit_docs) {
+            var wf = b.addWriteFiles();
+            const path = "share/man/.placeholder";
+            const placeholder = wf.add(path, "emit-docs not true so no man pages");
+            b.getInstallStep().dependOn(&b.addInstallFile(placeholder, path).step);
+        }
+
+        // Build our macOS app
+        const app = try buildpkg.GhosttyXcodebuild.init(
+            b,
+            &config,
+            &xcframework,
         );
 
+        // Add a run command that opens our mac app.
         const run_step = b.step("run", "Run the app");
-        run_step.dependOn(&run_cmd.step);
+        run_step.dependOn(&app.open.step);
     }
 
     // Tests
