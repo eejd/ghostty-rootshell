@@ -13,7 +13,7 @@ const math = @import("../math.zig");
 const Surface = @import("../Surface.zig");
 const link = @import("link.zig");
 const cellpkg = @import("cell.zig");
-const fgMode = cellpkg.fgMode;
+const noMinContrast = cellpkg.noMinContrast;
 const constraintWidth = cellpkg.constraintWidth;
 const isCovering = cellpkg.isCovering;
 const imagepkg = @import("image.zig");
@@ -2933,9 +2933,8 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             );
 
             try self.cells.add(self.alloc, .underline, .{
-                .mode = .fg,
+                .atlas = .grayscale,
                 .grid_pos = .{ @intCast(x), @intCast(y) },
-                .constraint_width = 1,
                 .color = .{ color.r, color.g, color.b, alpha },
                 .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
                 .glyph_size = .{ render.glyph.width, render.glyph.height },
@@ -2965,9 +2964,8 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             );
 
             try self.cells.add(self.alloc, .overline, .{
-                .mode = .fg,
+                .atlas = .grayscale,
                 .grid_pos = .{ @intCast(x), @intCast(y) },
-                .constraint_width = 1,
                 .color = .{ color.r, color.g, color.b, alpha },
                 .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
                 .glyph_size = .{ render.glyph.width, render.glyph.height },
@@ -2997,9 +2995,8 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             );
 
             try self.cells.add(self.alloc, .strikethrough, .{
-                .mode = .fg,
+                .atlas = .grayscale,
                 .grid_pos = .{ @intCast(x), @intCast(y) },
-                .constraint_width = 1,
                 .color = .{ color.r, color.g, color.b, alpha },
                 .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
                 .glyph_size = .{ render.glyph.width, render.glyph.height },
@@ -3024,6 +3021,8 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             const rac = cell_pin.rowAndCell();
             const cell = rac.cell;
 
+            const cp = cell.codepoint();
+
             // Render
             const render = try self.font_grid.renderGlyph(
                 self.alloc,
@@ -3034,7 +3033,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     .thicken = self.config.font_thicken,
                     .thicken_strength = self.config.font_thicken_strength,
                     .cell_width = cell.gridWidth(),
-                    .constraint = getConstraint(cell.codepoint()),
+                    .constraint = getConstraint(cp),
                     .constraint_width = constraintWidth(cell_pin),
                 },
             );
@@ -3045,27 +3044,13 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 return;
             }
 
-            // We always use fg mode for sprite glyphs, since we know we never
-            // need to constrain them, and we don't have any color sprites.
-            //
-            // Otherwise we defer to `fgMode`.
-            const mode: shaderpkg.CellText.Mode =
-                if (render.glyph.sprite)
-                    .fg
-                else switch (fgMode(
-                    render.presentation,
-                    cell_pin,
-                )) {
-                    .normal => .fg,
-                    .color => .fg_color,
-                    .constrained => .fg_constrained,
-                    .powerline => .fg_powerline,
-                };
-
             try self.cells.add(self.alloc, .text, .{
-                .mode = mode,
+                .atlas = switch (render.presentation) {
+                    .emoji => .color,
+                    .text => .grayscale,
+                },
+                .bools = .{ .no_min_contrast = noMinContrast(cp) },
                 .grid_pos = .{ @intCast(x), @intCast(y) },
-                .constraint_width = cell.gridWidth(),
                 .color = .{ color.r, color.g, color.b, alpha },
                 .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
                 .glyph_size = .{ render.glyph.width, render.glyph.height },
@@ -3150,7 +3135,8 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             };
 
             self.cells.setCursor(.{
-                .mode = .cursor,
+                .atlas = .grayscale,
+                .bools = .{ .is_cursor_glyph = true },
                 .grid_pos = .{ x, screen.cursor.y },
                 .color = .{ cursor_color.r, cursor_color.g, cursor_color.b, alpha },
                 .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
@@ -3199,7 +3185,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
             // Add our text
             try self.cells.add(self.alloc, .text, .{
-                .mode = .fg,
+                .atlas = .grayscale,
                 .grid_pos = .{ @intCast(coord.x), @intCast(coord.y) },
                 .color = .{ fg.r, fg.g, fg.b, 255 },
                 .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
