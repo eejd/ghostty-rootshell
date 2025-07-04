@@ -9,6 +9,7 @@ const apprt = @import("../apprt.zig");
 const font = @import("../font/main.zig");
 const rendererpkg = @import("../renderer.zig");
 const Command = @import("../Command.zig");
+const XCFramework = @import("GhosttyXCFramework.zig");
 const WasmTarget = @import("../os/wasm/target.zig").Target;
 
 const gtk = @import("gtk.zig");
@@ -24,6 +25,7 @@ const app_version: std.SemanticVersion = .{ .major = 1, .minor = 1, .patch = 4 }
 /// Standard build configuration options.
 optimize: std.builtin.OptimizeMode,
 target: std.Build.ResolvedTarget,
+xcframework_target: XCFramework.Target = .universal,
 wasm_target: WasmTarget,
 
 /// Comptime interfaces
@@ -108,6 +110,14 @@ pub fn init(b: *std.Build) !Config {
         .wasm_target = wasm_target,
         .env = env,
     };
+
+    //---------------------------------------------------------------
+    // Target-specific properties
+    config.xcframework_target = b.option(
+        XCFramework.Target,
+        "xcframework-target",
+        "The target for the xcframework.",
+    ) orelse .universal;
 
     //---------------------------------------------------------------
     // Comptime Interfaces

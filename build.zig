@@ -98,7 +98,7 @@ pub fn build(b: *std.Build) !void {
         const xcframework = try buildpkg.GhosttyXCFramework.init(
             b,
             &deps,
-            .universal,
+            config.xcframework_target,
         );
         xcframework.install();
 
