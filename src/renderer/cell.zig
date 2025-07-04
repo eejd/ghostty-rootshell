@@ -309,7 +309,7 @@ test Contents {
     // Add some contents.
     const bg_cell: shaderpkg.CellBg = .{ 0, 0, 0, 1 };
     const fg_cell: shaderpkg.CellText = .{
-        .mode = .fg,
+        .atlas = .grayscale,
         .grid_pos = .{ 4, 1 },
         .color = .{ 0, 0, 0, 1 },
     };
@@ -330,7 +330,8 @@ test Contents {
 
     // Add a cursor.
     const cursor_cell: shaderpkg.CellText = .{
-        .mode = .cursor,
+        .atlas = .grayscale,
+        .bools = .{ .is_cursor_glyph = true },
         .grid_pos = .{ 2, 3 },
         .color = .{ 0, 0, 0, 1 },
     };
@@ -357,7 +358,7 @@ test "Contents clear retains other content" {
     // bg and fg cells in row 1
     const bg_cell_1: shaderpkg.CellBg = .{ 0, 0, 0, 1 };
     const fg_cell_1: shaderpkg.CellText = .{
-        .mode = .fg,
+        .atlas = .grayscale,
         .grid_pos = .{ 4, 1 },
         .color = .{ 0, 0, 0, 1 },
     };
@@ -366,7 +367,7 @@ test "Contents clear retains other content" {
     // bg and fg cells in row 2
     const bg_cell_2: shaderpkg.CellBg = .{ 0, 0, 0, 1 };
     const fg_cell_2: shaderpkg.CellText = .{
-        .mode = .fg,
+        .atlas = .grayscale,
         .grid_pos = .{ 4, 2 },
         .color = .{ 0, 0, 0, 1 },
     };
@@ -397,7 +398,7 @@ test "Contents clear last added content" {
     // bg and fg cells in row 1
     const bg_cell_1: shaderpkg.CellBg = .{ 0, 0, 0, 1 };
     const fg_cell_1: shaderpkg.CellText = .{
-        .mode = .fg,
+        .atlas = .grayscale,
         .grid_pos = .{ 4, 1 },
         .color = .{ 0, 0, 0, 1 },
     };
@@ -406,7 +407,7 @@ test "Contents clear last added content" {
     // bg and fg cells in row 2
     const bg_cell_2: shaderpkg.CellBg = .{ 0, 0, 0, 1 };
     const fg_cell_2: shaderpkg.CellText = .{
-        .mode = .fg,
+        .atlas = .grayscale,
         .grid_pos = .{ 4, 2 },
         .color = .{ 0, 0, 0, 1 },
     };
