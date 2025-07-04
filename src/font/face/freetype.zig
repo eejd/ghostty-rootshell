@@ -15,7 +15,6 @@ const Allocator = std.mem.Allocator;
 const font = @import("../main.zig");
 const Glyph = font.Glyph;
 const Library = font.Library;
-const convert = @import("freetype_convert.zig");
 const opentype = @import("../opentype.zig");
 const fastmem = @import("../../fastmem.zig");
 const quirks = @import("../../quirks.zig");
