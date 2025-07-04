@@ -141,12 +141,19 @@ pub const Contents = struct {
     }
 
     /// Set the cursor value. If the value is null then the cursor is hidden.
-    pub fn setCursor(self: *Contents, v: ?shaderpkg.CellText) void {
+    pub fn setCursor(self: *Contents, v: ?shaderpkg.CellText, cursor_style: ?renderer.CursorStyle) void {
         self.fg_rows.lists[0].clearRetainingCapacity();
         self.fg_rows.lists[self.size.rows + 1].clearRetainingCapacity();
 
         if (v) |cell| {
-            self.fg_rows.lists[0].appendAssumeCapacity(cell);
+            if (cursor_style) |style| {
+                switch (style) {
+                    // Block cursors should be drawn first
+                    .block => self.fg_rows.lists[0].appendAssumeCapacity(cell),
+                    // Other cursor styles should be drawn last
+                    .block_hollow, .bar, .underline, .lock => self.fg_rows.lists[self.size.rows + 1].appendAssumeCapacity(cell),
+                }
+            }
         }
     }
 
@@ -374,17 +381,17 @@ test Contents {
         }
     }
 
-    // Add a cursor.
+    // Add a block cursor.
     const cursor_cell: shaderpkg.CellText = .{
         .mode = .cursor,
         .grid_pos = .{ 2, 3 },
         .color = .{ 0, 0, 0, 1 },
     };
-    c.setCursor(cursor_cell);
+    c.setCursor(cursor_cell, .block);
     try testing.expectEqual(cursor_cell, c.fg_rows.lists[0].items[0]);
 
     // And remove it.
-    c.setCursor(null);
+    c.setCursor(null, null);
     try testing.expectEqual(0, c.fg_rows.lists[0].items.len);
 }
 
