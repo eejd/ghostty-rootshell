@@ -1582,9 +1582,9 @@ keybind: Keybinds = .{},
 /// the visible screen area. This means that if the menu bar is visible, the
 /// window will be placed below the menu bar.
 ///
-/// Note: this is only supported on macOS and Linux GLFW builds. The GTK
-/// runtime does not support setting the window position, as windows are
-/// only allowed position themselves in X11 and not Wayland.
+/// Note: this is only supported on macOS. The GTK runtime does not support
+/// setting the window position, as windows are only allowed position
+/// themselves in X11 and not Wayland.
 @"window-position-x": ?i16 = null,
 @"window-position-y": ?i16 = null,
 
@@ -2504,8 +2504,6 @@ keybind: Keybinds = .{},
 ///
 /// The values `left` or `right` enable this for the left or right *Option*
 /// key, respectively.
-///
-/// This does not work with GLFW builds.
 @"macos-option-as-alt": ?OptionAsAlt = null,
 
 /// Whether to enable the macOS window shadow. The default value is true.

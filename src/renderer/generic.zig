@@ -1,6 +1,5 @@
 const std = @import("std");
 const builtin = @import("builtin");
-const glfw = @import("glfw");
 const xev = @import("xev");
 const wuffs = @import("wuffs");
 const apprt = @import("../apprt.zig");
@@ -605,20 +604,6 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 self.arena.deinit();
             }
         };
-
-        /// Returns the hints that we want for this window.
-        pub fn glfwWindowHints(config: *const configpkg.Config) glfw.Window.Hints {
-            // If our graphics API provides hints, use them,
-            // otherwise fall back to generic hints.
-            if (@hasDecl(GraphicsAPI, "glfwWindowHints")) {
-                return GraphicsAPI.glfwWindowHints(config);
-            }
-
-            return .{
-                .client_api = .no_api,
-                .transparent_framebuffer = config.@"background-opacity" < 1,
-            };
-        }
 
         pub fn init(alloc: Allocator, options: renderer.Options) !Self {
             // Initialize our graphics API wrapper, this will prepare the

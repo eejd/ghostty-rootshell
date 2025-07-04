@@ -378,11 +378,6 @@ pub fn init(b: *std.Build) !Config {
             "glslang",
             "spirv-cross",
             "simdutf",
-
-            // This is default false because it is used for testing
-            // primarily and not official packaging. The packaging
-            // guide advises against building the GLFW backend.
-            "glfw3",
         }) |dep| {
             _ = b.systemIntegrationOption(dep, .{ .default = false });
         }
