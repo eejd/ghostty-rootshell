@@ -393,6 +393,10 @@ test Contents {
     // And remove it.
     c.setCursor(null, null);
     try testing.expectEqual(0, c.fg_rows.lists[0].items.len);
+
+    // Add a hollow cursor.
+    c.setCursor(cursor_cell, .block_hollow);
+    try testing.expectEqual(cursor_cell, c.fg_rows.lists[rows + 1].items[0]);
 }
 
 test "Contents clear retains other content" {
