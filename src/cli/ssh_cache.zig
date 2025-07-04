@@ -536,9 +536,9 @@ test "hostname validation - IPv6 addresses" {
     const testing = std.testing;
     try testing.expect(isValidHostname("[::1]"));
     try testing.expect(isValidHostname("[2001:db8::1]"));
-    try testing.expect(isValidHostname("[fe80::1%eth0]") == false); // Interface notation not supported
-    try testing.expect(isValidHostname("[]") == false); // Empty IPv6
-    try testing.expect(isValidHostname("[invalid]") == false); // No colons
+    try testing.expect(!isValidHostname("[fe80::1%eth0]")); // Interface notation not supported
+    try testing.expect(!isValidHostname("[]")); // Empty IPv6
+    try testing.expect(!isValidHostname("[invalid]")); // No colons
 }
 
 test "hostname validation - invalid cases" {
