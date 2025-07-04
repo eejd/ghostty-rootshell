@@ -110,7 +110,7 @@ quit_timer: union(enum) {
     expired: void,
 } = .{ .off = {} },
 
-pub fn init(core_app: *CoreApp, opts: Options) !App {
+pub fn init(self: *App, core_app: *CoreApp, opts: Options) !void {
     _ = opts;
 
     // Log our GTK version
@@ -373,6 +373,13 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         .{},
     );
 
+    // Setup a listener for SIGUSR2 to reload the configuration.
+    _ = glib.unixSignalAdd(
+        std.posix.SIG.USR2,
+        sigusr2,
+        self,
+    );
+
     // We don't use g_application_run, we want to manually control the
     // loop so we have to do the same things the run function does:
     // https://github.com/GNOME/glib/blob/a8e8b742e7926e33eb635a8edceac74cf239d6ed/gio/gapplication.c#L2533
@@ -405,11 +412,15 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
     // This just calls the `activate` signal but its part of the normal startup
     // routine so we just call it, but only if the config allows it (this allows
     // for launching Ghostty in the "background" without immediately opening
-    // a window)
+    // a window). An initial window will not be immediately created if we were
+    // launched by D-Bus activation or systemd.  D-Bus activation will send it's
+    // own `activate` or `new-window` signal later.
     //
     // https://gitlab.gnome.org/GNOME/glib/-/blob/bd2ccc2f69ecfd78ca3f34ab59e42e2b462bad65/gio/gapplication.c#L2302
-    if (config.@"initial-window")
-        gio_app.activate();
+    if (config.@"initial-window") switch (config.@"launched-from".?) {
+        .desktop, .cli => gio_app.activate(),
+        .dbus, .systemd => {},
+    };
 
     // Internally, GTK ensures that only one instance of this provider exists in the provider list
     // for the display.
@@ -420,7 +431,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 3,
     );
 
-    return .{
+    self.* = .{
         .core_app = core_app,
         .app = adw_app,
         .config = config,
@@ -1504,6 +1515,22 @@ pub fn quitNow(self: *App) void {
     self.running = false;
 }
 
+// SIGUSR2 signal handler via g_unix_signal_add
+fn sigusr2(ud: ?*anyopaque) callconv(.c) c_int {
+    const self: *App = @ptrCast(@alignCast(ud orelse
+        return @intFromBool(glib.SOURCE_CONTINUE)));
+
+    log.info("received SIGUSR2, reloading configuration", .{});
+    self.reloadConfig(.app, .{ .soft = false }) catch |err| {
+        log.err(
+            "error reloading configuration for SIGUSR2: {}",
+            .{err},
+        );
+    };
+
+    return @intFromBool(glib.SOURCE_CONTINUE);
+}
+
 /// This is called by the `activate` signal. This is sent on program startup and
 /// also when a secondary instance launches and requests a new window.
 fn gtkActivate(_: *adw.Application, core_app: *CoreApp) callconv(.c) void {
@@ -1683,6 +1710,17 @@ fn gtkActionShowGTKInspector(
     };
 }
 
+fn gtkActionNewWindow(
+    _: *gio.SimpleAction,
+    _: ?*glib.Variant,
+    self: *App,
+) callconv(.c) void {
+    log.info("received new window action", .{});
+    _ = self.core_app.mailbox.push(.{
+        .new_window = .{},
+    }, .{ .forever = {} });
+}
+
 /// This is called to setup the action map that this application supports.
 /// This should be called only once on startup.
 fn initActions(self: *App) void {
@@ -1702,7 +1740,9 @@ fn initActions(self: *App) void {
         .{ "reload-config", gtkActionReloadConfig, null },
         .{ "present-surface", gtkActionPresentSurface, t },
         .{ "show-gtk-inspector", gtkActionShowGTKInspector, null },
+        .{ "new-window", gtkActionNewWindow, null },
     };
+
     inline for (actions) |entry| {
         const action = gio.SimpleAction.new(entry[0], entry[2]);
         defer action.unref();

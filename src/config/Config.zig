@@ -46,14 +46,29 @@ const c = @cImport({
     @cInclude("unistd.h");
 });
 
-/// Renamed fields, used by cli.parse
-pub const renamed = std.StaticStringMap([]const u8).initComptime(&.{
+pub const compatibility = std.StaticStringMap(
+    cli.CompatibilityHandler(Config),
+).initComptime(&.{
     // Ghostty 1.1 introduced background-blur support for Linux which
     // doesn't support a specific radius value. The renaming is to let
     // one field be used for both platforms (macOS retained the ability
     // to set a radius).
-    .{ "background-blur-radius", "background-blur" },
-    .{ "adw-toolbar-style", "gtk-toolbar-style" },
+    .{ "background-blur-radius", cli.compatibilityRenamed(Config, "background-blur") },
+
+    // Ghostty 1.2 renamed all our adw options to gtk because we now have
+    // a hard dependency on libadwaita.
+    .{ "adw-toolbar-style", cli.compatibilityRenamed(Config, "gtk-toolbar-style") },
+
+    // Ghostty 1.2 removed the `hidden` value from `gtk-tabs-location` and
+    // moved it to `window-show-tab-bar`.
+    .{ "gtk-tabs-location", compatGtkTabsLocation },
+
+    // Ghostty 1.2 lets you set `cell-foreground` and `cell-background`
+    // to match the cell foreground and background colors, respectively.
+    // This can be used with `cursor-color` and `cursor-text` to recreate
+    // this behavior. This applies to selection too.
+    .{ "cursor-invert-fg-bg", compatCursorInvertFgBg },
+    .{ "selection-invert-fg-bg", compatSelectionInvertFgBg },
 });
 
 /// The font families to use.
@@ -261,6 +276,32 @@ pub const renamed = std.StaticStringMap([]const u8).initComptime(&.{
 ///
 /// This is currently only supported on macOS.
 @"font-thicken-strength": u8 = 255,
+
+/// Locations to break font shaping into multiple runs.
+///
+/// A "run" is a contiguous segment of text that is shaped together. "Shaping"
+/// is the process of converting text (codepoints) into glyphs (renderable
+/// characters). This is how ligatures are formed, among other things.
+/// For example, if a coding font turns "!=" into a single glyph, then it
+/// must see "!" and "=" next to each other in a single run. When a run
+/// is broken, the text is shaped separately. To continue our example, if
+/// "!" is at the end of one run and "=" is at the start of the next run,
+/// then the ligature will not be formed.
+///
+/// Ghostty breaks runs at certain points to improve readability or usability.
+/// For example, Ghostty by default will break runs under the cursor so that
+/// text editing can see the individual characters rather than a ligature.
+/// This configuration lets you configure this behavior.
+///
+/// Combine values with a comma to set multiple options. Prefix an
+/// option with "no-" to disable it. Enabling and disabling options
+/// can be done at the same time.
+///
+/// Available options:
+///
+///   * `cursor` - Break runs under the cursor.
+///
+@"font-shaping-break": FontShapingBreak = .{},
 
 /// What color space to use when performing alpha blending.
 ///
@@ -557,16 +598,11 @@ foreground: Color = .{ .r = 0xFF, .g = 0xFF, .b = 0xFF },
 /// the selection color is just the inverted window background and foreground
 /// (note: not to be confused with the cell bg/fg).
 /// Specified as either hex (`#RRGGBB` or `RRGGBB`) or a named X11 color.
-@"selection-foreground": ?Color = null,
-@"selection-background": ?Color = null,
-
-/// Swap the foreground and background colors of cells for selection. This
-/// option overrides the `selection-foreground` and `selection-background`
-/// options.
-///
-/// If you select across cells with differing foregrounds and backgrounds, the
-/// selection color will vary across the selection.
-@"selection-invert-fg-bg": bool = false,
+/// Since version 1.2.0, this can also be set to `cell-foreground` to match
+/// the cell foreground color, or `cell-background` to match the cell
+/// background color.
+@"selection-foreground": ?TerminalColor = null,
+@"selection-background": ?TerminalColor = null,
 
 /// Whether to clear selected text when typing. This defaults to `true`.
 /// This is typical behavior for most terminal emulators as well as
@@ -610,12 +646,20 @@ foreground: Color = .{ .r = 0xFF, .g = 0xFF, .b = 0xFF },
 palette: Palette = .{},
 
 /// The color of the cursor. If this is not set, a default will be chosen.
-/// Specified as either hex (`#RRGGBB` or `RRGGBB`) or a named X11 color.
-@"cursor-color": ?Color = null,
-
-/// Swap the foreground and background colors of the cell under the cursor. This
-/// option overrides the `cursor-color` and `cursor-text` options.
-@"cursor-invert-fg-bg": bool = false,
+///
+/// Direct colors can be specified as either hex (`#RRGGBB` or `RRGGBB`)
+/// or a named X11 color.
+///
+/// Additionally, special values can be used to set the color to match
+/// other colors at runtime:
+///
+///   * `cell-foreground` - Match the cell foreground color.
+///     (Available since version 1.2.0)
+///
+///   * `cell-background` - Match the cell background color.
+///     (Available since version 1.2.0)
+///
+@"cursor-color": ?TerminalColor = null,
 
 /// The opacity level (opposite of transparency) of the cursor. A value of 1
 /// is fully opaque and a value of 0 is fully transparent. A value less than 0
@@ -665,7 +709,10 @@ palette: Palette = .{},
 /// The color of the text under the cursor. If this is not set, a default will
 /// be chosen.
 /// Specified as either hex (`#RRGGBB` or `RRGGBB`) or a named X11 color.
-@"cursor-text": ?Color = null,
+/// Since version 1.2.0, this can also be set to `cell-foreground` to match
+/// the cell foreground color, or `cell-background` to match the cell
+/// background color.
+@"cursor-text": ?TerminalColor = null,
 
 /// Enables the ability to move the cursor at prompts by using `alt+click` on
 /// Linux and `option+click` on macOS.
@@ -1029,11 +1076,16 @@ title: ?[:0]const u8 = null,
 /// The setting that will change the application class value.
 ///
 /// This controls the class field of the `WM_CLASS` X11 property (when running
-/// under X11), and the Wayland application ID (when running under Wayland).
+/// under X11), the Wayland application ID (when running under Wayland), and the
+/// bus name that Ghostty uses to connect to DBus.
 ///
 /// Note that changing this value between invocations will create new, separate
 /// instances, of Ghostty when running with `gtk-single-instance=true`. See that
 /// option for more details.
+///
+/// Changing this value may break launching Ghostty from `.desktop` files, via
+/// DBus activation, or systemd user services as the system is expecting Ghostty
+/// to connect to DBus using the default `class` when it is launched.
 ///
 /// The class name must follow the requirements defined [in the GTK
 /// documentation](https://docs.gtk.org/gio/type_func.Application.id_is_valid.html).
@@ -1580,6 +1632,27 @@ keybind: Keybinds = .{},
 ///
 ///   * `end` - Insert the new tab at the end of the tab list.
 @"window-new-tab-position": WindowNewTabPosition = .current,
+
+/// Whether to show the tab bar.
+///
+/// Valid values:
+///
+///  - `always`
+///
+///    Always display the tab bar, even when there's only one tab.
+///
+///  - `auto` *(default)*
+///
+///    Automatically show and hide the tab bar. The tab bar is only
+///    shown when there are two or more tabs present.
+///
+///  - `never`
+///
+///    Never show the tab bar. Tabs are only accessible via the tab
+///    overview or by keybind actions.
+///
+/// Currently only supported on Linux (GTK).
+@"window-show-tab-bar": WindowShowTabBar = .auto,
 
 /// Background color for the window titlebar. This only takes effect if
 /// window-theme is set to ghostty. Currently only supported in the GTK app
@@ -2720,14 +2793,14 @@ else
 ///
 /// GTK CSS documentation can be found at the following links:
 ///
-///   * <https://docs.gtk.org/gtk4/css-overview.html> - An overview of GTK CSS.
-///   * <https://docs.gtk.org/gtk4/css-properties.html> - A comprehensive list
+///   * https://docs.gtk.org/gtk4/css-overview.html - An overview of GTK CSS.
+///   * https://docs.gtk.org/gtk4/css-properties.html - A comprehensive list
 ///     of supported CSS properties.
 ///
 /// Launch Ghostty with `env GTK_DEBUG=interactive ghostty` to tweak Ghostty's
 /// CSS in real time using the GTK Inspector. Errors in your CSS files would
 /// also be reported in the terminal you started Ghostty from. See
-/// <https://developer.gnome.org/documentation/tools/inspector.html> for more
+/// https://developer.gnome.org/documentation/tools/inspector.html for more
 /// information about the GTK Inspector.
 ///
 /// This configuration can be repeated multiple times to load multiple files.
@@ -3785,6 +3858,68 @@ pub fn parseManuallyHook(
     return true;
 }
 
+fn compatGtkTabsLocation(
+    self: *Config,
+    alloc: Allocator,
+    key: []const u8,
+    value: ?[]const u8,
+) bool {
+    _ = alloc;
+    assert(std.mem.eql(u8, key, "gtk-tabs-location"));
+
+    if (std.mem.eql(u8, value orelse "", "hidden")) {
+        self.@"window-show-tab-bar" = .never;
+        return true;
+    }
+
+    return false;
+}
+
+fn compatCursorInvertFgBg(
+    self: *Config,
+    alloc: Allocator,
+    key: []const u8,
+    value_: ?[]const u8,
+) bool {
+    _ = alloc;
+    assert(std.mem.eql(u8, key, "cursor-invert-fg-bg"));
+
+    // We don't do anything if the value is unset, which is technically
+    // not EXACTLY the same as prior behavior since it would fallback
+    // to doing whatever cursor-color/cursor-text were set to, but
+    // I don't want to store what that is separately so this is close
+    // enough.
+    //
+    // Realistically, these fields were mutually exclusive so anyone
+    // relying on that behavior should just upgrade to the new
+    // cursor-color/cursor-text fields.
+    const set = cli.args.parseBool(value_ orelse "t") catch return false;
+    if (set) {
+        self.@"cursor-color" = .@"cell-foreground";
+        self.@"cursor-text" = .@"cell-background";
+    }
+
+    return true;
+}
+
+fn compatSelectionInvertFgBg(
+    self: *Config,
+    alloc: Allocator,
+    key: []const u8,
+    value_: ?[]const u8,
+) bool {
+    _ = alloc;
+    assert(std.mem.eql(u8, key, "selection-invert-fg-bg"));
+
+    const set = cli.args.parseBool(value_ orelse "t") catch return false;
+    if (set) {
+        self.@"selection-foreground" = .@"cell-background";
+        self.@"selection-background" = .@"cell-foreground";
+    }
+
+    return true;
+}
+
 /// Create a shallow copy of this config. This will share all the memory
 /// allocated with the previous config but will have a new arena for
 /// any changes or new allocations. The config should have `deinit`
@@ -4344,6 +4479,65 @@ pub const Color = struct {
             Color{ .r = 0, .g = 0, .b = 0 },
             try Color.parseCLI("  black "),
         );
+    }
+};
+
+/// Represents color values that can also reference special color
+/// values such as "cell-foreground" or "cell-background".
+pub const TerminalColor = union(enum) {
+    color: Color,
+    @"cell-foreground",
+    @"cell-background",
+
+    pub fn parseCLI(input_: ?[]const u8) !TerminalColor {
+        const input = input_ orelse return error.ValueRequired;
+        if (std.mem.eql(u8, input, "cell-foreground")) return .@"cell-foreground";
+        if (std.mem.eql(u8, input, "cell-background")) return .@"cell-background";
+        return .{ .color = try Color.parseCLI(input) };
+    }
+
+    /// Used by Formatter
+    pub fn formatEntry(self: TerminalColor, formatter: anytype) !void {
+        switch (self) {
+            .color => try self.color.formatEntry(formatter),
+
+            .@"cell-foreground",
+            .@"cell-background",
+            => try formatter.formatEntry([:0]const u8, @tagName(self)),
+        }
+    }
+
+    test "parseCLI" {
+        const testing = std.testing;
+
+        try testing.expectEqual(
+            TerminalColor{ .color = Color{ .r = 78, .g = 42, .b = 132 } },
+            try TerminalColor.parseCLI("#4e2a84"),
+        );
+        try testing.expectEqual(
+            TerminalColor{ .color = Color{ .r = 0, .g = 0, .b = 0 } },
+            try TerminalColor.parseCLI("black"),
+        );
+        try testing.expectEqual(
+            TerminalColor.@"cell-foreground",
+            try TerminalColor.parseCLI("cell-foreground"),
+        );
+        try testing.expectEqual(
+            TerminalColor.@"cell-background",
+            try TerminalColor.parseCLI("cell-background"),
+        );
+
+        try testing.expectError(error.InvalidValue, TerminalColor.parseCLI("a"));
+    }
+
+    test "formatConfig" {
+        const testing = std.testing;
+        var buf = std.ArrayList(u8).init(testing.allocator);
+        defer buf.deinit();
+
+        var sc: TerminalColor = .@"cell-foreground";
+        try sc.formatEntry(formatterpkg.entryFormatter("a", buf.writer()));
+        try testing.expectEqualSlices(u8, "a = cell-foreground\n", buf.items);
     }
 };
 
@@ -4998,6 +5192,12 @@ pub const Keybinds = struct {
 
         try self.set.put(
             alloc,
+            .{ .key = .{ .unicode = 'j' }, .mods = .{ .shift = true, .ctrl = true, .super = true } },
+            .{ .write_screen_file = .copy },
+        );
+
+        try self.set.put(
+            alloc,
             .{ .key = .{ .unicode = 'j' }, .mods = inputpkg.ctrlOrSuper(.{ .shift = true }) },
             .{ .write_screen_file = .paste },
         );
@@ -5274,7 +5474,14 @@ pub const Keybinds = struct {
                         .mods = mods,
                     },
                     .{ .goto_tab = (i - start) + 1 },
-                    .{ .performable = true },
+                    .{
+                        // On macOS we keep this not performable so that the
+                        // keyboard shortcuts in tabs work. In the future the
+                        // correct fix is to fix the reverse mapping lookup
+                        // to allow us to lookup performable keybinds
+                        // conditionally.
+                        .performable = !builtin.target.os.tag.isDarwin(),
+                    },
                 );
             }
             try self.set.putFlags(
@@ -5284,7 +5491,10 @@ pub const Keybinds = struct {
                     .mods = mods,
                 },
                 .{ .last_tab = {} },
-                .{ .performable = true },
+                .{
+                    // See comment above with the numeric goto_tab
+                    .performable = !builtin.target.os.tag.isDarwin(),
+                },
             );
         }
 
@@ -6172,6 +6382,11 @@ pub const FontSyntheticStyle = packed struct {
     @"bold-italic": bool = true,
 };
 
+/// See "font-shaping-break" for documentation
+pub const FontShapingBreak = packed struct {
+    cursor: bool = true,
+};
+
 /// See "link" for documentation.
 pub const RepeatableLink = struct {
     const Self = @This();
@@ -6492,7 +6707,6 @@ pub const GtkSingleInstance = enum {
 pub const GtkTabsLocation = enum {
     top,
     bottom,
-    hidden,
 };
 
 /// See gtk-toolbar-style
@@ -6541,6 +6755,13 @@ pub const WindowSaveState = enum {
 pub const WindowNewTabPosition = enum {
     current,
     end,
+};
+
+/// See window-show-tab-bar
+pub const WindowShowTabBar = enum {
+    always,
+    auto,
+    never,
 };
 
 /// See resize-overlay
@@ -7963,5 +8184,53 @@ test "theme specifying light/dark sets theme usage in conditional state" {
 
         try testing.expect(cfg.@"window-theme" == .system);
         try testing.expect(cfg._conditional_set.contains(.theme));
+    }
+}
+
+test "compatibility: removed cursor-invert-fg-bg" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    {
+        var cfg = try Config.default(alloc);
+        defer cfg.deinit();
+        var it: TestIterator = .{ .data = &.{
+            "--cursor-invert-fg-bg",
+        } };
+        try cfg.loadIter(alloc, &it);
+        try cfg.finalize();
+
+        try testing.expectEqual(
+            TerminalColor.@"cell-foreground",
+            cfg.@"cursor-color",
+        );
+        try testing.expectEqual(
+            TerminalColor.@"cell-background",
+            cfg.@"cursor-text",
+        );
+    }
+}
+
+test "compatibility: removed selection-invert-fg-bg" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    {
+        var cfg = try Config.default(alloc);
+        defer cfg.deinit();
+        var it: TestIterator = .{ .data = &.{
+            "--selection-invert-fg-bg",
+        } };
+        try cfg.loadIter(alloc, &it);
+        try cfg.finalize();
+
+        try testing.expectEqual(
+            TerminalColor.@"cell-background",
+            cfg.@"selection-foreground",
+        );
+        try testing.expectEqual(
+            TerminalColor.@"cell-foreground",
+            cfg.@"selection-background",
+        );
     }
 }

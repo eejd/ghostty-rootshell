@@ -405,12 +405,11 @@ pub fn add(
     })) |dep| {
         step.root_module.addImport("xev", dep.module("xev"));
     }
-    if (b.lazyDependency("z2d", .{})) |dep| {
-        step.root_module.addImport("z2d", b.addModule("z2d", .{
-            .root_source_file = dep.path("src/z2d.zig"),
-            .target = target,
-            .optimize = optimize,
-        }));
+    if (b.lazyDependency("z2d", .{
+        .target = target,
+        .optimize = optimize,
+    })) |dep| {
+        step.root_module.addImport("z2d", dep.module("z2d"));
     }
     if (b.lazyDependency("ziglyph", .{
         .target = target,
@@ -652,14 +651,13 @@ fn addGTK(
             // IMPORTANT: gtk4-layer-shell must be linked BEFORE
             // wayland-client, as it relies on shimming libwayland's APIs.
             if (b.systemIntegrationOption("gtk4-layer-shell", .{})) {
-                step.linkSystemLibrary2(
-                    "gtk4-layer-shell-0",
-                    dynamic_link_opts,
-                );
+                step.linkSystemLibrary2("gtk4-layer-shell-0", dynamic_link_opts);
             } else {
                 // gtk4-layer-shell *must* be dynamically linked,
                 // so we don't add it as a static library
-                step.linkLibrary(gtk4_layer_shell.artifact("gtk4-layer-shell"));
+                const shared_lib = gtk4_layer_shell.artifact("gtk4-layer-shell");
+                b.installArtifact(shared_lib);
+                step.linkLibrary(shared_lib);
             }
         }
 

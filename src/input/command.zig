@@ -205,6 +205,11 @@ fn actionCommands(action: Action.Key) []const Command {
 
         .write_screen_file => comptime &.{
             .{
+                .action = .{ .write_screen_file = .copy },
+                .title = "Copy Screen to Temporary File and Copy Path",
+                .description = "Copy the screen contents to a temporary file and copy the path to the clipboard.",
+            },
+            .{
                 .action = .{ .write_screen_file = .paste },
                 .title = "Copy Screen to Temporary File and Paste Path",
                 .description = "Copy the screen contents to a temporary file and paste the path to the file.",
@@ -217,6 +222,11 @@ fn actionCommands(action: Action.Key) []const Command {
         },
 
         .write_selection_file => comptime &.{
+            .{
+                .action = .{ .write_selection_file = .copy },
+                .title = "Copy Selection to Temporary File and Copy Path",
+                .description = "Copy the selection contents to a temporary file and copy the path to the clipboard.",
+            },
             .{
                 .action = .{ .write_selection_file = .paste },
                 .title = "Copy Selection to Temporary File and Paste Path",
