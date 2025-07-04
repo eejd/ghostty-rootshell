@@ -287,7 +287,6 @@ pub fn renderGlyph(
         };
     }
 
-
     // Render into the atlas
     const glyph = self.resolver.renderGlyph(
         alloc,
@@ -348,7 +347,8 @@ const GlyphKey = struct {
             cell_width: u2,
             thicken: bool,
             thicken_strength: u8,
-            _padding: u5 = 0,
+            constraint_width: u2,
+            _padding: u3 = 0,
         },
 
         inline fn from(key: GlyphKey) Packed {
@@ -359,6 +359,7 @@ const GlyphKey = struct {
                     .cell_width = key.opts.cell_width orelse 0,
                     .thicken = key.opts.thicken,
                     .thicken_strength = key.opts.thicken_strength,
+                    .constraint_width = key.opts.constraint_width,
                 },
             };
         }
