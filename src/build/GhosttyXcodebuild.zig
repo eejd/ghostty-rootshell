@@ -1,6 +1,7 @@
 const Ghostty = @This();
 
 const std = @import("std");
+const builtin = @import("builtin");
 const RunStep = std.Build.Step.Run;
 const Config = @import("Config.zig");
 const XCFramework = @import("GhosttyXCFramework.zig");
@@ -39,6 +40,23 @@ pub fn init(
             "-configuration",
             xc_config,
         });
+
+        switch (xcframework.target) {
+            // Universal is our default target, so we don't have to
+            // add anything.
+            .universal => {},
+
+            // Native we need to override the architecture in the Xcode
+            // project with the -arch flag.
+            .native => build.addArgs(&.{
+                "-arch",
+                switch (builtin.cpu.arch) {
+                    .aarch64 => "arm64",
+                    .x86_64 => "x86_64",
+                    else => @panic("unsupported macOS arch"),
+                },
+            }),
+        }
 
         // We need the xcframework
         build.step.dependOn(xcframework.xcframework.step);

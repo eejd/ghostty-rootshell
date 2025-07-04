@@ -95,7 +95,11 @@ pub fn build(b: *std.Build) !void {
         if (!config.emit_xcframework) break :none;
 
         // Build the xcframework
-        const xcframework = try buildpkg.GhosttyXCFramework.init(b, &deps);
+        const xcframework = try buildpkg.GhosttyXCFramework.init(
+            b,
+            &deps,
+            .universal,
+        );
         xcframework.install();
 
         // The xcframework build always installs resources because our
@@ -113,15 +117,23 @@ pub fn build(b: *std.Build) !void {
         }
 
         // Build our macOS app
-        const app = try buildpkg.GhosttyXcodebuild.init(
-            b,
-            &config,
-            &xcframework,
-        );
+        {
+            const xcframework_native = try buildpkg.GhosttyXCFramework.init(
+                b,
+                &deps,
+                .native,
+            );
 
-        // Add a run command that opens our mac app.
-        const run_step = b.step("run", "Run the app");
-        run_step.dependOn(&app.open.step);
+            const app = try buildpkg.GhosttyXcodebuild.init(
+                b,
+                &config,
+                &xcframework_native,
+            );
+
+            // Add a run command that opens our mac app.
+            const run_step = b.step("run", "Run the app");
+            run_step.dependOn(&app.open.step);
+        }
     }
 
     // Tests
