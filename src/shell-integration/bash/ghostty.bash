@@ -270,7 +270,6 @@ _ghostty_last_reported_cwd=""
 function __ghostty_precmd() {
     local ret="$?"
     if test "$_ghostty_executing" != "0"; then
-      _GHOSTTY_SAVE_PS0="$PS0"
       _GHOSTTY_SAVE_PS1="$PS1"
       _GHOSTTY_SAVE_PS2="$PS2"
 
@@ -287,8 +286,8 @@ function __ghostty_precmd() {
 
       # Cursor
       if [[ "$GHOSTTY_SHELL_FEATURES" == *"cursor"* ]]; then
-        PS1=$PS1'\[\e[5 q\]'
-        PS0=$PS0'\[\e[0 q\]'
+        PS1=$PS1'\[\e[5 q\]'      # blinking bar for input
+        builtin printf "\e[0 q"   # reset to default cursor
       fi
 
       # Title (working directory)
@@ -318,7 +317,6 @@ function __ghostty_precmd() {
 function __ghostty_preexec() {
     builtin local cmd="$1"
 
-    PS0="$_GHOSTTY_SAVE_PS0"
     PS1="$_GHOSTTY_SAVE_PS1"
     PS2="$_GHOSTTY_SAVE_PS2"
 
