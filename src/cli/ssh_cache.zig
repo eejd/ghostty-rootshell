@@ -12,7 +12,6 @@ pub const CacheError = error{
 
 const MAX_CACHE_SIZE = 512 * 1024; // 512KB - sufficient for approximately 10k entries
 const NEVER_EXPIRE = 0;
-const SECONDS_PER_DAY = 86400;
 
 pub const Options = struct {
     clear: bool = false,
@@ -65,7 +64,7 @@ const CacheEntry = struct {
     fn isExpired(self: CacheEntry, expire_days: u32) bool {
         if (expire_days == NEVER_EXPIRE) return false;
         const now = std.time.timestamp();
-        const age_days = @divTrunc(now - self.timestamp, SECONDS_PER_DAY);
+        const age_days = @divTrunc(now - self.timestamp, std.time.s_per_day);
         return age_days > expire_days;
     }
 };
@@ -377,7 +376,7 @@ fn listHosts(alloc: Allocator, writer: anytype) !void {
     const now = std.time.timestamp();
 
     for (items.items) |entry| {
-        const age_days = @divTrunc(now - entry.timestamp, SECONDS_PER_DAY);
+        const age_days = @divTrunc(now - entry.timestamp, std.time.s_per_day);
         if (age_days == 0) {
             try writer.print("  {s} (today)\n", .{entry.hostname});
         } else if (age_days == 1) {
@@ -623,14 +622,14 @@ test "cache entry expiration" {
 
     const fresh_entry = CacheEntry{
         .hostname = "test.com",
-        .timestamp = now - SECONDS_PER_DAY, // 1 day old
+        .timestamp = now - std.time.s_per_day, // 1 day old
         .terminfo_version = "xterm-ghostty",
     };
     try testing.expect(!fresh_entry.isExpired(90));
 
     const old_entry = CacheEntry{
         .hostname = "old.com",
-        .timestamp = now - (SECONDS_PER_DAY * 100), // 100 days old
+        .timestamp = now - (std.time.s_per_day * 100), // 100 days old
         .terminfo_version = "xterm-ghostty",
     };
     try testing.expect(old_entry.isExpired(90));
@@ -646,7 +645,7 @@ test "cache entry expiration - boundary cases" {
     // Exactly at expiration boundary
     const boundary_entry = CacheEntry{
         .hostname = "boundary.com",
-        .timestamp = now - (SECONDS_PER_DAY * 30), // Exactly 30 days old
+        .timestamp = now - (std.time.s_per_day * 30), // Exactly 30 days old
         .terminfo_version = "xterm-ghostty",
     };
     try testing.expect(!boundary_entry.isExpired(30)); // Should not be expired
@@ -738,17 +737,3 @@ test "duplicate cache entries - memory management" {
     try testing.expectEqual(@as(i64, 1640995300), entry.timestamp);
     try testing.expectEqualStrings("xterm-ghostty-v2", entry.terminfo_version);
 }
-
-test "concurrent access simulation - file locking" {
-    const testing = std.testing;
-
-    // This test simulates the file locking mechanism
-    // In practice, this would require actual file operations
-    // but we can test the error handling logic
-
-    const TestError = error{CacheLocked};
-
-    const result = TestError.CacheLocked;
-    try testing.expectError(TestError.CacheLocked, result);
-}
-
