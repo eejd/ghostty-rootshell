@@ -210,11 +210,11 @@ in
       };
     }
     {
-      name = "N-V-__8AAI9HTABr_zPUAKuMp_GR5p_z-kjPIX_e3EtLjOqI";
+      name = "N-V-__8AAMVLTABmYkLqhZPLXnMl-KyN38R8UVYqGrxqO26s";
       path = fetchZigArtifact {
         name = "nerd_fonts_symbols_only";
-        url = "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.4.0/NerdFontsSymbolsOnly.tar.xz";
-        hash = "sha256-f4wJDaOw6qcQhka/NMu7btE9U1inJGBSIQiwbH7NcWo=";
+        url = "https://deps.files.ghostty.org/NerdFontsSymbolsOnly-3.4.0.tar.gz";
+        hash = "sha256-EWTRuVbUveJI17LwmYxDzJT1ICQxoVZKeTiVsec7DQQ=";
       };
     }
     {

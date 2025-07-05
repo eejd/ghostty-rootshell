@@ -79,10 +79,10 @@
     "url": "https://deps.files.ghostty.org/libxml2-2.11.5.tar.gz",
     "hash": "sha256-bCgFni4+60K1tLFkieORamNGwQladP7jvGXNxdiaYhU="
   },
-  "N-V-__8AAI9HTABr_zPUAKuMp_GR5p_z-kjPIX_e3EtLjOqI": {
+  "N-V-__8AAMVLTABmYkLqhZPLXnMl-KyN38R8UVYqGrxqO26s": {
     "name": "nerd_fonts_symbols_only",
-    "url": "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.4.0/NerdFontsSymbolsOnly.tar.xz",
-    "hash": "sha256-f4wJDaOw6qcQhka/NMu7btE9U1inJGBSIQiwbH7NcWo="
+    "url": "https://deps.files.ghostty.org/NerdFontsSymbolsOnly-3.4.0.tar.gz",
+    "hash": "sha256-EWTRuVbUveJI17LwmYxDzJT1ICQxoVZKeTiVsec7DQQ="
   },
   "N-V-__8AAHjwMQDBXnLq3Q2QhaivE0kE2aD138vtX2Bq1g7c": {
     "name": "oniguruma",
