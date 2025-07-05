@@ -4,16 +4,26 @@ const std = @import("std");
 const builtin = @import("builtin");
 const RunStep = std.Build.Step.Run;
 const Config = @import("Config.zig");
+const Docs = @import("GhosttyDocs.zig");
+const I18n = @import("GhosttyI18n.zig");
+const Resources = @import("GhosttyResources.zig");
 const XCFramework = @import("GhosttyXCFramework.zig");
 
 build: *std.Build.Step.Run,
 open: *std.Build.Step.Run,
 copy: *std.Build.Step.Run,
 
+pub const Deps = struct {
+    xcframework: *const XCFramework,
+    docs: *const Docs,
+    i18n: *const I18n,
+    resources: *const Resources,
+};
+
 pub fn init(
     b: *std.Build,
     config: *const Config,
-    xcframework: *const XCFramework,
+    deps: Deps,
 ) !Ghostty {
     const xc_config = switch (config.optimize) {
         .Debug => "Debug",
@@ -44,7 +54,7 @@ pub fn init(
             xc_config,
         });
 
-        switch (xcframework.target) {
+        switch (deps.xcframework.target) {
             // Universal is our default target, so we don't have to
             // add anything.
             .universal => {},
@@ -62,7 +72,13 @@ pub fn init(
         }
 
         // We need the xcframework
-        build.step.dependOn(xcframework.xcframework.step);
+        deps.xcframework.addStepDependencies(&build.step);
+
+        // We also need all these resources because the xcode project
+        // references them via symlinks.
+        deps.resources.addStepDependencies(&build.step);
+        deps.i18n.addStepDependencies(&build.step);
+        deps.docs.installDummy(&build.step);
 
         // Expect success
         build.expectExitCode(0);

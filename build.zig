@@ -104,7 +104,12 @@ pub fn build(b: *std.Build) !void {
         const macos_app = try buildpkg.GhosttyXcodebuild.init(
             b,
             &config,
-            &xcframework,
+            .{
+                .xcframework = &xcframework,
+                .docs = &docs,
+                .i18n = &i18n,
+                .resources = &resources,
+            },
         );
         if (config.emit_macos_app) {
             macos_app.install();
@@ -144,14 +149,13 @@ pub fn build(b: *std.Build) !void {
             const macos_app_native_only = try buildpkg.GhosttyXcodebuild.init(
                 b,
                 &config,
-                &xcframework_native,
+                .{
+                    .xcframework = &xcframework_native,
+                    .docs = &docs,
+                    .i18n = &i18n,
+                    .resources = &resources,
+                },
             );
-
-            // The app depends on the resources and i18n to be in the
-            // install directory too.
-            resources.addStepDependencies(&macos_app_native_only.build.step);
-            i18n.addStepDependencies(&macos_app_native_only.build.step);
-            docs.installDummy(&macos_app_native_only.build.step);
 
             const run_step = b.step("run", "Run the app");
             run_step.dependOn(&macos_app_native_only.open.step);

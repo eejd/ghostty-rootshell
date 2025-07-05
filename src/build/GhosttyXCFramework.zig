@@ -90,5 +90,12 @@ pub fn init(
 
 pub fn install(self: *const GhosttyXCFramework) void {
     const b = self.xcframework.step.owner;
-    b.getInstallStep().dependOn(self.xcframework.step);
+    self.addStepDependencies(b.getInstallStep());
+}
+
+pub fn addStepDependencies(
+    self: *const GhosttyXCFramework,
+    other_step: *std.Build.Step,
+) void {
+    other_step.dependOn(self.xcframework.step);
 }
