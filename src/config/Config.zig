@@ -432,13 +432,16 @@ pub const compatibility = std.StaticStringMap(
 ///
 /// Available flags:
 ///
-///   * `hinting` - Enable or disable hinting, enabled by default.
-///   * `force-autohint` - Use the freetype auto-hinter rather than the
-///     font's native hinter. Enabled by default.
-///   * `monochrome` - Instructs renderer to use 1-bit monochrome
-///     rendering. This option doesn't impact the hinter.
-///     Enabled by default.
-///   * `autohint` - Use the freetype auto-hinter. Enabled by default.
+///   * `hinting` - Enable or disable hinting. Enabled by default.
+///
+///   * `force-autohint` - Always use the freetype auto-hinter instead of
+///     the font's native hinter. Enabled by default.
+///
+///   * `monochrome` - Instructs renderer to use 1-bit monochrome rendering.
+///     This will disable anti-aliasing, and probably not look very good unless
+///     you're using a pixel font. Disabled by default.
+///
+///   * `autohint` - Enable the freetype auto-hinter. Enabled by default.
 ///
 /// Example: `hinting`, `no-hinting`, `force-autohint`, `no-force-autohint`
 @"freetype-load-flags": FreetypeLoadFlags = .{},
@@ -7082,7 +7085,7 @@ pub const FreetypeLoadFlags = packed struct {
     // to these defaults.
     hinting: bool = true,
     @"force-autohint": bool = true,
-    monochrome: bool = true,
+    monochrome: bool = false,
     autohint: bool = true,
 };
 

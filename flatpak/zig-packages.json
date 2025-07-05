@@ -67,6 +67,12 @@
   },
   {
     "type": "archive",
+    "url": "https://deps.files.ghostty.org/JetBrainsMono-2.304.tar.gz",
+    "dest": "vendor/p/N-V-__8AAIC5lwAVPJJzxnCAahSvZTIlG-HhtOvnM1uh-66x",
+    "sha256": "c57a691e8b82ad098b5963f3959032e4038f391087af7715885ba59046105cc4"
+  },
+  {
+    "type": "archive",
     "url": "https://deps.files.ghostty.org/libpng-1220aa013f0c83da3fb64ea6d327f9173fa008d10e28bc9349eac3463457723b1c66.tar.gz",
     "dest": "vendor/p/N-V-__8AAJrvXQCqAT8Mg9o_tk6m0yf5Fz-gCNEOKLyTSerD",
     "sha256": "fecc95b46cf05e8e3fc8a414750e0ba5aad00d89e9fdf175e94ff041caf1a03a"
@@ -82,6 +88,12 @@
     "url": "https://deps.files.ghostty.org/libxml2-2.11.5.tar.gz",
     "dest": "vendor/p/N-V-__8AAG3RoQEyRC2Vw7Qoro5SYBf62IHn3HjqtNVY6aWK",
     "sha256": "6c28059e2e3eeb42b5b4b16489e3916a6346c1095a74fee3bc65cdc5d89a6215"
+  },
+  {
+    "type": "archive",
+    "url": "https://deps.files.ghostty.org/NerdFontsSymbolsOnly-3.4.0.tar.gz",
+    "dest": "vendor/p/N-V-__8AAMVLTABmYkLqhZPLXnMl-KyN38R8UVYqGrxqO26s",
+    "sha256": "1164d1b956d4bde248d7b2f0998c43cc94f5202431a1564a793895b1e73b0d04"
   },
   {
     "type": "archive",
