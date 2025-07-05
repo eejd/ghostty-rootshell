@@ -515,17 +515,6 @@ pub fn add(
 
         switch (self.config.app_runtime) {
             .none => {},
-
-            .glfw => if (b.lazyDependency("glfw", .{
-                .target = target,
-                .optimize = optimize,
-            })) |glfw_dep| {
-                step.root_module.addImport(
-                    "glfw",
-                    glfw_dep.module("glfw"),
-                );
-            },
-
             .gtk => try self.addGTK(step),
         }
     }
