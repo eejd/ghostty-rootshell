@@ -178,11 +178,11 @@ in
       };
     }
     {
-      name = "N-V-__8AAGnElwD7frqELjgfXcwExs4UZuMDQQA_iXEe4Fsm";
+      name = "N-V-__8AAIC5lwAVPJJzxnCAahSvZTIlG-HhtOvnM1uh-66x";
       path = fetchZigArtifact {
         name = "jetbrains_mono";
         url = "https://deps.files.ghostty.org/JetBrainsMono-2.304.tar.gz";
-        hash = "sha256-C9T2ZxmKKzRIafWQzSzj5FOoKglc8cAQ2+vhTiWg3Qs=";
+        hash = "sha256-xXppHouCrQmLWWPzlZAy5AOPORCHr3cViFulkEYQXMQ=";
       };
     }
     {

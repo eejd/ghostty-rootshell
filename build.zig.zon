@@ -103,7 +103,7 @@
         // Fonts
         .jetbrains_mono = .{
             .url = "https://deps.files.ghostty.org/JetBrainsMono-2.304.tar.gz",
-            .hash = "N-V-__8AAGnElwD7frqELjgfXcwExs4UZuMDQQA_iXEe4Fsm",
+            .hash = "N-V-__8AAIC5lwAVPJJzxnCAahSvZTIlG-HhtOvnM1uh-66x",
         },
         .nerd_fonts_symbols_only = .{
             .url = "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.4.0/NerdFontsSymbolsOnly.tar.xz",
