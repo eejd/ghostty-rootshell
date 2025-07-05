@@ -73,9 +73,9 @@
   },
   {
     "type": "archive",
-    "url": "https://github.com/JetBrains/JetBrainsMono/releases/download/v2.304/JetBrainsMono-2.304.zip",
-    "dest": "vendor/p/N-V-__8AADWVlwASf7XCdCqpjVW5Jv_7oogANJ_H4_dIoEp6",
-    "sha256": "6f6376c6ed2960ea8a963cd7387ec9d76e3f629125bc33d1fdcd7eb7012f7bbf"
+    "url": "https://deps.files.ghostty.org/JetBrainsMono-2.304.tar.gz",
+    "dest": "vendor/p/N-V-__8AAGnElwD7frqELjgfXcwExs4UZuMDQQA_iXEe4Fsm",
+    "sha256": "0bd4f667198a2b344869f590cd2ce3e453a82a095cf1c010dbebe14e25a0dd0b"
   },
   {
     "type": "archive",

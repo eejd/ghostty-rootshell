@@ -178,11 +178,11 @@ in
       };
     }
     {
-      name = "N-V-__8AADWVlwASf7XCdCqpjVW5Jv_7oogANJ_H4_dIoEp6";
+      name = "N-V-__8AAGnElwD7frqELjgfXcwExs4UZuMDQQA_iXEe4Fsm";
       path = fetchZigArtifact {
         name = "jetbrains_mono";
-        url = "https://github.com/JetBrains/JetBrainsMono/releases/download/v2.304/JetBrainsMono-2.304.zip";
-        hash = "sha256-b2N2xu0pYOqKljzXOH7J124/YpElvDPR/c1+twEve78=";
+        url = "https://deps.files.ghostty.org/JetBrainsMono-2.304.tar.gz";
+        hash = "sha256-C9T2ZxmKKzRIafWQzSzj5FOoKglc8cAQ2+vhTiWg3Qs=";
       };
     }
     {

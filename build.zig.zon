@@ -102,8 +102,8 @@
 
         // Fonts
         .jetbrains_mono = .{
-            .url = "https://github.com/JetBrains/JetBrainsMono/releases/download/v2.304/JetBrainsMono-2.304.zip",
-            .hash = "N-V-__8AADWVlwASf7XCdCqpjVW5Jv_7oogANJ_H4_dIoEp6",
+            .url = "https://deps.files.ghostty.org/JetBrainsMono-2.304.tar.gz",
+            .hash = "N-V-__8AAGnElwD7frqELjgfXcwExs4UZuMDQQA_iXEe4Fsm",
         },
         .nerd_fonts_symbols_only = .{
             .url = "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.4.0/NerdFontsSymbolsOnly.tar.xz",
