@@ -236,7 +236,7 @@ pub const App = struct {
         var surface = try self.core_app.alloc.create(Surface);
         errdefer self.core_app.alloc.destroy(surface);
 
-        // Create the surface -- because windows are surfaces for glfw.
+        // Create the surface
         try surface.init(self, opts);
         errdefer surface.deinit();
 

@@ -432,13 +432,16 @@ pub const compatibility = std.StaticStringMap(
 ///
 /// Available flags:
 ///
-///   * `hinting` - Enable or disable hinting, enabled by default.
-///   * `force-autohint` - Use the freetype auto-hinter rather than the
-///     font's native hinter. Enabled by default.
-///   * `monochrome` - Instructs renderer to use 1-bit monochrome
-///     rendering. This option doesn't impact the hinter.
-///     Enabled by default.
-///   * `autohint` - Use the freetype auto-hinter. Enabled by default.
+///   * `hinting` - Enable or disable hinting. Enabled by default.
+///
+///   * `force-autohint` - Always use the freetype auto-hinter instead of
+///     the font's native hinter. Enabled by default.
+///
+///   * `monochrome` - Instructs renderer to use 1-bit monochrome rendering.
+///     This will disable anti-aliasing, and probably not look very good unless
+///     you're using a pixel font. Disabled by default.
+///
+///   * `autohint` - Enable the freetype auto-hinter. Enabled by default.
 ///
 /// Example: `hinting`, `no-hinting`, `force-autohint`, `no-force-autohint`
 @"freetype-load-flags": FreetypeLoadFlags = .{},
@@ -1582,9 +1585,9 @@ keybind: Keybinds = .{},
 /// the visible screen area. This means that if the menu bar is visible, the
 /// window will be placed below the menu bar.
 ///
-/// Note: this is only supported on macOS and Linux GLFW builds. The GTK
-/// runtime does not support setting the window position, as windows are
-/// only allowed position themselves in X11 and not Wayland.
+/// Note: this is only supported on macOS. The GTK runtime does not support
+/// setting the window position, as windows are only allowed position
+/// themselves in X11 and not Wayland.
 @"window-position-x": ?i16 = null,
 @"window-position-y": ?i16 = null,
 
@@ -2523,8 +2526,6 @@ keybind: Keybinds = .{},
 ///
 /// The values `left` or `right` enable this for the left or right *Option*
 /// key, respectively.
-///
-/// This does not work with GLFW builds.
 @"macos-option-as-alt": ?OptionAsAlt = null,
 
 /// Whether to enable the macOS window shadow. The default value is true.
@@ -7105,7 +7106,7 @@ pub const FreetypeLoadFlags = packed struct {
     // to these defaults.
     hinting: bool = true,
     @"force-autohint": bool = true,
-    monochrome: bool = true,
+    monochrome: bool = false,
     autohint: bool = true,
 };
 
