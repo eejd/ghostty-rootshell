@@ -29,15 +29,7 @@ pub fn build(b: *std.Build) !void {
         // If we aren't emitting docs we need to emit a placeholder so
         // our macOS xcodeproject builds since it expects the `share/man`
         // directory to exist to copy into the app bundle.
-        var wf = b.addWriteFiles();
-        const path = "share/man/.placeholder";
-        b.getInstallStep().dependOn(&b.addInstallFile(
-            wf.add(
-                path,
-                "emit-docs not true so no man pages",
-            ),
-            path,
-        ).step);
+        docs.installDummy(b.getInstallStep());
     }
 
     // Ghostty webdata
@@ -154,6 +146,12 @@ pub fn build(b: *std.Build) !void {
                 &config,
                 &xcframework_native,
             );
+
+            // The app depends on the resources and i18n to be in the
+            // install directory too.
+            resources.addStepDependencies(&macos_app_native_only.build.step);
+            i18n.addStepDependencies(&macos_app_native_only.build.step);
+            docs.installDummy(&macos_app_native_only.build.step);
 
             const run_step = b.step("run", "Run the app");
             run_step.dependOn(&macos_app_native_only.open.step);

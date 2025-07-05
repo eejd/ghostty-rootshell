@@ -6,8 +6,9 @@ const RunStep = std.Build.Step.Run;
 const Config = @import("Config.zig");
 const XCFramework = @import("GhosttyXCFramework.zig");
 
-xcodebuild: *std.Build.Step.Run,
+build: *std.Build.Step.Run,
 open: *std.Build.Step.Run,
+copy: *std.Build.Step.Run,
 
 pub fn init(
     b: *std.Build,
@@ -21,6 +22,8 @@ pub fn init(
         .ReleaseFast,
         => "Release",
     };
+
+    const app_path = b.fmt("macos/build/{s}/Ghostty.app", .{xc_config});
 
     // Our step to build the Ghostty macOS app.
     const build = build: {
@@ -74,13 +77,11 @@ pub fn init(
     const open = open: {
         const open = RunStep.create(b, "run Ghostty app");
         open.has_side_effects = true;
-        open.cwd = b.path("macos");
-        open.addArgs(&.{
-            b.fmt(
-                "build/{s}/Ghostty.app/Contents/MacOS/ghostty",
-                .{xc_config},
-            ),
-        });
+        open.cwd = b.path("");
+        open.addArgs(&.{b.fmt(
+            "{s}/Contents/MacOS/ghostty",
+            .{app_path},
+        )});
 
         // Open depends on the app
         open.step.dependOn(&build.step);
@@ -105,13 +106,31 @@ pub fn init(
         break :open open;
     };
 
+    // Our step to copy the app bundle to the install path.
+    // We have to use `cp -R` because there are symlinks in the
+    // bundle.
+    const copy = copy: {
+        const step = RunStep.create(b, "copy app bundle");
+        step.addArgs(&.{ "cp", "-R" });
+        step.addFileArg(b.path(app_path));
+        step.addArg(b.fmt("{s}", .{b.install_path}));
+        step.step.dependOn(&build.step);
+        break :copy step;
+    };
+
     return .{
-        .xcodebuild = build,
+        .build = build,
         .open = open,
+        .copy = copy,
     };
 }
 
 pub fn install(self: *const Ghostty) void {
-    const b = self.xcodebuild.step.owner;
-    b.getInstallStep().dependOn(&self.xcodebuild.step);
+    const b = self.copy.step.owner;
+    b.getInstallStep().dependOn(&self.copy.step);
+}
+
+pub fn installXcframework(self: *const Ghostty) void {
+    const b = self.build.step.owner;
+    b.getInstallStep().dependOn(&self.build.step);
 }
