@@ -67,9 +67,6 @@ pub fn init(
         // Expect success
         build.expectExitCode(0);
 
-        // Capture stdout/stderr so we don't pollute our zig build
-        // _ = build.captureStdOut();
-        // _ = build.captureStdErr();
         break :build build;
     };
 
