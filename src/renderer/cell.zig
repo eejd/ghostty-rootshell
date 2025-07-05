@@ -145,15 +145,14 @@ pub const Contents = struct {
         self.fg_rows.lists[0].clearRetainingCapacity();
         self.fg_rows.lists[self.size.rows + 1].clearRetainingCapacity();
 
-        if (v) |cell| {
-            if (cursor_style) |style| {
-                switch (style) {
-                    // Block cursors should be drawn first
-                    .block => self.fg_rows.lists[0].appendAssumeCapacity(cell),
-                    // Other cursor styles should be drawn last
-                    .block_hollow, .bar, .underline, .lock => self.fg_rows.lists[self.size.rows + 1].appendAssumeCapacity(cell),
-                }
-            }
+        const cell = v orelse return;
+        const style = cursor_style orelse return;
+
+        switch (style) {
+            // Block cursors should be drawn first
+            .block => self.fg_rows.lists[0].appendAssumeCapacity(cell),
+            // Other cursor styles should be drawn last
+            .block_hollow, .bar, .underline, .lock => self.fg_rows.lists[self.size.rows + 1].appendAssumeCapacity(cell),
         }
     }
 
