@@ -50,14 +50,15 @@ patch_rpath: ?[]const u8 = null,
 
 /// Artifacts
 flatpak: bool = false,
-emit_test_exe: bool = false,
 emit_bench: bool = false,
-emit_helpgen: bool = false,
 emit_docs: bool = false,
-emit_webdata: bool = false,
-emit_xcframework: bool = false,
+emit_helpgen: bool = false,
+emit_macos_app: bool = false,
 emit_terminfo: bool = false,
 emit_termcap: bool = false,
+emit_test_exe: bool = false,
+emit_xcframework: bool = false,
+emit_webdata: bool = false,
 
 /// Environmental properties
 env: std.process.EnvMap,
@@ -349,6 +350,12 @@ pub fn init(b: *std.Build) !Config {
         (!config.emit_bench and
             !config.emit_test_exe and
             !config.emit_helpgen);
+
+    config.emit_macos_app = b.option(
+        bool,
+        "emit-macos-app",
+        "Build and install the macOS app bundle.",
+    ) orelse config.emit_xcframework;
 
     //---------------------------------------------------------------
     // System Packages

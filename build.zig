@@ -23,7 +23,22 @@ pub fn build(b: *std.Build) !void {
 
     // Ghostty docs
     const docs = try buildpkg.GhosttyDocs.init(b, &deps);
-    if (config.emit_docs) docs.install();
+    if (config.emit_docs) {
+        docs.install();
+    } else if (config.target.result.os.tag.isDarwin()) {
+        // If we aren't emitting docs we need to emit a placeholder so
+        // our macOS xcodeproject builds since it expects the `share/man`
+        // directory to exist to copy into the app bundle.
+        var wf = b.addWriteFiles();
+        const path = "share/man/.placeholder";
+        b.getInstallStep().dependOn(&b.addInstallFile(
+            wf.add(
+                path,
+                "emit-docs not true so no man pages",
+            ),
+            path,
+        ).step);
+    }
 
     // Ghostty webdata
     const webdata = try buildpkg.GhosttyWebdata.init(b, &deps);
@@ -43,15 +58,70 @@ pub fn build(b: *std.Build) !void {
         check_step.dependOn(dist.install_step);
     }
 
-    // If we're not building libghostty, then install the exe and resources.
+    // libghostty
+    const libghostty_shared = try buildpkg.GhosttyLib.initShared(
+        b,
+        &deps,
+    );
+    const libghostty_static = try buildpkg.GhosttyLib.initStatic(
+        b,
+        &deps,
+    );
+
+    // Runtime "none" is libghostty, anything else is an executable.
     if (config.app_runtime != .none) {
         exe.install();
         resources.install();
         i18n.install();
+    } else {
+        // Libghostty
+        //
+        // Note: libghostty is not stable for general purpose use. It is used
+        // heavily by Ghostty on macOS but it isn't built to be reusable yet.
+        // As such, these build steps are lacking. For example, the Darwin
+        // build only produces an xcframework.
 
-        // Run runs the Ghostty exe. We only do this if we are building
-        // an apprt.
-        {
+        // We shouldn't have this guard but we don't currently
+        // build on macOS this way ironically so we need to fix that.
+        if (!config.target.result.os.tag.isDarwin()) {
+            libghostty_shared.installHeader(); // Only need one header
+            libghostty_shared.install("libghostty.so");
+            libghostty_static.install("libghostty.a");
+        }
+    }
+
+    // macOS only artifacts. These will error if they're initialized for
+    // other targets.
+    if (config.target.result.os.tag.isDarwin()) {
+        // Ghostty xcframework
+        const xcframework = try buildpkg.GhosttyXCFramework.init(
+            b,
+            &deps,
+            config.xcframework_target,
+        );
+        if (config.emit_xcframework) {
+            xcframework.install();
+
+            // The xcframework build always installs resources because our
+            // macOS xcode project contains references to them.
+            resources.install();
+            i18n.install();
+        }
+
+        // Ghostty macOS app
+        const macos_app = try buildpkg.GhosttyXcodebuild.init(
+            b,
+            &config,
+            &xcframework,
+        );
+        if (config.emit_macos_app) {
+            macos_app.install();
+        }
+    }
+
+    // Run step
+    run: {
+        if (config.app_runtime != .none) {
             const run_cmd = b.addRunArtifact(exe.exe);
             if (b.args) |args| run_cmd.addArgs(args);
 
@@ -66,73 +136,27 @@ pub fn build(b: *std.Build) !void {
 
             const run_step = b.step("run", "Run the app");
             run_step.dependOn(&run_cmd.step);
-        }
-    }
-
-    // Libghostty
-    //
-    // Note: libghostty is not stable for general purpose use. It is used
-    // heavily by Ghostty on macOS but it isn't built to be reusable yet.
-    // As such, these build steps are lacking. For example, the Darwin
-    // build only produces an xcframework.
-    if (config.app_runtime == .none) none: {
-        if (!config.target.result.os.tag.isDarwin()) {
-            const libghostty_shared = try buildpkg.GhosttyLib.initShared(
-                b,
-                &deps,
-            );
-            const libghostty_static = try buildpkg.GhosttyLib.initStatic(
-                b,
-                &deps,
-            );
-            libghostty_shared.installHeader(); // Only need one header
-            libghostty_shared.install("libghostty.so");
-            libghostty_static.install("libghostty.a");
-            break :none;
+            break :run;
         }
 
-        assert(config.target.result.os.tag.isDarwin());
-        if (!config.emit_xcframework) break :none;
+        assert(config.app_runtime == .none);
 
-        // Build the xcframework
-        const xcframework = try buildpkg.GhosttyXCFramework.init(
-            b,
-            &deps,
-            config.xcframework_target,
-        );
-        xcframework.install();
-
-        // The xcframework build always installs resources because our
-        // macOS xcode project contains references to them.
-        resources.install();
-        i18n.install();
-
-        // If we aren't emitting docs we need to emit a placeholder so
-        // our macOS xcodeproject builds.
-        if (!config.emit_docs) {
-            var wf = b.addWriteFiles();
-            const path = "share/man/.placeholder";
-            const placeholder = wf.add(path, "emit-docs not true so no man pages");
-            b.getInstallStep().dependOn(&b.addInstallFile(placeholder, path).step);
-        }
-
-        // Build our macOS app
-        {
+        // On macOS we can run the macOS app. For "run" we always force
+        // a native-only build so that we can run as quickly as possible.
+        if (config.target.result.os.tag.isDarwin()) {
             const xcframework_native = try buildpkg.GhosttyXCFramework.init(
                 b,
                 &deps,
                 .native,
             );
-
-            const app = try buildpkg.GhosttyXcodebuild.init(
+            const macos_app_native_only = try buildpkg.GhosttyXcodebuild.init(
                 b,
                 &config,
                 &xcframework_native,
             );
 
-            // Add a run command that opens our mac app.
             const run_step = b.step("run", "Run the app");
-            run_step.dependOn(&app.open.step);
+            run_step.dependOn(&macos_app_native_only.open.step);
         }
     }
 
