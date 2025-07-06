@@ -281,6 +281,10 @@ pub const Action = union(enum) {
     /// If there is a URL under the cursor, copy it to the default clipboard.
     copy_url_to_clipboard,
 
+    /// Copy the terminal title to the clipboard. If the terminal title is not
+    /// set or is empty this has no effect.
+    copy_title_to_clipboard,
+
     /// Increase the font size by the specified amount in points (pt).
     ///
     /// For example, `increase_font_size:1.5` will increase the font size
@@ -1005,6 +1009,7 @@ pub const Action = union(enum) {
             .reset,
             .copy_to_clipboard,
             .copy_url_to_clipboard,
+            .copy_title_to_clipboard,
             .paste_from_clipboard,
             .paste_from_selection,
             .increase_font_size,
