@@ -757,6 +757,20 @@ pub const Face = struct {
             break :cell_width max;
         };
 
+        // Measure "水" (CJK water ideograph, U+6C34) for our ic width.
+        const ic_width: ?f64 = ic_width: {
+            const glyph = self.glyphIndex('水') orelse break :ic_width null;
+
+            var advances: [1]macos.graphics.Size = undefined;
+            _ = ct_font.getAdvancesForGlyphs(
+                .horizontal,
+                &.{@intCast(glyph)},
+                &advances,
+            );
+
+            break :ic_width advances[0].width;
+        };
+
         return .{
             .cell_width = cell_width,
             .ascent = ascent,
@@ -768,6 +782,7 @@ pub const Face = struct {
             .strikethrough_thickness = strikethrough_thickness,
             .cap_height = cap_height,
             .ex_height = ex_height,
+            .ic_width = ic_width,
         };
     }
 

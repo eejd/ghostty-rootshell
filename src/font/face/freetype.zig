@@ -851,7 +851,7 @@ pub const Face = struct {
             while (c < 127) : (c += 1) {
                 if (face.getCharIndex(c)) |glyph_index| {
                     if (face.loadGlyph(glyph_index, .{
-                        .render = true,
+                        .render = false,
                         .no_svg = true,
                     })) {
                         max = @max(
@@ -889,7 +889,7 @@ pub const Face = struct {
                     defer self.ft_mutex.unlock();
                     if (face.getCharIndex('H')) |glyph_index| {
                         if (face.loadGlyph(glyph_index, .{
-                            .render = true,
+                            .render = false,
                             .no_svg = true,
                         })) {
                             break :cap f26dot6ToF64(face.handle.*.glyph.*.metrics.height);
@@ -902,7 +902,7 @@ pub const Face = struct {
                     defer self.ft_mutex.unlock();
                     if (face.getCharIndex('x')) |glyph_index| {
                         if (face.loadGlyph(glyph_index, .{
-                            .render = true,
+                            .render = false,
                             .no_svg = true,
                         })) {
                             break :ex f26dot6ToF64(face.handle.*.glyph.*.metrics.height);
@@ -911,6 +911,21 @@ pub const Face = struct {
                     break :ex null;
                 },
             };
+        };
+
+        // Measure "水" (CJK water ideograph, U+6C34) for our ic width.
+        const ic_width: ?f64 = ic_width: {
+            self.ft_mutex.lock();
+            defer self.ft_mutex.unlock();
+
+            const glyph = face.getCharIndex('水') orelse break :ic_width null;
+
+            face.loadGlyph(glyph, .{
+                .render = false,
+                .no_svg = true,
+            }) catch break :ic_width null;
+
+            break :ic_width f26dot6ToF64(face.handle.*.glyph.*.advance.x);
         };
 
         return .{
@@ -928,6 +943,7 @@ pub const Face = struct {
 
             .cap_height = cap_height,
             .ex_height = ex_height,
+            .ic_width = ic_width,
         };
     }
 
