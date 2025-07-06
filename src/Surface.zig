@@ -3724,11 +3724,7 @@ fn processLinks(self: *Surface, pos: apprt.CursorPos) !bool {
                 .trim = false,
             });
             defer self.alloc.free(str);
-            _ = try self.rt_app.performAction(
-                .{ .surface = self },
-                .open_url,
-                .{ .kind = .unknown, .url = str },
-            );
+            try self.openUrl(.{ .kind = .unknown, .url = str });
         },
 
         ._open_osc8 => {
@@ -3736,15 +3732,33 @@ fn processLinks(self: *Surface, pos: apprt.CursorPos) !bool {
                 log.warn("failed to get URI for OSC8 hyperlink", .{});
                 return false;
             };
-            _ = try self.rt_app.performAction(
-                .{ .surface = self },
-                .open_url,
-                .{ .kind = .unknown, .url = uri },
-            );
+            try self.openUrl(.{ .kind = .unknown, .url = uri });
         },
     }
 
     return true;
+}
+
+fn openUrl(
+    self: *Surface,
+    action: apprt.action.OpenUrl,
+) !void {
+    // If the apprt handles it then we're done.
+    if (try self.rt_app.performAction(
+        .{ .surface = self },
+        .open_url,
+        action,
+    )) return;
+
+    // apprt didn't handle it, fallback to our simple cross-platform
+    // URL opener. We log a warning because we want well-behaved
+    // apprts to handle this themselves.
+    log.warn("apprt did not handle open URL action, falling back to default opener", .{});
+    try internal_os.open(
+        self.alloc,
+        action.kind,
+        action.url,
+    );
 }
 
 /// Return the URI for an OSC8 hyperlink at the given position or null
@@ -4965,13 +4979,7 @@ fn writeScreenFile(
             defer self.alloc.free(pathZ);
             try self.rt_surface.setClipboardString(pathZ, .standard, false);
         },
-        .open => {
-            _ = try self.rt_app.performAction(
-                .{ .surface = self },
-                .open_url,
-                .{ .kind = .text, .url = path },
-            );
-        },
+        .open => try self.openUrl(.{ .kind = .text, .url = path }),
         .paste => self.io.queueMessage(try termio.Message.writeReq(
             self.alloc,
             path,

@@ -625,28 +625,35 @@ pub const ConfigChange = struct {
     }
 };
 
-/// The type of the data at the URL to open. This is used as a hint to
-/// potentially open the URL in a different way.
-/// Sync with: ghostty_action_open_url_kind_s
-pub const OpenUrlKind = enum(c_int) {
-    text,
-    unknown,
-};
-
 /// Open a URL
 pub const OpenUrl = struct {
     /// The type of data that the URL refers to.
-    kind: OpenUrlKind,
+    kind: Kind,
+
     /// The URL.
     url: []const u8,
 
+    /// The type of the data at the URL to open. This is used as a hint to
+    /// potentially open the URL in a different way.
+    ///
+    /// Sync with: ghostty_action_open_url_kind_e
+    pub const Kind = enum(c_int) {
+        /// The type is unknown. This is the default and apprts should
+        /// open the URL in the most generic way possible. For example,
+        /// on macOS this would be the equivalent of `open` or on Linux
+        /// this would be `xdg-open`.
+        unknown,
+
+        /// The URL is known to be a text file. In this case, the apprt
+        /// should try to open the URL in a text editor or viewer or
+        /// some equivalent, if possible.
+        text,
+    };
+
     // Sync with: ghostty_action_open_url_s
     pub const C = extern struct {
-        /// The type of data that the URL refers to.
-        kind: OpenUrlKind,
-        /// The URL (not zero terminated).
+        kind: Kind,
         url: [*]const u8,
-        /// The number of bytes in the URL.
         len: usize,
     };
 

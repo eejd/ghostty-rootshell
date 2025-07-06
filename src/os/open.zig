@@ -1,9 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
-
 const apprt = @import("../apprt.zig");
-const CircBuf = @import("../datastruct/circ_buf.zig").CircBuf;
 
 const log = std.log.scoped(.@"os-open");
 
@@ -12,41 +10,16 @@ const log = std.log.scoped(.@"os-open");
 /// Any output on stderr is logged as a warning in the application logs.
 /// Output on stdout is ignored. The allocator is used to buffer the
 /// log output and may allocate from another thread.
+///
+/// This function is purposely simple for the sake of providing
+/// some portable way to open URLs. If you are implementing an
+/// apprt for Ghostty, you should consider doing something special-cased
+/// for your platform.
 pub fn open(
     alloc: Allocator,
-    kind: apprt.action.OpenUrlKind,
+    kind: apprt.action.OpenUrl.Kind,
     url: []const u8,
 ) !void {
-    // Make a copy of the URL so that we can use it in the thread without
-    // worrying about it getting freed by other threads.
-    const copy = try alloc.dupe(u8, url);
-    errdefer alloc.free(copy);
-
-    // Run in a thread so that it never blocks the main thread, no matter how
-    // long it takes to execute.
-    const thread = try std.Thread.spawn(.{}, _openThread, .{ alloc, kind, copy });
-
-    // Don't worry about the thread any more.
-    thread.detach();
-}
-
-fn _openThread(
-    alloc: Allocator,
-    kind: apprt.action.OpenUrlKind,
-    url: []const u8,
-) void {
-    _openThreadError(alloc, kind, url) catch |err| {
-        log.warn("error while opening url: {}", .{err});
-    };
-}
-
-fn _openThreadError(
-    alloc: Allocator,
-    kind: apprt.action.OpenUrlKind,
-    url: []const u8,
-) !void {
-    defer alloc.free(url);
-
     var exe: std.process.Child = switch (builtin.os.tag) {
         .linux, .freebsd => .init(
             &.{ "xdg-open", url },
@@ -70,95 +43,43 @@ fn _openThreadError(
         else => @compileError("unsupported OS"),
     };
 
-    // Ignore stdin & stdout, collect the output from stderr.
+    // Pipe stdout/stderr so we can collect output from the command.
     // This must be set before spawning the process.
-    exe.stdin_behavior = .Ignore;
-    exe.stdout_behavior = .Ignore;
+    exe.stdout_behavior = .Pipe;
     exe.stderr_behavior = .Pipe;
 
-    exe.spawn() catch |err| {
-        switch (err) {
-            error.FileNotFound => {
-                log.warn("Unable to find {s}. Please install {s} and ensure that it is available on the PATH.", .{
-                    exe.argv[0],
-                    exe.argv[0],
-                });
-            },
-            else => |e| return e,
-        }
-        return;
-    };
+    // Spawn the process on our same thread so we can detect failure
+    // quickly.
+    try exe.spawn();
 
-    const stderr = exe.stderr orelse {
-        log.warn("Unable to access the stderr of the spawned program!", .{});
-        return;
-    };
+    // Create a thread that handles collecting output and reaping
+    // the process. This is done in a separate thread because SOME
+    // open implementations block and some do not. It's easier to just
+    // spawn a thread to handle this so that we never block.
+    const thread = try std.Thread.spawn(.{}, openThread, .{ alloc, exe });
+    thread.detach();
+}
 
-    var cb = try CircBuf(u8, 0).init(alloc, 50 * 1024);
-    defer cb.deinit(alloc);
+fn openThread(alloc: Allocator, exe_: std.process.Child) !void {
+    // 50 KiB is the default value used by std.process.Child.run and should
+    // be enough to get the output we care about.
+    const output_max_size = 50 * 1024;
 
-    // Read any error output and store it in a circular buffer so that we
-    // get that _last_ 50K of output.
-    while (true) {
-        var buf: [1024]u8 = undefined;
-        const len = try stderr.read(&buf);
-        if (len == 0) break;
-        try cb.appendSlice(buf[0..len]);
+    var stdout: std.ArrayListUnmanaged(u8) = .{};
+    var stderr: std.ArrayListUnmanaged(u8) = .{};
+    defer {
+        stdout.deinit(alloc);
+        stderr.deinit(alloc);
     }
 
-    // If we have any stderr output we log it. This makes it easier for users to
-    // debug why some open commands may not work as expected.
-    if (cb.len() > 0) log: {
-        {
-            var it = cb.iterator(.forward);
-            while (it.next()) |char| {
-                if (std.mem.indexOfScalar(u8, &std.ascii.whitespace, char.*)) |_| continue;
-                break;
-            }
-            // it's all whitespace, don't log
-            break :log;
-        }
-        var buf = std.ArrayList(u8).init(alloc);
-        defer buf.deinit();
-        var it = cb.iterator(.forward);
-        while (it.next()) |char| {
-            if (char.* == '\n') {
-                log.err("{s} stderr: {s}", .{ exe.argv[0], buf.items });
-                buf.clearRetainingCapacity();
-            }
-            try buf.append(char.*);
-        }
-        if (buf.items.len > 0)
-            log.err("{s} stderr: {s}", .{buf.items});
-    }
+    // Copy the exe so it is non-const. This is necessary because wait()
+    // requires a mutable reference and we can't have one as a thread
+    // param.
+    var exe = exe_;
+    try exe.collectOutput(alloc, &stdout, &stderr, output_max_size);
+    _ = try exe.wait();
 
-    const rc = exe.wait() catch |err| {
-        switch (err) {
-            error.FileNotFound => {
-                log.warn("Unable to find {s}. Please install {s} and ensure that it is available on the PATH.", .{
-                    exe.argv[0],
-                    exe.argv[0],
-                });
-            },
-            else => |e| return e,
-        }
-        return;
-    };
-
-    switch (rc) {
-        .Exited => |code| {
-            if (code != 0) {
-                log.warn("{s} exited with error code {d}", .{ exe.argv[0], code });
-            }
-        },
-        .Signal => |signal| {
-            log.warn("{s} was terminaled with signal {}", .{ exe.argv[0], signal });
-        },
-        .Stopped => |signal| {
-            log.warn("{s} was stopped with signal {}", .{ exe.argv[0], signal });
-        },
-        .Unknown => |code| {
-            log.warn("{s} had an unknown error {}", .{ exe.argv[0], code });
-        },
-    }
+    // If we have any stderr output we log it. This makes it easier for
+    // users to debug why some open commands may not work as expected.
+    if (stderr.items.len > 0) log.warn("wait stderr={s}", .{stderr.items});
 }

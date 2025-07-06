@@ -664,8 +664,8 @@ typedef struct {
 
 // apprt.action.OpenUrlKind
 typedef enum {
-  GHOSTTY_ACTION_OPEN_URL_KIND_TEXT,
   GHOSTTY_ACTION_OPEN_URL_KIND_UNKNOWN,
+  GHOSTTY_ACTION_OPEN_URL_KIND_TEXT,
 } ghostty_action_open_url_kind_e;
 
 // apprt.action.OpenUrl.C

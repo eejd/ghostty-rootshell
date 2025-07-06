@@ -1759,12 +1759,18 @@ fn initActions(self: *App) void {
     }
 }
 
-// TODO: use https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.OpenURI.html
 pub fn openUrl(
     app: *App,
     value: apprt.action.OpenUrl,
 ) void {
-    internal_os.open(app.core_app.alloc, value.kind, value.url) catch |err| {
-        log.warn("unable to open url: {}", .{err});
-    };
+    // TODO: use https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.OpenURI.html
+
+    // Fallback to the minimal cross-platform way of opening a URL.
+    // This is always a safe fallback and enables for example Windows
+    // to open URLs (GTK on Windows via WSL is a thing).
+    internal_os.open(
+        app.core_app.alloc,
+        value.kind,
+        value.url,
+    ) catch |err| log.warn("unable to open url: {}", .{err});
 }
