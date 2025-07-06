@@ -521,6 +521,7 @@ pub fn performAction(
         .ring_bell => try self.ringBell(target),
         .toggle_command_palette => try self.toggleCommandPalette(target),
         .open_url => self.openUrl(value),
+        .show_child_exited => try self.showChildExited(target, value),
 
         // Unimplemented
         .close_all_windows,
@@ -843,6 +844,13 @@ fn toggleCommandPalette(_: *App, target: apprt.Target) !void {
 
             window.toggleCommandPalette();
         },
+    }
+}
+
+fn showChildExited(_: *App, target: apprt.Target, value: apprt.surface.Message.ChildExited) !void {
+    switch (target) {
+        .app => {},
+        .surface => |surface| try surface.rt_surface.showChildExited(value),
     }
 }
 

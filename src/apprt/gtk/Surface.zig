@@ -2503,3 +2503,20 @@ fn gtkStreamError(media_file: *gtk.MediaFile, _: *gobject.ParamSpec, _: ?*anyopa
 fn gtkStreamEnded(media_file: *gtk.MediaFile, _: *gobject.ParamSpec, _: ?*anyopaque) callconv(.c) void {
     media_file.unref();
 }
+
+pub fn showChildExited(self: *Surface, _: apprt.surface.Message.ChildExited) (error{})!void {
+    if (!adw_version.supportsBanner()) return;
+
+    const warning_box = gtk.Box.new(.vertical, 0);
+
+    warning_box.as(gtk.Widget).setHalign(.fill);
+    warning_box.as(gtk.Widget).setValign(.end);
+
+    const warning_text = i18n._("⚠️ Process exited. Press any key to close the terminal.");
+    const banner = adw.Banner.new(warning_text);
+    banner.setRevealed(1);
+
+    warning_box.append(banner.as(gtk.Widget));
+
+    self.overlay.addOverlay(warning_box.as(gtk.Widget));
+}

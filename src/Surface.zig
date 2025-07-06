@@ -1018,6 +1018,14 @@ fn childExited(self: *Surface, info: apprt.surface.Message.ChildExited) void {
             return;
         };
 
+        _ = self.rt_app.performAction(
+            .{ .surface = self },
+            .show_child_exited,
+            info,
+        ) catch |err| {
+            log.err("error trying to show native child exited GUI err={}", .{err});
+        };
+
         return;
     }
 
@@ -1043,6 +1051,14 @@ fn childExited(self: *Surface, info: apprt.surface.Message.ChildExited) void {
         t.modes.set(.disable_keyboard, false);
         t.screen.kitty_keyboard.set(.set, .{});
     }
+
+    _ = self.rt_app.performAction(
+        .{ .surface = self },
+        .show_child_exited,
+        info,
+    ) catch |err| {
+        log.err("error trying to show native child exited GUI err={}", .{err});
+    };
 
     // Waiting after command we stop here. The terminal is updated, our
     // state is updated, and now its up to the user to decide what to do.
