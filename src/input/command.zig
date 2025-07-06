@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const Action = @import("Binding.zig").Action;
@@ -460,6 +461,7 @@ fn actionCommands(action: Action.Key) []const Command {
         .esc,
         .text,
         .cursor_key,
+        .set_font_size,
         .scroll_page_fractional,
         .scroll_page_lines,
         .adjust_selection,
