@@ -283,7 +283,7 @@ pub const Action = union(enum) {
 
     /// Copy the terminal title to the clipboard. If the terminal title is not
     /// set this has no effect.
-    copy_title,
+    copy_title_to_clipboard,
 
     /// Increase the font size by the specified amount in points (pt).
     ///
@@ -1009,7 +1009,7 @@ pub const Action = union(enum) {
             .reset,
             .copy_to_clipboard,
             .copy_url_to_clipboard,
-            .copy_title,
+            .copy_title_to_clipboard,
             .paste_from_clipboard,
             .paste_from_selection,
             .increase_font_size,

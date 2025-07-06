@@ -4443,7 +4443,7 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             return false;
         },
 
-        .copy_title => {
+        .copy_title_to_clipboard => {
             const title = self.rt_surface.getTitle() orelse return false;
 
             self.rt_surface.setClipboardString(title, .standard, false) catch |err| {
