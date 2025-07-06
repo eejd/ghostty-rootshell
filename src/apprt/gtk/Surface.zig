@@ -2504,8 +2504,8 @@ fn gtkStreamEnded(media_file: *gtk.MediaFile, _: *gobject.ParamSpec, _: ?*anyopa
     media_file.unref();
 }
 
-pub fn showChildExited(self: *Surface, info: apprt.surface.Message.ChildExited) (error{})!void {
-    if (!adw_version.supportsBanner()) return;
+pub fn showChildExited(self: *Surface, info: apprt.surface.Message.ChildExited) (error{})!bool {
+    if (!adw_version.supportsBanner()) return false;
 
     const warning_box = gtk.Box.new(.vertical, 0);
 
@@ -2528,4 +2528,6 @@ pub fn showChildExited(self: *Surface, info: apprt.surface.Message.ChildExited) 
     warning_box.append(banner_widget);
 
     self.overlay.addOverlay(warning_box.as(gtk.Widget));
+
+    return true;
 }
