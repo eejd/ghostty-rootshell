@@ -638,20 +638,40 @@ pub const Face = struct {
         // This should be the distance from the left of
         // the cell to the left of the glyph's bounding box.
         const offset_x: i32 = offset_x: {
-            var result: i32 = @intFromFloat(@floor(x));
-
-            // If our cell was resized then we adjust our glyph's
-            // position relative to the new center. This keeps glyphs
-            // centered in the cell whether it was made wider or narrower.
-            if (metrics.original_cell_width) |original_width| {
-                const before: i32 = @intCast(original_width);
-                const after: i32 = @intCast(metrics.cell_width);
-                // Increase the offset by half of the difference
-                // between the widths to keep things centered.
-                result += @divTrunc(after - before, 2);
+            // If the glyph's advance is narrower than the cell width then we
+            // center the advance of the glyph within the cell width. At first
+            // I implemented this to proportionally scale the center position
+            // of the glyph but that messes up glyphs that are meant to align
+            // vertically with others, so this is a compromise.
+            //
+            // This makes it so that when the `adjust-cell-width` config is
+            // used, or when a fallback font with a different advance width
+            // is used, we don't get weirdly aligned glyphs.
+            //
+            // We don't do this if the constraint has a horizontal alignment,
+            // since in that case the position was already calculated with the
+            // new cell width in mind.
+            if (opts.constraint.align_horizontal == .none) {
+                const advance = f26dot6ToFloat(glyph.*.advance.x);
+                const new_advance =
+                    cell_width * @as(f64, @floatFromInt(opts.cell_width orelse 1));
+                // If the original advance is greater than the cell width then
+                // it's possible that this is a ligature or other glyph that is
+                // intended to overflow the cell to one side or the other, and
+                // adjusting the bearings could mess that up, so we just leave
+                // it alone if that's the case.
+                //
+                // We also don't want to do anything if the advance is zero or
+                // less, since this is used for stuff like combining characters.
+                if (advance > new_advance or advance <= 0.0) {
+                    break :offset_x @intFromFloat(@floor(x));
+                }
+                break :offset_x @intFromFloat(
+                    @floor(x + (new_advance - advance) / 2),
+                );
+            } else {
+                break :offset_x @intFromFloat(@floor(x));
             }
-
-            break :offset_x result;
         };
 
         return Glyph{
