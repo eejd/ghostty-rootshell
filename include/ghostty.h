@@ -778,8 +778,8 @@ typedef struct {
 //-------------------------------------------------------------------
 // Published API
 
-int ghostty_init(void);
-void ghostty_cli_main(uintptr_t, char**);
+int ghostty_init(uintptr_t, char**);
+void ghostty_cli_try_action(void);
 ghostty_info_s ghostty_info(void);
 const char* ghostty_translate(const char*);
 

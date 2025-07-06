@@ -122,10 +122,6 @@ pub fn init(
 
         if (b.args) |args| {
             open.addArgs(args);
-        } else {
-            // This tricks the app into thinking it's running from the
-            // app bundle so we don't execute our CLI mode.
-            open.setEnvironmentVariable("GHOSTTY_MAC_APP", "1");
         }
 
         break :open open;
