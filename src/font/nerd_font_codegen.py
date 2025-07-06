@@ -6,6 +6,8 @@ attributes and scaling rules.
 
 This does include an `eval` call! This is spooky, but we trust the nerd fonts code to
 be safe and not malicious or anything.
+
+This script requires Python 3.12 or greater.
 """
 
 import ast
@@ -193,13 +195,20 @@ def emit_zig_entry_multikey(codepoints: list[int], attr: PatchSetAttributeEntry)
     if valign is not None:
         s += f"            .align_vertical = {valign},\n"
 
+    # `overlap` and `ypadding` are mutually exclusive,
+    # this is asserted in the nerd fonts patcher itself.
     if overlap:
         pad = -overlap
         s += f"            .pad_left = {pad},\n"
         s += f"            .pad_right = {pad},\n"
-        v_pad = y_padding - math.copysign(min(0.01, abs(overlap)), overlap)
+        # In the nerd fonts patcher, overlap values
+        # are capped at 0.01 in the vertical direction.
+        v_pad = -min(0.01, overlap)
         s += f"            .pad_top = {v_pad},\n"
         s += f"            .pad_bottom = {v_pad},\n"
+    elif y_padding:
+        s += f"            .pad_top = {y_padding},\n"
+        s += f"            .pad_bottom = {y_padding},\n"
 
     if xy_ratio > 0:
         s += f"            .max_xy_ratio = {xy_ratio},\n"
