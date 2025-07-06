@@ -10,9 +10,9 @@ be safe and not malicious or anything.
 
 import ast
 import math
-import sys
 from collections import defaultdict
 from contextlib import suppress
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Literal, TypedDict, cast
 
@@ -236,9 +236,16 @@ def generate_zig_switch_arms(patch_sets: list[PatchSet]) -> str:
 
 
 if __name__ == "__main__":
-    source = sys.stdin.read()
+    project_root = Path(__file__).resolve().parents[2]
+
+    patcher_path = project_root / "vendor" / "nerd-fonts" / "font-patcher.py"
+    source = patcher_path.read_text(encoding="utf-8")
     patch_set = extract_patch_set_values(source)
-    print("""//! This is a generated file, produced by nerd_font_codegen.py
+
+    out_path = project_root / "src" / "font" / "nerd_font_attributes.zig"
+
+    with out_path.open("w", encoding="utf-8") as f:
+        f.write("""//! This is a generated file, produced by nerd_font_codegen.py
 //! DO NOT EDIT BY HAND!
 //!
 //! This file provides info extracted from the nerd fonts patcher script,
@@ -248,6 +255,7 @@ const Constraint = @import("face.zig").RenderOptions.Constraint;
 
 /// Get the a constraints for the provided codepoint.
 pub fn getConstraint(cp: u21) Constraint {
-    return switch (cp) {""")
-    print(generate_zig_switch_arms(patch_set))
-    print("        else => .none,\n    };\n}")
+    return switch (cp) {
+""")
+        f.write(generate_zig_switch_arms(patch_set))
+        f.write("\n        else => .none,\n    };\n}\n")
