@@ -580,7 +580,7 @@ extension Ghostty {
                 fallthrough
             case GHOSTTY_ACTION_QUIT_TIMER:
                 fallthrough
-            case GHOSTTY_SHOW_CHILD_EXITED:
+            case GHOSTTY_ACTION_SHOW_CHILD_EXITED:
                 Ghostty.logger.info("known but unimplemented action action=\(action.tag.rawValue)")
                 return false
             default:
