@@ -282,7 +282,7 @@ pub const Action = union(enum) {
     copy_url_to_clipboard,
 
     /// Copy the terminal title to the clipboard. If the terminal title is not
-    /// set this has no effect.
+    /// set or is empty this has no effect.
     copy_title_to_clipboard,
 
     /// Increase the font size by the specified amount in points (pt).
