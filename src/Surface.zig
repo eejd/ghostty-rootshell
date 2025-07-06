@@ -270,6 +270,7 @@ const DerivedConfig = struct {
     title: ?[:0]const u8,
     title_report: bool,
     links: []Link,
+    link_previews: configpkg.LinkPreviews,
 
     const Link = struct {
         regex: oni.Regex,
@@ -336,6 +337,7 @@ const DerivedConfig = struct {
             .title = config.title,
             .title_report = config.@"title-report",
             .links = links,
+            .link_previews = config.@"link-previews",
 
             // Assignments happen sequentially so we have to do this last
             // so that the memory is captured from allocs above.
@@ -1242,7 +1244,7 @@ fn mouseRefreshLinks(
     // Get our link at the current position. This returns null if there
     // isn't a link OR if we shouldn't be showing links for some reason
     // (see further comments for cases).
-    const link_: ?apprt.action.MouseOverLink = link: {
+    const link_: ?apprt.action.MouseOverLink, const preview: bool = link: {
         // If we clicked and our mouse moved cells then we never
         // highlight links until the mouse is unclicked. This follows
         // standard macOS and Linux behavior where a click and drag cancels
@@ -1257,18 +1259,21 @@ fn mouseRefreshLinks(
 
             if (!click_pt.coord().eql(pos_vp)) {
                 log.debug("mouse moved while left click held, ignoring link hover", .{});
-                break :link null;
+                break :link .{ null, false };
             }
         }
 
-        const link = (try self.linkAtPos(pos)) orelse break :link null;
+        const link = (try self.linkAtPos(pos)) orelse break :link .{ null, false };
         switch (link[0]) {
             .open => {
                 const str = try self.io.terminal.screen.selectionString(alloc, .{
                     .sel = link[1],
                     .trim = false,
                 });
-                break :link .{ .url = str };
+                break :link .{
+                    .{ .url = str },
+                    self.config.link_previews == .true,
+                };
             },
 
             ._open_osc8 => {
@@ -1276,9 +1281,14 @@ fn mouseRefreshLinks(
                 const pin = link[1].start();
                 const uri = self.osc8URI(pin) orelse {
                     log.warn("failed to get URI for OSC8 hyperlink", .{});
-                    break :link null;
+                    break :link .{ null, false };
                 };
-                break :link .{ .url = uri };
+                break :link .{
+                    .{
+                        .url = uri,
+                    },
+                    self.config.link_previews != .false,
+                };
             },
         }
     };
@@ -1294,11 +1304,15 @@ fn mouseRefreshLinks(
             .mouse_shape,
             .pointer,
         );
-        _ = try self.rt_app.performAction(
-            .{ .surface = self },
-            .mouse_over_link,
-            link,
-        );
+
+        if (preview) {
+            _ = try self.rt_app.performAction(
+                .{ .surface = self },
+                .mouse_over_link,
+                link,
+            );
+        }
+
         try self.queueRender();
         return;
     }

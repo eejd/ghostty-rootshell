@@ -1046,6 +1046,14 @@ link: RepeatableLink = .{},
 /// `link`). If you want to customize URL matching, use `link` and disable this.
 @"link-url": bool = true,
 
+/// Show link previews for a matched URL.
+///
+/// When true, link previews are shown for all matched URLs. When false, link
+/// previews are never shown. When set to "osc8", link previews are only shown
+/// for hyperlinks created with the OSC 8 sequence (in this case, the link text
+/// can differ from the link destination).
+@"link-previews": LinkPreviews = .true,
+
 /// Whether to start the window in a maximized state. This setting applies
 /// to new windows and does not apply to tabs, splits, etc. However, this setting
 /// will apply to all new windows, not just the first one.
@@ -4324,6 +4332,12 @@ pub const WindowPaddingColor = enum {
 pub const WindowSubtitle = enum {
     false,
     @"working-directory",
+};
+
+pub const LinkPreviews = enum {
+    false,
+    true,
+    osc8,
 };
 
 /// Color represents a color using RGB.
