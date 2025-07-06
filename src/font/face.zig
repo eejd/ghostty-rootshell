@@ -147,6 +147,9 @@ pub const RenderOptions = struct {
         /// Maximum ratio of width to height when resizing.
         max_xy_ratio: ?f64 = null,
 
+        /// Maximum number of cells horizontally to use.
+        max_constraint_width: u2 = 2,
+
         pub const Size = enum {
             /// Don't change the size of this glyph.
             none,
@@ -186,16 +189,26 @@ pub const RenderOptions = struct {
         pub fn constrain(
             self: Constraint,
             glyph: GlyphSize,
-            /// Available width
+            /// Width of one cell.
             cell_width: f64,
-            /// Available height
+            /// Height of one cell.
             cell_height: f64,
+            /// Number of cells horizontally available for this glyph.
+            constraint_width: u2,
         ) GlyphSize {
             var g = glyph;
 
-            const w = cell_width -
-                self.pad_left * cell_width -
-                self.pad_right * cell_width;
+            const available_width =
+                cell_width * @as(f64, @floatFromInt(
+                    @min(
+                        self.max_constraint_width,
+                        constraint_width,
+                    ),
+                ));
+
+            const w = available_width -
+                self.pad_left * available_width -
+                self.pad_right * available_width;
             const h = cell_height -
                 self.pad_top * cell_height -
                 self.pad_bottom * cell_height;
@@ -203,7 +216,7 @@ pub const RenderOptions = struct {
             // Subtract padding from the bearings so that our
             // alignment and sizing code works correctly. We
             // re-add before returning.
-            g.x -= self.pad_left * cell_width;
+            g.x -= self.pad_left * available_width;
             g.y -= self.pad_bottom * cell_height;
 
             switch (self.size_horizontal) {
@@ -305,7 +318,7 @@ pub const RenderOptions = struct {
             }
 
             // Re-add our padding before returning.
-            g.x += self.pad_left * cell_width;
+            g.x += self.pad_left * available_width;
             g.y += self.pad_bottom * cell_height;
 
             return g;

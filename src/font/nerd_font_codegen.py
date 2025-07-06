@@ -6,13 +6,15 @@ attributes and scaling rules.
 
 This does include an `eval` call! This is spooky, but we trust the nerd fonts code to
 be safe and not malicious or anything.
+
+This script requires Python 3.12 or greater.
 """
 
 import ast
 import math
-import sys
 from collections import defaultdict
 from contextlib import suppress
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Literal, TypedDict, cast
 
@@ -188,18 +190,31 @@ def emit_zig_entry_multikey(codepoints: list[int], attr: PatchSetAttributeEntry)
         s += "            .size_horizontal = .fit,\n"
         s += "            .size_vertical = .fit,\n"
 
+    # There are two cases where we want to limit the constraint width to 1:
+    # - If there's a `1` in the stretch mode string.
+    # - If the stretch mode is `xy` and there's not an explicit `2`.
+    if "1" in stretch or ("xy" in stretch and "2" not in stretch):
+        s += "            .max_constraint_width = 1,\n"
+
     if align is not None:
         s += f"            .align_horizontal = {align},\n"
     if valign is not None:
         s += f"            .align_vertical = {valign},\n"
 
+    # `overlap` and `ypadding` are mutually exclusive,
+    # this is asserted in the nerd fonts patcher itself.
     if overlap:
         pad = -overlap
         s += f"            .pad_left = {pad},\n"
         s += f"            .pad_right = {pad},\n"
-        v_pad = y_padding - math.copysign(min(0.01, abs(overlap)), overlap)
+        # In the nerd fonts patcher, overlap values
+        # are capped at 0.01 in the vertical direction.
+        v_pad = -min(0.01, overlap)
         s += f"            .pad_top = {v_pad},\n"
         s += f"            .pad_bottom = {v_pad},\n"
+    elif y_padding:
+        s += f"            .pad_top = {y_padding},\n"
+        s += f"            .pad_bottom = {y_padding},\n"
 
     if xy_ratio > 0:
         s += f"            .max_xy_ratio = {xy_ratio},\n"
@@ -236,9 +251,16 @@ def generate_zig_switch_arms(patch_sets: list[PatchSet]) -> str:
 
 
 if __name__ == "__main__":
-    source = sys.stdin.read()
+    project_root = Path(__file__).resolve().parents[2]
+
+    patcher_path = project_root / "vendor" / "nerd-fonts" / "font-patcher.py"
+    source = patcher_path.read_text(encoding="utf-8")
     patch_set = extract_patch_set_values(source)
-    print("""//! This is a generated file, produced by nerd_font_codegen.py
+
+    out_path = project_root / "src" / "font" / "nerd_font_attributes.zig"
+
+    with out_path.open("w", encoding="utf-8") as f:
+        f.write("""//! This is a generated file, produced by nerd_font_codegen.py
 //! DO NOT EDIT BY HAND!
 //!
 //! This file provides info extracted from the nerd fonts patcher script,
@@ -248,6 +270,7 @@ const Constraint = @import("face.zig").RenderOptions.Constraint;
 
 /// Get the a constraints for the provided codepoint.
 pub fn getConstraint(cp: u21) Constraint {
-    return switch (cp) {""")
-    print(generate_zig_switch_arms(patch_set))
-    print("        else => .none,\n    };\n}")
+    return switch (cp) {
+""")
+        f.write(generate_zig_switch_arms(patch_set))
+        f.write("\n        else => .none,\n    };\n}\n")

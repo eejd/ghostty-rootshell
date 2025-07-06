@@ -337,7 +337,7 @@ pub const Face = struct {
             };
 
         const metrics = opts.grid_metrics;
-        const cell_width: f64 = @floatFromInt(metrics.cell_width * opts.constraint_width);
+        const cell_width: f64 = @floatFromInt(metrics.cell_width);
         const cell_height: f64 = @floatFromInt(metrics.cell_height);
 
         const glyph_size = opts.constraint.constrain(
@@ -349,6 +349,7 @@ pub const Face = struct {
             },
             cell_width,
             cell_height,
+            opts.constraint_width,
         );
 
         const width = glyph_size.width;
