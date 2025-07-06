@@ -348,7 +348,7 @@ pub const Face = struct {
 
             // use options from config
             .no_hinting = !do_hinting,
-            .force_autohint = !self.load_flags.@"force-autohint",
+            .force_autohint = self.load_flags.@"force-autohint",
             .no_autohint = !self.load_flags.autohint,
 
             // NO_SVG set to true because we don't currently support rendering

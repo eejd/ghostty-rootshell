@@ -356,8 +356,14 @@ pub const Face = struct {
         const x = glyph_size.x;
         const y = glyph_size.y;
 
-        const px_width: u32 = @intFromFloat(@ceil(width));
-        const px_height: u32 = @intFromFloat(@ceil(height));
+        // We have to include the fractional pixels that we won't be offsetting
+        // in our width and height calculations, that is, we offset by the floor
+        // of the bearings when we render the glyph, meaning there's still a bit
+        // of extra width to the area that's drawn in beyond just the width of
+        // the glyph itself, so we include that extra fraction of a pixel when
+        // calculating the width and height here.
+        const px_width: u32 = @intFromFloat(@ceil(width + rect.origin.x - @floor(rect.origin.x)));
+        const px_height: u32 = @intFromFloat(@ceil(height + rect.origin.y - @floor(rect.origin.y)));
 
         // Settings that are specific to if we are rendering text or emoji.
         const color: struct {

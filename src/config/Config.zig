@@ -435,7 +435,7 @@ pub const compatibility = std.StaticStringMap(
 ///   * `hinting` - Enable or disable hinting. Enabled by default.
 ///
 ///   * `force-autohint` - Always use the freetype auto-hinter instead of
-///     the font's native hinter. Enabled by default.
+///     the font's native hinter. Disabled by default.
 ///
 ///   * `monochrome` - Instructs renderer to use 1-bit monochrome rendering.
 ///     This will disable anti-aliasing, and probably not look very good unless
@@ -7084,7 +7084,7 @@ pub const FreetypeLoadFlags = packed struct {
     // for Freetype itself. Ghostty hasn't made any opinionated changes
     // to these defaults.
     hinting: bool = true,
-    @"force-autohint": bool = true,
+    @"force-autohint": bool = false,
     monochrome: bool = false,
     autohint: bool = true,
 };
