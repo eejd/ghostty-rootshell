@@ -190,6 +190,12 @@ def emit_zig_entry_multikey(codepoints: list[int], attr: PatchSetAttributeEntry)
         s += "            .size_horizontal = .fit,\n"
         s += "            .size_vertical = .fit,\n"
 
+    # There are two cases where we want to limit the constraint width to 1:
+    # - If there's a `1` in the stretch mode string.
+    # - If the stretch mode is `xy` and there's not an explicit `2`.
+    if "1" in stretch or ("xy" in stretch and "2" not in stretch):
+        s += "            .max_constraint_width = 1,\n"
+
     if align is not None:
         s += f"            .align_horizontal = {align},\n"
     if valign is not None:

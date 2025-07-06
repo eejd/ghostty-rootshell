@@ -13,6 +13,7 @@ pub fn getConstraint(cp: u21) Constraint {
         => .{
             .size_horizontal = .stretch,
             .size_vertical = .stretch,
+            .max_constraint_width = 1,
             .align_horizontal = .center,
             .align_vertical = .center,
             .pad_left = -0.02,
@@ -24,6 +25,7 @@ pub fn getConstraint(cp: u21) Constraint {
         => .{
             .size_horizontal = .cover,
             .size_vertical = .fit,
+            .max_constraint_width = 1,
             .align_horizontal = .center,
             .align_vertical = .center,
             .pad_left = 0.1,
@@ -35,6 +37,7 @@ pub fn getConstraint(cp: u21) Constraint {
         => .{
             .size_horizontal = .cover,
             .size_vertical = .fit,
+            .max_constraint_width = 1,
             .align_horizontal = .center,
             .align_vertical = .center,
             .pad_top = 0.3,
@@ -44,6 +47,7 @@ pub fn getConstraint(cp: u21) Constraint {
         => .{
             .size_horizontal = .stretch,
             .size_vertical = .stretch,
+            .max_constraint_width = 1,
             .align_horizontal = .start,
             .align_vertical = .center,
             .pad_left = -0.06,
@@ -56,6 +60,7 @@ pub fn getConstraint(cp: u21) Constraint {
         => .{
             .size_horizontal = .stretch,
             .size_vertical = .stretch,
+            .max_constraint_width = 1,
             .align_horizontal = .start,
             .align_vertical = .center,
             .max_xy_ratio = 0.7,
@@ -64,6 +69,7 @@ pub fn getConstraint(cp: u21) Constraint {
         => .{
             .size_horizontal = .stretch,
             .size_vertical = .stretch,
+            .max_constraint_width = 1,
             .align_horizontal = .end,
             .align_vertical = .center,
             .pad_left = -0.06,
@@ -76,6 +82,7 @@ pub fn getConstraint(cp: u21) Constraint {
         => .{
             .size_horizontal = .stretch,
             .size_vertical = .stretch,
+            .max_constraint_width = 1,
             .align_horizontal = .end,
             .align_vertical = .center,
             .max_xy_ratio = 0.7,
@@ -84,6 +91,7 @@ pub fn getConstraint(cp: u21) Constraint {
         => .{
             .size_horizontal = .stretch,
             .size_vertical = .stretch,
+            .max_constraint_width = 1,
             .align_horizontal = .start,
             .align_vertical = .center,
             .pad_left = -0.06,
@@ -96,6 +104,7 @@ pub fn getConstraint(cp: u21) Constraint {
         => .{
             .size_horizontal = .stretch,
             .size_vertical = .stretch,
+            .max_constraint_width = 1,
             .align_horizontal = .start,
             .align_vertical = .center,
             .max_xy_ratio = 0.5,
@@ -104,6 +113,7 @@ pub fn getConstraint(cp: u21) Constraint {
         => .{
             .size_horizontal = .stretch,
             .size_vertical = .stretch,
+            .max_constraint_width = 1,
             .align_horizontal = .end,
             .align_vertical = .center,
             .pad_left = -0.06,
@@ -116,6 +126,7 @@ pub fn getConstraint(cp: u21) Constraint {
         => .{
             .size_horizontal = .stretch,
             .size_vertical = .stretch,
+            .max_constraint_width = 1,
             .align_horizontal = .end,
             .align_vertical = .center,
             .max_xy_ratio = 0.5,
@@ -125,6 +136,7 @@ pub fn getConstraint(cp: u21) Constraint {
         => .{
             .size_horizontal = .stretch,
             .size_vertical = .stretch,
+            .max_constraint_width = 1,
             .align_horizontal = .start,
             .align_vertical = .center,
             .pad_left = -0.05,
@@ -137,6 +149,7 @@ pub fn getConstraint(cp: u21) Constraint {
         => .{
             .size_horizontal = .stretch,
             .size_vertical = .stretch,
+            .max_constraint_width = 1,
             .align_horizontal = .start,
             .align_vertical = .center,
         },
@@ -145,6 +158,7 @@ pub fn getConstraint(cp: u21) Constraint {
         => .{
             .size_horizontal = .stretch,
             .size_vertical = .stretch,
+            .max_constraint_width = 1,
             .align_horizontal = .end,
             .align_vertical = .center,
             .pad_left = -0.05,
@@ -157,6 +171,7 @@ pub fn getConstraint(cp: u21) Constraint {
         => .{
             .size_horizontal = .stretch,
             .size_vertical = .stretch,
+            .max_constraint_width = 1,
             .align_horizontal = .end,
             .align_vertical = .center,
         },
@@ -287,6 +302,7 @@ pub fn getConstraint(cp: u21) Constraint {
         => .{
             .size_horizontal = .stretch,
             .size_vertical = .stretch,
+            .max_constraint_width = 1,
             .align_horizontal = .start,
             .align_vertical = .center,
             .pad_left = -0.02,
@@ -299,6 +315,7 @@ pub fn getConstraint(cp: u21) Constraint {
         => .{
             .size_horizontal = .stretch,
             .size_vertical = .stretch,
+            .max_constraint_width = 1,
             .align_horizontal = .end,
             .align_vertical = .center,
             .pad_left = -0.02,
@@ -311,6 +328,7 @@ pub fn getConstraint(cp: u21) Constraint {
         => .{
             .size_horizontal = .stretch,
             .size_vertical = .stretch,
+            .max_constraint_width = 1,
             .align_horizontal = .start,
             .align_vertical = .center,
             .pad_left = -0.05,
@@ -323,6 +341,7 @@ pub fn getConstraint(cp: u21) Constraint {
         => .{
             .size_horizontal = .stretch,
             .size_vertical = .stretch,
+            .max_constraint_width = 1,
             .align_horizontal = .end,
             .align_vertical = .center,
             .pad_left = -0.05,
