@@ -132,6 +132,12 @@ fn actionCommands(action: Action.Key) []const Command {
             .description = "Copy the URL under the cursor to the clipboard.",
         }},
 
+        .copy_title => comptime &.{.{
+            .action = .copy_title,
+            .title = "Copy Terminal Title to Clipboard",
+            .description = "Copy the terminal title to the clipboard. If the terminal title is not set this has no effect.",
+        }},
+
         .paste_from_clipboard => comptime &.{.{
             .action = .paste_from_clipboard,
             .title = "Paste from Clipboard",
