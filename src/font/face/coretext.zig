@@ -333,7 +333,6 @@ pub const Face = struct {
                 .offset_y = 0,
                 .atlas_x = 0,
                 .atlas_y = 0,
-                .advance_x = 0,
             };
 
         const metrics = opts.grid_metrics;
@@ -498,10 +497,6 @@ pub const Face = struct {
             break :offset_x result;
         };
 
-        // Get our advance
-        var advances: [glyphs.len]macos.graphics.Size = undefined;
-        _ = self.font.getAdvancesForGlyphs(.horizontal, &glyphs, &advances);
-
         return .{
             .width = px_width,
             .height = px_height,
@@ -509,7 +504,6 @@ pub const Face = struct {
             .offset_y = offset_y,
             .atlas_x = region.x,
             .atlas_y = region.y,
-            .advance_x = @floatCast(advances[0].width),
         };
     }
 

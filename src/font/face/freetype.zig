@@ -373,7 +373,6 @@ pub const Face = struct {
                 .offset_y = 0,
                 .atlas_x = 0,
                 .atlas_y = 0,
-                .advance_x = 0,
             };
 
         // For synthetic bold, we embolden the glyph.
@@ -662,7 +661,6 @@ pub const Face = struct {
             .offset_y = offset_y,
             .atlas_x = region.x,
             .atlas_y = region.y,
-            .advance_x = f26dot6ToFloat(glyph.*.advance.x),
         };
     }
 
