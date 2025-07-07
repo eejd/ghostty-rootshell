@@ -496,7 +496,7 @@ pub fn performAction(
         .resize_split => self.resizeSplit(target, value),
         .equalize_splits => self.equalizeSplits(target),
         .goto_split => return self.gotoSplit(target, value),
-        .open_config => try configpkg.edit.open(self.core_app.alloc),
+        .open_config => return self.openConfig(),
         .config_change => self.configChange(target, value.config),
         .reload_config => try self.reloadConfig(target, value),
         .inspector => self.controlInspector(target, value),
@@ -1759,7 +1759,22 @@ fn initActions(self: *App) void {
     }
 }
 
-pub fn openUrl(
+fn openConfig(self: *App) !bool {
+    // Get the config file path
+    const alloc = self.core_app.alloc;
+    const path = configpkg.edit.openPath(alloc) catch |err| {
+        log.warn("error getting config file path: {}", .{err});
+        return false;
+    };
+    defer alloc.free(path);
+
+    // Open it using openURL. "path" isn't actually a URL but
+    // at the time of writing that works just fine for GTK.
+    self.openUrl(.{ .kind = .text, .url = path });
+    return true;
+}
+
+fn openUrl(
     app: *App,
     value: apprt.action.OpenUrl,
 ) void {
