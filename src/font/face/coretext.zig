@@ -366,8 +366,10 @@ pub const Face = struct {
         // of extra width to the area that's drawn in beyond just the width of
         // the glyph itself, so we include that extra fraction of a pixel when
         // calculating the width and height here.
-        const px_width: u32 = @intFromFloat(@ceil(width + rect.origin.x - @floor(rect.origin.x)));
-        const px_height: u32 = @intFromFloat(@ceil(height + rect.origin.y - @floor(rect.origin.y)));
+        const frac_x = rect.origin.x - @floor(rect.origin.x);
+        const frac_y = rect.origin.y - @floor(rect.origin.y);
+        const px_width: u32 = @intFromFloat(@ceil(width + frac_x));
+        const px_height: u32 = @intFromFloat(@ceil(height + frac_y));
 
         // Settings that are specific to if we are rendering text or emoji.
         const color: struct {
@@ -513,13 +515,13 @@ pub const Face = struct {
                 // We also don't want to do anything if the advance is zero or
                 // less, since this is used for stuff like combining characters.
                 if (advance > new_advance or advance <= 0.0) {
-                    break :offset_x @intFromFloat(@round(x));
+                    break :offset_x @intFromFloat(@ceil(x - frac_x));
                 }
                 break :offset_x @intFromFloat(
-                    @round(x + (new_advance - advance) / 2),
+                    @ceil(x - frac_x + (new_advance - advance) / 2),
                 );
             } else {
-                break :offset_x @intFromFloat(@round(x));
+                break :offset_x @intFromFloat(@ceil(x - frac_x));
             }
         };
 
