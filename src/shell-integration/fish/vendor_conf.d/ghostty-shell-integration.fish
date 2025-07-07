@@ -89,7 +89,7 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
     # SSH Integration
     if string match -q '*ssh-*' -- "$GHOSTTY_SHELL_FEATURES"
         function ssh --wraps=ssh --description "SSH wrapper with Ghostty integration"
-            set -l ssh_term ""
+            set -l ssh_term "xterm-256color"
             set -l ssh_opts
 
             # Configure environment variables for remote session
@@ -100,11 +100,10 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
 
             # Install terminfo on remote host if needed
             if string match -q '*ssh-terminfo*' -- "$GHOSTTY_SHELL_FEATURES"
-                set -l ssh_config (command ssh -G $argv 2>/dev/null)
                 set -l ssh_user
                 set -l ssh_hostname
 
-                for line in $ssh_config
+                for line in (command ssh -G $argv 2>/dev/null)
                     set -l parts (string split ' ' -- $line)
                     if test (count $parts) -ge 2
                         switch $parts[1]
@@ -133,71 +132,46 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
                     if test "$ssh_cache_check_success" = "true"
                         set ssh_term "xterm-ghostty"
                     else if command -v infocmp >/dev/null 2>&1
-                        if not command -v base64 >/dev/null 2>&1
-                            echo "Warning: base64 command not available for terminfo installation." >&2
-                            set ssh_term "xterm-256color"
-                        else
-                            set -l ssh_terminfo
-                            set -l ssh_base64_decode_cmd
+                        set -l ssh_terminfo
+                        set -l ssh_cpath_dir
+                        set -l ssh_cpath
 
-                            # BSD vs GNU base64 compatibility
-                            if base64 --help 2>&1 | grep -q GNU
-                                set ssh_base64_decode_cmd "base64 -d"
-                                set ssh_terminfo (infocmp -0 -Q2 -q xterm-ghostty 2>/dev/null | base64 -w0 2>/dev/null)
-                            else
-                                set ssh_base64_decode_cmd "base64 -D"
-                                set ssh_terminfo (infocmp -0 -Q2 -q xterm-ghostty 2>/dev/null | base64 2>/dev/null | tr -d '\n')
-                            end
+                        set ssh_terminfo (infocmp -0 -x xterm-ghostty 2>/dev/null)
 
-                            if test -n "$ssh_terminfo"
-                                echo "Setting up Ghostty terminfo on $ssh_hostname..." >&2
-                                set -l ssh_cpath_dir (mktemp -d "/tmp/ghostty-ssh-$ssh_user.XXXXXX" 2>/dev/null; or echo "/tmp/ghostty-ssh-$ssh_user."(random))
-                                set -l ssh_cpath "$ssh_cpath_dir/socket"
+                        if test -n "$ssh_terminfo"
+                            echo "Setting up Ghostty terminfo on $ssh_hostname..." >&2
 
-                                if echo "$ssh_terminfo" | eval $ssh_base64_decode_cmd | command ssh $ssh_opts -o ControlMaster=yes -o ControlPath="$ssh_cpath" -o ControlPersist=60s $argv '
-                                    infocmp xterm-ghostty >/dev/null 2>&1 && exit 0
-                                    command -v tic >/dev/null 2>&1 || exit 1
-                                    mkdir -p ~/.terminfo 2>/dev/null && tic -x - 2>/dev/null && exit 0
-                                    exit 1
-                                ' 2>/dev/null
-                                    echo "Terminfo setup complete on $ssh_hostname." >&2
-                                    set ssh_term "xterm-ghostty"
-                                    set -a ssh_opts -o "ControlPath=$ssh_cpath"
+                            set ssh_cpath_dir (mktemp -d "/tmp/ghostty-ssh-$ssh_user.XXXXXX" 2>/dev/null; or echo "/tmp/ghostty-ssh-$ssh_user."(random))
+                            set ssh_cpath "$ssh_cpath_dir/socket"
 
-                                    # Cache successful installation
-                                    if test -n "$ssh_target"; and command -v ghostty >/dev/null 2>&1
-                                        ghostty +ssh-cache --add="$ssh_target" >/dev/null 2>&1; or true
-                                    end
-                                else
-                                    echo "Warning: Failed to install terminfo." >&2
-                                    set ssh_term "xterm-256color"
+                            if echo "$ssh_terminfo" | command ssh $ssh_opts -o ControlMaster=yes -o ControlPath="$ssh_cpath" -o ControlPersist=60s $argv '
+                                infocmp xterm-ghostty >/dev/null 2>&1 && exit 0
+                                command -v tic >/dev/null 2>&1 || exit 1
+                                mkdir -p ~/.terminfo 2>/dev/null && tic -x - 2>/dev/null && exit 0
+                                exit 1
+                            ' 2>/dev/null
+                                echo "Terminfo setup complete on $ssh_hostname." >&2
+                                set ssh_term "xterm-ghostty"
+                                set -a ssh_opts -o "ControlPath=$ssh_cpath"
+
+                                # Cache successful installation
+                                if test -n "$ssh_target"; and command -v ghostty >/dev/null 2>&1
+                                    ghostty +ssh-cache --add="$ssh_target" >/dev/null 2>&1; or true
                                 end
                             else
-                                echo "Warning: Could not generate terminfo data." >&2
-                                set ssh_term "xterm-256color"
+                                echo "Warning: Failed to install terminfo." >&2
                             end
+                        else
+                            echo "Warning: Could not generate terminfo data." >&2
                         end
                     else
                         echo "Warning: ghostty command not available for cache management." >&2
-                        set ssh_term "xterm-256color"
-                    end
-                else
-                    if string match -q '*ssh-env*' -- "$GHOSTTY_SHELL_FEATURES"
-                        set ssh_term "xterm-256color"
                     end
                 end
             end
 
-            # Execute SSH with environment handling
-            if string match -q '*ssh-env*' -- "$GHOSTTY_SHELL_FEATURES"; and test -z "$ssh_term"
-                set ssh_term "xterm-256color"
-            end
-
-            if test -n "$ssh_term"
-                env TERM="$ssh_term" command ssh $ssh_opts $argv
-            else
-                command ssh $ssh_opts $argv
-            end
+            # Execute SSH with TERM environment variable
+            env TERM="$ssh_term" command ssh $ssh_opts $argv
         end
     end
 

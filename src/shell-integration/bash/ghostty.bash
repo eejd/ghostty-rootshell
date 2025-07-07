@@ -99,7 +99,7 @@ fi
 if [[ "$GHOSTTY_SHELL_FEATURES" == *ssh-* ]]; then
   ssh() {
     builtin local ssh_term ssh_opts
-    ssh_term=""
+    ssh_term="xterm-256color"
     ssh_opts=()
 
     # Configure environment variables for remote session
@@ -110,8 +110,7 @@ if [[ "$GHOSTTY_SHELL_FEATURES" == *ssh-* ]]; then
 
     # Install terminfo on remote host if needed
     if [[ "$GHOSTTY_SHELL_FEATURES" == *ssh-terminfo* ]]; then
-      builtin local ssh_config ssh_user ssh_hostname
-      ssh_config=$(builtin command ssh -G "$@" 2>/dev/null)
+      builtin local ssh_user ssh_hostname
 
       while IFS=' ' read -r ssh_key ssh_value; do
         case "$ssh_key" in
@@ -119,7 +118,7 @@ if [[ "$GHOSTTY_SHELL_FEATURES" == *ssh-* ]]; then
           hostname) ssh_hostname="$ssh_value" ;;
         esac
         [[ -n "$ssh_user" && -n "$ssh_hostname" ]] && break
-      done <<< "$ssh_config"
+      done < <(builtin command ssh -G "$@" 2>/dev/null)
 
       builtin local ssh_target="${ssh_user}@${ssh_hostname}"
 
@@ -133,72 +132,44 @@ if [[ "$GHOSTTY_SHELL_FEATURES" == *ssh-* ]]; then
         if [[ "$ssh_cache_check_success" == "true" ]]; then
           ssh_term="xterm-ghostty"
         elif builtin command -v infocmp >/dev/null 2>&1; then
-          if ! builtin command -v base64 >/dev/null 2>&1; then
-            builtin echo "Warning: base64 command not available for terminfo installation." >&2
-            ssh_term="xterm-256color"
-          else
-            builtin local ssh_terminfo ssh_base64_decode_cmd
+          builtin local ssh_terminfo ssh_cpath_dir ssh_cpath
 
-            # BSD vs GNU base64 compatibility
-            if base64 --help 2>&1 | grep -q GNU; then
-              ssh_base64_decode_cmd="base64 -d"
-              ssh_terminfo=$(infocmp -0 -Q2 -q xterm-ghostty 2>/dev/null | base64 -w0 2>/dev/null)
-            else
-              ssh_base64_decode_cmd="base64 -D"
-              ssh_terminfo=$(infocmp -0 -Q2 -q xterm-ghostty 2>/dev/null | base64 2>/dev/null | tr -d '\n')
-            fi
+          ssh_terminfo=$(infocmp -0 -x xterm-ghostty 2>/dev/null)
 
-            if [[ -n "$ssh_terminfo" ]]; then
-              builtin echo "Setting up Ghostty terminfo on $ssh_hostname..." >&2
-              builtin local ssh_cpath_dir ssh_cpath
+          if [[ -n "$ssh_terminfo" ]]; then
+            builtin echo "Setting up Ghostty terminfo on $ssh_hostname..." >&2
 
-              ssh_cpath_dir=$(mktemp -d "/tmp/ghostty-ssh-$ssh_user.XXXXXX" 2>/dev/null) || ssh_cpath_dir="/tmp/ghostty-ssh-$ssh_user.$$"
-              ssh_cpath="$ssh_cpath_dir/socket"
+            ssh_cpath_dir=$(mktemp -d "/tmp/ghostty-ssh-$ssh_user.XXXXXX" 2>/dev/null) || ssh_cpath_dir="/tmp/ghostty-ssh-$ssh_user.$$"
+            ssh_cpath="$ssh_cpath_dir/socket"
 
-              if builtin echo "$ssh_terminfo" | $ssh_base64_decode_cmd | builtin command ssh "${ssh_opts[@]}" -o ControlMaster=yes -o ControlPath="$ssh_cpath" -o ControlPersist=60s "$@" '
-                infocmp xterm-ghostty >/dev/null 2>&1 && exit 0
-                command -v tic >/dev/null 2>&1 || exit 1
-                mkdir -p ~/.terminfo 2>/dev/null && tic -x - 2>/dev/null && exit 0
-                exit 1
-              ' 2>/dev/null; then
-                builtin echo "Terminfo setup complete on $ssh_hostname." >&2
-                ssh_term="xterm-ghostty"
-                ssh_opts+=(-o "ControlPath=$ssh_cpath")
+            if builtin echo "$ssh_terminfo" | builtin command ssh "${ssh_opts[@]}" -o ControlMaster=yes -o ControlPath="$ssh_cpath" -o ControlPersist=60s "$@" '
+              infocmp xterm-ghostty >/dev/null 2>&1 && exit 0
+              command -v tic >/dev/null 2>&1 || exit 1
+              mkdir -p ~/.terminfo 2>/dev/null && tic -x - 2>/dev/null && exit 0
+              exit 1
+            ' 2>/dev/null; then
+              builtin echo "Terminfo setup complete on $ssh_hostname." >&2
+              ssh_term="xterm-ghostty"
+              ssh_opts+=(-o "ControlPath=$ssh_cpath")
 
-                # Cache successful installation
-                if [[ -n "$ssh_target" ]] && builtin command -v ghostty >/dev/null 2>&1; then
-                  ghostty +ssh-cache --add="$ssh_target" >/dev/null 2>&1 || true
-                fi
-              else
-                builtin echo "Warning: Failed to install terminfo." >&2
-                ssh_term="xterm-256color"
+              # Cache successful installation
+              if [[ -n "$ssh_target" ]] && builtin command -v ghostty >/dev/null 2>&1; then
+                ghostty +ssh-cache --add="$ssh_target" >/dev/null 2>&1 || true
               fi
             else
-              builtin echo "Warning: Could not generate terminfo data." >&2
-              ssh_term="xterm-256color"
+              builtin echo "Warning: Failed to install terminfo." >&2
             fi
+          else
+            builtin echo "Warning: Could not generate terminfo data." >&2
           fi
         else
           builtin echo "Warning: ghostty command not available for cache management." >&2
-          ssh_term="xterm-256color"
-        fi
-      else
-        if [[ "$GHOSTTY_SHELL_FEATURES" == *ssh-env* ]]; then
-          ssh_term="xterm-256color"
         fi
       fi
     fi
 
-    # Execute SSH with environment handling
-    if [[ "$GHOSTTY_SHELL_FEATURES" == *ssh-env* && -z "$ssh_term" ]]; then
-      ssh_term="xterm-256color"
-    fi
-
-    if [[ -n "$ssh_term" ]]; then
-      TERM="$ssh_term" builtin command ssh "${ssh_opts[@]}" "$@"
-    else
-      builtin command ssh "${ssh_opts[@]}" "$@"
-    fi
+    # Execute SSH with TERM environment variable
+    TERM="$ssh_term" builtin command ssh "${ssh_opts[@]}" "$@"
   }
 fi
 
