@@ -129,7 +129,6 @@ pub const AdjustSizeError = font.Face.GetMetricsError;
 //
 // This returns null if load options is null or if self.load_options is null.
 //
-//
 // This is very much like the `font-size-adjust` CSS property in how it works.
 // ref: https://developer.mozilla.org/en-US/docs/Web/CSS/font-size-adjust
 //
@@ -199,8 +198,10 @@ pub fn adjustedSize(
             primary_ex / face_ex,
     );
 
-    // Make a copy of our load options and multiply the size by our scale.
+    // Make a copy of our load options, set the size to the size of
+    // the provided face, and then multiply that by our scaling factor.
     var opts = load_options;
+    opts.size = face.size;
     opts.size.points *= @as(f32, @floatCast(scale));
 
     return opts;
@@ -1088,4 +1089,63 @@ test "metrics" {
         .box_thickness = 2,
         .cursor_height = 34,
     }, c.metrics);
+}
+
+// TODO: Also test CJK fallback sizing, we don't currently have a CJK test font.
+test "adjusted sizes" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    const testFont = font.embedded.inconsolata;
+    const fallback = font.embedded.monaspace_neon;
+
+    var lib = try Library.init(alloc);
+    defer lib.deinit();
+
+    var c = init();
+    defer c.deinit(alloc);
+    const size: DesiredSize = .{ .points = 12, .xdpi = 96, .ydpi = 96 };
+    c.load_options = .{ .library = lib, .size = size };
+
+    // Add our primary face.
+    _ = try c.add(alloc, .regular, .{ .loaded = try .init(
+        lib,
+        testFont,
+        .{ .size = size },
+    ) });
+
+    try c.updateMetrics();
+
+    // Add the fallback face.
+    const fallback_idx = try c.add(alloc, .regular, .{ .loaded = try .init(
+        lib,
+        fallback,
+        .{ .size = size },
+    ) });
+
+    // The ex heights should match.
+    {
+        const primary_metrics = try (try c.getFace(.{ .idx = 0 })).getMetrics();
+        const fallback_metrics = try (try c.getFace(fallback_idx)).getMetrics();
+
+        try std.testing.expectApproxEqAbs(
+            primary_metrics.ex_height.?,
+            fallback_metrics.ex_height.?,
+            // We accept anything within half a pixel.
+            0.5,
+        );
+    }
+
+    // Resize should keep that relationship.
+    try c.setSize(.{ .points = 37, .xdpi = 96, .ydpi = 96 });
+    {
+        const primary_metrics = try (try c.getFace(.{ .idx = 0 })).getMetrics();
+        const fallback_metrics = try (try c.getFace(fallback_idx)).getMetrics();
+
+        try std.testing.expectApproxEqAbs(
+            primary_metrics.ex_height.?,
+            fallback_metrics.ex_height.?,
+            // We accept anything within half a pixel.
+            0.5,
+        );
+    }
 }

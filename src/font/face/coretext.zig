@@ -31,6 +31,9 @@ pub const Face = struct {
     /// tables).
     color: ?ColorState = null,
 
+    /// The current size this font is set to.
+    size: font.face.DesiredSize,
+
     /// True if our build is using Harfbuzz. If we're not, we can avoid
     /// some Harfbuzz-specific code paths.
     const harfbuzz_shaper = font.options.backend.hasHarfbuzz();
@@ -106,6 +109,7 @@ pub const Face = struct {
             .font = ct_font,
             .hb_font = hb_font,
             .color = color,
+            .size = opts.size,
         };
         result.quirks_disable_default_font_features = quirks.disableDefaultFontFeatures(&result);
 

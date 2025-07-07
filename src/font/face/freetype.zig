@@ -59,6 +59,9 @@ pub const Face = struct {
         bold: bool = false,
     } = .{},
 
+    /// The current size this font is set to.
+    size: font.face.DesiredSize,
+
     /// Initialize a new font face with the given source in-memory.
     pub fn initFile(
         lib: Library,
@@ -107,6 +110,7 @@ pub const Face = struct {
             .hb_font = hb_font,
             .ft_mutex = ft_mutex,
             .load_flags = opts.freetype_load_flags,
+            .size = opts.size,
         };
         result.quirks_disable_default_font_features = quirks.disableDefaultFontFeatures(&result);
 
@@ -203,6 +207,7 @@ pub const Face = struct {
     /// for clearing any glyph caches, font atlas data, etc.
     pub fn setSize(self: *Face, opts: font.face.Options) !void {
         try setSize_(self.face, opts.size);
+        self.size = opts.size;
     }
 
     fn setSize_(face: freetype.Face, size: font.face.DesiredSize) !void {
