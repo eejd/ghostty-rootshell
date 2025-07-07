@@ -496,7 +496,7 @@ pub fn performAction(
         .resize_split => self.resizeSplit(target, value),
         .equalize_splits => self.equalizeSplits(target),
         .goto_split => return self.gotoSplit(target, value),
-        .open_config => try configpkg.edit.open(self.core_app.alloc),
+        .open_config => return self.openConfig(),
         .config_change => self.configChange(target, value.config),
         .reload_config => try self.reloadConfig(target, value),
         .inspector => self.controlInspector(target, value),
@@ -519,6 +519,7 @@ pub fn performAction(
         .secure_input => self.setSecureInput(target, value),
         .ring_bell => try self.ringBell(target),
         .toggle_command_palette => try self.toggleCommandPalette(target),
+        .open_url => self.openUrl(value),
 
         // Unimplemented
         .close_all_windows,
@@ -1756,4 +1757,35 @@ fn initActions(self: *App) void {
         const action_map = self.app.as(gio.ActionMap);
         action_map.addAction(action.as(gio.Action));
     }
+}
+
+fn openConfig(self: *App) !bool {
+    // Get the config file path
+    const alloc = self.core_app.alloc;
+    const path = configpkg.edit.openPath(alloc) catch |err| {
+        log.warn("error getting config file path: {}", .{err});
+        return false;
+    };
+    defer alloc.free(path);
+
+    // Open it using openURL. "path" isn't actually a URL but
+    // at the time of writing that works just fine for GTK.
+    self.openUrl(.{ .kind = .text, .url = path });
+    return true;
+}
+
+fn openUrl(
+    app: *App,
+    value: apprt.action.OpenUrl,
+) void {
+    // TODO: use https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.OpenURI.html
+
+    // Fallback to the minimal cross-platform way of opening a URL.
+    // This is always a safe fallback and enables for example Windows
+    // to open URLs (GTK on Windows via WSL is a thing).
+    internal_os.open(
+        app.core_app.alloc,
+        value.kind,
+        value.url,
+    ) catch |err| log.warn("unable to open url: {}", .{err});
 }

@@ -519,7 +519,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             foreground: terminal.color.RGB,
             selection_background: ?configpkg.Config.TerminalColor,
             selection_foreground: ?configpkg.Config.TerminalColor,
-            bold_is_bright: bool,
+            bold_color: ?configpkg.BoldColor,
             min_contrast: f32,
             padding_color: configpkg.WindowPaddingColor,
             custom_shaders: configpkg.RepeatablePath,
@@ -580,7 +580,8 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
                     .background = config.background.toTerminalRGB(),
                     .foreground = config.foreground.toTerminalRGB(),
-                    .bold_is_bright = config.@"bold-is-bright",
+                    .bold_color = config.@"bold-color",
+
                     .min_contrast = @floatCast(config.@"minimum-contrast"),
                     .padding_color = config.@"window-padding-color",
 
@@ -2540,10 +2541,11 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     // the cell style (SGR), before applying any additional
                     // configuration, inversions, selections, etc.
                     const bg_style = style.bg(cell, color_palette);
-                    const fg_style = style.fg(
-                        color_palette,
-                        self.config.bold_is_bright,
-                    ) orelse self.foreground_color orelse self.default_foreground_color;
+                    const fg_style = style.fg(.{
+                        .default = self.foreground_color orelse self.default_foreground_color,
+                        .palette = color_palette,
+                        .bold = self.config.bold_color,
+                    });
 
                     // The final background color for the cell.
                     const bg = bg: {
@@ -2801,10 +2803,11 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                         .@"cell-background",
                         => |_, tag| {
                             const sty = screen.cursor.page_pin.style(screen.cursor.page_cell);
-                            const fg_style = sty.fg(
-                                color_palette,
-                                self.config.bold_is_bright,
-                            ) orelse self.foreground_color orelse self.default_foreground_color;
+                            const fg_style = sty.fg(.{
+                                .default = self.foreground_color orelse self.default_foreground_color,
+                                .palette = color_palette,
+                                .bold = self.config.bold_color,
+                            });
                             const bg_style = sty.bg(
                                 screen.cursor.page_cell,
                                 color_palette,
@@ -2852,7 +2855,11 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                         }
 
                         const sty = screen.cursor.page_pin.style(screen.cursor.page_cell);
-                        const fg_style = sty.fg(color_palette, self.config.bold_is_bright) orelse self.foreground_color orelse self.default_foreground_color;
+                        const fg_style = sty.fg(.{
+                            .default = self.foreground_color orelse self.default_foreground_color,
+                            .palette = color_palette,
+                            .bold = self.config.bold_color,
+                        });
                         const bg_style = sty.bg(screen.cursor.page_cell, color_palette) orelse self.background_color orelse self.default_background_color;
 
                         break :blk switch (txt) {

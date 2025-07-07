@@ -356,6 +356,10 @@ pub inline fn textureOptions(self: OpenGL) Texture.Options {
         .format = .rgba,
         .internal_format = .srgba,
         .target = .@"2D",
+        .min_filter = .linear,
+        .mag_filter = .linear,
+        .wrap_s = .clamp_to_edge,
+        .wrap_t = .clamp_to_edge,
     };
 }
 
@@ -388,6 +392,16 @@ pub inline fn imageTextureOptions(
         .format = format.toPixelFormat(),
         .internal_format = if (srgb) .srgba else .rgba,
         .target = .@"2D",
+        // TODO: Generate mipmaps for image textures and use
+        //       linear_mipmap_linear filtering so that they
+        //       look good even when scaled way down.
+        .min_filter = .linear,
+        .mag_filter = .linear,
+        // TODO: Separate out background image options, use
+        //       repeating coordinate modes so we don't have
+        //       to do the modulus in the shader.
+        .wrap_s = .clamp_to_edge,
+        .wrap_t = .clamp_to_edge,
     };
 }
 
@@ -409,6 +423,10 @@ pub fn initAtlasTexture(
             .format = format,
             .internal_format = internal_format,
             .target = .Rectangle,
+            .min_filter = .nearest,
+            .mag_filter = .nearest,
+            .wrap_s = .clamp_to_edge,
+            .wrap_t = .clamp_to_edge,
         },
         atlas.size,
         atlas.size,
