@@ -2522,8 +2522,6 @@ pub fn showChildExited(self: *Surface, info: apprt.surface.Message.ChildExited) 
 
     const banner_widget = banner.as(gtk.Widget);
 
-    banner_widget.addCssClass("child_exited");
-
     if (info.exit_code == 0)
         banner_widget.addCssClass("child_exited_normally")
     else
