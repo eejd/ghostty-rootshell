@@ -31,6 +31,9 @@ pub const Face = struct {
     /// tables).
     color: ?ColorState = null,
 
+    /// The current size this font is set to.
+    size: font.face.DesiredSize,
+
     /// True if our build is using Harfbuzz. If we're not, we can avoid
     /// some Harfbuzz-specific code paths.
     const harfbuzz_shaper = font.options.backend.hasHarfbuzz();
@@ -106,6 +109,7 @@ pub const Face = struct {
             .font = ct_font,
             .hb_font = hb_font,
             .color = color,
+            .size = opts.size,
         };
         result.quirks_disable_default_font_features = quirks.disableDefaultFontFeatures(&result);
 
@@ -333,7 +337,6 @@ pub const Face = struct {
                 .offset_y = 0,
                 .atlas_x = 0,
                 .atlas_y = 0,
-                .advance_x = 0,
             };
 
         const metrics = opts.grid_metrics;
@@ -482,25 +485,43 @@ pub const Face = struct {
         // This should be the distance from the left of
         // the cell to the left of the glyph's bounding box.
         const offset_x: i32 = offset_x: {
-            var result: i32 = @intFromFloat(@round(x));
-
-            // If our cell was resized then we adjust our glyph's
-            // position relative to the new center. This keeps glyphs
-            // centered in the cell whether it was made wider or narrower.
-            if (metrics.original_cell_width) |original_width| {
-                const before: i32 = @intCast(original_width);
-                const after: i32 = @intCast(metrics.cell_width);
-                // Increase the offset by half of the difference
-                // between the widths to keep things centered.
-                result += @divTrunc(after - before, 2);
+            // If the glyph's advance is narrower than the cell width then we
+            // center the advance of the glyph within the cell width. At first
+            // I implemented this to proportionally scale the center position
+            // of the glyph but that messes up glyphs that are meant to align
+            // vertically with others, so this is a compromise.
+            //
+            // This makes it so that when the `adjust-cell-width` config is
+            // used, or when a fallback font with a different advance width
+            // is used, we don't get weirdly aligned glyphs.
+            //
+            // We don't do this if the constraint has a horizontal alignment,
+            // since in that case the position was already calculated with the
+            // new cell width in mind.
+            if (opts.constraint.align_horizontal == .none) {
+                var advances: [glyphs.len]macos.graphics.Size = undefined;
+                _ = self.font.getAdvancesForGlyphs(.horizontal, &glyphs, &advances);
+                const advance = advances[0].width;
+                const new_advance =
+                    cell_width * @as(f64, @floatFromInt(opts.cell_width orelse 1));
+                // If the original advance is greater than the cell width then
+                // it's possible that this is a ligature or other glyph that is
+                // intended to overflow the cell to one side or the other, and
+                // adjusting the bearings could mess that up, so we just leave
+                // it alone if that's the case.
+                //
+                // We also don't want to do anything if the advance is zero or
+                // less, since this is used for stuff like combining characters.
+                if (advance > new_advance or advance <= 0.0) {
+                    break :offset_x @intFromFloat(@round(x));
+                }
+                break :offset_x @intFromFloat(
+                    @round(x + (new_advance - advance) / 2),
+                );
+            } else {
+                break :offset_x @intFromFloat(@round(x));
             }
-
-            break :offset_x result;
         };
-
-        // Get our advance
-        var advances: [glyphs.len]macos.graphics.Size = undefined;
-        _ = self.font.getAdvancesForGlyphs(.horizontal, &glyphs, &advances);
 
         return .{
             .width = px_width,
@@ -509,7 +530,6 @@ pub const Face = struct {
             .offset_y = offset_y,
             .atlas_x = region.x,
             .atlas_y = region.y,
-            .advance_x = @floatCast(advances[0].width),
         };
     }
 
@@ -741,6 +761,20 @@ pub const Face = struct {
             break :cell_width max;
         };
 
+        // Measure "水" (CJK water ideograph, U+6C34) for our ic width.
+        const ic_width: ?f64 = ic_width: {
+            const glyph = self.glyphIndex('水') orelse break :ic_width null;
+
+            var advances: [1]macos.graphics.Size = undefined;
+            _ = ct_font.getAdvancesForGlyphs(
+                .horizontal,
+                &.{@intCast(glyph)},
+                &advances,
+            );
+
+            break :ic_width advances[0].width;
+        };
+
         return .{
             .cell_width = cell_width,
             .ascent = ascent,
@@ -752,6 +786,7 @@ pub const Face = struct {
             .strikethrough_thickness = strikethrough_thickness,
             .cap_height = cap_height,
             .ex_height = ex_height,
+            .ic_width = ic_width,
         };
     }
 
