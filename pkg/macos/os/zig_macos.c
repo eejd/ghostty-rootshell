@@ -1,4 +1,5 @@
 #include <os/log.h>
+#include <os/signpost.h>
 
 // A wrapper so we can use the os_log_with_type macro.
 void zig_os_log_with_type(
