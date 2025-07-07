@@ -2504,7 +2504,7 @@ fn gtkStreamEnded(media_file: *gtk.MediaFile, _: *gobject.ParamSpec, _: ?*anyopa
     media_file.unref();
 }
 
-pub fn showChildExited(self: *Surface, info: apprt.surface.Message.ChildExited) (error{})!bool {
+pub fn showChildExited(self: *Surface, info: apprt.surface.Message.ChildExited) error{}!bool {
     if (!adw_version.supportsBanner()) return false;
 
     const warning_box = gtk.Box.new(.vertical, 0);

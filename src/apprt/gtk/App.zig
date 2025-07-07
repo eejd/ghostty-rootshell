@@ -847,7 +847,7 @@ fn toggleCommandPalette(_: *App, target: apprt.Target) !void {
     }
 }
 
-fn showChildExited(_: *App, target: apprt.Target, value: apprt.surface.Message.ChildExited) (error{})!bool {
+fn showChildExited(_: *App, target: apprt.Target, value: apprt.surface.Message.ChildExited) error{}!bool {
     switch (target) {
         .app => return false,
         .surface => |surface| return try surface.rt_surface.showChildExited(value),
