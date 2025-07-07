@@ -1072,6 +1072,7 @@ test "metrics" {
         .overline_thickness = 1,
         .box_thickness = 1,
         .cursor_height = 17,
+        .icon_height = 11,
     }, c.metrics);
 
     // Resize should change metrics
@@ -1088,6 +1089,7 @@ test "metrics" {
         .overline_thickness = 2,
         .box_thickness = 2,
         .cursor_height = 34,
+        .icon_height = 23,
     }, c.metrics);
 }
 
