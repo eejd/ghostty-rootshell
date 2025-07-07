@@ -96,24 +96,16 @@ if [[ "$GHOSTTY_SHELL_FEATURES" == *"sudo"* && -n "$TERMINFO" ]]; then
 fi
 
 # SSH Integration
-if [[ "$GHOSTTY_SHELL_FEATURES" == *ssh-env* ]] || [[ "$GHOSTTY_SHELL_FEATURES" == *ssh-terminfo* ]]; then
+if [[ "$GHOSTTY_SHELL_FEATURES" == *ssh-* ]]; then
   ssh() {
-    builtin local ssh_env ssh_opts
-    ssh_env=()
+    builtin local ssh_term ssh_opts
+    ssh_term=""
     ssh_opts=()
 
     # Configure environment variables for remote session
     if [[ "$GHOSTTY_SHELL_FEATURES" == *ssh-env* ]]; then
       ssh_opts+=(-o "SetEnv COLORTERM=truecolor")
       ssh_opts+=(-o "SendEnv TERM_PROGRAM TERM_PROGRAM_VERSION")
-
-      ssh_env+=(
-        "COLORTERM=truecolor"
-        "TERM_PROGRAM=ghostty"
-      )
-      if [[ -n "$TERM_PROGRAM_VERSION" ]]; then
-        ssh_env+=("TERM_PROGRAM_VERSION=$TERM_PROGRAM_VERSION")
-      fi
     fi
 
     # Install terminfo on remote host if needed
@@ -139,11 +131,11 @@ if [[ "$GHOSTTY_SHELL_FEATURES" == *ssh-env* ]] || [[ "$GHOSTTY_SHELL_FEATURES" 
         fi
 
         if [[ "$ssh_cache_check_success" == "true" ]]; then
-          ssh_env+=(TERM=xterm-ghostty)
+          ssh_term="xterm-ghostty"
         elif builtin command -v infocmp >/dev/null 2>&1; then
           if ! builtin command -v base64 >/dev/null 2>&1; then
             builtin echo "Warning: base64 command not available for terminfo installation." >&2
-            ssh_env+=(TERM=xterm-256color)
+            ssh_term="xterm-256color"
           else
             builtin local ssh_terminfo ssh_base64_decode_cmd
 
@@ -170,64 +162,43 @@ if [[ "$GHOSTTY_SHELL_FEATURES" == *ssh-env* ]] || [[ "$GHOSTTY_SHELL_FEATURES" 
                 exit 1
               ' 2>/dev/null; then
                 builtin echo "Terminfo setup complete on $ssh_hostname." >&2
-                ssh_env+=(TERM=xterm-ghostty)
+                ssh_term="xterm-ghostty"
                 ssh_opts+=(-o "ControlPath=$ssh_cpath")
 
                 # Cache successful installation
                 if [[ -n "$ssh_target" ]] && builtin command -v ghostty >/dev/null 2>&1; then
-                  (
-                    set +m
-                    {
-                      ghostty +ssh-cache --add="$ssh_target" >/dev/null 2>&1 || true
-                    } &
-                  )
+                  ghostty +ssh-cache --add="$ssh_target" >/dev/null 2>&1 || true
                 fi
               else
                 builtin echo "Warning: Failed to install terminfo." >&2
-                ssh_env+=(TERM=xterm-256color)
+                ssh_term="xterm-256color"
               fi
             else
               builtin echo "Warning: Could not generate terminfo data." >&2
-              ssh_env+=(TERM=xterm-256color)
+              ssh_term="xterm-256color"
             fi
           fi
         else
           builtin echo "Warning: ghostty command not available for cache management." >&2
-          ssh_env+=(TERM=xterm-256color)
+          ssh_term="xterm-256color"
         fi
       else
         if [[ "$GHOSTTY_SHELL_FEATURES" == *ssh-env* ]]; then
-          ssh_env+=(TERM=xterm-256color)
+          ssh_term="xterm-256color"
         fi
       fi
     fi
 
     # Execute SSH with environment handling
-    builtin local ssh_term_override=""
-    for ssh_v in "${ssh_env[@]}"; do
-      if [[ "$ssh_v" =~ ^TERM=(.*)$ ]]; then
-        ssh_term_override="${BASH_REMATCH[1]}"
-        break
-      fi
-    done
-
-    if [[ "$GHOSTTY_SHELL_FEATURES" == *ssh-env* && -z "$ssh_term_override" ]]; then
-      ssh_env+=(TERM=xterm-256color)
-      ssh_term_override="xterm-256color"
+    if [[ "$GHOSTTY_SHELL_FEATURES" == *ssh-env* && -z "$ssh_term" ]]; then
+      ssh_term="xterm-256color"
     fi
 
-    if [[ -n "$ssh_term_override" ]]; then
-      builtin local ssh_original_term="$TERM"
-      builtin export TERM="$ssh_term_override"
-      builtin command ssh "${ssh_opts[@]}" "$@"
-      local ssh_ret=$?
-      builtin export TERM="$ssh_original_term"
+    if [[ -n "$ssh_term" ]]; then
+      TERM="$ssh_term" builtin command ssh "${ssh_opts[@]}" "$@"
     else
       builtin command ssh "${ssh_opts[@]}" "$@"
-      local ssh_ret=$?
     fi
-
-    return $ssh_ret
   }
 fi
 

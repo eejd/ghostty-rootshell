@@ -245,25 +245,19 @@ _ghostty_deferred_init() {
     fi
 
     # SSH Integration
-    if [[ "$GHOSTTY_SHELL_FEATURES" == *ssh-env* ]] || [[ "$GHOSTTY_SHELL_FEATURES" == *ssh-terminfo* ]]; then
+    if [[ "$GHOSTTY_SHELL_FEATURES" == *ssh-* ]]; then
       ssh() {
         emulate -L zsh
         setopt local_options no_glob_subst
 
-        local ssh_env ssh_opts
-        ssh_env=()
+        local ssh_term ssh_opts
+        ssh_term=""
         ssh_opts=()
 
         # Configure environment variables for remote session
         if [[ "$GHOSTTY_SHELL_FEATURES" == *ssh-env* ]]; then
           ssh_opts+=(-o "SetEnv COLORTERM=truecolor")
           ssh_opts+=(-o "SendEnv TERM_PROGRAM TERM_PROGRAM_VERSION")
-
-          ssh_env+=(
-            "COLORTERM=truecolor"
-            "TERM_PROGRAM=ghostty"
-          )
-          [[ -n "$TERM_PROGRAM_VERSION" ]] && ssh_env+=("TERM_PROGRAM_VERSION=$TERM_PROGRAM_VERSION")
         fi
 
         # Install terminfo on remote host if needed
@@ -289,11 +283,11 @@ _ghostty_deferred_init() {
             fi
 
             if [[ "$ssh_cache_check_success" == "true" ]]; then
-              ssh_env+=(TERM=xterm-ghostty)
+              ssh_term="xterm-ghostty"
             elif (( $+commands[infocmp] )); then
               if ! (( $+commands[base64] )); then
                 print "Warning: base64 command not available for terminfo installation." >&2
-                ssh_env+=(TERM=xterm-256color)
+                ssh_term="xterm-256color"
               else
                 local ssh_terminfo ssh_base64_decode_cmd
 
@@ -320,61 +314,41 @@ _ghostty_deferred_init() {
                     exit 1
                   ' 2>/dev/null; then
                     print "Terminfo setup complete on $ssh_hostname." >&2
-                    ssh_env+=(TERM=xterm-ghostty)
+                    ssh_term="xterm-ghostty"
                     ssh_opts+=(-o "ControlPath=$ssh_cpath")
 
                     # Cache successful installation
                     if [[ -n "$ssh_target" ]] && (( $+commands[ghostty] )); then
-                      {
-                        ghostty +ssh-cache --add="$ssh_target" >/dev/null 2>&1 || true
-                      } &!
+                      ghostty +ssh-cache --add="$ssh_target" >/dev/null 2>&1 || true
                     fi
                   else
                     print "Warning: Failed to install terminfo." >&2
-                    ssh_env+=(TERM=xterm-256color)
+                    ssh_term="xterm-256color"
                   fi
                 else
                   print "Warning: Could not generate terminfo data." >&2
-                  ssh_env+=(TERM=xterm-256color)
+                  ssh_term="xterm-256color"
                 fi
               fi
             else
               print "Warning: ghostty command not available for cache management." >&2
-              ssh_env+=(TERM=xterm-256color)
+              ssh_term="xterm-256color"
             fi
           else
-            [[ "$GHOSTTY_SHELL_FEATURES" == *ssh-env* ]] && ssh_env+=(TERM=xterm-256color)
+            [[ "$GHOSTTY_SHELL_FEATURES" == *ssh-env* ]] && ssh_term="xterm-256color"
           fi
         fi
 
         # Execute SSH with environment handling
-        local ssh_term_override=""
-        local ssh_v
-        for ssh_v in "${ssh_env[@]}"; do
-          if [[ "$ssh_v" =~ ^TERM=(.*)$ ]]; then
-            ssh_term_override="${match[1]}"
-            break
-          fi
-        done
-
-        if [[ "$GHOSTTY_SHELL_FEATURES" == *ssh-env* && -z "$ssh_term_override" ]]; then
-          ssh_env+=(TERM=xterm-256color)
-          ssh_term_override="xterm-256color"
+        if [[ "$GHOSTTY_SHELL_FEATURES" == *ssh-env* && -z "$ssh_term" ]]; then
+          ssh_term="xterm-256color"
         fi
 
-        local ssh_ret
-        if [[ -n "$ssh_term_override" ]]; then
-          local ssh_original_term="$TERM"
-          export TERM="$ssh_term_override"
-          command ssh "${ssh_opts[@]}" "$@"
-          ssh_ret=$?
-          export TERM="$ssh_original_term"
+        if [[ -n "$ssh_term" ]]; then
+          TERM="$ssh_term" command ssh "${ssh_opts[@]}" "$@"
         else
           command ssh "${ssh_opts[@]}" "$@"
-          ssh_ret=$?
         fi
-
-        return $ssh_ret
       }
     fi
 

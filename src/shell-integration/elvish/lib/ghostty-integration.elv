@@ -101,23 +101,16 @@
   # SSH Integration
   use str
 
-  if (or (str:contains $E:GHOSTTY_SHELL_FEATURES ssh-env) (str:contains $E:GHOSTTY_SHELL_FEATURES ssh-terminfo)) {
+  if (str:contains $E:GHOSTTY_SHELL_FEATURES ssh-) {
+      # SSH wrapper that preserves Ghostty features across remote connections
       fn ssh {|@args|
-          var ssh-env = []
+          var ssh-term = ""
           var ssh-opts = []
 
           # Configure environment variables for remote session
           if (str:contains $E:GHOSTTY_SHELL_FEATURES ssh-env) {
               set ssh-opts = [$@ssh-opts -o "SetEnv COLORTERM=truecolor"]
               set ssh-opts = [$@ssh-opts -o "SendEnv TERM_PROGRAM TERM_PROGRAM_VERSION"]
-
-              set ssh-env = [
-                  "COLORTERM=truecolor"
-                  "TERM_PROGRAM=ghostty"
-              ]
-              if (has-env TERM_PROGRAM_VERSION) {
-                  set ssh-env = [$@ssh-env "TERM_PROGRAM_VERSION="$E:TERM_PROGRAM_VERSION]
-              }
           }
 
           # Install terminfo on remote host if needed
@@ -159,7 +152,7 @@
                   }
 
                   if $ssh-cache-check-success {
-                      set ssh-env = [$@ssh-env TERM=xterm-ghostty]
+                      set ssh-term = "xterm-ghostty"
                   } else {
                       try {
                           external infocmp --help >/dev/null 2>&1
@@ -208,71 +201,58 @@
 
                                   if $terminfo-install-success {
                                       echo "Terminfo setup complete on "$ssh-hostname"." >&2
-                                      set ssh-env = [$@ssh-env TERM=xterm-ghostty]
+                                      set ssh-term = "xterm-ghostty"
                                       set ssh-opts = [$@ssh-opts -o ControlPath=$ssh-cpath]
 
                                       # Cache successful installation
                                       if (and (not-eq $ssh-target "") (has-external ghostty)) {
-                                          external ghostty +ssh-cache --add=$ssh-target >/dev/null 2>&1 &
+                                          try {
+                                              external ghostty +ssh-cache --add=$ssh-target >/dev/null 2>&1
+                                          } catch {
+                                              # cache add failed
+                                          }
                                       }
                                   } else {
                                       echo "Warning: Failed to install terminfo." >&2
-                                      set ssh-env = [$@ssh-env TERM=xterm-256color]
+                                      set ssh-term = "xterm-256color"
                                   }
                               } else {
                                   echo "Warning: Could not generate terminfo data." >&2
-                                  set ssh-env = [$@ssh-env TERM=xterm-256color]
+                                  set ssh-term = "xterm-256color"
                               }
                           } catch {
                               echo "Warning: base64 command not available for terminfo installation." >&2
-                              set ssh-env = [$@ssh-env TERM=xterm-256color]
+                              set ssh-term = "xterm-256color"
                           }
                       } catch {
                           echo "Warning: ghostty command not available for cache management." >&2
-                          set ssh-env = [$@ssh-env TERM=xterm-256color]
+                          set ssh-term = "xterm-256color"
                       }
                   }
               } else {
                   if (str:contains $E:GHOSTTY_SHELL_FEATURES ssh-env) {
-                      set ssh-env = [$@ssh-env TERM=xterm-256color]
+                      set ssh-term = "xterm-256color"
                   }
               }
           }
 
           # Execute SSH with environment handling
-          var ssh-term-override = ""
-          for ssh-v $ssh-env {
-              if (str:has-prefix $ssh-v TERM=) {
-                  set ssh-term-override = (str:trim-prefix $ssh-v TERM=)
-                  break
-              }
+          if (and (str:contains $E:GHOSTTY_SHELL_FEATURES ssh-env) (eq $ssh-term "")) {
+              set ssh-term = "xterm-256color"
           }
 
-          if (and (str:contains $E:GHOSTTY_SHELL_FEATURES ssh-env) (eq $ssh-term-override "")) {
-              set ssh-env = [$@ssh-env TERM=xterm-256color]
-              set ssh-term-override = xterm-256color
-          }
-
-          var ssh-ret = 0
-          if (not-eq $ssh-term-override "") {
-              var ssh-original-term = $E:TERM
-              set-env TERM $ssh-term-override
+          if (not-eq $ssh-term "") {
+              var old-term = $E:TERM
+              set-env TERM $ssh-term
               try {
                   external ssh $@ssh-opts $@args
               } catch e {
-                  set ssh-ret = $e[reason][exit-status]
+                  set-env TERM $old-term
+                  fail $e
               }
-              set-env TERM $ssh-original-term
+              set-env TERM $old-term
           } else {
-              try {
-                  external ssh $@ssh-opts $@args
-              } catch e {
-                  set ssh-ret = $e[reason][exit-status]
-              }
-          }
-
-          if (not-eq $ssh-ret 0) {
-              fail ssh-failed
+              external ssh $@ssh-opts $@args
           }
       }
   }
