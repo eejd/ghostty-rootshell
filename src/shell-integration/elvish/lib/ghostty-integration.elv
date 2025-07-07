@@ -105,28 +105,11 @@
       fn ssh {|@args|
           var ssh-env = []
           var ssh-opts = []
-          var ssh-exported-vars = []
 
           # Configure environment variables for remote session
           if (str:contains $E:GHOSTTY_SHELL_FEATURES ssh-env) {
               set ssh-opts = [$@ssh-opts -o "SetEnv COLORTERM=truecolor"]
-
-              if (has-env TERM_PROGRAM) {
-                  set ssh-exported-vars = [$@ssh-exported-vars "TERM_PROGRAM="$E:TERM_PROGRAM]
-              } else {
-                  set ssh-exported-vars = [$@ssh-exported-vars "TERM_PROGRAM"]
-              }
-              set-env TERM_PROGRAM ghostty
-              set ssh-opts = [$@ssh-opts -o "SendEnv TERM_PROGRAM"]
-
-              if (has-env TERM_PROGRAM_VERSION) {
-                  if (has-env TERM_PROGRAM_VERSION) {
-                      set ssh-exported-vars = [$@ssh-exported-vars "TERM_PROGRAM_VERSION="$E:TERM_PROGRAM_VERSION]
-                  } else {
-                      set ssh-exported-vars = [$@ssh-exported-vars "TERM_PROGRAM_VERSION"]
-                  }
-                  set ssh-opts = [$@ssh-opts -o "SendEnv TERM_PROGRAM_VERSION"]
-              }
+              set ssh-opts = [$@ssh-opts -o "SendEnv TERM_PROGRAM TERM_PROGRAM_VERSION"]
 
               set ssh-env = [
                   "COLORTERM=truecolor"
@@ -285,18 +268,6 @@
                   external ssh $@ssh-opts $@args
               } catch e {
                   set ssh-ret = $e[reason][exit-status]
-              }
-          }
-
-          # Restore original environment variables
-          if (str:contains $E:GHOSTTY_SHELL_FEATURES ssh-env) {
-              for ssh-v $ssh-exported-vars {
-                  if (str:contains $ssh-v =) {
-                      var ssh-var-parts = (str:split &max=2 = $ssh-v)
-                      set-env $ssh-var-parts[0] $ssh-var-parts[1]
-                  } else {
-                      unset-env $ssh-v
-                  }
               }
           }
 

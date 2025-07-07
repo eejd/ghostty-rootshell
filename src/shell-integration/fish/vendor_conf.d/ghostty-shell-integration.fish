@@ -91,28 +91,11 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
         function ssh --wraps=ssh --description "SSH wrapper with Ghostty integration"
             set -l ssh_env
             set -l ssh_opts
-            set -l ssh_exported_vars
 
             # Configure environment variables for remote session
             if string match -q '*ssh-env*' -- "$GHOSTTY_SHELL_FEATURES"
                 set -a ssh_opts -o "SetEnv COLORTERM=truecolor"
-
-                if set -q TERM_PROGRAM
-                    set -a ssh_exported_vars "TERM_PROGRAM=$TERM_PROGRAM"
-                else
-                    set -a ssh_exported_vars "TERM_PROGRAM"
-                end
-                set -gx TERM_PROGRAM ghostty
-                set -a ssh_opts -o "SendEnv TERM_PROGRAM"
-
-                if test -n "$TERM_PROGRAM_VERSION"
-                    if set -q TERM_PROGRAM_VERSION
-                        set -a ssh_exported_vars "TERM_PROGRAM_VERSION=$TERM_PROGRAM_VERSION"
-                    else
-                        set -a ssh_exported_vars "TERM_PROGRAM_VERSION"
-                    end
-                    set -a ssh_opts -o "SendEnv TERM_PROGRAM_VERSION"
-                end
+                set -a ssh_opts -o "SendEnv TERM_PROGRAM TERM_PROGRAM_VERSION"
 
                 set -a ssh_env "COLORTERM=truecolor"
                 set -a ssh_env "TERM_PROGRAM=ghostty"
@@ -235,17 +218,6 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
             else
                 command ssh $ssh_opts $argv
                 set ssh_ret $status
-            end
-
-            # Restore original environment variables
-            if string match -q '*ssh-env*' -- "$GHOSTTY_SHELL_FEATURES"
-                for ssh_v in $ssh_exported_vars
-                    if string match -q '*=*' -- $ssh_v
-                        set -gx (string split -m1 '=' -- $ssh_v)
-                    else
-                        set -e $ssh_v
-                    end
-                end
             end
 
             return $ssh_ret

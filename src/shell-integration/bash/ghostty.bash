@@ -96,33 +96,16 @@ if [[ "$GHOSTTY_SHELL_FEATURES" == *"sudo"* && -n "$TERMINFO" ]]; then
 fi
 
 # SSH Integration
-if [[ "$GHOSTTY_SHELL_FEATURES" =~ ssh-(env|terminfo) ]]; then
+if [[ "$GHOSTTY_SHELL_FEATURES" == *ssh-env* ]] || [[ "$GHOSTTY_SHELL_FEATURES" == *ssh-terminfo* ]]; then
   ssh() {
-    builtin local ssh_env ssh_opts ssh_exported_vars
+    builtin local ssh_env ssh_opts
     ssh_env=()
     ssh_opts=()
-    ssh_exported_vars=()
 
     # Configure environment variables for remote session
-    if [[ "$GHOSTTY_SHELL_FEATURES" =~ ssh-env ]]; then
+    if [[ "$GHOSTTY_SHELL_FEATURES" == *ssh-env* ]]; then
       ssh_opts+=(-o "SetEnv COLORTERM=truecolor")
-
-      if [[ -n "${TERM_PROGRAM+x}" ]]; then
-        ssh_exported_vars+=("TERM_PROGRAM=${TERM_PROGRAM}")
-      else
-        ssh_exported_vars+=("TERM_PROGRAM")
-      fi
-      builtin export "TERM_PROGRAM=ghostty"
-      ssh_opts+=(-o "SendEnv TERM_PROGRAM")
-
-      if [[ -n "$TERM_PROGRAM_VERSION" ]]; then
-        if [[ -n "${TERM_PROGRAM_VERSION+x}" ]]; then
-          ssh_exported_vars+=("TERM_PROGRAM_VERSION=${TERM_PROGRAM_VERSION}")
-        else
-          ssh_exported_vars+=("TERM_PROGRAM_VERSION")
-        fi
-        ssh_opts+=(-o "SendEnv TERM_PROGRAM_VERSION")
-      fi
+      ssh_opts+=(-o "SendEnv TERM_PROGRAM TERM_PROGRAM_VERSION")
 
       ssh_env+=(
         "COLORTERM=truecolor"
@@ -134,7 +117,7 @@ if [[ "$GHOSTTY_SHELL_FEATURES" =~ ssh-(env|terminfo) ]]; then
     fi
 
     # Install terminfo on remote host if needed
-    if [[ "$GHOSTTY_SHELL_FEATURES" =~ ssh-terminfo ]]; then
+    if [[ "$GHOSTTY_SHELL_FEATURES" == *ssh-terminfo* ]]; then
       builtin local ssh_config ssh_user ssh_hostname
       ssh_config=$(builtin command ssh -G "$@" 2>/dev/null)
 
@@ -146,7 +129,7 @@ if [[ "$GHOSTTY_SHELL_FEATURES" =~ ssh-(env|terminfo) ]]; then
         [[ -n "$ssh_user" && -n "$ssh_hostname" ]] && break
       done <<< "$ssh_config"
 
-      ssh_target="${ssh_user}@${ssh_hostname}"
+      builtin local ssh_target="${ssh_user}@${ssh_hostname}"
 
       if [[ -n "$ssh_hostname" ]]; then
         # Check if terminfo is already cached
@@ -213,7 +196,7 @@ if [[ "$GHOSTTY_SHELL_FEATURES" =~ ssh-(env|terminfo) ]]; then
           ssh_env+=(TERM=xterm-256color)
         fi
       else
-        if [[ "$GHOSTTY_SHELL_FEATURES" =~ ssh-env ]]; then
+        if [[ "$GHOSTTY_SHELL_FEATURES" == *ssh-env* ]]; then
           ssh_env+=(TERM=xterm-256color)
         fi
       fi
@@ -228,7 +211,7 @@ if [[ "$GHOSTTY_SHELL_FEATURES" =~ ssh-(env|terminfo) ]]; then
       fi
     done
 
-    if [[ "$GHOSTTY_SHELL_FEATURES" =~ ssh-env && -z "$ssh_term_override" ]]; then
+    if [[ "$GHOSTTY_SHELL_FEATURES" == *ssh-env* && -z "$ssh_term_override" ]]; then
       ssh_env+=(TERM=xterm-256color)
       ssh_term_override="xterm-256color"
     fi
@@ -242,17 +225,6 @@ if [[ "$GHOSTTY_SHELL_FEATURES" =~ ssh-(env|terminfo) ]]; then
     else
       builtin command ssh "${ssh_opts[@]}" "$@"
       local ssh_ret=$?
-    fi
-
-    # Restore original environment variables
-    if [[ "$GHOSTTY_SHELL_FEATURES" =~ ssh-env ]]; then
-      for ssh_v in "${ssh_exported_vars[@]}"; do
-        if [[ "$ssh_v" == *=* ]]; then
-          builtin export "${ssh_v?}"
-        else
-          builtin unset "${ssh_v}"
-        fi
-      done
     fi
 
     return $ssh_ret
@@ -286,8 +258,8 @@ function __ghostty_precmd() {
 
       # Cursor
       if [[ "$GHOSTTY_SHELL_FEATURES" == *"cursor"* ]]; then
-        PS1=$PS1'\[\e[5 q\]'      # blinking bar for input
-        builtin printf "\e[0 q"   # reset to default cursor
+        [[ "$PS1" != *'\[\e[5 q\]'* ]] && PS1=$PS1'\[\e[5 q\]' # input
+        [[ "$PS0" != *'\[\e[0 q\]'* ]] && PS0=$PS0'\[\e[0 q\]' # reset
       fi
 
       # Title (working directory)
