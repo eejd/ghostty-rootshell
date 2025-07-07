@@ -35,6 +35,9 @@ cursor_thickness: u32 = 1,
 /// The height in pixels of the cursor sprite.
 cursor_height: u32,
 
+/// The constraint height for nerd fonts icons.
+icon_height: u32,
+
 /// Minimum acceptable values for some fields to prevent modifiers
 /// from being able to, for example, cause 0-thickness underlines.
 const Minimums = struct {
@@ -46,6 +49,7 @@ const Minimums = struct {
     const box_thickness = 1;
     const cursor_thickness = 1;
     const cursor_height = 1;
+    const icon_height = 1;
 };
 
 /// Metrics extracted from a font face, based on
@@ -129,7 +133,7 @@ pub fn calc(face: FaceMetrics) Metrics {
     // that the cell is large enough for the provided size, since we cast
     // it to an integer later.
     const cell_width = @ceil(face.cell_width);
-    const cell_height = @ceil(face.ascent - face.descent + face.line_gap);
+    const cell_height = @ceil(face.lineHeight());
 
     // We split our line gap in two parts, and put half of it on the top
     // of the cell and the other half on the bottom, so that our text never
@@ -173,6 +177,17 @@ pub fn calc(face: FaceMetrics) Metrics {
         (face.strikethrough_position orelse
             ex_height * 0.5 + strikethrough_thickness * 0.5));
 
+    // The calculation for icon height in the nerd fonts patcher
+    // is two thirds cap height to one third line height, but we
+    // use an opinionated default of 1.2 * cap height instead.
+    //
+    // Doing this prevents fonts with very large line heights
+    // from having excessively oversized icons, and allows fonts
+    // with very small line heights to still have roomy icons.
+    //
+    // We do cap it at `cell_height` though for obvious reasons.
+    const icon_height = @min(cell_height, cap_height * 1.2);
+
     var result: Metrics = .{
         .cell_width = @intFromFloat(cell_width),
         .cell_height = @intFromFloat(cell_height),
@@ -185,6 +200,7 @@ pub fn calc(face: FaceMetrics) Metrics {
         .overline_thickness = @intFromFloat(underline_thickness),
         .box_thickness = @intFromFloat(underline_thickness),
         .cursor_height = @intFromFloat(cell_height),
+        .icon_height = @intFromFloat(icon_height),
     };
 
     // Ensure all metrics are within their allowable range.
@@ -423,6 +439,7 @@ fn init() Metrics {
         .overline_thickness = 0,
         .box_thickness = 0,
         .cursor_height = 0,
+        .icon_height = 0,
     };
 }
 
