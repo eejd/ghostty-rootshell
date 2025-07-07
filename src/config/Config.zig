@@ -396,6 +396,18 @@ pub const compatibility = std.StaticStringMap(
 /// Thickness in pixels or percentage adjustment of box drawing characters.
 /// See the notes about adjustments in `adjust-cell-width`.
 @"adjust-box-thickness": ?MetricModifier = null,
+/// Height in pixels or percentage adjustment of maximum height for nerd font icons.
+///
+/// Increasing this value will allow nerd font icons to be larger, but won't
+/// necessarily force them to be. Decreasing this value will make nerd font
+/// icons smaller.
+///
+/// The default value for the icon height is 1.2 times the height of capital
+/// letters in your primary font, so something like -16.6% would make icons
+/// roughly the same height as capital letters.
+///
+/// See the notes about adjustments in `adjust-cell-width`.
+@"adjust-icon-height": ?MetricModifier = null,
 
 /// The method to use for calculating the cell width of a grapheme cluster.
 /// The default value is `unicode` which uses the Unicode standard to determine

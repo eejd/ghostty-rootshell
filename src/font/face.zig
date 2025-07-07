@@ -150,6 +150,9 @@ pub const RenderOptions = struct {
         /// Maximum number of cells horizontally to use.
         max_constraint_width: u2 = 2,
 
+        /// What to use as the height metric when constraining the glyph.
+        height: Height = .cell,
+
         pub const Size = enum {
             /// Don't change the size of this glyph.
             none,
@@ -176,6 +179,13 @@ pub const RenderOptions = struct {
             center,
         };
 
+        pub const Height = enum {
+            /// Use the full height of the cell for constraining this glyph.
+            cell,
+            /// Use the "icon height" from the grid metrics as the height.
+            icon,
+        };
+
         /// The size and position of a glyph.
         pub const GlyphSize = struct {
             width: f64,
@@ -189,35 +199,35 @@ pub const RenderOptions = struct {
         pub fn constrain(
             self: Constraint,
             glyph: GlyphSize,
-            /// Width of one cell.
-            cell_width: f64,
-            /// Height of one cell.
-            cell_height: f64,
+            metrics: Metrics,
             /// Number of cells horizontally available for this glyph.
             constraint_width: u2,
         ) GlyphSize {
             var g = glyph;
 
-            const available_width =
-                cell_width * @as(f64, @floatFromInt(
-                    @min(
-                        self.max_constraint_width,
-                        constraint_width,
-                    ),
-                ));
+            const available_width: f64 = @floatFromInt(
+                metrics.cell_width * @min(
+                    self.max_constraint_width,
+                    constraint_width,
+                ),
+            );
+            const available_height: f64 = @floatFromInt(switch (self.height) {
+                .cell => metrics.cell_height,
+                .icon => metrics.icon_height,
+            });
 
             const w = available_width -
                 self.pad_left * available_width -
                 self.pad_right * available_width;
-            const h = cell_height -
-                self.pad_top * cell_height -
-                self.pad_bottom * cell_height;
+            const h = available_height -
+                self.pad_top * available_height -
+                self.pad_bottom * available_height;
 
             // Subtract padding from the bearings so that our
             // alignment and sizing code works correctly. We
             // re-add before returning.
             g.x -= self.pad_left * available_width;
-            g.y -= self.pad_bottom * cell_height;
+            g.y -= self.pad_bottom * available_height;
 
             switch (self.size_horizontal) {
                 .none => {},
@@ -319,7 +329,16 @@ pub const RenderOptions = struct {
 
             // Re-add our padding before returning.
             g.x += self.pad_left * available_width;
-            g.y += self.pad_bottom * cell_height;
+            g.y += self.pad_bottom * available_height;
+
+            // If the available height is less than the cell height, we
+            // add half of the difference to center it in the full height.
+            //
+            // If necessary, in the future, we can adjust this to account
+            // for alignment, but that isn't necessary with any of the nf
+            // icons afaict.
+            const cell_height: f64 = @floatFromInt(metrics.cell_height);
+            g.y += (cell_height - available_height) / 2;
 
             return g;
         }
