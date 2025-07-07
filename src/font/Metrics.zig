@@ -115,9 +115,10 @@ pub const FaceMetrics = struct {
     /// NOTE: IC = Ideograph Character
     ic_width: ?f64 = null,
 
-    /// Convenience function for getting the line height (ascent - descent).
+    /// Convenience function for getting the line height
+    /// (ascent - descent + line_gap).
     pub inline fn lineHeight(self: FaceMetrics) f64 {
-        return self.ascent - self.descent;
+        return self.ascent - self.descent + self.line_gap;
     }
 };
 
