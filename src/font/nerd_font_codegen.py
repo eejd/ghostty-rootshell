@@ -213,8 +213,8 @@ def emit_zig_entry_multikey(codepoints: list[int], attr: PatchSetAttributeEntry)
         s += f"            .pad_top = {v_pad},\n"
         s += f"            .pad_bottom = {v_pad},\n"
     elif y_padding:
-        s += f"            .pad_top = {y_padding},\n"
-        s += f"            .pad_bottom = {y_padding},\n"
+        s += f"            .pad_top = {y_padding / 2},\n"
+        s += f"            .pad_bottom = {y_padding / 2},\n"
 
     if xy_ratio > 0:
         s += f"            .max_xy_ratio = {xy_ratio},\n"

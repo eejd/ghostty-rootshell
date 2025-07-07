@@ -40,8 +40,8 @@ pub fn getConstraint(cp: u21) Constraint {
             .max_constraint_width = 1,
             .align_horizontal = .center,
             .align_vertical = .center,
-            .pad_top = 0.3,
-            .pad_bottom = 0.3,
+            .pad_top = 0.15,
+            .pad_bottom = 0.15,
         },
         0xe0b0,
         => .{
