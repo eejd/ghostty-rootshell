@@ -144,6 +144,23 @@ pub const RenderOptions = struct {
         /// Bottom padding when resizing.
         pad_bottom: f64 = 0.0,
 
+        // This acts as a multiple of the provided width when applying
+        // constraints, so if this is 1.6 for example, then a width of
+        // 10 would be treated as though it were 16.
+        group_width: f64 = 1.0,
+        // This acts as a multiple of the provided height when applying
+        // constraints, so if this is 1.6 for example, then a height of
+        // 10 would be treated as though it were 16.
+        group_height: f64 = 1.0,
+        // This is an x offset for the actual width within the group width.
+        // If this is 0.5 then the glyph will be offset so that its left
+        // edge sits at the halfway point of the group width.
+        group_x: f64 = 0.0,
+        // This is a y offset for the actual height within the group height.
+        // If this is 0.5 then the glyph will be offset so that its bottom
+        // edge sits at the halfway point of the group height.
+        group_y: f64 = 0.0,
+
         /// Maximum ratio of width to height when resizing.
         max_xy_ratio: ?f64 = null,
 
@@ -245,6 +262,10 @@ pub const RenderOptions = struct {
             g.x -= self.pad_left * available_width;
             g.y -= self.pad_bottom * available_height;
 
+            // Multiply by group width and height for better sizing.
+            g.width *= self.group_width;
+            g.height *= self.group_height;
+
             switch (self.size_horizontal) {
                 .none => {},
                 .fit => if (g.width > w) {
@@ -322,6 +343,14 @@ pub const RenderOptions = struct {
                     g.y = 0;
                 },
             }
+
+            // Add group-relative position
+            g.x += self.group_x * g.width;
+            g.y += self.group_y * g.height;
+
+            // Divide group width and height back out before we align.
+            g.width /= self.group_width;
+            g.height /= self.group_height;
 
             if (self.max_xy_ratio) |ratio| if (g.width > g.height * ratio) {
                 const orig_width = g.width;
