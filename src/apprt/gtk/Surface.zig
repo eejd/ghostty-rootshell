@@ -2504,6 +2504,9 @@ fn gtkStreamEnded(media_file: *gtk.MediaFile, _: *gobject.ParamSpec, _: ?*anyopa
     media_file.unref();
 }
 
+/// Show native GUI element with a notification that the child process has
+/// closed. Return `true` if we are able to show the GUI notification, and
+/// `false` if we are not.
 pub fn showChildExited(self: *Surface, info: apprt.surface.Message.ChildExited) error{}!bool {
     if (!adw_version.supportsBanner()) return false;
 
