@@ -2507,11 +2507,6 @@ fn gtkStreamEnded(media_file: *gtk.MediaFile, _: *gobject.ParamSpec, _: ?*anyopa
 pub fn showChildExited(self: *Surface, info: apprt.surface.Message.ChildExited) error{}!bool {
     if (!adw_version.supportsBanner()) return false;
 
-    const warning_box = gtk.Box.new(.vertical, 0);
-
-    warning_box.as(gtk.Widget).setHalign(.fill);
-    warning_box.as(gtk.Widget).setValign(.end);
-
     const warning_text = if (info.exit_code == 0)
         i18n._("Process exited normally. Press any key to close the terminal.")
     else
@@ -2521,15 +2516,15 @@ pub fn showChildExited(self: *Surface, info: apprt.surface.Message.ChildExited) 
     banner.setRevealed(1);
 
     const banner_widget = banner.as(gtk.Widget);
+    banner_widget.setHalign(.fill);
+    banner_widget.setValign(.end);
 
     if (info.exit_code == 0)
         banner_widget.addCssClass("child_exited_normally")
     else
         banner_widget.addCssClass("child_exited_abnormally");
 
-    warning_box.append(banner_widget);
-
-    self.overlay.addOverlay(warning_box.as(gtk.Widget));
+    self.overlay.addOverlay(banner_widget);
 
     return true;
 }
