@@ -41,11 +41,12 @@ pub fn run(
     // If we're on macOS, we setup signposts so its easier to find
     // the results in Instruments. There's a lot of nasty comptime stuff
     // here but its just to ensure this does nothing on other platforms.
-    const signpost_name = "Ghostty Benchmark";
+    const signpost_name = "ghostty";
     const signpost: if (builtin.target.os.tag.isDarwin()) struct {
         log: *macos.os.Log,
         id: macos.os.signpost.Id,
     } else void = if (comptime builtin.os.tag == .macos) macos: {
+        macos.os.signpost.init();
         const log = macos.os.Log.create(
             build_config.bundle_id,
             macos.os.signpost.Category.points_of_interest,

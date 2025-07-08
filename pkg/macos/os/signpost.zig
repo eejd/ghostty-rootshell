@@ -5,6 +5,38 @@ const c = @import("c.zig").c;
 const logpkg = @import("log.zig");
 const Log = logpkg.Log;
 
+/// This should be called once at the start of the program to intialize
+/// some required state for signpost logging.
+///
+/// This is all to workaround a Zig bug:
+/// https://github.com/ziglang/zig/issues/24370
+pub fn init() void {
+    if (__dso_handle != null) return;
+
+    // Since __dso_handle is not automatically populated by the linker,
+    // we populate it by looking up the main function's module address
+    // which should be a mach-o header.
+    var info: DlInfo = undefined;
+    const result = dladdr(@import("root").main, &info);
+    assert(result != 0);
+    __dso_handle = @ptrCast(@alignCast(info.dli_fbase));
+}
+
+/// This should REALLY be an extern var that is populated by the linker,
+/// but there is a Zig bug: https://github.com/ziglang/zig/issues/24370
+var __dso_handle: ?*c.mach_header = null;
+
+// Import the necessary C functions and types
+extern "c" fn dladdr(addr: ?*const anyopaque, info: *DlInfo) c_int;
+
+// Define the Dl_info structure
+const DlInfo = extern struct {
+    dli_fname: [*:0]const u8, // Pathname of shared object
+    dli_fbase: ?*anyopaque, // Base address of shared object
+    dli_sname: [*:0]const u8, // Name of nearest symbol
+    dli_saddr: ?*anyopaque, // Address of nearest symbol
+};
+
 /// Checks whether signpost logging is enabled for the given log handle.
 /// Returns true if signposts will be recorded for this log, false otherwise.
 /// This can be used to avoid expensive operations when signpost logging is disabled.
@@ -48,8 +80,6 @@ pub fn intervalEnd(log: *Log, id: Id, comptime name: [:0]const u8) void {
     emitWithName(log, id, .interval_end, name);
 }
 
-extern var __dso_handle: usize;
-
 /// The internal function to emit a signpost with a specific name.
 fn emitWithName(
     log: *Log,
@@ -57,14 +87,17 @@ fn emitWithName(
     typ: Type,
     comptime name: [:0]const u8,
 ) void {
-    var buf: [64]u8 = @splat(0);
+    // Init must be called by this point.
+    assert(__dso_handle != null);
+
+    var buf: [2]u8 = @splat(0);
     c._os_signpost_emit_with_name_impl(
-        &__dso_handle,
+        __dso_handle,
         @ptrCast(log),
         @intFromEnum(typ),
         @intFromEnum(id),
         name.ptr,
-        null,
+        "".ptr,
         &buf,
         buf.len,
     );
@@ -135,12 +168,12 @@ pub const Category = struct {
     /// Dynamic Tracing category enables runtime-configurable logging.
     /// Signposts in this category can be enabled/disabled dynamically
     /// without recompiling.
-    pub const dynamic_tracing: [:0]const u8 = "DynamicTracking";
+    pub const dynamic_tracing: [:0]const u8 = "DynamicTracing";
 
     /// Dynamic Stack Tracing category captures call stacks at signpost
     /// events. This provides deeper debugging information but has higher
     /// performance overhead.
-    pub const dynamic_stack_tracing: [:0]const u8 = "DynamicStackTracking";
+    pub const dynamic_stack_tracing: [:0]const u8 = "DynamicStackTracing";
 };
 
 test {
@@ -152,6 +185,8 @@ test enabled {
 }
 
 test "intervals" {
+    init();
+
     const log = Log.create("com.mitchellh.ghostty", "test");
     defer log.release();
 
