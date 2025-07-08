@@ -2513,9 +2513,9 @@ pub fn showChildExited(self: *Surface, info: apprt.surface.Message.ChildExited) 
     warning_box.as(gtk.Widget).setValign(.end);
 
     const warning_text = if (info.exit_code == 0)
-        i18n._("✔️ Process exited normally. Press any key to close the terminal.")
+        i18n._("Process exited normally. Press any key to close the terminal.")
     else
-        i18n._("⚠️ Process exited abnormally. Press any key to close the terminal.");
+        i18n._("Process exited abnormally. Press any key to close the terminal.");
 
     const banner = adw.Banner.new(warning_text);
     banner.setRevealed(1);
