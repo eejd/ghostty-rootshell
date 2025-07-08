@@ -50,7 +50,7 @@ pub fn run(
             build_config.bundle_id,
             macos.os.signpost.Category.points_of_interest,
         );
-        const id = macos.os.signpost.Id.generate(log);
+        const id = macos.os.signpost.Id.forPointer(log, self.ptr);
         macos.os.signpost.intervalBegin(log, id, signpost_name);
         break :macos .{ .log = log, .id = id };
     } else {};
