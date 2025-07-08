@@ -354,21 +354,48 @@ pub const Face = struct {
             opts.constraint_width,
         );
 
-        const width = glyph_size.width;
-        const height = glyph_size.height;
-        const x = glyph_size.x;
-        const y = glyph_size.y;
+        // We manually quantize the position and size of the glyph to whole
+        // pixel boundaries. Since macOS doesn't do font hinting this helps
+        // a lot for legibility at small sizes on low dpi displays.
+        //
+        // Well, okay, so, it seems like macOS does have a rudimentary auto-
+        // hinter of sorts, except they call it "subpixel quantization"[^1].
+        //
+        // Why not just use that? Because it's unpredictable and would force
+        // us to have an extra pixel of padding in the atlas for most glyphs
+        // that don't need it, since it's hard to know whether a given glyph
+        // will have its bottom or left edge snapped out an extra pixel.
+        //
+        // Also, this empirically just looks a whole lot better than theirs.
+        // Admittedly this is a very specific use case, we're rendering for
+        // a monospace grid and don't really have to worry about sub-pixel
+        // positioning; I'm sure Apple's technique is better for cases with
+        // proportional text.
+        //
+        // An effort was made to more or less match Apple's quantization in
+        // terms of resulting whole-pixel glyph sizes. Oddly it looks like
+        // Apple is still horizontally quantizing to thirds of a pixel, as
+        // if they're doing subpixel rendering for a horizontally striped
+        // LCD, even though they haven't done subpixel rendering for years.
+        // We don't match them on that, it tends to just make it blurrier.
+        //
+        // [^1]: Well I'm 80% sure it's hinting since it seems to account for
+        // features inside of the glyph like crossbars, not just the bounding
+        // box like we do. The documentation is... sparse. Ref:
+        // https://developer.apple.com/documentation/coregraphics/cgcontext/setshouldsubpixelquantizefonts(_:)?language=objc
+        //
+        // TODO: Maybe gate this so it only applies at small font sizes,
+        //       or else offer a user config option that can disable it.
+        const x = @round(glyph_size.x);
+        const y = @round(glyph_size.y);
+        // We subtract a third here so that we behave (somewhat) like the weird
+        // one third pixel quantization that Apple does. This is basically just
+        // a fudge factor though.
+        const width = @max(1.0, @ceil(glyph_size.width + glyph_size.x - x - 1.0 / 3.0));
+        const height = @max(1.0, @ceil(glyph_size.height + glyph_size.y - y));
 
-        // We have to include the fractional pixels that we won't be offsetting
-        // in our width and height calculations, that is, we offset by the floor
-        // of the bearings when we render the glyph, meaning there's still a bit
-        // of extra width to the area that's drawn in beyond just the width of
-        // the glyph itself, so we include that extra fraction of a pixel when
-        // calculating the width and height here.
-        const frac_x = rect.origin.x - @floor(rect.origin.x);
-        const frac_y = rect.origin.y - @floor(rect.origin.y);
-        const px_width: u32 = @intFromFloat(@ceil(width + frac_x));
-        const px_height: u32 = @intFromFloat(@ceil(height + frac_y));
+        const px_width: u32 = @intFromFloat(@ceil(width));
+        const px_height: u32 = @intFromFloat(@ceil(height));
 
         // Settings that are specific to if we are rendering text or emoji.
         const color: struct {
@@ -433,12 +460,23 @@ pub const Face = struct {
             },
         });
 
+        // "Font smoothing" is what we call "thickening", it's an attempt
+        // to compensate for optical thinning of fonts, but at this point
+        // it's just something that makes the text look closer to system
+        // applications if users want that.
         context.setAllowsFontSmoothing(ctx, true);
-        context.setShouldSmoothFonts(ctx, opts.thicken); // The amadeus "enthicken"
-        context.setAllowsFontSubpixelQuantization(ctx, true);
-        context.setShouldSubpixelQuantizeFonts(ctx, true);
+        context.setShouldSmoothFonts(ctx, opts.thicken);
+
+        // Subpixel positioning allows glyphs to be placed at non-integer
+        // coordinates. We need this for our alignment.
         context.setAllowsFontSubpixelPositioning(ctx, true);
         context.setShouldSubpixelPositionFonts(ctx, true);
+
+        // See comments about quantization earlier in the function.
+        context.setAllowsFontSubpixelQuantization(ctx, false);
+        context.setShouldSubpixelQuantizeFonts(ctx, false);
+
+        // Anti-aliasing is self explanatory.
         context.setAllowsAntialiasing(ctx, true);
         context.setShouldAntialias(ctx, true);
 
@@ -459,6 +497,8 @@ pub const Face = struct {
             context.setLineWidth(ctx, line_width);
         }
 
+        // Scale the drawing context so that when we draw
+        // our glyph it's stretched to the constrained size.
         context.scaleCTM(
             ctx,
             width / rect.size.width,
@@ -469,8 +509,8 @@ pub const Face = struct {
         // are offset by bearings, so we have to undo those bearings in order
         // to get them to 0,0.
         self.font.drawGlyphs(&glyphs, &.{.{
-            .x = -@floor(rect.origin.x),
-            .y = -@floor(rect.origin.y),
+            .x = -rect.origin.x,
+            .y = -rect.origin.y,
         }}, ctx);
 
         // Write our rasterized glyph to the atlas.
@@ -479,9 +519,7 @@ pub const Face = struct {
 
         // This should be the distance from the bottom of
         // the cell to the top of the glyph's bounding box.
-        const offset_y: i32 =
-            @as(i32, @intFromFloat(@floor(y))) +
-            @as(i32, @intCast(px_height));
+        const offset_y: i32 = @as(i32, @intFromFloat(@ceil(y + height)));
 
         // This should be the distance from the left of
         // the cell to the left of the glyph's bounding box.
@@ -514,13 +552,13 @@ pub const Face = struct {
                 // We also don't want to do anything if the advance is zero or
                 // less, since this is used for stuff like combining characters.
                 if (advance > new_advance or advance <= 0.0) {
-                    break :offset_x @intFromFloat(@ceil(x - frac_x));
+                    break :offset_x @intFromFloat(@ceil(x));
                 }
                 break :offset_x @intFromFloat(
-                    @ceil(x - frac_x + (new_advance - advance) / 2),
+                    @round(x + (new_advance - advance) / 2),
                 );
             } else {
-                break :offset_x @intFromFloat(@ceil(x - frac_x));
+                break :offset_x @intFromFloat(@ceil(x));
             }
         };
 
