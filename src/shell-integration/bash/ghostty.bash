@@ -124,12 +124,7 @@ if [[ "$GHOSTTY_SHELL_FEATURES" == *ssh-* ]]; then
 
       if [[ -n "$ssh_hostname" ]]; then
         # Check if terminfo is already cached
-        builtin local ssh_cache_check_success=false
-        if builtin command -v ghostty >/dev/null 2>&1; then
-          ghostty +ssh-cache --host="$ssh_target" >/dev/null 2>&1 && ssh_cache_check_success=true
-        fi
-
-        if [[ "$ssh_cache_check_success" == "true" ]]; then
+        if ghostty +ssh-cache --host="$ssh_target" >/dev/null 2>&1; then
           ssh_term="xterm-ghostty"
         elif builtin command -v infocmp >/dev/null 2>&1; then
           builtin local ssh_terminfo ssh_cpath_dir ssh_cpath
@@ -137,18 +132,17 @@ if [[ "$GHOSTTY_SHELL_FEATURES" == *ssh-* ]]; then
           ssh_terminfo=$(infocmp -0 -x xterm-ghostty 2>/dev/null)
 
           if [[ -n "$ssh_terminfo" ]]; then
-            builtin echo "Setting up Ghostty terminfo on $ssh_hostname..." >&2
+            builtin echo "Setting up xterm-ghostty terminfo on $ssh_hostname..." >&2
 
             ssh_cpath_dir=$(mktemp -d "/tmp/ghostty-ssh-$ssh_user.XXXXXX" 2>/dev/null) || ssh_cpath_dir="/tmp/ghostty-ssh-$ssh_user.$$"
             ssh_cpath="$ssh_cpath_dir/socket"
 
-            if builtin echo "$ssh_terminfo" | builtin command ssh "${ssh_opts[@]}" -o ControlMaster=yes -o ControlPath="$ssh_cpath" -o ControlPersist=60s "$@" '
+            if builtin echo "$ssh_terminfo" | builtin command ssh -o ControlMaster=yes -o ControlPath="$ssh_cpath" -o ControlPersist=60s "$@" '
               infocmp xterm-ghostty >/dev/null 2>&1 && exit 0
               command -v tic >/dev/null 2>&1 || exit 1
               mkdir -p ~/.terminfo 2>/dev/null && tic -x - 2>/dev/null && exit 0
               exit 1
             ' 2>/dev/null; then
-              builtin echo "Terminfo setup complete on $ssh_hostname." >&2
               ssh_term="xterm-ghostty"
               ssh_opts+=(-o "ControlPath=$ssh_cpath")
 

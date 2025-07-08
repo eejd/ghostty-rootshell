@@ -108,8 +108,10 @@
 
           # Configure environment variables for remote session
           if (str:contains $E:GHOSTTY_SHELL_FEATURES ssh-env) {
-              set ssh-opts = [$@ssh-opts -o "SetEnv COLORTERM=truecolor"]
-              set ssh-opts = [$@ssh-opts -o "SendEnv TERM_PROGRAM TERM_PROGRAM_VERSION"]
+              set ssh-opts = (conj $ssh-opts 
+                  -o "SetEnv COLORTERM=truecolor"
+                  -o "SendEnv TERM_PROGRAM TERM_PROGRAM_VERSION"
+              )
           }
 
           # Install terminfo on remote host if needed
@@ -117,112 +119,71 @@
               var ssh-user = ""
               var ssh-hostname = ""
 
-              try {
-                  var ssh-config = (external ssh -G $@args 2>/dev/null | slurp)
-                  for line (str:split "\n" $ssh-config) {
-                      var parts = (str:split " " $line)
-                      if (> (count $parts) 1) {
-                          if (eq $parts[0] user) {
-                              set ssh-user = $parts[1]
-                          } elif (eq $parts[0] hostname) {
-                              set ssh-hostname = $parts[1]
-                          }
-                          if (and (not-eq $ssh-user "") (not-eq $ssh-hostname "")) {
-                              break
-                          }
+              # Parse ssh config
+              var ssh-config = (external ssh -G $@args 2>/dev/null | slurp)
+              for line (str:split "\n" $ssh-config) {
+                  var parts = (str:split " " $line)
+                  if (> (count $parts) 1) {
+                      var ssh-key = $parts[0]
+                      var ssh-value = $parts[1]
+                      if (eq $ssh-key user) {
+                          set ssh-user = $ssh-value
+                      } elif (eq $ssh-key hostname) {
+                          set ssh-hostname = $ssh-value
+                      }
+                      if (and (not-eq $ssh-user "") (not-eq $ssh-hostname "")) {
+                          break
                       }
                   }
-              } catch {
-                  # ssh config failed
               }
 
               var ssh-target = $ssh-user"@"$ssh-hostname
 
               if (not-eq $ssh-hostname "") {
                   # Check if terminfo is already cached
-                  var ssh-cache-check-success = $false
-                  try {
-                      external ghostty +ssh-cache --host=$ssh-target >/dev/null 2>&1
-                      set ssh-cache-check-success = $true
-                  } catch {
-                      # cache check failed
-                  }
-
-                  if $ssh-cache-check-success {
+                  if (and (has-external ghostty) (bool ?(external ghostty +ssh-cache --host=$ssh-target >/dev/null 2>&1))) {
                       set ssh-term = "xterm-ghostty"
-                  } else {
-                      try {
-                          external infocmp --help >/dev/null 2>&1
+                  } elif (has-external infocmp) {
+                      var ssh-terminfo = (external infocmp -0 -x xterm-ghostty 2>/dev/null | slurp)
 
-                          var ssh-terminfo = ""
+                      if (not-eq $ssh-terminfo "") {
+                          echo "Setting up xterm-ghostty terminfo on "$ssh-hostname"..." >&2
+
                           var ssh-cpath-dir = ""
-                          var ssh-cpath = ""
-
                           try {
-                              set ssh-terminfo = (external infocmp -0 -x xterm-ghostty 2>/dev/null | slurp)
+                              set ssh-cpath-dir = (external mktemp -d "/tmp/ghostty-ssh-"$ssh-user".XXXXXX" 2>/dev/null | slurp)
                           } catch {
-                              set ssh-terminfo = ""
+                              set ssh-cpath-dir = "/tmp/ghostty-ssh-"$ssh-user"."(randint 10000 99999)
                           }
+                          var ssh-cpath = $ssh-cpath-dir"/socket"
 
-                          if (not-eq $ssh-terminfo "") {
-                              echo "Setting up Ghostty terminfo on "$ssh-hostname"..." >&2
+                          if (bool ?(echo $ssh-terminfo | external ssh $@ssh-opts -o ControlMaster=yes -o ControlPath=$ssh-cpath -o ControlPersist=60s $@args '
+                                  infocmp xterm-ghostty >/dev/null 2>&1 && exit 0
+                                  command -v tic >/dev/null 2>&1 || exit 1
+                                  mkdir -p ~/.terminfo 2>/dev/null && tic -x - 2>/dev/null && exit 0
+                                  exit 1
+                              ' 2>/dev/null)) {
+                              set ssh-term = "xterm-ghostty"
+                              set ssh-opts = (conj $ssh-opts -o ControlPath=$ssh-cpath)
 
-                              try {
-                                  set ssh-cpath-dir = (external mktemp -d "/tmp/ghostty-ssh-"$ssh-user".XXXXXX" 2>/dev/null | slurp)
-                              } catch {
-                                  set ssh-cpath-dir = "/tmp/ghostty-ssh-"$ssh-user"."(randint 10000 99999)
-                              }
-                              set ssh-cpath = $ssh-cpath-dir"/socket"
-
-                              var terminfo-install-success = $false
-                              try {
-                                  echo $ssh-terminfo | external ssh $@ssh-opts -o ControlMaster=yes -o ControlPath=$ssh-cpath -o ControlPersist=60s $@args '
-                                      infocmp xterm-ghostty >/dev/null 2>&1 && exit 0
-                                      command -v tic >/dev/null 2>&1 || exit 1
-                                      mkdir -p ~/.terminfo 2>/dev/null && tic -x - 2>/dev/null && exit 0
-                                      exit 1
-                                  ' >/dev/null 2>&1
-                                  set terminfo-install-success = $true
-                              } catch {
-                                  set terminfo-install-success = $false
-                              }
-
-                              if $terminfo-install-success {
-                                  echo "Terminfo setup complete on "$ssh-hostname"." >&2
-                                  set ssh-term = "xterm-ghostty"
-                                  set ssh-opts = [$@ssh-opts -o ControlPath=$ssh-cpath]
-
-                                  # Cache successful installation
-                                  if (and (not-eq $ssh-target "") (has-external ghostty)) {
-                                      try {
-                                          external ghostty +ssh-cache --add=$ssh-target >/dev/null 2>&1
-                                      } catch {
-                                          # cache add failed
-                                      }
-                                  }
-                              } else {
-                                  echo "Warning: Failed to install terminfo." >&2
+                              # Cache successful installation
+                              if (and (not-eq $ssh-target "") (has-external ghostty)) {
+                                  external ghostty +ssh-cache --add=$ssh-target >/dev/null 2>&1
                               }
                           } else {
-                              echo "Warning: Could not generate terminfo data." >&2
+                              echo "Warning: Failed to install terminfo." >&2
                           }
-                      } catch {
-                          echo "Warning: ghostty command not available for cache management." >&2
+                      } else {
+                          echo "Warning: Could not generate terminfo data." >&2
                       }
+                  } else {
+                      echo "Warning: ghostty command not available for cache management." >&2
                   }
               }
           }
 
           # Execute SSH with TERM environment variable
-          var old-term = $E:TERM
-          set-env TERM $ssh-term
-          try {
-              external ssh $@ssh-opts $@args
-          } catch e {
-              set-env TERM $old-term
-              fail $e
-          }
-          set-env TERM $old-term
+          external E:TERM=$ssh-term ssh $@ssh-opts $@args
       }
   }
 

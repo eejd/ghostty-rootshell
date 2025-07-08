@@ -87,19 +87,21 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
     end
 
     # SSH Integration
-    if string match -q '*ssh-*' -- "$GHOSTTY_SHELL_FEATURES"
+    set -l features (string split ',' -- "$GHOSTTY_SHELL_FEATURES")
+    if contains ssh-env $features; or contains ssh-terminfo $features
         function ssh --wraps=ssh --description "SSH wrapper with Ghostty integration"
+            set -l features (string split ',' -- "$GHOSTTY_SHELL_FEATURES")
             set -l ssh_term "xterm-256color"
             set -l ssh_opts
 
             # Configure environment variables for remote session
-            if string match -q '*ssh-env*' -- "$GHOSTTY_SHELL_FEATURES"
+            if contains ssh-env $features
                 set -a ssh_opts -o "SetEnv COLORTERM=truecolor"
                 set -a ssh_opts -o "SendEnv TERM_PROGRAM TERM_PROGRAM_VERSION"
             end
 
             # Install terminfo on remote host if needed
-            if string match -q '*ssh-terminfo*' -- "$GHOSTTY_SHELL_FEATURES"
+            if contains ssh-terminfo $features
                 set -l ssh_user
                 set -l ssh_hostname
 
@@ -122,14 +124,7 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
 
                 if test -n "$ssh_hostname"
                     # Check if terminfo is already cached
-                    set -l ssh_cache_check_success false
-                    if command -v ghostty >/dev/null 2>&1
-                        if ghostty +ssh-cache --host="$ssh_target" >/dev/null 2>&1
-                            set ssh_cache_check_success true
-                        end
-                    end
-
-                    if test "$ssh_cache_check_success" = "true"
+                    if command -v ghostty >/dev/null 2>&1; and ghostty +ssh-cache --host="$ssh_target" >/dev/null 2>&1
                         set ssh_term "xterm-ghostty"
                     else if command -v infocmp >/dev/null 2>&1
                         set -l ssh_terminfo
@@ -139,7 +134,7 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
                         set ssh_terminfo (infocmp -0 -x xterm-ghostty 2>/dev/null)
 
                         if test -n "$ssh_terminfo"
-                            echo "Setting up Ghostty terminfo on $ssh_hostname..." >&2
+                            echo "Setting up xterm-ghostty terminfo on $ssh_hostname..." >&2
 
                             set ssh_cpath_dir (mktemp -d "/tmp/ghostty-ssh-$ssh_user.XXXXXX" 2>/dev/null; or echo "/tmp/ghostty-ssh-$ssh_user."(random))
                             set ssh_cpath "$ssh_cpath_dir/socket"
@@ -150,7 +145,6 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
                                 mkdir -p ~/.terminfo 2>/dev/null && tic -x - 2>/dev/null && exit 0
                                 exit 1
                             ' 2>/dev/null
-                                echo "Terminfo setup complete on $ssh_hostname." >&2
                                 set ssh_term "xterm-ghostty"
                                 set -a ssh_opts -o "ControlPath=$ssh_cpath"
 
