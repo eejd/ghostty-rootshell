@@ -14,6 +14,22 @@ pub fn init(
     var steps = std.ArrayList(*std.Build.Step.Compile).init(b.allocator);
     errdefer steps.deinit();
 
+    // Our new benchmarking application.
+    {
+        const exe = b.addExecutable(.{
+            .name = "ghostty-bench",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("src/main_bench.zig"),
+                .target = deps.config.target,
+                // We always want our benchmarks to be in release mode.
+                .optimize = .ReleaseFast,
+            }),
+        });
+        exe.linkLibC();
+        _ = try deps.add(exe);
+        try steps.append(exe);
+    }
+
     // Open the directory ./src/bench
     const c_dir_path = b.pathFromRoot("src/bench");
     var c_dir = try std.fs.cwd().openDir(c_dir_path, .{ .iterate = true });
