@@ -2511,12 +2511,21 @@ pub fn showChildExited(self: *Surface, info: apprt.surface.Message.ChildExited) 
     if (!adw_version.supportsBanner()) return false;
 
     const warning_text = if (info.exit_code == 0)
-        i18n._("Process exited normally. Press any key to close the terminal.")
+        i18n._("Process exited normally.")
     else
-        i18n._("Process exited abnormally. Press any key to close the terminal.");
+        i18n._("Process exited abnormally.");
 
     const banner = adw.Banner.new(warning_text);
     banner.setRevealed(1);
+    banner.setButtonLabel(i18n._("Close"));
+
+    _ = adw.Banner.signals.button_clicked.connect(
+        banner,
+        *Surface,
+        showChildExitedButtonClosed,
+        self,
+        .{},
+    );
 
     const banner_widget = banner.as(gtk.Widget);
     banner_widget.setHalign(.fill);
@@ -2530,4 +2539,8 @@ pub fn showChildExited(self: *Surface, info: apprt.surface.Message.ChildExited) 
     self.overlay.addOverlay(banner_widget);
 
     return true;
+}
+
+fn showChildExitedButtonClosed(_: *adw.Banner, self: *Surface) callconv(.c) void {
+    self.close(false);
 }
