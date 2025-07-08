@@ -144,6 +144,23 @@ pub const RenderOptions = struct {
         /// Bottom padding when resizing.
         pad_bottom: f64 = 0.0,
 
+        // This acts as a multiple of the provided width when applying
+        // constraints, so if this is 1.6 for example, then a width of
+        // 10 would be treated as though it were 16.
+        group_width: f64 = 1.0,
+        // This acts as a multiple of the provided height when applying
+        // constraints, so if this is 1.6 for example, then a height of
+        // 10 would be treated as though it were 16.
+        group_height: f64 = 1.0,
+        // This is an x offset for the actual width within the group width.
+        // If this is 0.5 then the glyph will be offset so that its left
+        // edge sits at the halfway point of the group width.
+        group_x: f64 = 0.0,
+        // This is a y offset for the actual height within the group height.
+        // If this is 0.5 then the glyph will be offset so that its bottom
+        // edge sits at the halfway point of the group height.
+        group_y: f64 = 0.0,
+
         /// Maximum ratio of width to height when resizing.
         max_xy_ratio: ?f64 = null,
 
@@ -205,7 +222,7 @@ pub const RenderOptions = struct {
         ) GlyphSize {
             var g = glyph;
 
-            const available_width: f64 = @floatFromInt(
+            var available_width: f64 = @floatFromInt(
                 metrics.cell_width * @min(
                     self.max_constraint_width,
                     constraint_width,
@@ -215,6 +232,22 @@ pub const RenderOptions = struct {
                 .cell => metrics.cell_height,
                 .icon => metrics.icon_height,
             });
+
+            // We make the opinionated choice here to reduce the width
+            // of icon-height symbols by the same amount horizontally,
+            // since otherwise wide aspect ratio icons like folders end
+            // up far too wide.
+            //
+            // But we *only* do this if the constraint width is 2, since
+            // otherwise it would make them way too small when sized for
+            // a single cell.
+            const is_icon_width = self.height == .icon and @min(self.max_constraint_width, constraint_width) > 1;
+            const orig_avail_width = available_width;
+            if (is_icon_width) {
+                const cell_height: f64 = @floatFromInt(metrics.cell_height);
+                const ratio = available_height / cell_height;
+                available_width *= ratio;
+            }
 
             const w = available_width -
                 self.pad_left * available_width -
@@ -228,6 +261,10 @@ pub const RenderOptions = struct {
             // re-add before returning.
             g.x -= self.pad_left * available_width;
             g.y -= self.pad_bottom * available_height;
+
+            // Multiply by group width and height for better sizing.
+            g.width *= self.group_width;
+            g.height *= self.group_height;
 
             switch (self.size_horizontal) {
                 .none => {},
@@ -307,6 +344,14 @@ pub const RenderOptions = struct {
                 },
             }
 
+            // Add group-relative position
+            g.x += self.group_x * g.width;
+            g.y += self.group_y * g.height;
+
+            // Divide group width and height back out before we align.
+            g.width /= self.group_width;
+            g.height /= self.group_height;
+
             if (self.max_xy_ratio) |ratio| if (g.width > g.height * ratio) {
                 const orig_width = g.width;
                 g.width = g.height * ratio;
@@ -325,6 +370,11 @@ pub const RenderOptions = struct {
                 .start => g.y = 0,
                 .end => g.y = h - g.height,
                 .center => g.y = (h - g.height) / 2,
+            }
+
+            // Add offset for icon width restriction, to keep it centered.
+            if (is_icon_width) {
+                g.x += (orig_avail_width - available_width) / 2;
             }
 
             // Re-add our padding before returning.
