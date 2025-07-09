@@ -124,9 +124,9 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
 
                 if test -n "$ssh_hostname"
                     # Check if terminfo is already cached
-                    if command -v ghostty >/dev/null 2>&1; and ghostty +ssh-cache --host="$ssh_target" >/dev/null 2>&1
+                    if command -q ghostty; and ghostty +ssh-cache --host="$ssh_target" >/dev/null 2>&1
                         set ssh_term "xterm-ghostty"
-                    else if command -v infocmp >/dev/null 2>&1
+                    else if command -q infocmp
                         set -l ssh_terminfo
                         set -l ssh_cpath_dir
                         set -l ssh_cpath
@@ -149,7 +149,7 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
                                 set -a ssh_opts -o "ControlPath=$ssh_cpath"
 
                                 # Cache successful installation
-                                if test -n "$ssh_target"; and command -v ghostty >/dev/null 2>&1
+                                if test -n "$ssh_target"; and command -q ghostty
                                     ghostty +ssh-cache --add="$ssh_target" >/dev/null 2>&1; or true
                                 end
                             else
