@@ -689,10 +689,10 @@ palette: Palette = .{},
 /// other colors at runtime:
 ///
 ///   * `cell-foreground` - Match the cell foreground color.
-///     (Available since version 1.2.0)
+///     (Available since: 1.2.0)
 ///
 ///   * `cell-background` - Match the cell background color.
-///     (Available since version 1.2.0)
+///     (Available since: 1.2.0)
 @"cursor-color": ?TerminalColor = null,
 
 /// The opacity level (opposite of transparency) of the cursor. A value of 1
@@ -2217,6 +2217,7 @@ keybind: Keybinds = .{},
 ///     remote hosts and propagates COLORTERM, TERM_PROGRAM, and TERM_PROGRAM_VERSION.
 ///     Whether or not these variables will be accepted by the remote host(s) will
 ///     depend on whether or not the variables are allowed in their sshd_config.
+///     (Available since: 1.2.0)
 ///
 ///   * `ssh-terminfo` - Enable automatic terminfo installation on remote hosts.
 ///     Attempts to install Ghostty's terminfo entry using `infocmp` and `tic` when
@@ -2225,6 +2226,7 @@ keybind: Keybinds = .{},
 ///     remote host, it will be automatically "cached" to avoid repeat installations.
 ///     If desired, the `+ssh-cache` CLI action can be used to manage the installation
 ///     cache manually using various arguments.
+///     (Available since: 1.2.0)
 ///
 /// SSH features work independently and can be combined for optimal experience:
 /// when both `ssh-env` and `ssh-terminfo` are enabled, Ghostty will install its
