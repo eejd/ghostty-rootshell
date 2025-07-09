@@ -126,8 +126,6 @@ pub const compatibility = std.StaticStringMap(
 ///
 /// Changing this configuration at runtime will only affect new terminals, i.e.
 /// new windows, tabs, etc.
-///
-/// Available since: 1.0.0
 @"font-family": RepeatableString = .{},
 @"font-family-bold": RepeatableString = .{},
 @"font-family-italic": RepeatableString = .{},
@@ -145,8 +143,6 @@ pub const compatibility = std.StaticStringMap(
 /// These are only valid if its corresponding font-family is also specified. If
 /// no font-family is specified, then the font-style is ignored unless you're
 /// disabling the font style.
-///
-/// Available since: 1.0.0
 @"font-style": FontStyle = .{ .default = {} },
 @"font-style-bold": FontStyle = .{ .default = {} },
 @"font-style-italic": FontStyle = .{ .default = {} },
@@ -182,8 +178,6 @@ pub const compatibility = std.StaticStringMap(
 /// explicitly disable it. You cannot partially disable `bold-italic`.
 ///
 /// By default, synthetic styles are enabled.
-///
-/// Available since: 1.0.0
 @"font-synthetic-style": FontSyntheticStyle = .{},
 
 /// Apply a font feature. To enable multiple font features you can repeat
@@ -208,8 +202,6 @@ pub const compatibility = std.StaticStringMap(
 /// [fontdrop.info](https://fontdrop.info).
 ///
 /// To generally disable most ligatures, use `-calt, -liga, -dlig`.
-///
-/// Available since: 1.0.0
 @"font-feature": RepeatableString = .{},
 
 /// Font size in points. This value can be a non-integer and the nearest integer
@@ -227,8 +219,6 @@ pub const compatibility = std.StaticStringMap(
 /// On Linux with GTK, font size is scaled according to both display-wide and
 /// text-specific scaling factors, which are often managed by your desktop
 /// environment (e.g. the GNOME display scale and large text settings).
-///
-/// Available since: 1.0.0
 @"font-size": f32 = switch (builtin.os.tag) {
     // On macOS we default a little bigger since this tends to look better. This
     // is purely subjective but this is easy to modify.
@@ -254,8 +244,6 @@ pub const compatibility = std.StaticStringMap(
 ///
 /// Common axes are: `wght` (weight), `slnt` (slant), `ital` (italic), `opsz`
 /// (optical size), `wdth` (width), `GRAD` (gradient), etc.
-///
-/// Available since: 1.0.0
 @"font-variation": RepeatableFontVariation = .{},
 @"font-variation-bold": RepeatableFontVariation = .{},
 @"font-variation-italic": RepeatableFontVariation = .{},
@@ -277,14 +265,10 @@ pub const compatibility = std.StaticStringMap(
 ///
 /// Changing this configuration at runtime will only affect new terminals,
 /// i.e. new windows, tabs, etc.
-///
-/// Available since: 1.0.0
 @"font-codepoint-map": RepeatableCodepointMap = .{},
 
 /// Draw fonts with a thicker stroke, if supported.
 /// This is currently only supported on macOS.
-///
-/// Available since: 1.0.0
 @"font-thicken": bool = false,
 
 /// Strength of thickening when `font-thicken` is enabled.
@@ -295,8 +279,6 @@ pub const compatibility = std.StaticStringMap(
 /// Has no effect when `font-thicken` is set to `false`.
 ///
 /// This is currently only supported on macOS.
-///
-/// Available since: 1.0.0
 @"font-thicken-strength": u8 = 255,
 
 /// Locations to break font shaping into multiple runs.
@@ -380,64 +362,42 @@ pub const compatibility = std.StaticStringMap(
 ///
 ///   * Powerline glyphs will be adjusted along with the cell height so
 ///     that things like status lines continue to look aligned.
-///
-/// Available since: 1.0.0
 @"adjust-cell-width": ?MetricModifier = null,
 @"adjust-cell-height": ?MetricModifier = null,
 /// Distance in pixels or percentage adjustment from the bottom of the cell to the text baseline.
 /// Increase to move baseline UP, decrease to move baseline DOWN.
 /// See the notes about adjustments in `adjust-cell-width`.
-///
-/// Available since: 1.0.0
 @"adjust-font-baseline": ?MetricModifier = null,
 /// Distance in pixels or percentage adjustment from the top of the cell to the top of the underline.
 /// Increase to move underline DOWN, decrease to move underline UP.
 /// See the notes about adjustments in `adjust-cell-width`.
-///
-/// Available since: 1.0.0
 @"adjust-underline-position": ?MetricModifier = null,
 /// Thickness in pixels of the underline.
 /// See the notes about adjustments in `adjust-cell-width`.
-///
-/// Available since: 1.0.0
 @"adjust-underline-thickness": ?MetricModifier = null,
 /// Distance in pixels or percentage adjustment from the top of the cell to the top of the strikethrough.
 /// Increase to move strikethrough DOWN, decrease to move strikethrough UP.
 /// See the notes about adjustments in `adjust-cell-width`.
-///
-/// Available since: 1.0.0
 @"adjust-strikethrough-position": ?MetricModifier = null,
 /// Thickness in pixels or percentage adjustment of the strikethrough.
 /// See the notes about adjustments in `adjust-cell-width`.
-///
-/// Available since: 1.0.0
 @"adjust-strikethrough-thickness": ?MetricModifier = null,
 /// Distance in pixels or percentage adjustment from the top of the cell to the top of the overline.
 /// Increase to move overline DOWN, decrease to move overline UP.
 /// See the notes about adjustments in `adjust-cell-width`.
-///
-/// Available since: 1.0.0
 @"adjust-overline-position": ?MetricModifier = null,
 /// Thickness in pixels or percentage adjustment of the overline.
 /// See the notes about adjustments in `adjust-cell-width`.
-///
-/// Available since: 1.0.0
 @"adjust-overline-thickness": ?MetricModifier = null,
 /// Thickness in pixels or percentage adjustment of the bar cursor and outlined rect cursor.
 /// See the notes about adjustments in `adjust-cell-width`.
-///
-/// Available since: 1.0.0
 @"adjust-cursor-thickness": ?MetricModifier = null,
 /// Height in pixels or percentage adjustment of the cursor. Currently applies to all cursor types:
 /// bar, rect, and outlined rect.
 /// See the notes about adjustments in `adjust-cell-width`.
-///
-/// Available since: 1.0.0
 @"adjust-cursor-height": ?MetricModifier = null,
 /// Thickness in pixels or percentage adjustment of box drawing characters.
 /// See the notes about adjustments in `adjust-cell-width`.
-///
-/// Available since: 1.0.0
 @"adjust-box-thickness": ?MetricModifier = null,
 /// Height in pixels or percentage adjustment of maximum height for nerd font icons.
 ///
@@ -479,8 +439,6 @@ pub const compatibility = std.StaticStringMap(
 ///
 /// This configuration can be changed at runtime but will not affect existing
 /// terminals. Only new terminals will use the new configuration.
-///
-/// Available since: 1.0.0
 @"grapheme-width-method": GraphemeWidthMethod = .unicode,
 
 /// FreeType load flags to enable. The format of this is a list of flags to
@@ -507,8 +465,6 @@ pub const compatibility = std.StaticStringMap(
 ///   * `autohint` - Enable the freetype auto-hinter. Enabled by default.
 ///
 /// Example: `hinting`, `no-hinting`, `force-autohint`, `no-force-autohint`
-///
-/// Available since: 1.0.0
 @"freetype-load-flags": FreetypeLoadFlags = .{},
 
 /// A theme to use. This can be a built-in theme name, a custom theme
@@ -564,20 +520,14 @@ pub const compatibility = std.StaticStringMap(
 /// be fixed in a future update:
 ///
 ///   - macOS: titlebar tabs style is not updated when switching themes.
-///
-/// Available since: 1.0.0
 theme: ?Theme = null,
 
 /// Background color for the window.
 /// Specified as either hex (`#RRGGBB` or `RRGGBB`) or a named X11 color.
-///
-/// Available since: 1.0.0
 background: Color = .{ .r = 0x28, .g = 0x2C, .b = 0x34 },
 
 /// Foreground color for the window.
 /// Specified as either hex (`#RRGGBB` or `RRGGBB`) or a named X11 color.
-///
-/// Available since: 1.0.0
 foreground: Color = .{ .r = 0xFF, .g = 0xFF, .b = 0xFF },
 
 /// Background image for the terminal.
@@ -684,8 +634,6 @@ foreground: Color = .{ .r = 0xFF, .g = 0xFF, .b = 0xFF },
 /// Since version 1.2.0, this can also be set to `cell-foreground` to match
 /// the cell foreground color, or `cell-background` to match the cell
 /// background color.
-///
-/// Available since: 1.0.0
 @"selection-foreground": ?TerminalColor = null,
 @"selection-background": ?TerminalColor = null,
 
@@ -717,8 +665,6 @@ foreground: Color = .{ .r = 0xFF, .g = 0xFF, .b = 0xFF },
 /// that text will become black or white.
 ///
 /// This value does not apply to Emoji or images.
-///
-/// Available since: 1.0.0
 @"minimum-contrast": f64 = 1,
 
 /// Color palette for the 256 color form that many terminal applications use.
@@ -732,8 +678,6 @@ foreground: Color = .{ .r = 0xFF, .g = 0xFF, .b = 0xFF },
 ///
 /// For definitions on the color indices and what they canonically map to,
 /// [see this cheat sheet](https://www.ditig.com/256-colors-cheat-sheet).
-///
-/// Available since: 1.0.0
 palette: Palette = .{},
 
 /// The color of the cursor. If this is not set, a default will be chosen.
@@ -749,8 +693,6 @@ palette: Palette = .{},
 ///
 ///   * `cell-background` - Match the cell background color.
 ///     (Available since version 1.2.0)
-///
-/// Available since: 1.0.0
 @"cursor-color": ?TerminalColor = null,
 
 /// The opacity level (opposite of transparency) of the cursor. A value of 1
@@ -775,8 +717,6 @@ palette: Palette = .{},
 ///   * `bar`
 ///   * `underline`
 ///   * `block_hollow`
-///
-/// Available since: 1.0.0
 @"cursor-style": terminal.CursorStyle = .block,
 
 /// Sets the default blinking state of the cursor. This is just the default
@@ -796,8 +736,6 @@ palette: Palette = .{},
 ///   * ` ` (blank)
 ///   * `true`
 ///   * `false`
-///
-/// Available since: 1.0.0
 @"cursor-style-blink": ?bool = null,
 
 /// The color of the text under the cursor. If this is not set, a default will
@@ -806,8 +744,6 @@ palette: Palette = .{},
 /// Since version 1.2.0, this can also be set to `cell-foreground` to match
 /// the cell foreground color, or `cell-background` to match the cell
 /// background color.
-///
-/// Available since: 1.0.0
 @"cursor-text": ?TerminalColor = null,
 
 /// Enables the ability to move the cursor at prompts by using `alt+click` on
@@ -823,16 +759,12 @@ palette: Palette = .{},
 /// behavior around edge cases are to be expected. This is unfortunately how
 /// this feature is implemented across terminals because there isn't any other
 /// way to implement it.
-///
-/// Available since: 1.0.0
 @"cursor-click-to-move": bool = true,
 
 /// Hide the mouse immediately when typing. The mouse becomes visible again
 /// when the mouse is used (button, movement, etc.). Platform-specific behavior
 /// may dictate other scenarios where the mouse is shown. For example on macOS,
 /// the mouse is shown again when a new window, tab, or split is created.
-///
-/// Available since: 1.0.0
 @"mouse-hide-while-typing": bool = false,
 
 /// Determines whether running programs can detect the shift key pressed with a
@@ -860,8 +792,6 @@ palette: Palette = .{},
 ///   * `false`
 ///   * `always`
 ///   * `never`
-///
-/// Available since: 1.0.0
 @"mouse-shift-capture": MouseShiftCapture = .false,
 
 /// Multiplier for scrolling distance with the mouse wheel. Any value less
@@ -882,8 +812,6 @@ palette: Palette = .{},
 /// widgets to show through which isn't generally desirable.
 ///
 /// On macOS, changing this configuration requires restarting Ghostty completely.
-///
-/// Available since: 1.0.0
 @"background-opacity": f64 = 1.0,
 
 /// Whether to blur the background when `background-opacity` is less than 1.
@@ -917,8 +845,6 @@ palette: Palette = .{},
 /// need to set environment-specific settings and/or install third-party plugins
 /// in order to support background blur, as there isn't a unified interface for
 /// doing so.
-///
-/// Available since: 1.0.0
 @"background-blur": BackgroundBlur = .false,
 
 /// The opacity level (opposite of transparency) of an unfocused split.
@@ -930,8 +856,6 @@ palette: Palette = .{},
 /// is 0.15. This value still looks weird but you can at least see what's going
 /// on. A value outside of the range 0.15 to 1 will be clamped to the nearest
 /// valid value.
-///
-/// Available since: 1.0.0
 @"unfocused-split-opacity": f64 = 0.7,
 
 /// The color to dim the unfocused split. Unfocused splits are dimmed by
@@ -941,8 +865,6 @@ palette: Palette = .{},
 /// This will default to the background color.
 ///
 /// Specified as either hex (`#RRGGBB` or `RRGGBB`) or a named X11 color.
-///
-/// Available since: 1.0.0
 @"unfocused-split-fill": ?Color = null,
 
 /// The color of the split divider. If this is not set, a default will be chosen.
@@ -980,8 +902,6 @@ palette: Palette = .{},
 /// arguments. For example, `ghostty -e fish --with --custom --args`.
 /// This flag sets the `initial-command` configuration, see that for more
 /// information.
-///
-/// Available since: 1.0.0
 command: ?Command = null,
 
 /// This is the same as "command", but only applies to the first terminal
@@ -1018,8 +938,6 @@ command: ?Command = null,
 ///     shell integration with a `-e`-executed command, you must either
 ///     name your binary appropriately or source the shell integration script
 ///     manually.
-///
-/// Available since: 1.0.0
 @"initial-command": ?Command = null,
 
 /// Extra environment variables to pass to commands launched in a terminal
@@ -1109,8 +1027,6 @@ input: RepeatableReadableIO = .{},
 /// received.
 ///
 /// This is primarily useful for scripts or debugging.
-///
-/// Available since: 1.0.0
 @"wait-after-command": bool = false,
 
 /// The number of milliseconds of runtime below which we consider a process exit
@@ -1120,8 +1036,6 @@ input: RepeatableReadableIO = .{},
 /// On Linux, this must be paired with a non-zero exit code. On macOS, we allow
 /// any exit code because of the way shell processes are launched via the login
 /// command.
-///
-/// Available since: 1.0.0
 @"abnormal-command-exit-runtime": u32 = 250,
 
 /// The size of the scrollback buffer in bytes. This also includes the active
@@ -1143,8 +1057,6 @@ input: RepeatableReadableIO = .{},
 /// This is a future planned feature.
 ///
 /// This can be changed at runtime but will only affect new terminal surfaces.
-///
-/// Available since: 1.0.0
 @"scrollback-limit": usize = 10_000_000, // 10MB
 
 /// Match a regular expression against the terminal text and associate clicking
@@ -1159,8 +1071,6 @@ input: RepeatableReadableIO = .{},
 /// exists. This can be disabled using `link-url`.
 ///
 /// TODO: This can't currently be set!
-///
-/// Available since: 1.0.0
 link: RepeatableLink = .{},
 
 /// Enable URL matching. URLs are matched on hover with control (Linux) or
@@ -1169,8 +1079,6 @@ link: RepeatableLink = .{},
 ///
 /// The URL matcher is always lowest priority of any configured links (see
 /// `link`). If you want to customize URL matching, use `link` and disable this.
-///
-/// Available since: 1.0.0
 @"link-url": bool = true,
 
 /// Show link previews for a matched URL.
@@ -1197,8 +1105,6 @@ maximize: bool = false,
 /// On macOS, this setting does not work if window-decoration is set to
 /// "false", because native fullscreen on macOS requires window decorations
 /// to be set.
-///
-/// Available since: 1.0.0
 fullscreen: bool = false,
 
 /// The title Ghostty will use for the window. This will force the title of the
@@ -1215,8 +1121,6 @@ fullscreen: bool = false,
 /// sequence will be honored but previous changes will not retroactively
 /// be set. This latter case may require you to restart programs such as Neovim
 /// to get the new title.
-///
-/// Available since: 1.0.0
 title: ?[:0]const u8 = null,
 
 /// The setting that will change the application class value.
@@ -1239,8 +1143,6 @@ title: ?[:0]const u8 = null,
 /// The default is `com.mitchellh.ghostty`.
 ///
 /// This only affects GTK builds.
-///
-/// Available since: 1.0.0
 class: ?[:0]const u8 = null,
 
 /// This controls the instance name field of the `WM_CLASS` X11 property when
@@ -1249,8 +1151,6 @@ class: ?[:0]const u8 = null,
 /// The default is `ghostty`.
 ///
 /// This only affects GTK builds.
-///
-/// Available since: 1.0.0
 @"x11-instance-name": ?[:0]const u8 = null,
 
 /// The directory to change to after starting the command.
@@ -1272,8 +1172,6 @@ class: ?[:0]const u8 = null,
 ///   * `home` - The home directory of the executing user.
 ///
 ///   * `inherit` - The working directory of the launching process.
-///
-/// Available since: 1.0.0
 @"working-directory": ?[]const u8 = null,
 
 /// Key bindings. The format is `trigger=action`. Duplicate triggers will
@@ -1500,8 +1398,6 @@ class: ?[:0]const u8 = null,
 ///
 ///  - Notably, global shortcuts have not been implemented on wlroots-based
 ///    compositors like Sway (see [upstream issue](https://github.com/emersion/xdg-desktop-portal-wlr/issues/240)).
-///
-/// Available since: 1.0.0
 keybind: Keybinds = .{},
 
 /// Horizontal window padding. This applies padding between the terminal cells
@@ -1521,8 +1417,6 @@ keybind: Keybinds = .{},
 /// left padding to 2 and the right padding to 4. If you want to set both
 /// paddings to the same value, you can use a single value. For example,
 /// `window-padding-x = 2` will set both paddings to 2.
-///
-/// Available since: 1.0.0
 @"window-padding-x": WindowPadding = .{ .top_left = 2, .bottom_right = 2 },
 
 /// Vertical window padding. This applies padding between the terminal cells and
@@ -1542,8 +1436,6 @@ keybind: Keybinds = .{},
 /// top padding to 2 and the bottom padding to 4. If you want to set both
 /// paddings to the same value, you can use a single value. For example,
 /// `window-padding-y = 2` will set both paddings to 2.
-///
-/// Available since: 1.0.0
 @"window-padding-y": WindowPadding = .{ .top_left = 2, .bottom_right = 2 },
 
 /// The viewport dimensions are usually not perfectly divisible by the cell
@@ -1558,8 +1450,6 @@ keybind: Keybinds = .{},
 /// apply. The other padding is applied first and may affect how many grid cells
 /// actually exist, and this is applied last in order to balance the padding
 /// given a certain viewport size and grid cell size.
-///
-/// Available since: 1.0.0
 @"window-padding-balance": bool = false,
 
 /// The color of the padding area of the window. Valid values are:
@@ -1581,8 +1471,6 @@ keybind: Keybinds = .{},
 ///   do not look good extended.
 /// * The nearest row contains a perfect fit powerline character. These
 ///   don't look good extended.
-///
-/// Available since: 1.0.0
 @"window-padding-color": WindowPaddingColor = .background,
 
 /// Synchronize rendering with the screen refresh rate. If true, this will
@@ -1598,23 +1486,17 @@ keybind: Keybinds = .{},
 /// Changing this value at runtime will only affect new terminals.
 ///
 /// This setting is only supported currently on macOS.
-///
-/// Available since: 1.0.0
 @"window-vsync": bool = true,
 
 /// If true, new windows and tabs will inherit the working directory of the
 /// previously focused window. If no window was previously focused, the default
 /// working directory will be used (the `working-directory` option).
-///
-/// Available since: 1.0.0
 @"window-inherit-working-directory": bool = true,
 
 /// If true, new windows and tabs will inherit the font size of the previously
 /// focused window. If no window was previously focused, the default font size
 /// will be used. If this is false, the default font size specified in the
 /// configuration `font-size` will be used.
-///
-/// Available since: 1.0.0
 @"window-inherit-font-size": bool = true,
 
 /// Configure a preference for window decorations. This setting specifies
@@ -1661,8 +1543,6 @@ keybind: Keybinds = .{},
 ///
 /// macOS: To hide the titlebar without removing the native window borders
 ///        or rounded corners, use `macos-titlebar-style = hidden` instead.
-///
-/// Available since: 1.0.0
 @"window-decoration": WindowDecoration = .auto,
 
 /// The font that will be used for the application's window and tab titles.
@@ -1672,8 +1552,7 @@ keybind: Keybinds = .{},
 /// Note: any font available on the system may be used, this font is not
 /// required to be a fixed-width font.
 ///
-/// Available since: 1.0.0 (macOS)
-/// Available since: 1.1.0 (GTK)
+/// Available since: 1.1.0 (on GTK)
 @"window-title-font-family": ?[:0]const u8 = null,
 
 /// The text that will be displayed in the subtitle of the window. Valid values:
@@ -1705,8 +1584,6 @@ keybind: Keybinds = .{},
 /// non-terminal windows within Ghostty.
 ///
 /// This is currently only supported on macOS and Linux.
-///
-/// Available since: 1.0.0
 @"window-theme": WindowTheme = .auto,
 
 /// The color space to use when interpreting terminal colors. "Terminal colors"
@@ -1719,8 +1596,6 @@ keybind: Keybinds = .{},
 ///   * `display-p3` - Interpret colors in the Display P3 color space.
 ///
 /// This setting is currently only supported on macOS.
-///
-/// Available since: 1.0.0
 @"window-colorspace": WindowColorspace = .srgb,
 
 /// The initial window size. This size is in terminal grid cells by default.
@@ -1750,8 +1625,6 @@ keybind: Keybinds = .{},
 /// `window-decoration`), then this will work as expected.
 ///
 /// Windows smaller than 10 wide by 4 high are not allowed.
-///
-/// Available since: 1.0.0
 @"window-height": u32 = 0,
 @"window-width": u32 = 0,
 
@@ -1778,8 +1651,6 @@ keybind: Keybinds = .{},
 /// Note: this is only supported on macOS. The GTK runtime does not support
 /// setting the window position, as windows are only allowed position
 /// themselves in X11 and not Wayland.
-///
-/// Available since: 1.0.0
 @"window-position-x": ?i16 = null,
 @"window-position-y": ?i16 = null,
 
@@ -1813,15 +1684,11 @@ keybind: Keybinds = .{},
 /// The default value is `default`.
 ///
 /// This is currently only supported on macOS. This has no effect on Linux.
-///
-/// Available since: 1.0.0
 @"window-save-state": WindowSaveState = .default,
 
 /// Resize the window in discrete increments of the focused surface's cell size.
 /// If this is disabled, surfaces are resized in pixel increments. Currently
 /// only supported on macOS.
-///
-/// Available since: 1.0.0
 @"window-step-resize": bool = false,
 
 /// The position where new tabs are created. Valid values:
@@ -1830,8 +1697,6 @@ keybind: Keybinds = .{},
 ///     or at the end if there are no focused tabs.
 ///
 ///   * `end` - Insert the new tab at the end of the tab list.
-///
-/// Available since: 1.0.0
 @"window-new-tab-position": WindowNewTabPosition = .current,
 
 /// Whether to show the tab bar.
@@ -1855,8 +1720,6 @@ keybind: Keybinds = .{},
 ///    overview or by keybind actions.
 ///
 /// Currently only supported on Linux (GTK).
-///
-/// Available since: 1.0.0
 @"window-show-tab-bar": WindowShowTabBar = .auto,
 
 /// Background color for the window titlebar. This only takes effect if
@@ -1864,8 +1727,6 @@ keybind: Keybinds = .{},
 /// runtime.
 ///
 /// Specified as either hex (`#RRGGBB` or `RRGGBB`) or a named X11 color.
-///
-/// Available since: 1.0.0
 @"window-titlebar-background": ?Color = null,
 
 /// Foreground color for the window titlebar. This only takes effect if
@@ -1873,8 +1734,6 @@ keybind: Keybinds = .{},
 /// runtime.
 ///
 /// Specified as either hex (`#RRGGBB` or `RRGGBB`) or a named X11 color.
-///
-/// Available since: 1.0.0
 @"window-titlebar-foreground": ?Color = null,
 
 /// This controls when resize overlays are shown. Resize overlays are a
@@ -1888,8 +1747,6 @@ keybind: Keybinds = .{},
 ///                     subsequently resized.
 ///
 /// The default is `after-first`.
-///
-/// Available since: 1.0.0
 @"resize-overlay": ResizeOverlay = .@"after-first",
 
 /// If resize overlays are enabled, this controls the position of the overlay.
@@ -1904,8 +1761,6 @@ keybind: Keybinds = .{},
 ///   * `bottom-right`
 ///
 /// The default is `center`.
-///
-/// Available since: 1.0.0
 @"resize-overlay-position": ResizeOverlayPosition = .center,
 
 /// If resize overlays are enabled, this controls how long the overlay is
@@ -1996,8 +1851,6 @@ keybind: Keybinds = .{},
 ///
 /// This value is separate for primary and alternate screens so the effective
 /// limit per surface is double.
-///
-/// Available since: 1.0.0
 @"image-storage-limit": u32 = 320 * 1000 * 1000,
 
 /// Whether to automatically copy selected text to the clipboard. `true`
@@ -2011,8 +1864,6 @@ keybind: Keybinds = .{},
 /// paste is always enabled even if this is `false`.
 ///
 /// The default value is true on Linux and macOS.
-///
-/// Available since: 1.0.0
 @"copy-on-select": CopyOnSelect = switch (builtin.os.tag) {
     .linux => .true,
     .macos => .true,
@@ -2023,8 +1874,6 @@ keybind: Keybinds = .{},
 /// (double, triple, etc.) or an entirely new single click. A value of zero will
 /// use a platform-specific default. The default on macOS is determined by the
 /// OS settings. On every other platform it is 500ms.
-///
-/// Available since: 1.0.0
 @"click-repeat-interval": u32 = 0,
 
 /// Additional configuration files to read. This configuration can be repeated
@@ -2054,8 +1903,6 @@ keybind: Keybinds = .{},
 /// If "foo" contains `a = 2`, the final value of `a` will be 2, because
 /// `foo` is loaded after the configuration file that configures the
 /// nested `config-file` value.
-///
-/// Available since: 1.0.0
 @"config-file": RepeatablePath = .{},
 
 /// When this is true, the default configuration file paths will be loaded.
@@ -2069,8 +1916,6 @@ keybind: Keybinds = .{},
 /// This is a CLI-only configuration. Setting this in a configuration file
 /// will have no effect. It is not an error, but it will not do anything.
 /// This configuration can only be set via CLI arguments.
-///
-/// Available since: 1.0.0
 @"config-default-files": bool = true,
 
 /// Confirms that a surface should be closed before closing it.
@@ -2079,8 +1924,6 @@ keybind: Keybinds = .{},
 /// any confirmation. This can also be set to `always`, which will always
 /// confirm closing a surface, even if shell integration says a process isn't
 /// running.
-///
-/// Available since: 1.0.0
 @"confirm-close-surface": ConfirmCloseSurface = .true,
 
 /// Whether or not to quit after the last surface is closed.
@@ -2092,8 +1935,6 @@ keybind: Keybinds = .{},
 /// On Linux, if this is `true`, Ghostty can delay quitting fully until a
 /// configurable amount of time has passed after the last window is closed.
 /// See the documentation of `quit-after-last-window-closed-delay`.
-///
-/// Available since: 1.0.0
 @"quit-after-last-window-closed": bool = builtin.os.tag == .linux,
 
 /// Controls how long Ghostty will stay running after the last open surface has
@@ -2135,8 +1976,6 @@ keybind: Keybinds = .{},
 /// `quit-after-last-window-closed` is `true`.
 ///
 /// Only implemented on Linux.
-///
-/// Available since: 1.0.0
 @"quit-after-last-window-closed-delay": ?Duration = null,
 
 /// This controls whether an initial window is created when Ghostty
@@ -2144,8 +1983,6 @@ keybind: Keybinds = .{},
 /// `quit-after-last-window-closed-delay` is set, setting `initial-window` to
 /// `false` will mean that Ghostty will quit after the configured delay if no
 /// window is ever created. Only implemented on Linux and macOS.
-///
-/// Available since: 1.0.0
 @"initial-window": bool = true,
 
 /// The duration that undo operations remain available. After this
@@ -2213,8 +2050,6 @@ keybind: Keybinds = .{},
 ///
 /// Note: There is no default keybind for toggling the quick terminal.
 /// To enable this feature, bind the `toggle_quick_terminal` action to a key.
-///
-/// Available since: 1.0.0
 @"quick-terminal-position": QuickTerminalPosition = .top,
 
 /// The size of the quick terminal.
@@ -2236,8 +2071,6 @@ keybind: Keybinds = .{},
 /// from the first by a comma (`,`). Percentage and pixel sizes can be mixed
 /// together: for instance, a size of `50%,500px` for a top-positioned quick
 /// terminal would be half a screen tall, and 500 pixels wide.
-///
-/// Available since: 1.0.0
 @"quick-terminal-size": QuickTerminalSize = .{},
 
 /// The screen where the quick terminal should show up.
@@ -2260,8 +2093,6 @@ keybind: Keybinds = .{},
 /// by the operating system.
 ///
 /// Only implemented on macOS.
-///
-/// Available since: 1.0.0
 @"quick-terminal-screen": QuickTerminalScreen = .main,
 
 /// Duration (in seconds) of the quick terminal enter and exit animation.
@@ -2269,8 +2100,6 @@ keybind: Keybinds = .{},
 /// runtime.
 ///
 /// Only implemented on macOS.
-///
-/// Available since: 1.0.0
 @"quick-terminal-animation-duration": f64 = 0.2,
 
 /// Automatically hide the quick terminal when focus shifts to another window.
@@ -2281,8 +2110,6 @@ keybind: Keybinds = .{},
 /// accessible than on macOS, meaning that it is more preferable to keep the
 /// quick terminal open until the user has completed their task.
 /// This default may change in the future.
-///
-/// Available since: 1.0.0
 @"quick-terminal-autohide": bool = switch (builtin.os.tag) {
     .linux => false,
     .macos => true,
@@ -2365,8 +2192,6 @@ keybind: Keybinds = .{},
 ///   * `bash`, `elvish`, `fish`, `zsh` - Use this specific shell injection scheme.
 ///
 /// The default value is `detect`.
-///
-/// Available since: 1.0.0
 @"shell-integration": ShellIntegration = .detect,
 
 /// Shell integration features to enable. These require our shell integration
@@ -2386,8 +2211,6 @@ keybind: Keybinds = .{},
 ///   * `title` - Set the window title via shell integration.
 ///
 /// Example: `cursor`, `no-cursor`, `sudo`, `no-sudo`, `title`, `no-title`
-///
-/// Available since: 1.0.0
 @"shell-integration-features": ShellIntegrationFeatures = .{},
 
 /// Custom entries into the command palette.
@@ -2431,8 +2254,6 @@ keybind: Keybinds = .{},
 ///   * `16-bit` - Color components are returned scaled, e.g. `rrrr/gggg/bbbb`
 ///
 /// The default value is `16-bit`.
-///
-/// Available since: 1.0.0
 @"osc-color-report-format": OSCColorReportFormat = .@"16-bit",
 
 /// If true, allows the "KAM" mode (ANSI mode 2) to be used within
@@ -2441,8 +2262,6 @@ keybind: Keybinds = .{},
 /// to be enabled. This will not be documented further because
 /// if you know you need KAM, you know. If you don't know if you
 /// need KAM, you don't need it.
-///
-/// Available since: 1.0.0
 @"vt-kam-allowed": bool = false,
 
 /// Custom shaders to run after the default shaders. This is a file path
@@ -2516,8 +2335,6 @@ keybind: Keybinds = .{},
 /// will be run in the order they are specified.
 ///
 /// This can be changed at runtime and will affect all open terminals.
-///
-/// Available since: 1.0.0
 @"custom-shader": RepeatablePath = .{},
 
 /// If `true` (default), the focused terminal surface will run an animation
@@ -2536,8 +2353,6 @@ keybind: Keybinds = .{},
 /// depending on the shader and your terminal usage.
 ///
 /// This can be changed at runtime and will affect all open terminals.
-///
-/// Available since: 1.0.0
 @"custom-shader-animation": CustomShaderAnimation = .true,
 
 /// Bell features to enable if bell support is available in your runtime. Not
@@ -2661,8 +2476,6 @@ keybind: Keybinds = .{},
 /// Changing this option at runtime works, but will only apply to the next
 /// time the window is made fullscreen. If a window is already fullscreen,
 /// it will retain the previous setting until fullscreen is exited.
-///
-/// Available since: 1.0.0
 @"macos-non-native-fullscreen": NonNativeFullscreen = .false,
 
 /// Whether the window buttons in the macOS titlebar are visible. The window
@@ -2726,8 +2539,6 @@ keybind: Keybinds = .{},
 /// most cases.
 ///
 /// Changing this option at runtime only applies to new windows.
-///
-/// Available since: 1.0.0
 @"macos-titlebar-style": MacTitlebarStyle = .transparent,
 
 /// Whether the proxy icon in the macOS titlebar is visible. The proxy icon
@@ -2749,8 +2560,6 @@ keybind: Keybinds = .{},
 /// Therefore, to make this work after changing the setting, you must
 /// usually `cd` to a different directory, open a different file in an
 /// editor, etc.
-///
-/// Available since: 1.0.0
 @"macos-titlebar-proxy-icon": MacTitlebarProxyIcon = .visible,
 
 /// macOS doesn't have a distinct "alt" key and instead has the "option"
@@ -2785,15 +2594,11 @@ keybind: Keybinds = .{},
 ///
 /// The values `left` or `right` enable this for the left or right *Option*
 /// key, respectively.
-///
-/// Available since: 1.0.0
 @"macos-option-as-alt": ?OptionAsAlt = null,
 
 /// Whether to enable the macOS window shadow. The default value is true.
 /// With some window managers and window transparency settings, you may
 /// find false more visually appealing.
-///
-/// Available since: 1.0.0
 @"macos-window-shadow": bool = true,
 
 /// If true, the macOS icon in the dock and app switcher will be hidden. This is
@@ -2834,8 +2639,6 @@ keybind: Keybinds = .{},
 /// with legitimate accessibility software (or software that uses the
 /// accessibility APIs), since secure input prevents any application from
 /// reading keyboard events.
-///
-/// Available since: 1.0.0
 @"macos-auto-secure-input": bool = true,
 
 /// If true, Ghostty will show a graphical indication when secure input is
@@ -2846,8 +2649,6 @@ keybind: Keybinds = .{},
 /// or it is manually (and typically temporarily) enabled. However, if you
 /// always have secure input enabled, the indication can be distracting and
 /// you may want to disable it.
-///
-/// Available since: 1.0.0
 @"macos-secure-input-indication": bool = true,
 
 /// Customize the macOS app icon.
@@ -2881,8 +2682,6 @@ keybind: Keybinds = .{},
 ///     This is because the update dialog is managed through a
 ///     separate framework and cannot be customized without significant
 ///     effort.
-///
-/// Available since: 1.0.0
 @"macos-icon": MacAppIcon = .official,
 
 /// The material to use for the frame of the macOS app icon.
@@ -2896,8 +2695,6 @@ keybind: Keybinds = .{},
 ///
 /// Note: This configuration is required when `macos-icon` is set to
 /// `custom-style`.
-///
-/// Available since: 1.0.0
 @"macos-icon-frame": MacAppIconFrame = .aluminum,
 
 /// The color of the ghost in the macOS app icon.
@@ -2906,8 +2703,6 @@ keybind: Keybinds = .{},
 /// `custom-style`.
 ///
 /// Specified as either hex (`#RRGGBB` or `RRGGBB`) or a named X11 color.
-///
-/// Available since: 1.0.0
 @"macos-icon-ghost-color": ?Color = null,
 
 /// The color of the screen in the macOS app icon.
@@ -2920,8 +2715,6 @@ keybind: Keybinds = .{},
 ///
 /// Note: This configuration is required when `macos-icon` is set to
 /// `custom-style`.
-///
-/// Available since: 1.0.0
 @"macos-icon-screen-color": ?ColorList = null,
 
 /// Whether macOS Shortcuts are allowed to control Ghostty.
@@ -2973,8 +2766,6 @@ keybind: Keybinds = .{},
 ///   * `always` - Always use cgroups.
 ///   * `single-instance` - Enable cgroups only for Ghostty instances launched
 ///     as single-instance applications (see gtk-single-instance).
-///
-/// Available since: 1.0.0
 @"linux-cgroup": LinuxCgroup = if (builtin.os.tag == .linux)
     .@"single-instance"
 else
@@ -2987,8 +2778,6 @@ else
 /// controller, which is a soft limit. You should configure something like
 /// systemd-oom to handle killing processes that have too much memory
 /// pressure.
-///
-/// Available since: 1.0.0
 @"linux-cgroup-memory-limit": ?u64 = null,
 
 /// Number of processes limit for any individual terminal process (tab, split,
@@ -2996,8 +2785,6 @@ else
 ///
 /// Note that this sets the "pids.max" configuration for the process number
 /// controller, which is a hard limit.
-///
-/// Available since: 1.0.0
 @"linux-cgroup-processes-limit": ?u64 = null,
 
 /// If this is false, then any cgroup initialization (for linux-cgroup)
@@ -3011,8 +2798,6 @@ else
 ///
 /// Note: This currently only affects cgroup initialization. Subprocesses
 /// must always be able to move themselves into an isolated cgroup.
-///
-/// Available since: 1.0.0
 @"linux-cgroup-hard-fail": bool = false,
 
 /// Enable or disable GTK's OpenGL debugging logs. The default is `true` for
@@ -3034,8 +2819,6 @@ else
 ///
 /// Note that debug builds of Ghostty have a separate single-instance ID
 /// so you can test single instance without conflicting with release builds.
-///
-/// Available since: 1.0.0
 @"gtk-single-instance": GtkSingleInstance = .desktop,
 
 /// When enabled, the full GTK titlebar is displayed instead of your window
@@ -3044,8 +2827,6 @@ else
 ///
 /// This option does nothing when `window-decoration` is false or when running
 /// under macOS.
-///
-/// Available since: 1.0.0
 @"gtk-titlebar": bool = true,
 
 /// Determines the side of the screen that the GTK tab bar will stick to.
@@ -3056,8 +2837,6 @@ else
 /// tabs. Alternatively, you can use the `toggle_tab_overview` action in a
 /// keybind if your window doesn't have a title bar, or you can switch tabs
 /// with keybinds.
-///
-/// Available since: 1.0.0
 @"gtk-tabs-location": GtkTabsLocation = .top,
 
 /// If this is `true`, the titlebar will be hidden when the window is maximized,
@@ -3074,16 +2853,12 @@ else
 ///  * `raised` - Top and bottom bars cast a shadow on the terminal area.
 ///  * `raised-border` - Similar to `raised` but the shadow is replaced with a
 ///    more subtle border.
-///
-/// Available since: 1.0.0
 @"gtk-toolbar-style": GtkToolbarStyle = .raised,
 
 /// If `true` (default), then the Ghostty GTK tabs will be "wide." Wide tabs
 /// are the new typical Gnome style where tabs fill their available space.
 /// If you set this to `false` then tabs will only take up space they need,
 /// which is the old style.
-///
-/// Available since: 1.0.0
 @"gtk-wide-tabs": bool = true,
 
 /// Custom CSS files to be loaded.
@@ -3111,8 +2886,6 @@ else
 
 /// If `true` (default), applications running in the terminal can show desktop
 /// notifications using certain escape sequences such as OSC 9 or OSC 777.
-///
-/// Available since: 1.0.0
 @"desktop-notifications": bool = true,
 
 /// Modifies the color used for bold text in the terminal.
@@ -3140,14 +2913,10 @@ else
 /// features. An option exists in vim to modify this: `:set
 /// keyprotocol=ghostty:kitty`, however a bug in the implementation prevents it
 /// from working properly. https://github.com/vim/vim/pull/13211 fixes this.
-///
-/// Available since: 1.0.0
 term: []const u8 = "xterm-ghostty",
 
 /// String to send when we receive `ENQ` (`0x05`) from the command that we are
 /// running. Defaults to an empty string if not set.
-///
-/// Available since: 1.0.0
 @"enquiry-response": []const u8 = "",
 
 /// The mechanism used to launch Ghostty. This should generally not be
@@ -3222,8 +2991,6 @@ term: []const u8 = "xterm-ghostty",
 /// preference stored in the standard user defaults (`defaults(1)`).
 ///
 /// Changing this value at runtime works after a small delay.
-///
-/// Available since: 1.0.0
 @"auto-update": ?AutoUpdate = null,
 
 /// The release channel to use for auto-updates.
@@ -3246,8 +3013,6 @@ term: []const u8 = "xterm-ghostty",
 /// Ghostty to take effect.
 ///
 /// This only works on macOS since only macOS has an auto-update feature.
-///
-/// Available since: 1.0.0
 @"auto-update-channel": ?build_config.ReleaseChannel = null,
 
 /// This is set by the CLI parser for deinit.
