@@ -120,9 +120,9 @@ if [[ "$GHOSTTY_SHELL_FEATURES" == *ssh-* ]]; then
         [[ -n "$ssh_user" && -n "$ssh_hostname" ]] && break
       done < <(builtin command ssh -G "$@" 2>/dev/null)
 
-      builtin local ssh_target="${ssh_user}@${ssh_hostname}"
-
       if [[ -n "$ssh_hostname" ]]; then
+        builtin local ssh_target="${ssh_user}@${ssh_hostname}"
+
         # Check if terminfo is already cached
         if ghostty +ssh-cache --host="$ssh_target" >/dev/null 2>&1; then
           ssh_term="xterm-ghostty"
@@ -147,9 +147,7 @@ if [[ "$GHOSTTY_SHELL_FEATURES" == *ssh-* ]]; then
               ssh_opts+=(-o "ControlPath=$ssh_cpath")
 
               # Cache successful installation
-              if [[ -n "$ssh_target" ]] && builtin command -v ghostty >/dev/null 2>&1; then
-                ghostty +ssh-cache --add="$ssh_target" >/dev/null 2>&1 || true
-              fi
+              ghostty +ssh-cache --add="$ssh_target" >/dev/null 2>&1 || true
             else
               builtin echo "Warning: Failed to install terminfo." >&2
             fi

@@ -149,7 +149,7 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
                                 set -a ssh_opts -o "ControlPath=$ssh_cpath"
 
                                 # Cache successful installation
-                                if test -n "$ssh_target"; and command -q ghostty
+                                if command -q ghostty
                                     ghostty +ssh-cache --add="$ssh_target" >/dev/null 2>&1; or true
                                 end
                             else
