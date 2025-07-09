@@ -343,7 +343,14 @@ pub const Face = struct {
         const cell_width: f64 = @floatFromInt(metrics.cell_width);
         // const cell_height: f64 = @floatFromInt(metrics.cell_height);
 
-        const glyph_size = opts.constraint.constrain(
+        // We eliminate any negative vertical padding since these overlap
+        // values aren't needed under CoreText with how precisely we apply
+        // constraints, and they can lead to extra height that looks bad
+        // for things like powerline glyphs.
+        var constraint = opts.constraint;
+        constraint.pad_top = @max(0.0, constraint.pad_top);
+        constraint.pad_bottom = @max(0.0, constraint.pad_bottom);
+        const glyph_size = constraint.constrain(
             .{
                 .width = rect.size.width,
                 .height = rect.size.height,
@@ -354,48 +361,75 @@ pub const Face = struct {
             opts.constraint_width,
         );
 
-        // We manually quantize the position and size of the glyph to whole
-        // pixel boundaries. Since macOS doesn't do font hinting this helps
-        // a lot for legibility at small sizes on low dpi displays.
+        // These calculations are an attempt to mostly imitate the effect of
+        // `shouldSubpixelQuantizeFonts`[^1], which helps maximize legibility
+        // at small pixel sizes (low DPI). We do this math ourselves instead
+        // of letting CoreText do it because it's not entirely clear how the
+        // math in CoreText works and we've run in to edge cases where glyphs
+        // have their bottom or left row cut off due to bad rounding.
         //
-        // Well, okay, so, it seems like macOS does have a rudimentary auto-
-        // hinter of sorts, except they call it "subpixel quantization"[^1].
+        // This math seems to have a mostly comparable result to whatever it
+        // is that CoreText does, and is even (in my opinion) better in some
+        // cases.
         //
-        // Why not just use that? Because it's unpredictable and would force
-        // us to have an extra pixel of padding in the atlas for most glyphs
-        // that don't need it, since it's hard to know whether a given glyph
-        // will have its bottom or left edge snapped out an extra pixel.
+        // I'm not entirely certain but I suspect that when you enable the
+        // CoreText option it also does some sort of rudimentary hinting,
+        // but it doesn't seem to make that big of a difference in terms
+        // of legibility in the end.
         //
-        // Also, this empirically just looks a whole lot better than theirs.
-        // Admittedly this is a very specific use case, we're rendering for
-        // a monospace grid and don't really have to worry about sub-pixel
-        // positioning; I'm sure Apple's technique is better for cases with
-        // proportional text.
-        //
-        // An effort was made to more or less match Apple's quantization in
-        // terms of resulting whole-pixel glyph sizes. Oddly it looks like
-        // Apple is still horizontally quantizing to thirds of a pixel, as
-        // if they're doing subpixel rendering for a horizontally striped
-        // LCD, even though they haven't done subpixel rendering for years.
-        // We don't match them on that, it tends to just make it blurrier.
-        //
-        // [^1]: Well I'm 80% sure it's hinting since it seems to account for
-        // features inside of the glyph like crossbars, not just the bounding
-        // box like we do. The documentation is... sparse. Ref:
-        // https://developer.apple.com/documentation/coregraphics/cgcontext/setshouldsubpixelquantizefonts(_:)?language=objc
+        // [^1]: https://developer.apple.com/documentation/coregraphics/cgcontext/setshouldsubpixelquantizefonts(_:)?language=objc
+
+        // We only want to apply quantization if we don't have any
+        // constraints and this isn't a bitmap glyph, since CoreText
+        // doesn't seem to apply its quantization to bitmap glyphs.
         //
         // TODO: Maybe gate this so it only applies at small font sizes,
         //       or else offer a user config option that can disable it.
-        const x = @round(glyph_size.x);
-        const y = @round(glyph_size.y);
-        // We subtract a third here so that we behave (somewhat) like the weird
-        // one third pixel quantization that Apple does. This is basically just
-        // a fudge factor though.
-        const width = @max(1.0, @ceil(glyph_size.width + glyph_size.x - x - 1.0 / 3.0));
-        const height = @max(1.0, @ceil(glyph_size.height + glyph_size.y - y));
+        const should_quantize = !sbix and std.meta.eql(opts.constraint, .none);
 
-        const px_width: u32 = @intFromFloat(@ceil(width));
-        const px_height: u32 = @intFromFloat(@ceil(height));
+        // We offset our glyph by its bearings when we draw it, using `@floor`
+        // here rounds it *up* since we negate it right outside. Moving it by
+        // whole pixels ensures that we don't disturb the pixel alignment of
+        // the glyph, fractional pixels will still be drawn on all sides as
+        // necessary.
+        const draw_x = -@floor(rect.origin.x);
+        const draw_y = -@floor(rect.origin.y);
+
+        // We use `x` and `y` for our full pixel bearings post-raster.
+        // We need to subtract the fractional pixel of difference from
+        // the edge of the draw area to the edge of the actual glyph.
+        const frac_x = rect.origin.x + draw_x;
+        const frac_y = rect.origin.y + draw_y;
+        const x = glyph_size.x - frac_x;
+        const y = glyph_size.y - frac_y;
+
+        // We never modify the width.
+        //
+        // When using the CoreText option the widths do seem to be
+        // modified extremely subtly, but even at very small font
+        // sizes it's hardly a noticeable difference.
+        const width = glyph_size.width;
+
+        // If the top of the glyph (taking in to account the y position)
+        // is within half a pixel of an exact pixel edge, we round up the
+        // height, otherwise leave it alone.
+        //
+        // This seems to match what CoreText does.
+        const frac_top = (glyph_size.height + frac_y) - @floor(glyph_size.height + frac_y);
+        const height =
+            if (should_quantize)
+                if (frac_top >= 0.5)
+                    glyph_size.height + 1 - frac_top
+                else
+                    glyph_size.height
+            else
+                glyph_size.height;
+
+        // Add the fractional pixel to the width and height and take
+        // the ceiling to get a canvas size that will definitely fit
+        // our drawn glyph.
+        const px_width: u32 = @intFromFloat(@ceil(width + frac_x));
+        const px_height: u32 = @intFromFloat(@ceil(height + frac_y));
 
         // Settings that are specific to if we are rendering text or emoji.
         const color: struct {
@@ -505,13 +539,8 @@ pub const Face = struct {
             height / rect.size.height,
         );
 
-        // We want to render the glyphs at (0,0), but the glyphs themselves
-        // are offset by bearings, so we have to undo those bearings in order
-        // to get them to 0,0.
-        self.font.drawGlyphs(&glyphs, &.{.{
-            .x = -rect.origin.x,
-            .y = -rect.origin.y,
-        }}, ctx);
+        // Draw our glyph.
+        self.font.drawGlyphs(&glyphs, &.{.{ .x = draw_x, .y = draw_y }}, ctx);
 
         // Write our rasterized glyph to the atlas.
         const region = try atlas.reserve(alloc, px_width, px_height);
@@ -519,7 +548,7 @@ pub const Face = struct {
 
         // This should be the distance from the bottom of
         // the cell to the top of the glyph's bounding box.
-        const offset_y: i32 = @as(i32, @intFromFloat(@ceil(y + height)));
+        const offset_y: i32 = @as(i32, @intFromFloat(@round(y))) + @as(i32, @intCast(px_height));
 
         // This should be the distance from the left of
         // the cell to the left of the glyph's bounding box.
@@ -538,9 +567,7 @@ pub const Face = struct {
             // since in that case the position was already calculated with the
             // new cell width in mind.
             if (opts.constraint.align_horizontal == .none) {
-                var advances: [glyphs.len]macos.graphics.Size = undefined;
-                _ = self.font.getAdvancesForGlyphs(.horizontal, &glyphs, &advances);
-                const advance = advances[0].width;
+                const advance = self.font.getAdvancesForGlyphs(.horizontal, &glyphs, null);
                 const new_advance =
                     cell_width * @as(f64, @floatFromInt(opts.cell_width orelse 1));
                 // If the original advance is greater than the cell width then
@@ -552,13 +579,13 @@ pub const Face = struct {
                 // We also don't want to do anything if the advance is zero or
                 // less, since this is used for stuff like combining characters.
                 if (advance > new_advance or advance <= 0.0) {
-                    break :offset_x @intFromFloat(@ceil(x));
+                    break :offset_x @intFromFloat(@round(x));
                 }
                 break :offset_x @intFromFloat(
                     @round(x + (new_advance - advance) / 2),
                 );
             } else {
-                break :offset_x @intFromFloat(@ceil(x));
+                break :offset_x @intFromFloat(@round(x));
             }
         };
 
