@@ -10,7 +10,6 @@ const entrypoint = switch (build_config.exe_entrypoint) {
     .webgen_config => @import("build/webgen/main_config.zig"),
     .webgen_actions => @import("build/webgen/main_actions.zig"),
     .webgen_commands => @import("build/webgen/main_commands.zig"),
-    .bench_stream => @import("bench/stream.zig"),
 };
 
 /// The main entrypoint for the program.
