@@ -343,7 +343,14 @@ pub const Face = struct {
         const cell_width: f64 = @floatFromInt(metrics.cell_width);
         // const cell_height: f64 = @floatFromInt(metrics.cell_height);
 
-        const glyph_size = opts.constraint.constrain(
+        // We eliminate any negative vertical padding since these overlap
+        // values aren't needed under CoreText with how precisely we apply
+        // constraints, and they can lead to extra height that looks bad
+        // for things like powerline glyphs.
+        var constraint = opts.constraint;
+        constraint.pad_top = @max(0.0, constraint.pad_top);
+        constraint.pad_bottom = @max(0.0, constraint.pad_bottom);
+        const glyph_size = constraint.constrain(
             .{
                 .width = rect.size.width,
                 .height = rect.size.height,
