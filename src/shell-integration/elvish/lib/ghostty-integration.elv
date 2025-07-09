@@ -137,9 +137,9 @@
                   }
               }
 
-              var ssh-target = $ssh-user"@"$ssh-hostname
-
               if (not-eq $ssh-hostname "") {
+                  var ssh-target = $ssh-user"@"$ssh-hostname
+
                   # Check if terminfo is already cached
                   if (and (has-external ghostty) (bool ?(external ghostty +ssh-cache --host=$ssh-target >/dev/null 2>&1))) {
                       set ssh-term = "xterm-ghostty"
@@ -167,7 +167,7 @@
                               set ssh-opts = (conj $ssh-opts -o ControlPath=$ssh-cpath)
 
                               # Cache successful installation
-                              if (and (not-eq $ssh-target "") (has-external ghostty)) {
+                              if (has-external ghostty) {
                                   external ghostty +ssh-cache --add=$ssh-target >/dev/null 2>&1
                               }
                           } else {
