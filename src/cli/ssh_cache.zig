@@ -50,7 +50,7 @@ const CacheEntry = struct {
             return null;
         };
 
-        return CacheEntry{
+        return .{
             .hostname = hostname,
             .timestamp = timestamp,
             .terminfo_version = terminfo_version,
@@ -107,9 +107,8 @@ fn isValidHostname(host: []const u8) bool {
         var has_colon = false;
         for (ipv6_part) |c| {
             switch (c) {
-                'a'...'f', 'A'...'F', '0'...'9', ':' => {
-                    if (c == ':') has_colon = true;
-                },
+                'a'...'f', 'A'...'F', '0'...'9' => {},
+                ':' => has_colon = true,
                 else => return false,
             }
         }
@@ -178,7 +177,7 @@ fn readCacheFile(
             const gop = try entries.getOrPut(hostname_copy);
             if (!gop.found_existing) {
                 const terminfo_copy = try alloc.dupe(u8, entry.terminfo_version);
-                gop.value_ptr.* = CacheEntry{
+                gop.value_ptr.* = .{
                     .hostname = hostname_copy,
                     .timestamp = entry.timestamp,
                     .terminfo_version = terminfo_copy,
