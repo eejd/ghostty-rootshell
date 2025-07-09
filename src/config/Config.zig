@@ -2893,8 +2893,8 @@ else
 /// This can be set to a specific color, using the same format as
 /// `background` or `foreground` (e.g. `#RRGGBB` but other formats
 /// are also supported; see the aforementioned documentation). If a
-/// specific color is set, this color will always be used for all
-/// bold text regardless of the terminal's color scheme.
+/// specific color is set, this color will always be used for the default
+/// bold text color. It will set the rest of the bold colors to `bright`.
 ///
 /// This can also be set to `bright`, which uses the bright color palette
 /// for bold text. For example, if the text is red, then the bold will
