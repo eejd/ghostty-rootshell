@@ -82,7 +82,8 @@ fn getCachePath(allocator: Allocator) ![]const u8 {
 
 // Supports both standalone hostnames and user@hostname format
 fn isValidCacheKey(key: []const u8) bool {
-    if (key.len == 0 or key.len > 320) return false; // 253 + 1 + 64 for user@hostname
+    // 253 + 1 + 64 for user@hostname
+    if (key.len == 0 or key.len > 320) return false;
 
     // Check for user@hostname format
     if (std.mem.indexOf(u8, key, "@")) |at_pos| {
@@ -94,7 +95,8 @@ fn isValidCacheKey(key: []const u8) bool {
     return isValidHostname(key);
 }
 
-// Basic hostname validation - accepts domains and IPs (including IPv6 in brackets)
+// Basic hostname validation - accepts domains and IPs
+// (including IPv6 in brackets)
 fn isValidHostname(host: []const u8) bool {
     if (host.len == 0 or host.len > 253) return false;
 
@@ -438,24 +440,27 @@ pub fn run(alloc_gpa: Allocator) !u8 {
     }
 
     if (opts.add) |host| {
-        const result = addHost(alloc, host) catch |err| switch (err) {
-            CacheError.InvalidCacheKey => {
-                try stderr.print("Error: Invalid hostname format '{s}'\n", .{host});
-                try stderr.print("Expected format: hostname or user@hostname\n", .{});
-                return 1;
-            },
-            CacheError.CacheLocked => {
-                try stderr.print("Error: Cache is busy, try again\n", .{});
-                return 1;
-            },
-            error.AccessDenied, error.PermissionDenied => {
-                try stderr.print("Error: Permission denied\n", .{});
-                return 1;
-            },
-            else => {
-                try stderr.print("Error: Unable to add '{s}' to cache\n", .{host});
-                return 1;
-            },
+        const result = addHost(alloc, host) catch |err| {
+            const Error = error{PermissionDenied} || @TypeOf(err);
+            switch (@as(Error, err)) {
+                CacheError.InvalidCacheKey => {
+                    try stderr.print("Error: Invalid hostname format '{s}'\n", .{host});
+                    try stderr.print("Expected format: hostname or user@hostname\n", .{});
+                    return 1;
+                },
+                CacheError.CacheLocked => {
+                    try stderr.print("Error: Cache is busy, try again\n", .{});
+                    return 1;
+                },
+                error.AccessDenied, error.PermissionDenied => {
+                    try stderr.print("Error: Permission denied\n", .{});
+                    return 1;
+                },
+                else => {
+                    try stderr.print("Error: Unable to add '{s}' to cache\n", .{host});
+                    return 1;
+                },
+            }
         };
 
         switch (result) {
@@ -466,51 +471,63 @@ pub fn run(alloc_gpa: Allocator) !u8 {
     }
 
     if (opts.remove) |host| {
-        removeHost(alloc, host) catch |err| switch (err) {
-            CacheError.InvalidCacheKey => {
-                try stderr.print("Error: Invalid hostname format '{s}'\n", .{host});
-                try stderr.print("Expected format: hostname or user@hostname\n", .{});
-                return 1;
-            },
-            CacheError.CacheLocked => {
-                try stderr.print("Error: Cache is busy, try again\n", .{});
-                return 1;
-            },
-            error.AccessDenied, error.PermissionDenied => {
-                try stderr.print("Error: Permission denied\n", .{});
-                return 1;
-            },
-            else => {
-                try stderr.print("Error: Unable to remove '{s}' from cache\n", .{host});
-                return 1;
-            },
+        removeHost(alloc, host) catch |err| {
+            const Error = error{PermissionDenied} || @TypeOf(err);
+            switch (@as(Error, err)) {
+                CacheError.InvalidCacheKey => {
+                    try stderr.print("Error: Invalid hostname format '{s}'\n", .{host});
+                    try stderr.print("Expected format: hostname or user@hostname\n", .{});
+                    return 1;
+                },
+                CacheError.CacheLocked => {
+                    try stderr.print("Error: Cache is busy, try again\n", .{});
+                    return 1;
+                },
+                error.AccessDenied, error.PermissionDenied => {
+                    try stderr.print("Error: Permission denied\n", .{});
+                    return 1;
+                },
+                else => {
+                    try stderr.print("Error: Unable to remove '{s}' from cache\n", .{host});
+                    return 1;
+                },
+            }
         };
         try stdout.print("Removed '{s}' from cache.\n", .{host});
         return 0;
     }
 
     if (opts.host) |host| {
-        const cached = checkHost(alloc, host) catch |err| switch (err) {
-            CacheError.InvalidCacheKey => {
-                try stderr.print("Error: Invalid hostname format '{s}'\n", .{host});
-                try stderr.print("Expected format: hostname or user@hostname\n", .{});
-                return 1;
-            },
-            error.AccessDenied, error.PermissionDenied => {
-                try stderr.print("Error: Permission denied\n", .{});
-                return 1;
-            },
-            else => {
-                try stderr.print("Error: Unable to check host '{s}' in cache\n", .{host});
-                return 1;
-            },
+        const cached = checkHost(alloc, host) catch |err| {
+            const Error = error{PermissionDenied} || @TypeOf(err);
+            switch (@as(Error, err)) {
+                CacheError.InvalidCacheKey => {
+                    try stderr.print("Error: Invalid hostname format '{s}'\n", .{host});
+                    try stderr.print("Expected format: hostname or user@hostname\n", .{});
+                    return 1;
+                },
+                error.AccessDenied, error.PermissionDenied => {
+                    try stderr.print("Error: Permission denied\n", .{});
+                    return 1;
+                },
+                else => {
+                    try stderr.print("Error: Unable to check host '{s}' in cache\n", .{host});
+                    return 1;
+                },
+            }
         };
 
         if (cached) {
-            try stdout.print("'{s}' has Ghostty terminfo installed.\n", .{host});
+            try stdout.print(
+                "'{s}' has Ghostty terminfo installed.\n",
+                .{host},
+            );
             return 0;
         } else {
-            try stdout.print("'{s}' does not have Ghostty terminfo installed.\n", .{host});
+            try stdout.print(
+                "'{s}' does not have Ghostty terminfo installed.\n",
+                .{host},
+            );
             return 1;
         }
     }
