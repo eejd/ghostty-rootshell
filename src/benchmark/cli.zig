@@ -7,6 +7,8 @@ const cli = @import("../cli.zig");
 pub const Action = enum {
     @"terminal-stream",
     @"codepoint-width",
+    @"grapheme-break",
+    @"terminal-parser",
 
     /// Returns the struct associated with the action. The struct
     /// should have a few decls:
@@ -20,6 +22,8 @@ pub const Action = enum {
         return switch (action) {
             .@"terminal-stream" => @import("TerminalStream.zig"),
             .@"codepoint-width" => @import("CodepointWidth.zig"),
+            .@"grapheme-break" => @import("GraphemeBreak.zig"),
+            .@"terminal-parser" => @import("TerminalParser.zig"),
         };
     }
 };
