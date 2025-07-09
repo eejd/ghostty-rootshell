@@ -14,7 +14,24 @@ pub fn init(
     var steps = std.ArrayList(*std.Build.Step.Compile).init(b.allocator);
     errdefer steps.deinit();
 
-    // Our new benchmarking application.
+    // Our synthetic data generator
+    {
+        const exe = b.addExecutable(.{
+            .name = "ghostty-gen",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("src/main_gen.zig"),
+                .target = deps.config.target,
+                // We always want our datagen to be fast because it
+                // takes awhile to run.
+                .optimize = .ReleaseFast,
+            }),
+        });
+        exe.linkLibC();
+        _ = try deps.add(exe);
+        try steps.append(exe);
+    }
+
+    // Our benchmarking application.
     {
         const exe = b.addExecutable(.{
             .name = "ghostty-bench",

@@ -7,5 +7,5 @@ pub const GraphemeBreak = @import("GraphemeBreak.zig");
 pub const TerminalParser = @import("TerminalParser.zig");
 
 test {
-    _ = @import("std").testing.refAllDecls(@This());
+    @import("std").testing.refAllDecls(@This());
 }
