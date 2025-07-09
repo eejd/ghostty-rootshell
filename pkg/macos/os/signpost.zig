@@ -13,18 +13,23 @@ const Log = logpkg.Log;
 pub fn init() void {
     if (__dso_handle != null) return;
 
-    const root = @import("root");
-    const sym = if (@hasDecl(root, "main"))
-        root.main
-    else
-        comptime first: {
-            for (@typeInfo(root).@"struct".decls) |decl_info| {
-                const decl = @field(root, decl_info.name);
-                if (@typeInfo(@TypeOf(decl)) == .@"fn") break :first decl;
-            }
+    const sym = comptime sym: {
+        const root = @import("root");
 
-            @compileError("No functions found in root module");
-        };
+        // If we have a main function, use that as the symbol.
+        if (@hasDecl(root, "main")) break :sym root.main;
+
+        // Otherwise, we're in a library, so we just use the first
+        // function in our root module. I actually don't know if this is
+        // all required or if we can just use the real `__dso_handle` symbol,
+        // but this seems to work for now.
+        for (@typeInfo(root).@"struct".decls) |decl_info| {
+            const decl = @field(root, decl_info.name);
+            if (@typeInfo(@TypeOf(decl)) == .@"fn") break :sym decl;
+        }
+
+        @compileError("no functions found in root module");
+    };
 
     // Since __dso_handle is not automatically populated by the linker,
     // we populate it by looking up the main function's module address

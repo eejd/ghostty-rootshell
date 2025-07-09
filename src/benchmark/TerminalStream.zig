@@ -21,6 +21,8 @@ const Benchmark = @import("Benchmark.zig");
 const Terminal = terminalpkg.Terminal;
 const Stream = terminalpkg.Stream(*Handler);
 
+const log = std.log.scoped(.@"terminal-stream-bench");
+
 opts: Options,
 terminal: Terminal,
 handler: Handler,
@@ -88,8 +90,10 @@ fn setup(ptr: *anyopaque) Benchmark.Error!void {
     // validation here eventually.
     assert(self.data_f == null);
     if (self.opts.data) |path| {
-        self.data_f = std.fs.cwd().openFile(path, .{}) catch
+        self.data_f = std.fs.cwd().openFile(path, .{}) catch |err| {
+            log.warn("error opening data file err={}", .{err});
             return error.BenchmarkFailed;
+        };
     }
 }
 
@@ -114,11 +118,16 @@ fn step(ptr: *anyopaque) Benchmark.Error!void {
 
     var buf: [4096]u8 = undefined;
     while (true) {
-        const n = r.read(&buf) catch return error.BenchmarkFailed;
+        const n = r.read(&buf) catch |err| {
+            log.warn("error reading data file err={}", .{err});
+            return error.BenchmarkFailed;
+        };
         if (n == 0) break; // EOF reached
         const chunk = buf[0..n];
-        self.stream.nextSlice(chunk) catch
+        self.stream.nextSlice(chunk) catch |err| {
+            log.warn("error processing data file chunk err={}", .{err});
             return error.BenchmarkFailed;
+        };
     }
 }
 
