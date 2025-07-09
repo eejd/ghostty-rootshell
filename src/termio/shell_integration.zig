@@ -177,10 +177,28 @@ pub fn setupFeatures(
     };
     var buffer = try std.BoundedArray(u8, capacity).init(0);
 
-    inline for (fields) |field| {
-        if (@field(features, field.name)) {
+    // Sort the fields so that the output is deterministic. This is
+    // done at comptime so it has no runtime cost
+    const fields_sorted: [fields.len][]const u8 = comptime fields: {
+        var fields_sorted: [fields.len][]const u8 = undefined;
+        for (fields, 0..) |field, i| fields_sorted[i] = field.name;
+        std.mem.sortUnstable(
+            []const u8,
+            &fields_sorted,
+            {},
+            (struct {
+                fn lessThan(_: void, lhs: []const u8, rhs: []const u8) bool {
+                    return std.ascii.orderIgnoreCase(lhs, rhs) == .lt;
+                }
+            }).lessThan,
+        );
+        break :fields fields_sorted;
+    };
+
+    inline for (fields_sorted) |name| {
+        if (@field(features, name)) {
             if (buffer.len > 0) try buffer.append(',');
-            try buffer.appendSlice(field.name);
+            try buffer.appendSlice(name);
         }
     }
 
@@ -220,7 +238,7 @@ test "setup features" {
         defer env.deinit();
 
         try setupFeatures(&env, .{ .cursor = false, .sudo = true, .title = false, .@"ssh-env" = true, .@"ssh-terminfo" = false });
-        try testing.expectEqualStrings("sudo,ssh-env", env.get("GHOSTTY_SHELL_FEATURES").?);
+        try testing.expectEqualStrings("ssh-env,sudo", env.get("GHOSTTY_SHELL_FEATURES").?);
     }
 }
 
