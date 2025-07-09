@@ -45,7 +45,7 @@ pub fn run(
     const signpost: if (builtin.target.os.tag.isDarwin()) struct {
         log: *macos.os.Log,
         id: macos.os.signpost.Id,
-    } else void = if (comptime builtin.os.tag == .macos) macos: {
+    } else void = if (builtin.target.os.tag.isDarwin()) darwin: {
         macos.os.signpost.init();
         const log = macos.os.Log.create(
             build_config.bundle_id,
@@ -53,9 +53,9 @@ pub fn run(
         );
         const id = macos.os.signpost.Id.forPointer(log, self.ptr);
         macos.os.signpost.intervalBegin(log, id, signpost_name);
-        break :macos .{ .log = log, .id = id };
+        break :darwin .{ .log = log, .id = id };
     } else {};
-    defer if (comptime builtin.os.tag == .macos) {
+    defer if (comptime builtin.target.os.tag.isDarwin()) {
         macos.os.signpost.intervalEnd(
             signpost.log,
             signpost.id,

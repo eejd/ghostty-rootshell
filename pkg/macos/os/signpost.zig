@@ -13,11 +13,24 @@ const Log = logpkg.Log;
 pub fn init() void {
     if (__dso_handle != null) return;
 
+    const root = @import("root");
+    const sym = if (@hasDecl(root, "main"))
+        root.main
+    else
+        comptime first: {
+            for (@typeInfo(root).@"struct".decls) |decl_info| {
+                const decl = @field(root, decl_info.name);
+                if (@typeInfo(@TypeOf(decl)) == .@"fn") break :first decl;
+            }
+
+            @compileError("No functions found in root module");
+        };
+
     // Since __dso_handle is not automatically populated by the linker,
     // we populate it by looking up the main function's module address
     // which should be a mach-o header.
     var info: DlInfo = undefined;
-    const result = dladdr(@import("root").main, &info);
+    const result = dladdr(sym, &info);
     assert(result != 0);
     __dso_handle = @ptrCast(@alignCast(info.dli_fbase));
 }
