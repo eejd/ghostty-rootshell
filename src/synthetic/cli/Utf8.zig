@@ -1,4 +1,4 @@
-const Ascii = @This();
+const Utf8 = @This();
 
 const std = @import("std");
 const assert = std.debug.assert;
@@ -13,22 +13,21 @@ pub const Options = struct {};
 pub fn create(
     alloc: Allocator,
     _: Options,
-) !*Ascii {
-    const ptr = try alloc.create(Ascii);
+) !*Utf8 {
+    const ptr = try alloc.create(Utf8);
     errdefer alloc.destroy(ptr);
     return ptr;
 }
 
-pub fn destroy(self: *Ascii, alloc: Allocator) void {
+pub fn destroy(self: *Utf8, alloc: Allocator) void {
     alloc.destroy(self);
 }
 
-pub fn run(self: *Ascii, writer: anytype, rand: std.Random) !void {
+pub fn run(self: *Utf8, writer: anytype, rand: std.Random) !void {
     _ = self;
 
-    var gen: synthetic.Bytes = .{
+    var gen: synthetic.Utf8 = .{
         .rand = rand,
-        .alphabet = synthetic.Bytes.Alphabet.ascii,
     };
 
     var buf: [1024]u8 = undefined;
@@ -45,11 +44,11 @@ pub fn run(self: *Ascii, writer: anytype, rand: std.Random) !void {
     }
 }
 
-test Ascii {
+test Utf8 {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    const impl: *Ascii = try .create(alloc, .{});
+    const impl: *Utf8 = try .create(alloc, .{});
     defer impl.destroy(alloc);
 
     var prng = std.Random.DefaultPrng.init(1);

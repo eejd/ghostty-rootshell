@@ -7,6 +7,8 @@ const cli = @import("../cli.zig");
 /// predictably named files under `cli/`.
 pub const Action = enum {
     ascii,
+    osc,
+    utf8,
 
     /// Returns the struct associated with the action. The struct
     /// should have a few decls:
@@ -19,6 +21,8 @@ pub const Action = enum {
     pub fn Struct(comptime action: Action) type {
         return switch (action) {
             .ascii => @import("cli/Ascii.zig"),
+            .osc => @import("cli/Osc.zig"),
+            .utf8 => @import("cli/Utf8.zig"),
         };
     }
 };
@@ -92,4 +96,13 @@ fn mainActionImpl(
     const impl = try Impl.create(alloc, opts);
     defer impl.destroy(alloc);
     try impl.run(writer, rand);
+}
+
+test {
+    // Make sure we ref all our actions
+    inline for (@typeInfo(Action).@"enum".fields) |field| {
+        const action = @field(Action, field.name);
+        const Impl = Action.Struct(action);
+        _ = Impl;
+    }
 }

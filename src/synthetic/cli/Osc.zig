@@ -1,4 +1,4 @@
-const Ascii = @This();
+const Osc = @This();
 
 const std = @import("std");
 const assert = std.debug.assert;
@@ -7,28 +7,32 @@ const synthetic = @import("../main.zig");
 
 const log = std.log.scoped(.@"terminal-stream-bench");
 
-pub const Options = struct {};
+pub const Options = struct {
+    /// Probability of generating a valid value.
+    @"p-valid": f64 = 0.5,
+};
+
+opts: Options,
 
 /// Create a new terminal stream handler for the given arguments.
 pub fn create(
     alloc: Allocator,
-    _: Options,
-) !*Ascii {
-    const ptr = try alloc.create(Ascii);
+    opts: Options,
+) !*Osc {
+    const ptr = try alloc.create(Osc);
     errdefer alloc.destroy(ptr);
+    ptr.* = .{ .opts = opts };
     return ptr;
 }
 
-pub fn destroy(self: *Ascii, alloc: Allocator) void {
+pub fn destroy(self: *Osc, alloc: Allocator) void {
     alloc.destroy(self);
 }
 
-pub fn run(self: *Ascii, writer: anytype, rand: std.Random) !void {
-    _ = self;
-
-    var gen: synthetic.Bytes = .{
+pub fn run(self: *Osc, writer: anytype, rand: std.Random) !void {
+    var gen: synthetic.Osc = .{
         .rand = rand,
-        .alphabet = synthetic.Bytes.Alphabet.ascii,
+        .p_valid = self.opts.@"p-valid",
     };
 
     var buf: [1024]u8 = undefined;
@@ -45,11 +49,11 @@ pub fn run(self: *Ascii, writer: anytype, rand: std.Random) !void {
     }
 }
 
-test Ascii {
+test Osc {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    const impl: *Ascii = try .create(alloc, .{});
+    const impl: *Osc = try .create(alloc, .{});
     defer impl.destroy(alloc);
 
     var prng = std.Random.DefaultPrng.init(1);
