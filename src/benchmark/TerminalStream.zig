@@ -18,6 +18,7 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const terminalpkg = @import("../terminal/main.zig");
 const Benchmark = @import("Benchmark.zig");
+const options = @import("options.zig");
 const Terminal = terminalpkg.Terminal;
 const Stream = terminalpkg.Stream(*Handler);
 
@@ -89,12 +90,10 @@ fn setup(ptr: *anyopaque) Benchmark.Error!void {
     // Open our data file to prepare for reading. We can do more
     // validation here eventually.
     assert(self.data_f == null);
-    if (self.opts.data) |path| {
-        self.data_f = std.fs.cwd().openFile(path, .{}) catch |err| {
-            log.warn("error opening data file err={}", .{err});
-            return error.BenchmarkFailed;
-        };
-    }
+    self.data_f = options.dataFile(self.opts.data) catch |err| {
+        log.warn("error opening data file err={}", .{err});
+        return error.BenchmarkFailed;
+    };
 }
 
 fn teardown(ptr: *anyopaque) void {
