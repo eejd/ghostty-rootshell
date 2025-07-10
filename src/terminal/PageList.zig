@@ -1401,6 +1401,15 @@ fn resizeWithoutReflow(self: *PageList, opts: Resize) !void {
                     assert(count < rows);
                     for (count..rows) |_| _ = try self.grow();
                 }
+
+                // Make sure that the viewport pin isn't below the active
+                // area, since that will lead to all sorts of problems.
+                switch (self.viewport) {
+                    .pin => if (self.pinIsActive(self.viewport_pin.*)) {
+                        self.viewport = .{ .active = {} };
+                    },
+                    .active, .top => {},
+                }
             },
         }
 
