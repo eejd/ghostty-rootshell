@@ -1401,6 +1401,15 @@ fn resizeWithoutReflow(self: *PageList, opts: Resize) !void {
                     assert(count < rows);
                     for (count..rows) |_| _ = try self.grow();
                 }
+
+                // Make sure that the viewport pin isn't below the active
+                // area, since that will lead to all sorts of problems.
+                switch (self.viewport) {
+                    .pin => if (self.pinIsActive(self.viewport_pin.*)) {
+                        self.viewport = .{ .active = {} };
+                    },
+                    .active, .top => {},
+                }
             },
         }
 
@@ -5973,6 +5982,36 @@ test "PageList resize (no reflow) more rows extends blank lines" {
             .y = 0,
         } }, pt);
     }
+}
+
+test "PageList resize (no reflow) more rows contains viewport" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    // When the rows are increased we need to make sure that the viewport
+    // doesn't end up below the active area if it's currently in pin mode.
+
+    var s = try init(alloc, 5, 5, 1);
+    defer s.deinit();
+    try testing.expect(s.pages.first == s.pages.last);
+
+    // Make it so we have scrollback
+    _ = try s.grow();
+
+    try testing.expectEqual(@as(usize, 5), s.rows);
+    try testing.expectEqual(@as(usize, 6), s.totalRows());
+
+    // Set viewport above active by scrolling up one.
+    s.scroll(.{ .delta_row = -1 });
+    // The viewport should be a pin now.
+    try testing.expectEqual(Viewport.pin, s.viewport);
+
+    // Resize
+    try s.resize(.{ .rows = 7, .reflow = false });
+    try testing.expectEqual(@as(usize, 7), s.rows);
+    try testing.expectEqual(@as(usize, 7), s.totalRows());
+    // The viewport should now be active, not a pin.
+    try testing.expectEqual(Viewport.active, s.viewport);
 }
 
 test "PageList resize (no reflow) less cols" {
