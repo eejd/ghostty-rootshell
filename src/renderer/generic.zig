@@ -2218,10 +2218,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             };
 
             // Update custom cursor uniforms, if we have a cursor.
-            if (self.cells.fg_rows.lists[0].items.len > 0) {
-                const cursor: shaderpkg.CellText =
-                    self.cells.fg_rows.lists[0].items[0];
-
+            if (self.cells.getCursorGlyph()) |cursor| {
                 const cursor_width: f32 = @floatFromInt(cursor.glyph_size[0]);
                 const cursor_height: f32 = @floatFromInt(cursor.glyph_size[1]);
 
