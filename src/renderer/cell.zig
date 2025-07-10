@@ -156,6 +156,17 @@ pub const Contents = struct {
         }
     }
 
+    /// Returns the current cursor glyph if present, checking both cursor lists.
+    pub fn getCursorGlyph(self: *Contents) ?shaderpkg.CellText {
+        if (self.fg_rows.lists[0].items.len > 0) {
+            return self.fg_rows.lists[0].items[0];
+        }
+        if (self.fg_rows.lists[self.size.rows + 1].items.len > 0) {
+            return self.fg_rows.lists[self.size.rows + 1].items[0];
+        }
+        return null;
+    }
+
     /// Access a background cell. Prefer this function over direct indexing
     /// of `bg_cells` in order to avoid integer size bugs causing overflows.
     pub inline fn bgCell(
