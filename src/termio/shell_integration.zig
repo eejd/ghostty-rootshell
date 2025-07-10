@@ -340,6 +340,11 @@ fn setupBash(
         }
     }
 
+    // Preserve an existing ENV value. We're about to overwrite it.
+    if (env.get("ENV")) |v| {
+        try env.put("GHOSTTY_BASH_ENV", v);
+    }
+
     // Set our new ENV to point to our integration script.
     var path_buf: [std.fs.max_path_bytes]u8 = undefined;
     const integ_dir = try std.fmt.bufPrint(
@@ -500,6 +505,22 @@ test "bash: HISTFILE" {
         try testing.expectEqualStrings("my_history", env.get("HISTFILE").?);
         try testing.expect(env.get("GHOSTTY_BASH_UNEXPORT_HISTFILE") == null);
     }
+}
+
+test "bash: ENV" {
+    const testing = std.testing;
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var env = EnvMap.init(alloc);
+    defer env.deinit();
+
+    try env.put("ENV", "env.sh");
+
+    _ = try setupBash(alloc, .{ .shell = "bash" }, ".", &env);
+    try testing.expectEqualStrings("./shell-integration/bash/ghostty.bash", env.get("ENV").?);
+    try testing.expectEqualStrings("env.sh", env.get("GHOSTTY_BASH_ENV").?);
 }
 
 test "bash: additional arguments" {
