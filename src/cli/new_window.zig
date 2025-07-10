@@ -14,8 +14,10 @@ pub const Options = struct {
     /// This is set by the CLI parser for deinit.
     _arena: ?ArenaAllocator = null,
 
+    /// If `true`, open up a new window in a release instance of Ghostty.
+    release: bool = false,
+
     /// If `true`, open up a new window in a debug instance of Ghostty.
-    /// Otherwise open up a new window in a release instance of Ghostty.
     debug: bool = false,
 
     /// If set, open up a new window in a custom instance of Ghostty. Takes
@@ -41,25 +43,41 @@ pub const Options = struct {
 /// The `new-window` will use native platform IPC to open up a new window in a
 /// running instance of Ghostty.
 ///
-/// On GTK, if D-Bus activation is properly configured, Ghostty does not need
+/// On GTK, D-Bus activation must be properly configured. Ghostty does not need
 /// to be running for this to open a new window, making it suitable for binding
-/// to keys in your window manager (if other methods of configuring global
-/// shortcuts are unavailable). See the Ghostty website for information on
-/// properly configuring D-Bus activation.
+/// to keys in your window manager (if other methods for configuring global
+/// shortcuts are unavailable). D-Bus will handle launching a new instance
+/// of Ghostty if it is not already running. See the Ghostty website for
+/// information on properly configuring D-Bus activation.
 ///
-/// If Ghostty is already running, D-Bus activation is unnecessary and this
-/// command should cause the running instance to open a new window.
+/// GTK uses an application ID to identify instances of applications. If
+/// Ghostty is compiled with debug optimizations, the application ID will
+/// be `com.mitchellh.ghostty-debug`. If Ghostty is compiled with release
+/// optimizations, the application ID will be `com.mitchellh.ghostty`.
+///
+/// The `class` configuration entry can be used to set up a custom application
+/// ID. The class name must follow the requirements defined [in the GTK
+/// documentation](https://docs.gtk.org/gio/type_func.Application.id_is_valid.html)
+/// or it will be ignored and Ghostty will use the default application ID as
+/// defined above.
+///
+/// The `new-window` command will try and find the application ID of the running
+/// Ghostty instance in the `GHOSTTY_CLASS` environment variable. If this
+/// environment variable is not set, and any of the command line flags defined
+/// below are not set, a release instance of Ghostty will be opened.
 ///
 /// Only supported on GTK.
 ///
 /// Flags:
 ///
-///   * `--debug`:  If `true`, open up a new window in a debug instance of
-///     Ghostty. Otherwise open up a new window in a release instance of
+///   * `--release`:  If `true`, force opening up a new window in a release instance of
 ///     Ghostty.
 ///
-///   * `--class`: If set, open up a new window in a custom instance of Ghostty.
-///     This takes precedence over the `--debug` flag.
+///   * `--debug`:  If `true`, force opening up a new window in a debug instance of
+///     Ghostty.
+///
+///   * `--class=<class>`: If set, open up a new window in a custom instance of Ghostty. The
+///     class must be a valid GTK application ID.
 ///
 /// Available since: 1.2.0
 pub fn run(alloc: Allocator) !u8 {
@@ -102,6 +120,16 @@ fn runArgs(alloc_gpa: Allocator, argsIter: anytype) !u8 {
         if (exit) return 1;
     }
 
+    var count: usize = 0;
+    if (opts.release) count += 1;
+    if (opts.debug) count += 1;
+    if (opts.class) |_| count += 1;
+
+    if (count > 1) {
+        try stderr.print("The --release, --debug, and --class flags are mutually exclusive, only one may be specified at a time.\n", .{});
+        return 1;
+    }
+
     var arena = ArenaAllocator.init(alloc_gpa);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -123,8 +151,19 @@ fn runArgs(alloc_gpa: Allocator, argsIter: anytype) !u8 {
 
                 break :result .{ class, object_path };
             }
+            if (opts.release) {
+                break :result .{ "com.mitchellh.ghostty", "/com/mitchellh/ghostty" };
+            }
             if (opts.debug) {
                 break :result .{ "com.mitchellh.ghostty-debug", "/com/mitchellh/ghostty_debug" };
+            }
+            if (std.posix.getenv("GHOSTTY_CLASS")) |class| {
+                const object_path = try std.fmt.allocPrintZ(alloc, "/{s}", .{class});
+
+                std.mem.replaceScalar(u8, object_path, '.', '/');
+                std.mem.replaceScalar(u8, object_path, '-', '_');
+
+                break :result .{ class, object_path };
             }
             break :result .{ "com.mitchellh.ghostty", "/com/mitchellh/ghostty" };
         };
