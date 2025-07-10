@@ -303,7 +303,7 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		A54F45F42E1F047A0046BD5C /* GhosttyTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = GhosttyTests; sourceTree = "<group>"; };
+		A54F45F42E1F047A0046BD5C /* Tests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = Tests; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -612,7 +612,7 @@
 				A51BFC282B30F26D00E92F16 /* GhosttyDebug.entitlements */,
 				3B39CAA42B33949B00DABEB8 /* GhosttyReleaseLocal.entitlements */,
 				A54CD6ED299BEB14008C95BB /* Sources */,
-				A54F45F42E1F047A0046BD5C /* GhosttyTests */,
+				A54F45F42E1F047A0046BD5C /* Tests */,
 				A5D495A3299BECBA00DD1313 /* Frameworks */,
 				A5A1F8862A489D7400D1E8BC /* Resources */,
 				A5B30532299BEAAA0047F10C /* Products */,
@@ -712,7 +712,7 @@
 				A54F45F82E1F047A0046BD5C /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
-				A54F45F42E1F047A0046BD5C /* GhosttyTests */,
+				A54F45F42E1F047A0046BD5C /* Tests */,
 			);
 			name = GhosttyTests;
 			packageProductDependencies = (

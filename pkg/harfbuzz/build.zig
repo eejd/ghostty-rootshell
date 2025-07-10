@@ -15,15 +15,23 @@ pub fn build(b: *std.Build) !void {
     });
     const macos = b.dependency("macos", .{ .target = target, .optimize = optimize });
 
-    const module = b.addModule("harfbuzz", .{
-        .root_source_file = b.path("main.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "freetype", .module = freetype.module("freetype") },
-            .{ .name = "macos", .module = macos.module("macos") },
-        },
-    });
+    const module = harfbuzz: {
+        const module = b.addModule("harfbuzz", .{
+            .root_source_file = b.path("main.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "freetype", .module = freetype.module("freetype") },
+                .{ .name = "macos", .module = macos.module("macos") },
+            },
+        });
+
+        const options = b.addOptions();
+        options.addOption(bool, "coretext", coretext_enabled);
+        options.addOption(bool, "freetype", freetype_enabled);
+        module.addOptions("build_options", options);
+        break :harfbuzz module;
+    };
 
     // For dynamic linking, we prefer dynamic linking and to search by
     // mode first. Mode first will search all paths for a dynamic library

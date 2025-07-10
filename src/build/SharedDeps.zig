@@ -139,7 +139,7 @@ pub fn add(
         if (b.lazyDependency("harfbuzz", .{
             .target = target,
             .optimize = optimize,
-            .@"enable-freetype" = true,
+            .@"enable-freetype" = self.config.font_backend.hasFreetype(),
             .@"enable-coretext" = self.config.font_backend.hasCoretext(),
         })) |harfbuzz_dep| {
             step.root_module.addImport(
