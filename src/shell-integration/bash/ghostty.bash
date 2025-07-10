@@ -26,6 +26,12 @@ if [ -n "$GHOSTTY_BASH_INJECT" ]; then
   builtin declare __ghostty_bash_flags="$GHOSTTY_BASH_INJECT"
   builtin unset ENV GHOSTTY_BASH_INJECT
 
+  # Restore an existing ENV that was replaced by the shell integration code.
+  if [[ -n "$GHOSTTY_BASH_ENV" ]]; then
+    builtin export ENV=$GHOSTTY_BASH_ENV
+    builtin unset GHOSTTY_BASH_ENV
+  fi
+
   # Restore bash's default 'posix' behavior. Also reset 'inherit_errexit',
   # which doesn't happen as part of the 'posix' reset.
   builtin set +o posix
