@@ -213,7 +213,7 @@ msgstr "이 분할에 대한 선택 기억하기"
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-read.blp:82
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-write.blp:78
 msgid "Reload configuration to show this prompt again"
-msgstr "이 프롬프트를 다시 표시하려면 구성을 다시 로드하십시오."
+msgstr "이 창을 다시 보려면 설정을  다시 불러오세요"
 
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-write.blp:7
 #: src/apprt/gtk/ui/1.2/ccw-osc-52-write.blp:7
