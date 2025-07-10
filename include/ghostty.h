@@ -932,6 +932,9 @@ bool ghostty_inspector_metal_shutdown(ghostty_inspector_t);
 // Don't use these unless you know what you're doing.
 void ghostty_set_window_background_blur(ghostty_app_t, void*);
 
+// Benchmark API, if available.
+bool ghostty_benchmark_cli(const char*, const char*);
+
 #ifdef __cplusplus
 }
 #endif

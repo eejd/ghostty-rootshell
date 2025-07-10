@@ -3,7 +3,7 @@ const fs = std.fs;
 const Allocator = std.mem.Allocator;
 const xdg = @import("../os/xdg.zig");
 const args = @import("args.zig");
-const Action = @import("action.zig").Action;
+const Action = @import("ghostty.zig").Action;
 pub const Entry = @import("ssh-cache/Entry.zig");
 pub const DiskCache = @import("ssh-cache/DiskCache.zig");
 

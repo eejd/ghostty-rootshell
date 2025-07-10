@@ -18,15 +18,12 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
     });
 
-    var flags = std.ArrayList([]const u8).init(b.allocator);
-    defer flags.deinit();
     lib.addCSourceFile(.{
-        .file = b.path("os/zig_log.c"),
-        .flags = flags.items,
+        .file = b.path("os/zig_macos.c"),
+        .flags = &.{"-std=c99"},
     });
     lib.addCSourceFile(.{
         .file = b.path("text/ext.c"),
-        .flags = flags.items,
     });
     lib.linkFramework("CoreFoundation");
     lib.linkFramework("CoreGraphics");
