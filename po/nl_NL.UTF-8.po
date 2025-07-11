@@ -161,7 +161,7 @@ msgstr "Open configuratie"
 
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:85
 msgid "Command Palette"
-msgstr "Commandopalet"
+msgstr "Opdrachtpalet"
 
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:90
 msgid "Terminal Inspector"
