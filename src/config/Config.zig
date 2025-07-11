@@ -814,6 +814,22 @@ palette: Palette = .{},
 /// On macOS, changing this configuration requires restarting Ghostty completely.
 @"background-opacity": f64 = 1.0,
 
+/// Applies background opacity to cells with an explicit background color
+/// set.
+///
+/// Normally, `background-opacity` is only applied to the window background.
+/// If a cell has an explicit background color set, such as red, then that
+/// background color will be fully opaque. An effect of this is that some
+/// terminal applications that repaint the background color of the terminal
+/// such as a Neovim and Tmux may not respect the `background-opacity`
+/// (by design).
+///
+/// Setting this to `true` will apply the `background-opacity` to all cells
+/// regardless of whether they have an explicit background color set or not.
+///
+/// Available since: 1.2.0
+@"background-opacity-cells": bool = false,
+
 /// Whether to blur the background when `background-opacity` is less than 1.
 ///
 /// Valid values are:

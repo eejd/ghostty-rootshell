@@ -516,6 +516,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             cursor_text: ?configpkg.Config.TerminalColor,
             background: terminal.color.RGB,
             background_opacity: f64,
+            background_opacity_cells: bool,
             foreground: terminal.color.RGB,
             selection_background: ?configpkg.Config.TerminalColor,
             selection_foreground: ?configpkg.Config.TerminalColor,
@@ -568,6 +569,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
                 return .{
                     .background_opacity = @max(0, @min(1, config.@"background-opacity")),
+                    .background_opacity_cells = config.@"background-opacity-cells",
                     .font_thicken = config.@"font-thicken",
                     .font_thicken_strength = config.@"font-thicken-strength",
                     .font_features = font_features.list,
@@ -2627,6 +2629,13 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
                             // Cells that are reversed should be fully opaque.
                             if (style.flags.inverse) break :bg_alpha default;
+
+                            // If the user requested to have opacity on all cells, apply it.
+                            if (self.config.background_opacity_cells and bg_style != null) {
+                                var opacity: f64 = @floatFromInt(default);
+                                opacity *= self.config.background_opacity;
+                                break :bg_alpha @intFromFloat(opacity);
+                            }
 
                             // Cells that have an explicit bg color should be fully opaque.
                             if (bg_style != null) break :bg_alpha default;
