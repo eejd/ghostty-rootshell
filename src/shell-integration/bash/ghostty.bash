@@ -26,6 +26,12 @@ if [ -n "$GHOSTTY_BASH_INJECT" ]; then
   builtin declare __ghostty_bash_flags="$GHOSTTY_BASH_INJECT"
   builtin unset ENV GHOSTTY_BASH_INJECT
 
+  # Restore an existing ENV that was replaced by the shell integration code.
+  if [[ -n "$GHOSTTY_BASH_ENV" ]]; then
+    builtin export ENV=$GHOSTTY_BASH_ENV
+    builtin unset GHOSTTY_BASH_ENV
+  fi
+
   # Restore bash's default 'posix' behavior. Also reset 'inherit_errexit',
   # which doesn't happen as part of the 'posix' reset.
   builtin set +o posix
@@ -124,7 +130,7 @@ if [[ "$GHOSTTY_SHELL_FEATURES" == *ssh-* ]]; then
         builtin local ssh_target="${ssh_user}@${ssh_hostname}"
 
         # Check if terminfo is already cached
-        if ghostty +ssh-cache --host="$ssh_target" >/dev/null 2>&1; then
+        if "$GHOSTTY_BIN_DIR/ghostty" +ssh-cache --host="$ssh_target" >/dev/null 2>&1; then
           ssh_term="xterm-ghostty"
         elif builtin command -v infocmp >/dev/null 2>&1; then
           builtin local ssh_terminfo ssh_cpath_dir ssh_cpath
@@ -147,7 +153,7 @@ if [[ "$GHOSTTY_SHELL_FEATURES" == *ssh-* ]]; then
               ssh_opts+=(-o "ControlPath=$ssh_cpath")
 
               # Cache successful installation
-              ghostty +ssh-cache --add="$ssh_target" >/dev/null 2>&1 || true
+              "$GHOSTTY_BIN_DIR/ghostty" +ssh-cache --add="$ssh_target" >/dev/null 2>&1 || true
             else
               builtin echo "Warning: Failed to install terminfo." >&2
             fi

@@ -41,7 +41,7 @@ pub const BackgroundImageFit = Config.BackgroundImageFit;
 pub const LinkPreviews = Config.LinkPreviews;
 
 // Alternate APIs
-pub const CAPI = @import("config/CAPI.zig");
+pub const CApi = @import("config/CApi.zig");
 pub const Wasm = if (!builtin.target.cpu.arch.isWasm()) struct {} else @import("config/Wasm.zig");
 
 test {

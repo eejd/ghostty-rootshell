@@ -8,7 +8,22 @@ comptime {
 }
 
 pub fn build(b: *std.Build) !void {
+    // This defines all the available build options (e.g. `-D`).
     const config = try buildpkg.Config.init(b);
+    const test_filter = b.option(
+        []const u8,
+        "test-filter",
+        "Filter for test. Only applies to Zig tests.",
+    );
+
+    // All our steps which we'll hook up later. The steps are shown
+    // up here just so that they are more self-documenting.
+    const run_step = b.step("run", "Run the app");
+    const test_step = b.step("test", "Run all tests");
+    const translations_step = b.step(
+        "update-translations",
+        "Update translation files",
+    );
 
     // Ghostty resources like terminfo, shell integration, themes, etc.
     const resources = try buildpkg.GhosttyResources.init(b, &config);
@@ -131,7 +146,6 @@ pub fn build(b: *std.Build) !void {
                 b.getInstallPath(.prefix, "share/ghostty"),
             );
 
-            const run_step = b.step("run", "Run the app");
             run_step.dependOn(&run_cmd.step);
             break :run;
         }
@@ -157,16 +171,18 @@ pub fn build(b: *std.Build) !void {
                 },
             );
 
-            const run_step = b.step("run", "Run the app");
+            // Run uses the native macOS app
             run_step.dependOn(&macos_app_native_only.open.step);
+
+            // If we have no test filters, install the tests too
+            if (test_filter == null) {
+                macos_app_native_only.addTestStepDependencies(test_step);
+            }
         }
     }
 
     // Tests
     {
-        const test_step = b.step("test", "Run all tests");
-        const test_filter = b.option([]const u8, "test-filter", "Filter for test");
-
         const test_exe = b.addTest(.{
             .name = "ghostty-test",
             .filters = if (test_filter) |v| &.{v} else &.{},
@@ -180,18 +196,13 @@ pub fn build(b: *std.Build) !void {
             }),
         });
 
-        {
-            if (config.emit_test_exe) b.installArtifact(test_exe);
-            _ = try deps.add(test_exe);
-            const test_run = b.addRunArtifact(test_exe);
-            test_step.dependOn(&test_run.step);
-        }
+        if (config.emit_test_exe) b.installArtifact(test_exe);
+        _ = try deps.add(test_exe);
+        const test_run = b.addRunArtifact(test_exe);
+        test_step.dependOn(&test_run.step);
     }
 
     // update-translations does what it sounds like and updates the "pot"
     // files. These should be committed to the repo.
-    {
-        const step = b.step("update-translations", "Update translation files");
-        step.dependOn(i18n.update_step);
-    }
+    translations_step.dependOn(i18n.update_step);
 }

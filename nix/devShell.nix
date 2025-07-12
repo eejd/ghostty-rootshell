@@ -61,6 +61,7 @@
   pinact,
   hyperfine,
   typos,
+  shellcheck,
   uv,
   wayland,
   wayland-scanner,
@@ -101,6 +102,7 @@ in
         alejandra
         pinact
         typos
+        shellcheck
 
         # Testing
         parallel

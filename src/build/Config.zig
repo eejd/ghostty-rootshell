@@ -528,11 +528,6 @@ pub const ExeEntrypoint = enum {
     webgen_config,
     webgen_actions,
     webgen_commands,
-    bench_parser,
-    bench_stream,
-    bench_codepoint_width,
-    bench_grapheme_break,
-    bench_page_init,
 };
 
 /// The release channel for the build.
