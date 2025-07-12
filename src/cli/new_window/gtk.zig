@@ -7,6 +7,18 @@ const Options = @import("../new_window.zig").Options;
 
 // Use a D-Bus method call to open a new window on GTK.
 // See: https://wiki.gnome.org/Projects/GLib/GApplication/DBusAPI
+//
+// `ghostty +new-window --release` is equivalent to the following command:
+//
+// ```
+// gdbus call --session --dest com.mitchellh.ghostty --object-path /com/mitchellh/ghostty --method org.gtk.Actions.Activate new-window [] []
+// ```
+//
+// `ghostty +new-window --release -e echo hello` would be equivalent to the following command:
+//
+// ```
+// gdbus call --session --dest con.mitchellh.ghostty --object-path /com/mitchellh/ghostty --method org.gtk.Actions.Activate new-window-command '[<@as ["echo" "hello"]>]' []
+// ```
 pub fn new_window(alloc: Allocator, stderr: std.fs.File.Writer, opts: Options) (Allocator.Error || std.posix.WriteError)!u8 {
     // Get the appropriate bus name and object path for contacting the
     // Ghostty instance we're interested in.
@@ -84,18 +96,42 @@ pub fn new_window(alloc: Allocator, stderr: std.fs.File.Writer, opts: Options) (
         errdefer builder.unref();
 
         // action
-        builder.add("s", "new-window");
+        if (opts._arguments.items.len == 0) {
+            builder.add("s", "new-window");
+        } else {
+            builder.add("s", "new-window-command");
+        }
 
         // parameters
         {
-            const parameters = glib.VariantType.new("av");
-            defer glib.free(parameters);
+            const av = glib.VariantType.new("av");
+            defer av.free();
 
-            builder.open(parameters);
-            defer builder.close();
+            var parameters: glib.VariantBuilder = undefined;
+            parameters.init(av);
 
-            // we have no parameters
+            if (opts._arguments.items.len > 0) {
+                // If `-e` was specified on the command line, he first parameter
+                // is an array of strings that contain the arguments that came
+                // afer `-e`, which will be interpreted as a command to run.
+                {
+                    const as = glib.VariantType.new("as");
+                    defer as.free();
+
+                    var command: glib.VariantBuilder = undefined;
+                    command.init(as);
+
+                    for (opts._arguments.items) |argument| {
+                        command.add("s", argument.ptr);
+                    }
+
+                    parameters.add("v", command.end());
+                }
+            }
+
+            builder.addValue(parameters.end());
         }
+
         {
             const platform_data = glib.VariantType.new("a{sv}");
             defer glib.free(platform_data);

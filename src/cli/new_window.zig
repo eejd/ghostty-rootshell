@@ -24,9 +24,31 @@ pub const Options = struct {
     /// precedence over `--debug`.
     class: ?[:0]const u8 = null,
 
-    // Enable arg parsing diagnostics so that we don't get an error if
-    // there is a "normal" config setting on the cli.
+    /// Set to `true` if `-e` was found on the command line.
+    _command: bool = false,
+
+    /// If `-e` is found in the arguments, this will contain all of the
+    /// arguments to pass to Ghostty as the command.
+    _arguments: std.ArrayListUnmanaged([:0]const u8) = .empty,
+
+    /// Enable arg parsing diagnostics so that we don't get an error if
+    /// there is a "normal" config setting on the cli.
     _diagnostics: diagnostics.DiagnosticList = .{},
+
+    /// Manual parse hook, used to deal with `-e`
+    pub fn parseManuallyHook(self: *Options, alloc: Allocator, arg: []const u8, iter: anytype) Allocator.Error!bool {
+        // If it's not `-e` continue with the standard argument parsning.
+        if (!std.mem.eql(u8, arg, "-e")) return true;
+
+        self._command = true;
+
+        // Otherwise gather up the rest of the arguments to use as the command.
+        while (iter.next()) |param| {
+            try self._arguments.append(alloc, try alloc.dupeZ(u8, param));
+        }
+
+        return false;
+    }
 
     pub fn deinit(self: *Options) void {
         if (self._arena) |arena| arena.deinit();
@@ -42,6 +64,12 @@ pub const Options = struct {
 
 /// The `new-window` will use native platform IPC to open up a new window in a
 /// running instance of Ghostty.
+///
+/// If the `-e` flag is included on the command line, any arguments that follow
+/// will be sent to the running Ghostty instance and used as the command to run
+/// in the new window rather than the default. If `-e` is not specified, Ghostty
+/// will use the default command (either specified with `command` in your config
+/// or your default shell as configured on your system).
 ///
 /// On GTK, D-Bus activation must be properly configured. Ghostty does not need
 /// to be running for this to open a new window, making it suitable for binding
@@ -78,6 +106,9 @@ pub const Options = struct {
 ///
 ///   * `--class=<class>`: If set, open up a new window in a custom instance of Ghostty. The
 ///     class must be a valid GTK application ID.
+///
+///   * `-e`: Any arguments after this will be interpreted as a command to
+///     execute inside the new window instead of the default command.
 ///
 /// Available since: 1.2.0
 pub fn run(alloc: Allocator) !u8 {
@@ -120,6 +151,11 @@ fn runArgs(alloc_gpa: Allocator, argsIter: anytype) !u8 {
         if (exit) return 1;
     }
 
+    if (opts._command and opts._arguments.items.len == 0) {
+        try stderr.print("The -e flag was specified on the command line, but no other arguments were found.\n", .{});
+        return 1;
+    }
+
     var count: usize = 0;
     if (opts.release) count += 1;
     if (opts.debug) count += 1;
@@ -140,6 +176,6 @@ fn runArgs(alloc_gpa: Allocator, argsIter: anytype) !u8 {
     }
 
     // If we get here, the platform is unsupported.
-    try stderr.print("+new-window is unsupported on this platform\n", .{});
+    try stderr.print("+new-window is unsupported on this platform.\n", .{});
     return 1;
 }
