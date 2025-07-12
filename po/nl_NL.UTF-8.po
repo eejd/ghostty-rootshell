@@ -9,7 +9,7 @@ msgstr ""
 "Project-Id-Version: com.mitchellh.ghostty\n"
 "Report-Msgid-Bugs-To: m@mitchellh.com\n"
 "POT-Creation-Date: 2025-07-11 22:56-0500\n"
-"PO-Revision-Date: 2025-07-12 06:54+0200\n"
+"PO-Revision-Date: 2025-07-12 08:54+0200\n"
 "Last-Translator: Merijntje Tak <merijntje@tak.io>\n"
 "Language-Team: Dutch <vertaling@vrijschrift.org>\n"
 "Language: nl\n"
@@ -280,11 +280,11 @@ msgstr "Gekopieerd naar klembord"
 
 #: src/apprt/gtk/Surface.zig:2514
 msgid "Command succeeded"
-msgstr ""
+msgstr "Opdracht geslaagd"
 
 #: src/apprt/gtk/Surface.zig:2516
 msgid "Command failed"
-msgstr ""
+msgstr "Opdracht mislukt"
 
 #: src/apprt/gtk/Window.zig:216
 msgid "Main Menu"
