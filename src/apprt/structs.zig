@@ -72,3 +72,23 @@ pub const Selection = struct {
     offset_start: u32,
     offset_len: u32,
 };
+
+pub const OpenNewWindowIPCOptions = struct {
+    instance: union(enum) {
+        /// Open up a new window in a release instance of Ghostty.
+        release,
+
+        /// Open up a new window in a debug instance of Ghostty.
+        debug,
+
+        /// Open up a new window in a custom instance of Ghostty.
+        class: [:0]const u8,
+
+        /// Detect which instance to open a new window in.
+        detect,
+    },
+
+    /// If `-e` is found in the arguments, this will contain all of the
+    /// arguments to pass to Ghostty as the command.
+    arguments: [][:0]const u8,
+};

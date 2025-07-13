@@ -1,14 +1,10 @@
 const std = @import("std");
-const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
-const build_config = @import("../build_config.zig");
 const Action = @import("../cli.zig").ghostty.Action;
+const apprt = @import("../apprt.zig");
 const args = @import("args.zig");
 const diagnostics = @import("diagnostics.zig");
-const font = @import("../font/main.zig");
-const configpkg = @import("../config.zig");
-const Config = configpkg.Config;
 
 pub const Options = struct {
     /// This is set by the CLI parser for deinit.
@@ -65,11 +61,25 @@ pub const Options = struct {
 /// The `new-window` will use native platform IPC to open up a new window in a
 /// running instance of Ghostty.
 ///
+/// If none of `--release`, `--debug`, and `--class` flags are not set, the
+/// `new-window` command will try and find the class of the running Ghostty
+/// instance in the `GHOSTTY_CLASS` environment variable. If this environment
+/// variable is not set, a release instance of Ghostty will be opened.
+///
 /// If the `-e` flag is included on the command line, any arguments that follow
 /// will be sent to the running Ghostty instance and used as the command to run
 /// in the new window rather than the default. If `-e` is not specified, Ghostty
 /// will use the default command (either specified with `command` in your config
 /// or your default shell as configured on your system).
+///
+/// GTK uses an application ID to identify instances of applications. If Ghostty
+/// is compiled with release optimizations, the default application ID will be
+/// `com.mitchellh.ghostty`. If Ghostty is compiled with debug optimizations,
+/// the default application ID will be `com.mitchellh.ghostty-debug`.  The
+/// `class` configuration entry can be used to set up a custom application
+/// ID. The class name must follow the requirements defined [in the GTK
+/// documentation](https://docs.gtk.org/gio/type_func.Application.id_is_valid.html)
+/// or it will be ignored and Ghostty will use the default as defined above.
 ///
 /// On GTK, D-Bus activation must be properly configured. Ghostty does not need
 /// to be running for this to open a new window, making it suitable for binding
@@ -77,22 +87,6 @@ pub const Options = struct {
 /// shortcuts are unavailable). D-Bus will handle launching a new instance
 /// of Ghostty if it is not already running. See the Ghostty website for
 /// information on properly configuring D-Bus activation.
-///
-/// GTK uses an application ID to identify instances of applications. If
-/// Ghostty is compiled with debug optimizations, the application ID will
-/// be `com.mitchellh.ghostty-debug`. If Ghostty is compiled with release
-/// optimizations, the application ID will be `com.mitchellh.ghostty`.
-///
-/// The `class` configuration entry can be used to set up a custom application
-/// ID. The class name must follow the requirements defined [in the GTK
-/// documentation](https://docs.gtk.org/gio/type_func.Application.id_is_valid.html)
-/// or it will be ignored and Ghostty will use the default application ID as
-/// defined above.
-///
-/// The `new-window` command will try and find the application ID of the running
-/// Ghostty instance in the `GHOSTTY_CLASS` environment variable. If this
-/// environment variable is not set, and any of the command line flags defined
-/// below are not set, a release instance of Ghostty will be opened.
 ///
 /// Only supported on GTK.
 ///
@@ -170,12 +164,23 @@ fn runArgs(alloc_gpa: Allocator, argsIter: anytype) !u8 {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    if (comptime build_config.app_runtime == .gtk) {
-        const new_window = @import("new_window/gtk.zig").new_window;
-        return try new_window(alloc, stderr, opts);
+    if (@hasDecl(apprt.IPC, "openNewWindow")) {
+        return try apprt.IPC.openNewWindow(
+            alloc,
+            stderr,
+            .{
+                .instance = instance: {
+                    if (opts.class) |class| break :instance .{ .class = class };
+                    if (opts.release) break :instance .release;
+                    if (opts.debug) break :instance .debug;
+                    break :instance .detect;
+                },
+                .arguments = opts._arguments.items,
+            },
+        );
     }
 
-    // If we get here, the platform is unsupported.
-    try stderr.print("+new-window is unsupported on this platform.\n", .{});
+    // If we get here, the platform is not supported.
+    try stderr.print("+new-window is not supported on this platform.\n", .{});
     return 1;
 }

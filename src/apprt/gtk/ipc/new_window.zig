@@ -3,7 +3,7 @@ const Allocator = std.mem.Allocator;
 
 const gio = @import("gio");
 const glib = @import("glib");
-const Options = @import("../new_window.zig").Options;
+const apprt = @import("../../../apprt.zig");
 
 // Use a D-Bus method call to open a new window on GTK.
 // See: https://wiki.gnome.org/Projects/GLib/GApplication/DBusAPI
@@ -17,42 +17,46 @@ const Options = @import("../new_window.zig").Options;
 // `ghostty +new-window --release -e echo hello` would be equivalent to the following command:
 //
 // ```
-// gdbus call --session --dest con.mitchellh.ghostty --object-path /com/mitchellh/ghostty --method org.gtk.Actions.Activate new-window-command '[<@as ["echo" "hello"]>]' []
+// gdbus call --session --dest com.mitchellh.ghostty --object-path /com/mitchellh/ghostty --method org.gtk.Actions.Activate new-window-command '[<@as ["echo" "hello"]>]' []
 // ```
-pub fn new_window(alloc: Allocator, stderr: std.fs.File.Writer, opts: Options) (Allocator.Error || std.posix.WriteError)!u8 {
+pub fn openNewWindow(alloc: Allocator, stderr: std.fs.File.Writer, opts: apprt.OpenNewWindowIPCOptions) (Allocator.Error || std.posix.WriteError)!u8 {
     // Get the appropriate bus name and object path for contacting the
     // Ghostty instance we're interested in.
     const bus_name: [:0]const u8, const object_path: [:0]const u8 = result: {
-        // Force the usage of the class specified on the CLI to determine the
-        // bus name and object path.
-        if (opts.class) |class| {
-            const object_path = try std.fmt.allocPrintZ(alloc, "/{s}", .{class});
+        switch (opts.instance) {
+            .class => |class| {
+                // Force the usage of the class specified on the CLI to determine the
+                // bus name and object path.
+                const object_path = try std.fmt.allocPrintZ(alloc, "/{s}", .{class});
 
-            std.mem.replaceScalar(u8, object_path, '.', '/');
-            std.mem.replaceScalar(u8, object_path, '-', '_');
+                std.mem.replaceScalar(u8, object_path, '.', '/');
+                std.mem.replaceScalar(u8, object_path, '-', '_');
 
-            break :result .{ class, object_path };
-        }
-        // Force the usage of the release bus name and object path.
-        if (opts.release) {
-            break :result .{ "com.mitchellh.ghostty", "/com/mitchellh/ghostty" };
-        }
-        // Force the usage of the debug bus name and object path.
-        if (opts.debug) {
-            break :result .{ "com.mitchellh.ghostty-debug", "/com/mitchellh/ghostty_debug" };
-        }
-        // If there is a `GHOSTTY_CLASS` environment variable, use that as the basis
-        // for the bus name and object path.
-        if (std.posix.getenv("GHOSTTY_CLASS")) |class| {
-            const object_path = try std.fmt.allocPrintZ(alloc, "/{s}", .{class});
+                break :result .{ class, object_path };
+            },
+            .release => {
+                // Force the usage of the release bus name and object path.
+                break :result .{ "com.mitchellh.ghostty", "/com/mitchellh/ghostty" };
+            },
+            .debug => {
+                // Force the usage of the debug bus name and object path.
+                break :result .{ "com.mitchellh.ghostty-debug", "/com/mitchellh/ghostty_debug" };
+            },
+            .detect => {
+                // If there is a `GHOSTTY_CLASS` environment variable, use that as the basis
+                // for the bus name and object path.
+                if (std.posix.getenv("GHOSTTY_CLASS")) |class| {
+                    const object_path = try std.fmt.allocPrintZ(alloc, "/{s}", .{class});
 
-            std.mem.replaceScalar(u8, object_path, '.', '/');
-            std.mem.replaceScalar(u8, object_path, '-', '_');
+                    std.mem.replaceScalar(u8, object_path, '.', '/');
+                    std.mem.replaceScalar(u8, object_path, '-', '_');
 
-            break :result .{ class, object_path };
+                    break :result .{ class, object_path };
+                }
+                // Otherwise fall back to the release bus name and object path.
+                break :result .{ "com.mitchellh.ghostty", "/com/mitchellh/ghostty" };
+            },
         }
-        // Otherwise fall back to the release bus name and object path.
-        break :result .{ "com.mitchellh.ghostty", "/com/mitchellh/ghostty" };
     };
 
     if (gio.Application.idIsValid(bus_name.ptr) == 0) {
@@ -96,7 +100,7 @@ pub fn new_window(alloc: Allocator, stderr: std.fs.File.Writer, opts: Options) (
         errdefer builder.unref();
 
         // action
-        if (opts._arguments.items.len == 0) {
+        if (opts.arguments.len == 0) {
             builder.add("s", "new-window");
         } else {
             builder.add("s", "new-window-command");
@@ -110,10 +114,11 @@ pub fn new_window(alloc: Allocator, stderr: std.fs.File.Writer, opts: Options) (
             var parameters: glib.VariantBuilder = undefined;
             parameters.init(av);
 
-            if (opts._arguments.items.len > 0) {
-                // If `-e` was specified on the command line, he first parameter
-                // is an array of strings that contain the arguments that came
-                // afer `-e`, which will be interpreted as a command to run.
+            if (opts.arguments.len > 0) {
+                // If `-e` was specified on the command line, the first
+                // parameter is an array of strings that contain the arguments
+                // that came after `-e`, which will be interpreted as a command
+                // to run.
                 {
                     const as = glib.VariantType.new("as");
                     defer as.free();
@@ -121,7 +126,7 @@ pub fn new_window(alloc: Allocator, stderr: std.fs.File.Writer, opts: Options) (
                     var command: glib.VariantBuilder = undefined;
                     command.init(as);
 
-                    for (opts._arguments.items) |argument| {
+                    for (opts.arguments) |argument| {
                         command.add("s", argument.ptr);
                     }
 
@@ -134,7 +139,7 @@ pub fn new_window(alloc: Allocator, stderr: std.fs.File.Writer, opts: Options) (
 
         {
             const platform_data = glib.VariantType.new("a{sv}");
-            defer glib.free(platform_data);
+            defer platform_data.free();
 
             builder.open(platform_data);
             defer builder.close();

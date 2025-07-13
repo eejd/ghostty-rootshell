@@ -3,6 +3,7 @@
 pub const App = @import("gtk/App.zig");
 pub const Surface = @import("gtk/Surface.zig");
 pub const resourcesDir = @import("gtk/flatpak.zig").resourcesDir;
+pub const IPC = @import("gtk/IPC.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());

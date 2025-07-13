@@ -1153,6 +1153,9 @@ pub const Inspector = struct {
     }
 };
 
+/// Functions for inter-process communication.
+pub const IPC = struct {};
+
 // C API
 pub const CAPI = struct {
     const global = &@import("../global.zig").state;
