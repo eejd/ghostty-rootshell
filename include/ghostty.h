@@ -803,6 +803,36 @@ typedef struct {
   ghostty_runtime_close_surface_cb close_surface_cb;
 } ghostty_runtime_config_s;
 
+// apprt.ipc.Target.Key
+typedef enum {
+  GHOSTTY_IPC_TARGET_CLASS,
+  GHOSTTY_IPC_TARGET_DETECT,
+} ghostty_ipc_target_tag_e;
+
+typedef union {
+  char *klass;
+} ghostty_ipc_target_u;
+
+typedef struct {
+  ghostty_ipc_target_tag_e tag;
+  ghostty_ipc_target_u target;
+} chostty_ipc_target_s;
+
+// apprt.ipc.Action.NewWindow
+typedef struct {
+  // This should be a null terminated list of strings.
+  const char **arguments;
+} ghostty_ipc_action_new_window_s;
+
+typedef union {
+  ghostty_ipc_action_new_window_s new_window;
+} ghostty_ipc_action_u;
+
+// apprt.ipc.Action.Key
+typedef enum {
+  GHOSTTY_IPC_ACTION_NEW_WINDOW,
+} ghostty_ipc_action_tag_e;
+
 //-------------------------------------------------------------------
 // Published API
 

@@ -34,6 +34,7 @@ const terminal = @import("../../terminal/main.zig");
 const Config = configpkg.Config;
 const CoreApp = @import("../../App.zig");
 const CoreSurface = @import("../../Surface.zig");
+const ipc = @import("ipc.zig");
 
 const cgroup = @import("cgroup.zig");
 const Surface = @import("Surface.zig");
@@ -545,6 +546,23 @@ pub fn performAction(
     // We can assume it was handled because all unknown/unimplemented actions
     // are caught above.
     return true;
+}
+
+/// Send the given IPC to a running Ghostty. Returns `true` if the action was
+/// able to be performed, `false` otherwise.
+///
+/// Note that this is a static function. Since this is called from a CLI app (or
+/// some other process that is not Ghostty) there is no full-featured apprt App
+/// to use.
+pub fn performIpc(
+    alloc: Allocator,
+    target: apprt.ipc.Target,
+    comptime action: apprt.ipc.Action.Key,
+    value: apprt.ipc.Action.Value(action),
+) (Allocator.Error || std.posix.WriteError || apprt.ipc.Errors)!bool {
+    switch (action) {
+        .new_window => return try ipc.openNewWindow(alloc, target, value),
+    }
 }
 
 fn newTab(_: *App, target: apprt.Target) !void {
@@ -1731,10 +1749,44 @@ fn gtkActionShowGTKInspector(
 
 fn gtkActionNewWindow(
     _: *gio.SimpleAction,
-    _: ?*glib.Variant,
+    parameter_: ?*glib.Variant,
     self: *App,
 ) callconv(.c) void {
-    log.info("received new window action", .{});
+    log.debug("received new window action", .{});
+
+    parameter: {
+        // were we given a parameter?
+        const parameter = parameter_ orelse break :parameter;
+
+        const as = glib.VariantType.new("as");
+        defer as.free();
+
+        // ensure that the supplied parameter is an array of strings
+        if (glib.Variant.isOfType(parameter, as) == 0) {
+            log.warn("parameter is of type {s}", .{parameter.getTypeString()});
+            break :parameter;
+        }
+
+        const s = glib.VariantType.new("s");
+        defer s.free();
+
+        var it: glib.VariantIter = undefined;
+        _ = it.init(parameter);
+
+        while (it.nextValue()) |value| {
+            defer value.unref();
+
+            // just to be sure
+            if (value.isOfType(s) == 0) continue;
+
+            var len: usize = undefined;
+            const buf = value.getString(&len);
+            const str = buf[0..len];
+
+            log.debug("new-window command argument: {s}", .{str});
+        }
+    }
+
     _ = self.core_app.mailbox.push(.{
         .new_window = .{},
     }, .{ .forever = {} });
@@ -1751,7 +1803,10 @@ fn initActions(self: *App) void {
     // For action names:
     // https://docs.gtk.org/gio/type_func.Action.name_is_valid.html
     const t = glib.ext.VariantType.newFor(u64);
-    defer glib.VariantType.free(t);
+    defer t.free();
+
+    const as = glib.VariantType.new("as");
+    defer as.free();
 
     const actions = .{
         .{ "quit", gtkActionQuit, null },
@@ -1760,6 +1815,7 @@ fn initActions(self: *App) void {
         .{ "present-surface", gtkActionPresentSurface, t },
         .{ "show-gtk-inspector", gtkActionShowGTKInspector, null },
         .{ "new-window", gtkActionNewWindow, null },
+        .{ "new-window-command", gtkActionNewWindow, as },
     };
 
     inline for (actions) |entry| {
