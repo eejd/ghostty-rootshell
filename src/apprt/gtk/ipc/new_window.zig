@@ -41,6 +41,12 @@ pub fn openNewWindow(alloc: Allocator, target: apprt.ipc.Target, value: apprt.ip
             .ReleaseFast, .ReleaseSmall => .{ "com.mitchellh.ghostty", "/com/mitchellh/ghostty" },
         },
     };
+    defer {
+        switch (target) {
+            .class => alloc.free(object_path),
+            .detect => {},
+        }
+    }
 
     if (gio.Application.idIsValid(bus_name.ptr) == 0) {
         try stderr.print("D-Bus bus name is not valid: {s}\n", .{bus_name});
@@ -80,7 +86,7 @@ pub fn openNewWindow(alloc: Allocator, target: apprt.ipc.Target, value: apprt.ip
         // Initialize our builder to build up our parameters
         var builder: glib.VariantBuilder = undefined;
         builder.init(builder_type);
-        errdefer builder.unref();
+        errdefer builder.clear();
 
         // action
         if (value.arguments == null) {
@@ -96,6 +102,7 @@ pub fn openNewWindow(alloc: Allocator, target: apprt.ipc.Target, value: apprt.ip
 
             var parameters: glib.VariantBuilder = undefined;
             parameters.init(av);
+            errdefer parameters.clear();
 
             if (value.arguments) |arguments| {
                 // If `-e` was specified on the command line, the first
@@ -108,6 +115,7 @@ pub fn openNewWindow(alloc: Allocator, target: apprt.ipc.Target, value: apprt.ip
 
                     var command: glib.VariantBuilder = undefined;
                     command.init(as);
+                    errdefer command.clear();
 
                     for (arguments) |argument| {
                         command.add("s", argument.ptr);

@@ -5,6 +5,9 @@ const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
 
 pub const Errors = error{
+    /// The IPC failed. If a function returns this error, it's expected that
+    /// an a more specific error message will have been written to stderr (or
+    /// otherwise shown to the user in an appropriate way).
     IPCFailed,
 };
 
@@ -38,8 +41,6 @@ pub const Target = union(Key) {
         return .{
             .key = @as(Key, self),
             .value = switch (self) {
-                .release => .{ .release = {} },
-                .debug => .{ .debug = {} },
                 .class => |class| .{ .class = class.ptr },
                 .detect => .{ .detect = {} },
             },
@@ -68,6 +69,11 @@ pub const Action = union(enum) {
     new_window: NewWindow,
 
     pub const NewWindow = struct {
+        /// A list of command arguments to launch in the new window. If this is
+        /// `null` the command configured in the config or the user's default
+        /// shell should be launched.
+        ///
+        /// It is an error for this to be non-`null`, but zero length.
         arguments: ?[][:0]const u8,
 
         pub const C = extern struct {
