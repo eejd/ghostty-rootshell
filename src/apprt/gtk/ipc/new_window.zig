@@ -19,11 +19,18 @@ const apprt = @import("../../../apprt.zig");
 // ```
 // gdbus call --session --dest com.mitchellh.ghostty --object-path /com/mitchellh/ghostty --method org.gtk.Actions.Activate new-window-command '[<@as ["echo" "hello"]>]' []
 // ```
-pub fn openNewWindow(alloc: Allocator, stderr: std.fs.File.Writer, opts: apprt.OpenNewWindowIPCOptions) (Allocator.Error || std.posix.WriteError)!u8 {
+pub fn openNewWindow(alloc: Allocator, target: apprt.ipc.Target, value: apprt.ipc.Action.NewWindow) (Allocator.Error || std.posix.WriteError || apprt.ipc.Errors)!bool {
+    const stderr = std.io.getStdErr().writer();
+
+    if (value.arguments.len > 256) {
+        try stderr.print("The new window IPC supports at most 256 arguments.\n", .{});
+        return error.IPCFailed;
+    }
+
     // Get the appropriate bus name and object path for contacting the
     // Ghostty instance we're interested in.
     const bus_name: [:0]const u8, const object_path: [:0]const u8 = result: {
-        switch (opts.instance) {
+        switch (target) {
             .class => |class| {
                 // Force the usage of the class specified on the CLI to determine the
                 // bus name and object path.
@@ -61,12 +68,12 @@ pub fn openNewWindow(alloc: Allocator, stderr: std.fs.File.Writer, opts: apprt.O
 
     if (gio.Application.idIsValid(bus_name.ptr) == 0) {
         try stderr.print("D-Bus bus name is not valid: {s}\n", .{bus_name});
-        return 1;
+        return error.IPCFailed;
     }
 
     if (glib.Variant.isObjectPath(object_path.ptr) == 0) {
         try stderr.print("D-Bus object path is not valid: {s}\n", .{object_path});
-        return 1;
+        return error.IPCFailed;
     }
 
     const dbus = dbus: {
@@ -79,12 +86,12 @@ pub fn openNewWindow(alloc: Allocator, stderr: std.fs.File.Writer, opts: apprt.O
                 "Unable to establish connection to D-Bus session bus: {s}\n",
                 .{err.f_message orelse "(unknown)"},
             );
-            return 1;
+            return error.IPCFailed;
         }
 
         break :dbus dbus_ orelse {
             try stderr.print("gio.busGetSync returned null\n", .{});
-            return 1;
+            return error.IPCFailed;
         };
     };
     defer dbus.unref();
@@ -100,7 +107,7 @@ pub fn openNewWindow(alloc: Allocator, stderr: std.fs.File.Writer, opts: apprt.O
         errdefer builder.unref();
 
         // action
-        if (opts.arguments.len == 0) {
+        if (value.arguments.len == 0) {
             builder.add("s", "new-window");
         } else {
             builder.add("s", "new-window-command");
@@ -114,7 +121,7 @@ pub fn openNewWindow(alloc: Allocator, stderr: std.fs.File.Writer, opts: apprt.O
             var parameters: glib.VariantBuilder = undefined;
             parameters.init(av);
 
-            if (opts.arguments.len > 0) {
+            if (value.arguments.len > 0) {
                 // If `-e` was specified on the command line, the first
                 // parameter is an array of strings that contain the arguments
                 // that came after `-e`, which will be interpreted as a command
@@ -126,7 +133,7 @@ pub fn openNewWindow(alloc: Allocator, stderr: std.fs.File.Writer, opts: apprt.O
                     var command: glib.VariantBuilder = undefined;
                     command.init(as);
 
-                    for (opts.arguments) |argument| {
+                    for (value.arguments) |argument| {
                         command.add("s", argument.ptr);
                     }
 
@@ -173,9 +180,9 @@ pub fn openNewWindow(alloc: Allocator, stderr: std.fs.File.Writer, opts: apprt.O
                 "D-Bus method call returned an error err={s}\n",
                 .{err.f_message orelse "(unknown)"},
             );
-            return 1;
+            return error.IPCFailed;
         }
     }
 
-    return 0;
+    return true;
 }

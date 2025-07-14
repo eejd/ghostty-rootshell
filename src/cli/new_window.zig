@@ -149,6 +149,10 @@ fn runArgs(alloc_gpa: Allocator, argsIter: anytype) !u8 {
         try stderr.print("The -e flag was specified on the command line, but no other arguments were found.\n", .{});
         return 1;
     }
+    if (opts._command and opts._arguments.items.len > 256) {
+        try stderr.print("The -e flag supports at most 256 arguments.\n", .{});
+        return 1;
+    }
 
     var count: usize = 0;
     if (opts.release) count += 1;
@@ -164,21 +168,29 @@ fn runArgs(alloc_gpa: Allocator, argsIter: anytype) !u8 {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    if (@hasDecl(apprt.IPC, "openNewWindow")) {
-        return try apprt.IPC.openNewWindow(
-            alloc,
-            stderr,
-            .{
-                .instance = instance: {
-                    if (opts.class) |class| break :instance .{ .class = class };
-                    if (opts.release) break :instance .release;
-                    if (opts.debug) break :instance .debug;
-                    break :instance .detect;
-                },
-                .arguments = opts._arguments.items,
-            },
-        );
-    }
+    if (apprt.IPC.sendIPC(
+        alloc,
+        target: {
+            if (opts.class) |class| break :target .{ .class = class };
+            if (opts.release) break :target .release;
+            if (opts.debug) break :target .debug;
+            break :target .detect;
+        },
+        .new_window,
+        .{
+            .arguments = opts._arguments.items,
+        },
+    ) catch |err| switch (err) {
+        error.IPCFailed => {
+            // The apprt should have printed a more specific error message
+            // already.
+            return 1;
+        },
+        else => {
+            try stderr.print("Sending the IPC failed: {}", .{err});
+            return 1;
+        },
+    }) return 0;
 
     // If we get here, the platform is not supported.
     try stderr.print("+new-window is not supported on this platform.\n", .{});

@@ -1154,7 +1154,20 @@ pub const Inspector = struct {
 };
 
 /// Functions for inter-process communication.
-pub const IPC = struct {};
+pub const IPC = struct {
+    /// Send the given IPC to a running Ghostty. Returns `true` if the action was
+    /// able to be performed, `false` otherwise.
+    pub fn sendIPC(
+        _: Allocator,
+        _: apprt.ipc.Target,
+        comptime action: apprt.ipc.Action.Key,
+        _: apprt.ipc.Action.Value(action),
+    ) (Allocator.Error || std.posix.WriteError || apprt.ipc.Errors)!bool {
+        switch (action) {
+            .new_window => return false,
+        }
+    }
+};
 
 // C API
 pub const CAPI = struct {
