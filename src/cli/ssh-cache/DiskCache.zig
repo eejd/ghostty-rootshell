@@ -4,6 +4,7 @@
 const DiskCache = @This();
 
 const std = @import("std");
+const builtin = @import("builtin");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const xdg = @import("../../os/main.zig").xdg;
@@ -56,6 +57,8 @@ pub fn clear(self: DiskCache) !void {
 
 pub const AddResult = enum { added, updated };
 
+pub const AddError = std.fs.Dir.MakeError || std.fs.File.OpenError || std.fs.File.LockError || std.fs.File.ReadError || std.fs.File.WriteError || std.posix.RealPathError || std.posix.RenameError || Allocator.Error || error{ HostnameIsInvalid, CacheIsLocked };
+
 /// Add or update a hostname entry in the cache.
 /// Returns AddResult.added for new entries or AddResult.updated for existing ones.
 /// The cache file is created if it doesn't exist with secure permissions (0600).
@@ -63,7 +66,7 @@ pub fn add(
     self: DiskCache,
     alloc: Allocator,
     hostname: []const u8,
-) !AddResult {
+) AddError!AddResult {
     if (!isValidCacheKey(hostname)) return error.HostnameIsInvalid;
 
     // Create cache directory if needed
@@ -94,8 +97,10 @@ pub fn add(
     defer file.close();
 
     // Lock
-    _ = file.tryLock(.exclusive) catch return error.CacheIsLocked;
-    defer file.unlock();
+    // Causes a compile failure in the Zig std library on Windows, see:
+    // https://github.com/ziglang/zig/issues/18430
+    if (comptime builtin.os.tag != .windows) _ = file.tryLock(.exclusive) catch return error.CacheIsLocked;
+    defer if (comptime builtin.os.tag != .windows) file.unlock();
 
     var entries = try readEntries(alloc, file);
     defer deinitEntries(alloc, &entries);
@@ -125,13 +130,15 @@ pub fn add(
     return result;
 }
 
+pub const RemoveError = std.fs.Dir.OpenError || std.fs.File.OpenError || std.fs.File.ReadError || std.fs.File.WriteError || std.posix.RealPathError || std.posix.RenameError || Allocator.Error || error{ HostnameIsInvalid, CacheIsLocked };
+
 /// Remove a hostname entry from the cache.
 /// No error is returned if the hostname doesn't exist or the cache file is missing.
 pub fn remove(
     self: DiskCache,
     alloc: Allocator,
     hostname: []const u8,
-) !void {
+) RemoveError!void {
     if (!isValidCacheKey(hostname)) return error.HostnameIsInvalid;
 
     // Open our file
@@ -145,9 +152,11 @@ pub fn remove(
     defer file.close();
     try fixupPermissions(file);
 
-    // Acquire exclusive lock
-    _ = file.tryLock(.exclusive) catch return error.CacheIsLocked;
-    defer file.unlock();
+    // Lock
+    // Causes a compile failure in the Zig std library on Windows, see:
+    // https://github.com/ziglang/zig/issues/18430
+    if (comptime builtin.os.tag != .windows) _ = file.tryLock(.exclusive) catch return error.CacheIsLocked;
+    defer if (comptime builtin.os.tag != .windows) file.unlock();
 
     // Read existing entries
     var entries = try readEntries(alloc, file);
@@ -191,6 +200,9 @@ pub fn contains(
 }
 
 fn fixupPermissions(file: std.fs.File) !void {
+    // Windows does not support chmod
+    if (comptime builtin.os.tag == .windows) return;
+
     // Ensure file has correct permissions (readable/writable by
     // owner only)
     const stat = try file.stat();
@@ -199,12 +211,14 @@ fn fixupPermissions(file: std.fs.File) !void {
     }
 }
 
+pub const WriteCacheFileError = std.fs.Dir.OpenError || std.fs.File.OpenError || std.fs.File.WriteError || std.fs.Dir.RealPathAllocError || std.posix.RealPathError || std.posix.RenameError || error{FileTooBig};
+
 fn writeCacheFile(
     self: DiskCache,
     alloc: Allocator,
     entries: std.StringHashMap(Entry),
     expire_days: ?u32,
-) !void {
+) WriteCacheFileError!void {
     var td: TempDir = try .init();
     defer td.deinit();
 
@@ -264,7 +278,7 @@ pub fn deinitEntries(
 fn readEntries(
     alloc: Allocator,
     file: std.fs.File,
-) !std.StringHashMap(Entry) {
+) (std.fs.File.ReadError || Allocator.Error || error{FileTooBig})!std.StringHashMap(Entry) {
     const content = try file.readToEndAlloc(alloc, MAX_CACHE_SIZE);
     defer alloc.free(content);
 
