@@ -186,11 +186,11 @@ in
       };
     }
     {
-      name = "libxev-0.0.0-86vtcyMBEwA-UpcjfOICyI2GYG8o6MiRbinS1_8g1_rw";
+      name = "libxev-0.0.0-86vtc2UaEwDfiTKX3iBI-s_hdzfzWQUarT3MUrmUQl-Q";
       path = fetchZigArtifact {
         name = "libxev";
-        url = "https://github.com/mitchellh/libxev/archive/75a10d0fb374e8eb84948dcfc68d865e755e59c2.tar.gz";
-        hash = "sha256-/CSKSuZZfn0aIQlVZ0O8ch5O4gCajYBTTuoetRdo0n4=";
+        url = "https://github.com/mitchellh/libxev/archive/7f803181b158a10fec8619f793e3b4df515566cb.tar.gz";
+        hash = "sha256-KaozYKEhhT/6sInef7/8O/60LDBJN+8QmdLuNY1Gkmc=";
       };
     }
     {
