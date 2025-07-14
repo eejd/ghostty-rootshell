@@ -9,12 +9,6 @@ pub const Errors = error{
 };
 
 pub const Target = union(Key) {
-    /// Open up a new window in a release instance of Ghostty.
-    release,
-
-    /// Open up a new window in a debug instance of Ghostty.
-    debug,
-
     /// Open up a new window in a custom instance of Ghostty.
     class: [:0]const u8,
 
@@ -23,16 +17,12 @@ pub const Target = union(Key) {
 
     // Sync with: ghostty_ipc_target_tag_e
     pub const Key = enum(c_int) {
-        release,
-        debug,
         class,
         detect,
     };
 
     // Sync with: ghostty_ipc_target_u
     pub const CValue = extern union {
-        release: void,
-        debug: void,
         class: [*:0]const u8,
         detect: void,
     };
@@ -78,27 +68,32 @@ pub const Action = union(enum) {
     new_window: NewWindow,
 
     pub const NewWindow = struct {
-        arguments: [][:0]const u8,
+        arguments: ?[][:0]const u8,
 
         pub const C = extern struct {
             /// null terminated list of arguments
-            arguments: [*]?[*:0]const u8,
+            /// it will be null itself if there are no arguments
+            arguments: ?[*]?[*:0]const u8,
 
             pub fn deinit(self: *NewWindow.C, alloc: Allocator) void {
-                alloc.free(self.arguments);
+                if (self.arguments) |arguments| alloc.free(arguments);
             }
         };
 
         pub fn cval(self: *NewWindow, alloc: Allocator) Allocator.Error!NewWindow.C {
             var result: NewWindow.C = undefined;
 
-            result.arguments = try alloc.alloc([*:0]const u8, self.arguments.len + 1);
+            if (self.arguments) |arguments| {
+                result.arguments = try alloc.alloc([*:0]const u8, arguments.len + 1);
 
-            for (self.arguments, 0..) |argument, i|
-                result.arguments[i] = argument.ptr;
+                for (arguments, 0..) |argument, i|
+                    result.arguments[i] = argument.ptr;
 
-            // add null terminator
-            result.arguments[self.arguments.len] = null;
+                // add null terminator
+                result.arguments[arguments.len] = null;
+            } else {
+                result.arguments = null;
+            }
 
             return result;
         }

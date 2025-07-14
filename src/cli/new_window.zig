@@ -10,22 +10,12 @@ pub const Options = struct {
     /// This is set by the CLI parser for deinit.
     _arena: ?ArenaAllocator = null,
 
-    /// If `true`, open up a new window in a release instance of Ghostty.
-    release: bool = false,
-
-    /// If `true`, open up a new window in a debug instance of Ghostty.
-    debug: bool = false,
-
-    /// If set, open up a new window in a custom instance of Ghostty. Takes
-    /// precedence over `--debug`.
+    /// If set, open up a new window in a custom instance of Ghostty.
     class: ?[:0]const u8 = null,
-
-    /// Set to `true` if `-e` was found on the command line.
-    _command: bool = false,
 
     /// If `-e` is found in the arguments, this will contain all of the
     /// arguments to pass to Ghostty as the command.
-    _arguments: std.ArrayListUnmanaged([:0]const u8) = .empty,
+    _arguments: ?[][:0]const u8 = null,
 
     /// Enable arg parsing diagnostics so that we don't get an error if
     /// there is a "normal" config setting on the cli.
@@ -36,12 +26,18 @@ pub const Options = struct {
         // If it's not `-e` continue with the standard argument parsning.
         if (!std.mem.eql(u8, arg, "-e")) return true;
 
-        self._command = true;
+        var arguments: std.ArrayListUnmanaged([:0]const u8) = .empty;
+        errdefer {
+            for (arguments.items) |argument| alloc.free(argument);
+            arguments.deinit(alloc);
+        }
 
         // Otherwise gather up the rest of the arguments to use as the command.
         while (iter.next()) |param| {
-            try self._arguments.append(alloc, try alloc.dupeZ(u8, param));
+            try arguments.append(alloc, try alloc.dupeZ(u8, param));
         }
+
+        self._arguments = try arguments.toOwnedSlice(alloc);
 
         return false;
     }
@@ -61,10 +57,11 @@ pub const Options = struct {
 /// The `new-window` will use native platform IPC to open up a new window in a
 /// running instance of Ghostty.
 ///
-/// If none of `--release`, `--debug`, and `--class` flags are not set, the
-/// `new-window` command will try and find the class of the running Ghostty
-/// instance in the `GHOSTTY_CLASS` environment variable. If this environment
-/// variable is not set, a release instance of Ghostty will be opened.
+/// If the `--class` flag is not set, the `new-window` command will try and
+/// connect to a running instance of Ghostty based on what optimizations the
+/// Ghostty CLI was compiled with. Otherwise the `new-window` command will try
+/// and contact a running Ghostty instance that was configured with the same
+/// `class` as was given on the command line.
 ///
 /// If the `-e` flag is included on the command line, any arguments that follow
 /// will be sent to the running Ghostty instance and used as the command to run
@@ -92,14 +89,8 @@ pub const Options = struct {
 ///
 /// Flags:
 ///
-///   * `--release`:  If `true`, force opening up a new window in a release instance of
-///     Ghostty.
-///
-///   * `--debug`:  If `true`, force opening up a new window in a debug instance of
-///     Ghostty.
-///
-///   * `--class=<class>`: If set, open up a new window in a custom instance of Ghostty. The
-///     class must be a valid GTK application ID.
+///   * `--class=<class>`: If set, open up a new window in a custom instance of
+///     Ghostty. The class must be a valid GTK application ID.
 ///
 ///   * `-e`: Any arguments after this will be interpreted as a command to
 ///     execute inside the new window instead of the default command.
@@ -145,23 +136,11 @@ fn runArgs(alloc_gpa: Allocator, argsIter: anytype) !u8 {
         if (exit) return 1;
     }
 
-    if (opts._command and opts._arguments.items.len == 0) {
-        try stderr.print("The -e flag was specified on the command line, but no other arguments were found.\n", .{});
-        return 1;
-    }
-    if (opts._command and opts._arguments.items.len > 256) {
-        try stderr.print("The -e flag supports at most 256 arguments.\n", .{});
-        return 1;
-    }
-
-    var count: usize = 0;
-    if (opts.release) count += 1;
-    if (opts.debug) count += 1;
-    if (opts.class) |_| count += 1;
-
-    if (count > 1) {
-        try stderr.print("The --release, --debug, and --class flags are mutually exclusive, only one may be specified at a time.\n", .{});
-        return 1;
+    if (opts._arguments) |arguments| {
+        if (arguments.len == 0) {
+            try stderr.print("The -e flag was specified on the command line, but no other arguments were found.\n", .{});
+            return 1;
+        }
     }
 
     var arena = ArenaAllocator.init(alloc_gpa);
@@ -170,15 +149,10 @@ fn runArgs(alloc_gpa: Allocator, argsIter: anytype) !u8 {
 
     if (apprt.IPC.sendIPC(
         alloc,
-        target: {
-            if (opts.class) |class| break :target .{ .class = class };
-            if (opts.release) break :target .release;
-            if (opts.debug) break :target .debug;
-            break :target .detect;
-        },
+        if (opts.class) |class| .{ .class = class } else .detect,
         .new_window,
         .{
-            .arguments = opts._arguments.items,
+            .arguments = opts._arguments,
         },
     ) catch |err| switch (err) {
         error.IPCFailed => {
