@@ -147,7 +147,7 @@ fn runArgs(alloc_gpa: Allocator, argsIter: anytype) !u8 {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    if (apprt.IPC.sendIPC(
+    if (apprt.App.performIpc(
         alloc,
         if (opts.class) |class| .{ .class = class } else .detect,
         .new_window,

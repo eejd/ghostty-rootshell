@@ -319,6 +319,23 @@ pub const App = struct {
             else => {},
         }
     }
+
+    /// Send the given IPC to a running Ghostty. Returns `true` if the action was
+    /// able to be performed, `false` otherwise.
+    ///
+    /// Note that this is a static function. Since this is called from a CLI app (or
+    /// some other process that is not Ghostty) there is no full-featured apprt App
+    /// to use.
+    pub fn performIpc(
+        _: Allocator,
+        _: apprt.ipc.Target,
+        comptime action: apprt.ipc.Action.Key,
+        _: apprt.ipc.Action.Value(action),
+    ) (Allocator.Error || std.posix.WriteError || apprt.ipc.Errors)!bool {
+        switch (action) {
+            .new_window => return false,
+        }
+    }
 };
 
 /// Platform-specific configuration for libghostty.
@@ -1150,22 +1167,6 @@ pub const Inspector = struct {
             break :delta @max(0.00001, since_s);
         } else (1 / 60);
         self.instant = now;
-    }
-};
-
-/// Functions for inter-process communication.
-pub const IPC = struct {
-    /// Send the given IPC to a running Ghostty. Returns `true` if the action was
-    /// able to be performed, `false` otherwise.
-    pub fn sendIPC(
-        _: Allocator,
-        _: apprt.ipc.Target,
-        comptime action: apprt.ipc.Action.Key,
-        _: apprt.ipc.Action.Value(action),
-    ) (Allocator.Error || std.posix.WriteError || apprt.ipc.Errors)!bool {
-        switch (action) {
-            .new_window => return false,
-        }
     }
 };
 

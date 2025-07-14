@@ -34,6 +34,7 @@ const terminal = @import("../../terminal/main.zig");
 const Config = configpkg.Config;
 const CoreApp = @import("../../App.zig");
 const CoreSurface = @import("../../Surface.zig");
+const ipc = @import("ipc.zig");
 
 const cgroup = @import("cgroup.zig");
 const Surface = @import("Surface.zig");
@@ -545,6 +546,23 @@ pub fn performAction(
     // We can assume it was handled because all unknown/unimplemented actions
     // are caught above.
     return true;
+}
+
+/// Send the given IPC to a running Ghostty. Returns `true` if the action was
+/// able to be performed, `false` otherwise.
+///
+/// Note that this is a static function. Since this is called from a CLI app (or
+/// some other process that is not Ghostty) there is no full-featured apprt App
+/// to use.
+pub fn performIpc(
+    alloc: Allocator,
+    target: apprt.ipc.Target,
+    comptime action: apprt.ipc.Action.Key,
+    value: apprt.ipc.Action.Value(action),
+) (Allocator.Error || std.posix.WriteError || apprt.ipc.Errors)!bool {
+    switch (action) {
+        .new_window => return try ipc.openNewWindow(alloc, target, value),
+    }
 }
 
 fn newTab(_: *App, target: apprt.Target) !void {

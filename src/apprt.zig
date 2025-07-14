@@ -51,7 +51,6 @@ pub const runtime = switch (build_config.artifact) {
 
 pub const App = runtime.App;
 pub const Surface = runtime.Surface;
-pub const IPC = runtime.IPC;
 
 /// Runtime is the runtime to use for Ghostty. All runtimes do not provide
 /// equivalent feature sets.
