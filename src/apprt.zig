@@ -33,7 +33,6 @@ pub const ColorScheme = structs.ColorScheme;
 pub const CursorPos = structs.CursorPos;
 pub const IMEPos = structs.IMEPos;
 pub const Selection = structs.Selection;
-pub const OpenNewWindowIPCOptions = structs.OpenNewWindowIPCOptions;
 pub const SurfaceSize = structs.SurfaceSize;
 
 /// The implementation to use for the app runtime. This is comptime chosen
