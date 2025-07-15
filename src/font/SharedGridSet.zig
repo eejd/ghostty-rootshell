@@ -299,14 +299,17 @@ fn collection(
     );
 
     // Nerd-font symbols fallback.
+    // For proper icon scaling, this should be loaded at the same point
+    // size as the primary font and not undergo size normalization,
+    // hence we use the em size as scale reference.
     _ = try c.add(
         self.alloc,
         .regular,
-        .init(.{ .fallback_loaded = try Face.init(
+        .initWithScaleReference(.{ .fallback_loaded = try .init(
             self.font_lib,
             font.embedded.symbols_nerd_font,
             load_options.faceOptions(),
-        ) }),
+        ) }, .em_size),
     );
 
     // On macOS, always search for and add the Apple Emoji font
