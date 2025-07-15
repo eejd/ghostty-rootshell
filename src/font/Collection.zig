@@ -154,30 +154,13 @@ pub fn adjustedSize(
     // We use the ex height to match our font sizes, so that the height of
     // lower-case letters matches between all fonts in the fallback chain.
     //
-    // We estimate ex height as 0.75 * cap height if it's not specifically
-    // provided, and we estimate cap height as 0.75 * ascent in the same case.
-    //
     // If the fallback font has an ic_width we prefer that, for normalization
     // of CJK font sizes when mixed with latin fonts.
-    //
-    // We estimate the ic_width as twice the cell width if it isn't provided.
-    var primary_cap = primary_metrics.cap_height orelse 0.0;
-    if (primary_cap <= 0) primary_cap = primary_metrics.ascent * 0.75;
+    const primary_ex = primary_metrics.exHeight();
+    const primary_ic = primary_metrics.icWidth();
 
-    var primary_ex = primary_metrics.ex_height orelse 0.0;
-    if (primary_ex <= 0) primary_ex = primary_cap * 0.75;
-
-    var primary_ic = primary_metrics.ic_width orelse 0.0;
-    if (primary_ic <= 0) primary_ic = primary_metrics.cell_width * 2;
-
-    var face_cap = face_metrics.cap_height orelse 0.0;
-    if (face_cap <= 0) face_cap = face_metrics.ascent * 0.75;
-
-    var face_ex = face_metrics.ex_height orelse 0.0;
-    if (face_ex <= 0) face_ex = face_cap * 0.75;
-
-    var face_ic = face_metrics.ic_width orelse 0.0;
-    if (face_ic <= 0) face_ic = face_metrics.cell_width * 2;
+    const face_ex = face_metrics.exHeight();
+    const face_ic = face_metrics.icWidth();
 
     // If the line height of the scaled font would be larger than
     // the line height of the primary font, we don't want that, so
@@ -192,7 +175,9 @@ pub fn adjustedSize(
     //       the user pick what metric to use for size adjustment.
     const scale = @min(
         1.2 * primary_metrics.lineHeight() / face_metrics.lineHeight(),
-        if (face_metrics.ic_width != null)
+        if ((face_metrics.ic_width != null) and (face_metrics.ic_width == face_ic))
+            // It's possible for .ic_width to be non-null and still invalid, e.g.,
+            // zero, so we only take this branch if it's also equal to .icWidth().
             primary_ic / face_ic
         else
             primary_ex / face_ex,
