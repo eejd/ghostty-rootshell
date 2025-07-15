@@ -8,6 +8,7 @@ const gobject = @import("gobject");
 
 const build_config = @import("../../../build_config.zig");
 const apprt = @import("../../../apprt.zig");
+const cgroup = @import("../cgroup.zig");
 const CoreApp = @import("../../../App.zig");
 const configpkg = @import("../../../config.zig");
 const Config = configpkg.Config;
@@ -49,6 +50,11 @@ pub const GhosttyApplication = extern struct {
 
         /// The configuration for the application.
         config: *Config,
+
+        /// The base path of the transient cgroup used to put all surfaces
+        /// into their own cgroup. This is only set if cgroups are enabled
+        /// and initialization was successful.
+        transient_cgroup_base: ?[]const u8 = null,
 
         /// This is set to false internally when the event loop
         /// should exit and the application should quit. This must
@@ -131,6 +137,7 @@ pub const GhosttyApplication = extern struct {
         const priv = self.private();
         priv.config.deinit();
         alloc.destroy(priv.config);
+        if (priv.transient_cgroup_base) |base| alloc.free(base);
     }
 
     /// Run the application. This is a replacement for `gio.Application.run`
@@ -253,12 +260,20 @@ pub const GhosttyApplication = extern struct {
         // Setup our style manager (light/dark mode)
         self.startupStyleManager();
 
+        // Setup our cgroup for the application.
+        self.startupCgroup() catch {
+            log.warn("TODO", .{});
+        };
+
         gio.Application.virtual_methods.startup.call(
             Class.parent,
             self.as(Parent),
         );
     }
 
+    /// Setup the style manager on startup. The primary task here is to
+    /// setup our initial light/dark mode based on the configuration and
+    /// setup listeners for changes to the style manager.
     fn startupStyleManager(self: *GhosttyApplication) void {
         const priv = self.private();
         const config = priv.config;
@@ -286,6 +301,72 @@ pub const GhosttyApplication = extern struct {
             self,
             .{ .detail = "dark" },
         );
+    }
+
+    const CgroupError = error{
+        DbusConnectionFailed,
+        CgroupInitFailed,
+    };
+
+    /// Setup our cgroup for the application, if enabled.
+    ///
+    /// The setup for cgroups involves creating the cgroup for our
+    /// application, moving ourselves into it, and storing the base path
+    /// so that created surfaces can also have their own cgroups.
+    fn startupCgroup(self: *GhosttyApplication) CgroupError!void {
+        const priv = self.private();
+        const config = priv.config;
+
+        // If cgroup isolation isn't enabled then we don't do this.
+        if (!switch (config.@"linux-cgroup") {
+            .never => false,
+            .always => true,
+            .@"single-instance" => single: {
+                const flags = self.as(gio.Application).getFlags();
+                break :single !flags.non_unique;
+            },
+        }) {
+            log.info(
+                "cgroup isolation disabled via config={}",
+                .{config.@"linux-cgroup"},
+            );
+            return;
+        }
+
+        // We need a dbus connection to do anything else
+        const dbus = self.as(gio.Application).getDbusConnection() orelse {
+            if (config.@"linux-cgroup-hard-fail") {
+                log.err("dbus connection required for cgroup isolation, exiting", .{});
+                return error.DbusConnectionFailed;
+            }
+
+            return;
+        };
+
+        const alloc = priv.core_app.alloc;
+        const path = cgroup.init(alloc, dbus, .{
+            .memory_high = config.@"linux-cgroup-memory-limit",
+            .pids_max = config.@"linux-cgroup-processes-limit",
+        }) catch |err| {
+            // If we can't initialize cgroups then that's okay. We
+            // want to continue to run so we just won't isolate surfaces.
+            // NOTE(mitchellh): do we want a config to force it?
+            log.warn(
+                "failed to initialize cgroups, terminals will not be isolated err={}",
+                .{err},
+            );
+
+            // If we have hard fail enabled then we exit now.
+            if (config.@"linux-cgroup-hard-fail") {
+                log.err("linux-cgroup-hard-fail enabled, exiting", .{});
+                return error.CgroupInitFailed;
+            }
+
+            return;
+        };
+
+        log.info("cgroup isolation enabled base={s}", .{path});
+        priv.transient_cgroup_base = path;
     }
 
     fn activate(self: *GhosttyApplication) callconv(.C) void {
