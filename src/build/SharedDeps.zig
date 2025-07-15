@@ -8,8 +8,6 @@ const UnicodeTables = @import("UnicodeTables.zig");
 const GhosttyFrameData = @import("GhosttyFrameData.zig");
 const DistResource = @import("GhosttyDist.zig").Resource;
 
-const gresource = @import("../apprt/gtk/gresource.zig");
-
 config: *const Config,
 
 options: *std.Build.Step.Options,
@@ -688,6 +686,107 @@ fn addGtkNg(
 
         step.linkSystemLibrary2("wayland-client", dynamic_link_opts);
     }
+
+    {
+        // Get our gresource c/h files and add them to our build.
+        const dist = gtkNgDistResources(b);
+        step.addCSourceFile(.{ .file = dist.resources_c.path(b), .flags = &.{} });
+        step.addIncludePath(dist.resources_h.path(b).dirname());
+    }
+}
+
+/// Creates the resources that can be prebuilt for our dist build.
+pub fn gtkNgDistResources(
+    b: *std.Build,
+) struct {
+    resources_c: DistResource,
+    resources_h: DistResource,
+} {
+    const gresource = @import("../apprt/gtk-ng/build/gresource.zig");
+    const gresource_xml = gresource_xml: {
+        const xml_exe = b.addExecutable(.{
+            .name = "generate_gresource_xml",
+            .root_source_file = b.path("src/apprt/gtk-ng/build/gresource.zig"),
+            .target = b.graph.host,
+        });
+        const xml_run = b.addRunArtifact(xml_exe);
+
+        // Run our blueprint compiler across all of our blueprint files.
+        const blueprint_exe = b.addExecutable(.{
+            .name = "gtk_blueprint_compiler",
+            .root_source_file = b.path("src/apprt/gtk-ng/build/blueprint.zig"),
+            .target = b.graph.host,
+        });
+        blueprint_exe.linkLibC();
+        blueprint_exe.linkSystemLibrary2("gtk4", dynamic_link_opts);
+        blueprint_exe.linkSystemLibrary2("libadwaita-1", dynamic_link_opts);
+
+        for (gresource.blueprints) |bp| {
+            const blueprint_run = b.addRunArtifact(blueprint_exe);
+            blueprint_run.addArgs(&.{
+                b.fmt("{d}", .{bp.major}),
+                b.fmt("{d}", .{bp.minor}),
+            });
+            const ui_file = blueprint_run.addOutputFileArg(b.fmt(
+                "{d}.{d}/{s}.ui",
+                .{
+                    bp.major,
+                    bp.minor,
+                    bp.name,
+                },
+            ));
+            blueprint_run.addFileArg(b.path(b.fmt(
+                "{s}/{d}.{d}/{s}.blp",
+                .{
+                    gresource.ui_path,
+                    bp.major,
+                    bp.minor,
+                    bp.name,
+                },
+            )));
+
+            xml_run.addFileArg(ui_file);
+        }
+
+        break :gresource_xml xml_run.captureStdOut();
+    };
+
+    const generate_c = b.addSystemCommand(&.{
+        "glib-compile-resources",
+        "--c-name",
+        "ghostty",
+        "--generate-source",
+        "--target",
+    });
+    const resources_c = generate_c.addOutputFileArg("ghostty_resources.c");
+    generate_c.addFileArg(gresource_xml);
+    for (gresource.file_inputs) |path| {
+        generate_c.addFileInput(b.path(path));
+    }
+
+    const generate_h = b.addSystemCommand(&.{
+        "glib-compile-resources",
+        "--c-name",
+        "ghostty",
+        "--generate-header",
+        "--target",
+    });
+    const resources_h = generate_h.addOutputFileArg("ghostty_resources.h");
+    generate_h.addFileArg(gresource_xml);
+    for (gresource.file_inputs) |path| {
+        generate_h.addFileInput(b.path(path));
+    }
+
+    return .{
+        .resources_c = .{
+            .dist = "src/apprt/gtk-ng/ghostty_resources.c",
+            .generated = resources_c,
+        },
+        .resources_h = .{
+            .dist = "src/apprt/gtk-ng/ghostty_resources.h",
+            .generated = resources_h,
+        },
+    };
 }
 
 /// Setup the dependencies for the GTK apprt build. The GTK apprt
@@ -832,6 +931,8 @@ pub fn gtkDistResources(
     resources_c: DistResource,
     resources_h: DistResource,
 } {
+    const gresource = @import("../apprt/gtk/gresource.zig");
+
     const gresource_xml = gresource_xml: {
         const xml_exe = b.addExecutable(.{
             .name = "generate_gresource_xml",

@@ -100,11 +100,20 @@ pub const GhosttyApplication = extern struct {
             single_instance,
         });
 
+        // Initialize the app.
         const self = gobject.ext.newInstance(Self, .{
             .application_id = app_id.ptr,
             .flags = app_flags,
+
+            // Force the resource path to a known value so it doesn't depend
+            // on the app id (which changes between debug/release and can be
+            // user-configured) and force it to load in compiled resources.
+            .resource_base_path = "/com/mitchellh/ghostty",
         });
 
+        // Setup our private state. More setup is done in the init
+        // callback that GObject calls, but we can't pass this data through
+        // to there (and we don't need it there directly) so this is here.
         const priv = self.private();
         priv.core_app = core_app;
         priv.config = config;
@@ -275,6 +284,23 @@ pub const GhosttyApplication = extern struct {
         pub const Instance = Self;
 
         fn init(class: *Class) callconv(.C) void {
+            // Register our compiled resources exactly once.
+            {
+                const c = @cImport({
+                    // generated header files
+                    @cInclude("ghostty_resources.h");
+                });
+                if (c.ghostty_get_resource()) |ptr| {
+                    gio.resourcesRegister(@ptrCast(@alignCast(ptr)));
+                } else {
+                    // If we fail to load resources then things will
+                    // probably look really bad but it shouldn't stop our
+                    // app from loading.
+                    log.warn("unable to load resources", .{});
+                }
+            }
+
+            // Virtual methods
             gio.Application.virtual_methods.activate.implement(class, &activate);
             gio.Application.virtual_methods.startup.implement(class, &startup);
             gobject.Object.virtual_methods.finalize.implement(class, &finalize);
