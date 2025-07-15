@@ -12,7 +12,7 @@ const CoreApp = @import("../../../App.zig");
 const configpkg = @import("../../../config.zig");
 const Config = configpkg.Config;
 
-const log = std.log.scoped(.gtk);
+const log = std.log.scoped(.gtk_ghostty_application);
 
 /// The primary entrypoint for the Ghostty GTK application.
 ///
@@ -200,6 +200,8 @@ pub const GhosttyApplication = extern struct {
             return;
         }
 
+        log.debug("entering runloop", .{});
+        defer log.debug("exiting runloop", .{});
         priv.running = true;
         while (priv.running) {
             _ = glib.MainContext.iteration(ctx, 1);
@@ -243,9 +245,13 @@ pub const GhosttyApplication = extern struct {
     }
 
     fn startup(self: *GhosttyApplication) callconv(.C) void {
-        // This is where we would initialize the application, but we
-        // do that in the `run` method instead.
-        log.debug("GhosttyApplication started", .{});
+        log.debug("startup", .{});
+        const priv = self.private();
+        const config = priv.config;
+        _ = config;
+
+        // Setup our style manager (light/dark mode)
+        self.startupStyleManager();
 
         gio.Application.virtual_methods.startup.call(
             Class.parent,
@@ -253,11 +259,40 @@ pub const GhosttyApplication = extern struct {
         );
     }
 
+    fn startupStyleManager(self: *GhosttyApplication) void {
+        const priv = self.private();
+        const config = priv.config;
+
+        // Setup our initial light/dark
+        const style = self.as(adw.Application).getStyleManager();
+        style.setColorScheme(switch (config.@"window-theme") {
+            .auto, .ghostty => auto: {
+                const lum = config.background.toTerminalRGB().perceivedLuminance();
+                break :auto if (lum > 0.5)
+                    .prefer_light
+                else
+                    .prefer_dark;
+            },
+            .system => .prefer_light,
+            .dark => .force_dark,
+            .light => .force_light,
+        });
+
+        // Setup color change notifications
+        _ = gobject.Object.signals.notify.connect(
+            style,
+            *GhosttyApplication,
+            handleStyleManagerDark,
+            self,
+            .{ .detail = "dark" },
+        );
+    }
+
     fn activate(self: *GhosttyApplication) callconv(.C) void {
         // This is called when the application is activated, but we
         // don't need to do anything here since we handle activation
         // in the `run` method.
-        log.debug("GhosttyApplication activated", .{});
+        log.debug("activate", .{});
 
         // Call the parent activate method.
         gio.Application.virtual_methods.activate.call(
@@ -272,6 +307,21 @@ pub const GhosttyApplication = extern struct {
             Class.parent,
             self.as(Parent),
         );
+    }
+
+    fn handleStyleManagerDark(
+        style: *adw.StyleManager,
+        _: *gobject.ParamSpec,
+        self: *GhosttyApplication,
+    ) callconv(.c) void {
+        _ = self;
+
+        const color_scheme: apprt.ColorScheme = if (style.getDark() == 0)
+            .light
+        else
+            .dark;
+
+        log.debug("style manager changed scheme={}", .{color_scheme});
     }
 
     fn allocator(self: *GhosttyApplication) std.mem.Allocator {
