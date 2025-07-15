@@ -480,7 +480,10 @@ extension Ghostty {
             // Add buttons
             alert.addButton(withTitle: "OK")
             alert.addButton(withTitle: "Cancel")
-
+            
+            // Make the text field the first responder so it gets focus
+            alert.window.initialFirstResponder = textField
+            
             let response = alert.runModal()
 
             // Check if the user clicked "OK"
