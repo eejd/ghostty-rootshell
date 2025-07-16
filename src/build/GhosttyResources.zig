@@ -293,7 +293,7 @@ fn addLinuxAppResources(
         if (!cfg.flatpak) try ts.append(.{
             b.path("dist/linux/systemd.service.in"),
             b.fmt(
-                "{s}/systemd/user/{s}.service",
+                "{s}/systemd/user/app-{s}.service",
                 .{
                     if (b.graph.system_package_mode) "lib" else "share",
                     app_id,
