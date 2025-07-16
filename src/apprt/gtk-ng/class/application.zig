@@ -1,5 +1,6 @@
 const std = @import("std");
 const assert = std.debug.assert;
+const Allocator = std.mem.Allocator;
 const builtin = @import("builtin");
 const adw = @import("adw");
 const gio = @import("gio");
@@ -12,8 +13,12 @@ const apprt = @import("../../../apprt.zig");
 const cgroup = @import("../cgroup.zig");
 const CoreApp = @import("../../../App.zig");
 const configpkg = @import("../../../config.zig");
+const internal_os = @import("../../../os/main.zig");
+const xev = @import("../../../global.zig").xev;
 const Config = configpkg.Config;
 
+const adw_version = @import("../adw_version.zig");
+const gtk_version = @import("../gtk_version.zig");
 const GhosttyWindow = @import("window.zig").GhosttyWindow;
 
 const log = std.log.scoped(.gtk_ghostty_application);
@@ -69,8 +74,64 @@ pub const GhosttyApplication = extern struct {
 
     /// Creates a new GhosttyApplication instance.
     ///
-    /// Takes ownership of the `config` argument.
-    pub fn new(core_app: *CoreApp, config: *Config) *Self {
+    /// This does a lot more work than a typical class instantiation,
+    /// because we expect that this is the main program entrypoint.
+    ///
+    /// The only failure mode of initializing the application is early OOM.
+    /// Early OOM can't be recovered from. Every other error is mapped to
+    /// some degraded state where we can at least show a window with an error.
+    pub fn new(core_app: *CoreApp) Allocator.Error!*Self {
+        const alloc = core_app.alloc;
+
+        // Log our GTK versions
+        gtk_version.logVersion();
+        adw_version.logVersion();
+
+        // Set gettext global domain to be our app so that our unqualified
+        // translations map to our translations.
+        internal_os.i18n.initGlobalDomain() catch |err| {
+            // Failures shuldn't stop application startup. Our app may
+            // not translate correctly but it should still work. In the
+            // future we may want to add this to the GUI to show.
+            log.warn("i18n initialization failed error={}", .{err});
+        };
+
+        // Load our configuration.
+        const config: *Config = try alloc.create(Config);
+        errdefer alloc.destroy(config);
+        config.* = Config.load(alloc) catch |err| err: {
+            // If we fail to load the configuration, then we should log
+            // the error in the diagnostics so it can be shown to the user.
+            // We can still load a default which only fails for OOM, allowing
+            // us to startup.
+            var default = try Config.default(alloc);
+            errdefer default.deinit();
+            const config_arena = default._arena.?.allocator();
+            try default._diagnostics.append(config_arena, .{
+                .message = try std.fmt.allocPrintZ(
+                    config_arena,
+                    "error loading user configuration: {}",
+                    .{err},
+                ),
+            });
+
+            break :err default;
+        };
+        errdefer config.deinit();
+
+        // Setup our GTK init env vars
+        setGtkEnv(config) catch |err| switch (err) {
+            error.NoSpaceLeft => {
+                // If we fail to set GTK environment variables then we still
+                // try to start the application...
+                log.warn(
+                    "error setting GTK environment variables err={}",
+                    .{err},
+                );
+            },
+        };
+        adw.init();
+
         const single_instance = switch (config.@"gtk-single-instance") {
             .true => true,
             .false => false,
@@ -256,9 +317,9 @@ pub const GhosttyApplication = extern struct {
 
     fn startup(self: *GhosttyApplication) callconv(.C) void {
         log.debug("startup", .{});
-        const priv = self.private();
-        const config = priv.config;
-        _ = config;
+
+        // Setup our event loop
+        self.startupXev();
 
         // Setup our style manager (light/dark mode)
         self.startupStyleManager();
@@ -272,6 +333,36 @@ pub const GhosttyApplication = extern struct {
             Class.parent,
             self.as(Parent),
         );
+    }
+
+    /// Configure libxev to use a specific backend.
+    ///
+    /// This must be called before any other xev APIs are used.
+    fn startupXev(self: *GhosttyApplication) void {
+        const priv = self.private();
+        const config = priv.config;
+
+        // If our backend is auto then we have no setup to do.
+        if (config.@"async-backend" == .auto) return;
+
+        // Setup our event loop backend to the preferred method
+        const result: bool = switch (config.@"async-backend") {
+            .auto => unreachable,
+            .epoll => if (comptime xev.dynamic) xev.prefer(.epoll) else false,
+            .io_uring => if (comptime xev.dynamic) xev.prefer(.io_uring) else false,
+        };
+
+        if (result) {
+            log.info(
+                "libxev manual backend={s}",
+                .{@tagName(xev.backend)},
+            );
+        } else {
+            log.warn(
+                "libxev manual backend failed, using default={s}",
+                .{@tagName(xev.backend)},
+            );
+        }
     }
 
     /// Setup the style manager on startup. The primary task here is to
@@ -444,3 +535,107 @@ pub const GhosttyApplication = extern struct {
         }
     };
 };
+
+/// This sets various GTK-related environment variables as necessary
+/// given the runtime environment or configuration.
+///
+/// This must be called BEFORE GTK initialization.
+fn setGtkEnv(config: *const Config) error{NoSpaceLeft}!void {
+    var gdk_debug: struct {
+        /// output OpenGL debug information
+        opengl: bool = false,
+        /// disable GLES, Ghostty can't use GLES
+        @"gl-disable-gles": bool = false,
+        // GTK's new renderer can cause blurry font when using fractional scaling.
+        @"gl-no-fractional": bool = false,
+        /// Disabling Vulkan can improve startup times by hundreds of
+        /// milliseconds on some systems. We don't use Vulkan so we can just
+        /// disable it.
+        @"vulkan-disable": bool = false,
+    } = .{
+        .opengl = config.@"gtk-opengl-debug",
+    };
+
+    var gdk_disable: struct {
+        @"gles-api": bool = false,
+        /// current gtk implementation for color management is not good enough.
+        /// see: https://bugs.kde.org/show_bug.cgi?id=495647
+        /// gtk issue: https://gitlab.gnome.org/GNOME/gtk/-/issues/6864
+        @"color-mgmt": bool = true,
+        /// Disabling Vulkan can improve startup times by hundreds of
+        /// milliseconds on some systems. We don't use Vulkan so we can just
+        /// disable it.
+        vulkan: bool = false,
+    } = .{};
+
+    environment: {
+        if (gtk_version.runtimeAtLeast(4, 18, 0)) {
+            gdk_disable.@"color-mgmt" = false;
+        }
+
+        if (gtk_version.runtimeAtLeast(4, 16, 0)) {
+            // From gtk 4.16, GDK_DEBUG is split into GDK_DEBUG and GDK_DISABLE.
+            // For the remainder of "why" see the 4.14 comment below.
+            gdk_disable.@"gles-api" = true;
+            gdk_disable.vulkan = true;
+            break :environment;
+        }
+        if (gtk_version.runtimeAtLeast(4, 14, 0)) {
+            // We need to export GDK_DEBUG to run on Wayland after GTK 4.14.
+            // Older versions of GTK do not support these values so it is safe
+            // to always set this. Forwards versions are uncertain so we'll have
+            // to reassess...
+            //
+            // Upstream issue: https://gitlab.gnome.org/GNOME/gtk/-/issues/6589
+            gdk_debug.@"gl-disable-gles" = true;
+            gdk_debug.@"vulkan-disable" = true;
+
+            if (gtk_version.runtimeUntil(4, 17, 5)) {
+                // Removed at GTK v4.17.5
+                gdk_debug.@"gl-no-fractional" = true;
+            }
+            break :environment;
+        }
+
+        // Versions prior to 4.14 are a bit of an unknown for Ghostty. It
+        // is an environment that isn't tested well and we don't have a
+        // good understanding of what we may need to do.
+        gdk_debug.@"vulkan-disable" = true;
+    }
+
+    {
+        var buf: [1024]u8 = undefined;
+        var fmt = std.io.fixedBufferStream(&buf);
+        const writer = fmt.writer();
+        var first: bool = true;
+        inline for (@typeInfo(@TypeOf(gdk_debug)).@"struct".fields) |field| {
+            if (@field(gdk_debug, field.name)) {
+                if (!first) try writer.writeAll(",");
+                try writer.writeAll(field.name);
+                first = false;
+            }
+        }
+        try writer.writeByte(0);
+        const value = fmt.getWritten();
+        log.warn("setting GDK_DEBUG={s}", .{value[0 .. value.len - 1]});
+        _ = internal_os.setenv("GDK_DEBUG", value[0 .. value.len - 1 :0]);
+    }
+
+    {
+        var buf: [1024]u8 = undefined;
+        var fmt = std.io.fixedBufferStream(&buf);
+        const writer = fmt.writer();
+        var first: bool = true;
+        inline for (@typeInfo(@TypeOf(gdk_disable)).@"struct".fields) |field| {
+            if (@field(gdk_disable, field.name)) {
+                if (!first) try writer.writeAll(",");
+                try writer.writeAll(field.name);
+                first = false;
+            }
+        }
+        try writer.writeByte(0);
+        const value = fmt.getWritten();
+        log.warn("setting GDK_DISABLE={s}", .{value[0 .. value.len - 1]});
+        _ = internal_os.setenv("GDK_DISABLE", value[0 .. value.len - 1 :0]);
+    }
+}
