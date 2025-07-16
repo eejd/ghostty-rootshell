@@ -19,6 +19,7 @@ const Config = configpkg.Config;
 
 const adw_version = @import("../adw_version.zig");
 const gtk_version = @import("../gtk_version.zig");
+const GhosttyConfig = @import("config.zig").GhosttyConfig;
 const GhosttyWindow = @import("window.zig").GhosttyWindow;
 
 const log = std.log.scoped(.gtk_ghostty_application);
@@ -57,7 +58,7 @@ pub const GhosttyApplication = extern struct {
         core_app: *CoreApp,
 
         /// The configuration for the application.
-        config: *Config,
+        config: *GhosttyConfig,
 
         /// The base path of the transient cgroup used to put all surfaces
         /// into their own cgroup. This is only set if cgroups are enabled
@@ -97,14 +98,12 @@ pub const GhosttyApplication = extern struct {
         };
 
         // Load our configuration.
-        const config: *Config = try alloc.create(Config);
-        errdefer alloc.destroy(config);
-        config.* = Config.load(alloc) catch |err| err: {
+        var config = Config.load(alloc) catch |err| err: {
             // If we fail to load the configuration, then we should log
             // the error in the diagnostics so it can be shown to the user.
             // We can still load a default which only fails for OOM, allowing
             // us to startup.
-            var default = try Config.default(alloc);
+            var default: Config = try .default(alloc);
             errdefer default.deinit();
             const config_arena = default._arena.?.allocator();
             try default._diagnostics.append(config_arena, .{
@@ -117,10 +116,10 @@ pub const GhosttyApplication = extern struct {
 
             break :err default;
         };
-        errdefer config.deinit();
+        defer config.deinit();
 
         // Setup our GTK init env vars
-        setGtkEnv(config) catch |err| switch (err) {
+        setGtkEnv(&config) catch |err| switch (err) {
             error.NoSpaceLeft => {
                 // If we fail to set GTK environment variables then we still
                 // try to start the application...
@@ -170,6 +169,10 @@ pub const GhosttyApplication = extern struct {
             single_instance,
         });
 
+        // Wrap our configuration in a GObject.
+        const config_obj: *GhosttyConfig = try .new(alloc, &config);
+        errdefer config_obj.unref();
+
         // Initialize the app.
         const self = gobject.ext.newInstance(Self, .{
             .application_id = app_id.ptr,
@@ -186,7 +189,7 @@ pub const GhosttyApplication = extern struct {
         // to there (and we don't need it there directly) so this is here.
         const priv = self.private();
         priv.core_app = core_app;
-        priv.config = config;
+        priv.config = config_obj;
 
         return self;
     }
@@ -199,8 +202,7 @@ pub const GhosttyApplication = extern struct {
     pub fn deinit(self: *Self) void {
         const alloc = self.allocator();
         const priv = self.private();
-        priv.config.deinit();
-        alloc.destroy(priv.config);
+        priv.config.unref();
         if (priv.transient_cgroup_base) |base| alloc.free(base);
     }
 
@@ -254,7 +256,7 @@ pub const GhosttyApplication = extern struct {
         //
         // https://gitlab.gnome.org/GNOME/glib/-/blob/bd2ccc2f69ecfd78ca3f34ab59e42e2b462bad65/gio/gapplication.c#L2302
         const priv = self.private();
-        const config = priv.config;
+        const config = priv.config.get();
         if (config.@"initial-window") switch (config.@"launched-from".?) {
             .desktop, .cli => self.as(gio.Application).activate(),
             .dbus, .systemd => {},
@@ -340,7 +342,7 @@ pub const GhosttyApplication = extern struct {
     /// This must be called before any other xev APIs are used.
     fn startupXev(self: *GhosttyApplication) void {
         const priv = self.private();
-        const config = priv.config;
+        const config = priv.config.get();
 
         // If our backend is auto then we have no setup to do.
         if (config.@"async-backend" == .auto) return;
@@ -370,7 +372,7 @@ pub const GhosttyApplication = extern struct {
     /// setup listeners for changes to the style manager.
     fn startupStyleManager(self: *GhosttyApplication) void {
         const priv = self.private();
-        const config = priv.config;
+        const config = priv.config.get();
 
         // Setup our initial light/dark
         const style = self.as(adw.Application).getStyleManager();
@@ -409,7 +411,7 @@ pub const GhosttyApplication = extern struct {
     /// so that created surfaces can also have their own cgroups.
     fn startupCgroup(self: *GhosttyApplication) CgroupError!void {
         const priv = self.private();
-        const config = priv.config;
+        const config = priv.config.get();
 
         // If cgroup isolation isn't enabled then we don't do this.
         if (!switch (config.@"linux-cgroup") {

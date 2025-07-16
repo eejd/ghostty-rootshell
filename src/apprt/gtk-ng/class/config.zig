@@ -51,8 +51,8 @@ pub const GhosttyConfig = extern struct {
 
     /// Get the wrapped configuration. It's unsafe to store this or access
     /// it in any way that may live beyond the lifetime of this object.
-    pub fn getConfig(self: *Self) *const Config {
-        return self.private().config;
+    pub fn get(self: *Self) *const Config {
+        return &self.private().config;
     }
 
     fn finalize(self: *Self) callconv(.C) void {
