@@ -464,9 +464,6 @@ pub const GhosttyApplication = extern struct {
     }
 
     fn activate(self: *GhosttyApplication) callconv(.C) void {
-        // This is called when the application is activated, but we
-        // don't need to do anything here since we handle activation
-        // in the `run` method.
         log.debug("activate", .{});
 
         // Call the parent activate method.
