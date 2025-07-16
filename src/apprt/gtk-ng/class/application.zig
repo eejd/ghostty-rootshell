@@ -5,6 +5,7 @@ const adw = @import("adw");
 const gio = @import("gio");
 const glib = @import("glib");
 const gobject = @import("gobject");
+const gtk = @import("gtk");
 
 const build_config = @import("../../../build_config.zig");
 const apprt = @import("../../../apprt.zig");
@@ -12,6 +13,8 @@ const cgroup = @import("../cgroup.zig");
 const CoreApp = @import("../../../App.zig");
 const configpkg = @import("../../../config.zig");
 const Config = configpkg.Config;
+
+const GhosttyWindow = @import("window.zig").GhosttyWindow;
 
 const log = std.log.scoped(.gtk_ghostty_application);
 
@@ -380,6 +383,9 @@ pub const GhosttyApplication = extern struct {
             Class.parent,
             self.as(Parent),
         );
+
+        const win = GhosttyWindow.new(self);
+        gtk.Window.present(win.as(gtk.Window));
     }
 
     fn finalize(self: *GhosttyApplication) callconv(.C) void {

@@ -29,12 +29,14 @@ pub const icon_sizes: []const comptime_int = &.{ 16, 32, 128, 256, 512, 1024 };
 /// setup in the build system.
 ///
 /// These will be asserted to exist at runtime.
-pub const blueprints: []const struct {
+pub const blueprints: []const Blueprint = &.{
+    .{ .major = 1, .minor = 5, .name = "window" },
+};
+
+pub const Blueprint = struct {
     major: u16,
     minor: u16,
     name: []const u8,
-} = &.{
-    .{ .major = 1, .minor = 5, .name = "window" },
 };
 
 /// The list of filepaths that we depend on. Used for the build
@@ -59,6 +61,33 @@ pub const file_inputs = deps: {
     }
     break :deps deps;
 };
+
+/// Returns the matching blueprint resource path for the given blueprint
+/// definition. This will fail at compile time if the blueprint is not
+/// found.
+///
+/// Must be called at comptime.
+pub fn blueprint(comptime bp: Blueprint) [:0]const u8 {
+    // The comptime block around this whole thing forces an error if
+    // the caller attempts to call this function at runtime.
+    comptime {
+        for (blueprints) |candidate| {
+            if (candidate.major == bp.major and
+                candidate.minor == bp.minor and
+                std.mem.eql(u8, candidate.name, bp.name))
+            {
+                return std.fmt.comptimePrint("{s}/ui/{d}.{d}/{s}.ui", .{
+                    prefix,
+                    candidate.major,
+                    candidate.minor,
+                    candidate.name,
+                });
+            }
+        }
+
+        @compileError("invalid blueprint");
+    }
+}
 
 pub fn main() !void {
     var debug_allocator: std.heap.DebugAllocator(.{}) = .init;
