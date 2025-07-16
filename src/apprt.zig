@@ -17,6 +17,7 @@ const structs = @import("apprt/structs.zig");
 pub const action = @import("apprt/action.zig");
 pub const ipc = @import("apprt/ipc.zig");
 pub const gtk = @import("apprt/gtk.zig");
+pub const gtk_ng = @import("apprt/gtk-ng.zig");
 pub const none = @import("apprt/none.zig");
 pub const browser = @import("apprt/browser.zig");
 pub const embedded = @import("apprt/embedded.zig");
@@ -43,6 +44,7 @@ pub const runtime = switch (build_config.artifact) {
     .exe => switch (build_config.app_runtime) {
         .none => none,
         .gtk => gtk,
+        .@"gtk-ng" => gtk_ng,
     },
     .lib => embedded,
     .wasm_module => browser,
@@ -60,6 +62,11 @@ pub const Runtime = enum {
 
     /// GTK-backed. Rich windowed application. GTK is dynamically linked.
     gtk,
+
+    /// GTK4. The "-ng" variant is a rewrite of the GTK backend using
+    /// GTK-native technologies such as full GObject classes, Blueprint
+    /// files, etc.
+    @"gtk-ng",
 
     pub fn default(target: std.Target) Runtime {
         // The Linux default is GTK because it is full featured.
