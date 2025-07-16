@@ -283,17 +283,27 @@ fn addLinuxAppResources(
             b.fmt("share/dbus-1/services/{s}.service", .{app_id}),
         });
 
-        // systemd user service. This is kind of nasty but systemd
-        // looks for user services in different paths depending on
-        // if we are installed as a system package or not (lib vs.
-        // share) so we have to handle that here. We might be able
-        // to get away with always installing to both because it
-        // only ever searches in one... but I don't want to do that hack
-        // until we have to.
+        // `systemd` user service. This is kind of nasty but `systemd` looks for
+        // user services in different paths depending on if we are installed
+        // as a system package or not (lib vs. share) so we have to handle that
+        // here. We might be able to get away with always installing to both
+        // because it only ever searches in one... but I don't want to do that
+        // hack until we have to.
+        //
+        // The XDG Freedesktop Portal has a major undocumented requirement
+        // for programs that are launched/controlled by `systemd` to interact
+        // with the Portal. The unit must be named `app-<appid>.service`. The
+        // Portal uses the `systemd` unit name figure out what the program's
+        // application ID is and it will only look at unit names that begin with
+        // `app-`. I can find no place that this is documented other than by
+        // inspecting the code or the issue and PR that introduced this feature.
+        // See the following code:
+        //
+        // https://github.com/flatpak/xdg-desktop-portal/blob/7d4d48cf079147c8887da17ec6c3954acd5a285c/src/xdp-utils.c#L152-L220
         if (!cfg.flatpak) try ts.append(.{
             b.path("dist/linux/systemd.service.in"),
             b.fmt(
-                "{s}/systemd/user/{s}.service",
+                "{s}/systemd/user/app-{s}.service",
                 .{
                     if (b.graph.system_package_mode) "lib" else "share",
                     app_id,
