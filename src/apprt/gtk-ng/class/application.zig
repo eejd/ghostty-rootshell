@@ -541,6 +541,8 @@ pub const GhosttyApplication = extern struct {
 ///
 /// This must be called BEFORE GTK initialization.
 fn setGtkEnv(config: *const Config) error{NoSpaceLeft}!void {
+    assert(gtk.isInitialized() == 0);
+
     var gdk_debug: struct {
         /// output OpenGL debug information
         opengl: bool = false,
