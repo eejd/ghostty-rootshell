@@ -33,6 +33,18 @@ pub const Window = extern struct {
         gtk.Widget.initTemplate(self.as(gtk.Widget));
     }
 
+    fn dispose(self: *Self) callconv(.C) void {
+        gtk.Widget.disposeTemplate(
+            self.as(gtk.Widget),
+            getGObjectType(),
+        );
+
+        gobject.Object.virtual_methods.dispose.call(
+            Class.parent,
+            self.as(Parent),
+        );
+    }
+
     pub fn as(self: *Self, comptime T: type) *T {
         return gobject.ext.as(T, self);
     }
@@ -59,6 +71,8 @@ pub const Window = extern struct {
                     .name = "window",
                 }),
             );
+
+            gobject.Object.virtual_methods.dispose.implement(class, &dispose);
         }
 
         pub fn as(class: *Class, comptime T: type) *T {

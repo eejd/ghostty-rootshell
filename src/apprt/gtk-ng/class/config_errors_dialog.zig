@@ -101,14 +101,16 @@ pub const ConfigErrorsDialog = extern struct {
     }
 
     fn dispose(self: *Self) callconv(.C) void {
-        log.warn("DISPOSE", .{});
-        gtk.Widget.disposeTemplate(self.as(gtk.Widget), getGObjectType());
-
         const priv = self.private();
         if (priv.config) |v| {
             v.unref();
             priv.config = null;
         }
+
+        gtk.Widget.disposeTemplate(
+            self.as(gtk.Widget),
+            getGObjectType(),
+        );
 
         gobject.Object.virtual_methods.dispose.call(
             Class.parent,

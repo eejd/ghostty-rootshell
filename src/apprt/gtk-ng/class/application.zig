@@ -585,8 +585,8 @@ pub const Application = extern struct {
             self.as(Parent),
         );
 
-        // const win = Window.new(self);
-        // gtk.Window.present(win.as(gtk.Window));
+        const win = Window.new(self);
+        gtk.Window.present(win.as(gtk.Window));
     }
 
     fn dispose(self: *Self) callconv(.C) void {
