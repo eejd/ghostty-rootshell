@@ -74,14 +74,16 @@ pub const ConfigErrorsDialog = extern struct {
     pub fn present(self: *Self, parent: ?*gtk.Widget) void {
         switch (Parent) {
             adw.AlertDialog => self.as(adw.Dialog).present(parent),
-            else => unreachable,
+            adw.MessageDialog => self.as(gtk.Window).present(),
+            else => comptime unreachable,
         }
     }
 
     pub fn close(self: *Self) void {
         switch (Parent) {
             adw.AlertDialog => self.as(adw.Dialog).forceClose(),
-            else => unreachable,
+            adw.MessageDialog => self.as(gtk.Window).close(),
+            else => comptime unreachable,
         }
     }
 
@@ -160,7 +162,13 @@ pub const ConfigErrorsDialog = extern struct {
                         .name = "config-errors-dialog",
                     }),
 
-                    else => unreachable,
+                    adw.MessageDialog => comptime gresource.blueprint(.{
+                        .major = 1,
+                        .minor = 2,
+                        .name = "config-errors-dialog",
+                    }),
+
+                    else => comptime unreachable,
                 },
             );
 
