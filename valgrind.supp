@@ -141,6 +141,20 @@
 }
 
 {
+   pango font map to cairgo
+   Memcheck:Leak
+   match-leak-kinds: possible
+   fun:malloc
+   ...
+   fun:FcConfigValues
+   fun:FcConfigSubstituteWithPat
+   fun:FcConfigSubstitute
+   fun:pango_cairo_fc_font_map_fontset_key_substitute
+   fun:pango_fc_font_map_load_fontset
+   ...
+}
+
+{
    Adwaita Stylesheet Load
    Memcheck:Leak
    match-leak-kinds: definite
