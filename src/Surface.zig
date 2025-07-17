@@ -3341,7 +3341,7 @@ pub fn mouseButtonCallback(
                 try self.setSelection(terminal.Selection.init(
                     prev.start(),
                     prev.end(),
-                    false,
+                    prev.rectangle,
                 ));
             }
         }
