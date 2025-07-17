@@ -80,6 +80,8 @@ pub const Application = extern struct {
         running: bool = false,
 
         /// If non-null, we're currently showing a config errors dialog.
+        /// This is a WeakRef because the dialog can close on its own
+        /// outside of our own lifecycle and that's okay.
         config_errors_dialog: WeakRef(ConfigErrorsDialog) = .{},
 
         var offset: c_int = 0;
