@@ -4068,6 +4068,23 @@ fn compatBoldIsBright(
     return true;
 }
 
+/// Add a diagnostic message to the config with the given string.
+/// This is always added with a location of "none".
+pub fn addDiagnosticFmt(
+    self: *Config,
+    comptime fmt: []const u8,
+    args: anytype,
+) Allocator.Error!void {
+    const alloc = self._arena.?.allocator();
+    try self._diagnostics.append(alloc, .{
+        .message = try std.fmt.allocPrintZ(
+            alloc,
+            fmt,
+            args,
+        ),
+    });
+}
+
 /// Create a shallow copy of this config. This will share all the memory
 /// allocated with the previous config but will have a new arena for
 /// any changes or new allocations. The config should have `deinit`

@@ -7,7 +7,7 @@ const gresource = @import("../build/gresource.zig");
 const adw_version = @import("../adw_version.zig");
 const Config = @import("config.zig").Config;
 
-const log = std.log.scoped(.gtk_ghostty_window);
+const log = std.log.scoped(.gtk_ghostty_config_errors_dialog);
 
 pub const ConfigErrorsDialog = extern struct {
     const Self = @This();
@@ -78,6 +78,13 @@ pub const ConfigErrorsDialog = extern struct {
         }
     }
 
+    pub fn close(self: *Self) void {
+        switch (Parent) {
+            adw.AlertDialog => self.as(adw.Dialog).forceClose(),
+            else => unreachable,
+        }
+    }
+
     fn response(
         self: *Self,
         response_id: [*:0]const u8,
@@ -92,6 +99,7 @@ pub const ConfigErrorsDialog = extern struct {
     }
 
     fn dispose(self: *Self) callconv(.C) void {
+        log.warn("DISPOSE", .{});
         gtk.Widget.disposeTemplate(self.as(gtk.Widget), getGObjectType());
 
         const priv = self.private();
@@ -119,6 +127,14 @@ pub const ConfigErrorsDialog = extern struct {
 
     pub fn as(win: *Self, comptime T: type) *T {
         return gobject.ext.as(T, win);
+    }
+
+    pub fn ref(self: *Self) *Self {
+        return @ptrCast(@alignCast(gobject.Object.ref(self.as(gobject.Object))));
+    }
+
+    pub fn unref(self: *Self) void {
+        gobject.Object.unref(self.as(gobject.Object));
     }
 
     fn private(self: *Self) *Private {

@@ -19,6 +19,7 @@ const CoreConfig = configpkg.Config;
 
 const adw_version = @import("../adw_version.zig");
 const gtk_version = @import("../gtk_version.zig");
+const WeakRef = @import("../weak_ref.zig").WeakRef;
 const Config = @import("config.zig").Config;
 const Window = @import("window.zig").Window;
 const ConfigErrorsDialog = @import("config_errors_dialog.zig").ConfigErrorsDialog;
@@ -72,6 +73,9 @@ pub const Application = extern struct {
         /// only be set by the main loop thread.
         running: bool = false,
 
+        /// If non-null, we're currently showing a config errors dialog.
+        config_errors_dialog: WeakRef(ConfigErrorsDialog) = .{},
+
         var offset: c_int = 0;
     };
 
@@ -107,14 +111,10 @@ pub const Application = extern struct {
             // us to startup.
             var default: CoreConfig = try .default(alloc);
             errdefer default.deinit();
-            const config_arena = default._arena.?.allocator();
-            try default._diagnostics.append(config_arena, .{
-                .message = try std.fmt.allocPrintZ(
-                    config_arena,
-                    "error loading user configuration: {}",
-                    .{err},
-                ),
-            });
+            try default.addDiagnosticFmt(
+                "error loading user configuration: {}",
+                .{err},
+            );
 
             break :err default;
         };
@@ -190,8 +190,10 @@ pub const Application = extern struct {
         // callback that GObject calls, but we can't pass this data through
         // to there (and we don't need it there directly) so this is here.
         const priv = self.private();
-        priv.core_app = core_app;
-        priv.config = config_obj;
+        priv.* = .{
+            .core_app = core_app,
+            .config = config_obj,
+        };
 
         return self;
     }
@@ -303,22 +305,6 @@ pub const Application = extern struct {
         }
     }
 
-    pub fn as(app: *Self, comptime T: type) *T {
-        return gobject.ext.as(T, app);
-    }
-
-    pub fn unref(self: *Self) void {
-        gobject.Object.unref(self.as(gobject.Object));
-    }
-
-    fn private(self: *Self) *Private {
-        return gobject.ext.impl_helpers.getPrivate(
-            self,
-            Private,
-            Private.offset,
-        );
-    }
-
     fn startup(self: *Self) callconv(.C) void {
         log.debug("startup", .{});
 
@@ -334,19 +320,26 @@ pub const Application = extern struct {
         self.startupStyleManager();
 
         // Setup our cgroup for the application.
-        self.startupCgroup() catch {
-            log.warn("TODO", .{});
+        self.startupCgroup() catch |err| {
+            log.warn("cgroup initialization failed err={}", .{err});
+
+            // Add it to our config diagnostics so it shows up in a GUI dialog.
+            // Admittedly this has two issues: (1) we shuldn't be using the
+            // config errors dialog for this long term and (2) using a mut
+            // ref to the config wouldn't propagate changes to UI properly,
+            // but we're in startup mode so its okay.
+            const config = self.private().config.getMut();
+            config.addDiagnosticFmt(
+                "cgroup initialization failed: {}",
+                .{err},
+            ) catch {};
         };
 
         // If we have any config diagnostics from loading, then we
         // show the diagnostics dialog. We show this one as a general
         // modal (not to any specific window) because we don't even
         // know if the window will load.
-        const priv = self.private();
-        if (priv.config.hasDiagnostics()) {
-            const dialog: *ConfigErrorsDialog = .new(priv.config);
-            dialog.present(null);
-        }
+        self.showConfigErrorsDialog();
     }
 
     /// Configure libxev to use a specific backend.
@@ -490,6 +483,19 @@ pub const Application = extern struct {
         // gtk.Window.present(win.as(gtk.Window));
     }
 
+    fn dispose(self: *Self) callconv(.C) void {
+        const priv = self.private();
+        if (priv.config_errors_dialog.get()) |diag| {
+            diag.close();
+            diag.unref(); // strong ref from get()
+        }
+
+        gobject.Object.virtual_methods.dispose.call(
+            Class.parent,
+            self.as(Parent),
+        );
+    }
+
     fn finalize(self: *Self) callconv(.C) void {
         self.deinit();
         gobject.Object.virtual_methods.finalize.call(
@@ -513,8 +519,60 @@ pub const Application = extern struct {
         log.debug("style manager changed scheme={}", .{color_scheme});
     }
 
+    /// Show the config errors dialog if the config on our application
+    /// has diagnostics.
+    fn showConfigErrorsDialog(self: *Self) void {
+        const priv = self.private();
+
+        // If we already have a dialog, just update the config.
+        if (priv.config_errors_dialog.get()) |diag| {
+            defer diag.unref(); // get gets a strong ref
+
+            var value = gobject.ext.Value.newFrom(priv.config);
+            defer value.unset();
+            gobject.Object.setProperty(
+                diag.as(gobject.Object),
+                "config",
+                &value,
+            );
+
+            if (!priv.config.hasDiagnostics()) {
+                diag.close();
+            } else {
+                diag.present(null);
+            }
+
+            return;
+        }
+
+        // No diagnostics, do nothing.
+        if (!priv.config.hasDiagnostics()) return;
+
+        // No dialog yet, initialize a new one. There's no need to unref
+        // here because the widget that it becomes a part of takes ownership.
+        const dialog: *ConfigErrorsDialog = .new(priv.config);
+        dialog.present(null);
+        priv.config_errors_dialog.set(dialog);
+    }
+
     fn allocator(self: *Self) std.mem.Allocator {
         return self.private().core_app.alloc;
+    }
+
+    pub fn as(app: *Self, comptime T: type) *T {
+        return gobject.ext.as(T, app);
+    }
+
+    pub fn unref(self: *Self) void {
+        gobject.Object.unref(self.as(gobject.Object));
+    }
+
+    fn private(self: *Self) *Private {
+        return gobject.ext.impl_helpers.getPrivate(
+            self,
+            Private,
+            Private.offset,
+        );
     }
 
     pub const Class = extern struct {
@@ -542,6 +600,7 @@ pub const Application = extern struct {
             // Virtual methods
             gio.Application.virtual_methods.activate.implement(class, &activate);
             gio.Application.virtual_methods.startup.implement(class, &startup);
+            gobject.Object.virtual_methods.dispose.implement(class, &dispose);
             gobject.Object.virtual_methods.finalize.implement(class, &finalize);
         }
     };
