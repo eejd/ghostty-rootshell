@@ -275,6 +275,9 @@ pub const Action = union(Key) {
     /// Show a native GUI notification that the child process has exited.
     show_child_exited: apprt.surface.Message.ChildExited,
 
+    /// Show a native GUI notification about the progress of some TUI operation.
+    progress_report: terminal.osc.Command.ProgressReport,
+
     /// Sync with: ghostty_action_tag_e
     pub const Key = enum(c_int) {
         quit,
@@ -327,6 +330,7 @@ pub const Action = union(Key) {
         check_for_updates,
         open_url,
         show_child_exited,
+        progress_report,
     };
 
     /// Sync with: ghostty_action_u

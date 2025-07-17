@@ -951,6 +951,16 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
             };
         },
 
+        .progress_report => |v| {
+            _ = self.rt_app.performAction(
+                .{ .surface = self },
+                .progress_report,
+                v,
+            ) catch |err| {
+                log.warn("apprt failed to report progress err={}", .{err});
+            };
+        },
+
         .selection_scroll_tick => |active| {
             self.selection_scroll_active = active;
             try self.selectionScrollTick();

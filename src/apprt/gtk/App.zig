@@ -523,6 +523,7 @@ pub fn performAction(
         .toggle_command_palette => try self.toggleCommandPalette(target),
         .open_url => self.openUrl(value),
         .show_child_exited => return try self.showChildExited(target, value),
+        .progress_report => return try self.handleProgressReport(target, value),
 
         // Unimplemented
         .close_all_windows,
@@ -869,6 +870,14 @@ fn showChildExited(_: *App, target: apprt.Target, value: apprt.surface.Message.C
     switch (target) {
         .app => return false,
         .surface => |surface| return try surface.rt_surface.showChildExited(value),
+    }
+}
+
+/// Show a native GUI element to indicate the progress of a TUI operation.
+fn handleProgressReport(_: *App, target: apprt.Target, value: terminal.osc.Command.ProgressReport) error{}!bool {
+    switch (target) {
+        .app => return false,
+        .surface => |surface| return try surface.rt_surface.progress_bar.handleProgressReport(value),
     }
 }
 
