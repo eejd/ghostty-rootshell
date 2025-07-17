@@ -31,14 +31,14 @@ pub fn init(
 ) !void {
     _ = opts;
 
-    const app: *Application = try .new(core_app);
+    const app: *Application = try .new(self, core_app);
     errdefer app.unref();
     self.* = .{ .app = app };
     return;
 }
 
 pub fn run(self: *App) !void {
-    try self.app.run(self);
+    try self.app.run();
 }
 
 pub fn terminate(self: *App) void {
@@ -54,10 +54,7 @@ pub fn performAction(
     comptime action: apprt.Action.Key,
     value: apprt.Action.Value(action),
 ) !bool {
-    _ = self;
-    _ = target;
-    _ = value;
-    return false;
+    return try self.app.performAction(target, action, value);
 }
 
 pub fn performIpc(

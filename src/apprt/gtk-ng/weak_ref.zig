@@ -12,8 +12,12 @@ pub fn WeakRef(comptime T: type) type {
 
         /// Set the weak reference to the given object. This will not
         /// increase the reference count of the object.
-        pub fn set(self: *Self, v: *T) void {
-            self.ref.set(v.as(gobject.Object));
+        pub fn set(self: *Self, v_: ?*T) void {
+            if (v_) |v| {
+                self.ref.set(v.as(gobject.Object));
+            } else {
+                self.ref.set(null);
+            }
         }
 
         /// Get a strong reference to the object, or null if the object
