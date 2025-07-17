@@ -5,11 +5,11 @@ const gtk = @import("gtk");
 
 const gresource = @import("../build/gresource.zig");
 const adw_version = @import("../adw_version.zig");
-const GhosttyConfig = @import("config.zig").GhosttyConfig;
+const Config = @import("config.zig").GhosttyConfig;
 
 const log = std.log.scoped(.gtk_ghostty_window);
 
-pub const GhosttyConfigErrors = extern struct {
+pub const ConfigErrorsDialog = extern struct {
     const Self = @This();
     parent_instance: Parent,
 
@@ -19,18 +19,38 @@ pub const GhosttyConfigErrors = extern struct {
         adw.MessageDialog;
 
     pub const getGObjectType = gobject.ext.defineClass(Self, .{
+        .name = "GhosttyConfigErrorsDialog",
         .instanceInit = &init,
         .classInit = &Class.init,
         .parent_class = &Class.parent,
         .private = .{ .Type = Private, .offset = &Private.offset },
     });
 
+    pub const properties = struct {
+        pub const config = gobject.ext.defineProperty(
+            "config",
+            Self,
+            ?*Config,
+            .{
+                .nick = "config",
+                .blurb = "The configuration that this dialog is showing errors for.",
+                .default = null,
+                .accessor = gobject.ext.privateFieldAccessor(
+                    Self,
+                    Private,
+                    &Private.offset,
+                    "config",
+                ),
+            },
+        );
+    };
+
     const Private = struct {
-        _todo: u8 = 0,
+        config: ?*Config,
         var offset: c_int = 0;
     };
 
-    pub fn new(config: *GhosttyConfig) *Self {
+    pub fn new(config: *Config) *Self {
         return gobject.ext.newInstance(Self, .{
             .config = config,
         });
@@ -38,6 +58,13 @@ pub const GhosttyConfigErrors = extern struct {
 
     fn init(self: *Self, _: *Class) callconv(.C) void {
         gtk.Widget.initTemplate(self.as(gtk.Widget));
+    }
+
+    pub fn present(self: *Self, parent: ?*gtk.Widget) void {
+        switch (Parent) {
+            adw.AlertDialog => self.as(adw.Dialog).present(parent),
+            else => unreachable,
+        }
     }
 
     pub fn as(win: *Self, comptime T: type) *T {
@@ -58,9 +85,14 @@ pub const GhosttyConfigErrors = extern struct {
                         .minor = 5,
                         .name = "config-errors-dialog",
                     }),
+
                     else => unreachable,
                 },
             );
+
+            gobject.ext.registerProperties(class, &.{
+                properties.config,
+            });
         }
 
         pub fn as(class: *Class, comptime T: type) *T {

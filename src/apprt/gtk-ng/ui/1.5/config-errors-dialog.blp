@@ -1,7 +1,7 @@
 using Gtk 4.0;
 using Adw 1;
 
-Adw.AlertDialog config_errors_dialog {
+template $GhosttyConfigErrorsDialog: Adw.AlertDialog {
   heading: _("Configuration Errors");
   body: _("One or more configuration errors were found. Please review the errors below, and either reload your configuration or ignore these errors.");
 
@@ -21,6 +21,7 @@ Adw.AlertDialog config_errors_dialog {
       bottom-margin: 8;
       left-margin: 8;
       right-margin: 8;
+      buffer: bind (template.config as <$GhosttyConfig>).diagnostics-buffer;
     }
   };
 }

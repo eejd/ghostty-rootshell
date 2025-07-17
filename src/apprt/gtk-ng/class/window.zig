@@ -20,7 +20,7 @@ pub const GhosttyWindow = extern struct {
     });
 
     const Private = struct {
-        _todo: u8 = 0,
+        _todo: u8,
         var offset: c_int = 0;
     };
 
@@ -28,12 +28,20 @@ pub const GhosttyWindow = extern struct {
         return gobject.ext.newInstance(Self, .{ .application = app });
     }
 
-    fn init(win: *GhosttyWindow, _: *Class) callconv(.C) void {
-        gtk.Widget.initTemplate(win.as(gtk.Widget));
+    fn init(self: *GhosttyWindow, _: *Class) callconv(.C) void {
+        gtk.Widget.initTemplate(self.as(gtk.Widget));
     }
 
-    pub fn as(win: *Self, comptime T: type) *T {
-        return gobject.ext.as(T, win);
+    pub fn as(self: *Self, comptime T: type) *T {
+        return gobject.ext.as(T, self);
+    }
+
+    fn private(self: *Self) *Private {
+        return gobject.ext.impl_helpers.getPrivate(
+            self,
+            Private,
+            Private.offset,
+        );
     }
 
     pub const Class = extern struct {

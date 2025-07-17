@@ -21,6 +21,7 @@ const adw_version = @import("../adw_version.zig");
 const gtk_version = @import("../gtk_version.zig");
 const GhosttyConfig = @import("config.zig").GhosttyConfig;
 const GhosttyWindow = @import("window.zig").GhosttyWindow;
+const ConfigErrorsDialog = @import("config_errors_dialog.zig").ConfigErrorsDialog;
 
 const log = std.log.scoped(.gtk_ghostty_application);
 
@@ -320,6 +321,11 @@ pub const GhosttyApplication = extern struct {
     fn startup(self: *GhosttyApplication) callconv(.C) void {
         log.debug("startup", .{});
 
+        gio.Application.virtual_methods.startup.call(
+            Class.parent,
+            self.as(Parent),
+        );
+
         // Setup our event loop
         self.startupXev();
 
@@ -331,10 +337,15 @@ pub const GhosttyApplication = extern struct {
             log.warn("TODO", .{});
         };
 
-        gio.Application.virtual_methods.startup.call(
-            Class.parent,
-            self.as(Parent),
-        );
+        // If we have any config diagnostics from loading, then we
+        // show the diagnostics dialog. We show this one as a general
+        // modal (not to any specific window) because we don't even
+        // know if the window will load.
+        const priv = self.private();
+        if (priv.config.hasDiagnostics()) {
+            const dialog: *ConfigErrorsDialog = .new(priv.config);
+            dialog.present(null);
+        }
     }
 
     /// Configure libxev to use a specific backend.
@@ -474,8 +485,8 @@ pub const GhosttyApplication = extern struct {
             self.as(Parent),
         );
 
-        const win = GhosttyWindow.new(self);
-        gtk.Window.present(win.as(gtk.Window));
+        // const win = GhosttyWindow.new(self);
+        // gtk.Window.present(win.as(gtk.Window));
     }
 
     fn finalize(self: *GhosttyApplication) callconv(.C) void {

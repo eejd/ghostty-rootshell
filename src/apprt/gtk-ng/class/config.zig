@@ -29,6 +29,36 @@ pub const GhosttyConfig = extern struct {
         .private = .{ .Type = Private, .offset = &Private.offset },
     });
 
+    pub const properties = struct {
+        pub const @"diagnostics-buffer" = gobject.ext.defineProperty(
+            "diagnostics-buffer",
+            Self,
+            ?*gtk.TextBuffer,
+            .{
+                .nick = "Dignostics Buffer",
+                .blurb = "A TextBuffer that contains the diagnostics.",
+                .default = null,
+                .accessor = .{
+                    .getter = Self.diagnosticsBuffer,
+                },
+            },
+        );
+
+        pub const @"has-diagnostics" = gobject.ext.defineProperty(
+            "has-diagnostics",
+            Self,
+            bool,
+            .{
+                .nick = "has-diagnostics",
+                .blurb = "Whether the configuration has diagnostics.",
+                .default = false,
+                .accessor = .{
+                    .getter = Self.hasDiagnostics,
+                },
+            },
+        );
+    };
+
     const Private = struct {
         config: Config,
 
@@ -53,6 +83,48 @@ pub const GhosttyConfig = extern struct {
     /// it in any way that may live beyond the lifetime of this object.
     pub fn get(self: *Self) *const Config {
         return &self.private().config;
+    }
+
+    /// Get the mutable configuration. This is usually NOT recommended
+    /// because any changes to the config won't be propagated to anyone
+    /// with a reference to this object. If you know what you're doing, then
+    /// you can use this.
+    pub fn getMut(self: *Self) *Config {
+        return &self.private().config;
+    }
+
+    /// Returns whether this configuration has any diagnostics.
+    pub fn hasDiagnostics(self: *Self) bool {
+        const config = self.get();
+        return !config._diagnostics.empty();
+    }
+
+    /// Reads the diagnostics of this configuration as a TextBuffer,
+    /// or returns null if there are no diagnostics.
+    pub fn diagnosticsBuffer(self: *Self) ?*gtk.TextBuffer {
+        const config = self.get();
+        if (config._diagnostics.empty()) return null;
+
+        const text_buf: *gtk.TextBuffer = .new(null);
+        errdefer text_buf.unref();
+
+        var buf: [4095:0]u8 = undefined;
+        var fbs = std.io.fixedBufferStream(&buf);
+        for (config._diagnostics.items()) |diag| {
+            fbs.reset();
+            diag.write(fbs.writer()) catch |err| {
+                log.warn(
+                    "error writing diagnostic to buffer err={}",
+                    .{err},
+                );
+                continue;
+            };
+
+            text_buf.insertAtCursor(&buf, @intCast(fbs.pos));
+            text_buf.insertAtCursor("\n", 1);
+        }
+
+        return text_buf;
     }
 
     fn finalize(self: *Self) callconv(.C) void {
@@ -91,6 +163,10 @@ pub const GhosttyConfig = extern struct {
 
         fn init(class: *Class) callconv(.C) void {
             gobject.Object.virtual_methods.finalize.implement(class, &finalize);
+            gobject.ext.registerProperties(class, &.{
+                properties.@"diagnostics-buffer",
+                properties.@"has-diagnostics",
+            });
         }
     };
 };
