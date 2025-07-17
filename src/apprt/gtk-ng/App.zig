@@ -12,15 +12,15 @@ const internal_os = @import("../../os/main.zig");
 const Config = configpkg.Config;
 const CoreApp = @import("../../App.zig");
 
-const GhosttyApplication = @import("class/application.zig").GhosttyApplication;
+const Application = @import("class/application.zig").Application;
 const Surface = @import("Surface.zig");
 const gtk_version = @import("gtk_version.zig");
 const adw_version = @import("adw_version.zig");
 
 const log = std.log.scoped(.gtk);
 
-/// The GObject GhosttyApplication instance
-app: *GhosttyApplication,
+/// The GObject Application instance
+app: *Application,
 
 pub fn init(
     self: *App,
@@ -31,7 +31,7 @@ pub fn init(
 ) !void {
     _ = opts;
 
-    const app: *GhosttyApplication = try .new(core_app);
+    const app: *Application = try .new(core_app);
     errdefer app.unref();
     self.* = .{ .app = app };
     return;

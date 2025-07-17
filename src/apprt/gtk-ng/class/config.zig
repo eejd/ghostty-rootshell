@@ -5,7 +5,7 @@ const gobject = @import("gobject");
 const gtk = @import("gtk");
 
 const configpkg = @import("../../../config.zig");
-const Config = configpkg.Config;
+const CoreConfig = configpkg.Config;
 
 const log = std.log.scoped(.gtk_ghostty_config);
 
@@ -19,11 +19,12 @@ const log = std.log.scoped(.gtk_ghostty_config);
 ///
 /// This can also expose helpers to access configuration in ways that
 /// may be more egonomic to GTK primitives.
-pub const GhosttyConfig = extern struct {
+pub const Config = extern struct {
     const Self = @This();
     parent_instance: Parent,
     pub const Parent = gobject.Object;
     pub const getGObjectType = gobject.ext.defineClass(Self, .{
+        .name = "GhosttyConfig",
         .classInit = &Class.init,
         .parent_class = &Class.parent,
         .private = .{ .Type = Private, .offset = &Private.offset },
@@ -60,7 +61,7 @@ pub const GhosttyConfig = extern struct {
     };
 
     const Private = struct {
-        config: Config,
+        config: CoreConfig,
 
         var offset: c_int = 0;
     };
@@ -69,7 +70,7 @@ pub const GhosttyConfig = extern struct {
     ///
     /// This clones the given configuration, so it is safe for the
     /// caller to free the original configuration after this call.
-    pub fn new(alloc: Allocator, config: *const Config) Allocator.Error!*Self {
+    pub fn new(alloc: Allocator, config: *const CoreConfig) Allocator.Error!*Self {
         const self = gobject.ext.newInstance(Self, .{});
         errdefer self.unref();
 
@@ -81,7 +82,7 @@ pub const GhosttyConfig = extern struct {
 
     /// Get the wrapped configuration. It's unsafe to store this or access
     /// it in any way that may live beyond the lifetime of this object.
-    pub fn get(self: *Self) *const Config {
+    pub fn get(self: *Self) *const CoreConfig {
         return &self.private().config;
     }
 
@@ -89,7 +90,7 @@ pub const GhosttyConfig = extern struct {
     /// because any changes to the config won't be propagated to anyone
     /// with a reference to this object. If you know what you're doing, then
     /// you can use this.
-    pub fn getMut(self: *Self) *Config {
+    pub fn getMut(self: *Self) *CoreConfig {
         return &self.private().config;
     }
 
@@ -176,8 +177,8 @@ pub const GhosttyConfig = extern struct {
 test "GhosttyConfig" {
     const testing = std.testing;
     const alloc = testing.allocator;
-    var config: Config = try .default(alloc);
+    var config: CoreConfig = try .default(alloc);
     defer config.deinit();
-    const obj: *GhosttyConfig = try .new(alloc, &config);
+    const obj: *Config = try .new(alloc, &config);
     obj.unref();
 }

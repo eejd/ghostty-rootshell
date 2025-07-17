@@ -5,7 +5,7 @@ const gtk = @import("gtk");
 
 const gresource = @import("../build/gresource.zig");
 const adw_version = @import("../adw_version.zig");
-const Config = @import("config.zig").GhosttyConfig;
+const Config = @import("config.zig").Config;
 
 const log = std.log.scoped(.gtk_ghostty_window);
 

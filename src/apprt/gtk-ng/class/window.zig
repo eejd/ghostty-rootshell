@@ -4,15 +4,16 @@ const gobject = @import("gobject");
 const gtk = @import("gtk");
 
 const gresource = @import("../build/gresource.zig");
-const GhosttyApplication = @import("application.zig").GhosttyApplication;
+const Application = @import("application.zig").Application;
 
 const log = std.log.scoped(.gtk_ghostty_window);
 
-pub const GhosttyWindow = extern struct {
+pub const Window = extern struct {
     const Self = @This();
     parent_instance: Parent,
     pub const Parent = adw.ApplicationWindow;
     pub const getGObjectType = gobject.ext.defineClass(Self, .{
+        .name = "GhosttyWindow",
         .instanceInit = &init,
         .classInit = &Class.init,
         .parent_class = &Class.parent,
@@ -24,11 +25,11 @@ pub const GhosttyWindow = extern struct {
         var offset: c_int = 0;
     };
 
-    pub fn new(app: *GhosttyApplication) *Self {
+    pub fn new(app: *Application) *Self {
         return gobject.ext.newInstance(Self, .{ .application = app });
     }
 
-    fn init(self: *GhosttyWindow, _: *Class) callconv(.C) void {
+    fn init(self: *Self, _: *Class) callconv(.C) void {
         gtk.Widget.initTemplate(self.as(gtk.Widget));
     }
 

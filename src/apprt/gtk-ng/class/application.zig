@@ -15,12 +15,12 @@ const CoreApp = @import("../../../App.zig");
 const configpkg = @import("../../../config.zig");
 const internal_os = @import("../../../os/main.zig");
 const xev = @import("../../../global.zig").xev;
-const Config = configpkg.Config;
+const CoreConfig = configpkg.Config;
 
 const adw_version = @import("../adw_version.zig");
 const gtk_version = @import("../gtk_version.zig");
-const GhosttyConfig = @import("config.zig").GhosttyConfig;
-const GhosttyWindow = @import("window.zig").GhosttyWindow;
+const Config = @import("config.zig").Config;
+const Window = @import("window.zig").Window;
 const ConfigErrorsDialog = @import("config_errors_dialog.zig").ConfigErrorsDialog;
 
 const log = std.log.scoped(.gtk_ghostty_application);
@@ -29,7 +29,7 @@ const log = std.log.scoped(.gtk_ghostty_application);
 ///
 /// This requires a `ghostty.App` and `ghostty.Config` and takes
 /// care of the rest. Call `run` to run the application to completion.
-pub const GhosttyApplication = extern struct {
+pub const Application = extern struct {
     /// This type creates a new GObject class. Since the Application is
     /// the primary entrypoint I'm going to use this as a place to document
     /// how this all works and where you can find resources for it, but
@@ -49,6 +49,7 @@ pub const GhosttyApplication = extern struct {
     parent_instance: Parent,
     pub const Parent = adw.Application;
     pub const getGObjectType = gobject.ext.defineClass(Self, .{
+        .name = "GhosttyApplication",
         .classInit = &Class.init,
         .parent_class = &Class.parent,
         .private = .{ .Type = Private, .offset = &Private.offset },
@@ -59,7 +60,7 @@ pub const GhosttyApplication = extern struct {
         core_app: *CoreApp,
 
         /// The configuration for the application.
-        config: *GhosttyConfig,
+        config: *Config,
 
         /// The base path of the transient cgroup used to put all surfaces
         /// into their own cgroup. This is only set if cgroups are enabled
@@ -74,7 +75,7 @@ pub const GhosttyApplication = extern struct {
         var offset: c_int = 0;
     };
 
-    /// Creates a new GhosttyApplication instance.
+    /// Creates a new Application instance.
     ///
     /// This does a lot more work than a typical class instantiation,
     /// because we expect that this is the main program entrypoint.
@@ -99,12 +100,12 @@ pub const GhosttyApplication = extern struct {
         };
 
         // Load our configuration.
-        var config = Config.load(alloc) catch |err| err: {
+        var config = CoreConfig.load(alloc) catch |err| err: {
             // If we fail to load the configuration, then we should log
             // the error in the diagnostics so it can be shown to the user.
             // We can still load a default which only fails for OOM, allowing
             // us to startup.
-            var default: Config = try .default(alloc);
+            var default: CoreConfig = try .default(alloc);
             errdefer default.deinit();
             const config_arena = default._arena.?.allocator();
             try default._diagnostics.append(config_arena, .{
@@ -171,7 +172,7 @@ pub const GhosttyApplication = extern struct {
         });
 
         // Wrap our configuration in a GObject.
-        const config_obj: *GhosttyConfig = try .new(alloc, &config);
+        const config_obj: *Config = try .new(alloc, &config);
         errdefer config_obj.unref();
 
         // Initialize the app.
@@ -310,7 +311,7 @@ pub const GhosttyApplication = extern struct {
         gobject.Object.unref(self.as(gobject.Object));
     }
 
-    fn private(self: *GhosttyApplication) *Private {
+    fn private(self: *Self) *Private {
         return gobject.ext.impl_helpers.getPrivate(
             self,
             Private,
@@ -318,7 +319,7 @@ pub const GhosttyApplication = extern struct {
         );
     }
 
-    fn startup(self: *GhosttyApplication) callconv(.C) void {
+    fn startup(self: *Self) callconv(.C) void {
         log.debug("startup", .{});
 
         gio.Application.virtual_methods.startup.call(
@@ -351,7 +352,7 @@ pub const GhosttyApplication = extern struct {
     /// Configure libxev to use a specific backend.
     ///
     /// This must be called before any other xev APIs are used.
-    fn startupXev(self: *GhosttyApplication) void {
+    fn startupXev(self: *Self) void {
         const priv = self.private();
         const config = priv.config.get();
 
@@ -381,7 +382,7 @@ pub const GhosttyApplication = extern struct {
     /// Setup the style manager on startup. The primary task here is to
     /// setup our initial light/dark mode based on the configuration and
     /// setup listeners for changes to the style manager.
-    fn startupStyleManager(self: *GhosttyApplication) void {
+    fn startupStyleManager(self: *Self) void {
         const priv = self.private();
         const config = priv.config.get();
 
@@ -403,7 +404,7 @@ pub const GhosttyApplication = extern struct {
         // Setup color change notifications
         _ = gobject.Object.signals.notify.connect(
             style,
-            *GhosttyApplication,
+            *Self,
             handleStyleManagerDark,
             self,
             .{ .detail = "dark" },
@@ -420,7 +421,7 @@ pub const GhosttyApplication = extern struct {
     /// The setup for cgroups involves creating the cgroup for our
     /// application, moving ourselves into it, and storing the base path
     /// so that created surfaces can also have their own cgroups.
-    fn startupCgroup(self: *GhosttyApplication) CgroupError!void {
+    fn startupCgroup(self: *Self) CgroupError!void {
         const priv = self.private();
         const config = priv.config.get();
 
@@ -476,7 +477,7 @@ pub const GhosttyApplication = extern struct {
         priv.transient_cgroup_base = path;
     }
 
-    fn activate(self: *GhosttyApplication) callconv(.C) void {
+    fn activate(self: *Self) callconv(.C) void {
         log.debug("activate", .{});
 
         // Call the parent activate method.
@@ -485,11 +486,11 @@ pub const GhosttyApplication = extern struct {
             self.as(Parent),
         );
 
-        // const win = GhosttyWindow.new(self);
+        // const win = Window.new(self);
         // gtk.Window.present(win.as(gtk.Window));
     }
 
-    fn finalize(self: *GhosttyApplication) callconv(.C) void {
+    fn finalize(self: *Self) callconv(.C) void {
         self.deinit();
         gobject.Object.virtual_methods.finalize.call(
             Class.parent,
@@ -500,7 +501,7 @@ pub const GhosttyApplication = extern struct {
     fn handleStyleManagerDark(
         style: *adw.StyleManager,
         _: *gobject.ParamSpec,
-        self: *GhosttyApplication,
+        self: *Self,
     ) callconv(.c) void {
         _ = self;
 
@@ -512,7 +513,7 @@ pub const GhosttyApplication = extern struct {
         log.debug("style manager changed scheme={}", .{color_scheme});
     }
 
-    fn allocator(self: *GhosttyApplication) std.mem.Allocator {
+    fn allocator(self: *Self) std.mem.Allocator {
         return self.private().core_app.alloc;
     }
 
