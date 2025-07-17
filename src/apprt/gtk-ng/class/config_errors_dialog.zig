@@ -35,14 +35,25 @@ pub const ConfigErrorsDialog = extern struct {
                 .nick = "config",
                 .blurb = "The configuration that this dialog is showing errors for.",
                 .default = null,
-                .accessor = gobject.ext.privateFieldAccessor(
-                    Self,
-                    Private,
-                    &Private.offset,
-                    "config",
-                ),
+                .accessor = .{
+                    .getter = Self.getConfig,
+                    .setter = Self.setConfig,
+                },
             },
         );
+    };
+
+    pub const signals = struct {
+        pub const @"reload-config" = struct {
+            pub const name = "reload-config";
+            pub const connect = impl.connect;
+            const impl = gobject.ext.defineSignal(
+                name,
+                Self,
+                &.{},
+                void,
+            );
+        };
     };
 
     const Private = struct {
@@ -67,8 +78,55 @@ pub const ConfigErrorsDialog = extern struct {
         }
     }
 
+    fn response(
+        self: *Self,
+        response_id: [*:0]const u8,
+    ) callconv(.C) void {
+        if (std.mem.orderZ(u8, response_id, "reload") != .eq) return;
+        signals.@"reload-config".impl.emit(
+            self,
+            null,
+            .{},
+            null,
+        );
+    }
+
+    fn dispose(self: *Self) callconv(.C) void {
+        gtk.Widget.disposeTemplate(self.as(gtk.Widget), getGObjectType());
+
+        const priv = self.private();
+        if (priv.config) |v| {
+            v.unref();
+            priv.config = null;
+        }
+
+        gobject.Object.virtual_methods.dispose.call(
+            Class.parent,
+            self.as(Parent),
+        );
+    }
+
+    fn getConfig(self: *Self) ?*Config {
+        return self.private().config;
+    }
+
+    fn setConfig(self: *Self, config: ?*Config) void {
+        const priv = self.private();
+        if (priv.config) |old| old.unref();
+        if (config) |newv| _ = newv.ref();
+        priv.config = config;
+    }
+
     pub fn as(win: *Self, comptime T: type) *T {
         return gobject.ext.as(T, win);
+    }
+
+    fn private(self: *Self) *Private {
+        return gobject.ext.impl_helpers.getPrivate(
+            self,
+            Private,
+            Private.offset,
+        );
     }
 
     pub const Class = extern struct {
@@ -90,9 +148,17 @@ pub const ConfigErrorsDialog = extern struct {
                 },
             );
 
+            // Properties
             gobject.ext.registerProperties(class, &.{
                 properties.config,
             });
+
+            // Signals
+            signals.@"reload-config".impl.register(.{});
+
+            // Virtual methods
+            gobject.Object.virtual_methods.dispose.implement(class, &dispose);
+            Parent.virtual_methods.response.implement(class, &response);
         }
 
         pub fn as(class: *Class, comptime T: type) *T {
