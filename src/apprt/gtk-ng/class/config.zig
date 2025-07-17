@@ -18,7 +18,7 @@ const log = std.log.scoped(.gtk_ghostty_config);
 /// this, copy any memory they require, and own that structure instead.
 ///
 /// This can also expose helpers to access configuration in ways that
-/// may be more egonomic to GTK primitives.
+/// may be more ergonomic to GTK primitives.
 pub const Config = extern struct {
     const Self = @This();
     parent_instance: Parent,
@@ -36,7 +36,7 @@ pub const Config = extern struct {
             Self,
             ?*gtk.TextBuffer,
             .{
-                .nick = "Dignostics Buffer",
+                .nick = "Diagnostics Buffer",
                 .blurb = "A TextBuffer that contains the diagnostics.",
                 .default = null,
                 .accessor = .{
