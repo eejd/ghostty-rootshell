@@ -9,6 +9,7 @@ const configpkg = @import("../../../config.zig");
 const CoreConfig = configpkg.Config;
 
 const unrefLater = @import("../class.zig").unrefLater;
+const Common = @import("../class.zig").Common;
 
 const log = std.log.scoped(.gtk_ghostty_config);
 
@@ -66,7 +67,7 @@ pub const Config = extern struct {
     const Private = struct {
         config: CoreConfig,
 
-        var offset: c_int = 0;
+        pub var offset: c_int = 0;
     };
 
     /// Create a new GhosttyConfig from a loaded configuration.
@@ -141,25 +142,11 @@ pub const Config = extern struct {
         );
     }
 
-    pub fn as(self: *Self, comptime T: type) *T {
-        return gobject.ext.as(T, self);
-    }
-
-    pub fn ref(self: *Self) *Self {
-        return @ptrCast(@alignCast(gobject.Object.ref(self.as(gobject.Object))));
-    }
-
-    pub fn unref(self: *Self) void {
-        gobject.Object.unref(self.as(gobject.Object));
-    }
-
-    fn private(self: *Self) *Private {
-        return gobject.ext.impl_helpers.getPrivate(
-            self,
-            Private,
-            Private.offset,
-        );
-    }
+    const C = Common(Self, Private);
+    pub const as = C.as;
+    pub const ref = C.ref;
+    pub const unref = C.unref;
+    const private = C.private;
 
     pub const Class = extern struct {
         parent_class: Parent.Class,

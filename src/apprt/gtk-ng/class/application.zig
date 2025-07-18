@@ -20,6 +20,7 @@ const CoreConfig = configpkg.Config;
 const adw_version = @import("../adw_version.zig");
 const gtk_version = @import("../gtk_version.zig");
 const ApprtApp = @import("../App.zig");
+const Common = @import("../class.zig").Common;
 const WeakRef = @import("../weak_ref.zig").WeakRef;
 const Config = @import("config.zig").Config;
 const Window = @import("window.zig").Window;
@@ -84,7 +85,7 @@ pub const Application = extern struct {
         /// outside of our own lifecycle and that's okay.
         config_errors_dialog: WeakRef(ConfigErrorsDialog) = .{},
 
-        var offset: c_int = 0;
+        pub var offset: c_int = 0;
     };
 
     /// Creates a new Application instance.
@@ -700,21 +701,11 @@ pub const Application = extern struct {
         return self.private().core_app.alloc;
     }
 
-    pub fn as(app: *Self, comptime T: type) *T {
-        return gobject.ext.as(T, app);
-    }
-
-    pub fn unref(self: *Self) void {
-        gobject.Object.unref(self.as(gobject.Object));
-    }
-
-    fn private(self: *Self) *Private {
-        return gobject.ext.impl_helpers.getPrivate(
-            self,
-            Private,
-            Private.offset,
-        );
-    }
+    const C = Common(Self, Private);
+    pub const as = C.as;
+    pub const ref = C.ref;
+    pub const unref = C.unref;
+    const private = C.private;
 
     pub const Class = extern struct {
         parent_class: Parent.Class,

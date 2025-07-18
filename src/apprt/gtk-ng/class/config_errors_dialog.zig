@@ -5,6 +5,7 @@ const gtk = @import("gtk");
 
 const gresource = @import("../build/gresource.zig");
 const adw_version = @import("../adw_version.zig");
+const Common = @import("../class.zig").Common;
 const Config = @import("config.zig").Config;
 
 const log = std.log.scoped(.gtk_ghostty_config_errors_dialog);
@@ -58,7 +59,7 @@ pub const ConfigErrorsDialog = extern struct {
 
     const Private = struct {
         config: ?*Config,
-        var offset: c_int = 0;
+        pub var offset: c_int = 0;
     };
 
     pub fn new(config: *Config) *Self {
@@ -129,25 +130,11 @@ pub const ConfigErrorsDialog = extern struct {
         priv.config = config;
     }
 
-    pub fn as(win: *Self, comptime T: type) *T {
-        return gobject.ext.as(T, win);
-    }
-
-    pub fn ref(self: *Self) *Self {
-        return @ptrCast(@alignCast(gobject.Object.ref(self.as(gobject.Object))));
-    }
-
-    pub fn unref(self: *Self) void {
-        gobject.Object.unref(self.as(gobject.Object));
-    }
-
-    fn private(self: *Self) *Private {
-        return gobject.ext.impl_helpers.getPrivate(
-            self,
-            Private,
-            Private.offset,
-        );
-    }
+    const C = Common(Self, Private);
+    pub const as = C.as;
+    pub const ref = C.ref;
+    pub const unref = C.unref;
+    const private = C.private;
 
     pub const Class = extern struct {
         parent_class: Parent.Class,
