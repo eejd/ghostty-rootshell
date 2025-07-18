@@ -88,6 +88,9 @@ pub const Surface = extern struct {
         im_buf: [128]u8 = undefined,
         im_len: u7 = 0,
 
+        /// True when we have a precision scroll in progress
+        precision_scroll: bool = false,
+
         pub var offset: c_int = 0;
     };
 
@@ -290,6 +293,7 @@ pub const Surface = extern struct {
 
         // Initialize some private fields so they aren't undefined
         priv.rt_surface = .{ .surface = self };
+        priv.precision_scroll = false;
         priv.cursor_pos = .{ .x = 0, .y = 0 };
         priv.size = .{
             // Funky numbers on purpose so they stand out if for some reason
@@ -384,6 +388,33 @@ pub const Surface = extern struct {
             ec_motion,
             *Self,
             ecMouseLeave,
+            self,
+            .{},
+        );
+
+        // Scroll
+        const ec_scroll = gtk.EventControllerScroll.new(.flags_both_axes);
+        errdefer ec_scroll.unref();
+        self_widget.addController(ec_scroll.as(gtk.EventController));
+        errdefer self_widget.removeController(ec_scroll.as(gtk.EventController));
+        _ = gtk.EventControllerScroll.signals.scroll.connect(
+            ec_scroll,
+            *Self,
+            ecMouseScroll,
+            self,
+            .{},
+        );
+        _ = gtk.EventControllerScroll.signals.scroll_begin.connect(
+            ec_scroll,
+            *Self,
+            ecMouseScrollPrecisionBegin,
+            self,
+            .{},
+        );
+        _ = gtk.EventControllerScroll.signals.scroll_end.connect(
+            ec_scroll,
+            *Self,
+            ecMouseScrollPrecisionEnd,
             self,
             .{},
         );
@@ -706,6 +737,55 @@ pub const Surface = extern struct {
                 return;
             };
         }
+    }
+
+    fn ecMouseScrollPrecisionBegin(
+        _: *gtk.EventControllerScroll,
+        self: *Self,
+    ) callconv(.c) void {
+        self.private().precision_scroll = true;
+    }
+
+    fn ecMouseScrollPrecisionEnd(
+        _: *gtk.EventControllerScroll,
+        self: *Self,
+    ) callconv(.c) void {
+        self.private().precision_scroll = false;
+    }
+
+    fn ecMouseScroll(
+        _: *gtk.EventControllerScroll,
+        x: f64,
+        y: f64,
+        self: *Self,
+    ) callconv(.c) c_int {
+        const priv = self.private();
+        if (priv.core_surface) |surface| {
+            // Multiply precision scrolls by 10 to get a better response from
+            // touchpad scrolling
+            const multiplier: f64 = if (priv.precision_scroll) 10.0 else 1.0;
+            const scroll_mods: input.ScrollMods = .{
+                .precision = priv.precision_scroll,
+            };
+
+            const scaled = self.scaledCoordinates(x, y);
+            surface.scrollCallback(
+                // We invert because we apply natural scrolling to the values.
+                // This behavior has existed for years without Linux users complaining
+                // but I suspect we'll have to make this configurable in the future
+                // or read a system setting.
+                scaled.x * -1 * multiplier,
+                scaled.y * -1 * multiplier,
+                scroll_mods,
+            ) catch |err| {
+                log.warn("error in scroll callback err={}", .{err});
+                return 0;
+            };
+
+            return 1;
+        }
+
+        return 0;
     }
 
     fn imPreeditStart(
