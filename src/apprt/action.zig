@@ -162,6 +162,11 @@ pub const Action = union(Key) {
     /// The cell size has changed to the given dimensions in pixels.
     cell_size: CellSize,
 
+    /// The target should be re-rendered. This usually has a specific
+    /// surface target but if the app is targeted then all active
+    /// surfaces should be redrawn.
+    render,
+
     /// Control whether the inspector is shown or hidden.
     inspector: Inspector,
 
@@ -311,6 +316,7 @@ pub const Action = union(Key) {
         reset_window_size,
         initial_size,
         cell_size,
+        render,
         inspector,
         show_gtk_inspector,
         render_inspector,

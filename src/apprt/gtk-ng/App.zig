@@ -79,12 +79,6 @@ pub fn performIpc(
     return false;
 }
 
-/// Close the given surface.
-pub fn redrawSurface(self: *App, surface: *Surface) void {
-    _ = self;
-    _ = surface;
-}
-
 /// Redraw the inspector for the given surface.
 pub fn redrawInspector(self: *App, surface: *Surface) void {
     _ = self;

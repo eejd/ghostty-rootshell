@@ -1,6 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const adw = @import("adw");
+const gdk = @import("gdk");
 const gobject = @import("gobject");
 const gtk = @import("gtk");
 
@@ -94,7 +95,7 @@ pub const Surface = extern struct {
     /// the terminal in reaction to internal changes. If there are external
     /// events that invalidate the surface, such as the widget moving parents,
     /// then we should force a redraw.
-    fn redraw(self: *Self) void {
+    pub fn redraw(self: *Self) void {
         const priv = self.private();
         priv.gl_area.queueRender();
     }
@@ -188,6 +189,13 @@ pub const Surface = extern struct {
             self,
             .{},
         );
+        _ = gtk.GLArea.signals.render.connect(
+            gl_area,
+            *Self,
+            glareaRender,
+            self,
+            .{},
+        );
     }
 
     fn dispose(self: *Self) callconv(.C) void {
@@ -275,6 +283,24 @@ pub const Surface = extern struct {
         }
 
         surface.renderer.displayUnrealized();
+    }
+
+    fn glareaRender(
+        _: *gtk.GLArea,
+        _: *gdk.GLContext,
+        self: *Self,
+    ) callconv(.c) c_int {
+        // If we don't have a surface then we failed to initialize for
+        // some reason and there's nothing to draw to the GLArea.
+        const priv = self.private();
+        const surface = priv.core_surface orelse return 1;
+
+        surface.renderer.drawFrame(true) catch |err| {
+            log.warn("failed to draw frame err={}", .{err});
+            return 0;
+        };
+
+        return 1;
     }
 
     const RealizeError = Allocator.Error || error{

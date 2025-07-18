@@ -380,6 +380,8 @@ pub const Application = extern struct {
 
             .quit_timer => try Action.quitTimer(self, value),
 
+            .render => Action.render(self, target),
+
             // Unimplemented
             .quit,
             .close_window,
@@ -881,6 +883,13 @@ const Action = struct {
             },
 
             .stop => {},
+        }
+    }
+
+    pub fn render(_: *Application, target: apprt.Target) void {
+        switch (target) {
+            .app => {},
+            .surface => |v| v.rt_surface.surface.redraw(),
         }
     }
 };

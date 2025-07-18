@@ -260,7 +260,7 @@ fn drainMailbox(self: *App, rt_app: *apprt.App) !void {
             .new_window => |msg| try self.newWindow(rt_app, msg),
             .close => |surface| self.closeSurface(surface),
             .surface_message => |msg| try self.surfaceMessage(msg.surface, msg.message),
-            .redraw_surface => |surface| self.redrawSurface(rt_app, surface),
+            .redraw_surface => |surface| try self.redrawSurface(rt_app, surface),
             .redraw_inspector => |surface| self.redrawInspector(rt_app, surface),
 
             // If we're quitting, then we set the quit flag and stop
@@ -286,9 +286,26 @@ pub fn focusSurface(self: *App, surface: *Surface) void {
     self.focused_surface = surface;
 }
 
-fn redrawSurface(self: *App, rt_app: *apprt.App, surface: *apprt.Surface) void {
+fn redrawSurface(
+    self: *App,
+    rt_app: *apprt.App,
+    surface: *apprt.Surface,
+) !void {
     if (!self.hasRtSurface(surface)) return;
-    rt_app.redrawSurface(surface);
+
+    // TODO: Remove this in a separate PR. We should transition to
+    // the `render` apprt action completely. This is only to make
+    // our initial gtk-ng work touch less things.
+    if (@hasDecl(apprt.App, "redrawSurface")) {
+        rt_app.redrawSurface(surface);
+        return;
+    }
+
+    _ = try rt_app.performAction(
+        .{ .surface = surface.core() },
+        .render,
+        {},
+    );
 }
 
 fn redrawInspector(self: *App, rt_app: *apprt.App, surface: *apprt.Surface) void {
