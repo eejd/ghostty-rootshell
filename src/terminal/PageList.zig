@@ -244,6 +244,7 @@ pub fn init(
 
     // We always track our viewport pin to ensure this is never an allocation
     const viewport_pin = try pool.pins.create();
+    viewport_pin.* = .{ .node = page_list.first.? };
     var tracked_pins: PinSet = .{};
     errdefer tracked_pins.deinit(pool.alloc);
     try tracked_pins.putNoClobber(pool.alloc, viewport_pin, {});
@@ -3807,6 +3808,10 @@ test "PageList" {
     try testing.expect(s.viewport == .active);
     try testing.expect(s.pages.first != null);
     try testing.expectEqual(@as(usize, s.rows), s.totalRows());
+
+    // Our viewport pin must be defined. It isn't used until the
+    // viewport is a pin but it prevents undefined access on clone.
+    try testing.expect(s.viewport_pin.node == s.pages.first.?);
 
     // Active area should be the top
     try testing.expectEqual(Pin{
