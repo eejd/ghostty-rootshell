@@ -378,6 +378,8 @@ pub const Application = extern struct {
                 },
             ),
 
+            .quit_timer => try Action.quitTimer(self, value),
+
             // Unimplemented
             .quit,
             .close_window,
@@ -407,7 +409,6 @@ pub const Application = extern struct {
             .toggle_tab_overview,
             .toggle_split_zoom,
             .toggle_window_decorations,
-            .quit_timer,
             .prompt_title,
             .toggle_quick_terminal,
             .secure_input,
@@ -866,6 +867,21 @@ const Action = struct {
 
         const win = Window.new(self);
         gtk.Window.present(win.as(gtk.Window));
+    }
+
+    pub fn quitTimer(
+        self: *Application,
+        mode: apprt.action.QuitTimer,
+    ) !void {
+        // TODO: An actual quit timer implementation. For now, we immediately
+        // quit on no windows regardless of the config.
+        switch (mode) {
+            .start => {
+                self.private().running = false;
+            },
+
+            .stop => {},
+        }
     }
 };
 

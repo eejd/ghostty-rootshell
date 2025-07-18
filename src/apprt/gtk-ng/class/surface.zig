@@ -220,6 +220,8 @@ pub const Surface = extern struct {
 
             // Deinit the surface
             v.deinit();
+            const alloc = Application.default().allocator();
+            alloc.destroy(v);
         }
 
         gobject.Object.virtual_methods.finalize.call(
