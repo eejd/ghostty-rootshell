@@ -162,6 +162,11 @@ pub const Action = union(Key) {
     /// The cell size has changed to the given dimensions in pixels.
     cell_size: CellSize,
 
+    /// The target should be re-rendered. This usually has a specific
+    /// surface target but if the app is targeted then all active
+    /// surfaces should be redrawn.
+    render,
+
     /// Control whether the inspector is shown or hidden.
     inspector: Inspector,
 
@@ -203,9 +208,16 @@ pub const Action = union(Key) {
     open_config,
 
     /// Called when there are no more surfaces and the app should quit
-    /// after the configured delay. This can be cancelled by sending
-    /// another quit_timer action with "stop". Multiple "starts" shouldn't
-    /// happen and can be ignored or cause a restart it isn't that important.
+    /// after the configured delay.
+    ///
+    /// Despite the name, this is the notification that libghostty sends
+    /// when there are no more surfaces regardless of if the configuration
+    /// wants to quit after close, has any delay set, etc. It's up to the
+    /// apprt to implement the proper logic based on the config.
+    ///
+    /// This can be cancelled by sending another quit_timer action with "stop".
+    /// Multiple "starts" shouldn't happen and can be ignored or cause a
+    /// restart it isn't that important.
     quit_timer: QuitTimer,
 
     /// Set the window floating state. A floating window is one that is
@@ -304,6 +316,7 @@ pub const Action = union(Key) {
         reset_window_size,
         initial_size,
         cell_size,
+        render,
         inspector,
         show_gtk_inspector,
         render_inspector,

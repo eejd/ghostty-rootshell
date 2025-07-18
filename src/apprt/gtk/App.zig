@@ -524,6 +524,7 @@ pub fn performAction(
         .open_url => self.openUrl(value),
         .show_child_exited => return try self.showChildExited(target, value),
         .progress_report => return try self.handleProgressReport(target, value),
+        .render => self.render(target),
 
         // Unimplemented
         .close_all_windows,
@@ -878,6 +879,13 @@ fn handleProgressReport(_: *App, target: apprt.Target, value: terminal.osc.Comma
     switch (target) {
         .app => return false,
         .surface => |surface| return try surface.rt_surface.progress_bar.handleProgressReport(value),
+    }
+}
+
+fn render(_: *App, target: apprt.Target) void {
+    switch (target) {
+        .app => {},
+        .surface => |v| v.rt_surface.redraw(),
     }
 }
 
@@ -1477,12 +1485,6 @@ fn stopQuitTimer(self: *App) void {
             self.quit_timer = .{ .off = {} };
         },
     }
-}
-
-/// Close the given surface.
-pub fn redrawSurface(self: *App, surface: *Surface) void {
-    _ = self;
-    surface.redraw();
 }
 
 /// Redraw the inspector for the given surface.

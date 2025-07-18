@@ -601,6 +601,14 @@ pub const Surface = struct {
         }
     }
 
+    pub fn core(self: *Surface) *CoreSurface {
+        return &self.core_surface;
+    }
+
+    pub fn rtApp(self: *const Surface) *App {
+        return self.app;
+    }
+
     pub fn close(self: *const Surface, process_alive: bool) void {
         const func = self.app.opts.close_surface orelse {
             log.info("runtime embedder does not support closing a surface", .{});

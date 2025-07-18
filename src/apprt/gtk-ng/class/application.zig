@@ -16,6 +16,7 @@ const configpkg = @import("../../../config.zig");
 const internal_os = @import("../../../os/main.zig");
 const xev = @import("../../../global.zig").xev;
 const CoreConfig = configpkg.Config;
+const CoreSurface = @import("../../../Surface.zig");
 
 const adw_version = @import("../adw_version.zig");
 const gtk_version = @import("../gtk_version.zig");
@@ -58,6 +59,25 @@ pub const Application = extern struct {
         .private = .{ .Type = Private, .offset = &Private.offset },
     });
 
+    pub const properties = struct {
+        pub const config = struct {
+            pub const name = "config";
+            const impl = gobject.ext.defineProperty(
+                "config",
+                Self,
+                ?*Config,
+                .{
+                    .nick = "Config",
+                    .blurb = "The current active configuration for the application.",
+                    .default = null,
+                    .accessor = .{
+                        .getter = Self.getPropConfig,
+                    },
+                },
+            );
+        };
+    };
+
     const Private = struct {
         /// The apprt App. This is annoying that we need this it'd be
         /// nicer to just make THIS the apprt app but the current libghostty
@@ -87,6 +107,17 @@ pub const Application = extern struct {
 
         pub var offset: c_int = 0;
     };
+
+    /// Get this application as the default, allowing access to its
+    /// properties globally.
+    ///
+    /// This asserts that there is a default application and that the
+    /// default application is a GhosttyApplication. The program would have
+    /// to be in a very bad state for this to be violated.
+    pub fn default() *Self {
+        const app = gio.Application.getDefault().?;
+        return gobject.ext.cast(Self, app).?;
+    }
 
     /// Creates a new Application instance.
     ///
@@ -121,14 +152,14 @@ pub const Application = extern struct {
             // the error in the diagnostics so it can be shown to the user.
             // We can still load a default which only fails for OOM, allowing
             // us to startup.
-            var default: CoreConfig = try .default(alloc);
-            errdefer default.deinit();
-            try default.addDiagnosticFmt(
+            var def: CoreConfig = try .default(alloc);
+            errdefer def.deinit();
+            try def.addDiagnosticFmt(
                 "error loading user configuration: {}",
                 .{err},
             );
 
-            break :err default;
+            break :err def;
         };
         defer config.deinit();
 
@@ -221,6 +252,13 @@ pub const Application = extern struct {
         const priv = self.private();
         priv.config.unref();
         if (priv.transient_cgroup_base) |base| alloc.free(base);
+    }
+
+    /// The global allocator that all other classes should use by
+    /// calling `Application.default().allocator()`. Zig code should prefer
+    /// this wherever possible so we get leak detection in debug/tests.
+    pub fn allocator(self: *Self) std.mem.Allocator {
+        return self.private().core_app.alloc;
     }
 
     /// Run the application. This is a replacement for `gio.Application.run`
@@ -332,9 +370,20 @@ pub const Application = extern struct {
                 value.config,
             ),
 
+            .new_window => try Action.newWindow(
+                self,
+                switch (target) {
+                    .app => null,
+                    .surface => |v| v,
+                },
+            ),
+
+            .quit_timer => try Action.quitTimer(self, value),
+
+            .render => Action.render(self, target),
+
             // Unimplemented
             .quit,
-            .new_window,
             .close_window,
             .toggle_maximize,
             .toggle_fullscreen,
@@ -362,7 +411,6 @@ pub const Application = extern struct {
             .toggle_tab_overview,
             .toggle_split_zoom,
             .toggle_window_decorations,
-            .quit_timer,
             .prompt_title,
             .toggle_quick_terminal,
             .secure_input,
@@ -410,6 +458,46 @@ pub const Application = extern struct {
         try priv.core_app.updateConfig(priv.rt_app, &config);
     }
 
+    /// Returns the configuration for this application.
+    ///
+    /// The reference count is increased.
+    pub fn getConfig(self: *Self) *Config {
+        var value = gobject.ext.Value.zero;
+        gobject.Object.getProperty(
+            self.as(gobject.Object),
+            properties.config.name,
+            &value,
+        );
+
+        const obj = value.getObject().?;
+        return gobject.ext.cast(Config, obj).?;
+    }
+
+    fn getPropConfig(self: *Self) *Config {
+        // Property return must not increase reference count since
+        // the gobject getter handles this automatically.
+        return self.private().config;
+    }
+
+    /// Returns the core app associated with this application. This is
+    /// not a reference-counted type so you should not store this.
+    pub fn core(self: *Self) *CoreApp {
+        return self.private().core_app;
+    }
+
+    /// Returns the apprt application associated with this application.
+    pub fn rt(self: *Self) *ApprtApp {
+        return self.private().rt_app;
+    }
+
+    //---------------------------------------------------------------
+    // Libghostty Callbacks
+
+    pub fn wakeup(self: *Self) void {
+        _ = self;
+        glib.MainContext.wakeup(null);
+    }
+
     //---------------------------------------------------------------
     // Virtual Methods
 
@@ -420,6 +508,9 @@ pub const Application = extern struct {
             Class.parent,
             self.as(Parent),
         );
+
+        // Set ourselves as the default application.
+        gio.Application.setDefault(self.as(gio.Application));
 
         // Setup our event loop
         self.startupXev();
@@ -581,14 +672,17 @@ pub const Application = extern struct {
     fn activate(self: *Self) callconv(.C) void {
         log.debug("activate", .{});
 
+        // Queue a new window
+        const priv = self.private();
+        _ = priv.core_app.mailbox.push(.{
+            .new_window = .{},
+        }, .{ .forever = {} });
+
         // Call the parent activate method.
         gio.Application.virtual_methods.activate.call(
             Class.parent,
             self.as(Parent),
         );
-
-        // const win = Window.new(self);
-        // gtk.Window.present(win.as(gtk.Window));
     }
 
     fn dispose(self: *Self) callconv(.C) void {
@@ -697,10 +791,6 @@ pub const Application = extern struct {
     //----------------------------------------------------------------
     // Boilerplate/Noise
 
-    fn allocator(self: *Self) std.mem.Allocator {
-        return self.private().core_app.alloc;
-    }
-
     const C = Common(Self, Private);
     pub const as = C.as;
     pub const ref = C.ref;
@@ -728,6 +818,11 @@ pub const Application = extern struct {
                     log.warn("unable to load resources", .{});
                 }
             }
+
+            // Properties
+            gobject.ext.registerProperties(class, &.{
+                properties.config.impl,
+            });
 
             // Virtual methods
             gio.Application.virtual_methods.activate.implement(class, &activate);
@@ -763,6 +858,38 @@ const Action = struct {
                 // Show our errors if we have any
                 self.showConfigErrorsDialog();
             },
+        }
+    }
+
+    pub fn newWindow(
+        self: *Application,
+        parent: ?*CoreSurface,
+    ) !void {
+        _ = parent;
+
+        const win = Window.new(self);
+        gtk.Window.present(win.as(gtk.Window));
+    }
+
+    pub fn quitTimer(
+        self: *Application,
+        mode: apprt.action.QuitTimer,
+    ) !void {
+        // TODO: An actual quit timer implementation. For now, we immediately
+        // quit on no windows regardless of the config.
+        switch (mode) {
+            .start => {
+                self.private().running = false;
+            },
+
+            .stop => {},
+        }
+    }
+
+    pub fn render(_: *Application, target: apprt.Target) void {
+        switch (target) {
+            .app => {},
+            .surface => |v| v.rt_surface.surface.redraw(),
         }
     }
 };
