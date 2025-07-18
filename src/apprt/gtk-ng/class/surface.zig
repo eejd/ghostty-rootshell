@@ -79,6 +79,7 @@ pub const Surface = extern struct {
 
         /// Cached metrics for libghostty callbacks
         size: apprt.SurfaceSize,
+        cursor_pos: apprt.CursorPos,
 
         /// Various input method state. All related to key input.
         in_keyevent: IMKeyEvent = .false,
@@ -161,6 +162,23 @@ pub const Surface = extern struct {
         return false;
     }
 
+    /// Scale x/y by the GDK device scale.
+    fn scaledCoordinates(
+        self: *Self,
+        x: f64,
+        y: f64,
+    ) struct { x: f64, y: f64 } {
+        const gl_area = self.private().gl_area;
+        const scale_factor: f64 = @floatFromInt(
+            gl_area.as(gtk.Widget).getScaleFactor(),
+        );
+
+        return .{
+            .x = x * scale_factor,
+            .y = y * scale_factor,
+        };
+    }
+
     //---------------------------------------------------------------
     // Libghostty Callbacks
 
@@ -216,6 +234,10 @@ pub const Surface = extern struct {
         return self.private().size;
     }
 
+    pub fn getCursorPos(self: *Self) apprt.CursorPos {
+        return self.private().cursor_pos;
+    }
+
     pub fn defaultTermioEnv(self: *Self) !std.process.EnvMap {
         _ = self;
 
@@ -268,6 +290,7 @@ pub const Surface = extern struct {
 
         // Initialize some private fields so they aren't undefined
         priv.rt_surface = .{ .surface = self };
+        priv.cursor_pos = .{ .x = 0, .y = 0 };
         priv.size = .{
             // Funky numbers on purpose so they stand out if for some reason
             // our size doesn't get properly set.
@@ -341,6 +364,26 @@ pub const Surface = extern struct {
             gesture_click,
             *Self,
             gcMouseUp,
+            self,
+            .{},
+        );
+
+        // Mouse movement
+        const ec_motion = gtk.EventControllerMotion.new();
+        errdefer ec_motion.unref();
+        self_widget.addController(ec_motion.as(gtk.EventController));
+        errdefer self_widget.removeController(ec_motion.as(gtk.EventController));
+        _ = gtk.EventControllerMotion.signals.motion.connect(
+            ec_motion,
+            *Self,
+            ecMouseMotion,
+            self,
+            .{},
+        );
+        _ = gtk.EventControllerMotion.signals.leave.connect(
+            ec_motion,
+            *Self,
+            ecMouseLeave,
             self,
             .{},
         );
@@ -555,7 +598,7 @@ pub const Surface = extern struct {
                 button,
                 mods,
             ) catch |err| err: {
-                log.err("error in key callback err={}", .{err});
+                log.warn("error in key callback err={}", .{err});
                 break :err false;
             };
         } else false;
@@ -585,7 +628,81 @@ pub const Surface = extern struct {
                 button,
                 mods,
             ) catch |err| {
-                log.err("error in key callback err={}", .{err});
+                log.warn("error in key callback err={}", .{err});
+                return;
+            };
+        }
+    }
+
+    fn ecMouseMotion(
+        ec: *gtk.EventControllerMotion,
+        x: f64,
+        y: f64,
+        self: *Self,
+    ) callconv(.c) void {
+        const event = ec.as(gtk.EventController).getCurrentEvent() orelse return;
+        const priv = self.private();
+
+        const scaled = self.scaledCoordinates(x, y);
+        const pos: apprt.CursorPos = .{
+            .x = @floatCast(scaled.x),
+            .y = @floatCast(scaled.y),
+        };
+
+        // There seem to be at least two cases where GTK issues a mouse motion
+        // event without the cursor actually moving:
+        // 1. GLArea is resized under the mouse. This has the unfortunate
+        //    side effect of causing focus to potentially change when
+        //    `focus-follows-mouse` is enabled.
+        // 2. The window title is updated. This can cause the mouse to unhide
+        //    incorrectly when hide-mouse-when-typing is enabled.
+        // To prevent incorrect behavior, we'll only grab focus and
+        // continue with callback logic if the cursor has actually moved.
+        const is_cursor_still = @abs(priv.cursor_pos.x - pos.x) < 1 and
+            @abs(priv.cursor_pos.y - pos.y) < 1;
+        if (is_cursor_still) return;
+
+        // If we don't have focus, and we want it, grab it.
+        if (priv.config) |config| {
+            const gl_area_widget = priv.gl_area.as(gtk.Widget);
+            if (gl_area_widget.hasFocus() == 0 and
+                config.get().@"focus-follows-mouse")
+            {
+                _ = gl_area_widget.grabFocus();
+            }
+        }
+
+        // Our pos changed, update
+        priv.cursor_pos = pos;
+
+        // Notify the callback
+        if (priv.core_surface) |surface| {
+            const gtk_mods = event.getModifierState();
+            const mods = gtk_key.translateMods(gtk_mods);
+            surface.cursorPosCallback(priv.cursor_pos, mods) catch |err| {
+                log.warn("error in cursor pos callback err={}", .{err});
+            };
+        }
+    }
+
+    fn ecMouseLeave(
+        ec_motion: *gtk.EventControllerMotion,
+        self: *Self,
+    ) callconv(.c) void {
+        const event = ec_motion.as(gtk.EventController).getCurrentEvent() orelse return;
+
+        // Get our modifiers
+        const priv = self.private();
+        if (priv.core_surface) |surface| {
+            // If we have a core surface then we can send the cursor pos
+            // callback with an invalid position to indicate the mouse left.
+            const gtk_mods = event.getModifierState();
+            const mods = gtk_key.translateMods(gtk_mods);
+            surface.cursorPosCallback(
+                .{ .x = -1, .y = -1 },
+                mods,
+            ) catch |err| {
+                log.warn("error in cursor pos callback err={}", .{err});
                 return;
             };
         }

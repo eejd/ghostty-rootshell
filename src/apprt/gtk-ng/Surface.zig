@@ -49,8 +49,7 @@ pub fn getSize(self: *const Self) !apprt.SurfaceSize {
 }
 
 pub fn getCursorPos(self: *const Self) !apprt.CursorPos {
-    _ = self;
-    return .{ .x = 0, .y = 0 };
+    return self.surface.getCursorPos();
 }
 
 pub fn supportsClipboard(
