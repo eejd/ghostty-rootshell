@@ -53,6 +53,19 @@ pub fn getCursorPos(self: *const Self) !apprt.CursorPos {
     return .{ .x = 0, .y = 0 };
 }
 
+pub fn supportsClipboard(
+    self: *const Self,
+    clipboard_type: apprt.Clipboard,
+) bool {
+    _ = self;
+    return switch (clipboard_type) {
+        .standard,
+        .selection,
+        .primary,
+        => true,
+    };
+}
+
 pub fn clipboardRequest(
     self: *Self,
     clipboard_type: apprt.Clipboard,
