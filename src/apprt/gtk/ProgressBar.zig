@@ -50,7 +50,6 @@ pub fn handleProgressReport(self: *ProgressBar, value: terminal.osc.Command.Prog
 
         // Set the progress bar to a fixed value if one was provided, otherwise pulse.
         // Remove the `error` CSS class so that the progress bar shows as normal.
-        // TODO: how to deal with accessibility?
         .set => {
             progress_bar.as(gtk.Widget).removeCssClass("error");
             if (value.progress) |progress| {
@@ -62,7 +61,6 @@ pub fn handleProgressReport(self: *ProgressBar, value: terminal.osc.Command.Prog
 
         // Set the progress bar to a fixed value if one was provided, otherwise pulse.
         // Set the `error` CSS class so that the progress bar shows as an error color.
-        // TODO: how to deal with accessibility?
         .@"error" => {
             progress_bar.as(gtk.Widget).addCssClass("error");
             if (value.progress) |progress| {
@@ -74,7 +72,6 @@ pub fn handleProgressReport(self: *ProgressBar, value: terminal.osc.Command.Prog
 
         // The state of progress is unknown, so pulse the progress bar to
         // indicate that things are still happening.
-        // TODO: how to deal with accessibility?
         .indeterminate => {
             progress_bar.pulse();
         },
@@ -83,7 +80,6 @@ pub fn handleProgressReport(self: *ProgressBar, value: terminal.osc.Command.Prog
         // Don't pulse the progress bar as that would indicate that things were
         // happening. Otherwise this is mainly used to keep the progress bar on
         // screen instead of timing out.
-        // TODO: how to deal with accessibility?
         .pause => {
             if (value.progress) |progress| {
                 progress_bar.setFraction(computeFraction(progress));
