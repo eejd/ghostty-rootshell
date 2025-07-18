@@ -3,10 +3,12 @@
 
 const glib = @import("glib");
 const gobject = @import("gobject");
+const gtk = @import("gtk");
 
 pub const Application = @import("class/application.zig").Application;
 pub const Window = @import("class/window.zig").Window;
 pub const Config = @import("class/config.zig").Config;
+pub const Surface = @import("class/surface.zig").Surface;
 
 /// Unrefs the given GObject on the next event loop tick.
 ///
@@ -60,6 +62,30 @@ pub fn Common(
                 );
             }
         }).private else {};
+
+        /// Common class functions.
+        pub const Class = struct {
+            pub fn as(class: *Self.Class, comptime T: type) *T {
+                return gobject.ext.as(T, class);
+            }
+
+            /// Bind a template child to a private entry in the class.
+            pub const bindTemplateChildPrivate = if (Private) |P| (struct {
+                pub fn bindTemplateChildPrivate(
+                    class: *Self.Class,
+                    comptime name: [:0]const u8,
+                    comptime options: gtk.ext.BindTemplateChildOptions,
+                ) void {
+                    gtk.ext.impl_helpers.bindTemplateChildPrivate(
+                        class,
+                        name,
+                        P,
+                        P.offset,
+                        options,
+                    );
+                }
+            }).bindTemplateChildPrivate else {};
+        };
     };
 }
 

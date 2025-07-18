@@ -1,0 +1,18 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $GhosttySurface: Adw.Bin {
+  Box {
+    orientation: vertical;
+    hexpand: true;
+
+    Label {
+      label: "Hello";
+    }
+
+    GLArea gl_area {
+      hexpand: true;
+      vexpand: true;
+    }
+  }
+}

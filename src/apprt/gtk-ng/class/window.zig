@@ -6,6 +6,7 @@ const gtk = @import("gtk");
 const gresource = @import("../build/gresource.zig");
 const Common = @import("../class.zig").Common;
 const Application = @import("application.zig").Application;
+const Surface = @import("surface.zig").Surface;
 
 const log = std.log.scoped(.gtk_ghostty_window);
 
@@ -58,6 +59,8 @@ pub const Window = extern struct {
         pub const Instance = Self;
 
         fn init(class: *Class) callconv(.C) void {
+            gobject.ext.ensureType(Surface);
+
             gtk.Widget.Class.setTemplateFromResource(
                 class.as(gtk.Widget.Class),
                 comptime gresource.blueprint(.{

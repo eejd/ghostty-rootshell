@@ -13,6 +13,39 @@
 # You must gracefully exit Ghostty (do not SIGINT) by closing all windows
 # and quitting. Otherwise, we leave a number of GTK resources around.
 
+{
+   GSK Renderer GPU Stuff
+   Memcheck:Leak
+   match-leak-kinds: possible
+   ...
+   fun:gsk_gpu_image_toggle_ref_texture
+   fun:gsk_gl_image_new_for_texture
+   fun:gsk_gl_frame_upload_texture
+   fun:gsk_gpu_frame_do_upload_texture
+   fun:gsk_gpu_lookup_texture
+   ...
+   fun:gsk_gpu_node_processor_add_first_node
+   fun:gsk_gpu_node_processor_process
+   fun:gsk_gpu_frame_render
+   fun:gsk_gpu_renderer_render
+   fun:gsk_renderer_render
+   fun:gtk_widget_render
+   fun:surface_render
+  ...
+}
+
+{
+   GTK Shader Selector
+   Memcheck:Leak
+   match-leak-kinds: possible
+   ...
+   fun:_ZL29si_init_shader_selector_asyncPvS_i
+   fun:util_queue_thread_func
+   fun:impl_thrd_routine
+   fun:start_thread
+   fun:clone
+}
+
 # Weird gtk_tooltip_init leak I can't figure out
 {
    Non-builder tooltip create
