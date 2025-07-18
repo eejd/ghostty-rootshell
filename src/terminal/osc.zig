@@ -158,10 +158,7 @@ pub const Command = union(enum) {
     },
 
     /// Set progress state (OSC 9;4)
-    progress: struct {
-        state: ProgressState,
-        progress: ?u8 = null,
-    },
+    progress_report: ProgressReport,
 
     /// Wait input (OSC 9;5)
     wait_input: void,
@@ -206,12 +203,31 @@ pub const Command = union(enum) {
         report: Kind,
     };
 
-    pub const ProgressState = enum {
-        remove,
-        set,
-        @"error",
-        indeterminate,
-        pause,
+    pub const ProgressReport = struct {
+        // sync with ghostty_terminal_osc_command_progressreport_state_e in include/ghostty.h
+        pub const State = enum(c_int) {
+            remove,
+            set,
+            @"error",
+            indeterminate,
+            pause,
+        };
+
+        state: State,
+        progress: ?u8 = null,
+
+        // sync with ghostty_terminal_osc_command_progressreport_s in include/ghostty.h
+        pub const C = extern struct {
+            state: c_int,
+            progress: i8,
+        };
+
+        pub fn cval(self: ProgressReport) C {
+            return .{
+                .state = @intFromEnum(self.state),
+                .progress = if (self.progress) |progress| @intCast(std.math.clamp(progress, 0, 100)) else -1,
+            };
+        }
     };
 
     comptime {
@@ -973,7 +989,7 @@ pub const Parser = struct {
 
             .conemu_progress_prestate => switch (c) {
                 ';' => {
-                    self.command = .{ .progress = .{
+                    self.command = .{ .progress_report = .{
                         .state = undefined,
                     } };
                     self.state = .conemu_progress_state;
@@ -983,27 +999,27 @@ pub const Parser = struct {
 
             .conemu_progress_state => switch (c) {
                 '0' => {
-                    self.command.progress.state = .remove;
+                    self.command.progress_report.state = .remove;
                     self.state = .swallow;
                     self.complete = true;
                 },
                 '1' => {
-                    self.command.progress.state = .set;
-                    self.command.progress.progress = 0;
+                    self.command.progress_report.state = .set;
+                    self.command.progress_report.progress = 0;
                     self.state = .conemu_progress_prevalue;
                 },
                 '2' => {
-                    self.command.progress.state = .@"error";
+                    self.command.progress_report.state = .@"error";
                     self.complete = true;
                     self.state = .conemu_progress_prevalue;
                 },
                 '3' => {
-                    self.command.progress.state = .indeterminate;
+                    self.command.progress_report.state = .indeterminate;
                     self.complete = true;
                     self.state = .swallow;
                 },
                 '4' => {
-                    self.command.progress.state = .pause;
+                    self.command.progress_report.state = .pause;
                     self.complete = true;
                     self.state = .conemu_progress_prevalue;
                 },
@@ -1026,7 +1042,7 @@ pub const Parser = struct {
 
                     // If we aren't a set substate, then we don't care
                     // about the value.
-                    const p = &self.command.progress;
+                    const p = &self.command.progress_report;
                     if (p.state != .set and p.state != .@"error" and p.state != .pause) break :value;
 
                     if (p.state == .set)
@@ -2901,9 +2917,9 @@ test "OSC: OSC9 progress set" {
     for (input) |ch| p.next(ch);
 
     const cmd = p.end('\x1b').?;
-    try testing.expect(cmd == .progress);
-    try testing.expect(cmd.progress.state == .set);
-    try testing.expect(cmd.progress.progress == 100);
+    try testing.expect(cmd == .progress_report);
+    try testing.expect(cmd.progress_report.state == .set);
+    try testing.expect(cmd.progress_report.progress == 100);
 }
 
 test "OSC: OSC9 progress set overflow" {
@@ -2915,9 +2931,9 @@ test "OSC: OSC9 progress set overflow" {
     for (input) |ch| p.next(ch);
 
     const cmd = p.end('\x1b').?;
-    try testing.expect(cmd == .progress);
-    try testing.expect(cmd.progress.state == .set);
-    try testing.expect(cmd.progress.progress == 100);
+    try testing.expect(cmd == .progress_report);
+    try testing.expect(cmd.progress_report.state == .set);
+    try testing.expect(cmd.progress_report.progress == 100);
 }
 
 test "OSC: OSC9 progress set single digit" {
@@ -2929,9 +2945,9 @@ test "OSC: OSC9 progress set single digit" {
     for (input) |ch| p.next(ch);
 
     const cmd = p.end('\x1b').?;
-    try testing.expect(cmd == .progress);
-    try testing.expect(cmd.progress.state == .set);
-    try testing.expect(cmd.progress.progress == 9);
+    try testing.expect(cmd == .progress_report);
+    try testing.expect(cmd.progress_report.state == .set);
+    try testing.expect(cmd.progress_report.progress == 9);
 }
 
 test "OSC: OSC9 progress set double digit" {
@@ -2943,9 +2959,9 @@ test "OSC: OSC9 progress set double digit" {
     for (input) |ch| p.next(ch);
 
     const cmd = p.end('\x1b').?;
-    try testing.expect(cmd == .progress);
-    try testing.expect(cmd.progress.state == .set);
-    try testing.expect(cmd.progress.progress == 94);
+    try testing.expect(cmd == .progress_report);
+    try testing.expect(cmd.progress_report.state == .set);
+    try testing.expect(cmd.progress_report.progress == 94);
 }
 
 test "OSC: OSC9 progress set extra semicolon ignored" {
@@ -2957,9 +2973,9 @@ test "OSC: OSC9 progress set extra semicolon ignored" {
     for (input) |ch| p.next(ch);
 
     const cmd = p.end('\x1b').?;
-    try testing.expect(cmd == .progress);
-    try testing.expect(cmd.progress.state == .set);
-    try testing.expect(cmd.progress.progress == 100);
+    try testing.expect(cmd == .progress_report);
+    try testing.expect(cmd.progress_report.state == .set);
+    try testing.expect(cmd.progress_report.progress == 100);
 }
 
 test "OSC: OSC9 progress remove with no progress" {
@@ -2971,9 +2987,9 @@ test "OSC: OSC9 progress remove with no progress" {
     for (input) |ch| p.next(ch);
 
     const cmd = p.end('\x1b').?;
-    try testing.expect(cmd == .progress);
-    try testing.expect(cmd.progress.state == .remove);
-    try testing.expect(cmd.progress.progress == null);
+    try testing.expect(cmd == .progress_report);
+    try testing.expect(cmd.progress_report.state == .remove);
+    try testing.expect(cmd.progress_report.progress == null);
 }
 
 test "OSC: OSC9 progress remove with double semicolon" {
@@ -2985,9 +3001,9 @@ test "OSC: OSC9 progress remove with double semicolon" {
     for (input) |ch| p.next(ch);
 
     const cmd = p.end('\x1b').?;
-    try testing.expect(cmd == .progress);
-    try testing.expect(cmd.progress.state == .remove);
-    try testing.expect(cmd.progress.progress == null);
+    try testing.expect(cmd == .progress_report);
+    try testing.expect(cmd.progress_report.state == .remove);
+    try testing.expect(cmd.progress_report.progress == null);
 }
 
 test "OSC: OSC9 progress remove ignores progress" {
@@ -2999,9 +3015,9 @@ test "OSC: OSC9 progress remove ignores progress" {
     for (input) |ch| p.next(ch);
 
     const cmd = p.end('\x1b').?;
-    try testing.expect(cmd == .progress);
-    try testing.expect(cmd.progress.state == .remove);
-    try testing.expect(cmd.progress.progress == null);
+    try testing.expect(cmd == .progress_report);
+    try testing.expect(cmd.progress_report.state == .remove);
+    try testing.expect(cmd.progress_report.progress == null);
 }
 
 test "OSC: OSC9 progress remove extra semicolon" {
@@ -3013,8 +3029,8 @@ test "OSC: OSC9 progress remove extra semicolon" {
     for (input) |ch| p.next(ch);
 
     const cmd = p.end('\x1b').?;
-    try testing.expect(cmd == .progress);
-    try testing.expect(cmd.progress.state == .remove);
+    try testing.expect(cmd == .progress_report);
+    try testing.expect(cmd.progress_report.state == .remove);
 }
 
 test "OSC: OSC9 progress error" {
@@ -3026,9 +3042,9 @@ test "OSC: OSC9 progress error" {
     for (input) |ch| p.next(ch);
 
     const cmd = p.end('\x1b').?;
-    try testing.expect(cmd == .progress);
-    try testing.expect(cmd.progress.state == .@"error");
-    try testing.expect(cmd.progress.progress == null);
+    try testing.expect(cmd == .progress_report);
+    try testing.expect(cmd.progress_report.state == .@"error");
+    try testing.expect(cmd.progress_report.progress == null);
 }
 
 test "OSC: OSC9 progress error with progress" {
@@ -3040,9 +3056,9 @@ test "OSC: OSC9 progress error with progress" {
     for (input) |ch| p.next(ch);
 
     const cmd = p.end('\x1b').?;
-    try testing.expect(cmd == .progress);
-    try testing.expect(cmd.progress.state == .@"error");
-    try testing.expect(cmd.progress.progress == 100);
+    try testing.expect(cmd == .progress_report);
+    try testing.expect(cmd.progress_report.state == .@"error");
+    try testing.expect(cmd.progress_report.progress == 100);
 }
 
 test "OSC: OSC9 progress pause" {
@@ -3054,9 +3070,9 @@ test "OSC: OSC9 progress pause" {
     for (input) |ch| p.next(ch);
 
     const cmd = p.end('\x1b').?;
-    try testing.expect(cmd == .progress);
-    try testing.expect(cmd.progress.state == .pause);
-    try testing.expect(cmd.progress.progress == null);
+    try testing.expect(cmd == .progress_report);
+    try testing.expect(cmd.progress_report.state == .pause);
+    try testing.expect(cmd.progress_report.progress == null);
 }
 
 test "OSC: OSC9 progress pause with progress" {
@@ -3068,9 +3084,9 @@ test "OSC: OSC9 progress pause with progress" {
     for (input) |ch| p.next(ch);
 
     const cmd = p.end('\x1b').?;
-    try testing.expect(cmd == .progress);
-    try testing.expect(cmd.progress.state == .pause);
-    try testing.expect(cmd.progress.progress == 100);
+    try testing.expect(cmd == .progress_report);
+    try testing.expect(cmd.progress_report.state == .pause);
+    try testing.expect(cmd.progress_report.progress == 100);
 }
 
 test "OSC: OSC9 conemu wait input" {

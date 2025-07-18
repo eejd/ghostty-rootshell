@@ -37,6 +37,7 @@ const CloseDialog = @import("CloseDialog.zig");
 const inspectorpkg = @import("inspector.zig");
 const gtk_key = @import("key.zig");
 const Builder = @import("Builder.zig");
+const ProgressBar = @import("ProgressBar.zig");
 const adw_version = @import("adw_version.zig");
 
 const log = std.log.scoped(.gtk_surface);
@@ -309,6 +310,9 @@ precision_scroll: bool = false,
 /// Flag indicating whether the surface is in secure input mode.
 is_secure_input: bool = false,
 
+/// Structure for managing GUI progress bar
+progress_bar: ProgressBar,
+
 /// The state of the key event while we're doing IM composition.
 /// See gtkKeyPressed for detailed descriptions.
 pub const IMKeyEvent = enum {
@@ -517,6 +521,7 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
         .im_context = im_context,
         .cgroup_path = cgroup_path,
         .context_menu = undefined,
+        .progress_bar = .init(self),
     };
     errdefer self.* = undefined;
 
@@ -735,6 +740,9 @@ pub fn deinit(self: *Surface) void {
 
     // We don't allocate anything if we aren't realized.
     if (!self.realized) return;
+
+    // Cleanup the progress bar.
+    self.progress_bar.deinit();
 
     // Delete our inspector if we have one
     self.controlInspector(.hide);

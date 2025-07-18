@@ -1590,7 +1590,14 @@ pub fn Stream(comptime Handler: type) type {
                     } else log.warn("unimplemented OSC callback: {}", .{cmd});
                 },
 
-                .progress, .sleep, .show_message_box, .change_conemu_tab_title, .wait_input => {
+                .progress_report => |v| {
+                    if (@hasDecl(T, "handleProgressReport")) {
+                        try self.handler.handleProgressReport(v);
+                        return;
+                    } else log.warn("unimplemented OSC callback: {}", .{cmd});
+                },
+
+                .sleep, .show_message_box, .change_conemu_tab_title, .wait_input => {
                     log.warn("unimplemented OSC callback: {}", .{cmd});
                 },
             }

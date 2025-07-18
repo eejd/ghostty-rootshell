@@ -686,6 +686,23 @@ typedef struct {
   uint64_t timetime_ms;
 } ghostty_surface_message_childexited_s;
 
+// terminal.osc.Command.ProgressReport.State
+typedef enum {
+  GHOSTTY_PROGRESS_STATE_REMOVE,
+  GHOSTTY_PROGRESS_STATE_SET,
+  GHOSTTY_PROGRESS_STATE_ERROR,
+  GHOSTTY_PROGRESS_STATE_INDETERMINATE,
+  GHOSTTY_PROGRESS_STATE_PAUSE,
+} ghostty_terminal_osc_command_progressreport_state_e;
+
+// terminal.osc.Command.ProgressReport.C
+typedef struct {
+  ghostty_terminal_osc_command_progressreport_state_e state;
+  // -1 if no progress was reported, otherwise 0-100 indicating percent
+  // completeness.
+  int8_t progress;
+} ghostty_terminal_osc_command_progressreport_s;
+
 // apprt.Action.Key
 typedef enum {
   GHOSTTY_ACTION_QUIT,
@@ -737,7 +754,8 @@ typedef enum {
   GHOSTTY_ACTION_REDO,
   GHOSTTY_ACTION_CHECK_FOR_UPDATES,
   GHOSTTY_ACTION_OPEN_URL,
-  GHOSTTY_ACTION_SHOW_CHILD_EXITED
+  GHOSTTY_ACTION_SHOW_CHILD_EXITED,
+  GHOSTTY_ACTION_PROGRESS_REPORT,
 } ghostty_action_tag_e;
 
 typedef union {
@@ -767,6 +785,7 @@ typedef union {
   ghostty_action_config_change_s config_change;
   ghostty_action_open_url_s open_url;
   ghostty_surface_message_childexited_s child_exited;
+  ghostty_terminal_osc_command_progressreport_s progress_report;
 } ghostty_action_u;
 
 typedef struct {
