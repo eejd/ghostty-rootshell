@@ -19,6 +19,11 @@ const adw_version = @import("adw_version.zig");
 
 const log = std.log.scoped(.gtk);
 
+/// This is detected by the Renderer, in which case it sends a `redraw_surface`
+/// message so that we can call `drawFrame` ourselves from the app thread,
+/// because GTK's `GLArea` does not support drawing from a different thread.
+pub const must_draw_from_app_thread = true;
+
 /// The GObject Application instance
 app: *Application,
 
@@ -46,6 +51,11 @@ pub fn terminate(self: *App) void {
     // tend to have a reference at this point, so this just forces the
     // disposal now.
     self.app.deinit();
+}
+
+/// Called by CoreApp to wake up the event loop.
+pub fn wakeup(self: *App) void {
+    self.app.wakeup();
 }
 
 pub fn performAction(

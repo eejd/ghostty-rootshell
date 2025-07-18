@@ -1738,7 +1738,10 @@ pub fn selectionInfo(self: *const Surface) ?apprt.Selection {
 /// Returns the pwd of the terminal, if any. This is always copied because
 /// the pwd can change at any point from termio. If we are calling from the IO
 /// thread you should just check the terminal directly.
-pub fn pwd(self: *const Surface, alloc: Allocator) !?[]const u8 {
+pub fn pwd(
+    self: *const Surface,
+    alloc: Allocator,
+) Allocator.Error!?[]const u8 {
     self.renderer_state.mutex.lock();
     defer self.renderer_state.mutex.unlock();
     const terminal_pwd = self.io.terminal.getPwd() orelse return null;

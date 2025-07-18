@@ -781,6 +781,14 @@ pub fn deinit(self: *Surface) void {
     self.resize_overlay.deinit();
 }
 
+pub fn core(self: *Surface) *CoreSurface {
+    return &self.core_surface;
+}
+
+pub fn rtApp(self: *const Surface) *App {
+    return self.app;
+}
+
 /// Update our local copy of any configuration that we use.
 pub fn updateConfig(self: *Surface, config: *const configpkg.Config) !void {
     self.resize_overlay.updateConfig(config);

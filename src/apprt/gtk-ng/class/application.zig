@@ -476,6 +476,25 @@ pub const Application = extern struct {
         return self.private().config;
     }
 
+    /// Returns the core app associated with this application. This is
+    /// not a reference-counted type so you should not store this.
+    pub fn core(self: *Self) *CoreApp {
+        return self.private().core_app;
+    }
+
+    /// Returns the apprt application associated with this application.
+    pub fn rt(self: *Self) *ApprtApp {
+        return self.private().rt_app;
+    }
+
+    //---------------------------------------------------------------
+    // Libghostty Callbacks
+
+    pub fn wakeup(self: *Self) void {
+        _ = self;
+        glib.MainContext.wakeup(null);
+    }
+
     //---------------------------------------------------------------
     // Virtual Methods
 

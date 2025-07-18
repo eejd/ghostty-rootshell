@@ -1,3 +1,6 @@
+const std = @import("std");
+const Allocator = std.mem.Allocator;
+
 const apprt = @import("../apprt.zig");
 const App = @import("../App.zig");
 const Surface = @import("../Surface.zig");
@@ -133,7 +136,10 @@ pub const Mailbox = struct {
 /// Returns a new config for a surface for the given app that should be
 /// used for any new surfaces. The resulting config should be deinitialized
 /// after the surface is initialized.
-pub fn newConfig(app: *const App, config: *const Config) !Config {
+pub fn newConfig(
+    app: *const App,
+    config: *const Config,
+) Allocator.Error!Config {
     // Create a shallow clone
     var copy = config.shallowClone(app.alloc);
 
