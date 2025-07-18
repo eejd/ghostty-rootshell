@@ -111,9 +111,9 @@ pub fn add(
 
     const owned: *Entry = list.at(idx).unwrapNoAlias().?;
 
-    // If we have load options, we update the size such that it's scaled
-    // to the primary if possible. If the face is not loaded, this is a
-    // no-op and scaling will be done when loading happens.
+    // If we have load options, we update the size to ensure it's matches and is
+    // normalized to the primary if possible. If the face is not loaded, this is
+    // a no-op and sizing/scaling will happen whenever we do load it.
     if (self.load_options) |opts| {
         const primary_entry = self.getEntry(.{ .idx = 0 }) catch null;
         try owned.setSize(opts.faceOptions(), primary_entry);
@@ -159,9 +159,12 @@ fn getFaceFromEntry(
                 else => unreachable,
             };
 
-            // Adjust the size, passing the primary font for scaling
-            const primary_entry = self.getEntry(.{ .idx = 0 }) catch null;
-            try entry.setSize(face_opts, primary_entry);
+            // Adjust the size if we have access to the primary font for
+            // scaling. Otherwise, nothing to do, calling setSize would
+            // be redundant as the same face_opts were used when loading.
+            if (self.getEntry(.{ .idx = 0 })) |primary_entry| {
+                try entry.setSize(face_opts, primary_entry);
+            } else |_| {}
 
             break :deferred switch (tag) {
                 .deferred => &entry.face.loaded,
@@ -428,15 +431,11 @@ pub fn setSize(self: *Collection, size: DesiredSize) !void {
     opts.size = size;
     const face_opts = opts.faceOptions();
 
-    // Get the primary face if we can, and update that first,
-    // such that the relative scaling of the remaining faces
-    // is correct
-    const primary_entry = primary_entry: {
-        if (self.getEntry(.{ .idx = 0 })) |pe| {
-            try pe.setSize(face_opts, null);
-            break :primary_entry pe;
-        } else |_| break :primary_entry null;
-    };
+    // Get the primary face if we can, for size normalization. No need
+    // to jump through hoops to make sure this is resized first, as
+    // Entry.setSize will get it right regardless. (That said, it's
+    // likely the first iterate and hence resized first anyway.)
+    const primary_entry = self.getEntry(.{ .idx = 0 }) catch null;
 
     // Resize all our faces that are loaded
     var it = self.faces.iterator();
@@ -444,7 +443,6 @@ pub fn setSize(self: *Collection, size: DesiredSize) !void {
         var entry_it = array.value.iterator(0);
         while (entry_it.next()) |entry_or_alias| {
             if (entry_or_alias.unwrapNoAlias()) |entry| {
-                if (entry == primary_entry) continue;
                 try entry.setSize(face_opts, primary_entry);
             }
         }
@@ -666,23 +664,27 @@ pub const Entry = struct {
         // If not loaded, nothing to do
         var face = self.getLoaded() orelse return;
 
-        // First set to the raw size from opts, even if we're scaling,
-        // otherwise scaling calculations will be incorrect.
-        face.setSize(opts) catch return error.SetSizeFailed;
+        var modified_opts = opts;
 
         // If we have a primary we rescale
-        if (primary_entry) |pe| if (try self.scaleFactor(pe)) |scale| {
-            var opts_scaled = opts;
-            opts_scaled.size.points *= scale;
-            face.setSize(opts_scaled) catch return error.SetSizeFailed;
-        };
+        if (primary_entry) |p| {
+            modified_opts.size = try self.scaledSize(modified_opts.size, p);
+        }
+
+        // Before going through with the resize, we check whether the requested
+        // size after scaling is actually different from the existing size.
+        if (!std.meta.eql(modified_opts.size, face.size)) {
+            face.setSize(modified_opts) catch return error.SetSizeFailed;
+        }
     }
 
     // Calculate a size for the face that will match it with the primary font,
     // metrically, to improve consistency with fallback fonts.
     //
-    // This returns null if this or the primary face aren't loaded or, if
-    // scaling doesn't apply to this face.
+    // This returns a scaled copy of the nominal_size, where the points size has
+    // been scaled by the font metric ratio specified by self.scale_reference.
+    // If either this or the primary face are not yet loaded, or the primary
+    // face is the same as this, nominal_size is returned unchanged.
     //
     // This is very much like the `font-size-adjust` CSS property in how it works.
     // ref: https://developer.mozilla.org/en-US/docs/Web/CSS/font-size-adjust
@@ -690,51 +692,58 @@ pub const Entry = struct {
     // TODO: In the future, provide config options that allow the user to select
     //       which metric should be matched for fallback fonts, instead of hard
     //       coding at the point where a face is added to the collection.
-    pub fn scaleFactor(self: *Entry, primary_entry: *Entry) !?f32 {
-        // If the reference metric is the em size, no scaling
-        if (self.scale_reference == .em_size) return null;
+    pub fn scaledSize(self: *Entry, nominal_size: DesiredSize, primary_entry: *Entry) !DesiredSize {
+        // If the scale reference is the em size, no scaling
+        if (self.scale_reference == .em_size) return nominal_size;
 
         // If the primary is us, no scaling
-        if (@intFromPtr(self) == @intFromPtr(primary_entry)) return null;
+        if (@intFromPtr(self) == @intFromPtr(primary_entry)) return nominal_size;
 
-        // If we or the primary face aren't loaded, we don't know our
-        // metrics, so we can't do anything
-        const primary_face = primary_entry.getLoaded() orelse return null;
-        const face = self.getLoaded() orelse return null;
-
-        // Verify that the two faces are currently loaded at the same
-        // size, otherwise what follows is nonsense
-        if (!std.meta.eql(face.size, primary_face.size)) {
-            return error.InconsistentSizesForScaling;
-        }
+        // If we or the primary face aren't loaded, we don't know our metrics,
+        // so unable to scale
+        const primary_face = primary_entry.getLoaded() orelse return nominal_size;
+        const face = self.getLoaded() orelse return nominal_size;
 
         const primary_metrics = try primary_face.getMetrics();
         const face_metrics = try face.getMetrics();
+
+        // The face metrics are in pixel units, and both point sizes and dpis
+        // may differ. The following factors are used to convert ratios of face
+        // metrics to scaling factors that are size- and dpi-independent and can
+        // be used to scale point sizes directly.
+        const primary_y_px_per_72em = primary_face.size.points * @as(f32, @floatFromInt(primary_face.size.ydpi));
+        const primary_x_px_per_72em = primary_face.size.points * @as(f32, @floatFromInt(primary_face.size.xdpi));
+
+        const face_y_px_per_72em = face.size.points * @as(f32, @floatFromInt(face.size.ydpi));
+        const face_x_px_per_72em = face.size.points * @as(f32, @floatFromInt(face.size.xdpi));
+
+        const y_ratio: f64 = face_y_px_per_72em / primary_y_px_per_72em;
+        const x_ratio: f64 = face_x_px_per_72em / primary_x_px_per_72em;
 
         // The preferred metric to normalize by is self.scale_reference,
         // however we don't want to use a metric not explicitly defined
         // in `self`, so if needed we fall back through other metrics in
         // the order shown in the switch statement below. If the metric
         // is not defined in `primary`, that's OK, we'll use the estimate.
-        const line_height_ratio = primary_metrics.lineHeight() / face_metrics.lineHeight();
-        const scale: f64 = normalize_by: switch (self.scale_reference) {
+        const line_height_ratio = y_ratio * primary_metrics.lineHeight() / face_metrics.lineHeight();
+        const scale = normalize_by: switch (self.scale_reference) {
             // Even if a metric is non-null, it may be invalid (e.g., negative),
             // so we check for equality with the estimator before using it
             .ic_width => {
                 if (face_metrics.ic_width) |value| if (value == face_metrics.icWidth()) {
-                    break :normalize_by primary_metrics.icWidth() / value;
+                    break :normalize_by x_ratio * (primary_metrics.icWidth() / value);
                 };
                 continue :normalize_by .ex_height;
             },
             .ex_height => {
                 if (face_metrics.ex_height) |value| if (value == face_metrics.exHeight()) {
-                    break :normalize_by primary_metrics.exHeight() / value;
+                    break :normalize_by y_ratio * primary_metrics.exHeight() / value;
                 };
                 continue :normalize_by .cap_height;
             },
             .cap_height => {
                 if (face_metrics.cap_height) |value| if (value == face_metrics.capHeight()) {
-                    break :normalize_by primary_metrics.capHeight() / value;
+                    break :normalize_by y_ratio * primary_metrics.capHeight() / value;
                 };
                 continue :normalize_by .line_height;
             },
@@ -752,7 +761,11 @@ pub const Entry = struct {
         //       this is usually fine and is better for CJK.
         const capped_scale = @min(scale, 1.2 * line_height_ratio);
 
-        return @floatCast(capped_scale);
+        // Scale the target size by the final scaling factor and return.
+        var scaled_size = nominal_size;
+        scaled_size.points *= @floatCast(capped_scale);
+
+        return scaled_size;
     }
 };
 
@@ -785,7 +798,7 @@ pub const EntryOrAlias = union(enum) {
     }
 };
 
-pub const AdjustSizeError = font.Face.GetMetricsError || error{InconsistentSizesForScaling};
+pub const AdjustSizeError = font.Face.GetMetricsError;
 
 pub const ReferenceMetric = enum {
     // The font's ideograph width
