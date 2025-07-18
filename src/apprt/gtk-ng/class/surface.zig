@@ -13,6 +13,7 @@ const renderer = @import("../../../renderer.zig");
 const CoreSurface = @import("../../../Surface.zig");
 const gresource = @import("../build/gresource.zig");
 const adw_version = @import("../adw_version.zig");
+const gtk_key = @import("../key.zig");
 const ApprtSurface = @import("../Surface.zig");
 const Common = @import("../class.zig").Common;
 const Application = @import("application.zig").Application;
@@ -323,6 +324,27 @@ pub const Surface = extern struct {
             .{},
         );
 
+        // Clicks
+        const gesture_click = gtk.GestureClick.new();
+        errdefer gesture_click.unref();
+        gesture_click.as(gtk.GestureSingle).setButton(0);
+        self_widget.addController(gesture_click.as(gtk.EventController));
+        errdefer self_widget.removeController(gesture_click.as(gtk.EventController));
+        _ = gtk.GestureClick.signals.pressed.connect(
+            gesture_click,
+            *Self,
+            gcMouseDown,
+            self,
+            .{},
+        );
+        _ = gtk.GestureClick.signals.released.connect(
+            gesture_click,
+            *Self,
+            gcMouseUp,
+            self,
+            .{},
+        );
+
         // Setup our input method state
         const im_context = gtk.IMMulticontext.new();
         priv.im_context = im_context;
@@ -503,6 +525,68 @@ pub const Surface = extern struct {
         if (priv.core_surface) |surface| {
             surface.focusCallback(false) catch |err| {
                 log.warn("error in focus callback err={}", .{err});
+            };
+        }
+    }
+
+    fn gcMouseDown(
+        gesture: *gtk.GestureClick,
+        _: c_int,
+        x: f64,
+        y: f64,
+        self: *Self,
+    ) callconv(.c) void {
+        const event = gesture.as(gtk.EventController).getCurrentEvent() orelse return;
+
+        // If we don't have focus, grab it.
+        const priv = self.private();
+        const gl_area_widget = priv.gl_area.as(gtk.Widget);
+        if (gl_area_widget.hasFocus() == 0) {
+            _ = gl_area_widget.grabFocus();
+        }
+
+        // Report the event
+        const consumed = if (priv.core_surface) |surface| consumed: {
+            const gtk_mods = event.getModifierState();
+            const button = translateMouseButton(gesture.as(gtk.GestureSingle).getCurrentButton());
+            const mods = gtk_key.translateMods(gtk_mods);
+            break :consumed surface.mouseButtonCallback(
+                .press,
+                button,
+                mods,
+            ) catch |err| err: {
+                log.err("error in key callback err={}", .{err});
+                break :err false;
+            };
+        } else false;
+
+        // TODO: context menu
+        _ = consumed;
+        _ = x;
+        _ = y;
+    }
+
+    fn gcMouseUp(
+        gesture: *gtk.GestureClick,
+        _: c_int,
+        _: f64,
+        _: f64,
+        self: *Self,
+    ) callconv(.c) void {
+        const event = gesture.as(gtk.EventController).getCurrentEvent() orelse return;
+
+        const priv = self.private();
+        if (priv.core_surface) |surface| {
+            const gtk_mods = event.getModifierState();
+            const button = translateMouseButton(gesture.as(gtk.GestureSingle).getCurrentButton());
+            const mods = gtk_key.translateMods(gtk_mods);
+            _ = surface.mouseButtonCallback(
+                .release,
+                button,
+                mods,
+            ) catch |err| {
+                log.err("error in key callback err={}", .{err});
+                return;
             };
         }
     }
@@ -894,3 +978,20 @@ pub const IMKeyEvent = enum {
     composing,
     not_composing,
 };
+
+fn translateMouseButton(button: c_uint) input.MouseButton {
+    return switch (button) {
+        1 => .left,
+        2 => .middle,
+        3 => .right,
+        4 => .four,
+        5 => .five,
+        6 => .six,
+        7 => .seven,
+        8 => .eight,
+        9 => .nine,
+        10 => .ten,
+        11 => .eleven,
+        else => .unknown,
+    };
+}
