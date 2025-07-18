@@ -451,8 +451,9 @@ pub fn setSize(self: *Collection, size: DesiredSize) !void {
     try self.updateMetrics();
 }
 
-pub fn setReferenceMetric(self: *Collection, index: Index, scale_reference: ReferenceMetric) !void {
-    var entry = try self.getEntry(index);
+/// Update the scale reference metric associated with a face. This will
+/// also rescale the face's size accordingly.
+pub fn setScaleReference(self: *Collection, entry: *Entry, scale_reference: ReferenceMetric) !void {
     entry.scale_reference = scale_reference;
     if (self.load_options) |opts| {
         const primary_entry = self.getEntry(.{ .idx = 0 }) catch null;
@@ -1206,7 +1207,7 @@ test "adjusted sizes" {
     ) }));
 
     inline for ([_][]const u8{ "ex_height", "cap_height" }) |metric| {
-        try c.setReferenceMetric(fallback_idx, @field(ReferenceMetric, metric));
+        try c.setScaleReference(try c.getEntry(fallback_idx), @field(ReferenceMetric, metric));
 
         // The chosen metric should match.
         {
@@ -1259,7 +1260,7 @@ test "adjusted sizes" {
     }
 
     // Test em_size giving exact font size equality
-    try c.setReferenceMetric(symbol_idx, .em_size);
+    try c.setScaleReference(try c.getEntry(symbol_idx), .em_size);
 
     try std.testing.expectEqual(
         (try c.getFace(.{ .idx = 0 })).size.points,
