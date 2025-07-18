@@ -6,4 +6,9 @@ pub const Surface = @import("gtk-ng/Surface.zig");
 pub const resourcesDir = internal_os.resourcesDir;
 
 // The exported API, custom for the apprt.
-pub const GhosttyApplication = @import("gtk-ng/class/application.zig").GhosttyApplication;
+pub const class = @import("gtk-ng/class.zig");
+pub const WeakRef = @import("gtk-ng/weak_ref.zig").WeakRef;
+
+test {
+    @import("std").testing.refAllDecls(@This());
+}

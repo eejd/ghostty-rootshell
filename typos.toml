@@ -51,6 +51,8 @@ DECID = "DECID"
 flate = "flate"
 typ = "typ"
 kend = "kend"
+# GTK
+GIR = "GIR"
 
 [type.po]
 extend-glob = ["*.po"]

@@ -4,15 +4,16 @@ const gobject = @import("gobject");
 const gtk = @import("gtk");
 
 const gresource = @import("../build/gresource.zig");
-const GhosttyApplication = @import("application.zig").GhosttyApplication;
+const Application = @import("application.zig").Application;
 
 const log = std.log.scoped(.gtk_ghostty_window);
 
-pub const GhosttyWindow = extern struct {
+pub const Window = extern struct {
     const Self = @This();
     parent_instance: Parent,
     pub const Parent = adw.ApplicationWindow;
     pub const getGObjectType = gobject.ext.defineClass(Self, .{
+        .name = "GhosttyWindow",
         .instanceInit = &init,
         .classInit = &Class.init,
         .parent_class = &Class.parent,
@@ -20,20 +21,40 @@ pub const GhosttyWindow = extern struct {
     });
 
     const Private = struct {
-        _todo: u8 = 0,
+        _todo: u8,
         var offset: c_int = 0;
     };
 
-    pub fn new(app: *GhosttyApplication) *Self {
+    pub fn new(app: *Application) *Self {
         return gobject.ext.newInstance(Self, .{ .application = app });
     }
 
-    fn init(win: *GhosttyWindow, _: *Class) callconv(.C) void {
-        gtk.Widget.initTemplate(win.as(gtk.Widget));
+    fn init(self: *Self, _: *Class) callconv(.C) void {
+        gtk.Widget.initTemplate(self.as(gtk.Widget));
     }
 
-    pub fn as(win: *Self, comptime T: type) *T {
-        return gobject.ext.as(T, win);
+    fn dispose(self: *Self) callconv(.C) void {
+        gtk.Widget.disposeTemplate(
+            self.as(gtk.Widget),
+            getGObjectType(),
+        );
+
+        gobject.Object.virtual_methods.dispose.call(
+            Class.parent,
+            self.as(Parent),
+        );
+    }
+
+    pub fn as(self: *Self, comptime T: type) *T {
+        return gobject.ext.as(T, self);
+    }
+
+    fn private(self: *Self) *Private {
+        return gobject.ext.impl_helpers.getPrivate(
+            self,
+            Private,
+            Private.offset,
+        );
     }
 
     pub const Class = extern struct {
@@ -50,6 +71,8 @@ pub const GhosttyWindow = extern struct {
                     .name = "window",
                 }),
             );
+
+            gobject.Object.virtual_methods.dispose.implement(class, &dispose);
         }
 
         pub fn as(class: *Class, comptime T: type) *T {

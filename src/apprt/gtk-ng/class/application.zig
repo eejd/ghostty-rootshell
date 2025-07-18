@@ -15,11 +15,15 @@ const CoreApp = @import("../../../App.zig");
 const configpkg = @import("../../../config.zig");
 const internal_os = @import("../../../os/main.zig");
 const xev = @import("../../../global.zig").xev;
-const Config = configpkg.Config;
+const CoreConfig = configpkg.Config;
 
 const adw_version = @import("../adw_version.zig");
 const gtk_version = @import("../gtk_version.zig");
-const GhosttyWindow = @import("window.zig").GhosttyWindow;
+const ApprtApp = @import("../App.zig");
+const WeakRef = @import("../weak_ref.zig").WeakRef;
+const Config = @import("config.zig").Config;
+const Window = @import("window.zig").Window;
+const ConfigErrorsDialog = @import("config_errors_dialog.zig").ConfigErrorsDialog;
 
 const log = std.log.scoped(.gtk_ghostty_application);
 
@@ -27,7 +31,7 @@ const log = std.log.scoped(.gtk_ghostty_application);
 ///
 /// This requires a `ghostty.App` and `ghostty.Config` and takes
 /// care of the rest. Call `run` to run the application to completion.
-pub const GhosttyApplication = extern struct {
+pub const Application = extern struct {
     /// This type creates a new GObject class. Since the Application is
     /// the primary entrypoint I'm going to use this as a place to document
     /// how this all works and where you can find resources for it, but
@@ -47,12 +51,18 @@ pub const GhosttyApplication = extern struct {
     parent_instance: Parent,
     pub const Parent = adw.Application;
     pub const getGObjectType = gobject.ext.defineClass(Self, .{
+        .name = "GhosttyApplication",
         .classInit = &Class.init,
         .parent_class = &Class.parent,
         .private = .{ .Type = Private, .offset = &Private.offset },
     });
 
     const Private = struct {
+        /// The apprt App. This is annoying that we need this it'd be
+        /// nicer to just make THIS the apprt app but the current libghostty
+        /// API doesn't allow that.
+        rt_app: *ApprtApp,
+
         /// The libghostty App instance.
         core_app: *CoreApp,
 
@@ -69,10 +79,15 @@ pub const GhosttyApplication = extern struct {
         /// only be set by the main loop thread.
         running: bool = false,
 
+        /// If non-null, we're currently showing a config errors dialog.
+        /// This is a WeakRef because the dialog can close on its own
+        /// outside of our own lifecycle and that's okay.
+        config_errors_dialog: WeakRef(ConfigErrorsDialog) = .{},
+
         var offset: c_int = 0;
     };
 
-    /// Creates a new GhosttyApplication instance.
+    /// Creates a new Application instance.
     ///
     /// This does a lot more work than a typical class instantiation,
     /// because we expect that this is the main program entrypoint.
@@ -80,7 +95,10 @@ pub const GhosttyApplication = extern struct {
     /// The only failure mode of initializing the application is early OOM.
     /// Early OOM can't be recovered from. Every other error is mapped to
     /// some degraded state where we can at least show a window with an error.
-    pub fn new(core_app: *CoreApp) Allocator.Error!*Self {
+    pub fn new(
+        rt_app: *ApprtApp,
+        core_app: *CoreApp,
+    ) Allocator.Error!*Self {
         const alloc = core_app.alloc;
 
         // Log our GTK versions
@@ -97,30 +115,24 @@ pub const GhosttyApplication = extern struct {
         };
 
         // Load our configuration.
-        const config: *Config = try alloc.create(Config);
-        errdefer alloc.destroy(config);
-        config.* = Config.load(alloc) catch |err| err: {
+        var config = CoreConfig.load(alloc) catch |err| err: {
             // If we fail to load the configuration, then we should log
             // the error in the diagnostics so it can be shown to the user.
             // We can still load a default which only fails for OOM, allowing
             // us to startup.
-            var default = try Config.default(alloc);
+            var default: CoreConfig = try .default(alloc);
             errdefer default.deinit();
-            const config_arena = default._arena.?.allocator();
-            try default._diagnostics.append(config_arena, .{
-                .message = try std.fmt.allocPrintZ(
-                    config_arena,
-                    "error loading user configuration: {}",
-                    .{err},
-                ),
-            });
+            try default.addDiagnosticFmt(
+                "error loading user configuration: {}",
+                .{err},
+            );
 
             break :err default;
         };
-        errdefer config.deinit();
+        defer config.deinit();
 
         // Setup our GTK init env vars
-        setGtkEnv(config) catch |err| switch (err) {
+        setGtkEnv(&config) catch |err| switch (err) {
             error.NoSpaceLeft => {
                 // If we fail to set GTK environment variables then we still
                 // try to start the application...
@@ -170,6 +182,10 @@ pub const GhosttyApplication = extern struct {
             single_instance,
         });
 
+        // Wrap our configuration in a GObject.
+        const config_obj: *Config = try .new(alloc, &config);
+        errdefer config_obj.unref();
+
         // Initialize the app.
         const self = gobject.ext.newInstance(Self, .{
             .application_id = app_id.ptr,
@@ -185,8 +201,11 @@ pub const GhosttyApplication = extern struct {
         // callback that GObject calls, but we can't pass this data through
         // to there (and we don't need it there directly) so this is here.
         const priv = self.private();
-        priv.core_app = core_app;
-        priv.config = config;
+        priv.* = .{
+            .rt_app = rt_app,
+            .core_app = core_app,
+            .config = config_obj,
+        };
 
         return self;
     }
@@ -199,15 +218,14 @@ pub const GhosttyApplication = extern struct {
     pub fn deinit(self: *Self) void {
         const alloc = self.allocator();
         const priv = self.private();
-        priv.config.deinit();
-        alloc.destroy(priv.config);
+        priv.config.unref();
         if (priv.transient_cgroup_base) |base| alloc.free(base);
     }
 
     /// Run the application. This is a replacement for `gio.Application.run`
     /// because we want more tight control over our event loop so we can
     /// integrate it with libghostty.
-    pub fn run(self: *Self, rt_app: *apprt.gtk_ng.App) !void {
+    pub fn run(self: *Self) !void {
         // Based on the actual `gio.Application.run` implementation:
         // https://github.com/GNOME/glib/blob/a8e8b742e7926e33eb635a8edceac74cf239d6ed/gio/gapplication.c#L2533
 
@@ -254,7 +272,7 @@ pub const GhosttyApplication = extern struct {
         //
         // https://gitlab.gnome.org/GNOME/glib/-/blob/bd2ccc2f69ecfd78ca3f34ab59e42e2b462bad65/gio/gapplication.c#L2302
         const priv = self.private();
-        const config = priv.config;
+        const config = priv.config.get();
         if (config.@"initial-window") switch (config.@"launched-from".?) {
             .desktop, .cli => self.as(gio.Application).activate(),
             .dbus, .systemd => {},
@@ -278,7 +296,7 @@ pub const GhosttyApplication = extern struct {
             _ = glib.MainContext.iteration(ctx, 1);
 
             // Tick the core Ghostty terminal app
-            try priv.core_app.tick(rt_app);
+            try priv.core_app.tick(priv.rt_app);
 
             // Check if we must quit based on the current state.
             const must_quit = q: {
@@ -299,24 +317,107 @@ pub const GhosttyApplication = extern struct {
         }
     }
 
-    pub fn as(app: *Self, comptime T: type) *T {
-        return gobject.ext.as(T, app);
+    /// apprt API to perform an action.
+    pub fn performAction(
+        self: *Self,
+        target: apprt.Target,
+        comptime action: apprt.Action.Key,
+        value: apprt.Action.Value(action),
+    ) !bool {
+        switch (action) {
+            .config_change => try Action.configChange(
+                self,
+                target,
+                value.config,
+            ),
+
+            // Unimplemented
+            .quit,
+            .new_window,
+            .close_window,
+            .toggle_maximize,
+            .toggle_fullscreen,
+            .new_tab,
+            .close_tab,
+            .goto_tab,
+            .move_tab,
+            .new_split,
+            .resize_split,
+            .equalize_splits,
+            .goto_split,
+            .open_config,
+            .reload_config,
+            .inspector,
+            .show_gtk_inspector,
+            .desktop_notification,
+            .set_title,
+            .pwd,
+            .present_terminal,
+            .initial_size,
+            .size_limit,
+            .mouse_visibility,
+            .mouse_shape,
+            .mouse_over_link,
+            .toggle_tab_overview,
+            .toggle_split_zoom,
+            .toggle_window_decorations,
+            .quit_timer,
+            .prompt_title,
+            .toggle_quick_terminal,
+            .secure_input,
+            .ring_bell,
+            .toggle_command_palette,
+            .open_url,
+            .show_child_exited,
+            .close_all_windows,
+            .float_window,
+            .toggle_visibility,
+            .cell_size,
+            .key_sequence,
+            .render_inspector,
+            .renderer_health,
+            .color_change,
+            .reset_window_size,
+            .check_for_updates,
+            .undo,
+            .redo,
+            => {
+                log.warn("unimplemented action={}", .{action});
+                return false;
+            },
+        }
+
+        // Assume it was handled. The unhandled case must be explicit
+        // in the switch above.
+        return true;
     }
 
-    pub fn unref(self: *Self) void {
-        gobject.Object.unref(self.as(gobject.Object));
+    /// Reload the configuration for the application and propagate it
+    /// across the entire application and all terminals.
+    pub fn reloadConfig(self: *Self) !void {
+        const alloc = self.allocator();
+
+        // Read our new config. We can always deinit this because
+        // we'll clone and store it if libghostty accepts it and
+        // emits a `config_change` action.
+        var config = try CoreConfig.load(alloc);
+        defer config.deinit();
+
+        // Notify the app that we've updated.
+        const priv = self.private();
+        try priv.core_app.updateConfig(priv.rt_app, &config);
     }
 
-    fn private(self: *GhosttyApplication) *Private {
-        return gobject.ext.impl_helpers.getPrivate(
-            self,
-            Private,
-            Private.offset,
-        );
-    }
+    //---------------------------------------------------------------
+    // Virtual Methods
 
-    fn startup(self: *GhosttyApplication) callconv(.C) void {
+    fn startup(self: *Self) callconv(.C) void {
         log.debug("startup", .{});
+
+        gio.Application.virtual_methods.startup.call(
+            Class.parent,
+            self.as(Parent),
+        );
 
         // Setup our event loop
         self.startupXev();
@@ -325,22 +426,34 @@ pub const GhosttyApplication = extern struct {
         self.startupStyleManager();
 
         // Setup our cgroup for the application.
-        self.startupCgroup() catch {
-            log.warn("TODO", .{});
+        self.startupCgroup() catch |err| {
+            log.warn("cgroup initialization failed err={}", .{err});
+
+            // Add it to our config diagnostics so it shows up in a GUI dialog.
+            // Admittedly this has two issues: (1) we shuldn't be using the
+            // config errors dialog for this long term and (2) using a mut
+            // ref to the config wouldn't propagate changes to UI properly,
+            // but we're in startup mode so its okay.
+            const config = self.private().config.getMut();
+            config.addDiagnosticFmt(
+                "cgroup initialization failed: {}",
+                .{err},
+            ) catch {};
         };
 
-        gio.Application.virtual_methods.startup.call(
-            Class.parent,
-            self.as(Parent),
-        );
+        // If we have any config diagnostics from loading, then we
+        // show the diagnostics dialog. We show this one as a general
+        // modal (not to any specific window) because we don't even
+        // know if the window will load.
+        self.showConfigErrorsDialog();
     }
 
     /// Configure libxev to use a specific backend.
     ///
     /// This must be called before any other xev APIs are used.
-    fn startupXev(self: *GhosttyApplication) void {
+    fn startupXev(self: *Self) void {
         const priv = self.private();
-        const config = priv.config;
+        const config = priv.config.get();
 
         // If our backend is auto then we have no setup to do.
         if (config.@"async-backend" == .auto) return;
@@ -368,9 +481,9 @@ pub const GhosttyApplication = extern struct {
     /// Setup the style manager on startup. The primary task here is to
     /// setup our initial light/dark mode based on the configuration and
     /// setup listeners for changes to the style manager.
-    fn startupStyleManager(self: *GhosttyApplication) void {
+    fn startupStyleManager(self: *Self) void {
         const priv = self.private();
-        const config = priv.config;
+        const config = priv.config.get();
 
         // Setup our initial light/dark
         const style = self.as(adw.Application).getStyleManager();
@@ -390,7 +503,7 @@ pub const GhosttyApplication = extern struct {
         // Setup color change notifications
         _ = gobject.Object.signals.notify.connect(
             style,
-            *GhosttyApplication,
+            *Self,
             handleStyleManagerDark,
             self,
             .{ .detail = "dark" },
@@ -407,9 +520,9 @@ pub const GhosttyApplication = extern struct {
     /// The setup for cgroups involves creating the cgroup for our
     /// application, moving ourselves into it, and storing the base path
     /// so that created surfaces can also have their own cgroups.
-    fn startupCgroup(self: *GhosttyApplication) CgroupError!void {
+    fn startupCgroup(self: *Self) CgroupError!void {
         const priv = self.private();
-        const config = priv.config;
+        const config = priv.config.get();
 
         // If cgroup isolation isn't enabled then we don't do this.
         if (!switch (config.@"linux-cgroup") {
@@ -463,10 +576,7 @@ pub const GhosttyApplication = extern struct {
         priv.transient_cgroup_base = path;
     }
 
-    fn activate(self: *GhosttyApplication) callconv(.C) void {
-        // This is called when the application is activated, but we
-        // don't need to do anything here since we handle activation
-        // in the `run` method.
+    fn activate(self: *Self) callconv(.C) void {
         log.debug("activate", .{});
 
         // Call the parent activate method.
@@ -475,11 +585,24 @@ pub const GhosttyApplication = extern struct {
             self.as(Parent),
         );
 
-        const win = GhosttyWindow.new(self);
-        gtk.Window.present(win.as(gtk.Window));
+        // const win = Window.new(self);
+        // gtk.Window.present(win.as(gtk.Window));
     }
 
-    fn finalize(self: *GhosttyApplication) callconv(.C) void {
+    fn dispose(self: *Self) callconv(.C) void {
+        const priv = self.private();
+        if (priv.config_errors_dialog.get()) |diag| {
+            diag.close();
+            diag.unref(); // strong ref from get()
+        }
+
+        gobject.Object.virtual_methods.dispose.call(
+            Class.parent,
+            self.as(Parent),
+        );
+    }
+
+    fn finalize(self: *Self) callconv(.C) void {
         self.deinit();
         gobject.Object.virtual_methods.finalize.call(
             Class.parent,
@@ -487,10 +610,13 @@ pub const GhosttyApplication = extern struct {
         );
     }
 
+    //---------------------------------------------------------------
+    // Signal Handlers
+
     fn handleStyleManagerDark(
         style: *adw.StyleManager,
         _: *gobject.ParamSpec,
-        self: *GhosttyApplication,
+        self: *Self,
     ) callconv(.c) void {
         _ = self;
 
@@ -502,8 +628,91 @@ pub const GhosttyApplication = extern struct {
         log.debug("style manager changed scheme={}", .{color_scheme});
     }
 
-    fn allocator(self: *GhosttyApplication) std.mem.Allocator {
+    fn handleReloadConfig(
+        _: *ConfigErrorsDialog,
+        self: *Self,
+    ) callconv(.c) void {
+        // We clear our dialog reference because its going to close
+        // after response handling and we don't want to reuse it.
+        const priv = self.private();
+        priv.config_errors_dialog.set(null);
+
+        self.reloadConfig() catch |err| {
+            // If we fail to reload the configuration, then we want the
+            // user to know it. For now we log but we should show another
+            // GUI.
+            log.warn("error reloading config: {}", .{err});
+        };
+    }
+
+    /// Show the config errors dialog if the config on our application
+    /// has diagnostics.
+    fn showConfigErrorsDialog(self: *Self) void {
+        const priv = self.private();
+
+        // If we already have a dialog, just update the config.
+        if (priv.config_errors_dialog.get()) |diag| {
+            defer diag.unref(); // get gets a strong ref
+
+            var value = gobject.ext.Value.newFrom(priv.config);
+            defer value.unset();
+            gobject.Object.setProperty(
+                diag.as(gobject.Object),
+                "config",
+                &value,
+            );
+
+            if (!priv.config.hasDiagnostics()) {
+                diag.close();
+            } else {
+                diag.present(null);
+            }
+
+            return;
+        }
+
+        // No diagnostics, do nothing.
+        if (!priv.config.hasDiagnostics()) return;
+
+        // No dialog yet, initialize a new one. There's no need to unref
+        // here because the widget that it becomes a part of takes ownership.
+        const dialog: *ConfigErrorsDialog = .new(priv.config);
+        priv.config_errors_dialog.set(dialog);
+
+        // Connect to the reload signal so we know to reload our config.
+        _ = ConfigErrorsDialog.signals.@"reload-config".connect(
+            dialog,
+            *Application,
+            handleReloadConfig,
+            self,
+            .{},
+        );
+
+        // Show it
+        dialog.present(null);
+    }
+
+    //----------------------------------------------------------------
+    // Boilerplate/Noise
+
+    fn allocator(self: *Self) std.mem.Allocator {
         return self.private().core_app.alloc;
+    }
+
+    pub fn as(app: *Self, comptime T: type) *T {
+        return gobject.ext.as(T, app);
+    }
+
+    pub fn unref(self: *Self) void {
+        gobject.Object.unref(self.as(gobject.Object));
+    }
+
+    fn private(self: *Self) *Private {
+        return gobject.ext.impl_helpers.getPrivate(
+            self,
+            Private,
+            Private.offset,
+        );
     }
 
     pub const Class = extern struct {
@@ -531,16 +740,46 @@ pub const GhosttyApplication = extern struct {
             // Virtual methods
             gio.Application.virtual_methods.activate.implement(class, &activate);
             gio.Application.virtual_methods.startup.implement(class, &startup);
+            gobject.Object.virtual_methods.dispose.implement(class, &dispose);
             gobject.Object.virtual_methods.finalize.implement(class, &finalize);
         }
     };
+};
+
+/// All apprt action handlers
+const Action = struct {
+    pub fn configChange(
+        self: *Application,
+        target: apprt.Target,
+        new_config: *const CoreConfig,
+    ) !void {
+        // Wrap our config in a GObject. This will clone it.
+        const alloc = self.allocator();
+        const config_obj: *Config = try .new(alloc, new_config);
+        errdefer config_obj.unref();
+
+        switch (target) {
+            // TODO: when we implement surfaces in gtk-ng
+            .surface => @panic("TODO"),
+
+            .app => {
+                // Set it on our private
+                const priv = self.private();
+                priv.config.unref();
+                priv.config = config_obj;
+
+                // Show our errors if we have any
+                self.showConfigErrorsDialog();
+            },
+        }
+    }
 };
 
 /// This sets various GTK-related environment variables as necessary
 /// given the runtime environment or configuration.
 ///
 /// This must be called BEFORE GTK initialization.
-fn setGtkEnv(config: *const Config) error{NoSpaceLeft}!void {
+fn setGtkEnv(config: *const CoreConfig) error{NoSpaceLeft}!void {
     assert(gtk.isInitialized() == 0);
 
     var gdk_debug: struct {
