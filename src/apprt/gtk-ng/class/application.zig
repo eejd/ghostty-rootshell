@@ -221,20 +221,20 @@ pub const Application = extern struct {
         };
 
         // Setup our windowing protocol logic
-        var winproto: winprotopkg.App = winprotopkg.App.init(
+        var wp: winprotopkg.App = winprotopkg.App.init(
             alloc,
             display,
             app_id,
             &config,
-        ) catch |err| winproto: {
+        ) catch |err| wp: {
             // If we fail to detect or setup the windowing protocol
             // specifies, we fallback to a noop implementation so we can
             // still launch.
             log.warn("error initializing windowing protocol err={}", .{err});
-            break :winproto .{ .none = .{} };
+            break :wp .{ .none = .{} };
         };
-        errdefer winproto.deinit(alloc);
-        log.debug("windowing protocol={s}", .{@tagName(winproto)});
+        errdefer wp.deinit(alloc);
+        log.debug("windowing protocol={s}", .{@tagName(wp)});
 
         // Create our GTK Application which encapsulates our process.
         log.debug("creating GTK application id={s} single-instance={}", .{
@@ -265,7 +265,7 @@ pub const Application = extern struct {
             .rt_app = rt_app,
             .core_app = core_app,
             .config = config_obj,
-            .winproto = winproto,
+            .winproto = wp,
         };
 
         return self;
@@ -518,6 +518,11 @@ pub const Application = extern struct {
     /// Returns the apprt application associated with this application.
     pub fn rt(self: *Self) *ApprtApp {
         return self.private().rt_app;
+    }
+
+    /// Returns the app winproto implementation.
+    pub fn winproto(self: *Self) *winprotopkg.App {
+        return &self.private().winproto;
     }
 
     //---------------------------------------------------------------
