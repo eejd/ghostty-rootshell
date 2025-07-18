@@ -4,6 +4,7 @@ const gobject = @import("gobject");
 const gtk = @import("gtk");
 
 const gresource = @import("../build/gresource.zig");
+const Common = @import("../class.zig").Common;
 const Application = @import("application.zig").Application;
 
 const log = std.log.scoped(.gtk_ghostty_window);
@@ -22,7 +23,7 @@ pub const Window = extern struct {
 
     const Private = struct {
         _todo: u8,
-        var offset: c_int = 0;
+        pub var offset: c_int = 0;
     };
 
     pub fn new(app: *Application) *Self {
@@ -45,17 +46,11 @@ pub const Window = extern struct {
         );
     }
 
-    pub fn as(self: *Self, comptime T: type) *T {
-        return gobject.ext.as(T, self);
-    }
-
-    fn private(self: *Self) *Private {
-        return gobject.ext.impl_helpers.getPrivate(
-            self,
-            Private,
-            Private.offset,
-        );
-    }
+    const C = Common(Self, Private);
+    pub const as = C.as;
+    pub const ref = C.ref;
+    pub const unref = C.unref;
+    const private = C.private;
 
     pub const Class = extern struct {
         parent_class: Parent.Class,
