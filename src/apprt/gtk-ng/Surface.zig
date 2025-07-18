@@ -41,13 +41,11 @@ pub fn getTitle(self: *Self) ?[:0]const u8 {
 }
 
 pub fn getContentScale(self: *const Self) !apprt.ContentScale {
-    _ = self;
-    return .{ .x = 1, .y = 1 };
+    return self.surface.getContentScale();
 }
 
 pub fn getSize(self: *const Self) !apprt.SurfaceSize {
-    _ = self;
-    return .{ .width = 800, .height = 600 };
+    return self.surface.getSize();
 }
 
 pub fn getCursorPos(self: *const Self) !apprt.CursorPos {

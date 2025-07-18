@@ -74,6 +74,9 @@ pub const Surface = extern struct {
         // eventually.
         core_surface: ?*CoreSurface = null,
 
+        /// Cached metrics for libghostty callbacks
+        size: apprt.SurfaceSize,
+
         pub var offset: c_int = 0;
     };
 
@@ -102,6 +105,58 @@ pub const Surface = extern struct {
 
     //---------------------------------------------------------------
     // Libghostty Callbacks
+
+    pub fn getContentScale(self: *Self) apprt.ContentScale {
+        const priv = self.private();
+        const gl_area = priv.gl_area;
+
+        const gtk_scale: f32 = scale: {
+            const widget = gl_area.as(gtk.Widget);
+            // Future: detect GTK version 4.12+ and use gdk_surface_get_scale so we
+            // can support fractional scaling.
+            const scale = widget.getScaleFactor();
+            if (scale <= 0) {
+                log.warn("gtk_widget_get_scale_factor returned a non-positive number: {}", .{scale});
+                break :scale 1.0;
+            }
+            break :scale @floatFromInt(scale);
+        };
+
+        // Also scale using font-specific DPI, which is often exposed to the user
+        // via DE accessibility settings (see https://docs.gtk.org/gtk4/class.Settings.html).
+        const xft_dpi_scale = xft_scale: {
+            // gtk-xft-dpi is font DPI multiplied by 1024. See
+            // https://docs.gtk.org/gtk4/property.Settings.gtk-xft-dpi.html
+            const settings = gtk.Settings.getDefault() orelse break :xft_scale 1.0;
+            var value = std.mem.zeroes(gobject.Value);
+            defer value.unset();
+            _ = value.init(gobject.ext.typeFor(c_int));
+            settings.as(gobject.Object).getProperty("gtk-xft-dpi", &value);
+            const gtk_xft_dpi = value.getInt();
+
+            // Use a value of 1.0 for the XFT DPI scale if the setting is <= 0
+            // See:
+            // https://gitlab.gnome.org/GNOME/libadwaita/-/commit/a7738a4d269bfdf4d8d5429ca73ccdd9b2450421
+            // https://gitlab.gnome.org/GNOME/libadwaita/-/commit/9759d3fd81129608dd78116001928f2aed974ead
+            if (gtk_xft_dpi <= 0) {
+                log.warn("gtk-xft-dpi was not set, using default value", .{});
+                break :xft_scale 1.0;
+            }
+
+            // As noted above gtk-xft-dpi is multiplied by 1024, so we divide by
+            // 1024, then divide by the default value (96) to derive a scale. Note
+            // gtk-xft-dpi can be fractional, so we use floating point math here.
+            const xft_dpi: f32 = @as(f32, @floatFromInt(gtk_xft_dpi)) / 1024.0;
+            break :xft_scale xft_dpi / 96.0;
+        };
+
+        const scale = gtk_scale * xft_dpi_scale;
+        return .{ .x = scale, .y = scale };
+    }
+
+    pub fn getSize(self: *Self) apprt.SurfaceSize {
+        return self.private().size;
+    }
 
     pub fn defaultTermioEnv(self: *Self) !std.process.EnvMap {
         _ = self;
@@ -153,8 +208,14 @@ pub const Surface = extern struct {
 
         const priv = self.private();
 
-        // Initialize our apprt surface.
+        // Initialize some private fields so they aren't undefined
         priv.rt_surface = .{ .surface = self };
+        priv.size = .{
+            // Funky numbers on purpose so they stand out if for some reason
+            // our size doesn't get properly set.
+            .width = 111,
+            .height = 111,
+        };
 
         // If our configuration is null then we get the configuration
         // from the application.
@@ -193,6 +254,13 @@ pub const Surface = extern struct {
             gl_area,
             *Self,
             glareaRender,
+            self,
+            .{},
+        );
+        _ = gtk.GLArea.signals.resize.connect(
+            gl_area,
+            *Self,
+            glareaResize,
             self,
             .{},
         );
@@ -301,6 +369,52 @@ pub const Surface = extern struct {
         };
 
         return 1;
+    }
+
+    fn glareaResize(
+        gl_area: *gtk.GLArea,
+        width: c_int,
+        height: c_int,
+        self: *Surface,
+    ) callconv(.c) void {
+        // Some debug output to help understand what GTK is telling us.
+        {
+            const widget = gl_area.as(gtk.Widget);
+            const scale_factor = widget.getScaleFactor();
+            const window_scale_factor = scale: {
+                const root = widget.getRoot() orelse break :scale 0;
+                const gtk_native = root.as(gtk.Native);
+                const gdk_surface = gtk_native.getSurface() orelse break :scale 0;
+                break :scale gdk_surface.getScaleFactor();
+            };
+
+            log.debug("gl resize width={} height={} scale={} window_scale={}", .{
+                width,
+                height,
+                scale_factor,
+                window_scale_factor,
+            });
+        }
+
+        // Store our cached size
+        const priv = self.private();
+        priv.size = .{
+            .width = @intCast(width),
+            .height = @intCast(height),
+        };
+
+        // If our surface is realize, we send callbacks.
+        if (priv.core_surface) |surface| {
+            // We also update the content scale because there is no signal for
+            // content scale change and it seems to trigger a resize event.
+            surface.contentScaleCallback(self.getContentScale()) catch |err| {
+                log.warn("error in content scale callback err={}", .{err});
+            };
+
+            surface.sizeCallback(priv.size) catch |err| {
+                log.warn("error in size callback err={}", .{err});
+            };
+        }
     }
 
     const RealizeError = Allocator.Error || error{
