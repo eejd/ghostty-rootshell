@@ -189,7 +189,7 @@ pub fn getIndex(
     var i: usize = 0;
     var it = self.faces.get(style).constIterator(0);
     while (it.next()) |entry_or_alias| {
-        if (@constCast(entry_or_alias).unwrap().hasCodepoint(cp, p_mode)) {
+        if (entry_or_alias.unwrapConst().hasCodepoint(cp, p_mode)) {
             return .{
                 .style = style,
                 .idx = @intCast(i),
@@ -215,7 +215,7 @@ pub fn hasCodepoint(
 ) bool {
     const list = self.faces.get(index.style);
     if (index.idx >= list.count()) return false;
-    return @constCast(list.at(index.idx)).unwrap().hasCodepoint(cp, p_mode);
+    return list.at(index.idx).unwrapConst().hasCodepoint(cp, p_mode);
 }
 
 pub const CompleteError = Allocator.Error || error{
@@ -764,6 +764,13 @@ pub const EntryOrAlias = union(enum) {
     alias: *Entry,
 
     pub fn unwrap(self: *EntryOrAlias) *Entry {
+        return switch (self.*) {
+            .entry => |*v| v,
+            .alias => |v| v,
+        };
+    }
+
+    pub fn unwrapConst(self: *const EntryOrAlias) *const Entry {
         return switch (self.*) {
             .entry => |*v| v,
             .alias => |v| v,
