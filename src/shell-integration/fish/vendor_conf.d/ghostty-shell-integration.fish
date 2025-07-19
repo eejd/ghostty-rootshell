@@ -131,7 +131,7 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
                         set -l ssh_cpath_dir
                         set -l ssh_cpath
 
-                        set ssh_terminfo (infocmp -0 -x xterm-ghostty 2>/dev/null)
+                        set ssh_terminfo "$(infocmp -0 -x xterm-ghostty 2>/dev/null)"
 
                         if test -n "$ssh_terminfo"
                             echo "Setting up xterm-ghostty terminfo on $ssh_hostname..." >&2
