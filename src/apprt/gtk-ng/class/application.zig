@@ -3,6 +3,7 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const builtin = @import("builtin");
 const adw = @import("adw");
+const gdk = @import("gdk");
 const gio = @import("gio");
 const glib = @import("glib");
 const gobject = @import("gobject");
@@ -20,6 +21,7 @@ const CoreSurface = @import("../../../Surface.zig");
 
 const adw_version = @import("../adw_version.zig");
 const gtk_version = @import("../gtk_version.zig");
+const winprotopkg = @import("../winproto.zig");
 const ApprtApp = @import("../App.zig");
 const Common = @import("../class.zig").Common;
 const WeakRef = @import("../weak_ref.zig").WeakRef;
@@ -89,6 +91,9 @@ pub const Application = extern struct {
 
         /// The configuration for the application.
         config: *Config,
+
+        /// State and logic for the underlying windowing protocol.
+        winproto: winprotopkg.App,
 
         /// The base path of the transient cgroup used to put all surfaces
         /// into their own cgroup. This is only set if cgroups are enabled
@@ -208,6 +213,29 @@ pub const Application = extern struct {
             break :app_id if (builtin.mode == .Debug) default_id ++ "-debug" else default_id;
         };
 
+        const display: *gdk.Display = gdk.Display.getDefault() orelse {
+            // I'm unsure of any scenario where this happens. Because we don't
+            // want to litter null checks everywhere, we just exit here.
+            log.warn("gdk display is null, exiting", .{});
+            std.posix.exit(1);
+        };
+
+        // Setup our windowing protocol logic
+        var wp: winprotopkg.App = winprotopkg.App.init(
+            alloc,
+            display,
+            app_id,
+            &config,
+        ) catch |err| wp: {
+            // If we fail to detect or setup the windowing protocol
+            // specifies, we fallback to a noop implementation so we can
+            // still launch.
+            log.warn("error initializing windowing protocol err={}", .{err});
+            break :wp .{ .none = .{} };
+        };
+        errdefer wp.deinit(alloc);
+        log.debug("windowing protocol={s}", .{@tagName(wp)});
+
         // Create our GTK Application which encapsulates our process.
         log.debug("creating GTK application id={s} single-instance={}", .{
             app_id,
@@ -237,6 +265,7 @@ pub const Application = extern struct {
             .rt_app = rt_app,
             .core_app = core_app,
             .config = config_obj,
+            .winproto = wp,
         };
 
         return self;
@@ -251,6 +280,7 @@ pub const Application = extern struct {
         const alloc = self.allocator();
         const priv = self.private();
         priv.config.unref();
+        priv.winproto.deinit(alloc);
         if (priv.transient_cgroup_base) |base| alloc.free(base);
     }
 
@@ -488,6 +518,11 @@ pub const Application = extern struct {
     /// Returns the apprt application associated with this application.
     pub fn rt(self: *Self) *ApprtApp {
         return self.private().rt_app;
+    }
+
+    /// Returns the app winproto implementation.
+    pub fn winproto(self: *Self) *winprotopkg.App {
+        return &self.private().winproto;
     }
 
     //---------------------------------------------------------------

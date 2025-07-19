@@ -49,8 +49,20 @@ pub fn getSize(self: *const Self) !apprt.SurfaceSize {
 }
 
 pub fn getCursorPos(self: *const Self) !apprt.CursorPos {
+    return self.surface.getCursorPos();
+}
+
+pub fn supportsClipboard(
+    self: *const Self,
+    clipboard_type: apprt.Clipboard,
+) bool {
     _ = self;
-    return .{ .x = 0, .y = 0 };
+    return switch (clipboard_type) {
+        .standard,
+        .selection,
+        .primary,
+        => true,
+    };
 }
 
 pub fn clipboardRequest(
