@@ -71,10 +71,14 @@ pub const Application = extern struct {
                 .{
                     .nick = "Config",
                     .blurb = "The current active configuration for the application.",
-                    .default = null,
-                    .accessor = .{
-                        .getter = Self.getPropConfig,
-                    },
+                    .accessor = gobject.ext.typedAccessor(
+                        Self,
+                        ?*Config,
+                        .{
+                            .getter = Self.getConfig,
+                            .getter_transfer = .full,
+                        },
+                    ),
                 },
             );
         };
@@ -492,21 +496,7 @@ pub const Application = extern struct {
     ///
     /// The reference count is increased.
     pub fn getConfig(self: *Self) *Config {
-        var value = gobject.ext.Value.zero;
-        gobject.Object.getProperty(
-            self.as(gobject.Object),
-            properties.config.name,
-            &value,
-        );
-
-        const obj = value.getObject().?;
-        return gobject.ext.cast(Config, obj).?;
-    }
-
-    fn getPropConfig(self: *Self) *Config {
-        // Property return must not increase reference count since
-        // the gobject getter handles this automatically.
-        return self.private().config;
+        return self.private().config.ref();
     }
 
     /// Returns the core app associated with this application. This is

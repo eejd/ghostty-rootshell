@@ -43,7 +43,6 @@ pub const Surface = extern struct {
                 .{
                     .nick = "Config",
                     .blurb = "The configuration that this surface is using.",
-                    .default = null,
                     .accessor = gobject.ext.privateFieldAccessor(
                         Self,
                         Private,

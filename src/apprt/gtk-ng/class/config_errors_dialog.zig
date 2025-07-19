@@ -35,11 +35,14 @@ pub const ConfigErrorsDialog = extern struct {
             .{
                 .nick = "config",
                 .blurb = "The configuration that this dialog is showing errors for.",
-                .default = null,
-                .accessor = .{
-                    .getter = Self.getConfig,
-                    .setter = Self.setConfig,
-                },
+                .accessor = gobject.ext.typedAccessor(
+                    Self,
+                    ?*Config,
+                    .{
+                        .getter = Self.getConfig,
+                        .setter = Self.setConfig,
+                    },
+                ),
             },
         );
     };
@@ -126,7 +129,9 @@ pub const ConfigErrorsDialog = extern struct {
     fn setConfig(self: *Self, config: ?*Config) void {
         const priv = self.private();
         if (priv.config) |old| old.unref();
-        if (config) |newv| _ = newv.ref();
+
+        // We don't need to increase the reference count because
+        // the property setter handles it (uses GValue.get vs. take)
         priv.config = config;
     }
 
