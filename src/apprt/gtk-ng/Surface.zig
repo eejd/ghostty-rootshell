@@ -30,11 +30,6 @@ pub fn close(self: *Self, process_active: bool) void {
     _ = process_active;
 }
 
-pub fn shouldClose(self: *Self) bool {
-    _ = self;
-    return false;
-}
-
 pub fn getTitle(self: *Self) ?[:0]const u8 {
     _ = self;
     return null;
