@@ -8,7 +8,6 @@ const gtk = @import("gtk");
 const configpkg = @import("../../../config.zig");
 const CoreConfig = configpkg.Config;
 
-const unrefLater = @import("../class.zig").unrefLater;
 const Common = @import("../class.zig").Common;
 
 const log = std.log.scoped(.gtk_ghostty_config);
@@ -47,6 +46,7 @@ pub const Config = extern struct {
                     ?*gtk.TextBuffer,
                     .{
                         .getter = Self.diagnosticsBuffer,
+                        .getter_transfer = .full,
                     },
                 ),
             },
@@ -136,7 +136,6 @@ pub const Config = extern struct {
             text_buf.insertAtCursor("\n", 1);
         }
 
-        unrefLater(text_buf); // See unrefLater docs for why this is needed
         return text_buf;
     }
 

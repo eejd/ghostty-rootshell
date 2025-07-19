@@ -10,23 +10,6 @@ pub const Window = @import("class/window.zig").Window;
 pub const Config = @import("class/config.zig").Config;
 pub const Surface = @import("class/surface.zig").Surface;
 
-/// Unrefs the given GObject on the next event loop tick.
-///
-/// This works around an issue with zig-object where dynamically
-/// generated gobjects in property getters can't unref themselves
-/// normally: https://github.com/ianprime0509/zig-gobject/issues/108
-pub fn unrefLater(obj: anytype) void {
-    _ = glib.idleAdd((struct {
-        fn callback(data_: ?*anyopaque) callconv(.c) c_int {
-            const remove = @intFromBool(glib.SOURCE_REMOVE);
-            const data = data_ orelse return remove;
-            const object: *gobject.Object = @ptrCast(@alignCast(data));
-            object.unref();
-            return remove;
-        }
-    }).callback, obj.as(gobject.Object));
-}
-
 /// Common methods for all GObject classes we create.
 pub fn Common(
     comptime Self: type,
