@@ -293,14 +293,6 @@ fn redrawSurface(
 ) !void {
     if (!self.hasRtSurface(surface)) return;
 
-    // TODO: Remove this in a separate PR. We should transition to
-    // the `render` apprt action completely. This is only to make
-    // our initial gtk-ng work touch less things.
-    if (@hasDecl(apprt.App, "redrawSurface")) {
-        rt_app.redrawSurface(surface);
-        return;
-    }
-
     _ = try rt_app.performAction(
         .{ .surface = surface.core() },
         .render,

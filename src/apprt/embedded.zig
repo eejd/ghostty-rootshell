@@ -249,12 +249,6 @@ pub const App = struct {
         self.core_app.alloc.destroy(surface);
     }
 
-    pub fn redrawSurface(self: *App, surface: *Surface) void {
-        _ = self;
-        _ = surface;
-        // No-op, we use a threaded interface so we're constantly drawing.
-    }
-
     pub fn redrawInspector(self: *App, surface: *Surface) void {
         _ = self;
         surface.queueInspectorRender();
