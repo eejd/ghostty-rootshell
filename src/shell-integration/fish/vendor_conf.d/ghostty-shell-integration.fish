@@ -131,7 +131,7 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
                         set -l ssh_cpath_dir
                         set -l ssh_cpath
 
-                        set ssh_terminfo (infocmp -0 -x xterm-ghostty 2>/dev/null)
+                        set ssh_terminfo "$(infocmp -0 -x xterm-ghostty 2>/dev/null)"
 
                         if test -n "$ssh_terminfo"
                             echo "Setting up xterm-ghostty terminfo on $ssh_hostname..." >&2
@@ -139,7 +139,7 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
                             set ssh_cpath_dir (mktemp -d "/tmp/ghostty-ssh-$ssh_user.XXXXXX" 2>/dev/null; or echo "/tmp/ghostty-ssh-$ssh_user."(random))
                             set ssh_cpath "$ssh_cpath_dir/socket"
 
-                            if infocmp -0 -x xterm-ghostty 2>/dev/null | command ssh $ssh_opts -o ControlMaster=yes -o ControlPath="$ssh_cpath" -o ControlPersist=60s $argv '
+                            if echo "$ssh_terminfo" 2>/dev/null | command ssh $ssh_opts -o ControlMaster=yes -o ControlPath="$ssh_cpath" -o ControlPersist=60s $argv '
                                 infocmp xterm-ghostty >/dev/null 2>&1 && exit 0
                                 command -v tic >/dev/null 2>&1 || exit 1
                                 mkdir -p ~/.terminfo 2>/dev/null && tic -x - 2>/dev/null && exit 0
