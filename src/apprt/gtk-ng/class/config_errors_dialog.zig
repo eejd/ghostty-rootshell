@@ -35,11 +35,14 @@ pub const ConfigErrorsDialog = extern struct {
             .{
                 .nick = "config",
                 .blurb = "The configuration that this dialog is showing errors for.",
-                .default = null,
-                .accessor = .{
-                    .getter = Self.getConfig,
-                    .setter = Self.setConfig,
-                },
+                .accessor = gobject.ext.typedAccessor(
+                    Self,
+                    ?*Config,
+                    .{
+                        .getter = Self.getConfig,
+                        .setter = Self.setConfig,
+                    },
+                ),
             },
         );
     };

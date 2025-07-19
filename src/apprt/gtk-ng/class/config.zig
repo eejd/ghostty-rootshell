@@ -42,10 +42,13 @@ pub const Config = extern struct {
             .{
                 .nick = "Diagnostics Buffer",
                 .blurb = "A TextBuffer that contains the diagnostics.",
-                .default = null,
-                .accessor = .{
-                    .getter = Self.diagnosticsBuffer,
-                },
+                .accessor = gobject.ext.typedAccessor(
+                    Self,
+                    ?*gtk.TextBuffer,
+                    .{
+                        .getter = Self.diagnosticsBuffer,
+                    },
+                ),
             },
         );
 
@@ -57,9 +60,13 @@ pub const Config = extern struct {
                 .nick = "has-diagnostics",
                 .blurb = "Whether the configuration has diagnostics.",
                 .default = false,
-                .accessor = .{
-                    .getter = Self.hasDiagnostics,
-                },
+                .accessor = gobject.ext.typedAccessor(
+                    Self,
+                    bool,
+                    .{
+                        .getter = Self.hasDiagnostics,
+                    },
+                ),
             },
         );
     };

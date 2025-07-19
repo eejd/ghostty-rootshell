@@ -71,10 +71,13 @@ pub const Application = extern struct {
                 .{
                     .nick = "Config",
                     .blurb = "The current active configuration for the application.",
-                    .default = null,
-                    .accessor = .{
-                        .getter = Self.getPropConfig,
-                    },
+                    .accessor = gobject.ext.typedAccessor(
+                        Self,
+                        ?*Config,
+                        .{
+                            .getter = Self.getPropConfig,
+                        },
+                    ),
                 },
             );
         };
