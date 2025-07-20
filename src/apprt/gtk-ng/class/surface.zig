@@ -93,6 +93,30 @@ pub const Surface = extern struct {
                 },
             );
         };
+
+        pub const pwd = struct {
+            pub const name = "pwd";
+            const impl = gobject.ext.defineProperty(
+                name,
+                Self,
+                ?[:0]const u8,
+                .{
+                    .nick = "Working Directory",
+                    .blurb = "The current working directory as reported by core.",
+                    .default = null,
+                    .accessor = gobject.ext.typedAccessor(
+                        Self,
+                        ?[:0]const u8,
+                        .{
+                            .getter = getPwd,
+                            .getter_transfer = .none,
+                            .setter = setPwd,
+                            .setter_transfer = .full,
+                        },
+                    ),
+                },
+            );
+        };
     };
 
     pub const signals = struct {
@@ -127,6 +151,11 @@ pub const Surface = extern struct {
 
         /// Whether the mouse should be hidden or not as requested externally.
         mouse_hidden: bool = false,
+
+        /// The current working directory. This has to be reported externally,
+        /// usually by shell integration which then talks to libghostty
+        /// which triggers this property.
+        pwd: ?[:0]const u8 = null,
 
         /// The GLAarea that renders the actual surface. This is a binding
         /// to the template so it doesn't have to be unrefed manually.
@@ -820,6 +849,9 @@ pub const Surface = extern struct {
 
             priv.core_surface = null;
         }
+        if (priv.pwd != null) {
+            self.setPwd(null);
+        }
 
         gobject.Object.virtual_methods.finalize.call(
             Class.parent,
@@ -829,6 +861,26 @@ pub const Surface = extern struct {
 
     //---------------------------------------------------------------
     // Properties
+
+    fn getPwd(
+        self: *Self,
+    ) ?[:0]const u8 {
+        return self.private().pwd;
+    }
+
+    fn setPwd(
+        self: *Self,
+        value: ?[:0]const u8,
+    ) void {
+        const priv = self.private();
+
+        // Free the previous value
+        if (priv.pwd) |v| glib.free(@constCast(@ptrCast(v.ptr)));
+
+        // Set the new value, which is already copied since we
+        // set our setter_transfer value to full.
+        priv.pwd = value;
+    }
 
     fn propMouseHidden(
         self: *Self,
@@ -1512,6 +1564,7 @@ pub const Surface = extern struct {
                 properties.config.impl,
                 properties.@"mouse-shape".impl,
                 properties.@"mouse-hidden".impl,
+                properties.pwd.impl,
             });
 
             // Signals

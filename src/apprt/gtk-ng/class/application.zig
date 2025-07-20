@@ -416,6 +416,8 @@ pub const Application = extern struct {
                 },
             ),
 
+            .pwd => Action.pwd(target, value),
+
             .quit_timer => try Action.quitTimer(self, value),
 
             .render => Action.render(self, target),
@@ -439,7 +441,6 @@ pub const Application = extern struct {
             .show_gtk_inspector,
             .desktop_notification,
             .set_title,
-            .pwd,
             .present_terminal,
             .initial_size,
             .size_limit,
@@ -935,6 +936,24 @@ const Action = struct {
 
         const win = Window.new(self);
         gtk.Window.present(win.as(gtk.Window));
+    }
+
+    pub fn pwd(
+        target: apprt.Target,
+        value: apprt.action.Pwd,
+    ) void {
+        switch (target) {
+            .app => log.warn("pwd to app is unexpected", .{}),
+            .surface => |surface| {
+                var v = gobject.ext.Value.newFrom(value.pwd);
+                defer v.unset();
+                gobject.Object.setProperty(
+                    surface.rt_surface.gobj().as(gobject.Object),
+                    "pwd",
+                    &v,
+                );
+            },
+        }
     }
 
     pub fn quitTimer(
