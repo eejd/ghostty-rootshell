@@ -83,7 +83,7 @@ pub const Surface = extern struct {
                 .{
                     .nick = "Mouse Shape",
                     .blurb = "The current mouse shape to show for the surface.",
-                    .default = .default,
+                    .default = .text,
                     .accessor = gobject.ext.privateFieldAccessor(
                         Self,
                         Private,
@@ -563,6 +563,8 @@ pub const Surface = extern struct {
         priv.rt_surface = .{ .surface = self };
         priv.precision_scroll = false;
         priv.cursor_pos = .{ .x = 0, .y = 0 };
+        priv.mouse_shape = .text;
+        priv.mouse_hidden = false;
         priv.size = .{
             // Funky numbers on purpose so they stand out if for some reason
             // our size doesn't get properly set.
