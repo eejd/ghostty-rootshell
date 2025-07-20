@@ -54,6 +54,26 @@ pub const Surface = extern struct {
             );
         };
 
+        pub const @"mouse-hidden" = struct {
+            pub const name = "mouse-hidden";
+            const impl = gobject.ext.defineProperty(
+                name,
+                Self,
+                bool,
+                .{
+                    .nick = "Mouse Hidden",
+                    .blurb = "Whether the mouse cursor should be hidden.",
+                    .default = false,
+                    .accessor = gobject.ext.privateFieldAccessor(
+                        Self,
+                        Private,
+                        &Private.offset,
+                        "mouse_hidden",
+                    ),
+                },
+            );
+        };
+
         pub const @"mouse-shape" = struct {
             pub const name = "mouse-shape";
             const impl = gobject.ext.defineProperty(
@@ -104,6 +124,9 @@ pub const Surface = extern struct {
 
         /// The mouse shape to show for the surface.
         mouse_shape: terminal.MouseShape = .default,
+
+        /// Whether the mouse should be hidden or not as requested externally.
+        mouse_hidden: bool = false,
 
         /// The GLAarea that renders the actual surface. This is a binding
         /// to the template so it doesn't have to be unrefed manually.
@@ -745,6 +768,13 @@ pub const Surface = extern struct {
         _ = gobject.Object.signals.notify.connect(
             self,
             ?*anyopaque,
+            &propMouseHidden,
+            null,
+            .{ .detail = "mouse-hidden" },
+        );
+        _ = gobject.Object.signals.notify.connect(
+            self,
+            ?*anyopaque,
             &propMouseShape,
             null,
             .{ .detail = "mouse-shape" },
@@ -798,12 +828,35 @@ pub const Surface = extern struct {
     //---------------------------------------------------------------
     // Properties
 
+    fn propMouseHidden(
+        self: *Self,
+        _: *gobject.ParamSpec,
+        _: ?*anyopaque,
+    ) callconv(.c) void {
+        const priv = self.private();
+
+        // If we're hidden we set it to "none"
+        if (priv.mouse_hidden) {
+            priv.gl_area.as(gtk.Widget).setCursorFromName("none");
+            return;
+        }
+
+        // If we're not hidden we just trigger the mouse shape
+        // prop notification to handle setting the proper mouse shape.
+        self.propMouseShape(undefined, null);
+    }
+
     fn propMouseShape(
         self: *Self,
         _: *gobject.ParamSpec,
         _: ?*anyopaque,
     ) callconv(.c) void {
         const priv = self.private();
+
+        // If our mouse should be hidden currently then we don't
+        // do anything.
+        if (priv.mouse_hidden) return;
+
         const name: [:0]const u8 = switch (priv.mouse_shape) {
             .default => "default",
             .help => "help",
@@ -840,11 +893,6 @@ pub const Surface = extern struct {
             .zoom_in => "zoom-in",
             .zoom_out => "zoom-out",
         };
-
-        // TODO: mouse visibility
-        // if (widget.getCursor() != self.app.cursor_none) {
-        //     widget.setCursor(cursor);
-        // }
 
         // Set our new cursor.
         priv.gl_area.as(gtk.Widget).setCursorFromName(name.ptr);
@@ -1461,6 +1509,7 @@ pub const Surface = extern struct {
             gobject.ext.registerProperties(class, &.{
                 properties.config.impl,
                 properties.@"mouse-shape".impl,
+                properties.@"mouse-hidden".impl,
             });
 
             // Signals

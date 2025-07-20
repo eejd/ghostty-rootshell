@@ -406,6 +406,7 @@ pub const Application = extern struct {
             ),
 
             .mouse_shape => Action.mouseShape(target, value),
+            .mouse_visibility => Action.mouseVisibility(target, value),
 
             .new_window => try Action.newWindow(
                 self,
@@ -442,7 +443,6 @@ pub const Application = extern struct {
             .present_terminal,
             .initial_size,
             .size_limit,
-            .mouse_visibility,
             .mouse_over_link,
             .toggle_tab_overview,
             .toggle_split_zoom,
@@ -900,6 +900,27 @@ const Action = struct {
                 gobject.Object.setProperty(
                     surface.rt_surface.gobj().as(gobject.Object),
                     "mouse-shape",
+                    &value,
+                );
+            },
+        }
+    }
+
+    pub fn mouseVisibility(
+        target: apprt.Target,
+        visibility: apprt.action.MouseVisibility,
+    ) void {
+        switch (target) {
+            .app => log.warn("mouse visibility to app is unexpected", .{}),
+            .surface => |surface| {
+                var value = gobject.ext.Value.newFrom(switch (visibility) {
+                    .visible => false,
+                    .hidden => true,
+                });
+                defer value.unset();
+                gobject.Object.setProperty(
+                    surface.rt_surface.gobj().as(gobject.Object),
+                    "mouse-hidden",
                     &value,
                 );
             },
