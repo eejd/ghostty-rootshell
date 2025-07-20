@@ -14,6 +14,12 @@ pub fn deinit(self: *Self) void {
     _ = self;
 }
 
+/// Returns the GObject surface for this apprt surface. This is a function
+/// so we can add some extra logic if we ever have to here.
+pub fn gobj(self: *Self) *Surface {
+    return self.surface;
+}
+
 pub fn core(self: *Self) *CoreSurface {
     // This asserts the non-optional because libghostty should only
     // be calling this for initialized surfaces.

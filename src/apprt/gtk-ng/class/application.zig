@@ -15,6 +15,7 @@ const cgroup = @import("../cgroup.zig");
 const CoreApp = @import("../../../App.zig");
 const configpkg = @import("../../../config.zig");
 const internal_os = @import("../../../os/main.zig");
+const terminal = @import("../../../terminal/main.zig");
 const xev = @import("../../../global.zig").xev;
 const CoreConfig = configpkg.Config;
 const CoreSurface = @import("../../../Surface.zig");
@@ -404,6 +405,9 @@ pub const Application = extern struct {
                 value.config,
             ),
 
+            .mouse_shape => Action.mouseShape(target, value),
+            .mouse_visibility => Action.mouseVisibility(target, value),
+
             .new_window => try Action.newWindow(
                 self,
                 switch (target) {
@@ -439,8 +443,6 @@ pub const Application = extern struct {
             .present_terminal,
             .initial_size,
             .size_limit,
-            .mouse_visibility,
-            .mouse_shape,
             .mouse_over_link,
             .toggle_tab_overview,
             .toggle_split_zoom,
@@ -882,6 +884,45 @@ const Action = struct {
 
                 // Show our errors if we have any
                 self.showConfigErrorsDialog();
+            },
+        }
+    }
+
+    pub fn mouseShape(
+        target: apprt.Target,
+        shape: terminal.MouseShape,
+    ) void {
+        switch (target) {
+            .app => log.warn("mouse shape to app is unexpected", .{}),
+            .surface => |surface| {
+                var value = gobject.ext.Value.newFrom(shape);
+                defer value.unset();
+                gobject.Object.setProperty(
+                    surface.rt_surface.gobj().as(gobject.Object),
+                    "mouse-shape",
+                    &value,
+                );
+            },
+        }
+    }
+
+    pub fn mouseVisibility(
+        target: apprt.Target,
+        visibility: apprt.action.MouseVisibility,
+    ) void {
+        switch (target) {
+            .app => log.warn("mouse visibility to app is unexpected", .{}),
+            .surface => |surface| {
+                var value = gobject.ext.Value.newFrom(switch (visibility) {
+                    .visible => false,
+                    .hidden => true,
+                });
+                defer value.unset();
+                gobject.Object.setProperty(
+                    surface.rt_surface.gobj().as(gobject.Object),
+                    "mouse-hidden",
+                    &value,
+                );
             },
         }
     }
