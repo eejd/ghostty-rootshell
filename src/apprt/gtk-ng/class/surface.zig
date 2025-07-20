@@ -10,6 +10,7 @@ const apprt = @import("../../../apprt.zig");
 const input = @import("../../../input.zig");
 const internal_os = @import("../../../os/main.zig");
 const renderer = @import("../../../renderer.zig");
+const terminal = @import("../../../terminal/main.zig");
 const CoreSurface = @import("../../../Surface.zig");
 const gresource = @import("../build/gresource.zig");
 const adw_version = @import("../adw_version.zig");
@@ -52,6 +53,26 @@ pub const Surface = extern struct {
                 },
             );
         };
+
+        pub const @"mouse-shape" = struct {
+            pub const name = "mouse-shape";
+            const impl = gobject.ext.defineProperty(
+                name,
+                Self,
+                terminal.MouseShape,
+                .{
+                    .nick = "Mouse Shape",
+                    .blurb = "The current mouse shape to show for the surface.",
+                    .default = .default,
+                    .accessor = gobject.ext.privateFieldAccessor(
+                        Self,
+                        Private,
+                        &Private.offset,
+                        "mouse_shape",
+                    ),
+                },
+            );
+        };
     };
 
     pub const signals = struct {
@@ -80,6 +101,9 @@ pub const Surface = extern struct {
     const Private = struct {
         /// The configuration that this surface is using.
         config: ?*Config = null,
+
+        /// The mouse shape to show for the surface.
+        mouse_shape: terminal.MouseShape = .default,
 
         /// The GLAarea that renders the actual surface. This is a binding
         /// to the template so it doesn't have to be unrefed manually.
@@ -687,6 +711,7 @@ pub const Surface = extern struct {
         gl_area.setHasStencilBuffer(0);
         gl_area.setHasDepthBuffer(0);
         gl_area.setUseEs(0);
+        gl_area.as(gtk.Widget).setCursorFromName("text");
         _ = gtk.Widget.signals.realize.connect(
             gl_area,
             *Self,
@@ -714,6 +739,15 @@ pub const Surface = extern struct {
             glareaResize,
             self,
             .{},
+        );
+
+        // Some property signals
+        _ = gobject.Object.signals.notify.connect(
+            self,
+            ?*anyopaque,
+            &propMouseShape,
+            null,
+            .{ .detail = "mouse-shape" },
         );
     }
 
@@ -759,6 +793,61 @@ pub const Surface = extern struct {
             Class.parent,
             self.as(Parent),
         );
+    }
+
+    //---------------------------------------------------------------
+    // Properties
+
+    fn propMouseShape(
+        self: *Self,
+        _: *gobject.ParamSpec,
+        _: ?*anyopaque,
+    ) callconv(.c) void {
+        const priv = self.private();
+        const name: [:0]const u8 = switch (priv.mouse_shape) {
+            .default => "default",
+            .help => "help",
+            .pointer => "pointer",
+            .context_menu => "context-menu",
+            .progress => "progress",
+            .wait => "wait",
+            .cell => "cell",
+            .crosshair => "crosshair",
+            .text => "text",
+            .vertical_text => "vertical-text",
+            .alias => "alias",
+            .copy => "copy",
+            .no_drop => "no-drop",
+            .move => "move",
+            .not_allowed => "not-allowed",
+            .grab => "grab",
+            .grabbing => "grabbing",
+            .all_scroll => "all-scroll",
+            .col_resize => "col-resize",
+            .row_resize => "row-resize",
+            .n_resize => "n-resize",
+            .e_resize => "e-resize",
+            .s_resize => "s-resize",
+            .w_resize => "w-resize",
+            .ne_resize => "ne-resize",
+            .nw_resize => "nw-resize",
+            .se_resize => "se-resize",
+            .sw_resize => "sw-resize",
+            .ew_resize => "ew-resize",
+            .ns_resize => "ns-resize",
+            .nesw_resize => "nesw-resize",
+            .nwse_resize => "nwse-resize",
+            .zoom_in => "zoom-in",
+            .zoom_out => "zoom-out",
+        };
+
+        // TODO: mouse visibility
+        // if (widget.getCursor() != self.app.cursor_none) {
+        //     widget.setCursor(cursor);
+        // }
+
+        // Set our new cursor.
+        priv.gl_area.as(gtk.Widget).setCursorFromName(name.ptr);
     }
 
     //---------------------------------------------------------------
@@ -1371,6 +1460,7 @@ pub const Surface = extern struct {
             // Properties
             gobject.ext.registerProperties(class, &.{
                 properties.config.impl,
+                properties.@"mouse-shape".impl,
             });
 
             // Signals
