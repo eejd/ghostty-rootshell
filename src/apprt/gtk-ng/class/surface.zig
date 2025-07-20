@@ -117,6 +117,30 @@ pub const Surface = extern struct {
                 },
             );
         };
+
+        pub const title = struct {
+            pub const name = "title";
+            const impl = gobject.ext.defineProperty(
+                name,
+                Self,
+                ?[:0]const u8,
+                .{
+                    .nick = "Title",
+                    .blurb = "The title of the surface.",
+                    .default = null,
+                    .accessor = gobject.ext.typedAccessor(
+                        Self,
+                        ?[:0]const u8,
+                        .{
+                            .getter = getTitle,
+                            .getter_transfer = .none,
+                            .setter = setTitle,
+                            .setter_transfer = .full,
+                        },
+                    ),
+                },
+            );
+        };
     };
 
     pub const signals = struct {
@@ -156,6 +180,9 @@ pub const Surface = extern struct {
         /// usually by shell integration which then talks to libghostty
         /// which triggers this property.
         pwd: ?[:0]const u8 = null,
+
+        /// The title of this surface, if any has been set.
+        title: ?[:0]const u8 = null,
 
         /// The GLAarea that renders the actual surface. This is a binding
         /// to the template so it doesn't have to be unrefed manually.
@@ -849,9 +876,8 @@ pub const Surface = extern struct {
 
             priv.core_surface = null;
         }
-        if (priv.pwd != null) {
-            self.setPwd(null);
-        }
+        if (priv.pwd != null) self.setPwd(null);
+        if (priv.title != null) self.setTitle(null);
 
         gobject.Object.virtual_methods.finalize.call(
             Class.parent,
@@ -880,6 +906,21 @@ pub const Surface = extern struct {
         // Set the new value, which is already copied since we
         // set our setter_transfer value to full.
         priv.pwd = value;
+    }
+
+    fn getTitle(
+        self: *Self,
+    ) ?[:0]const u8 {
+        return self.private().title;
+    }
+
+    fn setTitle(
+        self: *Self,
+        value: ?[:0]const u8,
+    ) void {
+        const priv = self.private();
+        if (priv.title) |v| glib.free(@constCast(@ptrCast(v.ptr)));
+        priv.title = value;
     }
 
     fn propMouseHidden(
@@ -1565,6 +1606,7 @@ pub const Surface = extern struct {
                 properties.@"mouse-shape".impl,
                 properties.@"mouse-hidden".impl,
                 properties.pwd.impl,
+                properties.title.impl,
             });
 
             // Signals

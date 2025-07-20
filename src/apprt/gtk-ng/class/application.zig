@@ -422,6 +422,8 @@ pub const Application = extern struct {
 
             .render => Action.render(self, target),
 
+            .set_title => Action.setTitle(target, value),
+
             // Unimplemented
             .quit,
             .close_window,
@@ -440,7 +442,6 @@ pub const Application = extern struct {
             .inspector,
             .show_gtk_inspector,
             .desktop_notification,
-            .set_title,
             .present_terminal,
             .initial_size,
             .size_limit,
@@ -975,6 +976,24 @@ const Action = struct {
         switch (target) {
             .app => {},
             .surface => |v| v.rt_surface.surface.redraw(),
+        }
+    }
+
+    pub fn setTitle(
+        target: apprt.Target,
+        value: apprt.action.SetTitle,
+    ) void {
+        switch (target) {
+            .app => log.warn("set_title to app is unexpected", .{}),
+            .surface => |surface| {
+                var v = gobject.ext.Value.newFrom(value.title);
+                defer v.unset();
+                gobject.Object.setProperty(
+                    surface.rt_surface.gobj().as(gobject.Object),
+                    "title",
+                    &v,
+                );
+            },
         }
     }
 };
