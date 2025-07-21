@@ -881,6 +881,11 @@ pub const Surface = extern struct {
     //---------------------------------------------------------------
     // Properties
 
+    /// Returns the title property without a copy.
+    pub fn getTitle(self: *Self) ?[:0]const u8 {
+        return self.private().title;
+    }
+
     fn propMouseHidden(
         self: *Self,
         _: *gobject.ParamSpec,

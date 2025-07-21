@@ -36,8 +36,7 @@ pub fn close(self: *Self, process_active: bool) void {
 }
 
 pub fn getTitle(self: *Self) ?[:0]const u8 {
-    _ = self;
-    return null;
+    return self.surface.getTitle();
 }
 
 pub fn getContentScale(self: *const Self) !apprt.ContentScale {

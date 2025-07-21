@@ -49,7 +49,11 @@ pub fn Common(
         /// A helper that can be used to create a property that reads and
         /// writes a private `?[:0]const u8` field type.
         ///
-        /// This helper helps properly manage the memory to avoid memory leaks.
+        /// Reading the property will result in a copy of the string
+        /// and callers are responsible for freeing it.
+        ///
+        /// Writing the property will free the previous value and copy
+        /// the new value into the private field.
         ///
         /// The object class (Self) must still free the private field
         /// in finalize!
