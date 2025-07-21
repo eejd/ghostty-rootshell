@@ -424,7 +424,7 @@ pub const Application = extern struct {
 
             .set_title => Action.setTitle(target, value),
 
-            // Unimplemented
+            // Unimplemented but todo on gtk-ng branch
             .quit,
             .close_window,
             .toggle_maximize,
@@ -451,7 +451,6 @@ pub const Application = extern struct {
             .toggle_window_decorations,
             .prompt_title,
             .toggle_quick_terminal,
-            .secure_input,
             .ring_bell,
             .toggle_command_palette,
             .open_url,
@@ -469,6 +468,13 @@ pub const Application = extern struct {
             .undo,
             .redo,
             .progress_report,
+            => {
+                log.warn("unimplemented action={}", .{action});
+                return false;
+            },
+
+            // Unimplemented
+            .secure_input,
             => {
                 log.warn("unimplemented action={}", .{action});
                 return false;
