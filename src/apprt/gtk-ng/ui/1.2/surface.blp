@@ -42,3 +42,18 @@ Label url_right {
   valign: end;
   label: bind template.mouse-hover-url;
 }
+
+// The label that shows the resize information
+Label size_label {
+  styles [
+    "size-overlay",
+  ]
+
+  visible: false;
+  focusable: false;
+  focus-on-click: false;
+  justify: center;
+  selectable: false;
+  halign: center;
+  valign: center;
+}
