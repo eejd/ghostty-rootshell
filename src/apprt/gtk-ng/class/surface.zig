@@ -96,6 +96,8 @@ pub const Surface = extern struct {
 
         pub const pwd = struct {
             pub const name = "pwd";
+            pub const get = impl.get;
+            pub const set = impl.set;
             const impl = gobject.ext.defineProperty(
                 name,
                 Self,
@@ -104,22 +106,15 @@ pub const Surface = extern struct {
                     .nick = "Working Directory",
                     .blurb = "The current working directory as reported by core.",
                     .default = null,
-                    .accessor = gobject.ext.typedAccessor(
-                        Self,
-                        ?[:0]const u8,
-                        .{
-                            .getter = getPwd,
-                            .getter_transfer = .none,
-                            .setter = setPwd,
-                            .setter_transfer = .full,
-                        },
-                    ),
+                    .accessor = C.privateStringFieldAccessor("pwd"),
                 },
             );
         };
 
         pub const title = struct {
             pub const name = "title";
+            pub const get = impl.get;
+            pub const set = impl.set;
             const impl = gobject.ext.defineProperty(
                 name,
                 Self,
@@ -128,16 +123,7 @@ pub const Surface = extern struct {
                     .nick = "Title",
                     .blurb = "The title of the surface.",
                     .default = null,
-                    .accessor = gobject.ext.typedAccessor(
-                        Self,
-                        ?[:0]const u8,
-                        .{
-                            .getter = getTitle,
-                            .getter_transfer = .none,
-                            .setter = setTitle,
-                            .setter_transfer = .full,
-                        },
-                    ),
+                    .accessor = C.privateStringFieldAccessor("title"),
                 },
             );
         };
@@ -876,8 +862,10 @@ pub const Surface = extern struct {
 
             priv.core_surface = null;
         }
-        if (priv.pwd != null) self.setPwd(null);
-        if (priv.title != null) self.setTitle(null);
+
+        var @"null": gobject.Value = undefined;
+        if (priv.pwd != null) properties.pwd.set(self, &@"null");
+        if (priv.title != null) properties.pwd.set(self, &@"null");
 
         gobject.Object.virtual_methods.finalize.call(
             Class.parent,
@@ -887,41 +875,6 @@ pub const Surface = extern struct {
 
     //---------------------------------------------------------------
     // Properties
-
-    fn getPwd(
-        self: *Self,
-    ) ?[:0]const u8 {
-        return self.private().pwd;
-    }
-
-    fn setPwd(
-        self: *Self,
-        value: ?[:0]const u8,
-    ) void {
-        const priv = self.private();
-
-        // Free the previous value
-        if (priv.pwd) |v| glib.free(@constCast(@ptrCast(v.ptr)));
-
-        // Set the new value, which is already copied since we
-        // set our setter_transfer value to full.
-        priv.pwd = value;
-    }
-
-    fn getTitle(
-        self: *Self,
-    ) ?[:0]const u8 {
-        return self.private().title;
-    }
-
-    fn setTitle(
-        self: *Self,
-        value: ?[:0]const u8,
-    ) void {
-        const priv = self.private();
-        if (priv.title) |v| glib.free(@constCast(@ptrCast(v.ptr)));
-        priv.title = value;
-    }
 
     fn propMouseHidden(
         self: *Self,

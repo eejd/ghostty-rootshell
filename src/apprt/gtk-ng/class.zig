@@ -46,6 +46,48 @@ pub fn Common(
             }
         }).private else {};
 
+        /// A helper that can be used to create a property that reads and
+        /// writes a private `?[:0]const u8` field type.
+        ///
+        /// This helper helps properly manage the memory to avoid memory leaks.
+        ///
+        /// The object class (Self) must still free the private field
+        /// in finalize!
+        pub fn privateStringFieldAccessor(
+            comptime name: []const u8,
+        ) gobject.ext.Accessor(
+            Self,
+            @FieldType(Private.?, name),
+        ) {
+            const S = struct {
+                fn getter(self: *Self) ?[:0]const u8 {
+                    return @field(private(self), name);
+                }
+
+                fn setter(self: *Self, value: ?[:0]const u8) void {
+                    const priv = private(self);
+                    if (@field(priv, name)) |v| {
+                        glib.free(@constCast(@ptrCast(v)));
+                    }
+
+                    // We don't need to copy this because it was already
+                    // copied by the typedAccessor.
+                    @field(priv, name) = value;
+                }
+            };
+
+            return gobject.ext.typedAccessor(
+                Self,
+                ?[:0]const u8,
+                .{
+                    .getter = S.getter,
+                    .getter_transfer = .none,
+                    .setter = S.setter,
+                    .setter_transfer = .full,
+                },
+            );
+        }
+
         /// Common class functions.
         pub const Class = struct {
             pub fn as(class: *Self.Class, comptime T: type) *T {
