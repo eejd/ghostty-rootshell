@@ -863,9 +863,14 @@ pub const Surface = extern struct {
             priv.core_surface = null;
         }
 
-        var @"null": gobject.Value = undefined;
-        if (priv.pwd != null) properties.pwd.set(self, &@"null");
-        if (priv.title != null) properties.pwd.set(self, &@"null");
+        if (priv.pwd) |v| {
+            glib.free(@constCast(@ptrCast(v)));
+            priv.pwd = null;
+        }
+        if (priv.title) |v| {
+            glib.free(@constCast(@ptrCast(v)));
+            priv.title = null;
+        }
 
         gobject.Object.virtual_methods.finalize.call(
             Class.parent,
