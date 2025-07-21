@@ -507,7 +507,7 @@ pub const MouseVisibility = enum(c_int) {
 };
 
 pub const MouseOverLink = struct {
-    url: []const u8,
+    url: [:0]const u8,
 
     // Sync with: ghostty_action_mouse_over_link_s
     pub const C = extern struct {

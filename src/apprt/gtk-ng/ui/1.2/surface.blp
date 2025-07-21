@@ -2,12 +2,43 @@ using Gtk 4.0;
 using Adw 1;
 
 template $GhosttySurface: Adw.Bin {
-  Overlay {
-    GLArea gl_area {
-      hexpand: true;
-      vexpand: true;
-      focusable: true;
-      focus-on-click: true;
+  // We need to wrap our Overlay one more time because if you bind a
+  // direct child of your widget to a property, it will double free:
+  // https://gitlab.gnome.org/GNOME/gtk/-/blob/847571a1e314aba79260e4ef282e2ed9ba91a0d9/gtk/gtkwidget.c#L11423-11425
+  Adw.Bin {
+    Overlay overlay {
+      focusable: false;
+      focus-on-click: false;
+
+      GLArea gl_area {
+        hexpand: true;
+        vexpand: true;
+        focusable: true;
+        focus-on-click: true;
+      }
     }
   }
+}
+
+// The label that shows the currently hovered URL.
+Label url_left {
+  styles [
+    "url-overlay",
+  ]
+
+  visible: false;
+  halign: start;
+  valign: end;
+  label: bind template.mouse-hover-url;
+}
+
+Label url_right {
+  styles [
+    "url-overlay",
+  ]
+
+  visible: false;
+  halign: end;
+  valign: end;
+  label: bind template.mouse-hover-url;
 }
