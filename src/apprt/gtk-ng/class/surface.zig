@@ -19,6 +19,7 @@ const ApprtSurface = @import("../Surface.zig");
 const Common = @import("../class.zig").Common;
 const Application = @import("application.zig").Application;
 const Config = @import("config.zig").Config;
+const ResizeOverlay = @import("resize_overlay.zig").ResizeOverlay;
 
 const log = std.log.scoped(.gtk_ghostty_surface);
 
@@ -202,17 +203,8 @@ pub const Surface = extern struct {
         url_left: *gtk.Label = undefined,
         url_right: *gtk.Label = undefined,
 
-        /// The resize label shown when resizing the surface.
-        size_label: *gtk.Label = undefined,
-
-        /// The idle source that tracks our resize label.
-        size_idler: ?c_uint = null,
-
-        /// If non-null this is a timer for dismissing the resize overlay.
-        size_timer: ?c_uint = null,
-
-        /// Set to true after the first resize event.
-        size_first: bool = true,
+        /// The resize overlay
+        resize_overlay: *ResizeOverlay = undefined,
 
         /// The apprt Surface.
         rt_surface: ApprtSurface = undefined,
@@ -523,86 +515,6 @@ pub const Surface = extern struct {
         };
     }
 
-    fn resizeOverlaySchedule(self: *Self) void {
-        const priv = self.private();
-        const config = priv.config orelse return;
-        switch (config.get().@"resize-overlay") {
-            .never => return,
-            .always => {},
-            .@"after-first" => if (priv.size_first) {
-                priv.size_first = false;
-                return;
-            },
-        }
-
-        // We set this in case we reload our config later to after-first
-        // so we don't miss a tick.
-        priv.size_first = false;
-
-        // When updating a widget, wait until GTK is "idle", i.e. not in the middle
-        // of doing any other updates. Since we are called in the middle of resizing
-        // GTK is doing a lot of work rearranging all of the widgets. Not doing this
-        // results in a lot of warnings from GTK and _horrible_ flickering of the
-        // resize overlay.
-        if (priv.size_idler != null) return;
-        priv.size_idler = glib.idleAdd(resizeOverlayIdle, self);
-    }
-
-    fn resizeOverlayIdle(ud: ?*anyopaque) callconv(.c) c_int {
-        const self: *Self = @ptrCast(@alignCast(ud orelse return 0));
-        const priv = self.private();
-
-        // No matter what our idler is complete with this callback
-        priv.size_idler = null;
-
-        // We need config from here on out
-        const config = if (priv.config) |c| c.get() else return 0;
-
-        var buf: [32]u8 = undefined;
-        const text = text: {
-            const surface = priv.core_surface orelse return 0;
-            const grid_size = surface.size.grid();
-            break :text std.fmt.bufPrintZ(
-                &buf,
-                "{d} x {d}",
-                .{
-                    grid_size.columns,
-                    grid_size.rows,
-                },
-            ) catch |err| {
-                log.warn("unable to format text: {}", .{err});
-                return 0;
-            };
-        };
-
-        // The resize overlay widget already exists, just update it.
-        priv.size_label.setText(text.ptr);
-        priv.size_label.as(gtk.Widget).setVisible(1);
-        //setPosition(label, &self.config);
-
-        if (priv.size_timer) |timer| {
-            if (glib.Source.remove(timer) == 0) {
-                log.warn("unable to remove size overlay timer", .{});
-            }
-        }
-
-        priv.size_timer = glib.timeoutAdd(
-            config.@"resize-overlay-duration".asMilliseconds(),
-            resizeOverlayTimerExpired,
-            self,
-        );
-
-        return 0;
-    }
-
-    fn resizeOverlayTimerExpired(ud: ?*anyopaque) callconv(.c) c_int {
-        const self: *Self = @ptrCast(@alignCast(ud orelse return 0));
-        const priv = self.private();
-        priv.size_timer = null;
-        priv.size_label.as(gtk.Widget).setVisible(0);
-        return 0;
-    }
-
     //---------------------------------------------------------------
     // Libghostty Callbacks
 
@@ -733,9 +645,6 @@ pub const Surface = extern struct {
             .width = 111,
             .height = 111,
         };
-        priv.size_idler = null;
-        priv.size_timer = null;
-        priv.size_first = true;
 
         // If our configuration is null then we get the configuration
         // from the application.
@@ -935,6 +844,13 @@ pub const Surface = extern struct {
         _ = gobject.Object.signals.notify.connect(
             self,
             ?*anyopaque,
+            &propConfig,
+            null,
+            .{ .detail = "config" },
+        );
+        _ = gobject.Object.signals.notify.connect(
+            self,
+            ?*anyopaque,
             &propMouseHoverUrl,
             null,
             .{ .detail = "mouse-hover-url" },
@@ -957,13 +873,15 @@ pub const Surface = extern struct {
         // Some other initialization steps
         self.initUrlOverlay();
         self.initResizeOverlay();
+
+        // Initialize our config
+        self.propConfig(undefined, null);
     }
 
     fn initResizeOverlay(self: *Self) void {
         const priv = self.private();
         const overlay = priv.overlay;
-        const label = priv.size_label.as(gtk.Widget);
-        overlay.addOverlay(label);
+        overlay.addOverlay(priv.resize_overlay.as(gtk.Widget));
     }
 
     fn initUrlOverlay(self: *Self) void {
@@ -1007,18 +925,6 @@ pub const Surface = extern struct {
         if (priv.im_context) |v| {
             v.unref();
             priv.im_context = null;
-        }
-        if (priv.size_idler) |v| {
-            if (glib.Source.remove(v) == 0) {
-                log.warn("unable to remove resize overlay idler", .{});
-            }
-            priv.size_idler = null;
-        }
-        if (priv.size_timer) |v| {
-            if (glib.Source.remove(v) == 0) {
-                log.warn("unable to remove resize overlay timer", .{});
-            }
-            priv.size_timer = null;
         }
 
         gtk.Widget.disposeTemplate(
@@ -1073,6 +979,58 @@ pub const Surface = extern struct {
     /// Returns the title property without a copy.
     pub fn getTitle(self: *Self) ?[:0]const u8 {
         return self.private().title;
+    }
+
+    fn propConfig(
+        self: *Self,
+        _: *gobject.ParamSpec,
+        _: ?*anyopaque,
+    ) callconv(.c) void {
+        const priv = self.private();
+        const config = if (priv.config) |c| c.get() else return;
+
+        // resize-overlay-duration
+        {
+            const ms = config.@"resize-overlay-duration".asMilliseconds();
+            var value = gobject.ext.Value.newFrom(ms);
+            defer value.unset();
+            gobject.Object.setProperty(
+                priv.resize_overlay.as(gobject.Object),
+                "duration",
+                &value,
+            );
+        }
+
+        // resize-overlay-position
+        {
+            const hv: struct {
+                gtk.Align, // halign
+                gtk.Align, // valign
+            } = switch (config.@"resize-overlay-position") {
+                .center => .{ .center, .center },
+                .@"top-left" => .{ .start, .start },
+                .@"top-right" => .{ .end, .start },
+                .@"top-center" => .{ .center, .start },
+                .@"bottom-left" => .{ .start, .end },
+                .@"bottom-right" => .{ .end, .end },
+                .@"bottom-center" => .{ .center, .end },
+            };
+
+            var halign = gobject.ext.Value.newFrom(hv[0]);
+            defer halign.unset();
+            var valign = gobject.ext.Value.newFrom(hv[1]);
+            defer valign.unset();
+            gobject.Object.setProperty(
+                priv.resize_overlay.as(gobject.Object),
+                "overlay-halign",
+                &halign,
+            );
+            gobject.Object.setProperty(
+                priv.resize_overlay.as(gobject.Object),
+                "overlay-valign",
+                &valign,
+            );
+        }
     }
 
     fn propMouseHoverUrl(
@@ -1672,11 +1630,41 @@ pub const Surface = extern struct {
                 log.warn("error in size callback err={}", .{err});
             };
 
-            // If we have resize overlays enabled, setup an idler
-            // to show that. We do this in an idle tick because doing it
-            // during the resize results in flickering.
+            // Setup our resize overlay if configured
             self.resizeOverlaySchedule();
         }
+    }
+
+    fn resizeOverlaySchedule(self: *Self) void {
+        const priv = self.private();
+        const surface = priv.core_surface orelse return;
+
+        // Only show the resize overlay if its enabled
+        const config = if (priv.config) |c| c.get() else return;
+        switch (config.@"resize-overlay") {
+            .always, .@"after-first" => {},
+            .never => return,
+        }
+
+        // If we have resize overlays enabled, setup an idler
+        // to show that. We do this in an idle tick because doing it
+        // during the resize results in flickering.
+        var buf: [32]u8 = undefined;
+        priv.resize_overlay.setLabel(text: {
+            const grid_size = surface.size.grid();
+            break :text std.fmt.bufPrintZ(
+                &buf,
+                "{d} x {d}",
+                .{
+                    grid_size.columns,
+                    grid_size.rows,
+                },
+            ) catch |err| err: {
+                log.warn("unable to format text: {}", .{err});
+                break :err "";
+            };
+        });
+        priv.resize_overlay.schedule();
     }
 
     const RealizeError = Allocator.Error || error{
@@ -1775,6 +1763,7 @@ pub const Surface = extern struct {
         pub const Instance = Self;
 
         fn init(class: *Class) callconv(.C) void {
+            gobject.ext.ensureType(ResizeOverlay);
             gtk.Widget.Class.setTemplateFromResource(
                 class.as(gtk.Widget.Class),
                 comptime gresource.blueprint(.{
@@ -1789,7 +1778,7 @@ pub const Surface = extern struct {
             class.bindTemplateChildPrivate("gl_area", .{});
             class.bindTemplateChildPrivate("url_left", .{});
             class.bindTemplateChildPrivate("url_right", .{});
-            class.bindTemplateChildPrivate("size_label", .{});
+            class.bindTemplateChildPrivate("resize_overlay", .{});
 
             // Properties
             gobject.ext.registerProperties(class, &.{
