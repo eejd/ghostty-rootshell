@@ -396,11 +396,43 @@ pub const Application = extern struct {
                 break :q false;
             };
 
-            if (must_quit) {
-                //self.quit();
-                priv.running = false;
-            }
+            if (must_quit) self.quit();
         }
+    }
+
+    /// Quit the application. This will start the process to stop the
+    /// run loop. It will not `posix.exit`.
+    pub fn quit(self: *Self) void {
+        const priv = self.private();
+
+        // If our run loop has already exited then we are done.
+        if (!priv.running) return;
+
+        // If our core app doesn't need to confirm quit then we
+        // can exit immediately.
+        if (!priv.core_app.needsConfirmQuit()) {
+            self.quitNow();
+            return;
+        }
+
+        self.quitNow();
+    }
+
+    fn quitNow(self: *Self) void {
+        // Get all our windows and destroy them, forcing them to
+        // free their memory.
+        const list = gtk.Window.listToplevels();
+        defer list.free();
+        list.foreach(struct {
+            fn callback(data: ?*anyopaque, _: ?*anyopaque) callconv(.c) void {
+                const ptr = data orelse return;
+                const window: *gtk.Window = @ptrCast(@alignCast(ptr));
+                window.destroy();
+            }
+        }.callback, null);
+
+        // Trigger our runloop exit.
+        self.private().running = false;
     }
 
     /// apprt API to perform an action.
@@ -430,6 +462,8 @@ pub const Application = extern struct {
 
             .pwd => Action.pwd(target, value),
 
+            .quit => self.quit(),
+
             .quit_timer => try Action.quitTimer(self, value),
 
             .render => Action.render(self, target),
@@ -437,7 +471,6 @@ pub const Application = extern struct {
             .set_title => Action.setTitle(target, value),
 
             // Unimplemented but todo on gtk-ng branch
-            .quit,
             .close_window,
             .toggle_maximize,
             .toggle_fullscreen,
