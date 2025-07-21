@@ -110,6 +110,15 @@ pub const Application = extern struct {
         /// only be set by the main loop thread.
         running: bool = false,
 
+        /// The timer used to quit the application after the last window is
+        /// closed. Even if there is no quit delay set, this is the state
+        /// used to determine to close the app.
+        quit_timer: union(enum) {
+            off,
+            active: c_uint,
+            expired,
+        } = .off,
+
         /// If non-null, we're currently showing a config errors dialog.
         /// This is a WeakRef because the dialog can close on its own
         /// outside of our own lifecycle and that's okay.
@@ -309,6 +318,9 @@ pub const Application = extern struct {
 
         // The final cleanup that is always required at the end of running.
         defer {
+            // Ensure our timer source is removed
+            self.stopQuitTimer();
+
             // Sync any remaining settings
             gio.Settings.sync();
 
@@ -378,7 +390,7 @@ pub const Application = extern struct {
                 if (!config.@"quit-after-last-window-closed") break :q false;
 
                 // If the quit timer has expired, quit.
-                // if (self.quit_timer == .expired) break :q true;
+                if (priv.quit_timer == .expired) break :q true;
 
                 // There's no quit timer running, or it hasn't expired, don't quit.
                 break :q false;
@@ -523,6 +535,51 @@ pub const Application = extern struct {
     /// Returns the app winproto implementation.
     pub fn winproto(self: *Self) *winprotopkg.App {
         return &self.private().winproto;
+    }
+
+    /// This will get called when there are no more open surfaces.
+    fn startQuitTimer(self: *Self) void {
+        const priv = self.private();
+        const config = priv.config.get();
+
+        // Cancel any previous timer.
+        self.stopQuitTimer();
+
+        // This is a no-op unless we are configured to quit after last window is closed.
+        if (!config.@"quit-after-last-window-closed") return;
+
+        // If a delay is configured, set a timeout function to quit after the delay.
+        if (config.@"quit-after-last-window-closed-delay") |v| {
+            priv.quit_timer = .{
+                .active = glib.timeoutAdd(
+                    v.asMilliseconds(),
+                    handleQuitTimerExpired,
+                    self,
+                ),
+            };
+        } else {
+            // If no delay is configured, treat it as expired.
+            priv.quit_timer = .expired;
+        }
+    }
+
+    /// This will get called when a new surface gets opened.
+    fn stopQuitTimer(self: *Self) void {
+        const priv = self.private();
+        switch (priv.quit_timer) {
+            .off => {},
+            .expired => priv.quit_timer = .off,
+            .active => |source| {
+                if (glib.Source.remove(source) == 0) {
+                    log.warn(
+                        "unable to remove quit timer source={d}",
+                        .{source},
+                    );
+                }
+
+                priv.quit_timer = .off;
+            },
+        }
     }
 
     //---------------------------------------------------------------
@@ -743,6 +800,13 @@ pub const Application = extern struct {
 
     //---------------------------------------------------------------
     // Signal Handlers
+
+    fn handleQuitTimerExpired(ud: ?*anyopaque) callconv(.c) c_int {
+        const self: *Self = @ptrCast(@alignCast(ud));
+        const priv = self.private();
+        priv.quit_timer = .expired;
+        return 0;
+    }
 
     fn handleStyleManagerDark(
         style: *adw.StyleManager,
@@ -967,14 +1031,9 @@ const Action = struct {
         self: *Application,
         mode: apprt.action.QuitTimer,
     ) !void {
-        // TODO: An actual quit timer implementation. For now, we immediately
-        // quit on no windows regardless of the config.
         switch (mode) {
-            .start => {
-                self.private().running = false;
-            },
-
-            .stop => {},
+            .start => self.startQuitTimer(),
+            .stop => self.stopQuitTimer(),
         }
     }
 
