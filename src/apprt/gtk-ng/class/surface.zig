@@ -93,6 +93,40 @@ pub const Surface = extern struct {
                 },
             );
         };
+
+        pub const pwd = struct {
+            pub const name = "pwd";
+            pub const get = impl.get;
+            pub const set = impl.set;
+            const impl = gobject.ext.defineProperty(
+                name,
+                Self,
+                ?[:0]const u8,
+                .{
+                    .nick = "Working Directory",
+                    .blurb = "The current working directory as reported by core.",
+                    .default = null,
+                    .accessor = C.privateStringFieldAccessor("pwd"),
+                },
+            );
+        };
+
+        pub const title = struct {
+            pub const name = "title";
+            pub const get = impl.get;
+            pub const set = impl.set;
+            const impl = gobject.ext.defineProperty(
+                name,
+                Self,
+                ?[:0]const u8,
+                .{
+                    .nick = "Title",
+                    .blurb = "The title of the surface.",
+                    .default = null,
+                    .accessor = C.privateStringFieldAccessor("title"),
+                },
+            );
+        };
     };
 
     pub const signals = struct {
@@ -127,6 +161,14 @@ pub const Surface = extern struct {
 
         /// Whether the mouse should be hidden or not as requested externally.
         mouse_hidden: bool = false,
+
+        /// The current working directory. This has to be reported externally,
+        /// usually by shell integration which then talks to libghostty
+        /// which triggers this property.
+        pwd: ?[:0]const u8 = null,
+
+        /// The title of this surface, if any has been set.
+        title: ?[:0]const u8 = null,
 
         /// The GLAarea that renders the actual surface. This is a binding
         /// to the template so it doesn't have to be unrefed manually.
@@ -821,6 +863,15 @@ pub const Surface = extern struct {
             priv.core_surface = null;
         }
 
+        if (priv.pwd) |v| {
+            glib.free(@constCast(@ptrCast(v)));
+            priv.pwd = null;
+        }
+        if (priv.title) |v| {
+            glib.free(@constCast(@ptrCast(v)));
+            priv.title = null;
+        }
+
         gobject.Object.virtual_methods.finalize.call(
             Class.parent,
             self.as(Parent),
@@ -829,6 +880,11 @@ pub const Surface = extern struct {
 
     //---------------------------------------------------------------
     // Properties
+
+    /// Returns the title property without a copy.
+    pub fn getTitle(self: *Self) ?[:0]const u8 {
+        return self.private().title;
+    }
 
     fn propMouseHidden(
         self: *Self,
@@ -1512,6 +1568,8 @@ pub const Surface = extern struct {
                 properties.config.impl,
                 properties.@"mouse-shape".impl,
                 properties.@"mouse-hidden".impl,
+                properties.pwd.impl,
+                properties.title.impl,
             });
 
             // Signals

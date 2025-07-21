@@ -416,11 +416,15 @@ pub const Application = extern struct {
                 },
             ),
 
+            .pwd => Action.pwd(target, value),
+
             .quit_timer => try Action.quitTimer(self, value),
 
             .render => Action.render(self, target),
 
-            // Unimplemented
+            .set_title => Action.setTitle(target, value),
+
+            // Unimplemented but todo on gtk-ng branch
             .quit,
             .close_window,
             .toggle_maximize,
@@ -438,8 +442,6 @@ pub const Application = extern struct {
             .inspector,
             .show_gtk_inspector,
             .desktop_notification,
-            .set_title,
-            .pwd,
             .present_terminal,
             .initial_size,
             .size_limit,
@@ -449,7 +451,6 @@ pub const Application = extern struct {
             .toggle_window_decorations,
             .prompt_title,
             .toggle_quick_terminal,
-            .secure_input,
             .ring_bell,
             .toggle_command_palette,
             .open_url,
@@ -467,6 +468,13 @@ pub const Application = extern struct {
             .undo,
             .redo,
             .progress_report,
+            => {
+                log.warn("unimplemented action={}", .{action});
+                return false;
+            },
+
+            // Unimplemented
+            .secure_input,
             => {
                 log.warn("unimplemented action={}", .{action});
                 return false;
@@ -937,6 +945,24 @@ const Action = struct {
         gtk.Window.present(win.as(gtk.Window));
     }
 
+    pub fn pwd(
+        target: apprt.Target,
+        value: apprt.action.Pwd,
+    ) void {
+        switch (target) {
+            .app => log.warn("pwd to app is unexpected", .{}),
+            .surface => |surface| {
+                var v = gobject.ext.Value.newFrom(value.pwd);
+                defer v.unset();
+                gobject.Object.setProperty(
+                    surface.rt_surface.gobj().as(gobject.Object),
+                    "pwd",
+                    &v,
+                );
+            },
+        }
+    }
+
     pub fn quitTimer(
         self: *Application,
         mode: apprt.action.QuitTimer,
@@ -956,6 +982,24 @@ const Action = struct {
         switch (target) {
             .app => {},
             .surface => |v| v.rt_surface.surface.redraw(),
+        }
+    }
+
+    pub fn setTitle(
+        target: apprt.Target,
+        value: apprt.action.SetTitle,
+    ) void {
+        switch (target) {
+            .app => log.warn("set_title to app is unexpected", .{}),
+            .surface => |surface| {
+                var v = gobject.ext.Value.newFrom(value.title);
+                defer v.unset();
+                gobject.Object.setProperty(
+                    surface.rt_surface.gobj().as(gobject.Object),
+                    "title",
+                    &v,
+                );
+            },
         }
     }
 };
