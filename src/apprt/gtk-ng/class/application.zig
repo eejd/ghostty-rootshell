@@ -463,6 +463,7 @@ pub const Application = extern struct {
                 value.config,
             ),
 
+            .mouse_over_link => Action.mouseOverLink(target, value),
             .mouse_shape => Action.mouseShape(target, value),
             .mouse_visibility => Action.mouseVisibility(target, value),
 
@@ -505,7 +506,6 @@ pub const Application = extern struct {
             .present_terminal,
             .initial_size,
             .size_limit,
-            .mouse_over_link,
             .toggle_tab_overview,
             .toggle_split_zoom,
             .toggle_window_decorations,
@@ -1011,6 +1011,25 @@ const Action = struct {
 
                 // Show our errors if we have any
                 self.showConfigErrorsDialog();
+            },
+        }
+    }
+
+    pub fn mouseOverLink(
+        target: apprt.Target,
+        value: apprt.action.MouseOverLink,
+    ) void {
+        switch (target) {
+            .app => log.warn("mouse over link to app is unexpected", .{}),
+            .surface => |surface| {
+                var v = gobject.ext.Value.new([:0]const u8);
+                if (value.url.len > 0) gobject.ext.Value.set(&v, value.url);
+                defer v.unset();
+                gobject.Object.setProperty(
+                    surface.rt_surface.gobj().as(gobject.Object),
+                    "mouse-hover-url",
+                    &v,
+                );
             },
         }
     }

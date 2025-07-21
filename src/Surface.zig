@@ -1316,9 +1316,7 @@ fn mouseRefreshLinks(
                     break :link .{ null, false };
                 };
                 break :link .{
-                    .{
-                        .url = uri,
-                    },
+                    .{ .url = try alloc.dupeZ(u8, uri) },
                     self.config.link_previews != .false,
                 };
             },
