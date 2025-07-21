@@ -28,6 +28,7 @@ const Common = @import("../class.zig").Common;
 const WeakRef = @import("../weak_ref.zig").WeakRef;
 const Config = @import("config.zig").Config;
 const Window = @import("window.zig").Window;
+const CloseConfirmationDialog = @import("close_confirmation_dialog.zig").CloseConfirmationDialog;
 const ConfigErrorsDialog = @import("config_errors_dialog.zig").ConfigErrorsDialog;
 
 const log = std.log.scoped(.gtk_ghostty_application);
@@ -415,7 +416,20 @@ pub const Application = extern struct {
             return;
         }
 
-        self.quitNow();
+        // Show a confirmation dialog
+        const dialog: *CloseConfirmationDialog = .new(.app);
+
+        // Connect to the reload signal so we know to reload our config.
+        _ = CloseConfirmationDialog.signals.@"close-request".connect(
+            dialog,
+            *Application,
+            handleCloseConfirmation,
+            self,
+            .{},
+        );
+
+        // Show it
+        dialog.present();
     }
 
     fn quitNow(self: *Self) void {
@@ -833,6 +847,13 @@ pub const Application = extern struct {
 
     //---------------------------------------------------------------
     // Signal Handlers
+
+    fn handleCloseConfirmation(
+        _: *CloseConfirmationDialog,
+        self: *Self,
+    ) callconv(.c) void {
+        self.quitNow();
+    }
 
     fn handleQuitTimerExpired(ud: ?*anyopaque) callconv(.c) c_int {
         const self: *Self = @ptrCast(@alignCast(ud));
