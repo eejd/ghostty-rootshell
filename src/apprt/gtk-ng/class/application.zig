@@ -484,6 +484,8 @@ pub const Application = extern struct {
 
             .set_title => Action.setTitle(target, value),
 
+            .show_gtk_inspector => Action.showGtkInspector(),
+
             // Unimplemented but todo on gtk-ng branch
             .close_window,
             .toggle_maximize,
@@ -499,7 +501,6 @@ pub const Application = extern struct {
             .open_config,
             .reload_config,
             .inspector,
-            .show_gtk_inspector,
             .desktop_notification,
             .present_terminal,
             .initial_size,
@@ -1114,6 +1115,10 @@ const Action = struct {
                 );
             },
         }
+    }
+
+    pub fn showGtkInspector() void {
+        gtk.Window.setInteractiveDebugging(@intFromBool(true));
     }
 };
 
