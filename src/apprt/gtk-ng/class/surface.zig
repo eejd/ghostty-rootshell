@@ -2007,7 +2007,7 @@ const Clipboard = struct {
         contents_buf.insertAtCursor(val, @intCast(val.len));
 
         // Confirm
-        const diag = gobject.ext.newInstance(
+        const dialog = gobject.ext.newInstance(
             ClipboardConfirmationDialog,
             .{
                 .request = &apprt.ClipboardRequest{ .osc_52_write = clipboard_type },
@@ -2015,7 +2015,23 @@ const Clipboard = struct {
                 .@"clipboard-contents" = contents_buf,
             },
         );
-        diag.present(self.as(gtk.Widget));
+
+        _ = ClipboardConfirmationDialog.signals.confirm.connect(
+            dialog,
+            *Surface,
+            clipboardConfirmationConfirm,
+            self,
+            .{},
+        );
+        _ = ClipboardConfirmationDialog.signals.deny.connect(
+            dialog,
+            *Surface,
+            clipboardConfirmationDeny,
+            self,
+            .{},
+        );
+
+        dialog.present(self.as(gtk.Widget));
     }
 
     /// Request data from the clipboard (read the clipboard). This
@@ -2050,6 +2066,50 @@ const Clipboard = struct {
             clipboardReadText,
             ud,
         );
+    }
+
+    fn clipboardConfirmationConfirm(
+        dialog: *ClipboardConfirmationDialog,
+        remember: bool,
+        self: *Surface,
+    ) callconv(.c) void {
+        _ = remember;
+
+        const priv = self.private();
+        const surface = priv.core_surface orelse return;
+        const req = dialog.getRequest() orelse return;
+
+        // Get our text
+        const text_buf = dialog.getClipboardContents() orelse return;
+        var text_val = gobject.ext.Value.new(?[:0]const u8);
+        defer text_val.unset();
+        gobject.Object.getProperty(
+            text_buf.as(gobject.Object),
+            "text",
+            &text_val,
+        );
+        const text = gobject.ext.Value.get(
+            &text_val,
+            ?[:0]const u8,
+        ) orelse return;
+
+        surface.completeClipboardRequest(
+            req.*,
+            text,
+            true,
+        ) catch |err| {
+            log.warn("failed to complete clipboard request: {}", .{err});
+        };
+    }
+
+    fn clipboardConfirmationDeny(
+        dialog: *ClipboardConfirmationDialog,
+        remember: bool,
+        self: *Surface,
+    ) callconv(.c) void {
+        _ = dialog;
+        _ = remember;
+        _ = self;
     }
 
     fn clipboardReadText(

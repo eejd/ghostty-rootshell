@@ -201,6 +201,16 @@ pub const ClipboardConfirmationDialog = extern struct {
         self.as(Dialog).present(parent);
     }
 
+    /// Get the clipboard request without copying.
+    pub fn getRequest(self: *Self) ?*apprt.ClipboardRequest {
+        return self.private().request;
+    }
+
+    /// Get the clipboard contents without copying.
+    pub fn getClipboardContents(self: *Self) ?*gtk.TextBuffer {
+        return self.private().clipboard_contents;
+    }
+
     //---------------------------------------------------------------
     // Signal Handlers
 
