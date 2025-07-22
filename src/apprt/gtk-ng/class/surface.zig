@@ -190,6 +190,30 @@ pub const Surface = extern struct {
                 void,
             );
         };
+
+        /// Emitted whenever the clipboard has been written.
+        pub const @"clipboard-write" = struct {
+            pub const name = "clipboard-write";
+            pub const connect = impl.connect;
+            const impl = gobject.ext.defineSignal(
+                name,
+                Self,
+                &.{},
+                void,
+            );
+        };
+
+        /// Emitted whenever the surface reads the clipboard.
+        pub const @"clipboard-read" = struct {
+            pub const name = "clipboard-read";
+            pub const connect = impl.connect;
+            const impl = gobject.ext.defineSignal(
+                name,
+                Self,
+                &.{},
+                void,
+            );
+        };
     };
 
     const Private = struct {
@@ -1288,7 +1312,7 @@ pub const Surface = extern struct {
         _ = glib.idleAddOnce(idleFocus, self.ref());
     }
 
-    /// The focus callback must be triggerd on an idle loop source because
+    /// The focus callback must be triggered on an idle loop source because
     /// there are actions within libghostty callbacks (such as showing close
     /// confirmation dialogs) that can trigger focus loss and cause a deadlock
     /// because the lock may be held during the callback.
@@ -1927,6 +1951,8 @@ pub const Surface = extern struct {
 
             // Signals
             signals.@"close-request".impl.register(.{});
+            signals.@"clipboard-read".impl.register(.{});
+            signals.@"clipboard-write".impl.register(.{});
 
             // Virtual methods
             gobject.Object.virtual_methods.dispose.implement(class, &dispose);
@@ -1998,6 +2024,14 @@ const Clipboard = struct {
                 clipboard_type,
             ) orelse return;
             clipboard.setText(val);
+
+            Surface.signals.@"clipboard-write".impl.emit(
+                self,
+                null,
+                .{},
+                null,
+            );
+
             return;
         }
 
@@ -2163,17 +2197,30 @@ const Clipboard = struct {
         ) catch |err| switch (err) {
             error.UnsafePaste,
             error.UnauthorizedPaste,
-            => showClipboardConfirmation(
-                self,
-                req.state,
-                str,
-            ),
+            => {
+                showClipboardConfirmation(
+                    self,
+                    req.state,
+                    str,
+                );
+                return;
+            },
 
-            else => log.warn(
-                "failed to complete clipboard request err={}",
-                .{err},
-            ),
+            else => {
+                log.warn(
+                    "failed to complete clipboard request err={}",
+                    .{err},
+                );
+                return;
+            },
         };
+
+        Surface.signals.@"clipboard-read".impl.emit(
+            self,
+            null,
+            .{},
+            null,
+        );
     }
 
     /// The request we send as userdata to the clipboard read.
