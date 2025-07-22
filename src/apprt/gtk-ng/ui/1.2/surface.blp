@@ -16,35 +16,52 @@ template $GhosttySurface: Adw.Bin {
         focusable: true;
         focus-on-click: true;
       }
+
+      [overlay]
+      $GhosttyResizeOverlay resize_overlay {
+        styles [
+          "size-overlay",
+        ]
+      }
+
+      [overlay]
+      Label url_left {
+        styles [
+          "url-overlay",
+        ]
+
+        visible: false;
+        halign: start;
+        valign: end;
+        label: bind template.mouse-hover-url;
+
+        EventControllerMotion url_ec_motion {}
+      }
+
+      [overlay]
+      Label url_right {
+        styles [
+          "url-overlay",
+        ]
+
+        visible: false;
+        halign: end;
+        valign: end;
+        label: bind template.mouse-hover-url;
+      }
     }
   }
-}
 
-// The label that shows the currently hovered URL.
-Label url_left {
-  styles [
-    "url-overlay",
-  ]
+  // Event controllers for interactivity
+  EventControllerFocus ec_focus {}
 
-  visible: false;
-  halign: start;
-  valign: end;
-  label: bind template.mouse-hover-url;
-}
+  EventControllerKey ec_key {}
 
-Label url_right {
-  styles [
-    "url-overlay",
-  ]
+  EventControllerMotion ec_motion {}
 
-  visible: false;
-  halign: end;
-  valign: end;
-  label: bind template.mouse-hover-url;
-}
+  EventControllerScroll ec_scroll {}
 
-$GhosttyResizeOverlay resize_overlay {
-  styles [
-    "size-overlay",
-  ]
+  GestureClick gesture_click {
+    button: 0;
+  }
 }

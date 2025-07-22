@@ -247,18 +247,26 @@ pub const Surface = extern struct {
 
         /// The overlay we use for things such as the URL hover label
         /// or resize box. Bound from the template.
-        overlay: *gtk.Overlay = undefined,
+        overlay: *gtk.Overlay,
 
         /// The GLAarea that renders the actual surface. This is a binding
         /// to the template so it doesn't have to be unrefed manually.
-        gl_area: *gtk.GLArea = undefined,
+        gl_area: *gtk.GLArea,
 
         /// The labels for the left/right sides of the URL hover tooltip.
-        url_left: *gtk.Label = undefined,
-        url_right: *gtk.Label = undefined,
+        url_left: *gtk.Label,
+        url_right: *gtk.Label,
+        url_ec_motion: *gtk.EventControllerMotion,
 
         /// The resize overlay
-        resize_overlay: *ResizeOverlay = undefined,
+        resize_overlay: *ResizeOverlay,
+
+        // Event controllers
+        ec_focus: *gtk.EventControllerFocus,
+        ec_key: *gtk.EventControllerKey,
+        ec_motion: *gtk.EventControllerMotion,
+        ec_scroll: *gtk.EventControllerScroll,
+        gesture_click: *gtk.GestureClick,
 
         /// The apprt Surface.
         rt_surface: ApprtSurface = undefined,
@@ -795,22 +803,16 @@ pub const Surface = extern struct {
             priv.config = app.getConfig();
         }
 
-        const self_widget = self.as(gtk.Widget);
-
         // Setup our event controllers to get input events
-        const ec_key = gtk.EventControllerKey.new();
-        errdefer ec_key.unref();
-        self_widget.addController(ec_key.as(gtk.EventController));
-        errdefer self_widget.removeController(ec_key.as(gtk.EventController));
         _ = gtk.EventControllerKey.signals.key_pressed.connect(
-            ec_key,
+            priv.ec_key,
             *Self,
             ecKeyPressed,
             self,
             .{},
         );
         _ = gtk.EventControllerKey.signals.key_released.connect(
-            ec_key,
+            priv.ec_key,
             *Self,
             ecKeyReleased,
             self,
@@ -818,19 +820,15 @@ pub const Surface = extern struct {
         );
 
         // Focus controller will tell us about focus enter/exit events
-        const ec_focus = gtk.EventControllerFocus.new();
-        errdefer ec_focus.unref();
-        self_widget.addController(ec_focus.as(gtk.EventController));
-        errdefer self_widget.removeController(ec_focus.as(gtk.EventController));
         _ = gtk.EventControllerFocus.signals.enter.connect(
-            ec_focus,
+            priv.ec_focus,
             *Self,
             ecFocusEnter,
             self,
             .{},
         );
         _ = gtk.EventControllerFocus.signals.leave.connect(
-            ec_focus,
+            priv.ec_focus,
             *Self,
             ecFocusLeave,
             self,
@@ -838,20 +836,15 @@ pub const Surface = extern struct {
         );
 
         // Clicks
-        const gesture_click = gtk.GestureClick.new();
-        errdefer gesture_click.unref();
-        gesture_click.as(gtk.GestureSingle).setButton(0);
-        self_widget.addController(gesture_click.as(gtk.EventController));
-        errdefer self_widget.removeController(gesture_click.as(gtk.EventController));
         _ = gtk.GestureClick.signals.pressed.connect(
-            gesture_click,
+            priv.gesture_click,
             *Self,
             gcMouseDown,
             self,
             .{},
         );
         _ = gtk.GestureClick.signals.released.connect(
-            gesture_click,
+            priv.gesture_click,
             *Self,
             gcMouseUp,
             self,
@@ -859,19 +852,15 @@ pub const Surface = extern struct {
         );
 
         // Mouse movement
-        const ec_motion = gtk.EventControllerMotion.new();
-        errdefer ec_motion.unref();
-        self_widget.addController(ec_motion.as(gtk.EventController));
-        errdefer self_widget.removeController(ec_motion.as(gtk.EventController));
         _ = gtk.EventControllerMotion.signals.motion.connect(
-            ec_motion,
+            priv.ec_motion,
             *Self,
             ecMouseMotion,
             self,
             .{},
         );
         _ = gtk.EventControllerMotion.signals.leave.connect(
-            ec_motion,
+            priv.ec_motion,
             *Self,
             ecMouseLeave,
             self,
@@ -879,26 +868,22 @@ pub const Surface = extern struct {
         );
 
         // Scroll
-        const ec_scroll = gtk.EventControllerScroll.new(.flags_both_axes);
-        errdefer ec_scroll.unref();
-        self_widget.addController(ec_scroll.as(gtk.EventController));
-        errdefer self_widget.removeController(ec_scroll.as(gtk.EventController));
         _ = gtk.EventControllerScroll.signals.scroll.connect(
-            ec_scroll,
+            priv.ec_scroll,
             *Self,
             ecMouseScroll,
             self,
             .{},
         );
         _ = gtk.EventControllerScroll.signals.scroll_begin.connect(
-            ec_scroll,
+            priv.ec_scroll,
             *Self,
             ecMouseScrollPrecisionBegin,
             self,
             .{},
         );
         _ = gtk.EventControllerScroll.signals.scroll_end.connect(
-            ec_scroll,
+            priv.ec_scroll,
             *Self,
             ecMouseScrollPrecisionEnd,
             self,
@@ -1014,43 +999,25 @@ pub const Surface = extern struct {
 
         // Some other initialization steps
         self.initUrlOverlay();
-        self.initResizeOverlay();
 
         // Initialize our config
         self.propConfig(undefined, null);
     }
 
-    fn initResizeOverlay(self: *Self) void {
-        const priv = self.private();
-        const overlay = priv.overlay;
-        overlay.addOverlay(priv.resize_overlay.as(gtk.Widget));
-    }
-
     fn initUrlOverlay(self: *Self) void {
         const priv = self.private();
-        const overlay = priv.overlay;
-        const url_left = priv.url_left.as(gtk.Widget);
-        const url_right = priv.url_right.as(gtk.Widget);
-
-        // Add the url label to the overlay
-        overlay.addOverlay(url_left);
-        overlay.addOverlay(url_right);
 
         // Setup a motion controller to handle moving the label
         // to avoid the mouse.
-        const ec_motion = gtk.EventControllerMotion.new();
-        errdefer ec_motion.unref();
-        url_left.addController(ec_motion.as(gtk.EventController));
-        errdefer url_left.removeController(ec_motion.as(gtk.EventController));
         _ = gtk.EventControllerMotion.signals.enter.connect(
-            ec_motion,
+            priv.url_ec_motion,
             *Self,
             ecUrlMouseEnter,
             self,
             .{},
         );
         _ = gtk.EventControllerMotion.signals.leave.connect(
-            ec_motion,
+            priv.url_ec_motion,
             *Self,
             ecUrlMouseLeave,
             self,
@@ -1937,6 +1904,24 @@ pub const Surface = extern struct {
             class.bindTemplateChildPrivate("url_left", .{});
             class.bindTemplateChildPrivate("url_right", .{});
             class.bindTemplateChildPrivate("resize_overlay", .{});
+
+            // EventControllers don't work with our helper.
+            // https://github.com/ianprime0509/zig-gobject/issues/111
+            inline for (&.{
+                "ec_focus",
+                "ec_key",
+                "ec_motion",
+                "ec_scroll",
+                "gesture_click",
+                "url_ec_motion",
+            }) |name| {
+                gtk.Widget.Class.bindTemplateChildFull(
+                    gobject.ext.as(gtk.Widget.Class, class),
+                    name,
+                    @intFromBool(false),
+                    Private.offset + @offsetOf(Private, name),
+                );
+            }
 
             // Properties
             gobject.ext.registerProperties(class, &.{
