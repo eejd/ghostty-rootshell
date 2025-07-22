@@ -585,6 +585,11 @@ pub const Application = extern struct {
         return &self.private().winproto;
     }
 
+    /// Returns the cgroup base (if any).
+    pub fn cgroupBase(self: *Self) ?[]const u8 {
+        return self.private().transient_cgroup_base;
+    }
+
     /// This will get called when there are no more open surfaces.
     fn startQuitTimer(self: *Self) void {
         const priv = self.private();

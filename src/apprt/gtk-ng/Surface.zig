@@ -35,6 +35,10 @@ pub fn close(self: *Self, process_active: bool) void {
     self.surface.close(process_active);
 }
 
+pub fn cgroup(self: *Self) ?[]const u8 {
+    return self.surface.cgroupPath();
+}
+
 pub fn getTitle(self: *Self) ?[:0]const u8 {
     return self.surface.getTitle();
 }
