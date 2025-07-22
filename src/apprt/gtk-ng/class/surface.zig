@@ -21,6 +21,7 @@ const Common = @import("../class.zig").Common;
 const Application = @import("application.zig").Application;
 const Config = @import("config.zig").Config;
 const ResizeOverlay = @import("resize_overlay.zig").ResizeOverlay;
+const ClipboardConfirmationDialog = @import("clipboard_confirmation_dialog.zig").ClipboardConfirmationDialog;
 
 const log = std.log.scoped(.gtk_ghostty_surface);
 
@@ -51,6 +52,26 @@ pub const Surface = extern struct {
                         Private,
                         &Private.offset,
                         "config",
+                    ),
+                },
+            );
+        };
+
+        pub const focused = struct {
+            pub const name = "focused";
+            const impl = gobject.ext.defineProperty(
+                name,
+                Self,
+                bool,
+                .{
+                    .nick = "Focused",
+                    .blurb = "The focused state of the surface.",
+                    .default = false,
+                    .accessor = gobject.ext.privateFieldAccessor(
+                        Self,
+                        Private,
+                        &Private.offset,
+                        "focused",
                     ),
                 },
             );
@@ -195,6 +216,10 @@ pub const Surface = extern struct {
 
         /// The title of this surface, if any has been set.
         title: ?[:0]const u8 = null,
+
+        /// The current focus state of the terminal based on the
+        /// focus events.
+        focused: bool = true,
 
         /// The overlay we use for things such as the URL hover label
         /// or resize box. Bound from the template.
@@ -731,6 +756,7 @@ pub const Surface = extern struct {
         priv.cursor_pos = .{ .x = 0, .y = 0 };
         priv.mouse_shape = .text;
         priv.mouse_hidden = false;
+        priv.focused = true;
         priv.size = .{
             // Funky numbers on purpose so they stand out if for some reason
             // our size doesn't get properly set.
@@ -1242,30 +1268,41 @@ pub const Surface = extern struct {
 
     fn ecFocusEnter(_: *gtk.EventControllerFocus, self: *Self) callconv(.c) void {
         const priv = self.private();
+        priv.focused = true;
 
         if (priv.im_context) |im_context| {
             im_context.as(gtk.IMContext).focusIn();
         }
 
-        if (priv.core_surface) |surface| {
-            surface.focusCallback(true) catch |err| {
-                log.warn("error in focus callback err={}", .{err});
-            };
-        }
+        _ = glib.idleAddOnce(idleFocus, self.ref());
     }
 
     fn ecFocusLeave(_: *gtk.EventControllerFocus, self: *Self) callconv(.c) void {
         const priv = self.private();
+        priv.focused = false;
 
         if (priv.im_context) |im_context| {
             im_context.as(gtk.IMContext).focusOut();
         }
 
-        if (priv.core_surface) |surface| {
-            surface.focusCallback(false) catch |err| {
-                log.warn("error in focus callback err={}", .{err});
-            };
-        }
+        _ = glib.idleAddOnce(idleFocus, self.ref());
+    }
+
+    /// The focus callback must be triggerd on an idle loop source because
+    /// there are actions within libghostty callbacks (such as showing close
+    /// confirmation dialogs) that can trigger focus loss and cause a deadlock
+    /// because the lock may be held during the callback.
+    ///
+    /// Userdata should be a `*Surface`. This will unref once.
+    fn idleFocus(ud: ?*anyopaque) callconv(.c) void {
+        const self: *Self = @ptrCast(@alignCast(ud orelse return));
+        defer self.unref();
+
+        const priv = self.private();
+        const surface = priv.core_surface orelse return;
+        surface.focusCallback(priv.focused) catch |err| {
+            log.warn("error in focus callback err={}", .{err});
+        };
     }
 
     fn gcMouseDown(
@@ -1880,6 +1917,7 @@ pub const Surface = extern struct {
             // Properties
             gobject.ext.registerProperties(class, &.{
                 properties.config.impl,
+                properties.focused.impl,
                 properties.@"mouse-shape".impl,
                 properties.@"mouse-hidden".impl,
                 properties.@"mouse-hover-url".impl,
@@ -1951,10 +1989,31 @@ const Clipboard = struct {
         clipboard_type: apprt.Clipboard,
         confirm: bool,
     ) void {
-        _ = self;
-        _ = val;
-        _ = clipboard_type;
-        _ = confirm;
+        const priv = self.private();
+
+        // If no confirmation is necessary, set the clipboard.
+        if (!confirm and false) {
+            const clipboard = get(
+                priv.gl_area.as(gtk.Widget),
+                clipboard_type,
+            ) orelse return;
+            clipboard.setText(val);
+            return;
+        }
+
+        // Confirm
+        const diag = gobject.ext.newInstance(
+            ClipboardConfirmationDialog,
+            .{ .request = &apprt.ClipboardRequest{
+                .osc_52_write = clipboard_type,
+            } },
+        );
+
+        // We need to trigger the dialog
+
+        diag.present(self.as(gtk.Widget));
+
+        log.warn("TODO: confirmation window", .{});
     }
 
     /// Request data from the clipboard (read the clipboard). This

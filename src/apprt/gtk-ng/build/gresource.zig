@@ -33,6 +33,7 @@ pub const icon_sizes: []const comptime_int = &.{ 16, 32, 128, 256, 512, 1024 };
 ///
 /// These will be asserted to exist at runtime.
 pub const blueprints: []const Blueprint = &.{
+    .{ .major = 1, .minor = 2, .name = "clipboard-confirmation-dialog" },
     .{ .major = 1, .minor = 2, .name = "close-confirmation-dialog" },
     .{ .major = 1, .minor = 2, .name = "config-errors-dialog" },
     .{ .major = 1, .minor = 2, .name = "resize-overlay" },
