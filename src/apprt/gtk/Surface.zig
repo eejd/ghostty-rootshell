@@ -1259,9 +1259,13 @@ pub fn setClipboardString(
         // We only toast if we are copying to the standard clipboard.
         if (clipboard_type == .standard and
             self.app.config.@"app-notifications".@"clipboard-copy")
-        {
-            if (self.container.window()) |window|
-                window.sendToast(i18n._("Copied to clipboard"));
+        toast: {
+            const window = self.container.window() orelse break :toast;
+
+            if (val.len > 0)
+                window.sendToast(i18n._("Copied to clipboard"))
+            else
+                window.sendToast(i18n._("Cleared clipboard"));
         }
         return;
     }
