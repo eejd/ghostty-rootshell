@@ -146,7 +146,7 @@ pub const ClipboardConfirmationDialog = extern struct {
         /// Whether the user can remember the choice.
         can_remember: bool = false,
 
-        /// Template bindings
+        // Template bindings
         text_view_scroll: *gtk.ScrolledWindow,
         text_view: *gtk.TextView,
         reveal_button: *gtk.Button,
