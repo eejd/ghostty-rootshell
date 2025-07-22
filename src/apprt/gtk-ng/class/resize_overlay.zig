@@ -8,7 +8,7 @@ const gtk = @import("gtk");
 const gresource = @import("../build/gresource.zig");
 const Common = @import("../class.zig").Common;
 
-const log = std.log.scoped(.gtk_ghostty_window);
+const log = std.log.scoped(.gtk_ghostty_resize_overlay);
 
 /// The overlay that shows the current size while a surface is resizing.
 /// This can be used generically to show pretty much anything with a
