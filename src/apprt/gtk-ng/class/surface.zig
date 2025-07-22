@@ -2001,19 +2001,21 @@ const Clipboard = struct {
             return;
         }
 
+        // Build a text buffer for our contents
+        const contents_buf: *gtk.TextBuffer = .new(null);
+        defer contents_buf.unref();
+        contents_buf.insertAtCursor(val, @intCast(val.len));
+
         // Confirm
         const diag = gobject.ext.newInstance(
             ClipboardConfirmationDialog,
-            .{ .request = &apprt.ClipboardRequest{
-                .osc_52_write = clipboard_type,
-            } },
+            .{
+                .request = &apprt.ClipboardRequest{ .osc_52_write = clipboard_type },
+                .@"can-remember" = true,
+                .@"clipboard-contents" = contents_buf,
+            },
         );
-
-        // We need to trigger the dialog
-
         diag.present(self.as(gtk.Widget));
-
-        log.warn("TODO: confirmation window", .{});
     }
 
     /// Request data from the clipboard (read the clipboard). This

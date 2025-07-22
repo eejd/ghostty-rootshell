@@ -3,8 +3,13 @@ using Gtk 4.0;
 using Adw 1;
 
 template $GhosttyClipboardConfirmationDialog: $GhosttyDialog {
+  styles [
+    "clipboard-confirmation-dialog",
+  ]
+
   heading: _("Authorize Clipboard Access");
-  body: _("An application is attempting to write to the clipboard. The current clipboard contents are shown below.");
+  // Not localized because this is a placeholder users never see.
+  body: "If you see this text, there is a bug in Ghostty. Please report it.";
 
   responses [
     cancel: _("Deny") suggested,
@@ -17,10 +22,6 @@ template $GhosttyClipboardConfirmationDialog: $GhosttyDialog {
   extra-child: ListBox {
     selection-mode: none;
 
-    styles [
-      "boxed-list-separate",
-    ]
-
     Overlay {
       styles [
         "osd",
@@ -32,6 +33,10 @@ template $GhosttyClipboardConfirmationDialog: $GhosttyDialog {
         height-request: 200;
 
         TextView text_view {
+          styles [
+            "clipboard-content-view",
+          ]
+
           cursor-visible: false;
           editable: false;
           monospace: true;
@@ -39,10 +44,7 @@ template $GhosttyClipboardConfirmationDialog: $GhosttyDialog {
           left-margin: 8;
           bottom-margin: 8;
           right-margin: 8;
-
-          styles [
-            "clipboard-content-view",
-          ]
+          buffer: bind template.clipboard-contents;
         }
       }
 
@@ -74,6 +76,11 @@ template $GhosttyClipboardConfirmationDialog: $GhosttyDialog {
     }
 
     Adw.SwitchRow remember_choice {
+      styles [
+        "card",
+      ]
+
+      visible: bind template.can-remember;
       title: _("Remember choice for this split");
       subtitle: _("Reload configuration to show this prompt again");
     }
