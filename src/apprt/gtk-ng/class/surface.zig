@@ -174,6 +174,10 @@ pub const Surface = extern struct {
         /// The configuration that this surface is using.
         config: ?*Config = null,
 
+        /// The cgroup created for this surface. This will be created
+        /// if `Application.transient_cgroup_base` is set.
+        cgroup_path: ?[]const u8 = null,
+
         /// The mouse shape to show for the surface.
         mouse_shape: terminal.MouseShape = .default,
 
@@ -515,6 +519,63 @@ pub const Surface = extern struct {
         };
     }
 
+    /// Initialize the cgroup for this surface if it hasn't been
+    /// already. While this is `init`-prefixed, we prefer to call this
+    /// in the realize function because we don't need to create a cgroup
+    /// if we don't init a surface.
+    fn initCgroup(self: *Self) void {
+        const priv = self.private();
+
+        // If we already have a cgroup path then we don't do it again.
+        if (priv.cgroup_path != null) return;
+
+        const app = Application.default();
+        const alloc = app.allocator();
+        const base = app.cgroupBase() orelse return;
+
+        // For the unique group name we use the self pointer. This may
+        // not be a good idea for security reasons but not sure yet. We
+        // may want to change this to something else eventually to be safe.
+        var buf: [256]u8 = undefined;
+        const name = std.fmt.bufPrint(
+            &buf,
+            "surfaces/{X}.scope",
+            .{@intFromPtr(self)},
+        ) catch unreachable;
+
+        // Create the cgroup. If it fails, no big deal... just ignore.
+        internal_os.cgroup.create(base, name, null) catch |err| {
+            log.warn("failed to create surface cgroup err={}", .{err});
+            return;
+        };
+
+        // Success, save the cgroup path.
+        priv.cgroup_path = std.fmt.allocPrint(
+            alloc,
+            "{s}/{s}",
+            .{ base, name },
+        ) catch null;
+    }
+
+    /// Deletes the cgroup if set.
+    fn clearCgroup(self: *Self) void {
+        const priv = self.private();
+        const path = priv.cgroup_path orelse return;
+
+        internal_os.cgroup.remove(path) catch |err| {
+            // We don't want this to be fatal in any way so we just log
+            // and continue. A dangling empty cgroup is not a big deal
+            // and this should be rare.
+            log.warn(
+                "failed to remove cgroup for surface path={s} err={}",
+                .{ path, err },
+            );
+        };
+
+        Application.default().allocator().free(path);
+        priv.cgroup_path = null;
+    }
+
     //---------------------------------------------------------------
     // Libghostty Callbacks
 
@@ -525,6 +586,10 @@ pub const Surface = extern struct {
             .{process_active},
             null,
         );
+    }
+
+    pub fn cgroupPath(self: *Self) ?[]const u8 {
+        return self.private().cgroup_path;
     }
 
     pub fn getContentScale(self: *Self) apprt.ContentScale {
@@ -953,7 +1018,6 @@ pub const Surface = extern struct {
 
             priv.core_surface = null;
         }
-
         if (priv.mouse_hover_url) |v| {
             glib.free(@constCast(@ptrCast(v)));
             priv.mouse_hover_url = null;
@@ -966,6 +1030,7 @@ pub const Surface = extern struct {
             glib.free(@constCast(@ptrCast(v)));
             priv.title = null;
         }
+        self.clearCgroup();
 
         gobject.Object.virtual_methods.finalize.call(
             Class.parent,
@@ -1697,9 +1762,14 @@ pub const Surface = extern struct {
             return;
         }
 
-        // Make our pointer to store our surface
         const app = Application.default();
         const alloc = app.allocator();
+
+        // Initialize our cgroup if we can.
+        self.initCgroup();
+        errdefer self.clearCgroup();
+
+        // Make our pointer to store our surface
         const surface = try alloc.create(CoreSurface);
         errdefer alloc.destroy(surface);
 
