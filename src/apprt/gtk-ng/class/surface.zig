@@ -2091,7 +2091,10 @@ const Clipboard = struct {
             ClipboardConfirmationDialog,
             .{
                 .request = &req,
-                .@"can-remember" = true,
+                .@"can-remember" = switch (req) {
+                    .osc_52_read, .osc_52_write => true,
+                    .paste => false,
+                },
                 .@"clipboard-contents" = contents_buf,
             },
         );
@@ -2166,7 +2169,7 @@ const Clipboard = struct {
         if (remember) switch (req.*) {
             .osc_52_read => surface.config.clipboard_read = .deny,
             .osc_52_write => surface.config.clipboard_write = .deny,
-            .paste => {},
+            .paste => @panic("paste should not be rememberable"),
         };
     }
 
