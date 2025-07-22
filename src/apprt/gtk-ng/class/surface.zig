@@ -2169,7 +2169,7 @@ const Clipboard = struct {
         if (remember) switch (req.*) {
             .osc_52_read => surface.config.clipboard_read = .deny,
             .osc_52_write => surface.config.clipboard_write = .deny,
-            .paste => @panic("paste should not be rememberable"),
+            .paste => @panic("paste should not be able to be remembered"),
         };
     }
 
