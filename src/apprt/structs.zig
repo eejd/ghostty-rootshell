@@ -1,3 +1,5 @@
+const build_config = @import("../build_config.zig");
+
 /// ContentScale is the ratio between the current DPI and the platform's
 /// default DPI. This is used to determine how much certain rendered elements
 /// need to be scaled up or down.
@@ -50,6 +52,16 @@ pub const ClipboardRequest = union(ClipboardRequestType) {
 
     /// A request to write clipboard contents via OSC 52.
     osc_52_write: Clipboard,
+
+    /// Make this a valid gobject if we're in a GTK environment.
+    pub const getGObjectType = switch (build_config.app_runtime) {
+        .gtk, .@"gtk-ng" => @import("gobject").ext.defineBoxed(
+            ClipboardRequest,
+            .{ .name = "GhosttyClipboardRequest" },
+        ),
+
+        .none => void,
+    };
 };
 
 /// The color scheme in use (light vs dark).
