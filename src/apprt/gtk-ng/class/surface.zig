@@ -703,6 +703,20 @@ pub const Surface = extern struct {
         );
     }
 
+    pub fn setClipboardString(
+        self: *Self,
+        val: [:0]const u8,
+        clipboard_type: apprt.Clipboard,
+        confirm: bool,
+    ) void {
+        Clipboard.set(
+            self,
+            val,
+            clipboard_type,
+            confirm,
+        );
+    }
+
     //---------------------------------------------------------------
     // Virtual Methods
 
@@ -1930,6 +1944,22 @@ const Clipboard = struct {
         };
     }
 
+    /// Set the clipboard contents.
+    pub fn set(
+        self: *Surface,
+        val: [:0]const u8,
+        clipboard_type: apprt.Clipboard,
+        confirm: bool,
+    ) void {
+        _ = self;
+        _ = val;
+        _ = clipboard_type;
+        _ = confirm;
+    }
+
+    /// Request data from the clipboard (read the clipboard). This
+    /// completes asynchronously and will call the `completeClipboardRequest`
+    /// core surface API when done.
     pub fn request(
         self: *Surface,
         clipboard_type: apprt.Clipboard,

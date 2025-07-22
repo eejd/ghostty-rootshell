@@ -85,10 +85,11 @@ pub fn setClipboardString(
     clipboard_type: apprt.Clipboard,
     confirm: bool,
 ) !void {
-    _ = self;
-    _ = val;
-    _ = clipboard_type;
-    _ = confirm;
+    self.surface.setClipboardString(
+        val,
+        clipboard_type,
+        confirm,
+    );
 }
 
 pub fn defaultTermioEnv(self: *Self) !std.process.EnvMap {
