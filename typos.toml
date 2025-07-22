@@ -20,6 +20,8 @@ extend-exclude = [
   "*.png",
   "*.ico",
   "*.icns",
+  # Valgrind nonsense
+  "valgrind.supp",
   # Other
   "*.pdf",
   "*.data",
