@@ -22,3 +22,11 @@ label.url-overlay.left {
 label.url-overlay.right {
   border-radius: 6px 0px 0px 0px;
 }
+
+.size-overlay label {
+  padding: 4px 8px 4px 8px;
+  border-radius: 6px 6px 6px 6px;
+  outline-style: solid;
+  outline-width: 1px;
+  outline-color: #555555;
+}

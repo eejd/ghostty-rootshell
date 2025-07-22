@@ -19,6 +19,7 @@ const ApprtSurface = @import("../Surface.zig");
 const Common = @import("../class.zig").Common;
 const Application = @import("application.zig").Application;
 const Config = @import("config.zig").Config;
+const ResizeOverlay = @import("resize_overlay.zig").ResizeOverlay;
 
 const log = std.log.scoped(.gtk_ghostty_surface);
 
@@ -201,6 +202,9 @@ pub const Surface = extern struct {
         /// The labels for the left/right sides of the URL hover tooltip.
         url_left: *gtk.Label = undefined,
         url_right: *gtk.Label = undefined,
+
+        /// The resize overlay
+        resize_overlay: *ResizeOverlay = undefined,
 
         /// The apprt Surface.
         rt_surface: ApprtSurface = undefined,
@@ -840,6 +844,13 @@ pub const Surface = extern struct {
         _ = gobject.Object.signals.notify.connect(
             self,
             ?*anyopaque,
+            &propConfig,
+            null,
+            .{ .detail = "config" },
+        );
+        _ = gobject.Object.signals.notify.connect(
+            self,
+            ?*anyopaque,
             &propMouseHoverUrl,
             null,
             .{ .detail = "mouse-hover-url" },
@@ -861,6 +872,16 @@ pub const Surface = extern struct {
 
         // Some other initialization steps
         self.initUrlOverlay();
+        self.initResizeOverlay();
+
+        // Initialize our config
+        self.propConfig(undefined, null);
+    }
+
+    fn initResizeOverlay(self: *Self) void {
+        const priv = self.private();
+        const overlay = priv.overlay;
+        overlay.addOverlay(priv.resize_overlay.as(gtk.Widget));
     }
 
     fn initUrlOverlay(self: *Self) void {
@@ -958,6 +979,58 @@ pub const Surface = extern struct {
     /// Returns the title property without a copy.
     pub fn getTitle(self: *Self) ?[:0]const u8 {
         return self.private().title;
+    }
+
+    fn propConfig(
+        self: *Self,
+        _: *gobject.ParamSpec,
+        _: ?*anyopaque,
+    ) callconv(.c) void {
+        const priv = self.private();
+        const config = if (priv.config) |c| c.get() else return;
+
+        // resize-overlay-duration
+        {
+            const ms = config.@"resize-overlay-duration".asMilliseconds();
+            var value = gobject.ext.Value.newFrom(ms);
+            defer value.unset();
+            gobject.Object.setProperty(
+                priv.resize_overlay.as(gobject.Object),
+                "duration",
+                &value,
+            );
+        }
+
+        // resize-overlay-position
+        {
+            const hv: struct {
+                gtk.Align, // halign
+                gtk.Align, // valign
+            } = switch (config.@"resize-overlay-position") {
+                .center => .{ .center, .center },
+                .@"top-left" => .{ .start, .start },
+                .@"top-right" => .{ .end, .start },
+                .@"top-center" => .{ .center, .start },
+                .@"bottom-left" => .{ .start, .end },
+                .@"bottom-right" => .{ .end, .end },
+                .@"bottom-center" => .{ .center, .end },
+            };
+
+            var halign = gobject.ext.Value.newFrom(hv[0]);
+            defer halign.unset();
+            var valign = gobject.ext.Value.newFrom(hv[1]);
+            defer valign.unset();
+            gobject.Object.setProperty(
+                priv.resize_overlay.as(gobject.Object),
+                "overlay-halign",
+                &halign,
+            );
+            gobject.Object.setProperty(
+                priv.resize_overlay.as(gobject.Object),
+                "overlay-valign",
+                &valign,
+            );
+        }
     }
 
     fn propMouseHoverUrl(
@@ -1556,7 +1629,42 @@ pub const Surface = extern struct {
             surface.sizeCallback(priv.size) catch |err| {
                 log.warn("error in size callback err={}", .{err});
             };
+
+            // Setup our resize overlay if configured
+            self.resizeOverlaySchedule();
         }
+    }
+
+    fn resizeOverlaySchedule(self: *Self) void {
+        const priv = self.private();
+        const surface = priv.core_surface orelse return;
+
+        // Only show the resize overlay if its enabled
+        const config = if (priv.config) |c| c.get() else return;
+        switch (config.@"resize-overlay") {
+            .always, .@"after-first" => {},
+            .never => return,
+        }
+
+        // If we have resize overlays enabled, setup an idler
+        // to show that. We do this in an idle tick because doing it
+        // during the resize results in flickering.
+        var buf: [32]u8 = undefined;
+        priv.resize_overlay.setLabel(text: {
+            const grid_size = surface.size.grid();
+            break :text std.fmt.bufPrintZ(
+                &buf,
+                "{d} x {d}",
+                .{
+                    grid_size.columns,
+                    grid_size.rows,
+                },
+            ) catch |err| err: {
+                log.warn("unable to format text: {}", .{err});
+                break :err "";
+            };
+        });
+        priv.resize_overlay.schedule();
     }
 
     const RealizeError = Allocator.Error || error{
@@ -1655,6 +1763,7 @@ pub const Surface = extern struct {
         pub const Instance = Self;
 
         fn init(class: *Class) callconv(.C) void {
+            gobject.ext.ensureType(ResizeOverlay);
             gtk.Widget.Class.setTemplateFromResource(
                 class.as(gtk.Widget.Class),
                 comptime gresource.blueprint(.{
@@ -1669,6 +1778,7 @@ pub const Surface = extern struct {
             class.bindTemplateChildPrivate("gl_area", .{});
             class.bindTemplateChildPrivate("url_left", .{});
             class.bindTemplateChildPrivate("url_right", .{});
+            class.bindTemplateChildPrivate("resize_overlay", .{});
 
             // Properties
             gobject.ext.registerProperties(class, &.{
