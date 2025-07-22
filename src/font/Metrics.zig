@@ -235,10 +235,9 @@ pub fn apply(self: *Metrics, mods: ModifierSet) void {
                 // centered in the cell.
                 if (comptime tag == .cell_height) {
                     // We split the difference in half because we want to
-                    // center the baseline in the cell. We round the shift
-                    // down to the nearest full pixel shift, such that if
-                    // the diff is odd, there's one more pixel added/removed
-                    // on top than on the bottom.
+                    // center the baseline in the cell. If the difference
+                    // is odd, one more pixel is added/removed on top than
+                    // on the bottom.
                     if (new > original) {
                         const diff = new - original;
                         const diff_bottom = diff / 2;
