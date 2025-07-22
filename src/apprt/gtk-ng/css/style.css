@@ -55,3 +55,18 @@ label.url-overlay.right {
 .clipboard-confirmation-dialog list > row:last-child {
   margin-bottom: 0;
 }
+
+.clipboard-confirmation-dialog .clipboard-overlay {
+  border-radius: 10px;
+}
+
+.clipboard-confirmation-dialog .clipboard-contents {
+  filter: blur(0px);
+  transition: filter 0.3s ease;
+  border-radius: 10px;
+}
+
+.clipboard-confirmation-dialog .clipboard-contents.blurred {
+  filter: blur(5px);
+}
+

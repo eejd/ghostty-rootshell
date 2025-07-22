@@ -34,7 +34,7 @@ template $GhosttyClipboardConfirmationDialog: $GhosttyDialog {
 
         TextView text_view {
           styles [
-            "clipboard-content-view",
+            "clipboard-contents",
           ]
 
           cursor-visible: false;
@@ -68,10 +68,6 @@ template $GhosttyClipboardConfirmationDialog: $GhosttyDialog {
         valign: start;
         margin-end: 12;
         margin-top: 12;
-
-        styles [
-          "opaque",
-        ]
       }
     }
 

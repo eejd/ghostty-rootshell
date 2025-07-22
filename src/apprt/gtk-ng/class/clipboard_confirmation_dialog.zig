@@ -83,6 +83,50 @@ pub const ClipboardConfirmationDialog = extern struct {
                 },
             );
         };
+
+        pub const blur = struct {
+            pub const name = "blur";
+            const impl = gobject.ext.defineProperty(
+                name,
+                Self,
+                bool,
+                .{
+                    .nick = "Blur",
+                    .blurb = "Blur the contents, allowing the user to reveal.",
+                    .default = false,
+                    .accessor = gobject.ext.privateFieldAccessor(
+                        Self,
+                        Private,
+                        &Private.offset,
+                        "blur",
+                    ),
+                },
+            );
+        };
+    };
+
+    pub const signals = struct {
+        pub const deny = struct {
+            pub const name = "deny";
+            pub const connect = impl.connect;
+            const impl = gobject.ext.defineSignal(
+                name,
+                Self,
+                &.{bool},
+                void,
+            );
+        };
+
+        pub const confirm = struct {
+            pub const name = "confirm";
+            pub const connect = impl.connect;
+            const impl = gobject.ext.defineSignal(
+                name,
+                Self,
+                &.{bool},
+                void,
+            );
+        };
     };
 
     const Private = struct {
@@ -92,8 +136,17 @@ pub const ClipboardConfirmationDialog = extern struct {
         /// The clipboard contents being read/written.
         clipboard_contents: ?*gtk.TextBuffer = null,
 
+        /// Whether the contents should be blurred.
+        blur: bool = false,
+
         /// Whether the user can remember the choice.
         can_remember: bool = false,
+
+        /// Template bindings
+        text_view_scroll: *gtk.ScrolledWindow,
+        text_view: *gtk.TextView,
+        reveal_button: *gtk.Button,
+        hide_button: *gtk.Button,
 
         pub var offset: c_int = 0;
     };
@@ -105,7 +158,32 @@ pub const ClipboardConfirmationDialog = extern struct {
     fn init(self: *Self, _: *Class) callconv(.C) void {
         gtk.Widget.initTemplate(self.as(gtk.Widget));
 
+        const priv = self.private();
+
+        // Signals
+        _ = gtk.Button.signals.clicked.connect(
+            priv.reveal_button,
+            *Self,
+            revealButtonClicked,
+            self,
+            .{},
+        );
+        _ = gtk.Button.signals.clicked.connect(
+            priv.hide_button,
+            *Self,
+            hideButtonClicked,
+            self,
+            .{},
+        );
+
         // Some property signals
+        _ = gobject.Object.signals.notify.connect(
+            self,
+            ?*anyopaque,
+            &propBlur,
+            null,
+            .{ .detail = "blur" },
+        );
         _ = gobject.Object.signals.notify.connect(
             self,
             ?*anyopaque,
@@ -115,6 +193,7 @@ pub const ClipboardConfirmationDialog = extern struct {
         );
 
         // Trigger initial values
+        self.propBlur(undefined, null);
         self.propRequest(undefined, null);
     }
 
@@ -124,6 +203,25 @@ pub const ClipboardConfirmationDialog = extern struct {
 
     //---------------------------------------------------------------
     // Signal Handlers
+
+    fn propBlur(
+        self: *Self,
+        _: *gobject.ParamSpec,
+        _: ?*anyopaque,
+    ) callconv(.c) void {
+        const priv = self.private();
+        if (priv.blur) {
+            priv.text_view_scroll.as(gtk.Widget).setSensitive(@intFromBool(false));
+            priv.text_view.as(gtk.Widget).addCssClass("blurred");
+            priv.reveal_button.as(gtk.Widget).setVisible(@intFromBool(true));
+            priv.hide_button.as(gtk.Widget).setVisible(@intFromBool(false));
+        } else {
+            priv.text_view_scroll.as(gtk.Widget).setSensitive(@intFromBool(true));
+            priv.text_view.as(gtk.Widget).removeCssClass("blurred");
+            priv.reveal_button.as(gtk.Widget).setVisible(@intFromBool(false));
+            priv.hide_button.as(gtk.Widget).setVisible(@intFromBool(false));
+        }
+    }
 
     fn propRequest(
         self: *Self,
@@ -148,8 +246,48 @@ pub const ClipboardConfirmationDialog = extern struct {
         }
     }
 
+    fn revealButtonClicked(_: *gtk.Button, self: *Self) callconv(.c) void {
+        const priv = self.private();
+        priv.text_view_scroll.as(gtk.Widget).setSensitive(@intFromBool(true));
+        priv.text_view.as(gtk.Widget).removeCssClass("blurred");
+        priv.hide_button.as(gtk.Widget).setVisible(@intFromBool(true));
+        priv.reveal_button.as(gtk.Widget).setVisible(@intFromBool(false));
+    }
+
+    fn hideButtonClicked(_: *gtk.Button, self: *Self) callconv(.c) void {
+        const priv = self.private();
+        priv.text_view_scroll.as(gtk.Widget).setSensitive(@intFromBool(false));
+        priv.text_view.as(gtk.Widget).addCssClass("blurred");
+        priv.hide_button.as(gtk.Widget).setVisible(@intFromBool(false));
+        priv.reveal_button.as(gtk.Widget).setVisible(@intFromBool(true));
+    }
+
     //---------------------------------------------------------------
     // Virtual methods
+
+    fn response(
+        self: *Self,
+        response_id: [*:0]const u8,
+    ) callconv(.C) void {
+        // TODO: remember
+        const remember = false;
+
+        if (std.mem.orderZ(u8, response_id, "cancel") == .eq) {
+            signals.deny.impl.emit(
+                self,
+                null,
+                .{remember},
+                null,
+            );
+        } else if (std.mem.orderZ(u8, response_id, "ok") == .eq) {
+            signals.confirm.impl.emit(
+                self,
+                null,
+                .{remember},
+                null,
+            );
+        }
+    }
 
     fn dispose(self: *Self) callconv(.C) void {
         const priv = self.private();
@@ -204,18 +342,27 @@ pub const ClipboardConfirmationDialog = extern struct {
             );
 
             // Bindings
-            //class.bindTemplateChildPrivate("remember_bin", .{});
+            class.bindTemplateChildPrivate("text_view_scroll", .{});
+            class.bindTemplateChildPrivate("text_view", .{});
+            class.bindTemplateChildPrivate("hide_button", .{});
+            class.bindTemplateChildPrivate("reveal_button", .{});
 
             // Properties
             gobject.ext.registerProperties(class, &.{
+                properties.blur.impl,
                 properties.@"can-remember".impl,
                 properties.@"clipboard-contents".impl,
                 properties.request.impl,
             });
 
+            // Signals
+            signals.confirm.impl.register(.{});
+            signals.deny.impl.register(.{});
+
             // Virtual methods
             gobject.Object.virtual_methods.dispose.implement(class, &dispose);
             gobject.Object.virtual_methods.finalize.implement(class, &finalize);
+            Dialog.virtual_methods.response.implement(class, &response);
         }
 
         pub const as = C.Class.as;
