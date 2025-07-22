@@ -1992,7 +1992,7 @@ const Clipboard = struct {
         const priv = self.private();
 
         // If no confirmation is necessary, set the clipboard.
-        if (!confirm and false) {
+        if (!confirm) {
             const clipboard = get(
                 priv.gl_area.as(gtk.Widget),
                 clipboard_type,
@@ -2001,37 +2001,11 @@ const Clipboard = struct {
             return;
         }
 
-        // Build a text buffer for our contents
-        const contents_buf: *gtk.TextBuffer = .new(null);
-        defer contents_buf.unref();
-        contents_buf.insertAtCursor(val, @intCast(val.len));
-
-        // Confirm
-        const dialog = gobject.ext.newInstance(
-            ClipboardConfirmationDialog,
-            .{
-                .request = &apprt.ClipboardRequest{ .osc_52_write = clipboard_type },
-                .@"can-remember" = true,
-                .@"clipboard-contents" = contents_buf,
-            },
-        );
-
-        _ = ClipboardConfirmationDialog.signals.confirm.connect(
-            dialog,
-            *Surface,
-            clipboardConfirmationConfirm,
+        showClipboardConfirmation(
             self,
-            .{},
+            .{ .osc_52_write = clipboard_type },
+            val,
         );
-        _ = ClipboardConfirmationDialog.signals.deny.connect(
-            dialog,
-            *Surface,
-            clipboardConfirmationDeny,
-            self,
-            .{},
-        );
-
-        dialog.present(self.as(gtk.Widget));
     }
 
     /// Request data from the clipboard (read the clipboard). This
@@ -2066,6 +2040,44 @@ const Clipboard = struct {
             clipboardReadText,
             ud,
         );
+    }
+
+    fn showClipboardConfirmation(
+        self: *Surface,
+        req: apprt.ClipboardRequest,
+        str: [:0]const u8,
+    ) void {
+        // Build a text buffer for our contents
+        const contents_buf: *gtk.TextBuffer = .new(null);
+        defer contents_buf.unref();
+        contents_buf.insertAtCursor(str, @intCast(str.len));
+
+        // Confirm
+        const dialog = gobject.ext.newInstance(
+            ClipboardConfirmationDialog,
+            .{
+                .request = &req,
+                .@"can-remember" = true,
+                .@"clipboard-contents" = contents_buf,
+            },
+        );
+
+        _ = ClipboardConfirmationDialog.signals.confirm.connect(
+            dialog,
+            *Surface,
+            clipboardConfirmationConfirm,
+            self,
+            .{},
+        );
+        _ = ClipboardConfirmationDialog.signals.deny.connect(
+            dialog,
+            *Surface,
+            clipboardConfirmationDeny,
+            self,
+            .{},
+        );
+
+        dialog.present(self.as(gtk.Widget));
     }
 
     fn clipboardConfirmationConfirm(
@@ -2151,24 +2163,11 @@ const Clipboard = struct {
         ) catch |err| switch (err) {
             error.UnsafePaste,
             error.UnauthorizedPaste,
-            => {
-                log.warn("unsafe paste, TODO confirmation", .{});
-
-                // Create a dialog and ask the user if they want to paste anyway.
-                // ClipboardConfirmationWindow.create(
-                //     self.app,
-                //     str,
-                //     &self.core_surface,
-                //     req.state,
-                //     self.is_secure_input,
-                // ) catch |window_err| {
-                //     log.warn(
-                //         "failed to create clipboard confirmation window err={}",
-                //         .{window_err},
-                //     );
-                // };
-                return;
-            },
+            => showClipboardConfirmation(
+                self,
+                req.state,
+                str,
+            ),
 
             else => log.warn(
                 "failed to complete clipboard request err={}",
