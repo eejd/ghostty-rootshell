@@ -2,6 +2,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const adw = @import("adw");
 const gdk = @import("gdk");
+const gio = @import("gio");
 const glib = @import("glib");
 const gobject = @import("gobject");
 const gtk = @import("gtk");
@@ -688,6 +689,18 @@ pub const Surface = extern struct {
         }
 
         return env;
+    }
+
+    pub fn clipboardRequest(
+        self: *Self,
+        clipboard_type: apprt.Clipboard,
+        state: apprt.ClipboardRequest,
+    ) !void {
+        try Clipboard.request(
+            self,
+            clipboard_type,
+            state,
+        );
     }
 
     //---------------------------------------------------------------
@@ -1903,3 +1916,121 @@ fn translateMouseButton(button: c_uint) input.MouseButton {
         else => .unknown,
     };
 }
+
+/// A namespace for our clipboard-related functions so Surface isn't SO large.
+const Clipboard = struct {
+    /// Get the specific type of clipboard for a widget.
+    pub fn get(
+        widget: *gtk.Widget,
+        clipboard: apprt.Clipboard,
+    ) ?*gdk.Clipboard {
+        return switch (clipboard) {
+            .standard => widget.getClipboard(),
+            .selection, .primary => widget.getPrimaryClipboard(),
+        };
+    }
+
+    pub fn request(
+        self: *Surface,
+        clipboard_type: apprt.Clipboard,
+        state: apprt.ClipboardRequest,
+    ) Allocator.Error!void {
+        // Get our requested clipboard
+        const clipboard = get(
+            self.private().gl_area.as(gtk.Widget),
+            clipboard_type,
+        ) orelse return;
+
+        // Allocate our userdata
+        const alloc = Application.default().allocator();
+        const ud = try alloc.create(Request);
+        errdefer alloc.destroy(ud);
+        ud.* = .{
+            // Important: we ref self here so that we can't free memory
+            // while we have an outstanding clipboard read.
+            .self = self.ref(),
+            .state = state,
+        };
+        errdefer self.unref();
+
+        // Read
+        clipboard.readTextAsync(
+            null,
+            clipboardReadText,
+            ud,
+        );
+    }
+
+    fn clipboardReadText(
+        source: ?*gobject.Object,
+        res: *gio.AsyncResult,
+        ud: ?*anyopaque,
+    ) callconv(.c) void {
+        const clipboard = gobject.ext.cast(
+            gdk.Clipboard,
+            source orelse return,
+        ) orelse return;
+        const req: *Request = @ptrCast(@alignCast(ud orelse return));
+
+        const alloc = Application.default().allocator();
+        defer alloc.destroy(req);
+
+        const self = req.self;
+        defer self.unref();
+
+        var gerr: ?*glib.Error = null;
+        const cstr_ = clipboard.readTextFinish(res, &gerr);
+        if (gerr) |err| {
+            defer err.free();
+            log.warn(
+                "failed to read clipboard err={s}",
+                .{err.f_message orelse "(no message)"},
+            );
+            return;
+        }
+        const cstr = cstr_ orelse return;
+        defer glib.free(cstr);
+        const str = std.mem.sliceTo(cstr, 0);
+
+        const surface = self.private().core_surface orelse return;
+        surface.completeClipboardRequest(
+            req.state,
+            str,
+            false,
+        ) catch |err| switch (err) {
+            error.UnsafePaste,
+            error.UnauthorizedPaste,
+            => {
+                log.warn("unsafe paste, TODO confirmation", .{});
+
+                // Create a dialog and ask the user if they want to paste anyway.
+                // ClipboardConfirmationWindow.create(
+                //     self.app,
+                //     str,
+                //     &self.core_surface,
+                //     req.state,
+                //     self.is_secure_input,
+                // ) catch |window_err| {
+                //     log.warn(
+                //         "failed to create clipboard confirmation window err={}",
+                //         .{window_err},
+                //     );
+                // };
+                return;
+            },
+
+            else => log.warn(
+                "failed to complete clipboard request err={}",
+                .{err},
+            ),
+        };
+    }
+
+    /// The request we send as userdata to the clipboard read.
+    const Request = struct {
+        /// "Self" is reffed so we can't dispose it until the clipboard
+        /// read is complete. Callers must unref when done.
+        self: *Surface,
+        state: apprt.ClipboardRequest,
+    };
+};

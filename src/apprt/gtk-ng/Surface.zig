@@ -73,9 +73,10 @@ pub fn clipboardRequest(
     clipboard_type: apprt.Clipboard,
     state: apprt.ClipboardRequest,
 ) !void {
-    _ = self;
-    _ = clipboard_type;
-    _ = state;
+    try self.surface.clipboardRequest(
+        clipboard_type,
+        state,
+    );
 }
 
 pub fn setClipboardString(
