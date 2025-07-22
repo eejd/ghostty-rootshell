@@ -1001,7 +1001,7 @@ test "name" {
 
     var buf: [1024]u8 = undefined;
     const font_name = try face.name(&buf);
-    try testing.expect(std.mem.eql(u8, font_name, "Menlo"));
+    try testing.expectEqualStrings(font_name, "Menlo");
 }
 
 test "emoji" {
