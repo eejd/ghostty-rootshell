@@ -8,10 +8,14 @@ const gtk = @import("gtk");
 const apprt = @import("../../../apprt.zig");
 const gresource = @import("../build/gresource.zig");
 const i18n = @import("../../../os/main.zig").i18n;
+const adw_version = @import("../adw_version.zig");
 const Common = @import("../class.zig").Common;
 const Dialog = @import("dialog.zig").Dialog;
 
 const log = std.log.scoped(.gtk_ghostty_clipboard_confirmation);
+
+/// Whether we're able to have the remember switch
+const can_remember = adw_version.supportsSwitchRow();
 
 pub const ClipboardConfirmationDialog = extern struct {
     const Self = @This();
@@ -147,6 +151,7 @@ pub const ClipboardConfirmationDialog = extern struct {
         text_view: *gtk.TextView,
         reveal_button: *gtk.Button,
         hide_button: *gtk.Button,
+        remember_choice: if (can_remember) *adw.SwitchRow else void,
 
         pub var offset: c_int = 0;
     };
@@ -279,8 +284,10 @@ pub const ClipboardConfirmationDialog = extern struct {
         self: *Self,
         response_id: [*:0]const u8,
     ) callconv(.C) void {
-        // TODO: remember
-        const remember = false;
+        const remember: bool = if (comptime can_remember) remember: {
+            const priv = self.private();
+            break :remember priv.remember_choice.getActive() != 0;
+        } else false;
 
         if (std.mem.orderZ(u8, response_id, "cancel") == .eq) {
             signals.deny.impl.emit(
@@ -344,11 +351,18 @@ pub const ClipboardConfirmationDialog = extern struct {
         fn init(class: *Class) callconv(.C) void {
             gtk.Widget.Class.setTemplateFromResource(
                 class.as(gtk.Widget.Class),
-                comptime gresource.blueprint(.{
-                    .major = 1,
-                    .minor = 2,
-                    .name = "clipboard-confirmation-dialog",
-                }),
+                if (comptime adw_version.atLeast(1, 4, 0))
+                    comptime gresource.blueprint(.{
+                        .major = 1,
+                        .minor = 4,
+                        .name = "clipboard-confirmation-dialog",
+                    })
+                else
+                    comptime gresource.blueprint(.{
+                        .major = 1,
+                        .minor = 0,
+                        .name = "clipboard-confirmation-dialog",
+                    }),
             );
 
             // Bindings
@@ -356,6 +370,9 @@ pub const ClipboardConfirmationDialog = extern struct {
             class.bindTemplateChildPrivate("text_view", .{});
             class.bindTemplateChildPrivate("hide_button", .{});
             class.bindTemplateChildPrivate("reveal_button", .{});
+            if (comptime can_remember) {
+                class.bindTemplateChildPrivate("remember_choice", .{});
+            }
 
             // Properties
             gobject.ext.registerProperties(class, &.{

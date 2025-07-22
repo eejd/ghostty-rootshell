@@ -2119,11 +2119,16 @@ const Clipboard = struct {
         remember: bool,
         self: *Surface,
     ) callconv(.c) void {
-        _ = remember;
-
         const priv = self.private();
         const surface = priv.core_surface orelse return;
         const req = dialog.getRequest() orelse return;
+
+        // Handle remember
+        if (remember) switch (req.*) {
+            .osc_52_read => surface.config.clipboard_read = .allow,
+            .osc_52_write => surface.config.clipboard_write = .allow,
+            .paste => {},
+        };
 
         // Get our text
         const text_buf = dialog.getClipboardContents() orelse return;
@@ -2153,9 +2158,16 @@ const Clipboard = struct {
         remember: bool,
         self: *Surface,
     ) callconv(.c) void {
-        _ = dialog;
-        _ = remember;
-        _ = self;
+        const priv = self.private();
+        const surface = priv.core_surface orelse return;
+        const req = dialog.getRequest() orelse return;
+
+        // Handle remember
+        if (remember) switch (req.*) {
+            .osc_52_read => surface.config.clipboard_read = .deny,
+            .osc_52_write => surface.config.clipboard_write = .deny,
+            .paste => {},
+        };
     }
 
     fn clipboardReadText(
