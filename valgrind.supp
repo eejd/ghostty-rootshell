@@ -35,6 +35,35 @@
 }
 
 {
+   GSK GPU Rendering
+   Memcheck:Leak
+   match-leak-kinds: possible
+   ...
+   fun:gsk_gpu_render_pass_op_gl_command
+   fun:gsk_gl_frame_submit
+   fun:gsk_gpu_renderer_render
+   fun:gsk_renderer_render
+   fun:gtk_widget_render
+   fun:surface_render
+   fun:_gdk_marshal_BOOLEAN__BOXEDv
+   fun:_g_closure_invoke_va
+   fun:signal_emit_valist_unlocked
+   fun:g_signal_emit_valist
+   fun:g_signal_emit
+   fun:gdk_surface_paint_on_clock
+   fun:_g_closure_invoke_va
+   fun:signal_emit_valist_unlocked
+   fun:g_signal_emit_valist
+   fun:g_signal_emit
+   fun:gdk_frame_clock_paint_idle
+   ...
+   fun:g_timeout_dispatch
+   fun:g_main_context_dispatch_unlocked
+   fun:g_main_context_iterate_unlocked.isra.0
+   fun:g_main_context_iteration
+  ...
+}
+{
    GTK Shader Selector
    Memcheck:Leak
    match-leak-kinds: possible
@@ -57,7 +86,7 @@
    fun:g_object_new_internal.part.0
    fun:g_object_new_valist
    fun:g_object_new
-   fun:gtk_at_spi_create_context
+   ...
    fun:gtk_at_context_create
    fun:gtk_widget_init
    fun:g_type_create_instance
@@ -79,7 +108,7 @@
    fun:g_object_new_internal.part.0
    fun:g_object_new_valist
    fun:g_object_new
-   fun:gtk_at_spi_create_context
+   ...
    fun:gtk_at_context_create
    fun:gtk_widget_init
    fun:g_type_create_instance
@@ -98,6 +127,34 @@
    fun:g_object_new_with_properties
    fun:g_object_new
    fun:gtk_tooltip_init
+   ...
+}
+
+{
+   Fcitx
+   Memcheck:Leak
+   match-leak-kinds: definite
+   ...
+   fun:g_malloc0
+   fun:parser_start_element
+   fun:emit_start_element
+   fun:g_markup_parse_context_parse
+   fun:g_dbus_node_info_new_for_xml
+   fun:_fcitx_g_client_*
+   ...
+}
+
+{
+   Fcitx
+   Memcheck:Leak
+   match-leak-kinds: possible
+   ...
+   fun:g_closure_invoke
+   fun:signal_emit_unlocked_R.isra.0
+   fun:signal_emit_valist_unlocked
+   fun:g_signal_emit_valist
+   fun:g_signal_emit
+   fun:_fcitx_g_client_g_signal
    ...
 }
 
@@ -126,7 +183,7 @@
    fun:fc_thread_func
    fun:g_thread_proxy
    fun:start_thread
-   fun:clone
+   ...
 }
 
 {
@@ -211,17 +268,17 @@
 {
    Mesa
    Memcheck:Leak
-   match-leak-kinds: possible
    ...
    fun:_mesa_*
+   ...
 }
 
 {
    Mesa
    Memcheck:Leak
-   match-leak-kinds: possible
    ...
    fun:mesa_*
+   ...
 }
 
 {
