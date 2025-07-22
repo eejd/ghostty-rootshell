@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: com.mitchellh.ghostty\n"
 "Report-Msgid-Bugs-To: m@mitchellh.com\n"
-"POT-Creation-Date: 2025-07-11 22:56-0500\n"
+"POT-Creation-Date: 2025-07-22 17:18+0000\n"
 "PO-Revision-Date: 2025-03-23 14:17+0100\n"
 "Last-Translator: Andrej Daskalov <andrej.daskalov@gmail.com>\n"
 "Language-Team: Macedonian\n"
@@ -236,7 +236,7 @@ msgstr ""
 "Вметнувањето на овој текст во терминалот може да биде опасно, бидејќи "
 "изгледа како да ќе се извршат одредени команди."
 
-#: src/apprt/gtk/CloseDialog.zig:47 src/apprt/gtk/Surface.zig:2520
+#: src/apprt/gtk/CloseDialog.zig:47 src/apprt/gtk/Surface.zig:2531
 msgid "Close"
 msgstr "Затвори"
 
@@ -272,15 +272,19 @@ msgstr "Сите сесии во ова јазиче ќе бидат преки�
 msgid "The currently running process in this split will be terminated."
 msgstr "Процесот кој моментално се извршува во оваа поделба ќе биде прекинат."
 
-#: src/apprt/gtk/Surface.zig:1257
+#: src/apprt/gtk/Surface.zig:1266
 msgid "Copied to clipboard"
 msgstr "Копирано во привремена меморија"
 
-#: src/apprt/gtk/Surface.zig:2514
+#: src/apprt/gtk/Surface.zig:1268
+msgid "Cleared clipboard"
+msgstr ""
+
+#: src/apprt/gtk/Surface.zig:2525
 msgid "Command succeeded"
 msgstr ""
 
-#: src/apprt/gtk/Surface.zig:2516
+#: src/apprt/gtk/Surface.zig:2527
 msgid "Command failed"
 msgstr ""
 
