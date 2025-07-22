@@ -800,6 +800,9 @@ pub const Parser = struct {
                     self.temp_state = .{ .str = &self.command.clipboard_contents.data };
                     self.buf_start = self.buf_idx;
                     self.prepAllocableString();
+
+                    // See clipboard_kind_end
+                    self.complete = true;
                 },
                 else => {
                     self.command.clipboard_contents.kind = c;
@@ -812,6 +815,11 @@ pub const Parser = struct {
                     self.temp_state = .{ .str = &self.command.clipboard_contents.data };
                     self.buf_start = self.buf_idx;
                     self.prepAllocableString();
+
+                    // OSC 52 can have empty payloads (quoting xterm ctlseqs):
+                    // "If the second parameter is neither a base64 string nor ?,
+                    // then the selection is cleared."
+                    self.complete = true;
                 },
                 else => self.state = .invalid,
             },
@@ -1926,6 +1934,21 @@ test "OSC: get/set clipboard with allocator" {
     try testing.expect(cmd == .clipboard_contents);
     try testing.expect(cmd.clipboard_contents.kind == 's');
     try testing.expect(std.mem.eql(u8, "?", cmd.clipboard_contents.data));
+}
+
+test "OSC: clear clipboard" {
+    const testing = std.testing;
+
+    var p: Parser = .{ .alloc = testing.allocator };
+    defer p.deinit();
+
+    const input = "52;;";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end(null).?;
+    try testing.expect(cmd == .clipboard_contents);
+    try testing.expect(cmd.clipboard_contents.kind == 'c');
+    try testing.expect(std.mem.eql(u8, "", cmd.clipboard_contents.data));
 }
 
 test "OSC: report pwd" {
