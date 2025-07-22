@@ -271,15 +271,15 @@ msgstr "已复制至剪贴板"
 
 #: src/apprt/gtk/Surface.zig:1268
 msgid "Cleared clipboard"
-msgstr ""
+msgstr "已清空剪贴板"
 
 #: src/apprt/gtk/Surface.zig:2525
 msgid "Command succeeded"
-msgstr ""
+msgstr "命令执行成功"
 
 #: src/apprt/gtk/Surface.zig:2527
 msgid "Command failed"
-msgstr ""
+msgstr "命令执行失败"
 
 #: src/apprt/gtk/Window.zig:216
 msgid "Main Menu"
