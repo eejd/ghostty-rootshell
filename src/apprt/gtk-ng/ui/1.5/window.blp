@@ -5,5 +5,7 @@ template $GhosttyWindow: Adw.ApplicationWindow {
   default-width: 800;
   default-height: 600;
 
-  content: $GhosttySurface surface {};
+  content: $GhosttySurface surface {
+    close-request => $surface_close_request();
+  };
 }

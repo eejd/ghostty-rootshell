@@ -36,15 +36,6 @@ pub const Window = extern struct {
 
     fn init(self: *Self, _: *Class) callconv(.C) void {
         gtk.Widget.initTemplate(self.as(gtk.Widget));
-
-        const surface = self.private().surface;
-        _ = Surface.signals.@"close-request".connect(
-            surface,
-            *Self,
-            surfaceCloseRequest,
-            self,
-            .{},
-        );
     }
 
     //---------------------------------------------------------------
@@ -102,11 +93,15 @@ pub const Window = extern struct {
             // Bindings
             class.bindTemplateChildPrivate("surface", .{});
 
+            // Template Callbacks
+            class.bindTemplateCallback("surface_close_request", &surfaceCloseRequest);
+
             // Virtual methods
             gobject.Object.virtual_methods.dispose.implement(class, &dispose);
         }
 
         pub const as = C.Class.as;
         pub const bindTemplateChildPrivate = C.Class.bindTemplateChildPrivate;
+        pub const bindTemplateCallback = C.Class.bindTemplateCallback;
     };
 };

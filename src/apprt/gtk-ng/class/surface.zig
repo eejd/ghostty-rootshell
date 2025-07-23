@@ -245,10 +245,6 @@ pub const Surface = extern struct {
         /// focus events.
         focused: bool = true,
 
-        /// The overlay we use for things such as the URL hover label
-        /// or resize box. Bound from the template.
-        overlay: *gtk.Overlay,
-
         /// The GLAarea that renders the actual surface. This is a binding
         /// to the template so it doesn't have to be unrefed manually.
         gl_area: *gtk.GLArea,
@@ -256,17 +252,9 @@ pub const Surface = extern struct {
         /// The labels for the left/right sides of the URL hover tooltip.
         url_left: *gtk.Label,
         url_right: *gtk.Label,
-        url_ec_motion: *gtk.EventControllerMotion,
 
         /// The resize overlay
         resize_overlay: *ResizeOverlay,
-
-        // Event controllers
-        ec_focus: *gtk.EventControllerFocus,
-        ec_key: *gtk.EventControllerKey,
-        ec_motion: *gtk.EventControllerMotion,
-        ec_scroll: *gtk.EventControllerScroll,
-        gesture_click: *gtk.GestureClick,
 
         /// The apprt Surface.
         rt_surface: ApprtSurface = undefined,
@@ -288,7 +276,7 @@ pub const Surface = extern struct {
 
         /// Various input method state. All related to key input.
         in_keyevent: IMKeyEvent = .false,
-        im_context: ?*gtk.IMMulticontext = null,
+        im_context: *gtk.IMMulticontext,
         im_composing: bool = false,
         im_buf: [128]u8 = undefined,
         im_len: u7 = 0,
@@ -368,13 +356,13 @@ pub const Surface = extern struct {
         // The block below is all related to input method handling. See the function
         // comment for some high level details and then the comments within
         // the block for more specifics.
-        if (priv.im_context) |im_context| {
+        {
             // This can trigger an input method so we need to notify the im context
             // where the cursor is so it can render the dropdowns in the correct
             // place.
             if (priv.core_surface) |surface| {
                 const ime_point = surface.imePoint();
-                im_context.as(gtk.IMContext).setCursorLocation(&.{
+                priv.im_context.as(gtk.IMContext).setCursorLocation(&.{
                     .f_x = @intFromFloat(ime_point.x),
                     .f_y = @intFromFloat(ime_point.y),
                     .f_width = 1,
@@ -415,7 +403,7 @@ pub const Surface = extern struct {
             //   triggered despite being technically consumed. At the time of
             //   writing, both Kitty and Alacritty have the same behavior. I
             //   know of no way to fix this.
-            const im_handled = im_context.as(gtk.IMContext).filterKeypress(event) != 0;
+            const im_handled = priv.im_context.as(gtk.IMContext).filterKeypress(event) != 0;
             // log.warn("GTKIM: im_handled={} im_len={} im_composing={}", .{
             //     im_handled,
             //     self.im_len,
@@ -546,10 +534,7 @@ pub const Surface = extern struct {
                 // because there is other IME state that we want to preserve,
                 // such as quotation mark ordering for Chinese input.
                 if (priv.im_composing) {
-                    if (priv.im_context) |im_context| {
-                        im_context.as(gtk.IMContext).reset();
-                    }
-
+                    priv.im_context.as(gtk.IMContext).reset();
                     surface.preeditCallback(null) catch {};
                 }
 
@@ -803,226 +788,22 @@ pub const Surface = extern struct {
             priv.config = app.getConfig();
         }
 
-        // Setup our event controllers to get input events
-        _ = gtk.EventControllerKey.signals.key_pressed.connect(
-            priv.ec_key,
-            *Self,
-            ecKeyPressed,
-            self,
-            .{},
-        );
-        _ = gtk.EventControllerKey.signals.key_released.connect(
-            priv.ec_key,
-            *Self,
-            ecKeyReleased,
-            self,
-            .{},
-        );
-
-        // Focus controller will tell us about focus enter/exit events
-        _ = gtk.EventControllerFocus.signals.enter.connect(
-            priv.ec_focus,
-            *Self,
-            ecFocusEnter,
-            self,
-            .{},
-        );
-        _ = gtk.EventControllerFocus.signals.leave.connect(
-            priv.ec_focus,
-            *Self,
-            ecFocusLeave,
-            self,
-            .{},
-        );
-
-        // Clicks
-        _ = gtk.GestureClick.signals.pressed.connect(
-            priv.gesture_click,
-            *Self,
-            gcMouseDown,
-            self,
-            .{},
-        );
-        _ = gtk.GestureClick.signals.released.connect(
-            priv.gesture_click,
-            *Self,
-            gcMouseUp,
-            self,
-            .{},
-        );
-
-        // Mouse movement
-        _ = gtk.EventControllerMotion.signals.motion.connect(
-            priv.ec_motion,
-            *Self,
-            ecMouseMotion,
-            self,
-            .{},
-        );
-        _ = gtk.EventControllerMotion.signals.leave.connect(
-            priv.ec_motion,
-            *Self,
-            ecMouseLeave,
-            self,
-            .{},
-        );
-
-        // Scroll
-        _ = gtk.EventControllerScroll.signals.scroll.connect(
-            priv.ec_scroll,
-            *Self,
-            ecMouseScroll,
-            self,
-            .{},
-        );
-        _ = gtk.EventControllerScroll.signals.scroll_begin.connect(
-            priv.ec_scroll,
-            *Self,
-            ecMouseScrollPrecisionBegin,
-            self,
-            .{},
-        );
-        _ = gtk.EventControllerScroll.signals.scroll_end.connect(
-            priv.ec_scroll,
-            *Self,
-            ecMouseScrollPrecisionEnd,
-            self,
-            .{},
-        );
-
         // Setup our input method state
-        const im_context = gtk.IMMulticontext.new();
-        priv.im_context = im_context;
         priv.in_keyevent = .false;
         priv.im_composing = false;
         priv.im_len = 0;
-        _ = gtk.IMContext.signals.preedit_start.connect(
-            im_context,
-            *Self,
-            imPreeditStart,
-            self,
-            .{},
-        );
-        _ = gtk.IMContext.signals.preedit_changed.connect(
-            im_context,
-            *Self,
-            imPreeditChanged,
-            self,
-            .{},
-        );
-        _ = gtk.IMContext.signals.preedit_end.connect(
-            im_context,
-            *Self,
-            imPreeditEnd,
-            self,
-            .{},
-        );
-        _ = gtk.IMContext.signals.commit.connect(
-            im_context,
-            *Self,
-            imCommit,
-            self,
-            .{},
-        );
 
-        // Initialize our GLArea. We could do a lot of this in
-        // the Blueprint file but I think its cleaner to separate
-        // the "UI" part of the blueprint file from the internal logic/config
-        // part.
+        // Initialize our GLArea. We only set the values we can't set
+        // in our blueprint file.
         const gl_area = priv.gl_area;
         gl_area.setRequiredVersion(
             renderer.OpenGL.MIN_VERSION_MAJOR,
             renderer.OpenGL.MIN_VERSION_MINOR,
         );
-        gl_area.setHasStencilBuffer(0);
-        gl_area.setHasDepthBuffer(0);
-        gl_area.setUseEs(0);
         gl_area.as(gtk.Widget).setCursorFromName("text");
-        _ = gtk.Widget.signals.realize.connect(
-            gl_area,
-            *Self,
-            glareaRealize,
-            self,
-            .{},
-        );
-        _ = gtk.Widget.signals.unrealize.connect(
-            gl_area,
-            *Self,
-            glareaUnrealize,
-            self,
-            .{},
-        );
-        _ = gtk.GLArea.signals.render.connect(
-            gl_area,
-            *Self,
-            glareaRender,
-            self,
-            .{},
-        );
-        _ = gtk.GLArea.signals.resize.connect(
-            gl_area,
-            *Self,
-            glareaResize,
-            self,
-            .{},
-        );
-
-        // Some property signals
-        _ = gobject.Object.signals.notify.connect(
-            self,
-            ?*anyopaque,
-            &propConfig,
-            null,
-            .{ .detail = "config" },
-        );
-        _ = gobject.Object.signals.notify.connect(
-            self,
-            ?*anyopaque,
-            &propMouseHoverUrl,
-            null,
-            .{ .detail = "mouse-hover-url" },
-        );
-        _ = gobject.Object.signals.notify.connect(
-            self,
-            ?*anyopaque,
-            &propMouseHidden,
-            null,
-            .{ .detail = "mouse-hidden" },
-        );
-        _ = gobject.Object.signals.notify.connect(
-            self,
-            ?*anyopaque,
-            &propMouseShape,
-            null,
-            .{ .detail = "mouse-shape" },
-        );
-
-        // Some other initialization steps
-        self.initUrlOverlay();
 
         // Initialize our config
         self.propConfig(undefined, null);
-    }
-
-    fn initUrlOverlay(self: *Self) void {
-        const priv = self.private();
-
-        // Setup a motion controller to handle moving the label
-        // to avoid the mouse.
-        _ = gtk.EventControllerMotion.signals.enter.connect(
-            priv.url_ec_motion,
-            *Self,
-            ecUrlMouseEnter,
-            self,
-            .{},
-        );
-        _ = gtk.EventControllerMotion.signals.leave.connect(
-            priv.url_ec_motion,
-            *Self,
-            ecUrlMouseLeave,
-            self,
-            .{},
-        );
     }
 
     fn dispose(self: *Self) callconv(.C) void {
@@ -1030,10 +811,6 @@ pub const Surface = extern struct {
         if (priv.config) |v| {
             v.unref();
             priv.config = null;
-        }
-        if (priv.im_context) |v| {
-            v.unref();
-            priv.im_context = null;
         }
 
         gtk.Widget.disposeTemplate(
@@ -1260,22 +1037,14 @@ pub const Surface = extern struct {
     fn ecFocusEnter(_: *gtk.EventControllerFocus, self: *Self) callconv(.c) void {
         const priv = self.private();
         priv.focused = true;
-
-        if (priv.im_context) |im_context| {
-            im_context.as(gtk.IMContext).focusIn();
-        }
-
+        priv.im_context.as(gtk.IMContext).focusIn();
         _ = glib.idleAddOnce(idleFocus, self.ref());
     }
 
     fn ecFocusLeave(_: *gtk.EventControllerFocus, self: *Self) callconv(.c) void {
         const priv = self.private();
         priv.focused = false;
-
-        if (priv.im_context) |im_context| {
-            im_context.as(gtk.IMContext).focusOut();
-        }
-
+        priv.im_context.as(gtk.IMContext).focusOut();
         _ = glib.idleAddOnce(idleFocus, self.ref());
     }
 
@@ -1647,9 +1416,8 @@ pub const Surface = extern struct {
         // Setup our input method. We do this here because this will
         // create a strong reference back to ourself and we want to be
         // able to release that in unrealize.
-        if (self.private().im_context) |im_context| {
-            im_context.as(gtk.IMContext).setClientWidget(self.as(gtk.Widget));
-        }
+        const priv = self.private();
+        priv.im_context.as(gtk.IMContext).setClientWidget(self.as(gtk.Widget));
     }
 
     fn glareaUnrealize(
@@ -1683,9 +1451,7 @@ pub const Surface = extern struct {
         }
 
         // Unset our input method
-        if (priv.im_context) |im_context| {
-            im_context.as(gtk.IMContext).setClientWidget(null);
-        }
+        priv.im_context.as(gtk.IMContext).setClientWidget(null);
     }
 
     fn glareaRender(
@@ -1899,29 +1665,38 @@ pub const Surface = extern struct {
             );
 
             // Bindings
-            class.bindTemplateChildPrivate("overlay", .{});
             class.bindTemplateChildPrivate("gl_area", .{});
             class.bindTemplateChildPrivate("url_left", .{});
             class.bindTemplateChildPrivate("url_right", .{});
             class.bindTemplateChildPrivate("resize_overlay", .{});
+            class.bindTemplateChildPrivate("im_context", .{});
 
-            // EventControllers don't work with our helper.
-            // https://github.com/ianprime0509/zig-gobject/issues/111
-            inline for (&.{
-                "ec_focus",
-                "ec_key",
-                "ec_motion",
-                "ec_scroll",
-                "gesture_click",
-                "url_ec_motion",
-            }) |name| {
-                gtk.Widget.Class.bindTemplateChildFull(
-                    gobject.ext.as(gtk.Widget.Class, class),
-                    name,
-                    @intFromBool(false),
-                    Private.offset + @offsetOf(Private, name),
-                );
-            }
+            // Template Callbacks
+            class.bindTemplateCallback("focus_enter", &ecFocusEnter);
+            class.bindTemplateCallback("focus_leave", &ecFocusLeave);
+            class.bindTemplateCallback("key_pressed", &ecKeyPressed);
+            class.bindTemplateCallback("key_released", &ecKeyReleased);
+            class.bindTemplateCallback("mouse_down", &gcMouseDown);
+            class.bindTemplateCallback("mouse_up", &gcMouseUp);
+            class.bindTemplateCallback("mouse_motion", &ecMouseMotion);
+            class.bindTemplateCallback("mouse_leave", &ecMouseLeave);
+            class.bindTemplateCallback("scroll", &ecMouseScroll);
+            class.bindTemplateCallback("scroll_begin", &ecMouseScrollPrecisionBegin);
+            class.bindTemplateCallback("scroll_end", &ecMouseScrollPrecisionEnd);
+            class.bindTemplateCallback("gl_realize", &glareaRealize);
+            class.bindTemplateCallback("gl_unrealize", &glareaUnrealize);
+            class.bindTemplateCallback("gl_render", &glareaRender);
+            class.bindTemplateCallback("gl_resize", &glareaResize);
+            class.bindTemplateCallback("im_preedit_start", &imPreeditStart);
+            class.bindTemplateCallback("im_preedit_changed", &imPreeditChanged);
+            class.bindTemplateCallback("im_preedit_end", &imPreeditEnd);
+            class.bindTemplateCallback("im_commit", &imCommit);
+            class.bindTemplateCallback("url_mouse_enter", &ecUrlMouseEnter);
+            class.bindTemplateCallback("url_mouse_leave", &ecUrlMouseLeave);
+            class.bindTemplateCallback("notify_config", &propConfig);
+            class.bindTemplateCallback("notify_mouse_hover_url", &propMouseHoverUrl);
+            class.bindTemplateCallback("notify_mouse_hidden", &propMouseHidden);
+            class.bindTemplateCallback("notify_mouse_shape", &propMouseShape);
 
             // Properties
             gobject.ext.registerProperties(class, &.{
@@ -1946,6 +1721,7 @@ pub const Surface = extern struct {
 
         pub const as = C.Class.as;
         pub const bindTemplateChildPrivate = C.Class.bindTemplateChildPrivate;
+        pub const bindTemplateCallback = C.Class.bindTemplateCallback;
     };
 };
 
