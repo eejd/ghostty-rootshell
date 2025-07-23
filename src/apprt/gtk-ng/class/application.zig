@@ -481,6 +481,8 @@ pub const Application = extern struct {
 
             .quit_timer => try Action.quitTimer(self, value),
 
+            .progress_report => return Action.progressReport(target, value),
+
             .render => Action.render(self, target),
 
             .set_title => Action.setTitle(target, value),
@@ -528,7 +530,6 @@ pub const Application = extern struct {
             .check_for_updates,
             .undo,
             .redo,
-            .progress_report,
             => {
                 log.warn("unimplemented action={}", .{action});
                 return false;
@@ -1115,6 +1116,19 @@ const Action = struct {
             .start => self.startQuitTimer(),
             .stop => self.stopQuitTimer(),
         }
+    }
+
+    pub fn progressReport(
+        target: apprt.Target,
+        value: terminal.osc.Command.ProgressReport,
+    ) bool {
+        return switch (target) {
+            .app => false,
+            .surface => |v| surface: {
+                v.rt_surface.surface.setProgressReport(value);
+                break :surface true;
+            },
+        };
     }
 
     pub fn render(_: *Application, target: apprt.Target) void {
