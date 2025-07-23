@@ -89,6 +89,11 @@ template $GhosttySurface: Adw.Bin {
     released => $mouse_up();
     button: 0;
   }
+
+  DropTarget drop_target {
+    drop => $drop();
+    actions: copy;
+  }
 }
 
 IMMulticontext im_context {

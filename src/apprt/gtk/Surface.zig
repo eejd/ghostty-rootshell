@@ -2232,22 +2232,30 @@ fn gtkDrop(
         };
         const writer = shell_escape_writer.writer();
 
-        const unboxed = value.getBoxed() orelse return 0;
-        const fl: *gdk.FileList = @ptrCast(@alignCast(unboxed));
-        var list: ?*glib.SList = fl.getFiles();
+        const list: ?*glib.SList = list: {
+            const unboxed = value.getBoxed() orelse return 0;
+            const fl: *gdk.FileList = @ptrCast(@alignCast(unboxed));
+            break :list fl.getFiles();
+        };
+        defer if (list) |v| v.free();
 
-        while (list) |item| : (list = item.f_next) {
-            const file: *gio.File = @ptrCast(@alignCast(item.f_data orelse continue));
-            const path = file.getPath() orelse continue;
+        {
+            var current: ?*glib.SList = list;
+            while (current) |item| : (current = item.f_next) {
+                const file: *gio.File = @ptrCast(@alignCast(item.f_data orelse continue));
+                const path = file.getPath() orelse continue;
+                const slice = std.mem.span(path);
+                defer glib.free(path);
 
-            writer.writeAll(std.mem.span(path)) catch |err| {
-                log.err("unable to write path to buffer: {}", .{err});
-                continue;
-            };
-            writer.writeAll("\n") catch |err| {
-                log.err("unable to write to buffer: {}", .{err});
-                continue;
-            };
+                writer.writeAll(slice) catch |err| {
+                    log.err("unable to write path to buffer: {}", .{err});
+                    continue;
+                };
+                writer.writeAll("\n") catch |err| {
+                    log.err("unable to write to buffer: {}", .{err});
+                    continue;
+                };
+            }
         }
 
         const string = data.toOwnedSliceSentinel(0) catch |err| {
