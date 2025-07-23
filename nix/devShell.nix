@@ -69,6 +69,10 @@
   zon2nix,
   system,
   pkgs,
+  # needed by GTK for loading SVG icons while running from within the
+  # developer shell
+  glycin-loaders,
+  librsvg,
 }: let
   # See package.nix. Keep in sync.
   ld_library_path = import ./build-support/ld-library-path.nix {
@@ -174,6 +178,11 @@ in
         gst_all_1.gstreamer
         gst_all_1.gst-plugins-base
         gst_all_1.gst-plugins-good
+
+        # needed by GTK for loading SVG icons while running from within the
+        # developer shell
+        glycin-loaders
+        librsvg
       ];
 
     # This should be set onto the rpath of the ghostty binary if you want
