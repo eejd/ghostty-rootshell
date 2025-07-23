@@ -63,8 +63,8 @@ pub const file_inputs = deps: {
     var deps: [total][]const u8 = undefined;
     var index: usize = 0;
     for (icon_sizes) |size| {
-        deps[index] = std.fmt.comptimePrint("images/icons/icon_{d}.png", .{size});
-        deps[index + 1] = std.fmt.comptimePrint("images/icons/icon_{d}@2x.png", .{size});
+        deps[index] = std.fmt.comptimePrint("images/gnome/{d}.png", .{size});
+        deps[index + 1] = std.fmt.comptimePrint("images/gnome/{d}.png", .{size * 2});
         index += 2;
     }
     for (blueprints) |bp| {
@@ -162,7 +162,7 @@ fn genIcons(writer: anytype) !void {
         // 1x
         {
             const alias = std.fmt.comptimePrint("{d}x{d}", .{ size, size });
-            const source = std.fmt.comptimePrint("images/icons/icon_{d}.png", .{size});
+            const source = std.fmt.comptimePrint("images/gnome/{d}.png", .{size});
             try cwd.access(source, .{});
             try writer.print(
                 \\    <file alias="{s}/apps/{s}.png">{s}</file>
@@ -175,7 +175,7 @@ fn genIcons(writer: anytype) !void {
         // 2x
         {
             const alias = std.fmt.comptimePrint("{d}x{d}@2", .{ size, size });
-            const source = std.fmt.comptimePrint("images/icons/icon_{d}@2x.png", .{size});
+            const source = std.fmt.comptimePrint("images/gnome/{d}.png", .{size * 2});
             try cwd.access(source, .{});
             try writer.print(
                 \\    <file alias="{s}/apps/{s}.png">{s}</file>
