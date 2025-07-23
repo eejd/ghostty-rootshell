@@ -2,6 +2,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 
 const apprt = @import("../apprt.zig");
+const build_config = @import("../build_config.zig");
 const App = @import("../App.zig");
 const Surface = @import("../Surface.zig");
 const renderer = @import("../renderer.zig");
@@ -107,6 +108,18 @@ pub const Message = union(enum) {
     pub const ChildExited = extern struct {
         exit_code: u32,
         runtime_ms: u64,
+
+        /// Make this a valid gobject if we're in a GTK environment.
+        pub const getGObjectType = switch (build_config.app_runtime) {
+            .gtk,
+            .@"gtk-ng",
+            => @import("gobject").ext.defineBoxed(
+                ChildExited,
+                .{ .name = "GhosttyApprtChildExited" },
+            ),
+
+            .none => void,
+        };
     };
 };
 

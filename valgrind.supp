@@ -83,6 +83,18 @@
 }
 
 {
+   VMware Graphics Driver
+   Memcheck:Leak
+   match-leak-kinds: possible
+   ...
+   fun:vmw_fence_create
+   fun:vmw_ioctl_command
+   fun:vmw_swc_flush
+   fun:svga_context_flush
+  ...
+}
+
+{
    GSK Renderer GPU Stuff
    Memcheck:Leak
    match-leak-kinds: possible
