@@ -114,6 +114,34 @@ pub fn Common(
                     );
                 }
             }).bindTemplateChildPrivate else {};
+
+            /// Bind a function pointer to a template callback symbol.
+            pub fn bindTemplateCallback(
+                class: *Self.Class,
+                comptime name: [:0]const u8,
+                comptime func: anytype,
+            ) void {
+                {
+                    const ptr_ti = @typeInfo(@TypeOf(func));
+                    if (ptr_ti != .pointer) {
+                        @compileError("bound function must be a pointer type");
+                    }
+                    if (ptr_ti.pointer.size != .one) {
+                        @compileError("bound function must be a pointer to a function");
+                    }
+
+                    const func_ti = @typeInfo(ptr_ti.pointer.child);
+                    if (func_ti != .@"fn") {
+                        @compileError("bound function must be a function pointer");
+                    }
+                }
+
+                gtk.Widget.Class.bindTemplateCallbackFull(
+                    class.as(gtk.Widget.Class),
+                    name,
+                    @ptrCast(func),
+                );
+            }
         };
     };
 }

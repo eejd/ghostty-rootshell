@@ -163,40 +163,6 @@ pub const ClipboardConfirmationDialog = extern struct {
     fn init(self: *Self, _: *Class) callconv(.C) void {
         gtk.Widget.initTemplate(self.as(gtk.Widget));
 
-        const priv = self.private();
-
-        // Signals
-        _ = gtk.Button.signals.clicked.connect(
-            priv.reveal_button,
-            *Self,
-            revealButtonClicked,
-            self,
-            .{},
-        );
-        _ = gtk.Button.signals.clicked.connect(
-            priv.hide_button,
-            *Self,
-            hideButtonClicked,
-            self,
-            .{},
-        );
-
-        // Some property signals
-        _ = gobject.Object.signals.notify.connect(
-            self,
-            ?*anyopaque,
-            &propBlur,
-            null,
-            .{ .detail = "blur" },
-        );
-        _ = gobject.Object.signals.notify.connect(
-            self,
-            ?*anyopaque,
-            &propRequest,
-            null,
-            .{ .detail = "request" },
-        );
-
         // Trigger initial values
         self.propBlur(undefined, null);
         self.propRequest(undefined, null);
@@ -374,6 +340,12 @@ pub const ClipboardConfirmationDialog = extern struct {
                 class.bindTemplateChildPrivate("remember_choice", .{});
             }
 
+            // Template Callbacks
+            class.bindTemplateCallback("reveal_clicked", &revealButtonClicked);
+            class.bindTemplateCallback("hide_clicked", &hideButtonClicked);
+            class.bindTemplateCallback("notify_blur", &propBlur);
+            class.bindTemplateCallback("notify_request", &propRequest);
+
             // Properties
             gobject.ext.registerProperties(class, &.{
                 properties.blur.impl,
@@ -394,5 +366,6 @@ pub const ClipboardConfirmationDialog = extern struct {
 
         pub const as = C.Class.as;
         pub const bindTemplateChildPrivate = C.Class.bindTemplateChildPrivate;
+        pub const bindTemplateCallback = C.Class.bindTemplateCallback;
     };
 };

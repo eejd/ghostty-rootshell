@@ -7,6 +7,8 @@ template $GhosttyClipboardConfirmationDialog: $GhosttyDialog {
     "clipboard-confirmation-dialog",
   ]
 
+  notify::blur => $notify_blur();
+  notify::request => $notify_request();
   heading: _("Authorize Clipboard Access");
   // Not localized because this is a placeholder users never see.
   body: "If you see this text, there is a bug in Ghostty. Please report it.";
@@ -50,6 +52,7 @@ template $GhosttyClipboardConfirmationDialog: $GhosttyDialog {
 
       [overlay]
       Button reveal_button {
+        clicked => $reveal_clicked();
         visible: false;
         halign: end;
         valign: start;
@@ -63,6 +66,7 @@ template $GhosttyClipboardConfirmationDialog: $GhosttyDialog {
 
       [overlay]
       Button hide_button {
+        clicked => $hide_clicked();
         visible: false;
         halign: end;
         valign: start;
