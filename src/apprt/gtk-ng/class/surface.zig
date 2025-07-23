@@ -1,4 +1,5 @@
 const std = @import("std");
+const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const adw = @import("adw");
 const gdk = @import("gdk");
@@ -308,9 +309,13 @@ pub const Surface = extern struct {
         /// True when the child has exited.
         child_exited: bool = false,
 
+        // Progress bar
+        progress_bar_timer: ?c_uint = null,
+
         // Template binds
         child_exited_overlay: *ChildExited,
         drop_target: *gtk.DropTarget,
+        progress_bar_overlay: *gtk.ProgressBar,
 
         pub var offset: c_int = 0;
     };
@@ -336,6 +341,93 @@ pub const Surface = extern struct {
     pub fn redraw(self: *Self) void {
         const priv = self.private();
         priv.gl_area.queueRender();
+    }
+
+    /// Set the current progress report state.
+    pub fn setProgressReport(
+        self: *Self,
+        value: terminal.osc.Command.ProgressReport,
+    ) void {
+        const priv = self.private();
+
+        // No matter what, we stop the timer because if we're removing
+        // then we're done and otherwise we restart it.
+        if (priv.progress_bar_timer) |timer| {
+            if (glib.Source.remove(timer) == 0) {
+                log.warn("unable to remove progress bar timer", .{});
+            }
+            priv.progress_bar_timer = null;
+        }
+
+        const progress_bar = priv.progress_bar_overlay;
+        switch (value.state) {
+            // Remove the progress bar
+            .remove => {
+                progress_bar.as(gtk.Widget).setVisible(@intFromBool(false));
+                return;
+            },
+
+            // Set the progress bar to a fixed value if one was provided, otherwise pulse.
+            // Remove the `error` CSS class so that the progress bar shows as normal.
+            .set => {
+                progress_bar.as(gtk.Widget).removeCssClass("error");
+                if (value.progress) |progress| {
+                    progress_bar.setFraction(computeFraction(progress));
+                } else {
+                    progress_bar.pulse();
+                }
+            },
+
+            // Set the progress bar to a fixed value if one was provided, otherwise pulse.
+            // Set the `error` CSS class so that the progress bar shows as an error color.
+            .@"error" => {
+                progress_bar.as(gtk.Widget).addCssClass("error");
+                if (value.progress) |progress| {
+                    progress_bar.setFraction(computeFraction(progress));
+                } else {
+                    progress_bar.pulse();
+                }
+            },
+
+            // The state of progress is unknown, so pulse the progress bar to
+            // indicate that things are still happening.
+            .indeterminate => {
+                progress_bar.pulse();
+            },
+
+            // If a progress value was provided, set the progress bar to that value.
+            // Don't pulse the progress bar as that would indicate that things were
+            // happening. Otherwise this is mainly used to keep the progress bar on
+            // screen instead of timing out.
+            .pause => {
+                if (value.progress) |progress| {
+                    progress_bar.setFraction(computeFraction(progress));
+                }
+            },
+        }
+
+        // Assume all states lead to visibility
+        assert(value.state != .remove);
+        progress_bar.as(gtk.Widget).setVisible(@intFromBool(true));
+
+        // Start our timer to remove bad actor programs that stall
+        // the progress bar.
+        const progress_bar_timeout_seconds = 15;
+        assert(priv.progress_bar_timer == null);
+        priv.progress_bar_timer = glib.timeoutAdd(
+            progress_bar_timeout_seconds * std.time.ms_per_s,
+            progressBarTimer,
+            self,
+        );
+    }
+
+    /// The progress bar hasn't been updated by the TUI recently, remove it.
+    fn progressBarTimer(ud: ?*anyopaque) callconv(.c) c_int {
+        const self: *Self = @ptrCast(@alignCast(ud.?));
+        const priv = self.private();
+        priv.progress_bar_timer = null;
+        self.setProgressReport(.{ .state = .remove });
+        return @intFromBool(glib.SOURCE_REMOVE);
     }
 
     /// Key press event (press or release).
@@ -872,6 +964,12 @@ pub const Surface = extern struct {
         if (priv.config) |v| {
             v.unref();
             priv.config = null;
+        }
+        if (priv.progress_bar_timer) |timer| {
+            if (glib.Source.remove(timer) == 0) {
+                log.warn("unable to remove progress bar timer", .{});
+            }
+            priv.progress_bar_timer = null;
         }
 
         gtk.Widget.disposeTemplate(
@@ -1833,6 +1931,7 @@ pub const Surface = extern struct {
             class.bindTemplateChildPrivate("url_left", .{});
             class.bindTemplateChildPrivate("url_right", .{});
             class.bindTemplateChildPrivate("child_exited_overlay", .{});
+            class.bindTemplateChildPrivate("progress_bar_overlay", .{});
             class.bindTemplateChildPrivate("resize_overlay", .{});
             class.bindTemplateChildPrivate("drop_target", .{});
             class.bindTemplateChildPrivate("im_context", .{});
@@ -2220,4 +2319,17 @@ fn g_value_holds(value_: ?*gobject.Value, g_type: gobject.Type) bool {
         return gobject.typeCheckValueHolds(value, g_type) != 0;
     }
     return false;
+}
+
+/// Compute a fraction [0.0, 1.0] from the supplied progress, which is clamped
+/// to [0, 100].
+fn computeFraction(progress: u8) f64 {
+    return @as(f64, @floatFromInt(std.math.clamp(progress, 0, 100))) / 100.0;
+}
+
+test "computeFraction" {
+    try std.testing.expectEqual(1.0, computeFraction(100));
+    try std.testing.expectEqual(1.0, computeFraction(255));
+    try std.testing.expectEqual(0.0, computeFraction(0));
+    try std.testing.expectEqual(0.5, computeFraction(50));
 }

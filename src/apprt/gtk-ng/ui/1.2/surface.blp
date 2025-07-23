@@ -2,6 +2,10 @@ using Gtk 4.0;
 using Adw 1;
 
 template $GhosttySurface: Adw.Bin {
+  styles [
+    "surface",
+  ]
+
   notify::config => $notify_config();
   notify::mouse-hover-url => $notify_mouse_hover_url();
   notify::mouse-hidden => $notify_mouse_hidden();
@@ -23,6 +27,17 @@ template $GhosttySurface: Adw.Bin {
       has-stencil-buffer: false;
       has-depth-buffer: false;
       use-es: false;
+    }
+
+    [overlay]
+    ProgressBar progress_bar_overlay {
+      styles [
+        "osd",
+      ]
+
+      visible: false;
+      halign: fill;
+      valign: start;
     }
 
     [overlay]
