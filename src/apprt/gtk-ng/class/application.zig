@@ -485,6 +485,8 @@ pub const Application = extern struct {
 
             .set_title => Action.setTitle(target, value),
 
+            .show_child_exited => return Action.showChildExited(target, value),
+
             .show_gtk_inspector => Action.showGtkInspector(),
 
             // Unimplemented but todo on gtk-ng branch
@@ -514,7 +516,6 @@ pub const Application = extern struct {
             .ring_bell,
             .toggle_command_palette,
             .open_url,
-            .show_child_exited,
             .close_all_windows,
             .float_window,
             .toggle_visibility,
@@ -1139,6 +1140,16 @@ const Action = struct {
                 );
             },
         }
+    }
+
+    pub fn showChildExited(
+        target: apprt.Target,
+        value: apprt.surface.Message.ChildExited,
+    ) bool {
+        return switch (target) {
+            .app => false,
+            .surface => |v| v.rt_surface.surface.childExited(value),
+        };
     }
 
     pub fn showGtkInspector() void {

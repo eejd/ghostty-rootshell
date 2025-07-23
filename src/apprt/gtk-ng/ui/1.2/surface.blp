@@ -26,6 +26,12 @@ template $GhosttySurface: Adw.Bin {
     }
 
     [overlay]
+    $GhosttySurfaceChildExited child_exited_overlay {
+      visible: bind template.child-exited;
+      close-request => $child_exited_close();
+    }
+
+    [overlay]
     $GhosttyResizeOverlay resize_overlay {
       styles [
         "size-overlay",

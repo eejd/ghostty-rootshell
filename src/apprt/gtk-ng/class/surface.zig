@@ -21,6 +21,7 @@ const Common = @import("../class.zig").Common;
 const Application = @import("application.zig").Application;
 const Config = @import("config.zig").Config;
 const ResizeOverlay = @import("resize_overlay.zig").ResizeOverlay;
+const ChildExited = @import("surface_child_exited.zig").SurfaceChildExited;
 const ClipboardConfirmationDialog = @import("clipboard_confirmation_dialog.zig").ClipboardConfirmationDialog;
 
 const log = std.log.scoped(.gtk_ghostty_surface);
@@ -52,6 +53,26 @@ pub const Surface = extern struct {
                         Private,
                         &Private.offset,
                         "config",
+                    ),
+                },
+            );
+        };
+
+        pub const @"child-exited" = struct {
+            pub const name = "child-exited";
+            const impl = gobject.ext.defineProperty(
+                name,
+                Self,
+                bool,
+                .{
+                    .nick = "Child Exited",
+                    .blurb = "True when the child process has exited.",
+                    .default = false,
+                    .accessor = gobject.ext.privateFieldAccessor(
+                        Self,
+                        Private,
+                        &Private.offset,
+                        "child_exited",
                     ),
                 },
             );
@@ -284,7 +305,11 @@ pub const Surface = extern struct {
         /// True when we have a precision scroll in progress
         precision_scroll: bool = false,
 
+        /// True when the child has exited.
+        child_exited: bool = false,
+
         // Template binds
+        child_exited_overlay: *ChildExited,
         drop_target: *gtk.DropTarget,
 
         pub var offset: c_int = 0;
@@ -632,6 +657,26 @@ pub const Surface = extern struct {
             .{process_active},
             null,
         );
+    }
+
+    pub fn childExited(
+        self: *Self,
+        data: apprt.surface.Message.ChildExited,
+    ) bool {
+        // If we have the noop child exited overlay then we don't do anything
+        // for child exited. The false return will force libghostty to show
+        // the normal text-based message.
+        if (comptime @hasDecl(ChildExited, "noop")) {
+            return false;
+        }
+
+        const priv = self.private();
+        priv.child_exited = true;
+        priv.child_exited_overlay.setData(&data);
+        self.as(gobject.Object).notifyByPspec(
+            properties.@"child-exited".impl.param_spec,
+        );
+        return true;
     }
 
     pub fn cgroupPath(self: *Self) ?[]const u8 {
@@ -1014,6 +1059,14 @@ pub const Surface = extern struct {
 
     //---------------------------------------------------------------
     // Signal Handlers
+
+    fn childExitedClose(
+        _: *ChildExited,
+        self: *Self,
+    ) callconv(.c) void {
+        // This closes the surface with no confirmation.
+        self.close(false);
+    }
 
     fn dtDrop(
         _: *gtk.DropTarget,
@@ -1762,6 +1815,7 @@ pub const Surface = extern struct {
 
         fn init(class: *Class) callconv(.C) void {
             gobject.ext.ensureType(ResizeOverlay);
+            gobject.ext.ensureType(ChildExited);
             gtk.Widget.Class.setTemplateFromResource(
                 class.as(gtk.Widget.Class),
                 comptime gresource.blueprint(.{
@@ -1775,6 +1829,7 @@ pub const Surface = extern struct {
             class.bindTemplateChildPrivate("gl_area", .{});
             class.bindTemplateChildPrivate("url_left", .{});
             class.bindTemplateChildPrivate("url_right", .{});
+            class.bindTemplateChildPrivate("child_exited_overlay", .{});
             class.bindTemplateChildPrivate("resize_overlay", .{});
             class.bindTemplateChildPrivate("drop_target", .{});
             class.bindTemplateChildPrivate("im_context", .{});
@@ -1802,6 +1857,7 @@ pub const Surface = extern struct {
             class.bindTemplateCallback("im_commit", &imCommit);
             class.bindTemplateCallback("url_mouse_enter", &ecUrlMouseEnter);
             class.bindTemplateCallback("url_mouse_leave", &ecUrlMouseLeave);
+            class.bindTemplateCallback("child_exited_close", &childExitedClose);
             class.bindTemplateCallback("notify_config", &propConfig);
             class.bindTemplateCallback("notify_mouse_hover_url", &propMouseHoverUrl);
             class.bindTemplateCallback("notify_mouse_hidden", &propMouseHidden);
@@ -1810,6 +1866,7 @@ pub const Surface = extern struct {
             // Properties
             gobject.ext.registerProperties(class, &.{
                 properties.config.impl,
+                properties.@"child-exited".impl,
                 properties.focused.impl,
                 properties.@"mouse-shape".impl,
                 properties.@"mouse-hidden".impl,
