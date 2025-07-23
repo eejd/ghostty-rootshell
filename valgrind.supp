@@ -14,6 +14,75 @@
 # and quitting. Otherwise, we leave a number of GTK resources around.
 
 {
+   GDK Drag and Drop Leaks Data
+   Memcheck:Leak
+   match-leak-kinds: definite
+   fun:malloc
+   fun:g_malloc
+   fun:g_slice_alloc
+   fun:g_slice_alloc0
+   fun:g_error_allocate
+   fun:g_error_new_literal
+   fun:g_set_error_literal
+   fun:g_output_stream_set_pending
+   fun:g_output_stream_write
+   fun:portal_file_deserializer_finish
+   fun:g_task_return_now
+   fun:g_task_return
+   fun:async_ready_splice_callback_wrapper
+   fun:g_task_return_now
+   fun:g_task_return
+   fun:real_splice_async_complete_cb
+   fun:async_ready_close_callback_wrapper
+   fun:g_task_return_now
+   fun:complete_in_idle_cb
+   fun:g_idle_dispatch
+   fun:g_main_context_dispatch_unlocked
+   fun:g_main_context_iterate_unlocked.isra.0
+   fun:g_main_context_iteration
+   fun:apprt.gtk-ng.class.application.Application.run
+   fun:apprt.gtk-ng.App.run
+   fun:main_ghostty.main
+   fun:callMain
+   fun:callMainWithArgs
+   fun:main
+}
+
+{
+   GDK Drag and Drop Leaks Task
+   Memcheck:Leak
+   match-leak-kinds: definite
+   fun:calloc
+   fun:g_malloc0
+   fun:g_type_create_instance
+   fun:g_object_new_internal.part.0
+   fun:g_object_new_with_properties
+   fun:g_object_new
+   fun:g_task_new
+   fun:file_transfer_portal_retrieve_files
+   fun:portal_file_deserializer_finish
+   fun:g_task_return_now
+   fun:g_task_return
+   fun:async_ready_splice_callback_wrapper
+   fun:g_task_return_now
+   fun:g_task_return
+   fun:real_splice_async_complete_cb
+   fun:async_ready_close_callback_wrapper
+   fun:g_task_return_now
+   fun:complete_in_idle_cb
+   fun:g_idle_dispatch
+   fun:g_main_context_dispatch_unlocked
+   fun:g_main_context_iterate_unlocked.isra.0
+   fun:g_main_context_iteration
+   fun:apprt.gtk-ng.class.application.Application.run
+   fun:apprt.gtk-ng.App.run
+   fun:main_ghostty.main
+   fun:callMain
+   fun:callMainWithArgs
+   fun:main
+}
+
+{
    GSK Renderer GPU Stuff
    Memcheck:Leak
    match-leak-kinds: possible

@@ -284,6 +284,9 @@ pub const Surface = extern struct {
         /// True when we have a precision scroll in progress
         precision_scroll: bool = false,
 
+        // Template binds
+        drop_target: *gtk.DropTarget,
+
         pub var offset: c_int = 0;
     };
 
@@ -793,6 +796,16 @@ pub const Surface = extern struct {
         priv.im_composing = false;
         priv.im_len = 0;
 
+        // Set up to handle items being dropped on our surface. Files can be dropped
+        // from Nautilus and strings can be dropped from many programs. The order
+        // of these types matter.
+        var drop_target_types = [_]gobject.Type{
+            gdk.FileList.getGObjectType(),
+            gio.File.getGObjectType(),
+            gobject.ext.types.string,
+        };
+        priv.drop_target.setGtypes(&drop_target_types, drop_target_types.len);
+
         // Initialize our GLArea. We only set the values we can't set
         // in our blueprint file.
         const gl_area = priv.gl_area;
@@ -1001,6 +1014,100 @@ pub const Surface = extern struct {
 
     //---------------------------------------------------------------
     // Signal Handlers
+
+    fn dtDrop(
+        _: *gtk.DropTarget,
+        value: *gobject.Value,
+        _: f64,
+        _: f64,
+        self: *Self,
+    ) callconv(.c) c_int {
+        const alloc = Application.default().allocator();
+
+        if (g_value_holds(
+            value,
+            gdk.FileList.getGObjectType(),
+        )) {
+            var data = std.ArrayList(u8).init(alloc);
+            defer data.deinit();
+
+            var shell_escape_writer: internal_os.ShellEscapeWriter(std.ArrayList(u8).Writer) = .{
+                .child_writer = data.writer(),
+            };
+            const writer = shell_escape_writer.writer();
+
+            const list: ?*glib.SList = list: {
+                const unboxed = value.getBoxed() orelse return 0;
+                const fl: *gdk.FileList = @ptrCast(@alignCast(unboxed));
+                break :list fl.getFiles();
+            };
+            defer if (list) |v| v.free();
+
+            {
+                var current: ?*glib.SList = list;
+                while (current) |item| : (current = item.f_next) {
+                    const file: *gio.File = @ptrCast(@alignCast(item.f_data orelse continue));
+                    const path = file.getPath() orelse continue;
+                    const slice = std.mem.span(path);
+                    defer glib.free(path);
+
+                    writer.writeAll(slice) catch |err| {
+                        log.err("unable to write path to buffer: {}", .{err});
+                        continue;
+                    };
+                    writer.writeAll("\n") catch |err| {
+                        log.err("unable to write to buffer: {}", .{err});
+                        continue;
+                    };
+                }
+            }
+
+            const string = data.toOwnedSliceSentinel(0) catch |err| {
+                log.err("unable to convert to a slice: {}", .{err});
+                return 0;
+            };
+            defer alloc.free(string);
+            Clipboard.paste(self, string);
+            return 1;
+        }
+
+        if (g_value_holds(value, gio.File.getGObjectType())) {
+            const object = value.getObject() orelse return 0;
+            const file = gobject.ext.cast(gio.File, object) orelse return 0;
+            const path = file.getPath() orelse return 0;
+            var data = std.ArrayList(u8).init(alloc);
+            defer data.deinit();
+
+            var shell_escape_writer: internal_os.ShellEscapeWriter(std.ArrayList(u8).Writer) = .{
+                .child_writer = data.writer(),
+            };
+            const writer = shell_escape_writer.writer();
+            writer.writeAll(std.mem.span(path)) catch |err| {
+                log.err("unable to write path to buffer: {}", .{err});
+                return 0;
+            };
+            writer.writeAll("\n") catch |err| {
+                log.err("unable to write to buffer: {}", .{err});
+                return 0;
+            };
+
+            const string = data.toOwnedSliceSentinel(0) catch |err| {
+                log.err("unable to convert to a slice: {}", .{err});
+                return 0;
+            };
+            defer alloc.free(string);
+            return 1;
+        }
+
+        if (g_value_holds(value, gobject.ext.types.string)) {
+            if (value.getString()) |string| {
+                Clipboard.paste(self, std.mem.span(string));
+            }
+            return 1;
+        }
+
+        return 1;
+    }
 
     fn ecKeyPressed(
         ec_key: *gtk.EventControllerKey,
@@ -1669,6 +1776,7 @@ pub const Surface = extern struct {
             class.bindTemplateChildPrivate("url_left", .{});
             class.bindTemplateChildPrivate("url_right", .{});
             class.bindTemplateChildPrivate("resize_overlay", .{});
+            class.bindTemplateChildPrivate("drop_target", .{});
             class.bindTemplateChildPrivate("im_context", .{});
 
             // Template Callbacks
@@ -1683,6 +1791,7 @@ pub const Surface = extern struct {
             class.bindTemplateCallback("scroll", &ecMouseScroll);
             class.bindTemplateCallback("scroll_begin", &ecMouseScrollPrecisionBegin);
             class.bindTemplateCallback("scroll_end", &ecMouseScrollPrecisionEnd);
+            class.bindTemplateCallback("drop", &dtDrop);
             class.bindTemplateCallback("gl_realize", &glareaRealize);
             class.bindTemplateCallback("gl_unrealize", &glareaUnrealize);
             class.bindTemplateCallback("gl_render", &glareaRender);
@@ -1758,17 +1867,6 @@ fn translateMouseButton(button: c_uint) input.MouseButton {
 
 /// A namespace for our clipboard-related functions so Surface isn't SO large.
 const Clipboard = struct {
-    /// Get the specific type of clipboard for a widget.
-    pub fn get(
-        widget: *gtk.Widget,
-        clipboard: apprt.Clipboard,
-    ) ?*gdk.Clipboard {
-        return switch (clipboard) {
-            .standard => widget.getClipboard(),
-            .selection, .primary => widget.getPrimaryClipboard(),
-        };
-    }
-
     /// Set the clipboard contents.
     pub fn set(
         self: *Surface,
@@ -1835,6 +1933,52 @@ const Clipboard = struct {
             clipboardReadText,
             ud,
         );
+    }
+
+    /// Paste explicit text directly into the surface, regardless of the
+    /// actual clipboard contents.
+    pub fn paste(
+        self: *Surface,
+        text: [:0]const u8,
+    ) void {
+        if (text.len == 0) return;
+
+        const surface = self.private().core_surface orelse return;
+        surface.completeClipboardRequest(
+            .paste,
+            text,
+            false,
+        ) catch |err| switch (err) {
+            error.UnsafePaste,
+            error.UnauthorizedPaste,
+            => {
+                showClipboardConfirmation(
+                    self,
+                    .paste,
+                    text,
+                );
+                return;
+            },
+
+            else => {
+                log.warn(
+                    "failed to complete clipboard request err={}",
+                    .{err},
+                );
+                return;
+            },
+        };
+    }
+
+    /// Get the specific type of clipboard for a widget.
+    fn get(
+        widget: *gtk.Widget,
+        clipboard: apprt.Clipboard,
+    ) ?*gdk.Clipboard {
+        return switch (clipboard) {
+            .standard => widget.getClipboard(),
+            .selection, .primary => widget.getPrimaryClipboard(),
+        };
     }
 
     fn showClipboardConfirmation(
@@ -2007,3 +2151,13 @@ const Clipboard = struct {
         state: apprt.ClipboardRequest,
     };
 };
+
+/// Check a GValue to see what's type its wrapping. This is equivalent to GTK's
+/// `G_VALUE_HOLDS` macro but Zig's C translator does not like it.
+fn g_value_holds(value_: ?*gobject.Value, g_type: gobject.Type) bool {
+    if (value_) |value| {
+        if (value.f_g_type == g_type) return true;
+        return gobject.typeCheckValueHolds(value, g_type) != 0;
+    }
+    return false;
+}
