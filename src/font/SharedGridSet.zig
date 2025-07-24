@@ -309,7 +309,7 @@ fn collection(
             self.font_lib,
             font.embedded.symbols_nerd_font,
             load_options.faceOptions(),
-        ) }, .em_size),
+        ) }, .none),
     );
 
     // On macOS, always search for and add the Apple Emoji font

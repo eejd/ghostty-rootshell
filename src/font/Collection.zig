@@ -62,9 +62,12 @@ pub fn deinit(self: *Collection, alloc: Allocator) void {
     var it = self.faces.iterator();
     while (it.next()) |array| {
         var entry_it = array.value.iterator(0);
-        while (entry_it.next()) |entry_or_alias| {
-            if (entry_or_alias.unwrapNoAlias()) |entry| entry.deinit();
-        }
+        // Deinit all entries, aliases can be ignored.
+        while (entry_it.next()) |entry_or_alias|
+            switch (entry_or_alias.*) {
+                .entry => |*entry| entry.deinit(),
+                .alias => {},
+            };
         array.value.deinit(alloc);
     }
 
@@ -73,11 +76,12 @@ pub fn deinit(self: *Collection, alloc: Allocator) void {
 
 pub const AddError =
     Allocator.Error ||
-    AdjustSizeError ||
+    SetSizeError ||
     error{
+        /// There's no more room in the collection.
         CollectionFull,
+        /// Trying to add a deferred face and `self.load_options` is `null`.
         DeferredLoadingUnavailable,
-        SetSizeFailed,
     };
 
 /// Add a face to the collection for the given style. This face will be added
@@ -109,7 +113,7 @@ pub fn add(
 
     try list.append(alloc, .{ .entry = face });
 
-    const owned: *Entry = list.at(idx).unwrapNoAlias().?;
+    const owned: *Entry = list.at(idx).getEntry();
 
     // If we have load options, we update the size to ensure it's matches and is
     // normalized to the primary if possible. If the face is not loaded, this is
@@ -135,7 +139,7 @@ pub fn getFace(self: *Collection, index: Index) !*Face {
 pub fn getEntry(self: *Collection, index: Index) !*Entry {
     if (index.special() != null) return error.SpecialHasNoFace;
     const list = self.faces.getPtr(index.style);
-    return list.at(index.idx).unwrap();
+    return list.at(index.idx).getEntry();
 }
 
 /// Get the face from an entry.
@@ -192,7 +196,7 @@ pub fn getIndex(
     var i: usize = 0;
     var it = self.faces.get(style).constIterator(0);
     while (it.next()) |entry_or_alias| {
-        if (entry_or_alias.unwrapConst().hasCodepoint(cp, p_mode)) {
+        if (entry_or_alias.getConstEntry().hasCodepoint(cp, p_mode)) {
             return .{
                 .style = style,
                 .idx = @intCast(i),
@@ -218,7 +222,7 @@ pub fn hasCodepoint(
 ) bool {
     const list = self.faces.get(index.style);
     if (index.idx >= list.count()) return false;
-    return list.at(index.idx).unwrapConst().hasCodepoint(cp, p_mode);
+    return list.at(index.idx).getConstEntry().hasCodepoint(cp, p_mode);
 }
 
 pub const CompleteError = Allocator.Error || error{
@@ -259,7 +263,7 @@ pub fn completeStyles(
         while (it.next()) |entry_or_alias| {
             // Load our face. If we fail to load it, we just skip it and
             // continue on to try the next one.
-            const entry = entry_or_alias.unwrap();
+            const entry = entry_or_alias.getEntry();
             const face = self.getFaceFromEntry(entry) catch |err| {
                 log.warn("error loading regular entry={d} err={}", .{
                     it.index - 1,
@@ -342,7 +346,7 @@ pub fn completeStyles(
         // Prefer to synthesize on top of the face we already had. If we
         // have bold then we try to synthesize italic on top of bold.
         if (have_bold) {
-            const base_entry: *Entry = bold_list.at(0).unwrap();
+            const base_entry: *Entry = bold_list.at(0).getEntry();
             if (self.syntheticItalic(base_entry)) |synthetic| {
                 log.info("synthetic bold italic face created from bold", .{});
                 const synthetic_entry = base_entry.initCopy(.{ .loaded = synthetic });
@@ -354,7 +358,7 @@ pub fn completeStyles(
             // bold on whatever italic font we have.
         }
 
-        const base_entry: *Entry = italic_list.at(0).unwrap();
+        const base_entry: *Entry = italic_list.at(0).getEntry();
         if (self.syntheticBold(base_entry)) |synthetic| {
             log.info("synthetic bold italic face created from italic", .{});
             const synthetic_entry = base_entry.initCopy(.{ .loaded = synthetic });
@@ -367,7 +371,7 @@ pub fn completeStyles(
     }
 }
 
-// Create a synthetic bold font face from the given entry and return it.
+/// Create a synthetic bold font face from the given entry and return it.
 fn syntheticBold(self: *Collection, entry: *Entry) !Face {
     // Not all font backends support synthetic bold.
     if (comptime !@hasDecl(Face, "syntheticBold")) return error.SyntheticBoldUnavailable;
@@ -392,7 +396,7 @@ fn syntheticBold(self: *Collection, entry: *Entry) !Face {
     return face;
 }
 
-// Create a synthetic italic font face from the given entry and return it.
+/// Create a synthetic italic font face from the given entry and return it.
 fn syntheticItalic(self: *Collection, entry: *Entry) !Face {
     // Not all font backends support synthetic italicization.
     if (comptime !@hasDecl(Face, "syntheticItalic")) return error.SyntheticItalicUnavailable;
@@ -417,12 +421,23 @@ fn syntheticItalic(self: *Collection, entry: *Entry) !Face {
     return face;
 }
 
+pub const SetSizeError =
+    Entry.SetSizeError ||
+    UpdateMetricsError ||
+    error{
+        /// `self.load_options` is `null`.
+        DeferredLoadingUnavailable,
+    };
+
 /// Update the size of all faces in the collection. This will
 /// also update the size in the load options for future deferred
 /// face loading.
 ///
 /// This requires load options to be set.
-pub fn setSize(self: *Collection, size: DesiredSize) !void {
+pub fn setSize(
+    self: *Collection,
+    size: DesiredSize,
+) SetSizeError!void {
     // Get a pointer to our options so we can modify the size.
     const opts = if (self.load_options) |*v|
         v
@@ -441,24 +456,15 @@ pub fn setSize(self: *Collection, size: DesiredSize) !void {
     var it = self.faces.iterator();
     while (it.next()) |array| {
         var entry_it = array.value.iterator(0);
-        while (entry_it.next()) |entry_or_alias| {
-            if (entry_or_alias.unwrapNoAlias()) |entry| {
-                try entry.setSize(face_opts, primary_entry);
-            }
-        }
+        // Resize all entries, aliases can be ignored.
+        while (entry_it.next()) |entry_or_alias|
+            switch (entry_or_alias.*) {
+                .entry => |*entry| try entry.setSize(face_opts, primary_entry),
+                .alias => {},
+            };
     }
 
     try self.updateMetrics();
-}
-
-/// Update the scale reference metric associated with a face. This will
-/// also rescale the face's size accordingly.
-pub fn setScaleReference(self: *Collection, entry: *Entry, scale_reference: ReferenceMetric) !void {
-    entry.scale_reference = scale_reference;
-    if (self.load_options) |opts| {
-        const primary_entry = self.getEntry(.{ .idx = 0 }) catch null;
-        try entry.setSize(opts.faceOptions(), primary_entry);
-    }
 }
 
 const UpdateMetricsError = font.Face.GetMetricsError || error{
@@ -489,7 +495,7 @@ pub fn updateMetrics(self: *Collection) UpdateMetricsError!void {
 /// small style count.
 ///
 /// We use a segmented list because the entry values must be pointer-stable
-/// to support the "alias" field in Entry.
+/// to support aliases.
 ///
 /// WARNING: We cannot use any prealloc yet for the segmented list because
 /// the collection is copied around by value and pointers aren't stable.
@@ -562,29 +568,41 @@ pub const Entry = struct {
 
     // Metric by which to normalize the font's size to the primary font.
     // Default to ic_width to ensure appropriate normalization of CJK
-    // font sizes when mixed with latin fonts. See scaleFactor()
+    // font sizes when mixed with latin fonts. See the `scaleSize(...)`
     // implementation for fallback rules when the font does not define
     // the specified metric.
-    //
-    // NOTE: In the future, if additional modifiers are needed for the
-    // translation of global collection options to individual font
-    // options, this should be promoted to a new FontModifiers type.
-    scale_reference: ReferenceMetric = .ic_width,
+    size_adjust_metric: SizeAdjustmentMetric = .ic_width,
 
-    /// Convenience initializer so that users won't have to write nested
-    /// expressions depending on internals, like .{ .face = .{ .loaded = face } }
+    /// Font metrics that can be specified for font size adjustment.
+    pub const SizeAdjustmentMetric = enum {
+        /// Don't adjust the size for this font, use the original point size.
+        none,
+        /// Match ideograph character width with the primary font.
+        ic_width,
+        /// Match ex height with the primary font.
+        ex_height,
+        /// Match cap height with the primary font.
+        cap_height,
+        /// Match line height with the primary font.
+        line_height,
+    };
+
+    /// Create an entry for the provided face.
     pub fn init(face: AnyFace) Entry {
         return .{ .face = face };
     }
 
     /// Convenience initializer that also takes a scale reference
-    pub fn initWithScaleReference(face: AnyFace, scale_reference: ReferenceMetric) Entry {
-        return .{ .face = face, .scale_reference = scale_reference };
+    pub fn initWithScaleReference(
+        face: AnyFace,
+        scale_reference: SizeAdjustmentMetric,
+    ) Entry {
+        return .{ .face = face, .size_adjust_metric = scale_reference };
     }
 
     /// Initialize a new entry with the same scale reference as an existing entry
     pub fn initCopy(self: Entry, face: AnyFace) Entry {
-        return .{ .face = face, .scale_reference = self.scale_reference };
+        return .{ .face = face, .size_adjust_metric = self.size_adjust_metric };
     }
 
     pub fn deinit(self: *Entry) void {
@@ -660,42 +678,60 @@ pub const Entry = struct {
         };
     }
 
-    // Set the size of the face, rescaling to match the primary if given
-    pub fn setSize(self: *Entry, opts: font.face.Options, primary_entry: ?*Entry) !void {
+    pub const SetSizeError =
+        font.Face.GetMetricsError ||
+        error{
+            /// The call to `face.setSize` failed.
+            SetSizeFailed,
+        };
+
+    /// Set the size of the face for this entry if it's loaded.
+    ///
+    /// This takes in to account the `size_adjust_metric` of this entry,
+    /// adjusting the size in the provided options if a primary entry is
+    /// provided to scale against.
+    fn setSize(
+        self: *Entry,
+        opts: font.face.Options,
+        primary_entry: ?*Entry,
+    ) Entry.SetSizeError!void {
         // If not loaded, nothing to do
         var face = self.getLoaded() orelse return;
 
-        var modified_opts = opts;
+        var new_opts = opts;
 
         // If we have a primary we rescale
         if (primary_entry) |p| {
-            modified_opts.size = try self.scaledSize(modified_opts.size, p);
+            new_opts.size = try self.scaledSize(new_opts.size, p);
         }
 
         // Before going through with the resize, we check whether the requested
         // size after scaling is actually different from the existing size.
-        if (!std.meta.eql(modified_opts.size, face.size)) {
-            face.setSize(modified_opts) catch return error.SetSizeFailed;
+        if (!std.meta.eql(new_opts.size, face.size)) {
+            face.setSize(new_opts) catch return error.SetSizeFailed;
         }
     }
 
-    // Calculate a size for the face that will match it with the primary font,
-    // metrically, to improve consistency with fallback fonts.
-    //
-    // This returns a scaled copy of the nominal_size, where the points size has
-    // been scaled by the font metric ratio specified by self.scale_reference.
-    // If either this or the primary face are not yet loaded, or the primary
-    // face is the same as this, nominal_size is returned unchanged.
-    //
-    // This is very much like the `font-size-adjust` CSS property in how it works.
-    // ref: https://developer.mozilla.org/en-US/docs/Web/CSS/font-size-adjust
-    //
-    // TODO: In the future, provide config options that allow the user to select
-    //       which metric should be matched for fallback fonts, instead of hard
-    //       coding at the point where a face is added to the collection.
-    pub fn scaledSize(self: *Entry, nominal_size: DesiredSize, primary_entry: *Entry) !DesiredSize {
-        // If the scale reference is the em size, no scaling
-        if (self.scale_reference == .em_size) return nominal_size;
+    /// Calculate a size for the face that will match it with the primary font,
+    /// metrically, to improve consistency with fallback fonts.
+    ///
+    /// This returns a scaled copy of the nominal_size, where the points size has
+    /// been scaled by the font metric ratio specified by self.scale_reference.
+    /// If either this or the primary face are not yet loaded, or the primary
+    /// face is the same as this, nominal_size is returned unchanged.
+    ///
+    /// This is very much like the `font-size-adjust` CSS property in how it works.
+    /// ref: https://developer.mozilla.org/en-US/docs/Web/CSS/font-size-adjust
+    ///
+    /// TODO: In the future, provide config options that allow the user to select
+    ///       which metric should be matched for fallback fonts, instead of hard
+    ///       coding at the point where a face is added to the collection.
+    fn scaledSize(
+        self: *Entry,
+        nominal_size: DesiredSize,
+        primary_entry: *Entry,
+    ) font.Face.GetMetricsError!DesiredSize {
+        if (self.size_adjust_metric == .none) return nominal_size;
 
         // If the primary is us, no scaling
         if (@intFromPtr(self) == @intFromPtr(primary_entry)) return nominal_size;
@@ -727,29 +763,34 @@ pub const Entry = struct {
         // the order shown in the switch statement below. If the metric
         // is not defined in `primary`, that's OK, we'll use the estimate.
         const line_height_ratio = y_ratio * primary_metrics.lineHeight() / face_metrics.lineHeight();
-        const scale = normalize_by: switch (self.scale_reference) {
+        const scale = normalize_by: switch (self.size_adjust_metric) {
             // Even if a metric is non-null, it may be invalid (e.g., negative),
             // so we check for equality with the estimator before using it
+
             .ic_width => {
                 if (face_metrics.ic_width) |value| if (value == face_metrics.icWidth()) {
                     break :normalize_by x_ratio * (primary_metrics.icWidth() / value);
                 };
                 continue :normalize_by .ex_height;
             },
+
             .ex_height => {
                 if (face_metrics.ex_height) |value| if (value == face_metrics.exHeight()) {
                     break :normalize_by y_ratio * primary_metrics.exHeight() / value;
                 };
                 continue :normalize_by .cap_height;
             },
+
             .cap_height => {
                 if (face_metrics.cap_height) |value| if (value == face_metrics.capHeight()) {
                     break :normalize_by y_ratio * primary_metrics.capHeight() / value;
                 };
                 continue :normalize_by .line_height;
             },
+
             .line_height => line_height_ratio,
-            .em_size => unreachable,
+
+            .none => unreachable,
         };
 
         // If the line height of the scaled font would be larger than
@@ -773,50 +814,25 @@ pub const Entry = struct {
 pub const EntryOrAlias = union(enum) {
     entry: Entry,
 
-    // An alias to another entry. This is used to share the same face,
-    // avoid memory duplication. An alias must point to a non-alias entry.
+    /// An alias to another entry. This is used to share the same face,
+    /// avoid memory duplication. An alias must point to a non-alias entry.
     alias: *Entry,
 
-    pub fn unwrap(self: *EntryOrAlias) *Entry {
+    /// Get a pointer to the underlying entry.
+    pub fn getEntry(self: *EntryOrAlias) *Entry {
         return switch (self.*) {
             .entry => |*v| v,
             .alias => |v| v,
         };
     }
 
-    pub fn unwrapConst(self: *const EntryOrAlias) *const Entry {
+    /// Get a const pointer to the underlying entry.
+    pub fn getConstEntry(self: *const EntryOrAlias) *const Entry {
         return switch (self.*) {
             .entry => |*v| v,
             .alias => |v| v,
         };
     }
-
-    pub fn unwrapNoAlias(self: *EntryOrAlias) ?*Entry {
-        return switch (self.*) {
-            .entry => |*v| v,
-            .alias => null,
-        };
-    }
-};
-
-pub const AdjustSizeError = font.Face.GetMetricsError;
-
-pub const ReferenceMetric = enum {
-    // The font's ideograph width
-    ic_width,
-    // The font's ex height
-    ex_height,
-    // The font's cap height
-    cap_height,
-    // The font's line height
-    line_height,
-    // The font's em size
-    // Conventionally equivalent to line height, but the semantics
-    // differ: using em_size directly sets the point sizes to the same
-    // value, while using line_height calculates the scaling ratio for
-    // matching line heights even if it differs from 1 em for one or
-    // both fonts
-    em_size,
 };
 
 /// The requested presentation for a codepoint.
@@ -1206,8 +1222,11 @@ test "adjusted sizes" {
         .{ .size = size },
     ) }));
 
+    const primary_entry = try c.getEntry(.{ .idx = 0 });
     inline for ([_][]const u8{ "ex_height", "cap_height" }) |metric| {
-        try c.setScaleReference(try c.getEntry(fallback_idx), @field(ReferenceMetric, metric));
+        const entry = try c.getEntry(fallback_idx);
+        entry.size_adjust_metric = @field(Entry.SizeAdjustmentMetric, metric);
+        try entry.setSize(c.load_options.?.faceOptions(), primary_entry);
 
         // The chosen metric should match.
         {
@@ -1259,11 +1278,15 @@ test "adjusted sizes" {
         );
     }
 
-    // Test em_size giving exact font size equality
-    try c.setScaleReference(try c.getEntry(symbol_idx), .em_size);
+    // A reference metric of "none" should leave the size unchanged.
+    {
+        const entry = try c.getEntry(symbol_idx);
+        entry.size_adjust_metric = .none;
+        try entry.setSize(c.load_options.?.faceOptions(), primary_entry);
 
-    try std.testing.expectEqual(
-        (try c.getFace(.{ .idx = 0 })).size.points,
-        (try c.getFace(symbol_idx)).size.points,
-    );
+        try std.testing.expectEqual(
+            (try c.getFace(.{ .idx = 0 })).size.points,
+            (try c.getFace(symbol_idx)).size.points,
+        );
+    }
 }
