@@ -485,6 +485,8 @@ pub const Application = extern struct {
 
             .render => Action.render(self, target),
 
+            .ring_bell => Action.ringBell(target),
+
             .set_title => Action.setTitle(target, value),
 
             .show_child_exited => return Action.showChildExited(target, value),
@@ -515,7 +517,6 @@ pub const Application = extern struct {
             .toggle_window_decorations,
             .prompt_title,
             .toggle_quick_terminal,
-            .ring_bell,
             .toggle_command_palette,
             .open_url,
             .close_all_windows,
@@ -1135,6 +1136,13 @@ const Action = struct {
         switch (target) {
             .app => {},
             .surface => |v| v.rt_surface.surface.redraw(),
+        }
+    }
+
+    pub fn ringBell(target: apprt.Target) void {
+        switch (target) {
+            .app => {},
+            .surface => |v| v.rt_surface.surface.ringBell(),
         }
     }
 

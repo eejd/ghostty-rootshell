@@ -213,6 +213,21 @@ pub const Surface = extern struct {
             );
         };
 
+        /// The bell is rung.
+        ///
+        /// The surface view handles the audio bell feature but none of the
+        /// others so it is up to the embedding widget to react to this.
+        pub const bell = struct {
+            pub const name = "bell";
+            pub const connect = impl.connect;
+            const impl = gobject.ext.defineSignal(
+                name,
+                Self,
+                &.{},
+                void,
+            );
+        };
+
         /// Emitted whenever the clipboard has been written.
         pub const @"clipboard-write" = struct {
             pub const name = "clipboard-write";
@@ -341,6 +356,18 @@ pub const Surface = extern struct {
     pub fn redraw(self: *Self) void {
         const priv = self.private();
         priv.gl_area.queueRender();
+    }
+
+    /// Ring the bell.
+    pub fn ringBell(self: *Self) void {
+        // TODO: Audio feature
+
+        signals.bell.impl.emit(
+            self,
+            null,
+            .{},
+            null,
+        );
     }
 
     /// Set the current progress report state.
@@ -1979,6 +2006,7 @@ pub const Surface = extern struct {
 
             // Signals
             signals.@"close-request".impl.register(.{});
+            signals.bell.impl.register(.{});
             signals.@"clipboard-read".impl.register(.{});
             signals.@"clipboard-write".impl.register(.{});
 
