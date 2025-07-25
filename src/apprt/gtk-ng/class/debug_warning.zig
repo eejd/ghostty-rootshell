@@ -21,29 +21,6 @@ pub const DebugWarning = extern struct {
         .parent_class = &Class.parent,
     });
 
-    pub const properties = struct {
-        pub const debug = struct {
-            pub const name = "debug";
-            const impl = gobject.ext.defineProperty(
-                name,
-                Self,
-                bool,
-                .{
-                    .nick = "Debug",
-                    .blurb = "True if runtime safety checks are enabled.",
-                    .default = build_config.is_debug,
-                    .accessor = gobject.ext.typedAccessor(Self, bool, .{
-                        .getter = struct {
-                            pub fn getter(_: *DebugWarning) bool {
-                                return build_config.is_debug;
-                            }
-                        }.getter,
-                    }),
-                },
-            );
-        };
-    };
-
     fn init(self: *Self, _: *Class) callconv(.c) void {
         gtk.Widget.initTemplate(self.as(gtk.Widget));
     }
@@ -68,11 +45,6 @@ pub const DebugWarning = extern struct {
                     .name = "debug-warning",
                 }),
             );
-
-            // Properties
-            gobject.ext.registerProperties(class, &.{
-                properties.debug.impl,
-            });
         }
 
         pub const as = C.Class.as;

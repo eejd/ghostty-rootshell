@@ -26,6 +26,29 @@ pub const Window = extern struct {
         .private = .{ .Type = Private, .offset = &Private.offset },
     });
 
+    pub const properties = struct {
+        pub const debug = struct {
+            pub const name = "debug";
+            const impl = gobject.ext.defineProperty(
+                name,
+                Self,
+                bool,
+                .{
+                    .nick = "Debug",
+                    .blurb = "True if runtime safety checks are enabled.",
+                    .default = build_config.is_debug,
+                    .accessor = gobject.ext.typedAccessor(Self, bool, .{
+                        .getter = struct {
+                            pub fn getter(_: *Window) bool {
+                                return build_config.is_debug;
+                            }
+                        }.getter,
+                    }),
+                },
+            );
+        };
+    };
+
     const Private = struct {
         /// The surface in the view.
         surface: *Surface = undefined,
@@ -105,6 +128,11 @@ pub const Window = extern struct {
                     .name = "window",
                 }),
             );
+
+            // Properties
+            gobject.ext.registerProperties(class, &.{
+                properties.debug.impl,
+            });
 
             // Bindings
             class.bindTemplateChildPrivate("surface", .{});

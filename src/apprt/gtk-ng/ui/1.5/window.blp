@@ -13,7 +13,9 @@ template $GhosttyWindow: Adw.ApplicationWindow {
     orientation: vertical;
     spacing: 0;
 
-    $GhosttyDebugWarning {}
+    $GhosttyDebugWarning {
+      visible: bind template.debug;
+    }
 
     $GhosttySurface surface {
       close-request => $surface_close_request();
