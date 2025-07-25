@@ -471,6 +471,7 @@ class AppDelegate: NSObject,
         self.menuSplitUp?.setImageIfDesired(systemSymbolName: "rectangle.tophalf.inset.filled")
         self.menuSplitDown?.setImageIfDesired(systemSymbolName: "rectangle.bottomhalf.inset.filled")
         self.menuClose?.setImageIfDesired(systemSymbolName: "xmark")
+        self.menuPasteSelection?.setImageIfDesired(systemSymbolName: "doc.on.clipboard.fill")
         self.menuIncreaseFontSize?.setImageIfDesired(systemSymbolName: "textformat.size.larger")
         self.menuResetFontSize?.setImageIfDesired(systemSymbolName: "textformat.size")
         self.menuDecreaseFontSize?.setImageIfDesired(systemSymbolName: "textformat.size.smaller")
