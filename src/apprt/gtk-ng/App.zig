@@ -3,6 +3,7 @@
 const App = @This();
 
 const std = @import("std");
+const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
 const adw = @import("adw");
 const gio = @import("gio");
@@ -16,6 +17,7 @@ const Application = @import("class/application.zig").Application;
 const Surface = @import("Surface.zig");
 const gtk_version = @import("gtk_version.zig");
 const adw_version = @import("adw_version.zig");
+const ipcNewWindow = @import("ipc/new_window.zig").newWindow;
 
 const log = std.log.scoped(.gtk);
 
@@ -23,6 +25,18 @@ const log = std.log.scoped(.gtk);
 /// message so that we can call `drawFrame` ourselves from the app thread,
 /// because GTK's `GLArea` does not support drawing from a different thread.
 pub const must_draw_from_app_thread = true;
+
+/// GTK application ID
+pub const application_id = switch (builtin.mode) {
+    .Debug, .ReleaseSafe => "com.mitchellh.ghostty-debug",
+    .ReleaseFast, .ReleaseSmall => "com.mitchellh.ghostty",
+};
+
+/// GTK object path
+pub const object_path = switch (builtin.mode) {
+    .Debug, .ReleaseSafe => "/com/mitchellh/ghostty_debug",
+    .ReleaseFast, .ReleaseSmall => "/com/mitchellh/ghostty",
+};
 
 /// The GObject Application instance
 app: *Application,
@@ -67,16 +81,21 @@ pub fn performAction(
     return try self.app.performAction(target, action, value);
 }
 
+/// Send the given IPC to a running Ghostty. Returns `true` if the action was
+/// able to be performed, `false` otherwise.
+///
+/// Note that this is a static function. Since this is called from a CLI app (or
+/// some other process that is not Ghostty) there is no full-featured apprt App
+/// to use.
 pub fn performIpc(
     alloc: Allocator,
     target: apprt.ipc.Target,
     comptime action: apprt.ipc.Action.Key,
     value: apprt.ipc.Action.Value(action),
 ) !bool {
-    _ = alloc;
-    _ = target;
-    _ = value;
-    return false;
+    switch (action) {
+        .new_window => return try ipcNewWindow(alloc, target, value),
+    }
 }
 
 /// Redraw the inspector for the given surface.
