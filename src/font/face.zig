@@ -51,9 +51,9 @@ pub const DesiredSize = struct {
     ydpi: u16 = default_dpi,
 
     // Converts points to pixels
-    pub fn pixels(self: DesiredSize) u16 {
+    pub fn pixels(self: DesiredSize) f32 {
         // 1 point = 1/72 inch
-        return @intFromFloat(@round((self.points * @as(f32, @floatFromInt(self.ydpi))) / 72));
+        return (self.points * @as(f32, @floatFromInt(self.ydpi))) / 72;
     }
 };
 

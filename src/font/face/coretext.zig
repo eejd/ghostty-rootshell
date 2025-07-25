@@ -78,7 +78,7 @@ pub const Face = struct {
         // but we need to scale the points by the DPI and to do that we use our
         // function called "pixels".
         const ct_font = try base.copyWithAttributes(
-            @floatFromInt(opts.size.pixels()),
+            opts.size.pixels(),
             null,
             null,
         );
@@ -94,7 +94,8 @@ pub const Face = struct {
 
         var hb_font = if (comptime harfbuzz_shaper) font: {
             var hb_font = try harfbuzz.coretext.createFont(ct_font);
-            hb_font.setScale(opts.size.pixels(), opts.size.pixels());
+            const pixels: opentype.sfnt.F26Dot6 = .from(opts.size.pixels());
+            hb_font.setScale(@bitCast(pixels), @bitCast(pixels));
             break :font hb_font;
         } else {};
         errdefer if (comptime harfbuzz_shaper) hb_font.destroy();

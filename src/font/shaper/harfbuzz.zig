@@ -158,16 +158,11 @@ pub const Shaper = struct {
                 .glyph_index = info_v.codepoint,
             });
 
-            if (font.options.backend.hasFreetype()) {
-                // Freetype returns 26.6 fixed point values, so we need to
-                // divide by 64 to get the actual value. I can't find any
-                // HB API to stop this.
-                cell_offset.x += pos_v.x_advance >> 6;
-                cell_offset.y += pos_v.y_advance >> 6;
-            } else {
-                cell_offset.x += pos_v.x_advance;
-                cell_offset.y += pos_v.y_advance;
-            }
+            // Under both FreeType and CoreText the harfbuzz scale is
+            // in 26.6 fixed point units, so we round to the nearest
+            // whole value here.
+            cell_offset.x += (pos_v.x_advance + 0b100_000) >> 6;
+            cell_offset.y += (pos_v.y_advance + 0b100_000) >> 6;
 
             // const i = self.cell_buf.items.len - 1;
             // log.warn("i={} info={} pos={} cell={}", .{ i, info_v, pos_v, self.cell_buf.items[i] });
