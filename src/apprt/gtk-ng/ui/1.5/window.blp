@@ -6,6 +6,9 @@ template $GhosttyWindow: Adw.ApplicationWindow {
     "window",
   ]
 
+  notify::fullscreened => $notify_fullscreened();
+  notify::maximized => $notify_maximized();
+
   default-width: 800;
   default-height: 600;
   // GTK4 grabs F10 input by default to focus the menubar icon. We want
@@ -19,6 +22,8 @@ template $GhosttyWindow: Adw.ApplicationWindow {
     orientation: vertical;
 
     Adw.HeaderBar {
+      visible: bind template.headerbar-visible;
+
       title-widget: Adw.WindowTitle {
         title: bind surface.title;
       };

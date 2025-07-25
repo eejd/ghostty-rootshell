@@ -51,6 +51,23 @@ pub const Window = extern struct {
                 },
             );
         };
+
+        pub const @"headerbar-visible" = struct {
+            pub const name = "headerbar-visible";
+            const impl = gobject.ext.defineProperty(
+                name,
+                Self,
+                bool,
+                .{
+                    .nick = "Headerbar Visible",
+                    .blurb = "True if the headerbar is visible.",
+                    .default = true,
+                    .accessor = gobject.ext.typedAccessor(Self, bool, .{
+                        .getter = Self.getHeaderbarVisible,
+                    }),
+                },
+            );
+        };
     };
 
     const Private = struct {
@@ -112,6 +129,47 @@ pub const Window = extern struct {
         }
     }
 
+    /// Updates various appearance properties. This should always be safe
+    /// to call multiple times. This should be called whenever a change
+    /// happens that might affect how the window appears (config change,
+    /// fullscreen, etc.).
+    fn syncAppearance(self: *Window) void {
+        // TODO: CSD/SSD
+
+        // Trigger our headerbar visibility to refresh
+        self.as(gobject.Object).notifyByPspec(properties.@"headerbar-visible".impl.param_spec);
+    }
+
+    //---------------------------------------------------------------
+    // Properties
+
+    fn getHeaderbarVisible(self: *Self) bool {
+        // TODO: CSD/SSD
+        // TODO: QuickTerminal
+        // TODO: Config
+
+        // If we're fullscreen we never show the header bar.
+        if (self.as(gtk.Window).isFullscreen() != 0) return false;
+
+        return true;
+    }
+
+    fn propFullscreened(
+        _: *adw.ApplicationWindow,
+        _: *gobject.ParamSpec,
+        self: *Self,
+    ) callconv(.c) void {
+        self.syncAppearance();
+    }
+
+    fn propMaximized(
+        _: *adw.ApplicationWindow,
+        _: *gobject.ParamSpec,
+        self: *Self,
+    ) callconv(.c) void {
+        self.syncAppearance();
+    }
+
     //---------------------------------------------------------------
     // Virtual methods
 
@@ -147,10 +205,10 @@ pub const Window = extern struct {
         self: *Self,
     ) callconv(.c) void {
         _ = surface;
-        if (self.as(gtk.Window).isMaximized() != 0) {
-            self.as(gtk.Window).unmaximize();
+        if (self.as(gtk.Window).isFullscreen() != 0) {
+            self.as(gtk.Window).unfullscreen();
         } else {
-            self.as(gtk.Window).maximize();
+            self.as(gtk.Window).fullscreen();
         }
 
         // We react to the changes in the propFullscreen callback
@@ -240,6 +298,7 @@ pub const Window = extern struct {
             // Properties
             gobject.ext.registerProperties(class, &.{
                 properties.debug.impl,
+                properties.@"headerbar-visible".impl,
             });
 
             // Bindings
@@ -249,6 +308,8 @@ pub const Window = extern struct {
             class.bindTemplateCallback("surface_close_request", &surfaceCloseRequest);
             class.bindTemplateCallback("surface_toggle_fullscreen", &surfaceToggleFullscreen);
             class.bindTemplateCallback("surface_toggle_maximize", &surfaceToggleMaximize);
+            class.bindTemplateCallback("notify_fullscreened", &propFullscreened);
+            class.bindTemplateCallback("notify_maximized", &propMaximized);
 
             // Virtual methods
             gobject.Object.virtual_methods.dispose.implement(class, &dispose);
