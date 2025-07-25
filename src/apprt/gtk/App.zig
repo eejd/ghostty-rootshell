@@ -1556,7 +1556,22 @@ pub fn quitNow(self: *App) void {
         fn callback(data: ?*anyopaque, _: ?*anyopaque) callconv(.c) void {
             const ptr = data orelse return;
             const window: *gtk.Window = @ptrCast(@alignCast(ptr));
-            window.destroy();
+
+            // We only want to destroy our windows. These windows own
+            // every other type of window that is possible so this will
+            // trigger a proper shutdown sequence.
+            //
+            // We previously just destroyed ALL windows but this leads to
+            // a double-free with the fcitx ime, because it has a nested
+            // gtk.Window as a property that we don't own and it later
+            // tries to free on its own. I think this is probably a bug in
+            // the fcitx ime widget but still, we don't want a double free!
+            //
+            // Since we don't use gobject directly we can't check class,
+            // so we use a heuristic based on CSS class.
+            if (window.as(gtk.Widget).hasCssClass("terminal-window") != 0) {
+                window.destroy();
+            }
         }
     }.callback, null);
 

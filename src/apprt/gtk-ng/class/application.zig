@@ -433,15 +433,26 @@ pub const Application = extern struct {
     }
 
     fn quitNow(self: *Self) void {
-        // Get all our windows and destroy them, forcing them to
-        // free their memory.
+        // Get all our windows and destroy them, forcing them to free.
         const list = gtk.Window.listToplevels();
         defer list.free();
         list.foreach(struct {
             fn callback(data: ?*anyopaque, _: ?*anyopaque) callconv(.c) void {
                 const ptr = data orelse return;
                 const window: *gtk.Window = @ptrCast(@alignCast(ptr));
-                window.destroy();
+
+                // We only want to destroy our windows. These windows own
+                // every other type of window that is possible so this will
+                // trigger a proper shutdown sequence.
+                //
+                // We previously just destroyed ALL windows but this leads to
+                // a double-free with the fcitx ime, because it has a nested
+                // gtk.Window as a property that we don't own and it later
+                // tries to free on its own. I think this is probably a bug in
+                // the fcitx ime widget but still, we don't want a double free!
+                if (gobject.ext.isA(window, Window)) {
+                    window.destroy();
+                }
             }
         }.callback, null);
 
