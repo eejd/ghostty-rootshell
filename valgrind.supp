@@ -25,14 +25,8 @@
    fun:load_from_stream
    fun:gdk_pixbuf_new_from_stream_at_scale
    fun:gtk_make_symbolic_pixbuf_from_data
-   fun:gdk_texture_new_from_filename_symbolic
-   fun:icon_ensure_texture__locked.isra.0
-   fun:load_icon_thread
-   fun:g_task_thread_pool_thread
-   fun:g_thread_pool_thread_proxy
-   fun:g_thread_proxy
-   fun:start_thread
-   fun:thread_start
+   fun:gdk_texture_new_*
+   ...
 }
 
 {
@@ -44,15 +38,7 @@
    fun:gdk_pixbuf_loader_close
    fun:load_from_stream
    fun:gdk_pixbuf_new_from_stream_at_scale
-   fun:gtk_make_symbolic_pixbuf_from_data
-   fun:gdk_texture_new_from_filename_symbolic
-   fun:icon_ensure_texture__locked.isra.0
-   fun:load_icon_thread
-   fun:g_task_thread_pool_thread
-   fun:g_thread_pool_thread_proxy
-   fun:g_thread_proxy
-   fun:start_thread
-   fun:thread_start
+   ...
 }
 
 {
@@ -178,13 +164,43 @@
    fun:signal_emit_valist_unlocked
    fun:g_signal_emit_valist
    fun:g_signal_emit
-   fun:gdk_frame_clock_paint_idle
+   fun:gdk_frame_clock_*
    ...
    fun:g_timeout_dispatch
    fun:g_main_context_dispatch_unlocked
    fun:g_main_context_iterate_unlocked.isra.0
    fun:g_main_context_iteration
   ...
+}
+{
+   GSK GPU Rendering Another Form
+   Memcheck:Leak
+   match-leak-kinds: possible
+   ...
+   fun:gsk_gpu_render_pass_op_gl_command
+   fun:gsk_gl_frame_submit
+   fun:gsk_gpu_renderer_render
+   fun:gsk_renderer_render
+   fun:gtk_widget_render
+   fun:surface_render
+   fun:_gdk_marshal_BOOLEAN__BOXEDv
+   fun:_g_closure_invoke_va
+   fun:signal_emit_valist_unlocked
+   fun:g_signal_emit_valist
+   fun:g_signal_emit
+   fun:gdk_surface_paint_on_clock
+   fun:g_closure_invoke
+   fun:signal_emit_unlocked_R.isra.0
+   fun:signal_emit_valist_unlocked
+   fun:g_signal_emit_valist
+   fun:g_signal_emit
+   fun:gdk_frame_clock_*
+   ...
+   fun:g_timeout_dispatch
+   fun:g_main_context_dispatch_unlocked
+   fun:g_main_context_iterate_unlocked.isra.0
+   fun:g_main_context_iteration
+   ...
 }
 {
    GTK Shader Selector
@@ -220,6 +236,31 @@
    ...
 }
 
+{
+   Another tooltip
+   Memcheck:Leak
+   match-leak-kinds: possible
+   ...
+   fun:gtk_string_accessible_value_new
+   fun:gtk_accessible_update_property
+   fun:gtk_label_set_text_internal
+   fun:gtk_label_set_markup_internal
+   fun:gtk_label_recalculate
+   fun:gtk_label_set_markup
+   fun:gtk_tooltip_window_set_label_markup
+   fun:gtk_widget_real_query_tooltip
+   fun:_gtk_marshal_BOOLEAN__INT_INT_BOOLEAN_OBJECTv
+   fun:g_type_class_meta_marshalv
+   fun:_g_closure_invoke_va
+   fun:signal_emit_valist_unlocked
+   fun:g_signal_emit_valist
+   fun:g_signal_emit
+   fun:gtk_widget_query_tooltip
+   fun:gtk_tooltip_run_requery
+   fun:gtk_tooltip_handle_event_internal
+   fun:_gtk_tooltip_handle_event
+  ...
+}
 {
    Not sure about this one, I can't figure it out.
    Memcheck:Leak
@@ -282,6 +323,32 @@
 }
 
 {
+   GTK FontConfig
+   Memcheck:Leak
+   match-leak-kinds: possible
+   fun:malloc
+   fun:FcFontSet*
+   fun:FcFontSet*
+   fun:sort_in_thread.isra.0
+   fun:fc_thread_func
+   fun:g_thread_proxy
+   fun:start_thread
+   fun:thread_start
+}
+
+{
+   GTK FontConfig
+   Memcheck:Leak
+   match-leak-kinds: possible
+   fun:malloc
+   fun:strdup
+   fun:FcValueSave
+   fun:FcConfigEvaluate
+   fun:FcConfigValues
+   ...
+}
+
+{
    GTK init 
    Memcheck:Leak
    match-leak-kinds: possible
@@ -339,6 +406,17 @@
    fun:RegisterStubCallbacks
    fun:__glDispatchRegisterStubCallbacks
    fun:__libGLInit
+   ...
+}
+
+{
+   pango and fontconfig
+   Memcheck:Leak
+   match-leak-kinds: definite
+   fun:*alloc
+   ...
+   fun:FcChar*
+   fun:pango_fc_coverage_real_get
    ...
 }
 
