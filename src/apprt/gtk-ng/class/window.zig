@@ -12,6 +12,7 @@ const CoreSurface = @import("../../../Surface.zig");
 const adw_version = @import("../adw_version.zig");
 const gresource = @import("../build/gresource.zig");
 const Common = @import("../class.zig").Common;
+const Config = @import("config.zig").Config;
 const Application = @import("application.zig").Application;
 const Surface = @import("surface.zig").Surface;
 const DebugWarning = @import("debug_warning.zig").DebugWarning;
@@ -31,6 +32,25 @@ pub const Window = extern struct {
     });
 
     pub const properties = struct {
+        pub const config = struct {
+            pub const name = "config";
+            const impl = gobject.ext.defineProperty(
+                name,
+                Self,
+                ?*Config,
+                .{
+                    .nick = "Config",
+                    .blurb = "The configuration that this surface is using.",
+                    .accessor = gobject.ext.privateFieldAccessor(
+                        Self,
+                        Private,
+                        &Private.offset,
+                        "config",
+                    ),
+                },
+            );
+        };
+
         pub const debug = struct {
             pub const name = "debug";
             const impl = gobject.ext.defineProperty(
@@ -71,7 +91,10 @@ pub const Window = extern struct {
     };
 
     const Private = struct {
-        /// The surface in the view.
+        /// The configuration that this surface is using.
+        config: ?*Config = null,
+
+        // Template bindings
         surface: *Surface = undefined,
 
         pub var offset: c_int = 0;
@@ -93,6 +116,14 @@ pub const Window = extern struct {
     fn init(self: *Self, _: *Class) callconv(.C) void {
         gtk.Widget.initTemplate(self.as(gtk.Widget));
 
+        // If our configuration is null then we get the configuration
+        // from the application.
+        const priv = self.private();
+        if (priv.config == null) {
+            const app = Application.default();
+            priv.config = app.getConfig();
+        }
+
         // Add our dev CSS class if we're in debug mode.
         if (comptime build_config.is_debug) {
             self.as(gtk.Widget).addCssClass("devel");
@@ -102,7 +133,13 @@ pub const Window = extern struct {
         // because its dependent on the build config.
         self.as(gtk.Window).setIconName(build_config.bundle_id);
 
+        // Initialize our actions
         self.initActionMap();
+
+        // We always sync our appearance at the end because loading our
+        // config and such can affect our bindings which ar setup initially
+        // in initTemplate.
+        self.syncAppearance();
     }
 
     /// Setup our action map.
@@ -146,12 +183,31 @@ pub const Window = extern struct {
     fn getHeaderbarVisible(self: *Self) bool {
         // TODO: CSD/SSD
         // TODO: QuickTerminal
-        // TODO: Config
 
         // If we're fullscreen we never show the header bar.
         if (self.as(gtk.Window).isFullscreen() != 0) return false;
 
-        return true;
+        // The remainder needs a config
+        const config_obj = self.private().config orelse return true;
+        const config = config_obj.get();
+
+        // *Conditionally* disable the header bar when maximized,
+        // and gtk-titlebar-hide-when-maximized is set
+        if (self.as(gtk.Window).isMaximized() != 0 and
+            config.@"gtk-titlebar-hide-when-maximized")
+        {
+            return false;
+        }
+
+        return config.@"gtk-titlebar";
+    }
+
+    fn propConfig(
+        _: *adw.ApplicationWindow,
+        _: *gobject.ParamSpec,
+        self: *Self,
+    ) callconv(.c) void {
+        self.syncAppearance();
     }
 
     fn propFullscreened(
@@ -174,6 +230,12 @@ pub const Window = extern struct {
     // Virtual methods
 
     fn dispose(self: *Self) callconv(.C) void {
+        const priv = self.private();
+        if (priv.config) |v| {
+            v.unref();
+            priv.config = null;
+        }
+
         gtk.Widget.disposeTemplate(
             self.as(gtk.Widget),
             getGObjectType(),
@@ -297,6 +359,7 @@ pub const Window = extern struct {
 
             // Properties
             gobject.ext.registerProperties(class, &.{
+                properties.config.impl,
                 properties.debug.impl,
                 properties.@"headerbar-visible".impl,
             });
@@ -308,6 +371,7 @@ pub const Window = extern struct {
             class.bindTemplateCallback("surface_close_request", &surfaceCloseRequest);
             class.bindTemplateCallback("surface_toggle_fullscreen", &surfaceToggleFullscreen);
             class.bindTemplateCallback("surface_toggle_maximize", &surfaceToggleMaximize);
+            class.bindTemplateCallback("notify_config", &propConfig);
             class.bindTemplateCallback("notify_fullscreened", &propFullscreened);
             class.bindTemplateCallback("notify_maximized", &propMaximized);
 
