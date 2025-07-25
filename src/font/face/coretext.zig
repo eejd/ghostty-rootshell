@@ -241,10 +241,14 @@ pub const Face = struct {
             desc = next;
         }
 
+        // Put our current size in the opts so that we don't change size.
+        var new_opts = opts;
+        new_opts.size = self.size;
+
         // Initialize a font based on these attributes.
         const ct_font = try self.font.copyWithAttributes(0, null, desc);
         errdefer ct_font.release();
-        const face = try initFont(ct_font, opts);
+        const face = try initFont(ct_font, new_opts);
         self.deinit();
         self.* = face;
     }
@@ -843,14 +847,20 @@ pub const Face = struct {
         };
 
         return .{
+            .px_per_em = px_per_em,
+
             .cell_width = cell_width,
+
             .ascent = ascent,
             .descent = descent,
             .line_gap = line_gap,
+
             .underline_position = underline_position,
             .underline_thickness = underline_thickness,
+
             .strikethrough_position = strikethrough_position,
             .strikethrough_thickness = strikethrough_thickness,
+
             .cap_height = cap_height,
             .ex_height = ex_height,
             .ic_width = ic_width,

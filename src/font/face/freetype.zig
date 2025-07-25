@@ -933,6 +933,8 @@ pub const Face = struct {
         };
 
         return .{
+            .px_per_em = px_per_em,
+
             .cell_width = cell_width,
 
             .ascent = ascent,

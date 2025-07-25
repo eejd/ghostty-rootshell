@@ -200,11 +200,12 @@ fn collection(
                             try face.name(&name_buf),
                         });
 
-                        _ = try c.add(
-                            self.alloc,
-                            style,
-                            .init(.{ .deferred = face }),
-                        );
+                        _ = try c.addDeferred(self.alloc, face, .{
+                            .style = style,
+                            .fallback = false,
+                            // No size adjustment for primary fonts.
+                            .size_adjustment = .none,
+                        });
 
                         continue;
                     }
@@ -230,11 +231,12 @@ fn collection(
                             try face.name(&name_buf),
                         });
 
-                        _ = try c.add(
-                            self.alloc,
-                            style,
-                            .init(.{ .deferred = face }),
-                        );
+                        _ = try c.addDeferred(self.alloc, face, .{
+                            .style = style,
+                            .fallback = false,
+                            // No size adjustment for primary fonts.
+                            .size_adjustment = .none,
+                        });
 
                         continue;
                     }
@@ -257,59 +259,77 @@ fn collection(
     // Our built-in font will be used as a backup
     _ = try c.add(
         self.alloc,
-        .regular,
-        .init(.{ .fallback_loaded = try .init(
+        try .init(
             self.font_lib,
             font.embedded.variable,
             load_options.faceOptions(),
-        ) }),
+        ),
+        .{
+            .style = .regular,
+            .fallback = true,
+            .size_adjustment = font.default_fallback_adjustment,
+        },
     );
     try (try c.getFace(try c.add(
         self.alloc,
-        .bold,
-        .init(.{ .fallback_loaded = try .init(
+        try .init(
             self.font_lib,
             font.embedded.variable,
             load_options.faceOptions(),
-        ) }),
+        ),
+        .{
+            .style = .bold,
+            .fallback = true,
+            .size_adjustment = font.default_fallback_adjustment,
+        },
     ))).setVariations(
         &.{.{ .id = .init("wght"), .value = 700 }},
         load_options.faceOptions(),
     );
     _ = try c.add(
         self.alloc,
-        .italic,
-        .init(.{ .fallback_loaded = try .init(
+        try .init(
             self.font_lib,
             font.embedded.variable_italic,
             load_options.faceOptions(),
-        ) }),
+        ),
+        .{
+            .style = .italic,
+            .fallback = true,
+            .size_adjustment = font.default_fallback_adjustment,
+        },
     );
     try (try c.getFace(try c.add(
         self.alloc,
-        .bold_italic,
-        .init(.{ .fallback_loaded = try .init(
+        try .init(
             self.font_lib,
             font.embedded.variable_italic,
             load_options.faceOptions(),
-        ) }),
+        ),
+        .{
+            .style = .bold_italic,
+            .fallback = true,
+            .size_adjustment = font.default_fallback_adjustment,
+        },
     ))).setVariations(
         &.{.{ .id = .init("wght"), .value = 700 }},
         load_options.faceOptions(),
     );
 
     // Nerd-font symbols fallback.
-    // For proper icon scaling, this should be loaded at the same point
-    // size as the primary font and not undergo size normalization,
-    // hence we use the em size as scale reference.
     _ = try c.add(
         self.alloc,
-        .regular,
-        .initWithScaleReference(.{ .fallback_loaded = try .init(
+        try .init(
             self.font_lib,
             font.embedded.symbols_nerd_font,
             load_options.faceOptions(),
-        ) }, .none),
+        ),
+        .{
+            .style = .regular,
+            .fallback = true,
+            // No size adjustment for the symbols font.
+            .size_adjustment = .none,
+        },
     );
 
     // On macOS, always search for and add the Apple Emoji font
@@ -324,11 +344,12 @@ fn collection(
         });
         defer disco_it.deinit();
         if (try disco_it.next()) |face| {
-            _ = try c.add(
-                self.alloc,
-                .regular,
-                .init(.{ .fallback_deferred = face }),
-            );
+            _ = try c.addDeferred(self.alloc, face, .{
+                .style = .regular,
+                .fallback = true,
+                // No size adjustment for emojis.
+                .size_adjustment = .none,
+            });
         }
     }
 
@@ -337,21 +358,31 @@ fn collection(
     if (comptime !builtin.target.os.tag.isDarwin() or Discover == void) {
         _ = try c.add(
             self.alloc,
-            .regular,
-            .init(.{ .fallback_loaded = try .init(
+            try .init(
                 self.font_lib,
                 font.embedded.emoji,
                 load_options.faceOptions(),
-            ) }),
+            ),
+            .{
+                .style = .regular,
+                .fallback = true,
+                // No size adjustment for emojis.
+                .size_adjustment = .none,
+            },
         );
         _ = try c.add(
             self.alloc,
-            .regular,
-            .init(.{ .fallback_loaded = try .init(
+            try .init(
                 self.font_lib,
                 font.embedded.emoji_text,
                 load_options.faceOptions(),
-            ) }),
+            ),
+            .{
+                .style = .regular,
+                .fallback = true,
+                // No size adjustment for emojis.
+                .size_adjustment = .none,
+            },
         );
     }
 

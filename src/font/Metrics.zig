@@ -55,6 +55,11 @@ const Minimums = struct {
 /// Metrics extracted from a font face, based on
 /// the metadata tables and glyph measurements.
 pub const FaceMetrics = struct {
+    /// Pixels per em, dividing the other values in this struct by this should
+    /// yield sizes in ems, to allow comparing metrics from faces of different
+    /// sizes.
+    px_per_em: f64,
+
     /// The minimum cell width that can contain any glyph in the ASCII range.
     ///
     /// Determined by measuring all printable glyphs in the ASCII range.

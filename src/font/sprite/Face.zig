@@ -389,6 +389,9 @@ fn testDrawRanges(
     const alloc = testing.allocator;
 
     const metrics: font.Metrics = .calc(.{
+        // Fudged number, not used in anything we care about here.
+        .px_per_em = 16,
+
         .cell_width = @floatFromInt(width),
         .ascent = @floatFromInt(ascent),
         .descent = -@as(f64, @floatFromInt(descent)),
