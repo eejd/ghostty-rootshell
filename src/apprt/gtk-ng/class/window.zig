@@ -142,6 +142,34 @@ pub const Window = extern struct {
         self.as(gtk.Window).close();
     }
 
+    fn surfaceToggleFullscreen(
+        surface: *Surface,
+        self: *Self,
+    ) callconv(.c) void {
+        _ = surface;
+        if (self.as(gtk.Window).isMaximized() != 0) {
+            self.as(gtk.Window).unmaximize();
+        } else {
+            self.as(gtk.Window).maximize();
+        }
+
+        // We react to the changes in the propFullscreen callback
+    }
+
+    fn surfaceToggleMaximize(
+        surface: *Surface,
+        self: *Self,
+    ) callconv(.c) void {
+        _ = surface;
+        if (self.as(gtk.Window).isMaximized() != 0) {
+            self.as(gtk.Window).unmaximize();
+        } else {
+            self.as(gtk.Window).maximize();
+        }
+
+        // We react to the changes in the propMaximized callback
+    }
+
     fn actionAbout(
         _: *gio.SimpleAction,
         _: ?*glib.Variant,
@@ -219,6 +247,8 @@ pub const Window = extern struct {
 
             // Template Callbacks
             class.bindTemplateCallback("surface_close_request", &surfaceCloseRequest);
+            class.bindTemplateCallback("surface_toggle_fullscreen", &surfaceToggleFullscreen);
+            class.bindTemplateCallback("surface_toggle_maximize", &surfaceToggleMaximize);
 
             // Virtual methods
             gobject.Object.virtual_methods.dispose.implement(class, &dispose);

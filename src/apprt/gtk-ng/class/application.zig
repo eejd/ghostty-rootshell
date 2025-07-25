@@ -509,9 +509,10 @@ pub const Application = extern struct {
 
             .show_gtk_inspector => Action.showGtkInspector(),
 
+            .toggle_maximize => Action.toggleMaximize(target),
+            .toggle_fullscreen => Action.toggleFullscreen(target),
+
             // Unimplemented but todo on gtk-ng branch
-            .toggle_maximize,
-            .toggle_fullscreen,
             .new_tab,
             .goto_tab,
             .move_tab,
@@ -1236,6 +1237,20 @@ const Action = struct {
 
     pub fn showGtkInspector() void {
         gtk.Window.setInteractiveDebugging(@intFromBool(true));
+    }
+
+    pub fn toggleFullscreen(target: apprt.Target) void {
+        switch (target) {
+            .app => {},
+            .surface => |v| v.rt_surface.surface.toggleFullscreen(),
+        }
+    }
+
+    pub fn toggleMaximize(target: apprt.Target) void {
+        switch (target) {
+            .app => {},
+            .surface => |v| v.rt_surface.surface.toggleMaximize(),
+        }
     }
 };
 

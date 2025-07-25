@@ -40,6 +40,8 @@ template $GhosttyWindow: Adw.ApplicationWindow {
 
     $GhosttySurface surface {
       close-request => $surface_close_request();
+      toggle-fullscreen => $surface_toggle_fullscreen();
+      toggle-maximize => $surface_toggle_maximize();
     }
   };
 }
