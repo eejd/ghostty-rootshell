@@ -1,4 +1,5 @@
 const std = @import("std");
+const build_config = @import("../../../build_config.zig");
 const assert = std.debug.assert;
 const adw = @import("adw");
 const gobject = @import("gobject");
@@ -9,6 +10,7 @@ const gresource = @import("../build/gresource.zig");
 const Common = @import("../class.zig").Common;
 const Application = @import("application.zig").Application;
 const Surface = @import("surface.zig").Surface;
+const DebugWarning = @import("debug_warning.zig").DebugWarning;
 
 const log = std.log.scoped(.gtk_ghostty_window);
 
@@ -23,6 +25,29 @@ pub const Window = extern struct {
         .parent_class = &Class.parent,
         .private = .{ .Type = Private, .offset = &Private.offset },
     });
+
+    pub const properties = struct {
+        pub const debug = struct {
+            pub const name = "debug";
+            const impl = gobject.ext.defineProperty(
+                name,
+                Self,
+                bool,
+                .{
+                    .nick = "Debug",
+                    .blurb = "True if runtime safety checks are enabled.",
+                    .default = build_config.is_debug,
+                    .accessor = gobject.ext.typedAccessor(Self, bool, .{
+                        .getter = struct {
+                            pub fn getter(_: *Window) bool {
+                                return build_config.is_debug;
+                            }
+                        }.getter,
+                    }),
+                },
+            );
+        };
+    };
 
     const Private = struct {
         /// The surface in the view.
@@ -46,6 +71,9 @@ pub const Window = extern struct {
 
     fn init(self: *Self, _: *Class) callconv(.C) void {
         gtk.Widget.initTemplate(self.as(gtk.Widget));
+
+        if (comptime build_config.is_debug)
+            self.as(gtk.Widget).addCssClass("devel");
     }
 
     //---------------------------------------------------------------
@@ -91,6 +119,7 @@ pub const Window = extern struct {
 
         fn init(class: *Class) callconv(.C) void {
             gobject.ext.ensureType(Surface);
+            gobject.ext.ensureType(DebugWarning);
             gtk.Widget.Class.setTemplateFromResource(
                 class.as(gtk.Widget.Class),
                 comptime gresource.blueprint(.{
@@ -99,6 +128,11 @@ pub const Window = extern struct {
                     .name = "window",
                 }),
             );
+
+            // Properties
+            gobject.ext.registerProperties(class, &.{
+                properties.debug.impl,
+            });
 
             // Bindings
             class.bindTemplateChildPrivate("surface", .{});

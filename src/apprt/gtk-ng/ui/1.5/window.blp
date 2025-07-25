@@ -2,10 +2,23 @@ using Gtk 4.0;
 using Adw 1;
 
 template $GhosttyWindow: Adw.ApplicationWindow {
+  styles [
+    "window",
+  ]
+
   default-width: 800;
   default-height: 600;
 
-  content: $GhosttySurface surface {
-    close-request => $surface_close_request();
+  content: Gtk.Box {
+    orientation: vertical;
+    spacing: 0;
+
+    $GhosttyDebugWarning {
+      visible: bind template.debug;
+    }
+
+    $GhosttySurface surface {
+      close-request => $surface_close_request();
+    }
   };
 }
