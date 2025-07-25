@@ -72,8 +72,14 @@ pub const Window = extern struct {
     fn init(self: *Self, _: *Class) callconv(.C) void {
         gtk.Widget.initTemplate(self.as(gtk.Widget));
 
-        if (comptime build_config.is_debug)
+        // Add our dev CSS class if we're in debug mode.
+        if (comptime build_config.is_debug) {
             self.as(gtk.Widget).addCssClass("devel");
+        }
+
+        // Set our window icon. We can't set this in the blueprint file
+        // because its dependent on the build config.
+        self.as(gtk.Window).setIconName(build_config.bundle_id);
     }
 
     //---------------------------------------------------------------

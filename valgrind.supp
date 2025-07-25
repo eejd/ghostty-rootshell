@@ -14,6 +14,48 @@
 # and quitting. Otherwise, we leave a number of GTK resources around.
 
 {
+   GDK SVG Loading Leaks
+   Memcheck:Leak
+   match-leak-kinds: possible
+   fun:malloc
+   ...
+   fun:rsvg_*
+   ...
+   fun:gdk_pixbuf_loader_close
+   fun:load_from_stream
+   fun:gdk_pixbuf_new_from_stream_at_scale
+   fun:gtk_make_symbolic_pixbuf_from_data
+   fun:gdk_texture_new_from_filename_symbolic
+   fun:icon_ensure_texture__locked.isra.0
+   fun:load_icon_thread
+   fun:g_task_thread_pool_thread
+   fun:g_thread_pool_thread_proxy
+   fun:g_thread_proxy
+   fun:start_thread
+   fun:thread_start
+}
+
+{
+   GDK SVG Loading Touches Undefined Memory
+   Memcheck:Cond
+   ...
+   fun:rsvg_handle_get_pixbuf_and_error
+   ...
+   fun:gdk_pixbuf_loader_close
+   fun:load_from_stream
+   fun:gdk_pixbuf_new_from_stream_at_scale
+   fun:gtk_make_symbolic_pixbuf_from_data
+   fun:gdk_texture_new_from_filename_symbolic
+   fun:icon_ensure_texture__locked.isra.0
+   fun:load_icon_thread
+   fun:g_task_thread_pool_thread
+   fun:g_thread_pool_thread_proxy
+   fun:g_thread_proxy
+   fun:start_thread
+   fun:thread_start
+}
+
+{
    GDK Drag and Drop Leaks Data
    Memcheck:Leak
    match-leak-kinds: definite
