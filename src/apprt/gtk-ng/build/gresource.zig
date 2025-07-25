@@ -41,6 +41,8 @@ pub const blueprints: []const Blueprint = &.{
     .{ .major = 1, .minor = 2, .name = "surface" },
     .{ .major = 1, .minor = 3, .name = "surface-child-exited" },
     .{ .major = 1, .minor = 5, .name = "window" },
+    .{ .major = 1, .minor = 2, .name = "debug-warning" },
+    .{ .major = 1, .minor = 3, .name = "debug-warning" },
 };
 
 /// CSS files in css_path

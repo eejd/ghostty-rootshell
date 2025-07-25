@@ -96,3 +96,9 @@ pub const Artifact = enum {
         };
     }
 };
+
+/// True if runtime safety checks are enabled.
+pub const is_debug = switch (builtin.mode) {
+    .Debug, .ReleaseSafe => true,
+    .ReleaseFast, .ReleaseSmall => false,
+};
