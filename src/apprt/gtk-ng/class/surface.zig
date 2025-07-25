@@ -2172,7 +2172,7 @@ pub const Surface = extern struct {
         surface: bool,
 
         /// Close the tab. We can't know if there are processes active
-        /// for the entire tab scope so listners must query the app.
+        /// for the entire tab scope so listeners must query the app.
         tab,
 
         /// Close the window.
