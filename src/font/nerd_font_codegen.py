@@ -9,7 +9,7 @@ be safe and not malicious or anything.
 
 This script requires Python 3.12 or greater, requires that the `fontTools`
 python module is installed, and requires that the path to a copy of the
-SymbolsNerdFontMono font is passed as the first argument to the script.
+SymbolsNerdFont (not Mono!) font is passed as the first argument to it.
 """
 
 import ast
