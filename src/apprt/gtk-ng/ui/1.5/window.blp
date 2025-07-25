@@ -14,9 +14,7 @@ template $GhosttyWindow: Adw.ApplicationWindow {
   // GTK4 grabs F10 input by default to focus the menubar icon. We want
   // to disable this so that terminal programs can capture F10 (such as htop)
   handle-menubar-accel: false;
-  // A default, this will get overwritten by the terminal application
-  // pretty quickly, usually.
-  title: "Ghostty";
+  title: bind (template.active-surface as <$GhosttySurface>).title;
 
   content: Box {
     orientation: vertical;
@@ -25,12 +23,13 @@ template $GhosttyWindow: Adw.ApplicationWindow {
       visible: bind template.headerbar-visible;
 
       title-widget: Adw.WindowTitle {
-        title: bind surface.title;
+        title: bind (template.active-surface as <$GhosttySurface>).title;
       };
 
       [end]
       Gtk.Box {
         Gtk.MenuButton {
+          notify::active => $notify_menu_active();
           icon-name: "open-menu-symbolic";
           menu-model: main_menu;
           tooltip-text: _("Main Menu");

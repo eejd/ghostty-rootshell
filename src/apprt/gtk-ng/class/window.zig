@@ -8,7 +8,9 @@ const gobject = @import("gobject");
 const gtk = @import("gtk");
 
 const i18n = @import("../../../os/main.zig").i18n;
+const input = @import("../../../input.zig");
 const CoreSurface = @import("../../../Surface.zig");
+const gtk_version = @import("../gtk_version.zig");
 const adw_version = @import("../adw_version.zig");
 const gresource = @import("../build/gresource.zig");
 const Common = @import("../class.zig").Common;
@@ -32,6 +34,30 @@ pub const Window = extern struct {
     });
 
     pub const properties = struct {
+        /// The active surface is the focus that should be receiving all
+        /// surface-targeted actions. This is usually the focused surface,
+        /// but may also not be focused if the user has selected a non-surface
+        /// widget.
+        pub const @"active-surface" = struct {
+            pub const name = "active-surface";
+            const impl = gobject.ext.defineProperty(
+                name,
+                Self,
+                ?*Surface,
+                .{
+                    .nick = "Active Surface",
+                    .blurb = "The currently active surface.",
+                    .accessor = gobject.ext.typedAccessor(
+                        Self,
+                        ?*Surface,
+                        .{
+                            .getter = Self.getActiveSurface,
+                        },
+                    ),
+                },
+            );
+        };
+
         pub const config = struct {
             pub const name = "config";
             const impl = gobject.ext.defineProperty(
@@ -140,12 +166,21 @@ pub const Window = extern struct {
         // config and such can affect our bindings which ar setup initially
         // in initTemplate.
         self.syncAppearance();
+
+        // We need to do this so that the title initializes properly,
+        // I think because its a dynamic getter.
+        self.as(gobject.Object).notifyByPspec(properties.@"active-surface".impl.param_spec);
     }
 
     /// Setup our action map.
     fn initActionMap(self: *Self) void {
         const actions = .{
             .{ "about", actionAbout, null },
+            .{ "close", actionClose, null },
+            .{ "copy", actionCopy, null },
+            .{ "paste", actionPaste, null },
+            .{ "reset", actionReset, null },
+            .{ "clear", actionClear, null },
         };
 
         const action_map = self.as(gio.ActionMap);
@@ -177,8 +212,28 @@ pub const Window = extern struct {
         self.as(gobject.Object).notifyByPspec(properties.@"headerbar-visible".impl.param_spec);
     }
 
+    /// Perform a binding action on the window's active surface.
+    fn performBindingAction(
+        self: *Window,
+        action: input.Binding.Action,
+    ) void {
+        const surface = self.getActiveSurface() orelse return;
+        const core_surface = surface.core() orelse return;
+        _ = core_surface.performBindingAction(action) catch |err| {
+            log.warn("error performing binding action error={}", .{err});
+            return;
+        };
+    }
+
     //---------------------------------------------------------------
     // Properties
+
+    /// Get the currently active surface. See the "active-surface" property.
+    /// This does not ref the value.
+    fn getActiveSurface(self: *Self) ?*Surface {
+        const priv = self.private();
+        return priv.surface;
+    }
 
     fn getHeaderbarVisible(self: *Self) bool {
         // TODO: CSD/SSD
@@ -224,6 +279,38 @@ pub const Window = extern struct {
         self: *Self,
     ) callconv(.c) void {
         self.syncAppearance();
+    }
+
+    fn propMenuActive(
+        button: *gtk.MenuButton,
+        _: *gobject.ParamSpec,
+        self: *Self,
+    ) callconv(.c) void {
+        // Debian 12 is stuck on GTK 4.8
+        if (!gtk_version.atLeast(4, 10, 0)) return;
+
+        // We only care if we're activating. If we're activating then
+        // we need to check the validity of our menu items.
+        const active = button.getActive() != 0;
+        if (!active) return;
+
+        const has_selection = selection: {
+            const surface = self.getActiveSurface() orelse
+                break :selection false;
+            const core_surface = surface.core() orelse
+                break :selection false;
+            break :selection core_surface.hasSelection();
+        };
+
+        const action_map: *gio.ActionMap = gobject.ext.cast(
+            gio.ActionMap,
+            self,
+        ) orelse return;
+        const action: *gio.SimpleAction = gobject.ext.cast(
+            gio.SimpleAction,
+            action_map.lookupAction("copy") orelse return,
+        ) orelse return;
+        action.setEnabled(@intFromBool(has_selection));
     }
 
     //---------------------------------------------------------------
@@ -334,6 +421,47 @@ pub const Window = extern struct {
         }
     }
 
+    fn actionClose(
+        _: *gio.SimpleAction,
+        _: ?*glib.Variant,
+        self: *Self,
+    ) callconv(.c) void {
+        // TODO: Confirmation
+        self.as(gtk.Window).destroy();
+    }
+
+    fn actionCopy(
+        _: *gio.SimpleAction,
+        _: ?*glib.Variant,
+        self: *Window,
+    ) callconv(.c) void {
+        self.performBindingAction(.copy_to_clipboard);
+    }
+
+    fn actionPaste(
+        _: *gio.SimpleAction,
+        _: ?*glib.Variant,
+        self: *Window,
+    ) callconv(.c) void {
+        self.performBindingAction(.paste_from_clipboard);
+    }
+
+    fn actionReset(
+        _: *gio.SimpleAction,
+        _: ?*glib.Variant,
+        self: *Window,
+    ) callconv(.c) void {
+        self.performBindingAction(.reset);
+    }
+
+    fn actionClear(
+        _: *gio.SimpleAction,
+        _: ?*glib.Variant,
+        self: *Window,
+    ) callconv(.c) void {
+        self.performBindingAction(.clear_screen);
+    }
+
     const C = Common(Self, Private);
     pub const as = C.as;
     pub const ref = C.ref;
@@ -359,6 +487,7 @@ pub const Window = extern struct {
 
             // Properties
             gobject.ext.registerProperties(class, &.{
+                properties.@"active-surface".impl,
                 properties.config.impl,
                 properties.debug.impl,
                 properties.@"headerbar-visible".impl,
@@ -374,6 +503,7 @@ pub const Window = extern struct {
             class.bindTemplateCallback("notify_config", &propConfig);
             class.bindTemplateCallback("notify_fullscreened", &propFullscreened);
             class.bindTemplateCallback("notify_maximized", &propMaximized);
+            class.bindTemplateCallback("notify_menu_active", &propMenuActive);
 
             // Virtual methods
             gobject.Object.virtual_methods.dispose.implement(class, &dispose);
