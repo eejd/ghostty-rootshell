@@ -132,11 +132,11 @@ pub const Window = extern struct {
 
     fn surfaceCloseRequest(
         surface: *Surface,
-        process_active: bool,
+        scope: *const Surface.CloseScope,
         self: *Self,
     ) callconv(.c) void {
         // Todo
-        _ = process_active;
+        _ = scope;
 
         assert(surface == self.private().surface);
         self.as(gtk.Window).close();

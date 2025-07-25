@@ -32,7 +32,7 @@ pub fn rtApp(self: *Self) *ApprtApp {
 }
 
 pub fn close(self: *Self, process_active: bool) void {
-    self.surface.close(process_active);
+    self.surface.close(.{ .surface = process_active });
 }
 
 pub fn cgroup(self: *Self) ?[]const u8 {

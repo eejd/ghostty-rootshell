@@ -28,6 +28,7 @@ const ApprtApp = @import("../App.zig");
 const Common = @import("../class.zig").Common;
 const WeakRef = @import("../weak_ref.zig").WeakRef;
 const Config = @import("config.zig").Config;
+const Surface = @import("surface.zig").Surface;
 const Window = @import("window.zig").Window;
 const CloseConfirmationDialog = @import("close_confirmation_dialog.zig").CloseConfirmationDialog;
 const ConfigErrorsDialog = @import("config_errors_dialog.zig").ConfigErrorsDialog;
@@ -469,6 +470,9 @@ pub const Application = extern struct {
         value: apprt.Action.Value(action),
     ) !bool {
         switch (action) {
+            .close_tab => Action.close(target, .tab),
+            .close_window => Action.close(target, .window),
+
             .config_change => try Action.configChange(
                 self,
                 target,
@@ -495,7 +499,7 @@ pub const Application = extern struct {
 
             .progress_report => return Action.progressReport(target, value),
 
-            .render => Action.render(self, target),
+            .render => Action.render(target),
 
             .ring_bell => Action.ringBell(target),
 
@@ -506,11 +510,9 @@ pub const Application = extern struct {
             .show_gtk_inspector => Action.showGtkInspector(),
 
             // Unimplemented but todo on gtk-ng branch
-            .close_window,
             .toggle_maximize,
             .toggle_fullscreen,
             .new_tab,
-            .close_tab,
             .goto_tab,
             .move_tab,
             .new_split,
@@ -1047,6 +1049,16 @@ pub const Application = extern struct {
 
 /// All apprt action handlers
 const Action = struct {
+    pub fn close(
+        target: apprt.Target,
+        scope: Surface.CloseScope,
+    ) void {
+        switch (target) {
+            .app => {},
+            .surface => |v| v.rt_surface.surface.close(scope),
+        }
+    }
+
     pub fn configChange(
         self: *Application,
         target: apprt.Target,
@@ -1180,7 +1192,7 @@ const Action = struct {
         };
     }
 
-    pub fn render(_: *Application, target: apprt.Target) void {
+    pub fn render(target: apprt.Target) void {
         switch (target) {
             .app => {},
             .surface => |v| v.rt_surface.surface.redraw(),
