@@ -10,6 +10,7 @@ const gobject = @import("gobject");
 const gtk = @import("gtk");
 
 const build_config = @import("../../../build_config.zig");
+const i18n = @import("../../../os/main.zig").i18n;
 const apprt = @import("../../../apprt.zig");
 const cgroup = @import("../cgroup.zig");
 const CoreApp = @import("../../../App.zig");
@@ -677,6 +678,9 @@ pub const Application = extern struct {
         // Setup our style manager (light/dark mode)
         self.startupStyleManager();
 
+        // Setup our action map
+        self.startupActionMap();
+
         // Setup our cgroup for the application.
         self.startupCgroup() catch |err| {
             log.warn("cgroup initialization failed err={}", .{err});
@@ -760,6 +764,30 @@ pub const Application = extern struct {
             self,
             .{ .detail = "dark" },
         );
+    }
+
+    /// Setup our action map.
+    fn startupActionMap(self: *Self) void {
+        const actions = .{
+            .{ "quit", actionQuit, null },
+        };
+
+        const action_map = self.as(gio.ActionMap);
+        inline for (actions) |entry| {
+            const action = gio.SimpleAction.new(
+                entry[0],
+                entry[2],
+            );
+            defer action.unref();
+            _ = gio.SimpleAction.signals.activate.connect(
+                action,
+                *Self,
+                entry[1],
+                self,
+                .{},
+            );
+            action_map.addAction(action.as(gio.Action));
+        }
     }
 
     const CgroupError = error{
@@ -959,6 +987,17 @@ pub const Application = extern struct {
 
         // Show it
         dialog.present(null);
+    }
+
+    fn actionQuit(
+        _: *gio.SimpleAction,
+        _: ?*glib.Variant,
+        self: *Self,
+    ) callconv(.c) void {
+        const priv = self.private();
+        priv.core_app.performAction(self.rt(), .quit) catch |err| {
+            log.warn("error quitting err={}", .{err});
+        };
     }
 
     //----------------------------------------------------------------

@@ -2,10 +2,14 @@ const std = @import("std");
 const build_config = @import("../../../build_config.zig");
 const assert = std.debug.assert;
 const adw = @import("adw");
+const gio = @import("gio");
+const glib = @import("glib");
 const gobject = @import("gobject");
 const gtk = @import("gtk");
 
+const i18n = @import("../../../os/main.zig").i18n;
 const CoreSurface = @import("../../../Surface.zig");
+const adw_version = @import("../adw_version.zig");
 const gresource = @import("../build/gresource.zig");
 const Common = @import("../class.zig").Common;
 const Application = @import("application.zig").Application;
@@ -80,6 +84,32 @@ pub const Window = extern struct {
         // Set our window icon. We can't set this in the blueprint file
         // because its dependent on the build config.
         self.as(gtk.Window).setIconName(build_config.bundle_id);
+
+        self.initActionMap();
+    }
+
+    /// Setup our action map.
+    fn initActionMap(self: *Self) void {
+        const actions = .{
+            .{ "about", actionAbout, null },
+        };
+
+        const action_map = self.as(gio.ActionMap);
+        inline for (actions) |entry| {
+            const action = gio.SimpleAction.new(
+                entry[0],
+                entry[2],
+            );
+            defer action.unref();
+            _ = gio.SimpleAction.signals.activate.connect(
+                action,
+                *Self,
+                entry[1],
+                self,
+                .{},
+            );
+            action_map.addAction(action.as(gio.Action));
+        }
     }
 
     //---------------------------------------------------------------
@@ -110,6 +140,50 @@ pub const Window = extern struct {
 
         assert(surface == self.private().surface);
         self.as(gtk.Window).close();
+    }
+
+    fn actionAbout(
+        _: *gio.SimpleAction,
+        _: ?*glib.Variant,
+        self: *Self,
+    ) callconv(.c) void {
+        const name = "Ghostty";
+        const icon = "com.mitchellh.ghostty";
+        const website = "https://ghostty.org";
+
+        if (adw_version.supportsDialogs()) {
+            adw.showAboutDialog(
+                self.as(gtk.Widget),
+                "application-name",
+                name,
+                "developer-name",
+                i18n._("Ghostty Developers"),
+                "application-icon",
+                icon,
+                "version",
+                build_config.version_string.ptr,
+                "issue-url",
+                "https://github.com/ghostty-org/ghostty/issues",
+                "website",
+                website,
+                @as(?*anyopaque, null),
+            );
+        } else {
+            gtk.showAboutDialog(
+                self.as(gtk.Window),
+                "program-name",
+                name,
+                "logo-icon-name",
+                icon,
+                "title",
+                i18n._("About Ghostty"),
+                "version",
+                build_config.version_string.ptr,
+                "website",
+                website,
+                @as(?*anyopaque, null),
+            );
+        }
     }
 
     const C = Common(Self, Private);
