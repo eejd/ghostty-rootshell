@@ -15,6 +15,7 @@ const cgroup = @import("../cgroup.zig");
 const CoreApp = @import("../../../App.zig");
 const configpkg = @import("../../../config.zig");
 const internal_os = @import("../../../os/main.zig");
+const systemd = @import("../../../os/systemd.zig");
 const terminal = @import("../../../terminal/main.zig");
 const xev = @import("../../../global.zig").xev;
 const CoreConfig = configpkg.Config;
@@ -375,6 +376,9 @@ pub const Application = extern struct {
             );
             return;
         }
+
+        // Tell systemd that we are ready.
+        systemd.notify.ready();
 
         log.debug("entering runloop", .{});
         defer log.debug("exiting runloop", .{});
