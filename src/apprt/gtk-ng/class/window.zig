@@ -4,6 +4,7 @@ const adw = @import("adw");
 const gobject = @import("gobject");
 const gtk = @import("gtk");
 
+const CoreSurface = @import("../../../Surface.zig");
 const gresource = @import("../build/gresource.zig");
 const Common = @import("../class.zig").Common;
 const Application = @import("application.zig").Application;
@@ -30,8 +31,17 @@ pub const Window = extern struct {
         pub var offset: c_int = 0;
     };
 
-    pub fn new(app: *Application) *Self {
-        return gobject.ext.newInstance(Self, .{ .application = app });
+    pub fn new(app: *Application, parent_: ?*CoreSurface) *Self {
+        const self = gobject.ext.newInstance(Self, .{
+            .application = app,
+        });
+
+        if (parent_) |parent| {
+            const priv = self.private();
+            priv.surface.setParent(parent);
+        }
+
+        return self;
     }
 
     fn init(self: *Self, _: *Class) callconv(.C) void {

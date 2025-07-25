@@ -1085,9 +1085,7 @@ const Action = struct {
         self: *Application,
         parent: ?*CoreSurface,
     ) !void {
-        _ = parent;
-
-        const win = Window.new(self);
+        const win = Window.new(self, parent);
         gtk.Window.present(win.as(gtk.Window));
     }
 
