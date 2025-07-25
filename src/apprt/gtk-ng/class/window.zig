@@ -16,6 +16,7 @@ const gresource = @import("../build/gresource.zig");
 const Common = @import("../class.zig").Common;
 const Config = @import("config.zig").Config;
 const Application = @import("application.zig").Application;
+const CloseConfirmationDialog = @import("close_confirmation_dialog.zig").CloseConfirmationDialog;
 const Surface = @import("surface.zig").Surface;
 const DebugWarning = @import("debug_warning.zig").DebugWarning;
 
@@ -337,6 +338,44 @@ pub const Window = extern struct {
     //---------------------------------------------------------------
     // Signal handlers
 
+    fn windowCloseRequest(
+        _: *gtk.Window,
+        self: *Self,
+    ) callconv(.c) c_int {
+        // If our surface needs confirmation then we show confirmation.
+        // This will have to be expanded to a list when we have tabs
+        // or splits.
+        confirm: {
+            const surface = self.getActiveSurface() orelse break :confirm;
+            const core_surface = surface.core() orelse break :confirm;
+            if (!core_surface.needsConfirmQuit()) break :confirm;
+
+            // Show a confirmation dialog
+            const dialog: *CloseConfirmationDialog = .new(.app);
+            _ = CloseConfirmationDialog.signals.@"close-request".connect(
+                dialog,
+                *Self,
+                closeConfirmationClose,
+                self,
+                .{},
+            );
+
+            // Show it
+            dialog.present(self.as(gtk.Widget));
+            return @intFromBool(true);
+        }
+
+        self.as(gtk.Window).destroy();
+        return @intFromBool(false);
+    }
+
+    fn closeConfirmationClose(
+        _: *CloseConfirmationDialog,
+        self: *Self,
+    ) callconv(.c) void {
+        self.as(gtk.Window).destroy();
+    }
+
     fn surfaceCloseRequest(
         surface: *Surface,
         scope: *const Surface.CloseScope,
@@ -426,8 +465,7 @@ pub const Window = extern struct {
         _: ?*glib.Variant,
         self: *Self,
     ) callconv(.c) void {
-        // TODO: Confirmation
-        self.as(gtk.Window).destroy();
+        self.as(gtk.Window).close();
     }
 
     fn actionCopy(
@@ -497,6 +535,7 @@ pub const Window = extern struct {
             class.bindTemplateChildPrivate("surface", .{});
 
             // Template Callbacks
+            class.bindTemplateCallback("close_request", &windowCloseRequest);
             class.bindTemplateCallback("surface_close_request", &surfaceCloseRequest);
             class.bindTemplateCallback("surface_toggle_fullscreen", &surfaceToggleFullscreen);
             class.bindTemplateCallback("surface_toggle_maximize", &surfaceToggleMaximize);

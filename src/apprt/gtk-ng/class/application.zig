@@ -418,10 +418,16 @@ pub const Application = extern struct {
             return;
         }
 
+        // Get the parent for our dialog
+        const parent: ?*gtk.Widget = parent: {
+            const list = gtk.Window.listToplevels();
+            defer list.free();
+            const focused = list.findCustom(null, findActiveWindow);
+            break :parent @ptrCast(@alignCast(focused.f_data));
+        };
+
         // Show a confirmation dialog
         const dialog: *CloseConfirmationDialog = .new(.app);
-
-        // Connect to the reload signal so we know to reload our config.
         _ = CloseConfirmationDialog.signals.@"close-request".connect(
             dialog,
             *Application,
@@ -431,7 +437,7 @@ pub const Application = extern struct {
         );
 
         // Show it
-        dialog.present();
+        dialog.present(parent);
     }
 
     fn quitNow(self: *Self) void {
@@ -1358,4 +1364,13 @@ fn setGtkEnv(config: *const CoreConfig) error{NoSpaceLeft}!void {
         log.warn("setting GDK_DISABLE={s}", .{value[0 .. value.len - 1]});
         _ = internal_os.setenv("GDK_DISABLE", value[0 .. value.len - 1 :0]);
     }
+}
+
+fn findActiveWindow(data: ?*const anyopaque, _: ?*const anyopaque) callconv(.c) c_int {
+    const window: *gtk.Window = @ptrCast(@alignCast(@constCast(data orelse return -1)));
+
+    // Confusingly, `isActive` returns 1 when active,
+    // but we want to return 0 to indicate equality.
+    // Abusing integers to be enums and booleans is a terrible idea, C.
+    return if (window.isActive() != 0) 0 else -1;
 }

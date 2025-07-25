@@ -6,6 +6,7 @@ template $GhosttyWindow: Adw.ApplicationWindow {
     "window",
   ]
 
+  close-request => $close_request();
   notify::config => $notify_config();
   notify::fullscreened => $notify_fullscreened();
   notify::maximized => $notify_maximized();
