@@ -250,7 +250,7 @@
    fun:gtk_tooltip_window_set_label_markup
    fun:gtk_widget_real_query_tooltip
    fun:_gtk_marshal_BOOLEAN__INT_INT_BOOLEAN_OBJECTv
-   fun:g_type_class_meta_marshalv
+   ...
    fun:_g_closure_invoke_va
    fun:signal_emit_valist_unlocked
    fun:g_signal_emit_valist
@@ -323,17 +323,42 @@
 }
 
 {
+   GDK Wayland Pointer Motion Event
+   Memcheck:Leak
+   match-leak-kinds: definite
+   fun:calloc
+   fun:g_malloc0
+   fun:g_type_create_instance
+   fun:gdk_event_alloc
+   fun:gdk_motion_event_new
+   fun:pointer_handle_motion
+   fun:ffi_call_unix64
+   fun:ffi_call_int
+   fun:ffi_call
+   fun:wl_closure_invoke
+   fun:dispatch_event
+   fun:wl_display_dispatch_queue_pending
+   fun:_gdk_wayland_display_queue_events
+   fun:gdk_display_get_event
+   fun:gdk_wayland_event_source_dispatch
+   fun:g_main_context_dispatch_unlocked
+   fun:g_main_context_iterate_unlocked.isra.0
+   fun:g_main_context_iteration
+  ...
+}
+
+{
    GTK FontConfig
    Memcheck:Leak
    match-leak-kinds: possible
-   fun:malloc
+   fun:*alloc
    fun:FcFontSet*
    fun:FcFontSet*
    fun:sort_in_thread.isra.0
    fun:fc_thread_func
    fun:g_thread_proxy
    fun:start_thread
-   fun:thread_start
+   ...
 }
 
 {
