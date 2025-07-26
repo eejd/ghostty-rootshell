@@ -178,6 +178,7 @@ pub const Window = extern struct {
         const actions = .{
             .{ "about", actionAbout, null },
             .{ "close", actionClose, null },
+            .{ "new-window", actionNewWindow, null },
             .{ "copy", actionCopy, null },
             .{ "paste", actionPaste, null },
             .{ "reset", actionReset, null },
@@ -466,6 +467,14 @@ pub const Window = extern struct {
         self: *Self,
     ) callconv(.c) void {
         self.as(gtk.Window).close();
+    }
+
+    fn actionNewWindow(
+        _: *gio.SimpleAction,
+        _: ?*glib.Variant,
+        self: *Window,
+    ) callconv(.c) void {
+        self.performBindingAction(.new_window);
     }
 
     fn actionCopy(
