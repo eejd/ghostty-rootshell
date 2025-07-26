@@ -957,18 +957,10 @@ class AppDelegate: NSObject,
 
     @IBAction func newWindow(_ sender: Any?) {
         _ = TerminalController.newWindow(ghostty)
-
-        // We also activate our app so that it becomes front. This may be
-        // necessary for the dock menu.
-        NSApp.activate(ignoringOtherApps: true)
     }
 
     @IBAction func newTab(_ sender: Any?) {
         _ = TerminalController.newTab(ghostty)
-
-        // We also activate our app so that it becomes front. This may be
-        // necessary for the dock menu.
-        NSApp.activate(ignoringOtherApps: true)
     }
 
     @IBAction func closeAllWindows(_ sender: Any?) {
