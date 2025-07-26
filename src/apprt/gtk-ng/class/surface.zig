@@ -275,7 +275,10 @@ pub const Surface = extern struct {
             const impl = gobject.ext.defineSignal(
                 name,
                 Self,
-                &.{},
+                &.{
+                    apprt.Clipboard,
+                    [*:0]const u8,
+                },
                 void,
             );
         };
@@ -2236,7 +2239,7 @@ const Clipboard = struct {
             Surface.signals.@"clipboard-write".impl.emit(
                 self,
                 null,
-                .{},
+                .{ clipboard_type, val.ptr },
                 null,
             );
 
