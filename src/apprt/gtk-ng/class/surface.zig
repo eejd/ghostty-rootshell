@@ -209,6 +209,26 @@ pub const Surface = extern struct {
                 },
             );
         };
+
+        pub const zoom = struct {
+            pub const name = "zoom";
+            const impl = gobject.ext.defineProperty(
+                name,
+                Self,
+                bool,
+                .{
+                    .nick = "Zoom",
+                    .blurb = "Whether the surface should be zoomed.",
+                    .default = false,
+                    .accessor = gobject.ext.privateFieldAccessor(
+                        Self,
+                        Private,
+                        &Private.offset,
+                        "zoom",
+                    ),
+                },
+            );
+        };
     };
 
     pub const signals = struct {
@@ -228,7 +248,7 @@ pub const Surface = extern struct {
             const impl = gobject.ext.defineSignal(
                 name,
                 Self,
-                &.{bool},
+                &.{*const CloseScope},
                 void,
             );
         };
@@ -263,6 +283,32 @@ pub const Surface = extern struct {
         /// Emitted whenever the surface reads the clipboard.
         pub const @"clipboard-read" = struct {
             pub const name = "clipboard-read";
+            pub const connect = impl.connect;
+            const impl = gobject.ext.defineSignal(
+                name,
+                Self,
+                &.{},
+                void,
+            );
+        };
+
+        /// Emitted when this surface requests its container to toggle its
+        /// fullscreen state.
+        pub const @"toggle-fullscreen" = struct {
+            pub const name = "toggle-fullscreen";
+            pub const connect = impl.connect;
+            const impl = gobject.ext.defineSignal(
+                name,
+                Self,
+                &.{},
+                void,
+            );
+        };
+
+        /// Emitted when this surface requests its container to toggle its
+        /// maximized state.
+        pub const @"toggle-maximize" = struct {
+            pub const name = "toggle-maximize";
             pub const connect = impl.connect;
             const impl = gobject.ext.defineSignal(
                 name,
@@ -309,6 +355,10 @@ pub const Surface = extern struct {
         /// The current focus state of the terminal based on the
         /// focus events.
         focused: bool = true,
+
+        /// Whether this surface is "zoomed" or not. A zoomed surface
+        /// shows up taking the full bounds of a split view.
+        zoom: bool = false,
 
         /// The GLAarea that renders the actual surface. This is a binding
         /// to the template so it doesn't have to be unrefed manually.
@@ -423,6 +473,24 @@ pub const Surface = extern struct {
         // TODO: Audio feature
 
         signals.bell.impl.emit(
+            self,
+            null,
+            .{},
+            null,
+        );
+    }
+
+    pub fn toggleFullscreen(self: *Self) void {
+        signals.@"toggle-fullscreen".impl.emit(
+            self,
+            null,
+            .{},
+            null,
+        );
+    }
+
+    pub fn toggleMaximize(self: *Self) void {
+        signals.@"toggle-maximize".impl.emit(
             self,
             null,
             .{},
@@ -829,11 +897,11 @@ pub const Surface = extern struct {
     //---------------------------------------------------------------
     // Libghostty Callbacks
 
-    pub fn close(self: *Self, process_active: bool) void {
+    pub fn close(self: *Self, scope: CloseScope) void {
         signals.@"close-request".impl.emit(
             self,
             null,
-            .{process_active},
+            .{&scope},
             null,
         );
     }
@@ -1262,7 +1330,7 @@ pub const Surface = extern struct {
         self: *Self,
     ) callconv(.c) void {
         // This closes the surface with no confirmation.
-        self.close(false);
+        self.close(.{ .surface = false });
     }
 
     fn dtDrop(
@@ -2076,6 +2144,7 @@ pub const Surface = extern struct {
                 properties.@"mouse-hover-url".impl,
                 properties.pwd.impl,
                 properties.title.impl,
+                properties.zoom.impl,
             });
 
             // Signals
@@ -2083,6 +2152,8 @@ pub const Surface = extern struct {
             signals.bell.impl.register(.{});
             signals.@"clipboard-read".impl.register(.{});
             signals.@"clipboard-write".impl.register(.{});
+            signals.@"toggle-fullscreen".impl.register(.{});
+            signals.@"toggle-maximize".impl.register(.{});
 
             // Virtual methods
             gobject.Object.virtual_methods.dispose.implement(class, &dispose);
@@ -2092,6 +2163,25 @@ pub const Surface = extern struct {
         pub const as = C.Class.as;
         pub const bindTemplateChildPrivate = C.Class.bindTemplateChildPrivate;
         pub const bindTemplateCallback = C.Class.bindTemplateCallback;
+    };
+
+    /// The scope of a close request.
+    pub const CloseScope = union(enum) {
+        /// Close the surface. The boolean determines if there is a
+        /// process active.
+        surface: bool,
+
+        /// Close the tab. We can't know if there are processes active
+        /// for the entire tab scope so listeners must query the app.
+        tab,
+
+        /// Close the window.
+        window,
+
+        pub const getGObjectType = gobject.ext.defineBoxed(
+            CloseScope,
+            .{ .name = "GhosttySurfaceCloseScope" },
+        );
     };
 };
 

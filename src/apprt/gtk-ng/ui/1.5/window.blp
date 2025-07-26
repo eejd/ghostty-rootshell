@@ -6,12 +6,38 @@ template $GhosttyWindow: Adw.ApplicationWindow {
     "window",
   ]
 
+  close-request => $close_request();
+  notify::config => $notify_config();
+  notify::fullscreened => $notify_fullscreened();
+  notify::maximized => $notify_maximized();
   default-width: 800;
   default-height: 600;
+  // GTK4 grabs F10 input by default to focus the menubar icon. We want
+  // to disable this so that terminal programs can capture F10 (such as htop)
+  handle-menubar-accel: false;
+  title: bind (template.active-surface as <$GhosttySurface>).title;
 
-  content: Gtk.Box {
+  content: Box {
     orientation: vertical;
-    spacing: 0;
+
+    Adw.HeaderBar {
+      visible: bind template.headerbar-visible;
+
+      title-widget: Adw.WindowTitle {
+        title: bind (template.active-surface as <$GhosttySurface>).title;
+      };
+
+      [end]
+      Gtk.Box {
+        Gtk.MenuButton {
+          notify::active => $notify_menu_active();
+          icon-name: "open-menu-symbolic";
+          menu-model: main_menu;
+          tooltip-text: _("Main Menu");
+          can-focus: false;
+        }
+      }
+    }
 
     $GhosttyDebugWarning {
       visible: bind template.debug;
@@ -19,6 +45,145 @@ template $GhosttyWindow: Adw.ApplicationWindow {
 
     $GhosttySurface surface {
       close-request => $surface_close_request();
+      toggle-fullscreen => $surface_toggle_fullscreen();
+      toggle-maximize => $surface_toggle_maximize();
     }
   };
+}
+
+menu split_menu {
+  item {
+    label: _("Split Up");
+    action: "win.split-up";
+  }
+
+  item {
+    label: _("Split Down");
+    action: "win.split-down";
+  }
+
+  item {
+    label: _("Split Left");
+    action: "win.split-left";
+  }
+
+  item {
+    label: _("Split Right");
+    action: "win.split-right";
+  }
+}
+
+menu main_menu {
+  section {
+    item {
+      label: _("Copy");
+      action: "win.copy";
+    }
+
+    item {
+      label: _("Paste");
+      action: "win.paste";
+    }
+  }
+
+  section {
+    item {
+      label: _("New Window");
+      action: "win.new-window";
+    }
+
+    item {
+      label: _("Close Window");
+      action: "win.close";
+    }
+  }
+
+  section {
+    item {
+      label: _("New Tab");
+      action: "win.new-tab";
+    }
+
+    item {
+      label: _("Close Tab");
+      action: "win.close-tab";
+    }
+  }
+
+  section {
+    submenu {
+      label: _("Split");
+
+      item {
+        label: _("Change Title…");
+        action: "win.prompt-title";
+      }
+
+      item {
+        label: _("Split Up");
+        action: "win.split-up";
+      }
+
+      item {
+        label: _("Split Down");
+        action: "win.split-down";
+      }
+
+      item {
+        label: _("Split Left");
+        action: "win.split-left";
+      }
+
+      item {
+        label: _("Split Right");
+        action: "win.split-right";
+      }
+    }
+  }
+
+  section {
+    item {
+      label: _("Clear");
+      action: "win.clear";
+    }
+
+    item {
+      label: _("Reset");
+      action: "win.reset";
+    }
+  }
+
+  section {
+    item {
+      label: _("Command Palette");
+      action: "win.toggle-command-palette";
+    }
+
+    item {
+      label: _("Terminal Inspector");
+      action: "win.toggle-inspector";
+    }
+
+    item {
+      label: _("Open Configuration");
+      action: "app.open-config";
+    }
+
+    item {
+      label: _("Reload Configuration");
+      action: "app.reload-config";
+    }
+  }
+
+  section {
+    item {
+      label: _("About Ghostty");
+      action: "win.about";
+    }
+
+    item {
+      label: _("Quit");
+      action: "app.quit";
+    }
+  }
 }

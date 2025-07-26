@@ -79,9 +79,8 @@ pub const CloseConfirmationDialog = extern struct {
         self.as(Dialog.Parent).setBody(priv.target.body());
     }
 
-    pub fn present(self: *Self) void {
-        const priv = self.private();
-        self.as(Dialog).present(priv.target.dialogParent());
+    pub fn present(self: *Self, parent: ?*gtk.Widget) void {
+        self.as(Dialog).present(parent);
     }
 
     pub fn close(self: *Self) void {
@@ -159,28 +158,19 @@ pub const CloseConfirmationDialog = extern struct {
 /// together into one struct that is the sole source of truth.
 pub const Target = enum(c_int) {
     app,
+    window,
 
     pub fn title(self: Target) [*:0]const u8 {
         return switch (self) {
             .app => i18n._("Quit Ghostty?"),
+            .window => i18n._("Close Window?"),
         };
     }
 
     pub fn body(self: Target) [*:0]const u8 {
         return switch (self) {
             .app => i18n._("All terminal sessions will be terminated."),
-        };
-    }
-
-    pub fn dialogParent(self: Target) ?*gtk.Widget {
-        return switch (self) {
-            .app => {
-                // Find the currently focused window.
-                const list = gtk.Window.listToplevels();
-                defer list.free();
-                const focused = list.findCustom(null, findActiveWindow);
-                return @ptrCast(@alignCast(focused.f_data));
-            },
+            .window => i18n._("All terminal sessions in this window will be terminated."),
         };
     }
 
@@ -189,12 +179,3 @@ pub const Target = enum(c_int) {
         .{ .name = "GhosttyCloseConfirmationDialogTarget" },
     );
 };
-
-fn findActiveWindow(data: ?*const anyopaque, _: ?*const anyopaque) callconv(.c) c_int {
-    const window: *gtk.Window = @ptrCast(@alignCast(@constCast(data orelse return -1)));
-
-    // Confusingly, `isActive` returns 1 when active,
-    // but we want to return 0 to indicate equality.
-    // Abusing integers to be enums and booleans is a terrible idea, C.
-    return if (window.isActive() != 0) 0 else -1;
-}
