@@ -227,8 +227,7 @@ pub const Application = extern struct {
                 }
             }
 
-            const default_id = comptime build_config.bundle_id;
-            break :app_id if (builtin.mode == .Debug) default_id ++ "-debug" else default_id;
+            break :app_id ApprtApp.application_id;
         };
 
         const display: *gdk.Display = gdk.Display.getDefault() orelse {
@@ -781,8 +780,23 @@ pub const Application = extern struct {
 
     /// Setup our action map.
     fn startupActionMap(self: *Self) void {
+        const t_variant_type = glib.ext.VariantType.newFor(u64);
+        defer t_variant_type.free();
+
+        const as_variant_type = glib.VariantType.new("as");
+        defer as_variant_type.free();
+
+        // The set of actions. Each action has (in order):
+        // [0] The action name
+        // [1] The callback function
+        // [2] The glib.VariantType of the parameter
+        //
+        // For action names:
+        // https://docs.gtk.org/gio/type_func.Action.name_is_valid.html
         const actions = .{
             .{ "quit", actionQuit, null },
+            .{ "new-window", actionNewWindow, null },
+            .{ "new-window-command", actionNewWindow, as_variant_type },
         };
 
         const action_map = self.as(gio.ActionMap);
@@ -1011,6 +1025,52 @@ pub const Application = extern struct {
         priv.core_app.performAction(self.rt(), .quit) catch |err| {
             log.warn("error quitting err={}", .{err});
         };
+    }
+
+    /// Handle `app.new-window` and `app.new-window-command` GTK actions
+    pub fn actionNewWindow(
+        _: *gio.SimpleAction,
+        parameter_: ?*glib.Variant,
+        self: *Self,
+    ) callconv(.c) void {
+        log.debug("received new window action", .{});
+
+        parameter: {
+            // were we given a parameter?
+            const parameter = parameter_ orelse break :parameter;
+
+            const as_variant_type = glib.VariantType.new("as");
+            defer as_variant_type.free();
+
+            // ensure that the supplied parameter is an array of strings
+            if (glib.Variant.isOfType(parameter, as_variant_type) == 0) {
+                log.warn("parameter is of type {s}", .{parameter.getTypeString()});
+                break :parameter;
+            }
+
+            const s_variant_type = glib.VariantType.new("s");
+            defer s_variant_type.free();
+
+            var it: glib.VariantIter = undefined;
+            _ = it.init(parameter);
+
+            while (it.nextValue()) |value| {
+                defer value.unref();
+
+                // just to be sure
+                if (value.isOfType(s_variant_type) == 0) continue;
+
+                var len: usize = undefined;
+                const buf = value.getString(&len);
+                const str = buf[0..len];
+
+                log.debug("new-window command argument: {s}", .{str});
+            }
+        }
+
+        _ = self.core().mailbox.push(.{
+            .new_window = .{},
+        }, .{ .forever = {} });
     }
 
     //----------------------------------------------------------------
