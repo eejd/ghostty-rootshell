@@ -1647,32 +1647,30 @@ pub const Surface = extern struct {
         self: *Self,
     ) callconv(.c) c_int {
         const priv = self.private();
-        if (priv.core_surface) |surface| {
-            // Multiply precision scrolls by 10 to get a better response from
-            // touchpad scrolling
-            const multiplier: f64 = if (priv.precision_scroll) 10.0 else 1.0;
-            const scroll_mods: input.ScrollMods = .{
-                .precision = priv.precision_scroll,
-            };
+        const surface = priv.core_surface orelse return 0;
 
-            const scaled = self.scaledCoordinates(x, y);
-            surface.scrollCallback(
-                // We invert because we apply natural scrolling to the values.
-                // This behavior has existed for years without Linux users complaining
-                // but I suspect we'll have to make this configurable in the future
-                // or read a system setting.
-                scaled.x * -1 * multiplier,
-                scaled.y * -1 * multiplier,
-                scroll_mods,
-            ) catch |err| {
-                log.warn("error in scroll callback err={}", .{err});
-                return 0;
-            };
+        // Multiply precision scrolls by 10 to get a better response from
+        // touchpad scrolling
+        const multiplier: f64 = if (priv.precision_scroll) 10.0 else 1.0;
+        const scroll_mods: input.ScrollMods = .{
+            .precision = priv.precision_scroll,
+        };
 
-            return 1;
-        }
+        const scaled = self.scaledCoordinates(x, y);
+        surface.scrollCallback(
+            // We invert because we apply natural scrolling to the values.
+            // This behavior has existed for years without Linux users complaining
+            // but I suspect we'll have to make this configurable in the future
+            // or read a system setting.
+            scaled.x * -1 * multiplier,
+            scaled.y * -1 * multiplier,
+            scroll_mods,
+        ) catch |err| {
+            log.warn("error in scroll callback err={}", .{err});
+            return 0;
+        };
 
-        return 0;
+        return 1;
     }
 
     fn imPreeditStart(
