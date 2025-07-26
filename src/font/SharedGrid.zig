@@ -376,11 +376,15 @@ fn testGrid(mode: TestMode, alloc: Allocator, lib: Library) !SharedGrid {
 
     switch (mode) {
         .normal => {
-            _ = try c.add(alloc, .regular, .{ .loaded = try .init(
+            _ = try c.add(alloc, try .init(
                 lib,
                 testFont,
                 .{ .size = .{ .points = 12, .xdpi = 96, .ydpi = 96 } },
-            ) });
+            ), .{
+                .style = .regular,
+                .fallback = false,
+                .size_adjustment = .none,
+            });
         },
     }
 

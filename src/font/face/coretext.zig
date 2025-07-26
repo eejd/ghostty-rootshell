@@ -78,7 +78,7 @@ pub const Face = struct {
         // but we need to scale the points by the DPI and to do that we use our
         // function called "pixels".
         const ct_font = try base.copyWithAttributes(
-            @floatFromInt(opts.size.pixels()),
+            opts.size.pixels(),
             null,
             null,
         );
@@ -94,7 +94,8 @@ pub const Face = struct {
 
         var hb_font = if (comptime harfbuzz_shaper) font: {
             var hb_font = try harfbuzz.coretext.createFont(ct_font);
-            hb_font.setScale(opts.size.pixels(), opts.size.pixels());
+            const pixels: opentype.sfnt.F26Dot6 = .from(opts.size.pixels());
+            hb_font.setScale(@bitCast(pixels), @bitCast(pixels));
             break :font hb_font;
         } else {};
         errdefer if (comptime harfbuzz_shaper) hb_font.destroy();
@@ -240,10 +241,14 @@ pub const Face = struct {
             desc = next;
         }
 
+        // Put our current size in the opts so that we don't change size.
+        var new_opts = opts;
+        new_opts.size = self.size;
+
         // Initialize a font based on these attributes.
         const ct_font = try self.font.copyWithAttributes(0, null, desc);
         errdefer ct_font.release();
-        const face = try initFont(ct_font, opts);
+        const face = try initFont(ct_font, new_opts);
         self.deinit();
         self.* = face;
     }
@@ -842,14 +847,20 @@ pub const Face = struct {
         };
 
         return .{
+            .px_per_em = px_per_em,
+
             .cell_width = cell_width,
+
             .ascent = ascent,
             .descent = descent,
             .line_gap = line_gap,
+
             .underline_position = underline_position,
             .underline_thickness = underline_thickness,
+
             .strikethrough_position = strikethrough_position,
             .strikethrough_thickness = strikethrough_thickness,
+
             .cap_height = cap_height,
             .ex_height = ex_height,
             .ic_width = ic_width,

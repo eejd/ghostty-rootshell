@@ -217,7 +217,7 @@ pub const Face = struct {
         if (face.isScalable()) {
             const size_26dot6: i32 = @intFromFloat(@round(size.points * 64));
             try face.setCharSize(0, size_26dot6, size.xdpi, size.ydpi);
-        } else try selectSizeNearest(face, size.pixels());
+        } else try selectSizeNearest(face, @intFromFloat(@round(size.pixels())));
     }
 
     /// Selects the fixed size in the loaded face that is closest to the
@@ -933,6 +933,8 @@ pub const Face = struct {
         };
 
         return .{
+            .px_per_em = px_per_em,
+
             .cell_width = cell_width,
 
             .ascent = ascent,
