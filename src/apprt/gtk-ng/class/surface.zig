@@ -1193,6 +1193,14 @@ pub const Surface = extern struct {
         return self.private().pwd;
     }
 
+    /// Change the configuration for this surface.
+    pub fn setConfig(self: *Self, config: *Config) void {
+        const priv = self.private();
+        if (priv.config) |c| c.unref();
+        priv.config = config.ref();
+        self.as(gobject.Object).notifyByPspec(properties.config.impl.param_spec);
+    }
+
     fn propConfig(
         self: *Self,
         _: *gobject.ParamSpec,
