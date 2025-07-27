@@ -361,11 +361,15 @@ pub const Application = extern struct {
         //
         // https://gitlab.gnome.org/GNOME/glib/-/blob/bd2ccc2f69ecfd78ca3f34ab59e42e2b462bad65/gio/gapplication.c#L2302
         const priv = self.private();
-        const config = priv.config.get();
-        if (config.@"initial-window") switch (config.@"launched-from".?) {
-            .desktop, .cli => self.as(gio.Application).activate(),
-            .dbus, .systemd => {},
-        };
+        {
+            // We need to scope any config access because once we run our
+            // event loop, this can change out from underneath us.
+            const config = priv.config.get();
+            if (config.@"initial-window") switch (config.@"launched-from".?) {
+                .desktop, .cli => self.as(gio.Application).activate(),
+                .dbus, .systemd => {},
+            };
+        }
 
         // If we are NOT the primary instance, then we never want to run.
         // This means that another instance of the GTK app is running and
@@ -393,6 +397,7 @@ pub const Application = extern struct {
             // Check if we must quit based on the current state.
             const must_quit = q: {
                 // If we are configured to always stay running, don't quit.
+                const config = priv.config.get();
                 if (!config.@"quit-after-last-window-closed") break :q false;
 
                 // If the quit timer has expired, quit.
