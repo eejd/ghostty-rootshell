@@ -15,6 +15,7 @@ help_strings: HelpStrings,
 metallib: ?*MetallibStep,
 unicode_tables: UnicodeTables,
 framedata: GhosttyFrameData,
+uucode_table_data: std.Build.LazyPath,
 
 /// Used to keep track of a list of file sources.
 pub const LazyPathList = std.ArrayList(std.Build.LazyPath);
@@ -25,6 +26,24 @@ pub fn init(b: *std.Build, cfg: *const Config) !SharedDeps {
         .help_strings = try .init(b, cfg),
         .unicode_tables = try .init(b),
         .framedata = try .init(b),
+        .uucode_table_data = b.dependency("uucode", .{
+            .@"table_configs.zig" = @as(
+                []const u8,
+                \\const types = @import("types.zig");
+                \\const config = @import("config.zig");
+                \\
+                \\pub const configs = [_]types.TableConfig{
+                \\    .override(&config.default, .{
+                \\        .fields = &.{"case_folding_simple"},
+                \\    }),
+                \\    .override(&config.default, .{
+                \\        .fields = &.{"alphabetic","lowercase","uppercase"},
+                \\    }),
+                \\};
+                \\
+                ,
+            ),
+        }).namedLazyPath("table_data.zig"),
 
         // Setup by retarget
         .options = undefined,
@@ -414,6 +433,13 @@ pub fn add(
         .optimize = optimize,
     })) |dep| {
         step.root_module.addImport("ziglyph", dep.module("ziglyph"));
+    }
+    if (b.lazyDependency("uucode", .{
+        .target = target,
+        .optimize = optimize,
+        .@"table_data.zig" = self.uucode_table_data,
+    })) |dep| {
+        step.root_module.addImport("uucode", dep.module("uucode"));
     }
     if (b.lazyDependency("zf", .{
         .target = target,

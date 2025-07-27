@@ -41,6 +41,10 @@
             .hash = "ziglyph-0.11.2-AAAAAHPtHwB4Mbzn1KvOV7Wpjo82NYEc_v0WC8oCLrkf",
             .lazy = true,
         },
+        .uucode = .{
+            .url = "https://github.com/jacobsandlund/uucode/archive/fdcd8582f050e3054091d3ce3c60bf7a78bc8830.tar.gz",
+            .hash = "uucode-0.0.0-ZZjBPpnZOgCLQD3BsYbQ4N6dGqR3CRKlOngOBB3YEU_j",
+        },
         .zig_wayland = .{
             // codeberg ifreund/zig-wayland
             .url = "https://codeberg.org/ifreund/zig-wayland/archive/f3c5d503e540ada8cbcb056420de240af0c094f7.tar.gz",
