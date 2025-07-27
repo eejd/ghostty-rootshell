@@ -59,12 +59,7 @@ pub const ClipboardConfirmationDialog = extern struct {
                 .{
                     .nick = "Request",
                     .blurb = "The clipboard request.",
-                    .accessor = gobject.ext.privateFieldAccessor(
-                        Self,
-                        Private,
-                        &Private.offset,
-                        "request",
-                    ),
+                    .accessor = C.privateBoxedFieldAccessor("request"),
                 },
             );
         };
@@ -78,12 +73,7 @@ pub const ClipboardConfirmationDialog = extern struct {
                 .{
                     .nick = "Clipboard Contents",
                     .blurb = "The clipboard contents being read/written.",
-                    .accessor = gobject.ext.privateFieldAccessor(
-                        Self,
-                        Private,
-                        &Private.offset,
-                        "clipboard_contents",
-                    ),
+                    .accessor = C.privateObjFieldAccessor("clipboard_contents"),
                 },
             );
         };

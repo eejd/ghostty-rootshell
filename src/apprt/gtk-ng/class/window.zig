@@ -69,12 +69,7 @@ pub const Window = extern struct {
                 .{
                     .nick = "Config",
                     .blurb = "The configuration that this surface is using.",
-                    .accessor = gobject.ext.privateFieldAccessor(
-                        Self,
-                        Private,
-                        &Private.offset,
-                        "config",
-                    ),
+                    .accessor = C.privateObjFieldAccessor("config"),
                 },
             );
         };

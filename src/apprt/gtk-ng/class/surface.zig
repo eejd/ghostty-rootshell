@@ -50,12 +50,7 @@ pub const Surface = extern struct {
                 .{
                     .nick = "Config",
                     .blurb = "The configuration that this surface is using.",
-                    .accessor = gobject.ext.privateFieldAccessor(
-                        Self,
-                        Private,
-                        &Private.offset,
-                        "config",
-                    ),
+                    .accessor = C.privateObjFieldAccessor("config"),
                 },
             );
         };
@@ -89,12 +84,7 @@ pub const Surface = extern struct {
                 .{
                     .nick = "Desired Font Size",
                     .blurb = "The desired font size, only affects initialization.",
-                    .accessor = gobject.ext.privateFieldAccessor(
-                        Self,
-                        Private,
-                        &Private.offset,
-                        "font_size_request",
-                    ),
+                    .accessor = C.privateBoxedFieldAccessor("font_size_request"),
                 },
             );
         };
