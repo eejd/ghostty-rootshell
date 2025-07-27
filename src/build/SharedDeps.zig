@@ -27,6 +27,8 @@ pub fn init(b: *std.Build, cfg: *const Config) !SharedDeps {
         .unicode_tables = try .init(b),
         .framedata = try .init(b),
         .uucode_table_data = b.dependency("uucode", .{
+            // TODO: i'll add a nicer option to configure the tables rather
+            // than needing to type out the zig code as a string.
             .@"table_configs.zig" = @as(
                 []const u8,
                 \\const types = @import("types.zig");
