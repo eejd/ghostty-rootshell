@@ -353,8 +353,7 @@
    match-leak-kinds: possible
    fun:*alloc
    fun:FcFontSet*
-   fun:FcFontSet*
-   fun:sort_in_thread.isra.0
+   ...
    fun:fc_thread_func
    fun:g_thread_proxy
    fun:start_thread
