@@ -43,10 +43,13 @@ template $GhosttyWindow: Adw.ApplicationWindow {
       visible: bind template.debug;
     }
 
-    $GhosttySurface surface {
-      close-request => $surface_close_request();
-      toggle-fullscreen => $surface_toggle_fullscreen();
-      toggle-maximize => $surface_toggle_maximize();
+    Adw.ToastOverlay toast_overlay {
+      $GhosttySurface surface {
+        close-request => $surface_close_request();
+        clipboard-write => $surface_clipboard_write();
+        toggle-fullscreen => $surface_toggle_fullscreen();
+        toggle-maximize => $surface_toggle_maximize();
+      }
     }
   };
 }

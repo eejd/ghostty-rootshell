@@ -8,6 +8,7 @@ const gobject = @import("gobject");
 const gtk = @import("gtk");
 
 const i18n = @import("../../../os/main.zig").i18n;
+const apprt = @import("../../../apprt.zig");
 const input = @import("../../../input.zig");
 const CoreSurface = @import("../../../Surface.zig");
 const gtk_version = @import("../gtk_version.zig");
@@ -68,12 +69,7 @@ pub const Window = extern struct {
                 .{
                     .nick = "Config",
                     .blurb = "The configuration that this surface is using.",
-                    .accessor = gobject.ext.privateFieldAccessor(
-                        Self,
-                        Private,
-                        &Private.offset,
-                        "config",
-                    ),
+                    .accessor = C.privateObjFieldAccessor("config"),
                 },
             );
         };
@@ -122,7 +118,8 @@ pub const Window = extern struct {
         config: ?*Config = null,
 
         // Template bindings
-        surface: *Surface = undefined,
+        surface: *Surface,
+        toast_overlay: *adw.ToastOverlay,
 
         pub var offset: c_int = 0;
     };
@@ -227,6 +224,18 @@ pub const Window = extern struct {
         };
     }
 
+    /// Queue a simple text-based toast. All text-based toasts share the
+    /// same timeout for consistency.
+    ///
+    // This is not `pub` because we should be using signals emitted by
+    // other widgets to trigger our toasts. Other objects should not
+    // trigger toasts directly.
+    fn addToast(self: *Window, title: [*:0]const u8) void {
+        const toast = adw.Toast.new(title);
+        toast.setTimeout(3);
+        self.private().toast_overlay.addToast(toast);
+    }
+
     //---------------------------------------------------------------
     // Properties
 
@@ -264,6 +273,7 @@ pub const Window = extern struct {
         _: *gobject.ParamSpec,
         self: *Self,
     ) callconv(.c) void {
+        self.addToast(i18n._("Reloaded the configuration"));
         self.syncAppearance();
     }
 
@@ -375,6 +385,29 @@ pub const Window = extern struct {
         self: *Self,
     ) callconv(.c) void {
         self.as(gtk.Window).destroy();
+    }
+
+    fn surfaceClipboardWrite(
+        _: *Surface,
+        clipboard_type: apprt.Clipboard,
+        text: [*:0]const u8,
+        self: *Self,
+    ) callconv(.c) void {
+        // We only toast for the standard clipboard.
+        if (clipboard_type != .standard) return;
+
+        // We only toast if configured to
+        const priv = self.private();
+        const config_obj = priv.config orelse return;
+        const config = config_obj.get();
+        if (!config.@"app-notifications".@"clipboard-copy") {
+            return;
+        }
+
+        if (text[0] != 0)
+            self.addToast(i18n._("Copied to clipboard"))
+        else
+            self.addToast(i18n._("Cleared clipboard"));
     }
 
     fn surfaceCloseRequest(
@@ -542,9 +575,11 @@ pub const Window = extern struct {
 
             // Bindings
             class.bindTemplateChildPrivate("surface", .{});
+            class.bindTemplateChildPrivate("toast_overlay", .{});
 
             // Template Callbacks
             class.bindTemplateCallback("close_request", &windowCloseRequest);
+            class.bindTemplateCallback("surface_clipboard_write", &surfaceClipboardWrite);
             class.bindTemplateCallback("surface_close_request", &surfaceCloseRequest);
             class.bindTemplateCallback("surface_toggle_fullscreen", &surfaceToggleFullscreen);
             class.bindTemplateCallback("surface_toggle_maximize", &surfaceToggleMaximize);

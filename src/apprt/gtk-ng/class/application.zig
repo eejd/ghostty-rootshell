@@ -361,11 +361,15 @@ pub const Application = extern struct {
         //
         // https://gitlab.gnome.org/GNOME/glib/-/blob/bd2ccc2f69ecfd78ca3f34ab59e42e2b462bad65/gio/gapplication.c#L2302
         const priv = self.private();
-        const config = priv.config.get();
-        if (config.@"initial-window") switch (config.@"launched-from".?) {
-            .desktop, .cli => self.as(gio.Application).activate(),
-            .dbus, .systemd => {},
-        };
+        {
+            // We need to scope any config access because once we run our
+            // event loop, this can change out from underneath us.
+            const config = priv.config.get();
+            if (config.@"initial-window") switch (config.@"launched-from".?) {
+                .desktop, .cli => self.as(gio.Application).activate(),
+                .dbus, .systemd => {},
+            };
+        }
 
         // If we are NOT the primary instance, then we never want to run.
         // This means that another instance of the GTK app is running and
@@ -393,6 +397,7 @@ pub const Application = extern struct {
             // Check if we must quit based on the current state.
             const must_quit = q: {
                 // If we are configured to always stay running, don't quit.
+                const config = priv.config.get();
                 if (!config.@"quit-after-last-window-closed") break :q false;
 
                 // If the quit timer has expired, quit.
@@ -508,6 +513,8 @@ pub const Application = extern struct {
 
             .progress_report => return Action.progressReport(target, value),
 
+            .reload_config => try Action.reloadConfig(self, target, value),
+
             .render => Action.render(target),
 
             .ring_bell => Action.ringBell(target),
@@ -530,7 +537,6 @@ pub const Application = extern struct {
             .equalize_splits,
             .goto_split,
             .open_config,
-            .reload_config,
             .inspector,
             .desktop_notification,
             .present_terminal,
@@ -571,29 +577,6 @@ pub const Application = extern struct {
         // Assume it was handled. The unhandled case must be explicit
         // in the switch above.
         return true;
-    }
-
-    /// Reload the configuration for the application and propagate it
-    /// across the entire application and all terminals.
-    pub fn reloadConfig(self: *Self) !void {
-        const alloc = self.allocator();
-
-        // Read our new config. We can always deinit this because
-        // we'll clone and store it if libghostty accepts it and
-        // emits a `config_change` action.
-        var config = try CoreConfig.load(alloc);
-        defer config.deinit();
-
-        // Notify the app that we've updated.
-        const priv = self.private();
-        try priv.core_app.updateConfig(priv.rt_app, &config);
-    }
-
-    /// Returns the configuration for this application.
-    ///
-    /// The reference count is increased.
-    pub fn getConfig(self: *Self) *Config {
-        return self.private().config.ref();
     }
 
     /// Returns the core app associated with this application. This is
@@ -660,6 +643,31 @@ pub const Application = extern struct {
                 priv.quit_timer = .off;
             },
         }
+    }
+
+    //---------------------------------------------------------------
+    // Properties
+
+    /// Returns the configuration for this application.
+    ///
+    /// The reference count is increased.
+    pub fn getConfig(self: *Self) *Config {
+        return self.private().config.ref();
+    }
+
+    /// Set the configuration for this application. The reference count
+    /// is increased on the new configuration and the old one is
+    /// unreferenced.
+    ///
+    /// If the config has errors this may show the config errors dialog.
+    fn setConfig(self: *Self, config: *Config) void {
+        const priv = self.private();
+        priv.config.unref();
+        priv.config = config.ref();
+        self.as(gobject.Object).notifyByPspec(properties.config.impl.param_spec);
+
+        // Show our errors if we have any
+        self.showConfigErrorsDialog();
     }
 
     //---------------------------------------------------------------
@@ -794,9 +802,10 @@ pub const Application = extern struct {
         // For action names:
         // https://docs.gtk.org/gio/type_func.Action.name_is_valid.html
         const actions = .{
-            .{ "quit", actionQuit, null },
             .{ "new-window", actionNewWindow, null },
             .{ "new-window-command", actionNewWindow, as_variant_type },
+            .{ "quit", actionQuit, null },
+            .{ "reload-config", actionReloadConfig, null },
         };
 
         const action_map = self.as(gio.ActionMap);
@@ -961,7 +970,12 @@ pub const Application = extern struct {
         const priv = self.private();
         priv.config_errors_dialog.set(null);
 
-        self.reloadConfig() catch |err| {
+        // Reload our config as if the app reloaded.
+        Action.reloadConfig(
+            self,
+            .app,
+            .{},
+        ) catch |err| {
             // If we fail to reload the configuration, then we want the
             // user to know it. For now we log but we should show another
             // GUI.
@@ -1014,6 +1028,17 @@ pub const Application = extern struct {
 
         // Show it
         dialog.present(null);
+    }
+
+    fn actionReloadConfig(
+        _: *gio.SimpleAction,
+        _: ?*glib.Variant,
+        self: *Self,
+    ) callconv(.c) void {
+        const priv = self.private();
+        priv.core_app.performAction(self.rt(), .reload_config) catch |err| {
+            log.warn("error reloading config err={}", .{err});
+        };
     }
 
     fn actionQuit(
@@ -1138,21 +1163,11 @@ const Action = struct {
         // Wrap our config in a GObject. This will clone it.
         const alloc = self.allocator();
         const config_obj: *Config = try .new(alloc, new_config);
-        errdefer config_obj.unref();
+        defer config_obj.unref();
 
         switch (target) {
-            // TODO: when we implement surfaces in gtk-ng
-            .surface => @panic("TODO"),
-
-            .app => {
-                // Set it on our private
-                const priv = self.private();
-                priv.config.unref();
-                priv.config = config_obj;
-
-                // Show our errors if we have any
-                self.showConfigErrorsDialog();
-            },
+            .surface => |core| core.rt_surface.surface.setConfig(config_obj),
+            .app => self.setConfig(config_obj),
         }
     }
 
@@ -1219,6 +1234,19 @@ const Action = struct {
         parent: ?*CoreSurface,
     ) !void {
         const win = Window.new(self, parent);
+
+        // Setup a binding so that whenever our config changes so does the
+        // window. There's never a time when the window config should be out
+        // of sync with the application config.
+        _ = gobject.Object.bindProperty(
+            self.as(gobject.Object),
+            "config",
+            win.as(gobject.Object),
+            "config",
+            .{},
+        );
+
+        // Show the window
         gtk.Window.present(win.as(gtk.Window));
     }
 
@@ -1261,6 +1289,47 @@ const Action = struct {
                 break :surface true;
             },
         };
+    }
+
+    /// Reload the configuration for the application and propagate it
+    /// across the entire application and all terminals.
+    pub fn reloadConfig(
+        self: *Application,
+        target: apprt.Target,
+        opts: apprt.action.ReloadConfig,
+    ) !void {
+        // Tell systemd that reloading has started.
+        systemd.notify.reloading();
+
+        // When we exit this function tell systemd that reloading has finished.
+        defer systemd.notify.ready();
+
+        // Get our config object.
+        const config: *Config = config: {
+            // Soft-reloading applies conditional logic to the existing loaded
+            // config so we return that as-is (but take a reference).
+            if (opts.soft) {
+                break :config self.private().config.ref();
+            }
+
+            // Hard reload, load a new config completely.
+            const alloc = self.allocator();
+            var config = try CoreConfig.load(alloc);
+            defer config.deinit();
+            break :config try .new(alloc, &config);
+        };
+        defer config.unref();
+
+        // Update the proper target. This will trigger a `confige_change`
+        // apprt action which will propagate the config properly to our
+        // property system.
+        switch (target) {
+            .app => try self.core().updateConfig(
+                self.rt(),
+                config.get(),
+            ),
+            .surface => |core| try core.updateConfig(config.get()),
+        }
     }
 
     pub fn render(target: apprt.Target) void {

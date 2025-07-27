@@ -42,12 +42,7 @@ const SurfaceChildExitedBanner = extern struct {
                 .{
                     .nick = "Data",
                     .blurb = "The child exit data.",
-                    .accessor = gobject.ext.privateFieldAccessor(
-                        Self,
-                        Private,
-                        &Private.offset,
-                        "data",
-                    ),
+                    .accessor = C.privateBoxedFieldAccessor("data"),
                 },
             );
         };
