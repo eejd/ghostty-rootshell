@@ -10,7 +10,6 @@ const oni = @import("oniguruma");
 const crash = @import("crash/main.zig");
 const renderer = @import("renderer.zig");
 const apprt = @import("apprt.zig");
-const uucode = @import("uucode");
 
 /// We export the xev backend we want to use so that the rest of
 /// Ghostty can import this once and have access to the proper
@@ -54,11 +53,6 @@ pub const GlobalState = struct {
         //     // "[updateFrame critical time] <START us>\t<TIME_TAKEN us>"
         //     std.log.err("[global init time] start={}us duration={}ns", .{ start_micro, end.since(start) / std.time.ns_per_us });
         // }
-
-        std.log.err("XXX Uucode testing: {d}, {}\n", .{
-            uucode.case_folding_simple(65),
-            uucode.alphabetic(97),
-        });
 
         // Initialize ourself to nothing so we don't have any extra state.
         // IMPORTANT: this MUST be initialized before any log output because

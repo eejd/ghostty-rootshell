@@ -2,6 +2,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
 const ziglyph = @import("ziglyph");
+const uucode = @import("uucode");
 const font = @import("../font/main.zig");
 const terminal = @import("../terminal/main.zig");
 const renderer = @import("../renderer.zig");
@@ -235,7 +236,8 @@ pub fn constraintWidth(cell_pin: terminal.Pin) u2 {
     const cell = cell_pin.rowAndCell().cell;
     const cp = cell.codepoint();
 
-    if (!ziglyph.general_category.isPrivateUse(cp) and
+    // If not a Co (Private Use) and not a Dingbats, use grid width.
+    if (uucode.generalCategory(cp) != .Co and
         !ziglyph.blocks.isDingbats(cp))
     {
         return cell.gridWidth();
@@ -259,7 +261,8 @@ pub fn constraintWidth(cell_pin: terminal.Pin) u2 {
         // We consider powerline glyphs whitespace.
         if (isPowerline(prev_cp)) break :prev;
 
-        if (ziglyph.general_category.isPrivateUse(prev_cp)) {
+        // If it's Private Use (Co) use 1 as the width.
+        if (uucode.generalCategory(prev_cp) == .Co) {
             return 1;
         }
     }

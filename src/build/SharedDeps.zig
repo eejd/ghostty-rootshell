@@ -34,10 +34,10 @@ pub fn init(b: *std.Build, cfg: *const Config) !SharedDeps {
                 \\
                 \\pub const configs = [_]types.TableConfig{
                 \\    .override(&config.default, .{
-                \\        .fields = &.{"case_folding_simple"},
-                \\    }),
-                \\    .override(&config.default, .{
-                \\        .fields = &.{"alphabetic","lowercase","uppercase"},
+                \\        .fields = &.{
+                \\            "general_category",
+                \\            "has_emoji_presentation",
+                \\        },
                 \\    }),
                 \\};
                 \\
