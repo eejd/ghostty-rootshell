@@ -170,12 +170,33 @@ pub const Window = extern struct {
                 Self,
                 bool,
                 .{
-                    .nick = "Tab Bar Visiblity",
+                    .nick = "Tab Bar Visibility",
                     .blurb = "If true, tab bar should be visible.",
                     .default = true,
                     .accessor = gobject.ext.typedAccessor(Self, bool, .{
                         .getter = Self.getTabsVisible,
                     }),
+                },
+            );
+        };
+
+        pub const @"toolbar-style" = struct {
+            pub const name = "toolbar-style";
+            const impl = gobject.ext.defineProperty(
+                name,
+                Self,
+                adw.ToolbarStyle,
+                .{
+                    .nick = "Toolbar Style",
+                    .blurb = "The style for the toolbar top/bottom bars.",
+                    .default = .raised,
+                    .accessor = gobject.ext.typedAccessor(
+                        Self,
+                        adw.ToolbarStyle,
+                        .{
+                            .getter = Self.getToolbarStyle,
+                        },
+                    ),
                 },
             );
         };
@@ -284,6 +305,7 @@ pub const Window = extern struct {
             "tabs-autohide",
             "tabs-visible",
             "tabs-wide",
+            "toolbar-style",
         }) |key| {
             self.as(gobject.Object).notifyByPspec(
                 @field(properties, key).impl.param_spec,
@@ -402,6 +424,16 @@ pub const Window = extern struct {
         const priv = self.private();
         const config = if (priv.config) |v| v.get() else return true;
         return config.@"gtk-wide-tabs";
+    }
+
+    fn getToolbarStyle(self: *Self) adw.ToolbarStyle {
+        const priv = self.private();
+        const config = if (priv.config) |v| v.get() else return .raised;
+        return switch (config.@"gtk-toolbar-style") {
+            .flat => .flat,
+            .raised => .raised,
+            .@"raised-border" => .raised_border,
+        };
     }
 
     fn propConfig(
@@ -721,6 +753,7 @@ pub const Window = extern struct {
                 properties.@"tabs-autohide".impl,
                 properties.@"tabs-visible".impl,
                 properties.@"tabs-wide".impl,
+                properties.@"toolbar-style".impl,
             });
 
             // Bindings

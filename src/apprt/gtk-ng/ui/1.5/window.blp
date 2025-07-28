@@ -24,8 +24,8 @@ template $GhosttyWindow: Adw.ApplicationWindow {
     view: tab_view;
 
     Adw.ToolbarView toolbar {
-      top-bar-style: raised;
-      bottom-bar-style: raised;
+      top-bar-style: bind template.toolbar-style;
+      bottom-bar-style: bind template.toolbar-style;
 
       [top]
       Adw.HeaderBar {
