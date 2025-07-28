@@ -11,6 +11,11 @@ template $GhosttyResizeOverlay: Adw.Bin {
   // See surface.blp for why we need to wrap this.
   Adw.Bin {
     Label label {
+      styles [
+        "background",
+        "resize-overlay",
+      ]
+
       focusable: false;
       focus-on-click: false;
       justify: center;
