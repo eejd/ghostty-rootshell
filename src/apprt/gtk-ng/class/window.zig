@@ -128,6 +128,57 @@ pub const Window = extern struct {
                 },
             );
         };
+
+        pub const @"tabs-autohide" = struct {
+            pub const name = "tabs-autohide";
+            const impl = gobject.ext.defineProperty(
+                name,
+                Self,
+                bool,
+                .{
+                    .nick = "Autohide Tab Bar",
+                    .blurb = "If true, tab bar should autohide.",
+                    .default = true,
+                    .accessor = gobject.ext.typedAccessor(Self, bool, .{
+                        .getter = Self.getTabsAutohide,
+                    }),
+                },
+            );
+        };
+
+        pub const @"tabs-wide" = struct {
+            pub const name = "tabs-wide";
+            const impl = gobject.ext.defineProperty(
+                name,
+                Self,
+                bool,
+                .{
+                    .nick = "Wide Tabs",
+                    .blurb = "If true, tabs will be in the wide expanded style.",
+                    .default = true,
+                    .accessor = gobject.ext.typedAccessor(Self, bool, .{
+                        .getter = Self.getTabsWide,
+                    }),
+                },
+            );
+        };
+
+        pub const @"tabs-visible" = struct {
+            pub const name = "tabs-visible";
+            const impl = gobject.ext.defineProperty(
+                name,
+                Self,
+                bool,
+                .{
+                    .nick = "Tab Bar Visiblity",
+                    .blurb = "If true, tab bar should be visible.",
+                    .default = true,
+                    .accessor = gobject.ext.typedAccessor(Self, bool, .{
+                        .getter = Self.getTabsVisible,
+                    }),
+                },
+            );
+        };
     };
 
     const Private = struct {
@@ -224,10 +275,18 @@ pub const Window = extern struct {
     fn syncAppearance(self: *Window) void {
         // TODO: CSD/SSD
 
-        // Trigger our headerbar visibility to refresh
-        self.as(gobject.Object).notifyByPspec(properties.@"headerbar-visible".impl.param_spec);
-        // Trigger background opacity to refresh
-        self.as(gobject.Object).notifyByPspec(properties.@"background-opaque".impl.param_spec);
+        // Trigger all our dynamic properties that depend on the config.
+        inline for (&.{
+            "background-opaque",
+            "headerbar-visible",
+            "tabs-autohide",
+            "tabs-visible",
+            "tabs-wide",
+        }) |key| {
+            self.as(gobject.Object).notifyByPspec(
+                @field(properties, key).impl.param_spec,
+            );
+        }
     }
 
     fn toggleCssClass(self: *Window, class: [:0]const u8, value: bool) void {
@@ -299,6 +358,37 @@ pub const Window = extern struct {
         const priv = self.private();
         const config = (priv.config orelse return true).get();
         return config.@"background-opacity" >= 1.0;
+    }
+
+    fn getTabsAutohide(self: *Self) bool {
+        const priv = self.private();
+        const config = if (priv.config) |v| v.get() else return true;
+        return switch (config.@"window-show-tab-bar") {
+            // Auto we always autohide... obviously.
+            .auto => true,
+
+            // Always we never autohide because we always show the tab bar.
+            .always => false,
+
+            // Never we autohide because it doesn't actually matter,
+            // since getTabsVisible will return false.
+            .never => true,
+        };
+    }
+
+    fn getTabsVisible(self: *Self) bool {
+        const priv = self.private();
+        const config = if (priv.config) |v| v.get() else return true;
+        return switch (config.@"window-show-tab-bar") {
+            .always, .auto => true,
+            .never => false,
+        };
+    }
+
+    fn getTabsWide(self: *Self) bool {
+        const priv = self.private();
+        const config = if (priv.config) |v| v.get() else return true;
+        return config.@"gtk-wide-tabs";
     }
 
     fn propConfig(
@@ -611,10 +701,13 @@ pub const Window = extern struct {
             // Properties
             gobject.ext.registerProperties(class, &.{
                 properties.@"active-surface".impl,
+                properties.@"background-opaque".impl,
                 properties.config.impl,
                 properties.debug.impl,
                 properties.@"headerbar-visible".impl,
-                properties.@"background-opaque".impl,
+                properties.@"tabs-autohide".impl,
+                properties.@"tabs-visible".impl,
+                properties.@"tabs-wide".impl,
             });
 
             // Bindings
