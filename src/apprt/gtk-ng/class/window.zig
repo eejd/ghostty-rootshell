@@ -187,6 +187,8 @@ pub const Window = extern struct {
 
         // Template bindings
         surface: *Surface,
+        tab_bar: *adw.TabBar,
+        toolbar: *adw.ToolbarView,
         toast_overlay: *adw.ToastOverlay,
 
         pub var offset: c_int = 0;
@@ -286,6 +288,17 @@ pub const Window = extern struct {
             self.as(gobject.Object).notifyByPspec(
                 @field(properties, key).impl.param_spec,
             );
+        }
+
+        // Remainder uses the config
+        const priv = self.private();
+        const config = if (priv.config) |v| v.get() else return;
+
+        // Move the tab bar to the proper location.
+        priv.toolbar.remove(priv.tab_bar.as(gtk.Widget));
+        switch (config.@"gtk-tabs-location") {
+            .top => priv.toolbar.addTopBar(priv.tab_bar.as(gtk.Widget)),
+            .bottom => priv.toolbar.addBottomBar(priv.tab_bar.as(gtk.Widget)),
         }
     }
 
@@ -712,6 +725,8 @@ pub const Window = extern struct {
 
             // Bindings
             class.bindTemplateChildPrivate("surface", .{});
+            class.bindTemplateChildPrivate("tab_bar", .{});
+            class.bindTemplateChildPrivate("toolbar", .{});
             class.bindTemplateChildPrivate("toast_overlay", .{});
 
             // Template Callbacks

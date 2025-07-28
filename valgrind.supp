@@ -143,6 +143,31 @@
 }
 
 {
+   GDK GLArea
+   Memcheck:Leak
+   match-leak-kinds: possible
+   fun:malloc
+   fun:g_malloc
+   fun:gdk_memory_texture_from_texture
+   fun:gdk_gl_texture_release
+   fun:delete_one_texture
+   fun:g_list_foreach
+   fun:g_list_free_full
+   fun:gtk_gl_area_unrealize
+   ...
+}
+
+{
+   GDK GLArea Snapshot
+   Memcheck:Leak
+   match-leak-kinds: definite
+   fun:*alloc
+   ...
+   fun:gtk_gl_area_snapshot
+   ...
+}
+
+{
    GSK GPU Rendering
    Memcheck:Leak
    match-leak-kinds: possible
