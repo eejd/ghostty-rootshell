@@ -1,7 +1,6 @@
 using Gtk 4.0;
 using Adw 1;
-// TODO:gtk-tabs-location
-// TODO:gtk-toolbar-style
+
 template $GhosttyWindow: Adw.ApplicationWindow {
   styles [
     "window",
@@ -34,6 +33,14 @@ template $GhosttyWindow: Adw.ApplicationWindow {
         title-widget: Adw.WindowTitle {
           title: bind (template.active-surface as <$GhosttySurface>).title;
         };
+
+        [start]
+        Adw.SplitButton {
+          icon-name: "tab-new-symbolic";
+          tooltip-text: _("New Tab");
+          dropdown-tooltip: _("New Split");
+          menu-model: split_menu;
+        }
 
         [end]
         Gtk.Box {
