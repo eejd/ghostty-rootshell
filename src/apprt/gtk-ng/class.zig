@@ -47,6 +47,84 @@ pub fn Common(
         }).private else {};
 
         /// A helper that can be used to create a property that reads and
+        /// writes a private boxed gobject field type.
+        ///
+        /// Reading the property will result in allocating a pointer and
+        /// setting it will free the previous pointer.
+        ///
+        /// The object class (Self) must still free the private field
+        /// in finalize!
+        pub fn privateBoxedFieldAccessor(
+            comptime name: []const u8,
+        ) gobject.ext.Accessor(
+            Self,
+            @FieldType(Private.?, name),
+        ) {
+            return .{
+                .getter = &struct {
+                    fn get(self: *Self, value: *gobject.Value) void {
+                        gobject.ext.Value.set(
+                            value,
+                            @field(private(self), name),
+                        );
+                    }
+                }.get,
+                .setter = &struct {
+                    fn set(self: *Self, value: *const gobject.Value) void {
+                        const priv = private(self);
+                        if (@field(priv, name)) |v| {
+                            glib.ext.destroy(v);
+                        }
+
+                        const T = @TypeOf(@field(priv, name));
+                        @field(
+                            priv,
+                            name,
+                        ) = gobject.ext.Value.dup(value, T);
+                    }
+                }.set,
+            };
+        }
+
+        /// A helper that can be used to create a property that reads and
+        /// writes a private field gobject field type (reference counted).
+        ///
+        /// Reading the property will result in taking a reference to the
+        /// value and writing the property will unref the previous value.
+        ///
+        /// The object class (Self) must still free the private field
+        /// in finalize!
+        pub fn privateObjFieldAccessor(
+            comptime name: []const u8,
+        ) gobject.ext.Accessor(
+            Self,
+            @FieldType(Private.?, name),
+        ) {
+            return .{
+                .getter = &struct {
+                    fn get(self: *Self, value: *gobject.Value) void {
+                        gobject.ext.Value.set(
+                            value,
+                            @field(private(self), name),
+                        );
+                    }
+                }.get,
+                .setter = &struct {
+                    fn set(self: *Self, value: *const gobject.Value) void {
+                        const priv = private(self);
+                        if (@field(priv, name)) |v| v.unref();
+
+                        const T = @TypeOf(@field(priv, name));
+                        @field(
+                            priv,
+                            name,
+                        ) = gobject.ext.Value.dup(value, T);
+                    }
+                }.set,
+            };
+        }
+
+        /// A helper that can be used to create a property that reads and
         /// writes a private `?[:0]const u8` field type.
         ///
         /// Reading the property will result in a copy of the string

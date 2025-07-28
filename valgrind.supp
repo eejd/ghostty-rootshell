@@ -133,7 +133,6 @@
    fun:gsk_gpu_frame_do_upload_texture
    fun:gsk_gpu_lookup_texture
    ...
-   fun:gsk_gpu_node_processor_add_first_node
    fun:gsk_gpu_node_processor_process
    fun:gsk_gpu_frame_render
    fun:gsk_gpu_renderer_render
@@ -353,8 +352,7 @@
    match-leak-kinds: possible
    fun:*alloc
    fun:FcFontSet*
-   fun:FcFontSet*
-   fun:sort_in_thread.isra.0
+   ...
    fun:fc_thread_func
    fun:g_thread_proxy
    fun:start_thread

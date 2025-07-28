@@ -8,6 +8,7 @@ const gobject = @import("gobject");
 const gtk = @import("gtk");
 
 const i18n = @import("../../../os/main.zig").i18n;
+const apprt = @import("../../../apprt.zig");
 const input = @import("../../../input.zig");
 const CoreSurface = @import("../../../Surface.zig");
 const gtk_version = @import("../gtk_version.zig");
@@ -68,12 +69,7 @@ pub const Window = extern struct {
                 .{
                     .nick = "Config",
                     .blurb = "The configuration that this surface is using.",
-                    .accessor = gobject.ext.privateFieldAccessor(
-                        Self,
-                        Private,
-                        &Private.offset,
-                        "config",
-                    ),
+                    .accessor = C.privateObjFieldAccessor("config"),
                 },
             );
         };
@@ -115,6 +111,23 @@ pub const Window = extern struct {
                 },
             );
         };
+
+        pub const @"background-opaque" = struct {
+            pub const name = "background-opaque";
+            const impl = gobject.ext.defineProperty(
+                name,
+                Self,
+                bool,
+                .{
+                    .nick = "Background Opaque",
+                    .blurb = "True if the background should be opaque.",
+                    .default = true,
+                    .accessor = gobject.ext.typedAccessor(Self, bool, .{
+                        .getter = Self.getBackgroundOpaque,
+                    }),
+                },
+            );
+        };
     };
 
     const Private = struct {
@@ -122,7 +135,8 @@ pub const Window = extern struct {
         config: ?*Config = null,
 
         // Template bindings
-        surface: *Surface = undefined,
+        surface: *Surface,
+        toast_overlay: *adw.ToastOverlay,
 
         pub var offset: c_int = 0;
     };
@@ -212,6 +226,16 @@ pub const Window = extern struct {
 
         // Trigger our headerbar visibility to refresh
         self.as(gobject.Object).notifyByPspec(properties.@"headerbar-visible".impl.param_spec);
+        // Trigger background opacity to refresh
+        self.as(gobject.Object).notifyByPspec(properties.@"background-opaque".impl.param_spec);
+    }
+
+    fn toggleCssClass(self: *Window, class: [:0]const u8, value: bool) void {
+        const widget = self.as(gtk.Widget);
+        if (value)
+            widget.addCssClass(class.ptr)
+        else
+            widget.removeCssClass(class.ptr);
     }
 
     /// Perform a binding action on the window's active surface.
@@ -225,6 +249,18 @@ pub const Window = extern struct {
             log.warn("error performing binding action error={}", .{err});
             return;
         };
+    }
+
+    /// Queue a simple text-based toast. All text-based toasts share the
+    /// same timeout for consistency.
+    ///
+    // This is not `pub` because we should be using signals emitted by
+    // other widgets to trigger our toasts. Other objects should not
+    // trigger toasts directly.
+    fn addToast(self: *Window, title: [*:0]const u8) void {
+        const toast = adw.Toast.new(title);
+        toast.setTimeout(3);
+        self.private().toast_overlay.addToast(toast);
     }
 
     //---------------------------------------------------------------
@@ -259,11 +295,18 @@ pub const Window = extern struct {
         return config.@"gtk-titlebar";
     }
 
+    fn getBackgroundOpaque(self: *Self) bool {
+        const priv = self.private();
+        const config = (priv.config orelse return true).get();
+        return config.@"background-opacity" >= 1.0;
+    }
+
     fn propConfig(
         _: *adw.ApplicationWindow,
         _: *gobject.ParamSpec,
         self: *Self,
     ) callconv(.c) void {
+        self.addToast(i18n._("Reloaded the configuration"));
         self.syncAppearance();
     }
 
@@ -313,6 +356,16 @@ pub const Window = extern struct {
             action_map.lookupAction("copy") orelse return,
         ) orelse return;
         action.setEnabled(@intFromBool(has_selection));
+    }
+
+    /// Add or remove "background" CSS class depending on if the background
+    /// should be opaque.
+    fn propBackgroundOpaque(
+        _: *adw.ApplicationWindow,
+        _: *gobject.ParamSpec,
+        self: *Self,
+    ) callconv(.c) void {
+        self.toggleCssClass("background", self.getBackgroundOpaque());
     }
 
     //---------------------------------------------------------------
@@ -375,6 +428,29 @@ pub const Window = extern struct {
         self: *Self,
     ) callconv(.c) void {
         self.as(gtk.Window).destroy();
+    }
+
+    fn surfaceClipboardWrite(
+        _: *Surface,
+        clipboard_type: apprt.Clipboard,
+        text: [*:0]const u8,
+        self: *Self,
+    ) callconv(.c) void {
+        // We only toast for the standard clipboard.
+        if (clipboard_type != .standard) return;
+
+        // We only toast if configured to
+        const priv = self.private();
+        const config_obj = priv.config orelse return;
+        const config = config_obj.get();
+        if (!config.@"app-notifications".@"clipboard-copy") {
+            return;
+        }
+
+        if (text[0] != 0)
+            self.addToast(i18n._("Copied to clipboard"))
+        else
+            self.addToast(i18n._("Cleared clipboard"));
     }
 
     fn surfaceCloseRequest(
@@ -538,13 +614,16 @@ pub const Window = extern struct {
                 properties.config.impl,
                 properties.debug.impl,
                 properties.@"headerbar-visible".impl,
+                properties.@"background-opaque".impl,
             });
 
             // Bindings
             class.bindTemplateChildPrivate("surface", .{});
+            class.bindTemplateChildPrivate("toast_overlay", .{});
 
             // Template Callbacks
             class.bindTemplateCallback("close_request", &windowCloseRequest);
+            class.bindTemplateCallback("surface_clipboard_write", &surfaceClipboardWrite);
             class.bindTemplateCallback("surface_close_request", &surfaceCloseRequest);
             class.bindTemplateCallback("surface_toggle_fullscreen", &surfaceToggleFullscreen);
             class.bindTemplateCallback("surface_toggle_maximize", &surfaceToggleMaximize);
@@ -552,6 +631,7 @@ pub const Window = extern struct {
             class.bindTemplateCallback("notify_fullscreened", &propFullscreened);
             class.bindTemplateCallback("notify_maximized", &propMaximized);
             class.bindTemplateCallback("notify_menu_active", &propMenuActive);
+            class.bindTemplateCallback("notify_background_opaque", &propBackgroundOpaque);
 
             // Virtual methods
             gobject.Object.virtual_methods.dispose.implement(class, &dispose);

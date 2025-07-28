@@ -50,12 +50,7 @@ pub const Surface = extern struct {
                 .{
                     .nick = "Config",
                     .blurb = "The configuration that this surface is using.",
-                    .accessor = gobject.ext.privateFieldAccessor(
-                        Self,
-                        Private,
-                        &Private.offset,
-                        "config",
-                    ),
+                    .accessor = C.privateObjFieldAccessor("config"),
                 },
             );
         };
@@ -89,12 +84,7 @@ pub const Surface = extern struct {
                 .{
                     .nick = "Desired Font Size",
                     .blurb = "The desired font size, only affects initialization.",
-                    .accessor = gobject.ext.privateFieldAccessor(
-                        Self,
-                        Private,
-                        &Private.offset,
-                        "font_size_request",
-                    ),
+                    .accessor = C.privateBoxedFieldAccessor("font_size_request"),
                 },
             );
         };
@@ -275,7 +265,10 @@ pub const Surface = extern struct {
             const impl = gobject.ext.defineSignal(
                 name,
                 Self,
-                &.{},
+                &.{
+                    apprt.Clipboard,
+                    [*:0]const u8,
+                },
                 void,
             );
         };
@@ -1188,6 +1181,14 @@ pub const Surface = extern struct {
     /// Returns the pwd property without a copy.
     pub fn getPwd(self: *Self) ?[:0]const u8 {
         return self.private().pwd;
+    }
+
+    /// Change the configuration for this surface.
+    pub fn setConfig(self: *Self, config: *Config) void {
+        const priv = self.private();
+        if (priv.config) |c| c.unref();
+        priv.config = config.ref();
+        self.as(gobject.Object).notifyByPspec(properties.config.impl.param_spec);
     }
 
     fn propConfig(
@@ -2236,7 +2237,7 @@ const Clipboard = struct {
             Surface.signals.@"clipboard-write".impl.emit(
                 self,
                 null,
-                .{},
+                .{ clipboard_type, val.ptr },
                 null,
             );
 
