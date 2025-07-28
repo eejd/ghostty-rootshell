@@ -10,6 +10,7 @@ template $GhosttyWindow: Adw.ApplicationWindow {
   notify::config => $notify_config();
   notify::fullscreened => $notify_fullscreened();
   notify::maximized => $notify_maximized();
+  notify::background-opaque => $notify_background_opaque();
   default-width: 800;
   default-height: 600;
   // GTK4 grabs F10 input by default to focus the menubar icon. We want

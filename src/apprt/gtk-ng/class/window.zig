@@ -111,6 +111,23 @@ pub const Window = extern struct {
                 },
             );
         };
+
+        pub const @"background-opaque" = struct {
+            pub const name = "background-opaque";
+            const impl = gobject.ext.defineProperty(
+                name,
+                Self,
+                bool,
+                .{
+                    .nick = "Background Opaque",
+                    .blurb = "True if the background should be opaque.",
+                    .default = true,
+                    .accessor = gobject.ext.typedAccessor(Self, bool, .{
+                        .getter = Self.getBackgroundOpaque,
+                    }),
+                },
+            );
+        };
     };
 
     const Private = struct {
@@ -209,6 +226,16 @@ pub const Window = extern struct {
 
         // Trigger our headerbar visibility to refresh
         self.as(gobject.Object).notifyByPspec(properties.@"headerbar-visible".impl.param_spec);
+        // Trigger background opacity to refresh
+        self.as(gobject.Object).notifyByPspec(properties.@"background-opaque".impl.param_spec);
+    }
+
+    fn toggleCssClass(self: *Window, class: [:0]const u8, value: bool) void {
+        const widget = self.as(gtk.Widget);
+        if (value)
+            widget.addCssClass(class.ptr)
+        else
+            widget.removeCssClass(class.ptr);
     }
 
     /// Perform a binding action on the window's active surface.
@@ -268,6 +295,12 @@ pub const Window = extern struct {
         return config.@"gtk-titlebar";
     }
 
+    fn getBackgroundOpaque(self: *Self) bool {
+        const priv = self.private();
+        const config = (priv.config orelse return true).get();
+        return config.@"background-opacity" >= 1.0;
+    }
+
     fn propConfig(
         _: *adw.ApplicationWindow,
         _: *gobject.ParamSpec,
@@ -323,6 +356,16 @@ pub const Window = extern struct {
             action_map.lookupAction("copy") orelse return,
         ) orelse return;
         action.setEnabled(@intFromBool(has_selection));
+    }
+
+    /// Add or remove "background" CSS class depending on if the background
+    /// should be opaque.
+    fn propBackgroundOpaque(
+        _: *adw.ApplicationWindow,
+        _: *gobject.ParamSpec,
+        self: *Self,
+    ) callconv(.c) void {
+        self.toggleCssClass("background", self.getBackgroundOpaque());
     }
 
     //---------------------------------------------------------------
@@ -571,6 +614,7 @@ pub const Window = extern struct {
                 properties.config.impl,
                 properties.debug.impl,
                 properties.@"headerbar-visible".impl,
+                properties.@"background-opaque".impl,
             });
 
             // Bindings
@@ -587,6 +631,7 @@ pub const Window = extern struct {
             class.bindTemplateCallback("notify_fullscreened", &propFullscreened);
             class.bindTemplateCallback("notify_maximized", &propMaximized);
             class.bindTemplateCallback("notify_menu_active", &propMenuActive);
+            class.bindTemplateCallback("notify_background_opaque", &propBackgroundOpaque);
 
             // Virtual methods
             gobject.Object.virtual_methods.dispose.implement(class, &dispose);
