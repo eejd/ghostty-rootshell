@@ -29,12 +29,12 @@ label.url-overlay.right {
 /*
  * GhosttySurface resize overlay
  */
-.size-overlay label {
+label.resize-overlay {
   padding: 4px 8px 4px 8px;
   border-radius: 6px 6px 6px 6px;
   outline-style: solid;
-  outline-width: 1px;
   outline-color: #555555;
+  outline-width: 1px;
 }
 
 /*
