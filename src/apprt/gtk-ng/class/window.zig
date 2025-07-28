@@ -204,6 +204,9 @@ pub const Window = extern struct {
     };
 
     const Private = struct {
+        /// Binding group for our active tab.
+        tab_bindings: *gobject.BindingGroup,
+
         /// The configuration that this surface is using.
         config: ?*Config = null,
 
@@ -221,7 +224,9 @@ pub const Window = extern struct {
             .application = app,
         });
 
-        // Create our initial tab
+        // Create our initial tab. This will trigger the selected-page
+        // signal handler which will setup the remainder of the bindings
+        // for this to all work.
         const priv = self.private();
         const tab = gobject.ext.newInstance(Tab, .{
             .config = priv.config,
@@ -247,6 +252,10 @@ pub const Window = extern struct {
         if (comptime build_config.is_debug) {
             self.as(gtk.Widget).addCssClass("devel");
         }
+
+        // Setup some of our objects that are never null
+        priv.tab_bindings = gobject.BindingGroup.new();
+        priv.tab_bindings.bind("title", self.as(gobject.Object), "title", .{});
 
         // Set our window icon. We can't set this in the blueprint file
         // because its dependent on the build config.
@@ -517,6 +526,7 @@ pub const Window = extern struct {
             v.unref();
             priv.config = null;
         }
+        priv.tab_bindings.setSource(null);
 
         gtk.Widget.disposeTemplate(
             self.as(gtk.Widget),
@@ -524,6 +534,16 @@ pub const Window = extern struct {
         );
 
         gobject.Object.virtual_methods.dispose.call(
+            Class.parent,
+            self.as(Parent),
+        );
+    }
+
+    fn finalize(self: *Self) callconv(.C) void {
+        const priv = self.private();
+        priv.tab_bindings.unref();
+
+        gobject.Object.virtual_methods.finalize.call(
             Class.parent,
             self.as(Parent),
         );
@@ -568,6 +588,26 @@ pub const Window = extern struct {
         self: *Self,
     ) callconv(.c) void {
         self.as(gtk.Window).destroy();
+    }
+
+    fn tabViewSelectedPage(
+        _: *adw.TabView,
+        _: *gobject.ParamSpec,
+        self: *Self,
+    ) callconv(.c) void {
+        const priv = self.private();
+
+        // Always reset our binding source in case we have no pages.
+        priv.tab_bindings.setSource(null);
+
+        // Get our current page which MUST be a Tab object.
+        const page = priv.tab_view.getSelectedPage() orelse return;
+        const child = page.getChild();
+        assert(gobject.ext.isA(child, Tab));
+
+        // Setup our binding group. This ensures things like the title
+        // are synced from the active tab.
+        priv.tab_bindings.setSource(child.as(gobject.Object));
     }
 
     fn surfaceClipboardWrite(
@@ -768,6 +808,7 @@ pub const Window = extern struct {
 
             // Template Callbacks
             class.bindTemplateCallback("close_request", &windowCloseRequest);
+            class.bindTemplateCallback("selected_page", &tabViewSelectedPage);
             class.bindTemplateCallback("surface_clipboard_write", &surfaceClipboardWrite);
             class.bindTemplateCallback("surface_close_request", &surfaceCloseRequest);
             class.bindTemplateCallback("surface_toggle_fullscreen", &surfaceToggleFullscreen);
@@ -780,6 +821,7 @@ pub const Window = extern struct {
 
             // Virtual methods
             gobject.Object.virtual_methods.dispose.implement(class, &dispose);
+            gobject.Object.virtual_methods.finalize.implement(class, &finalize);
         }
 
         pub const as = C.Class.as;

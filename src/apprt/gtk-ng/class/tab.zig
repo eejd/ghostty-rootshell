@@ -72,11 +72,35 @@ pub const Tab = extern struct {
                 },
             );
         };
+
+        pub const title = struct {
+            pub const name = "title";
+            pub const get = impl.get;
+            pub const set = impl.set;
+            const impl = gobject.ext.defineProperty(
+                name,
+                Self,
+                ?[:0]const u8,
+                .{
+                    .nick = "Title",
+                    .blurb = "The title of the active surface.",
+                    .default = null,
+                    .accessor = C.privateStringFieldAccessor("title"),
+                },
+            );
+        };
     };
 
     const Private = struct {
         /// The configuration that this surface is using.
         config: ?*Config = null,
+
+        /// The title to show for this tab. This is usally set to a binding
+        /// with the active surface but can be manually set to anything.
+        title: ?[:0]const u8 = null,
+
+        /// The binding groups for the current active surface.
+        surface_bindings: *gobject.BindingGroup,
 
         // Template bindings
         surface: *Surface,
@@ -106,6 +130,19 @@ pub const Tab = extern struct {
             priv.config = app.getConfig();
         }
 
+        // Setup binding groups for surface properties
+        priv.surface_bindings = gobject.BindingGroup.new();
+        priv.surface_bindings.bind(
+            "title",
+            self.as(gobject.Object),
+            "title",
+            .{},
+        );
+
+        // TODO: Eventually this should be set dynamically based on the
+        // current active surface.
+        priv.surface_bindings.setSource(priv.surface.as(gobject.Object));
+
         // We need to do this so that the title initializes properly,
         // I think because its a dynamic getter.
         self.as(gobject.Object).notifyByPspec(properties.@"active-surface".impl.param_spec);
@@ -130,6 +167,7 @@ pub const Tab = extern struct {
             v.unref();
             priv.config = null;
         }
+        priv.surface_bindings.setSource(null);
 
         gtk.Widget.disposeTemplate(
             self.as(gtk.Widget),
@@ -142,6 +180,19 @@ pub const Tab = extern struct {
         );
     }
 
+    fn finalize(self: *Self) callconv(.C) void {
+        const priv = self.private();
+        if (priv.title) |v| {
+            glib.free(@constCast(@ptrCast(v)));
+            priv.title = null;
+        }
+        priv.surface_bindings.unref();
+
+        gobject.Object.virtual_methods.finalize.call(
+            Class.parent,
+            self.as(Parent),
+        );
+    }
     //---------------------------------------------------------------
     // Signal handlers
 
@@ -171,6 +222,7 @@ pub const Tab = extern struct {
             gobject.ext.registerProperties(class, &.{
                 properties.@"active-surface".impl,
                 properties.config.impl,
+                properties.title.impl,
             });
 
             // Bindings
@@ -181,6 +233,7 @@ pub const Tab = extern struct {
 
             // Virtual methods
             gobject.Object.virtual_methods.dispose.implement(class, &dispose);
+            gobject.Object.virtual_methods.finalize.implement(class, &finalize);
         }
 
         pub const as = C.Class.as;
