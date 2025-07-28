@@ -78,18 +78,7 @@ template $GhosttyWindow: Adw.ApplicationWindow {
         }
 
         Adw.ToastOverlay toast_overlay {
-          Adw.TabView tab_view {
-            Adw.TabPage {
-              title: bind (template.active-surface as <$GhosttySurface>).title;
-
-              child: $GhosttySurface surface {
-                close-request => $surface_close_request();
-                clipboard-write => $surface_clipboard_write();
-                toggle-fullscreen => $surface_toggle_fullscreen();
-                toggle-maximize => $surface_toggle_maximize();
-              };
-            }
-          }
+          Adw.TabView tab_view {}
         }
       }
     }

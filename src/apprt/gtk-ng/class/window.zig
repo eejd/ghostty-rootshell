@@ -19,6 +19,7 @@ const Config = @import("config.zig").Config;
 const Application = @import("application.zig").Application;
 const CloseConfirmationDialog = @import("close_confirmation_dialog.zig").CloseConfirmationDialog;
 const Surface = @import("surface.zig").Surface;
+const Tab = @import("tab.zig").Tab;
 const DebugWarning = @import("debug_warning.zig").DebugWarning;
 
 const log = std.log.scoped(.gtk_ghostty_window);
@@ -207,8 +208,8 @@ pub const Window = extern struct {
         config: ?*Config = null,
 
         // Template bindings
-        surface: *Surface,
         tab_bar: *adw.TabBar,
+        tab_view: *adw.TabView,
         toolbar: *adw.ToolbarView,
         toast_overlay: *adw.ToastOverlay,
 
@@ -220,10 +221,13 @@ pub const Window = extern struct {
             .application = app,
         });
 
-        if (parent_) |parent| {
-            const priv = self.private();
-            priv.surface.setParent(parent);
-        }
+        // Create our initial tab
+        const priv = self.private();
+        const tab = gobject.ext.newInstance(Tab, .{
+            .config = priv.config,
+        });
+        if (parent_) |p| tab.setParent(p);
+        _ = priv.tab_view.append(tab.as(gtk.Widget));
 
         return self;
     }
@@ -364,7 +368,8 @@ pub const Window = extern struct {
     /// This does not ref the value.
     fn getActiveSurface(self: *Self) ?*Surface {
         const priv = self.private();
-        return priv.surface;
+        _ = priv;
+        return null;
     }
 
     fn getHeaderbarVisible(self: *Self) bool {
@@ -595,8 +600,8 @@ pub const Window = extern struct {
     ) callconv(.c) void {
         // Todo
         _ = scope;
+        _ = surface;
 
-        assert(surface == self.private().surface);
         self.as(gtk.Window).close();
     }
 
@@ -732,7 +737,6 @@ pub const Window = extern struct {
         pub const Instance = Self;
 
         fn init(class: *Class) callconv(.C) void {
-            gobject.ext.ensureType(Surface);
             gobject.ext.ensureType(DebugWarning);
             gtk.Widget.Class.setTemplateFromResource(
                 class.as(gtk.Widget.Class),
@@ -757,8 +761,8 @@ pub const Window = extern struct {
             });
 
             // Bindings
-            class.bindTemplateChildPrivate("surface", .{});
             class.bindTemplateChildPrivate("tab_bar", .{});
+            class.bindTemplateChildPrivate("tab_view", .{});
             class.bindTemplateChildPrivate("toolbar", .{});
             class.bindTemplateChildPrivate("toast_overlay", .{});
 
