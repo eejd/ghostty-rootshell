@@ -215,6 +215,7 @@ pub const Window = extern struct {
         tab_overview_focus_timer: ?c_uint = null,
 
         // Template bindings
+        tab_overview: *adw.TabOverview,
         tab_bar: *adw.TabBar,
         tab_view: *adw.TabView,
         toolbar: *adw.ToolbarView,
@@ -446,6 +447,13 @@ pub const Window = extern struct {
         assert(desired_pos < total);
 
         return tab_view.reorderPage(page, desired_pos) != 0;
+    }
+
+    pub fn toggleTabOverview(self: *Self) void {
+        const priv = self.private();
+        const tab_overview = priv.tab_overview;
+        const is_open = tab_overview.getOpen() != 0;
+        tab_overview.setOpen(@intFromBool(!is_open));
     }
 
     /// Updates various appearance properties. This should always be safe
@@ -1240,6 +1248,7 @@ pub const Window = extern struct {
             });
 
             // Bindings
+            class.bindTemplateChildPrivate("tab_overview", .{});
             class.bindTemplateChildPrivate("tab_bar", .{});
             class.bindTemplateChildPrivate("tab_view", .{});
             class.bindTemplateChildPrivate("toolbar", .{});

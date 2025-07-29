@@ -537,6 +537,7 @@ pub const Application = extern struct {
 
             .toggle_maximize => Action.toggleMaximize(target),
             .toggle_fullscreen => Action.toggleFullscreen(target),
+            .toggle_tab_overview => return Action.toggleTabOverview(target),
 
             // Unimplemented but todo on gtk-ng branch
             .new_split,
@@ -549,7 +550,6 @@ pub const Application = extern struct {
             .present_terminal,
             .initial_size,
             .size_limit,
-            .toggle_tab_overview,
             .toggle_split_zoom,
             .toggle_window_decorations,
             .prompt_title,
@@ -1511,6 +1511,25 @@ const Action = struct {
         switch (target) {
             .app => {},
             .surface => |v| v.rt_surface.surface.toggleMaximize(),
+        }
+    }
+
+    pub fn toggleTabOverview(target: apprt.Target) bool {
+        switch (target) {
+            .app => return false,
+            .surface => |core| {
+                const surface = core.rt_surface.surface;
+                const window = ext.getAncestor(
+                    Window,
+                    surface.as(gtk.Widget),
+                ) orelse {
+                    log.warn("surface is not in a window, ignoring new_tab", .{});
+                    return false;
+                };
+
+                window.toggleTabOverview();
+                return true;
+            },
         }
     }
 };
