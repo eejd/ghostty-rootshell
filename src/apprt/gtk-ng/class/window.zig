@@ -622,12 +622,52 @@ pub const Window = extern struct {
         const tab = gobject.ext.cast(Tab, child) orelse return;
 
         // Attach listeners for the surface.
+        //
+        // Interesting behavior here that was previously undocumented but
+        // I'm going to make it explicit here: we accept all the signals here
+        // (like toggle-fullscreen) regardless of whether the surface or tab
+        // is focused. At the time of writing this we have no API that could
+        // really trigger these that way but its theoretically possible.
+        //
+        // What is DEFINITELY possible is something like OSC52 triggering
+        // a clipboard-write signal on an unfocused tab/surface. We definitely
+        // want to show the user a notification about that but our notification
+        // right now is a toast that doesn't make it clear WHO used the
+        // clipboard. We probably want to change that in the future.
+        //
+        // I'm not sure how desirable all the above is, and we probably
+        // should be thoughtful about future signals here. But all of this
+        // behavior is consistent with macOS and the previous GTK apprt,
+        // but that behavior was all implicit and not documented, so here
+        // I am.
+        //
         // TODO: When we have a split tree we'll want to attach to that.
         const surface = tab.getActiveSurface();
         _ = Surface.signals.@"close-request".connect(
             surface,
             *Self,
             surfaceCloseRequest,
+            self,
+            .{},
+        );
+        _ = Surface.signals.@"clipboard-write".connect(
+            surface,
+            *Self,
+            surfaceClipboardWrite,
+            self,
+            .{},
+        );
+        _ = Surface.signals.@"toggle-fullscreen".connect(
+            surface,
+            *Self,
+            surfaceToggleFullscreen,
+            self,
+            .{},
+        );
+        _ = Surface.signals.@"toggle-maximize".connect(
+            surface,
+            *Self,
+            surfaceToggleMaximize,
             self,
             .{},
         );
@@ -680,15 +720,22 @@ pub const Window = extern struct {
     }
 
     fn surfaceCloseRequest(
-        surface: *Surface,
+        _: *Surface,
         scope: *const Surface.CloseScope,
         self: *Self,
     ) callconv(.c) void {
-        // Todo
-        _ = scope;
-        _ = surface;
+        switch (scope.*) {
+            // Handled directly by the tab. If the surface is the last
+            // surface then the tab will emit its own signal to request
+            // closing itself.
+            .surface => return,
 
-        self.as(gtk.Window).close();
+            // Also handled directly by the tab.
+            .tab => return,
+
+            // The only one we care about!
+            .window => self.as(gtk.Window).close(),
+        }
     }
 
     fn surfaceToggleFullscreen(
