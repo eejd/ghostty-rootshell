@@ -607,7 +607,7 @@ pub const Window = extern struct {
             .getChild()
             .as(gtk.Widget)
             .getAncestor(gobject.ext.typeFor(adw.TabView)) orelse {
-            log.warn("close confirmation caled for non-existent page", .{});
+            log.warn("close confirmation called for non-existent page", .{});
             return;
         };
         const tab_view = gobject.ext.cast(
@@ -625,7 +625,7 @@ pub const Window = extern struct {
             .getChild()
             .as(gtk.Widget)
             .getAncestor(gobject.ext.typeFor(adw.TabView)) orelse {
-            log.warn("close confirmation caled for non-existent page", .{});
+            log.warn("close confirmation called for non-existent page", .{});
             return;
         };
         const tab_view = gobject.ext.cast(
