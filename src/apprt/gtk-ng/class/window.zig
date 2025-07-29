@@ -390,6 +390,25 @@ pub const Window = extern struct {
         return gobject.ext.cast(Tab, child);
     }
 
+    /// Returns true if this window needs confirmation before quitting.
+    pub fn getNeedsConfirmQuit(self: *Self) bool {
+        const priv = self.private();
+        const n = priv.tab_view.getNPages();
+        assert(n >= 0);
+
+        for (0..@intCast(n)) |i| {
+            const page = priv.tab_view.getNthPage(@intCast(i));
+            const child = page.getChild();
+            const tab = gobject.ext.cast(Tab, child) orelse {
+                log.warn("unexpected non-Tab child in tab view", .{});
+                continue;
+            };
+            if (tab.getNeedsConfirmQuit()) return true;
+        }
+
+        return false;
+    }
+
     fn getHeaderbarVisible(self: *Self) bool {
         // TODO: CSD/SSD
         // TODO: QuickTerminal
@@ -565,16 +584,9 @@ pub const Window = extern struct {
         _: *gtk.Window,
         self: *Self,
     ) callconv(.c) c_int {
-        // If our surface needs confirmation then we show confirmation.
-        // This will have to be expanded to a list when we have tabs
-        // or splits.
-        confirm: {
-            const surface = self.getActiveSurface() orelse break :confirm;
-            const core_surface = surface.core() orelse break :confirm;
-            if (!core_surface.needsConfirmQuit()) break :confirm;
-
+        if (self.getNeedsConfirmQuit()) {
             // Show a confirmation dialog
-            const dialog: *CloseConfirmationDialog = .new(.app);
+            const dialog: *CloseConfirmationDialog = .new(.window);
             _ = CloseConfirmationDialog.signals.@"close-request".connect(
                 dialog,
                 *Self,
