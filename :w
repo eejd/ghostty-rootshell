@@ -620,17 +620,10 @@ pub const Window = extern struct {
         // Get the attached page which must be a Tab object.
         const child = page.getChild();
         const tab = gobject.ext.cast(Tab, child) orelse return;
+        _ = tab;
 
-        // Attach listeners for the surface.
-        // TODO: When we have a split tree we'll want to attach to that.
-        const surface = tab.getActiveSurface();
-        _ = Surface.signals.@"close-request".connect(
-            surface,
-            *Self,
-            surfaceCloseRequest,
-            self,
-            .{},
-        );
+        // Attach listeners for the
+        _ = self;
     }
 
     fn tabViewPageDetached(
@@ -639,21 +632,8 @@ pub const Window = extern struct {
         _: c_int,
         self: *Self,
     ) callconv(.c) void {
-        // We need to get the tab to disconnect the signals.
-        const child = page.getChild();
-        const tab = gobject.ext.cast(Tab, child) orelse return;
-
-        // Remove all the signals that have this window as the userdata.
-        const surface = tab.getActiveSurface();
-        _ = gobject.signalHandlersDisconnectMatched(
-            surface.as(gobject.Object),
-            .{ .data = true },
-            0,
-            0,
-            null,
-            null,
-            self,
-        );
+        _ = page;
+        _ = self;
     }
 
     fn surfaceClipboardWrite(
@@ -855,8 +835,6 @@ pub const Window = extern struct {
             // Template Callbacks
             class.bindTemplateCallback("close_request", &windowCloseRequest);
             class.bindTemplateCallback("selected_page", &tabViewSelectedPage);
-            class.bindTemplateCallback("page_attached", &tabViewPageAttached);
-            class.bindTemplateCallback("page_detached", &tabViewPageDetached);
             class.bindTemplateCallback("surface_clipboard_write", &surfaceClipboardWrite);
             class.bindTemplateCallback("surface_close_request", &surfaceCloseRequest);
             class.bindTemplateCallback("surface_toggle_fullscreen", &surfaceToggleFullscreen);
