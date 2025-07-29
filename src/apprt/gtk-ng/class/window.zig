@@ -591,6 +591,81 @@ pub const Window = extern struct {
         self.as(gtk.Window).destroy();
     }
 
+    fn closeConfirmationCloseTab(
+        _: *CloseConfirmationDialog,
+        page: *adw.TabPage,
+    ) callconv(.c) void {
+        const tab_view_widget = page
+            .getChild()
+            .as(gtk.Widget)
+            .getAncestor(gobject.ext.typeFor(adw.TabView)) orelse {
+            log.warn("close confirmation caled for non-existent page", .{});
+            return;
+        };
+        const tab_view = gobject.ext.cast(
+            adw.TabView,
+            tab_view_widget,
+        ).?;
+        tab_view.closePageFinish(page, @intFromBool(true));
+    }
+
+    fn closeConfirmationCancelTab(
+        _: *CloseConfirmationDialog,
+        page: *adw.TabPage,
+    ) callconv(.c) void {
+        const tab_view_widget = page
+            .getChild()
+            .as(gtk.Widget)
+            .getAncestor(gobject.ext.typeFor(adw.TabView)) orelse {
+            log.warn("close confirmation caled for non-existent page", .{});
+            return;
+        };
+        const tab_view = gobject.ext.cast(
+            adw.TabView,
+            tab_view_widget,
+        ).?;
+        tab_view.closePageFinish(page, @intFromBool(false));
+    }
+
+    fn tabViewClosePage(
+        _: *adw.TabView,
+        page: *adw.TabPage,
+        self: *Self,
+    ) callconv(.c) c_int {
+        const priv = self.private();
+        const child = page.getChild();
+        const tab = gobject.ext.cast(Tab, child) orelse
+            return @intFromBool(false);
+
+        // If the tab says it doesn't need confirmation then we go ahead
+        // and close immediately.
+        if (!tab.getNeedsConfirmQuit()) {
+            priv.tab_view.closePageFinish(page, @intFromBool(true));
+            return @intFromBool(true);
+        }
+
+        // Show a confirmation dialog
+        const dialog: *CloseConfirmationDialog = .new(.tab);
+        _ = CloseConfirmationDialog.signals.@"close-request".connect(
+            dialog,
+            *adw.TabPage,
+            closeConfirmationCloseTab,
+            page,
+            .{},
+        );
+        _ = CloseConfirmationDialog.signals.cancel.connect(
+            dialog,
+            *adw.TabPage,
+            closeConfirmationCancelTab,
+            page,
+            .{},
+        );
+
+        // Show it
+        dialog.present(child);
+        return @intFromBool(true);
+    }
+
     fn tabViewSelectedPage(
         _: *adw.TabView,
         _: *gobject.ParamSpec,
@@ -929,6 +1004,7 @@ pub const Window = extern struct {
 
             // Template Callbacks
             class.bindTemplateCallback("close_request", &windowCloseRequest);
+            class.bindTemplateCallback("close_page", &tabViewClosePage);
             class.bindTemplateCallback("selected_page", &tabViewSelectedPage);
             class.bindTemplateCallback("page_attached", &tabViewPageAttached);
             class.bindTemplateCallback("page_detached", &tabViewPageDetached);

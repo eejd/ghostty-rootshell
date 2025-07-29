@@ -172,6 +172,14 @@ pub const Tab = extern struct {
         return priv.surface;
     }
 
+    /// Returns true if this tab needs confirmation before quitting based
+    /// on the various Ghostty configurations.
+    pub fn getNeedsConfirmQuit(self: *Self) bool {
+        const surface = self.getActiveSurface();
+        const core_surface = surface.core() orelse return false;
+        return core_surface.needsConfirmQuit();
+    }
+
     //---------------------------------------------------------------
     // Virtual methods
 
