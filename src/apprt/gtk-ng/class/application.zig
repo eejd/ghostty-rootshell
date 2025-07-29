@@ -22,6 +22,7 @@ const xev = @import("../../../global.zig").xev;
 const CoreConfig = configpkg.Config;
 const CoreSurface = @import("../../../Surface.zig");
 
+const ext = @import("../ext.zig");
 const adw_version = @import("../adw_version.zig");
 const gtk_version = @import("../gtk_version.zig");
 const winprotopkg = @import("../winproto.zig");
@@ -1285,13 +1286,13 @@ const Action = struct {
                 // be aware they might be in windows but at the app level we
                 // can do this.
                 const surface = core.rt_surface.surface;
-                const window_widget = surface
-                    .as(gtk.Widget)
-                    .getAncestor(gobject.ext.typeFor(Window)) orelse {
+                const window = ext.getAncestor(
+                    Window,
+                    surface.as(gtk.Widget),
+                ) orelse {
                     log.warn("surface is not in a window, ignoring new_tab", .{});
                     return false;
                 };
-                const window = gobject.ext.cast(Window, window_widget).?;
                 window.newTab(core);
                 return true;
             },

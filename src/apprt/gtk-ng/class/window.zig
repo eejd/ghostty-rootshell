@@ -11,6 +11,7 @@ const i18n = @import("../../../os/main.zig").i18n;
 const apprt = @import("../../../apprt.zig");
 const input = @import("../../../input.zig");
 const CoreSurface = @import("../../../Surface.zig");
+const ext = @import("../ext.zig");
 const gtk_version = @import("../gtk_version.zig");
 const adw_version = @import("../adw_version.zig");
 const gresource = @import("../build/gresource.zig");
@@ -719,17 +720,13 @@ pub const Window = extern struct {
         _: *CloseConfirmationDialog,
         page: *adw.TabPage,
     ) callconv(.c) void {
-        const tab_view_widget = page
-            .getChild()
-            .as(gtk.Widget)
-            .getAncestor(gobject.ext.typeFor(adw.TabView)) orelse {
+        const tab_view = ext.getAncestor(
+            adw.TabView,
+            page.getChild().as(gtk.Widget),
+        ) orelse {
             log.warn("close confirmation called for non-existent page", .{});
             return;
         };
-        const tab_view = gobject.ext.cast(
-            adw.TabView,
-            tab_view_widget,
-        ).?;
         tab_view.closePageFinish(page, @intFromBool(true));
     }
 
@@ -737,17 +734,13 @@ pub const Window = extern struct {
         _: *CloseConfirmationDialog,
         page: *adw.TabPage,
     ) callconv(.c) void {
-        const tab_view_widget = page
-            .getChild()
-            .as(gtk.Widget)
-            .getAncestor(gobject.ext.typeFor(adw.TabView)) orelse {
+        const tab_view = ext.getAncestor(
+            adw.TabView,
+            page.getChild().as(gtk.Widget),
+        ) orelse {
             log.warn("close confirmation called for non-existent page", .{});
             return;
         };
-        const tab_view = gobject.ext.cast(
-            adw.TabView,
-            tab_view_widget,
-        ).?;
         tab_view.closePageFinish(page, @intFromBool(false));
     }
 
