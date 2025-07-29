@@ -1355,7 +1355,7 @@ const Action = struct {
         self: *Application,
         parent: ?*CoreSurface,
     ) !void {
-        const win = Window.new(self, parent);
+        const win = Window.new(self);
 
         // Setup a binding so that whenever our config changes so does the
         // window. There's never a time when the window config should be out
@@ -1367,6 +1367,9 @@ const Action = struct {
             "config",
             .{},
         );
+
+        // Create a new tab
+        win.newTab(parent);
 
         // Show the window
         gtk.Window.present(win.as(gtk.Window));

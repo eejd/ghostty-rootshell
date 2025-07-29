@@ -224,12 +224,10 @@ pub const Window = extern struct {
         pub var offset: c_int = 0;
     };
 
-    pub fn new(app: *Application, parent_: ?*CoreSurface) *Self {
-        const self = gobject.ext.newInstance(Self, .{
+    pub fn new(app: *Application) *Self {
+        return gobject.ext.newInstance(Self, .{
             .application = app,
         });
-        self.newTab(parent_);
-        return self;
     }
 
     fn init(self: *Self, _: *Class) callconv(.C) void {
@@ -1012,6 +1010,25 @@ pub const Window = extern struct {
         );
     }
 
+    fn tabViewCreateWindow(
+        _: *adw.TabView,
+        _: *Self,
+    ) callconv(.c) *adw.TabView {
+        // Create a new window without creating a new tab.
+        const win = gobject.ext.newInstance(
+            Self,
+            .{
+                .application = Application.default(),
+            },
+        );
+
+        // We have to show it otherwise it'll just be hidden.
+        gtk.Window.present(win.as(gtk.Window));
+
+        // Get our tab view
+        return win.private().tab_view;
+    }
+
     fn tabCloseRequest(
         tab: *Tab,
         self: *Self,
@@ -1262,6 +1279,7 @@ pub const Window = extern struct {
             class.bindTemplateCallback("close_page", &tabViewClosePage);
             class.bindTemplateCallback("page_attached", &tabViewPageAttached);
             class.bindTemplateCallback("page_detached", &tabViewPageDetached);
+            class.bindTemplateCallback("tab_create_window", &tabViewCreateWindow);
             class.bindTemplateCallback("notify_n_pages", &tabViewNPages);
             class.bindTemplateCallback("notify_selected_page", &tabViewSelectedPage);
             class.bindTemplateCallback("notify_config", &propConfig);
