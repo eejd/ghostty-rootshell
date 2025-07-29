@@ -223,17 +223,7 @@ pub const Window = extern struct {
         const self = gobject.ext.newInstance(Self, .{
             .application = app,
         });
-
-        // Create our initial tab. This will trigger the selected-page
-        // signal handler which will setup the remainder of the bindings
-        // for this to all work.
-        const priv = self.private();
-        const tab = gobject.ext.newInstance(Tab, .{
-            .config = priv.config,
-        });
-        if (parent_) |p| tab.setParent(p);
-        _ = priv.tab_view.append(tab.as(gtk.Widget));
-
+        self.newTab(parent_);
         return self;
     }
 
@@ -280,6 +270,8 @@ pub const Window = extern struct {
         const actions = .{
             .{ "about", actionAbout, null },
             .{ "close", actionClose, null },
+            .{ "close-tab", actionCloseTab, null },
+            .{ "new-tab", actionNewTab, null },
             .{ "new-window", actionNewWindow, null },
             .{ "copy", actionCopy, null },
             .{ "paste", actionPaste, null },
@@ -303,6 +295,50 @@ pub const Window = extern struct {
             );
             action_map.addAction(action.as(gio.Action));
         }
+    }
+
+    /// Create a new tab with the given parent. The tab will be inserted
+    /// at the position dictated by the `window-new-tab-position` config.
+    /// The new tab will be selected.
+    pub fn newTab(self: *Self, parent_: ?*CoreSurface) void {
+        const priv = self.private();
+        const tab_view = priv.tab_view;
+
+        // Create our new tab object
+        const tab = gobject.ext.newInstance(Tab, .{
+            .config = priv.config,
+        });
+        if (parent_) |p| tab.setParent(p);
+
+        // Get the position that we should insert the new tab at.
+        const config = if (priv.config) |v| v.get() else {
+            // If we don't have a config we just append it at the end.
+            // This should never happen.
+            _ = tab_view.append(tab.as(gtk.Widget));
+            return;
+        };
+        const position = switch (config.@"window-new-tab-position") {
+            .current => current: {
+                const selected = tab_view.getSelectedPage() orelse
+                    break :current tab_view.getNPages();
+                const current = tab_view.getPagePosition(selected);
+                break :current current + 1;
+            },
+
+            .end => tab_view.getNPages(),
+        };
+
+        // Add the page and select it
+        const page = tab_view.insert(tab.as(gtk.Widget), position);
+        tab_view.setSelectedPage(page);
+
+        // Create some property bindings
+        _ = tab.as(gobject.Object).bindProperty(
+            "title",
+            page.as(gobject.Object),
+            "title",
+            .{ .sync_create = true },
+        );
     }
 
     /// Updates various appearance properties. This should always be safe
@@ -391,7 +427,7 @@ pub const Window = extern struct {
     }
 
     /// Returns true if this window needs confirmation before quitting.
-    pub fn getNeedsConfirmQuit(self: *Self) bool {
+    fn getNeedsConfirmQuit(self: *Self) bool {
         const priv = self.private();
         const n = priv.tab_view.getNPages();
         assert(n >= 0);
@@ -953,12 +989,28 @@ pub const Window = extern struct {
         self.as(gtk.Window).close();
     }
 
+    fn actionCloseTab(
+        _: *gio.SimpleAction,
+        _: ?*glib.Variant,
+        self: *Window,
+    ) callconv(.c) void {
+        self.performBindingAction(.close_tab);
+    }
+
     fn actionNewWindow(
         _: *gio.SimpleAction,
         _: ?*glib.Variant,
         self: *Window,
     ) callconv(.c) void {
         self.performBindingAction(.new_window);
+    }
+
+    fn actionNewTab(
+        _: *gio.SimpleAction,
+        _: ?*glib.Variant,
+        self: *Window,
+    ) callconv(.c) void {
+        self.performBindingAction(.new_tab);
     }
 
     fn actionCopy(

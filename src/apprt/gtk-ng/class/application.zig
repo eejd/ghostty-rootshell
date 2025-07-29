@@ -500,6 +500,8 @@ pub const Application = extern struct {
             .mouse_shape => Action.mouseShape(target, value),
             .mouse_visibility => Action.mouseVisibility(target, value),
 
+            .new_tab => return Action.newTab(target),
+
             .new_window => try Action.newWindow(
                 self,
                 switch (target) {
@@ -532,7 +534,6 @@ pub const Application = extern struct {
             .toggle_fullscreen => Action.toggleFullscreen(target),
 
             // Unimplemented but todo on gtk-ng branch
-            .new_tab,
             .goto_tab,
             .move_tab,
             .new_split,
@@ -1268,6 +1269,31 @@ const Action = struct {
                     "mouse-hidden",
                     &value,
                 );
+            },
+        }
+    }
+
+    pub fn newTab(target: apprt.Target) bool {
+        switch (target) {
+            .app => {
+                log.warn("new tab to app is unexpected", .{});
+                return false;
+            },
+
+            .surface => |core| {
+                // Get the window ancestor of the surface. Surfaces shouldn't
+                // be aware they might be in windows but at the app level we
+                // can do this.
+                const surface = core.rt_surface.surface;
+                const window_widget = surface
+                    .as(gtk.Widget)
+                    .getAncestor(gobject.ext.typeFor(Window)) orelse {
+                    log.warn("surface is not in a window, ignoring new_tab", .{});
+                    return false;
+                };
+                const window = gobject.ext.cast(Window, window_widget).?;
+                window.newTab(core);
+                return true;
             },
         }
     }
