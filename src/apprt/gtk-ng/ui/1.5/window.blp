@@ -18,6 +18,7 @@ template $GhosttyWindow: Adw.ApplicationWindow {
   handle-menubar-accel: false;
 
   content: Adw.TabOverview tab_overview {
+    create-tab => $overview_create_tab();
     enable-new-tab: true;
     view: tab_view;
 

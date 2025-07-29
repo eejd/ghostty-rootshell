@@ -301,6 +301,10 @@ pub const Window = extern struct {
     /// at the position dictated by the `window-new-tab-position` config.
     /// The new tab will be selected.
     pub fn newTab(self: *Self, parent_: ?*CoreSurface) void {
+        _ = self.newTabPage(parent_);
+    }
+
+    fn newTabPage(self: *Self, parent_: ?*CoreSurface) *adw.TabPage {
         const priv = self.private();
         const tab_view = priv.tab_view;
 
@@ -314,8 +318,7 @@ pub const Window = extern struct {
         const config = if (priv.config) |v| v.get() else {
             // If we don't have a config we just append it at the end.
             // This should never happen.
-            _ = tab_view.append(tab.as(gtk.Widget));
-            return;
+            return tab_view.append(tab.as(gtk.Widget));
         };
         const position = switch (config.@"window-new-tab-position") {
             .current => current: {
@@ -339,6 +342,8 @@ pub const Window = extern struct {
             "title",
             .{ .sync_create = true },
         );
+
+        return page;
     }
 
     /// Updates various appearance properties. This should always be safe
@@ -616,8 +621,15 @@ pub const Window = extern struct {
     //---------------------------------------------------------------
     // Signal handlers
 
-    fn btnNewTab(_: *adw.SplitButton, self: *Window) callconv(.c) void {
+    fn btnNewTab(_: *adw.SplitButton, self: *Self) callconv(.c) void {
         self.performBindingAction(.new_tab);
+    }
+
+    fn tabOverviewCreateTab(
+        _: *adw.TabOverview,
+        self: *Self,
+    ) callconv(.c) *adw.TabPage {
+        return self.newTabPage(if (self.getActiveSurface()) |v| v.core() else null);
     }
 
     fn windowCloseRequest(
@@ -1092,6 +1104,7 @@ pub const Window = extern struct {
 
             // Template Callbacks
             class.bindTemplateCallback("new_tab", &btnNewTab);
+            class.bindTemplateCallback("overview_create_tab", &tabOverviewCreateTab);
             class.bindTemplateCallback("close_request", &windowCloseRequest);
             class.bindTemplateCallback("close_page", &tabViewClosePage);
             class.bindTemplateCallback("page_attached", &tabViewPageAttached);
