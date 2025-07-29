@@ -135,10 +135,6 @@
    ...
    fun:gsk_gpu_node_processor_process
    fun:gsk_gpu_frame_render
-   fun:gsk_gpu_renderer_render
-   fun:gsk_renderer_render
-   fun:gtk_widget_render
-   fun:surface_render
   ...
 }
 
