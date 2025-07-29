@@ -407,6 +407,47 @@ pub const Window = extern struct {
         return true;
     }
 
+    /// Move the tab containing the given surface by the given amount.
+    /// Returns if this affected any tab positioning.
+    pub fn moveTab(
+        self: *Self,
+        surface: *Surface,
+        amount: isize,
+    ) bool {
+        const priv = self.private();
+        const tab_view = priv.tab_view;
+
+        // If we have one tab we never move.
+        const total = tab_view.getNPages();
+        if (total == 1) return false;
+
+        // Get the tab that contains the given surface.
+        const tab = ext.getAncestor(
+            Tab,
+            surface.as(gtk.Widget),
+        ) orelse return false;
+
+        // Get the page position that contains the tab.
+        const page = tab_view.getPage(tab.as(gtk.Widget));
+        const pos = tab_view.getPagePosition(page);
+
+        // Move it
+        const desired_pos: c_int = desired: {
+            const initial: c_int = @intCast(pos + amount);
+            const max = total - 1;
+            break :desired if (initial < 0)
+                max + initial + 1
+            else if (initial > max)
+                initial - max - 1
+            else
+                initial;
+        };
+        assert(desired_pos >= 0);
+        assert(desired_pos < total);
+
+        return tab_view.reorderPage(page, desired_pos) != 0;
+    }
+
     /// Updates various appearance properties. This should always be safe
     /// to call multiple times. This should be called whenever a change
     /// happens that might affect how the window appears (config change,

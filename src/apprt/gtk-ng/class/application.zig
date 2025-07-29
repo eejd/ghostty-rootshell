@@ -503,6 +503,8 @@ pub const Application = extern struct {
             .mouse_shape => Action.mouseShape(target, value),
             .mouse_visibility => Action.mouseVisibility(target, value),
 
+            .move_tab => return Action.moveTab(target, value),
+
             .new_tab => return Action.newTab(target),
 
             .new_window => try Action.newWindow(
@@ -537,7 +539,6 @@ pub const Application = extern struct {
             .toggle_fullscreen => Action.toggleFullscreen(target),
 
             // Unimplemented but todo on gtk-ng branch
-            .move_tab,
             .new_split,
             .resize_split,
             .equalize_splits,
@@ -1296,6 +1297,30 @@ const Action = struct {
                     surface.rt_surface.gobj().as(gobject.Object),
                     "mouse-hidden",
                     &value,
+                );
+            },
+        }
+    }
+
+    pub fn moveTab(
+        target: apprt.Target,
+        value: apprt.action.MoveTab,
+    ) bool {
+        switch (target) {
+            .app => return false,
+            .surface => |core| {
+                const surface = core.rt_surface.surface;
+                const window = ext.getAncestor(
+                    Window,
+                    surface.as(gtk.Widget),
+                ) orelse {
+                    log.warn("surface is not in a window, ignoring new_tab", .{});
+                    return false;
+                };
+
+                return window.moveTab(
+                    surface,
+                    @intCast(value.amount),
                 );
             },
         }
