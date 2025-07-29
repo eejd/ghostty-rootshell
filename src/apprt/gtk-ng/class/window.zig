@@ -621,6 +621,15 @@ pub const Window = extern struct {
         const child = page.getChild();
         const tab = gobject.ext.cast(Tab, child) orelse return;
 
+        // Attach listeners for the tab.
+        _ = Tab.signals.@"close-request".connect(
+            tab,
+            *Self,
+            tabCloseRequest,
+            self,
+            .{},
+        );
+
         // Attach listeners for the surface.
         //
         // Interesting behavior here that was previously undocumented but
@@ -682,6 +691,15 @@ pub const Window = extern struct {
         // We need to get the tab to disconnect the signals.
         const child = page.getChild();
         const tab = gobject.ext.cast(Tab, child) orelse return;
+        _ = gobject.signalHandlersDisconnectMatched(
+            tab.as(gobject.Object),
+            .{ .data = true },
+            0,
+            0,
+            null,
+            null,
+            self,
+        );
 
         // Remove all the signals that have this window as the userdata.
         const surface = tab.getActiveSurface();
@@ -694,6 +712,16 @@ pub const Window = extern struct {
             null,
             self,
         );
+    }
+
+    fn tabCloseRequest(
+        tab: *Tab,
+        self: *Self,
+    ) callconv(.c) void {
+        const priv = self.private();
+        const page = priv.tab_view.getPage(tab.as(gtk.Widget));
+        // TODO: connect close page handler to tab to check for confirmation
+        priv.tab_view.closePage(page);
     }
 
     fn surfaceClipboardWrite(

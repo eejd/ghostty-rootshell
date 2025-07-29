@@ -10,6 +10,6 @@ template $GhosttyTab: Box {
   // A tab currently just contains a surface directly. When we introduce
   // splits we probably want to replace this with the split widget type.
   $GhosttySurface surface {
-    // close-request => $surface_close_request();
+    close-request => $surface_close_request();
   }
 }

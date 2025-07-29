@@ -91,11 +91,25 @@ pub const Tab = extern struct {
         };
     };
 
+    pub const signals = struct {
+        /// Emitted whenever the tab would like to be closed.
+        pub const @"close-request" = struct {
+            pub const name = "close-request";
+            pub const connect = impl.connect;
+            const impl = gobject.ext.defineSignal(
+                name,
+                Self,
+                &.{},
+                void,
+            );
+        };
+    };
+
     const Private = struct {
         /// The configuration that this surface is using.
         config: ?*Config = null,
 
-        /// The title to show for this tab. This is usally set to a binding
+        /// The title to show for this tab. This is usually set to a binding
         /// with the active surface but can be manually set to anything.
         title: ?[:0]const u8 = null,
 
@@ -196,6 +210,27 @@ pub const Tab = extern struct {
     //---------------------------------------------------------------
     // Signal handlers
 
+    fn surfaceCloseRequest(
+        _: *Surface,
+        scope: *const Surface.CloseScope,
+        self: *Self,
+    ) callconv(.c) void {
+        switch (scope.*) {
+            // Handled upstream... we don't control our window close.
+            .window => return,
+
+            // Presently both the same, results in the tab closing.
+            .surface, .tab => {
+                signals.@"close-request".impl.emit(
+                    self,
+                    null,
+                    .{},
+                    null,
+                );
+            },
+        }
+    }
+
     const C = Common(Self, Private);
     pub const as = C.as;
     pub const ref = C.ref;
@@ -229,7 +264,10 @@ pub const Tab = extern struct {
             class.bindTemplateChildPrivate("surface", .{});
 
             // Template Callbacks
-            //class.bindTemplateCallback("close_request", &windowCloseRequest);
+            class.bindTemplateCallback("surface_close_request", &surfaceCloseRequest);
+
+            // Signals
+            signals.@"close-request".impl.register(.{});
 
             // Virtual methods
             gobject.Object.virtual_methods.dispose.implement(class, &dispose);
