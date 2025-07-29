@@ -19,6 +19,7 @@ template $GhosttyWindow: Adw.ApplicationWindow {
 
   content: Adw.TabOverview tab_overview {
     create-tab => $overview_create_tab();
+    notify::open => $overview_notify_open();
     enable-new-tab: true;
     view: tab_view;
 

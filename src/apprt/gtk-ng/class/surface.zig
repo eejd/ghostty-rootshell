@@ -1050,6 +1050,13 @@ pub const Surface = extern struct {
         );
     }
 
+    /// Focus this surface. This properly focuses the input part of
+    /// our surface.
+    pub fn grabFocus(self: *Self) void {
+        const priv = self.private();
+        _ = priv.gl_area.as(gtk.Widget).grabFocus();
+    }
+
     //---------------------------------------------------------------
     // Virtual Methods
 

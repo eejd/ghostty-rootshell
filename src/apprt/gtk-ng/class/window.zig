@@ -210,6 +210,9 @@ pub const Window = extern struct {
         /// The configuration that this surface is using.
         config: ?*Config = null,
 
+        /// See tabOverviewOpen for why we have this.
+        tab_overview_focus_timer: ?c_uint = null,
+
         // Template bindings
         tab_bar: *adw.TabBar,
         tab_view: *adw.TabView,
@@ -630,6 +633,55 @@ pub const Window = extern struct {
         self: *Self,
     ) callconv(.c) *adw.TabPage {
         return self.newTabPage(if (self.getActiveSurface()) |v| v.core() else null);
+    }
+
+    fn tabOverviewOpen(
+        tab_overview: *adw.TabOverview,
+        _: *gobject.ParamSpec,
+        self: *Self,
+    ) callconv(.c) void {
+        // We only care about when the tab overview is closed.
+        if (tab_overview.getOpen() != 0) return;
+
+        // On tab overview close, focus is sometimes lost. This is an
+        // upstream issue in libadwaita[1]. When this is resolved we
+        // can put a runtime version check here to avoid this workaround.
+        //
+        // Our workaround is to start a timer after 500ms to refocus
+        // the currently selected tab. We choose 500ms because the adw
+        // animation is 400ms.
+        //
+        // [1]: https://gitlab.gnome.org/GNOME/libadwaita/-/issues/670
+
+        // If we have an old timer remove it
+        const priv = self.private();
+        if (priv.tab_overview_focus_timer) |timer| {
+            _ = glib.Source.remove(timer);
+        }
+
+        // Restart our timer
+        priv.tab_overview_focus_timer = glib.timeoutAdd(
+            500,
+            tabOverviewFocusTimer,
+            self,
+        );
+    }
+
+    fn tabOverviewFocusTimer(
+        ud: ?*anyopaque,
+    ) callconv(.c) c_int {
+        const self: *Self = @ptrCast(@alignCast(ud orelse return 0));
+
+        // Always note our timer is removed
+        self.private().tab_overview_focus_timer = null;
+
+        // Get our currently active surface which should respect the newly
+        // selected tab. Grab focus.
+        const surface = self.getActiveSurface() orelse return 0;
+        surface.grabFocus();
+
+        // Remove the timer
+        return 0;
     }
 
     fn windowCloseRequest(
@@ -1105,6 +1157,7 @@ pub const Window = extern struct {
             // Template Callbacks
             class.bindTemplateCallback("new_tab", &btnNewTab);
             class.bindTemplateCallback("overview_create_tab", &tabOverviewCreateTab);
+            class.bindTemplateCallback("overview_notify_open", &tabOverviewOpen);
             class.bindTemplateCallback("close_request", &windowCloseRequest);
             class.bindTemplateCallback("close_page", &tabViewClosePage);
             class.bindTemplateCallback("page_attached", &tabViewPageAttached);
