@@ -807,6 +807,18 @@ pub const Window = extern struct {
         priv.tab_view.closePage(page);
     }
 
+    fn tabViewNPages(
+        _: *adw.TabView,
+        _: *gobject.ParamSpec,
+        self: *Self,
+    ) callconv(.c) void {
+        const priv = self.private();
+        if (priv.tab_view.getNPages() == 0) {
+            // If we have no pages left then we want to close window.
+            self.as(gtk.Window).close();
+        }
+    }
+
     fn surfaceClipboardWrite(
         _: *Surface,
         clipboard_type: apprt.Clipboard,
@@ -1013,9 +1025,10 @@ pub const Window = extern struct {
             // Template Callbacks
             class.bindTemplateCallback("close_request", &windowCloseRequest);
             class.bindTemplateCallback("close_page", &tabViewClosePage);
-            class.bindTemplateCallback("selected_page", &tabViewSelectedPage);
             class.bindTemplateCallback("page_attached", &tabViewPageAttached);
             class.bindTemplateCallback("page_detached", &tabViewPageDetached);
+            class.bindTemplateCallback("notify_n_pages", &tabViewNPages);
+            class.bindTemplateCallback("notify_selected_page", &tabViewSelectedPage);
             class.bindTemplateCallback("notify_config", &propConfig);
             class.bindTemplateCallback("notify_fullscreened", &propFullscreened);
             class.bindTemplateCallback("notify_maximized", &propMaximized);
