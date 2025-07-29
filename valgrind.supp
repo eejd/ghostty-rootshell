@@ -146,8 +146,8 @@
    GDK GLArea
    Memcheck:Leak
    match-leak-kinds: possible
-   fun:malloc
-   fun:g_malloc
+   fun:*alloc
+   ...
    fun:gdk_memory_texture_from_texture
    fun:gdk_gl_texture_release
    fun:delete_one_texture

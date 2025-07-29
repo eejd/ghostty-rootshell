@@ -616,6 +616,10 @@ pub const Window = extern struct {
     //---------------------------------------------------------------
     // Signal handlers
 
+    fn btnNewTab(_: *adw.SplitButton, self: *Window) callconv(.c) void {
+        self.performBindingAction(.new_tab);
+    }
+
     fn windowCloseRequest(
         _: *gtk.Window,
         self: *Self,
@@ -1087,6 +1091,7 @@ pub const Window = extern struct {
             class.bindTemplateChildPrivate("toast_overlay", .{});
 
             // Template Callbacks
+            class.bindTemplateCallback("new_tab", &btnNewTab);
             class.bindTemplateCallback("close_request", &windowCloseRequest);
             class.bindTemplateCallback("close_page", &tabViewClosePage);
             class.bindTemplateCallback("page_attached", &tabViewPageAttached);

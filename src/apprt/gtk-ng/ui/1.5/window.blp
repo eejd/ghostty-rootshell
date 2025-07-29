@@ -35,6 +35,7 @@ template $GhosttyWindow: Adw.ApplicationWindow {
 
         [start]
         Adw.SplitButton {
+          clicked => $new_tab();
           icon-name: "tab-new-symbolic";
           tooltip-text: _("New Tab");
           dropdown-tooltip: _("New Split");
