@@ -350,6 +350,63 @@ pub const Window = extern struct {
         return page;
     }
 
+    pub const SelectTab = union(enum) {
+        previous,
+        next,
+        last,
+        n: usize,
+    };
+
+    /// Select the tab as requested. Returns true if the tab selection
+    /// changed.
+    pub fn selectTab(self: *Self, n: SelectTab) bool {
+        const priv = self.private();
+        const tab_view = priv.tab_view;
+
+        // Get our current tab numeric position
+        const selected = tab_view.getSelectedPage() orelse return false;
+        const current = tab_view.getPagePosition(selected);
+
+        // Get our total
+        const total = tab_view.getNPages();
+
+        const goto: c_int = switch (n) {
+            .previous => if (current > 0)
+                current - 1
+            else
+                total - 1,
+
+            .next => if (current < total - 1)
+                current + 1
+            else
+                0,
+
+            .last => total - 1,
+
+            .n => |v| n: {
+                // 1-indexed
+                if (v == 0) return false;
+
+                const n_int = std.math.cast(
+                    c_int,
+                    v,
+                ) orelse return false;
+                break :n @min(n_int - 1, total - 1);
+            },
+        };
+        assert(goto >= 0);
+        assert(goto < total);
+
+        // If our target is the same as our current then we do nothing.
+        if (goto == current) return false;
+
+        // Add the page and select it
+        const page = tab_view.getNthPage(goto);
+        tab_view.setSelectedPage(page);
+
+        return true;
+    }
+
     /// Updates various appearance properties. This should always be safe
     /// to call multiple times. This should be called whenever a change
     /// happens that might affect how the window appears (config change,

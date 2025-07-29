@@ -497,6 +497,8 @@ pub const Application = extern struct {
                 value.config,
             ),
 
+            .goto_tab => return Action.gotoTab(target, value),
+
             .mouse_over_link => Action.mouseOverLink(target, value),
             .mouse_shape => Action.mouseShape(target, value),
             .mouse_visibility => Action.mouseVisibility(target, value),
@@ -535,7 +537,6 @@ pub const Application = extern struct {
             .toggle_fullscreen => Action.toggleFullscreen(target),
 
             // Unimplemented but todo on gtk-ng branch
-            .goto_tab,
             .move_tab,
             .new_split,
             .resize_split,
@@ -1213,6 +1214,32 @@ const Action = struct {
         switch (target) {
             .surface => |core| core.rt_surface.surface.setConfig(config_obj),
             .app => self.setConfig(config_obj),
+        }
+    }
+
+    pub fn gotoTab(
+        target: apprt.Target,
+        tab: apprt.action.GotoTab,
+    ) bool {
+        switch (target) {
+            .app => return false,
+            .surface => |core| {
+                const surface = core.rt_surface.surface;
+                const window = ext.getAncestor(
+                    Window,
+                    surface.as(gtk.Widget),
+                ) orelse {
+                    log.warn("surface is not in a window, ignoring new_tab", .{});
+                    return false;
+                };
+
+                return window.selectTab(switch (tab) {
+                    .previous => .previous,
+                    .next => .next,
+                    .last => .last,
+                    else => .{ .n = @intCast(@intFromEnum(tab)) },
+                });
+            },
         }
     }
 
