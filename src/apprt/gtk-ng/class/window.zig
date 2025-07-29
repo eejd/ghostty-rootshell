@@ -87,7 +87,7 @@ pub const Window = extern struct {
                     .default = build_config.is_debug,
                     .accessor = gobject.ext.typedAccessor(Self, bool, .{
                         .getter = struct {
-                            pub fn getter(_: *Window) bool {
+                            pub fn getter(_: *Self) bool {
                                 return build_config.is_debug;
                             }
                         }.getter,
@@ -309,7 +309,7 @@ pub const Window = extern struct {
     /// to call multiple times. This should be called whenever a change
     /// happens that might affect how the window appears (config change,
     /// fullscreen, etc.).
-    fn syncAppearance(self: *Window) void {
+    fn syncAppearance(self: *Self) void {
         // TODO: CSD/SSD
 
         // Trigger all our dynamic properties that depend on the config.
@@ -338,7 +338,7 @@ pub const Window = extern struct {
         }
     }
 
-    fn toggleCssClass(self: *Window, class: [:0]const u8, value: bool) void {
+    fn toggleCssClass(self: *Self, class: [:0]const u8, value: bool) void {
         const widget = self.as(gtk.Widget);
         if (value)
             widget.addCssClass(class.ptr)
@@ -348,7 +348,7 @@ pub const Window = extern struct {
 
     /// Perform a binding action on the window's active surface.
     fn performBindingAction(
-        self: *Window,
+        self: *Self,
         action: input.Binding.Action,
     ) void {
         const surface = self.getActiveSurface() orelse return;
@@ -365,7 +365,7 @@ pub const Window = extern struct {
     // This is not `pub` because we should be using signals emitted by
     // other widgets to trigger our toasts. Other objects should not
     // trigger toasts directly.
-    fn addToast(self: *Window, title: [*:0]const u8) void {
+    fn addToast(self: *Self, title: [*:0]const u8) void {
         const toast = adw.Toast.new(title);
         toast.setTimeout(3);
         self.private().toast_overlay.addToast(toast);
@@ -377,9 +377,17 @@ pub const Window = extern struct {
     /// Get the currently active surface. See the "active-surface" property.
     /// This does not ref the value.
     fn getActiveSurface(self: *Self) ?*Surface {
+        const tab = self.getSelectedTab() orelse return null;
+        return tab.getActiveSurface();
+    }
+
+    /// Get the currently selected tab as a Tab object.
+    fn getSelectedTab(self: *Self) ?*Tab {
         const priv = self.private();
-        _ = priv;
-        return null;
+        const page = priv.tab_view.getSelectedPage() orelse return null;
+        const child = page.getChild();
+        assert(gobject.ext.isA(child, Tab));
+        return gobject.ext.cast(Tab, child);
     }
 
     fn getHeaderbarVisible(self: *Self) bool {
