@@ -1008,10 +1008,6 @@ pub const Window = extern struct {
             class.bindTemplateCallback("selected_page", &tabViewSelectedPage);
             class.bindTemplateCallback("page_attached", &tabViewPageAttached);
             class.bindTemplateCallback("page_detached", &tabViewPageDetached);
-            class.bindTemplateCallback("surface_clipboard_write", &surfaceClipboardWrite);
-            class.bindTemplateCallback("surface_close_request", &surfaceCloseRequest);
-            class.bindTemplateCallback("surface_toggle_fullscreen", &surfaceToggleFullscreen);
-            class.bindTemplateCallback("surface_toggle_maximize", &surfaceToggleMaximize);
             class.bindTemplateCallback("notify_config", &propConfig);
             class.bindTemplateCallback("notify_fullscreened", &propFullscreened);
             class.bindTemplateCallback("notify_maximized", &propMaximized);

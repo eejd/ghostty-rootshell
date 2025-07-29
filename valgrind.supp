@@ -376,6 +376,7 @@
    Memcheck:Leak
    match-leak-kinds: possible
    fun:*alloc
+   ...
    fun:FcFontSet*
    ...
    fun:fc_thread_func
