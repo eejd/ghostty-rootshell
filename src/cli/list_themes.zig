@@ -209,7 +209,7 @@ const Preview = struct {
     text_input: vaxis.widgets.TextInput,
     theme_filter: ColorScheme,
 
-    pub fn init(allocator: std.mem.Allocator, themes: []ThemeListElement, colorScheme: ColorScheme) !*Preview {
+    pub fn init(allocator: std.mem.Allocator, themes: []ThemeListElement, theme_filter: ColorScheme) !*Preview {
         const self = try allocator.create(Preview);
 
         self.* = .{
@@ -226,7 +226,7 @@ const Preview = struct {
             .mode = .normal,
             .color_scheme = .light,
             .text_input = vaxis.widgets.TextInput.init(allocator, &self.vx.unicode),
-            .theme_filter = colorScheme,
+            .theme_filter = theme_filter,
         };
 
         try self.updateFiltered();
@@ -1617,8 +1617,8 @@ fn color(config: Config, palette: usize) vaxis.Color {
 
 const lorem_ipsum = @embedFile("lorem_ipsum.txt");
 
-fn preview(allocator: std.mem.Allocator, themes: []ThemeListElement, colorScheme: ColorScheme) !void {
-    var app = try Preview.init(allocator, themes, colorScheme);
+fn preview(allocator: std.mem.Allocator, themes: []ThemeListElement, theme_filter: ColorScheme) !void {
+    var app = try Preview.init(allocator, themes, theme_filter);
     defer app.deinit();
     try app.run();
 }
