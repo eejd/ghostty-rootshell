@@ -515,13 +515,17 @@ pub const Application = extern struct {
                 },
             ),
 
+            .open_config => return Action.openConfig(self),
+
+            .open_url => Action.openUrl(self, value),
+
             .pwd => Action.pwd(target, value),
+
+            .progress_report => return Action.progressReport(target, value),
 
             .quit => self.quit(),
 
             .quit_timer => try Action.quitTimer(self, value),
-
-            .progress_report => return Action.progressReport(target, value),
 
             .reload_config => try Action.reloadConfig(self, target, value),
 
@@ -544,7 +548,6 @@ pub const Application = extern struct {
             .resize_split,
             .equalize_splits,
             .goto_split,
-            .open_config,
             .inspector,
             .desktop_notification,
             .present_terminal,
@@ -555,7 +558,6 @@ pub const Application = extern struct {
             .prompt_title,
             .toggle_quick_terminal,
             .toggle_command_palette,
-            .open_url,
             => {
                 log.warn("unimplemented action={}", .{action});
                 return false;
@@ -825,6 +827,7 @@ pub const Application = extern struct {
         const actions = .{
             .{ "new-window", actionNewWindow, null },
             .{ "new-window-command", actionNewWindow, as_variant_type },
+            .{ "open-config", actionOpenConfig, null },
             .{ "quit", actionQuit, null },
             .{ "reload-config", actionReloadConfig, null },
         };
@@ -1145,6 +1148,14 @@ pub const Application = extern struct {
         }, .{ .forever = {} });
     }
 
+    pub fn actionOpenConfig(
+        _: *gio.SimpleAction,
+        _: ?*glib.Variant,
+        self: *Self,
+    ) callconv(.c) void {
+        _ = self.core().mailbox.push(.open_config, .forever);
+    }
+
     //----------------------------------------------------------------
     // Boilerplate/Noise
 
@@ -1373,6 +1384,37 @@ const Action = struct {
 
         // Show the window
         gtk.Window.present(win.as(gtk.Window));
+    }
+
+    pub fn openConfig(self: *Application) bool {
+        // Get the config file path
+        const alloc = self.allocator();
+        const path = configpkg.edit.openPath(alloc) catch |err| {
+            log.warn("error getting config file path: {}", .{err});
+            return false;
+        };
+        defer alloc.free(path);
+
+        // Open it using openURL. "path" isn't actually a URL but
+        // at the time of writing that works just fine for GTK.
+        openUrl(self, .{ .kind = .text, .url = path });
+        return true;
+    }
+
+    pub fn openUrl(
+        self: *Application,
+        value: apprt.action.OpenUrl,
+    ) void {
+        // TODO: use https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.OpenURI.html
+
+        // Fallback to the minimal cross-platform way of opening a URL.
+        // This is always a safe fallback and enables for example Windows
+        // to open URLs (GTK on Windows via WSL is a thing).
+        internal_os.open(
+            self.allocator(),
+            value.kind,
+            value.url,
+        ) catch |err| log.warn("unable to open url: {}", .{err});
     }
 
     pub fn pwd(
