@@ -497,6 +497,8 @@ pub const Application = extern struct {
                 value.config,
             ),
 
+            .desktop_notification => Action.desktopNotification(self, target, value),
+
             .goto_tab => return Action.gotoTab(target, value),
 
             .mouse_over_link => Action.mouseOverLink(target, value),
@@ -546,19 +548,20 @@ pub const Application = extern struct {
             .toggle_tab_overview => return Action.toggleTabOverview(target),
 
             // Unimplemented but todo on gtk-ng branch
+            .initial_size,
+            .size_limit,
+            .prompt_title,
+            .toggle_command_palette,
+            .inspector,
+            // TODO: splits
             .new_split,
             .resize_split,
             .equalize_splits,
             .goto_split,
-            .inspector,
-            .desktop_notification,
-            .initial_size,
-            .size_limit,
             .toggle_split_zoom,
-            .toggle_window_decorations,
-            .prompt_title,
+            // TODO: winproto
             .toggle_quick_terminal,
-            .toggle_command_palette,
+            .toggle_window_decorations,
             => {
                 log.warn("unimplemented action={}", .{action});
                 return false;
@@ -1273,6 +1276,48 @@ const Action = struct {
             .surface => |core| core.rt_surface.surface.setConfig(config_obj),
             .app => self.setConfig(config_obj),
         }
+    }
+
+    pub fn desktopNotification(
+        self: *Application,
+        target: apprt.Target,
+        n: apprt.action.DesktopNotification,
+    ) void {
+        // TODO: We should move the surface target to a function call
+        // on Surface and emit a signal that embedders can connect to. This
+        // will let us handle notifications differently depending on where
+        // a surface is presented. At the time of writing this, we always
+        // want to show the notification AND the logic below was directly
+        // ported from "legacy" GTK so this is fine, but I want to leave this
+        // note so we can do it one day.
+
+        // Set a default title if we don't already have one
+        const t = switch (n.title.len) {
+            0 => "Ghostty",
+            else => n.title,
+        };
+
+        const notification = gio.Notification.new(t);
+        defer notification.unref();
+        notification.setBody(n.body);
+
+        const icon = gio.ThemedIcon.new("com.mitchellh.ghostty");
+        defer icon.unref();
+        notification.setIcon(icon.as(gio.Icon));
+
+        const pointer = glib.Variant.newUint64(switch (target) {
+            .app => 0,
+            .surface => |v| @intFromPtr(v),
+        });
+        notification.setDefaultActionAndTargetValue(
+            "app.present-surface",
+            pointer,
+        );
+
+        // We set the notification ID to the body content. If the content is the
+        // same, this notification may replace a previous notification
+        const gio_app = self.as(gio.Application);
+        gio_app.sendNotification(n.body, notification);
     }
 
     pub fn gotoTab(
