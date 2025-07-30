@@ -955,6 +955,13 @@ pub const Window = extern struct {
             self,
             .{},
         );
+        _ = Surface.signals.@"present-request".connect(
+            surface,
+            *Self,
+            surfacePresentRequest,
+            self,
+            .{},
+        );
         _ = Surface.signals.@"clipboard-write".connect(
             surface,
             *Self,
@@ -1091,6 +1098,50 @@ pub const Window = extern struct {
             // The only one we care about!
             .window => self.as(gtk.Window).close(),
         }
+    }
+
+    fn surfacePresentRequest(
+        surface: *Surface,
+        self: *Self,
+    ) callconv(.c) void {
+        // Verify that this surface is actually in this window.
+        {
+            const surface_window = ext.getAncestor(
+                Self,
+                surface.as(gtk.Widget),
+            ) orelse {
+                log.warn(
+                    "present request called for non-existent surface",
+                    .{},
+                );
+                return;
+            };
+            if (surface_window != self) {
+                log.warn(
+                    "present request called for surface in different window",
+                    .{},
+                );
+                return;
+            }
+        }
+
+        // Get the tab for this surface.
+        const tab = ext.getAncestor(
+            Tab,
+            surface.as(gtk.Widget),
+        ) orelse {
+            log.warn("present request surface not found", .{});
+            return;
+        };
+
+        // Get the page that contains this tab
+        const priv = self.private();
+        const tab_view = priv.tab_view;
+        const page = tab_view.getPage(tab.as(gtk.Widget));
+        tab_view.setSelectedPage(page);
+
+        // Grab focus
+        surface.grabFocus();
     }
 
     fn surfaceToggleFullscreen(

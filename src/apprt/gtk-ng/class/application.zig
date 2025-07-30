@@ -497,6 +497,8 @@ pub const Application = extern struct {
                 value.config,
             ),
 
+            .desktop_notification => Action.desktopNotification(self, target, value),
+
             .goto_tab => return Action.gotoTab(target, value),
 
             .mouse_over_link => Action.mouseOverLink(target, value),
@@ -515,13 +517,19 @@ pub const Application = extern struct {
                 },
             ),
 
+            .open_config => return Action.openConfig(self),
+
+            .open_url => Action.openUrl(self, value),
+
             .pwd => Action.pwd(target, value),
+
+            .present_terminal => return Action.presentTerminal(target),
+
+            .progress_report => return Action.progressReport(target, value),
 
             .quit => self.quit(),
 
             .quit_timer => try Action.quitTimer(self, value),
-
-            .progress_report => return Action.progressReport(target, value),
 
             .reload_config => try Action.reloadConfig(self, target, value),
 
@@ -540,22 +548,20 @@ pub const Application = extern struct {
             .toggle_tab_overview => return Action.toggleTabOverview(target),
 
             // Unimplemented but todo on gtk-ng branch
+            .initial_size,
+            .size_limit,
+            .prompt_title,
+            .toggle_command_palette,
+            .inspector,
+            // TODO: splits
             .new_split,
             .resize_split,
             .equalize_splits,
             .goto_split,
-            .open_config,
-            .inspector,
-            .desktop_notification,
-            .present_terminal,
-            .initial_size,
-            .size_limit,
             .toggle_split_zoom,
-            .toggle_window_decorations,
-            .prompt_title,
+            // TODO: winproto
             .toggle_quick_terminal,
-            .toggle_command_palette,
-            .open_url,
+            .toggle_window_decorations,
             => {
                 log.warn("unimplemented action={}", .{action});
                 return false;
@@ -825,6 +831,8 @@ pub const Application = extern struct {
         const actions = .{
             .{ "new-window", actionNewWindow, null },
             .{ "new-window-command", actionNewWindow, as_variant_type },
+            .{ "open-config", actionOpenConfig, null },
+            .{ "present-surface", actionPresentSurface, t_variant_type },
             .{ "quit", actionQuit, null },
             .{ "reload-config", actionReloadConfig, null },
         };
@@ -1145,6 +1153,58 @@ pub const Application = extern struct {
         }, .{ .forever = {} });
     }
 
+    pub fn actionOpenConfig(
+        _: *gio.SimpleAction,
+        _: ?*glib.Variant,
+        self: *Self,
+    ) callconv(.c) void {
+        _ = self.core().mailbox.push(.open_config, .forever);
+    }
+
+    fn actionPresentSurface(
+        _: *gio.SimpleAction,
+        parameter_: ?*glib.Variant,
+        self: *Self,
+    ) callconv(.c) void {
+        const parameter = parameter_ orelse return;
+
+        const t = glib.ext.VariantType.newFor(u64);
+        defer glib.VariantType.free(t);
+
+        // Make sure that we've receiived a u64 from the system.
+        if (glib.Variant.isOfType(parameter, t) == 0) {
+            return;
+        }
+
+        // Convert that u64 to pointer to a core surface. A value of zero
+        // means that there was no target surface for the notification so
+        // we don't focus any surface.
+        //
+        // This is admittedly SUPER SUS and we should instead do what we
+        // do on macOS which is generate a UUID per surface and then pass
+        // that around. But, we do validate the pointer below so at worst
+        // this may result in focusing the wrong surface if the pointer was
+        // reused for a surface.
+        const ptr_int = parameter.getUint64();
+        if (ptr_int == 0) return;
+        const surface: *CoreSurface = @ptrFromInt(ptr_int);
+
+        // Send a message through the core app mailbox rather than presenting the
+        // surface directly so that it can validate that the surface pointer is
+        // valid. We could get an invalid pointer if a desktop notification outlives
+        // a Ghostty instance and a new one starts up, or there are multiple Ghostty
+        // instances running.
+        _ = self.core().mailbox.push(
+            .{
+                .surface_message = .{
+                    .surface = surface,
+                    .message = .present_surface,
+                },
+            },
+            .forever,
+        );
+    }
+
     //----------------------------------------------------------------
     // Boilerplate/Noise
 
@@ -1216,6 +1276,48 @@ const Action = struct {
             .surface => |core| core.rt_surface.surface.setConfig(config_obj),
             .app => self.setConfig(config_obj),
         }
+    }
+
+    pub fn desktopNotification(
+        self: *Application,
+        target: apprt.Target,
+        n: apprt.action.DesktopNotification,
+    ) void {
+        // TODO: We should move the surface target to a function call
+        // on Surface and emit a signal that embedders can connect to. This
+        // will let us handle notifications differently depending on where
+        // a surface is presented. At the time of writing this, we always
+        // want to show the notification AND the logic below was directly
+        // ported from "legacy" GTK so this is fine, but I want to leave this
+        // note so we can do it one day.
+
+        // Set a default title if we don't already have one
+        const t = switch (n.title.len) {
+            0 => "Ghostty",
+            else => n.title,
+        };
+
+        const notification = gio.Notification.new(t);
+        defer notification.unref();
+        notification.setBody(n.body);
+
+        const icon = gio.ThemedIcon.new("com.mitchellh.ghostty");
+        defer icon.unref();
+        notification.setIcon(icon.as(gio.Icon));
+
+        const pointer = glib.Variant.newUint64(switch (target) {
+            .app => 0,
+            .surface => |v| @intFromPtr(v),
+        });
+        notification.setDefaultActionAndTargetValue(
+            "app.present-surface",
+            pointer,
+        );
+
+        // We set the notification ID to the body content. If the content is the
+        // same, this notification may replace a previous notification
+        const gio_app = self.as(gio.Application);
+        gio_app.sendNotification(n.body, notification);
     }
 
     pub fn gotoTab(
@@ -1375,6 +1477,37 @@ const Action = struct {
         gtk.Window.present(win.as(gtk.Window));
     }
 
+    pub fn openConfig(self: *Application) bool {
+        // Get the config file path
+        const alloc = self.allocator();
+        const path = configpkg.edit.openPath(alloc) catch |err| {
+            log.warn("error getting config file path: {}", .{err});
+            return false;
+        };
+        defer alloc.free(path);
+
+        // Open it using openURL. "path" isn't actually a URL but
+        // at the time of writing that works just fine for GTK.
+        openUrl(self, .{ .kind = .text, .url = path });
+        return true;
+    }
+
+    pub fn openUrl(
+        self: *Application,
+        value: apprt.action.OpenUrl,
+    ) void {
+        // TODO: use https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.OpenURI.html
+
+        // Fallback to the minimal cross-platform way of opening a URL.
+        // This is always a safe fallback and enables for example Windows
+        // to open URLs (GTK on Windows via WSL is a thing).
+        internal_os.open(
+            self.allocator(),
+            value.kind,
+            value.url,
+        ) catch |err| log.warn("unable to open url: {}", .{err});
+    }
+
     pub fn pwd(
         target: apprt.Target,
         value: apprt.action.Pwd,
@@ -1401,6 +1534,18 @@ const Action = struct {
             .start => self.startQuitTimer(),
             .stop => self.stopQuitTimer(),
         }
+    }
+
+    pub fn presentTerminal(
+        target: apprt.Target,
+    ) bool {
+        return switch (target) {
+            .app => false,
+            .surface => |v| surface: {
+                v.rt_surface.surface.present();
+                break :surface true;
+            },
+        };
     }
 
     pub fn progressReport(
