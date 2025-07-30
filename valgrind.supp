@@ -135,11 +135,32 @@
    ...
    fun:gsk_gpu_node_processor_process
    fun:gsk_gpu_frame_render
-   fun:gsk_gpu_renderer_render
-   fun:gsk_renderer_render
-   fun:gtk_widget_render
-   fun:surface_render
   ...
+}
+
+{
+   GDK GLArea
+   Memcheck:Leak
+   match-leak-kinds: possible
+   fun:*alloc
+   ...
+   fun:gdk_memory_texture_from_texture
+   fun:gdk_gl_texture_release
+   fun:delete_one_texture
+   fun:g_list_foreach
+   fun:g_list_free_full
+   fun:gtk_gl_area_unrealize
+   ...
+}
+
+{
+   GDK GLArea Snapshot
+   Memcheck:Leak
+   match-leak-kinds: definite
+   fun:*alloc
+   ...
+   fun:gtk_gl_area_snapshot
+   ...
 }
 
 {
@@ -351,6 +372,7 @@
    Memcheck:Leak
    match-leak-kinds: possible
    fun:*alloc
+   ...
    fun:FcFontSet*
    ...
    fun:fc_thread_func

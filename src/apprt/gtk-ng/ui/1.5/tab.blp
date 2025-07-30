@@ -1,0 +1,15 @@
+using Gtk 4.0;
+
+template $GhosttyTab: Box {
+  styles [
+    "tab",
+  ]
+
+  hexpand: true;
+  vexpand: true;
+  // A tab currently just contains a surface directly. When we introduce
+  // splits we probably want to replace this with the split widget type.
+  $GhosttySurface surface {
+    close-request => $surface_close_request();
+  }
+}

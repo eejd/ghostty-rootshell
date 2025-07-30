@@ -22,6 +22,7 @@ const xev = @import("../../../global.zig").xev;
 const CoreConfig = configpkg.Config;
 const CoreSurface = @import("../../../Surface.zig");
 
+const ext = @import("../ext.zig");
 const adw_version = @import("../adw_version.zig");
 const gtk_version = @import("../gtk_version.zig");
 const winprotopkg = @import("../winproto.zig");
@@ -496,9 +497,15 @@ pub const Application = extern struct {
                 value.config,
             ),
 
+            .goto_tab => return Action.gotoTab(target, value),
+
             .mouse_over_link => Action.mouseOverLink(target, value),
             .mouse_shape => Action.mouseShape(target, value),
             .mouse_visibility => Action.mouseVisibility(target, value),
+
+            .move_tab => return Action.moveTab(target, value),
+
+            .new_tab => return Action.newTab(target),
 
             .new_window => try Action.newWindow(
                 self,
@@ -530,11 +537,9 @@ pub const Application = extern struct {
 
             .toggle_maximize => Action.toggleMaximize(target),
             .toggle_fullscreen => Action.toggleFullscreen(target),
+            .toggle_tab_overview => return Action.toggleTabOverview(target),
 
             // Unimplemented but todo on gtk-ng branch
-            .new_tab,
-            .goto_tab,
-            .move_tab,
             .new_split,
             .resize_split,
             .equalize_splits,
@@ -545,7 +550,6 @@ pub const Application = extern struct {
             .present_terminal,
             .initial_size,
             .size_limit,
-            .toggle_tab_overview,
             .toggle_split_zoom,
             .toggle_window_decorations,
             .prompt_title,
@@ -1214,6 +1218,32 @@ const Action = struct {
         }
     }
 
+    pub fn gotoTab(
+        target: apprt.Target,
+        tab: apprt.action.GotoTab,
+    ) bool {
+        switch (target) {
+            .app => return false,
+            .surface => |core| {
+                const surface = core.rt_surface.surface;
+                const window = ext.getAncestor(
+                    Window,
+                    surface.as(gtk.Widget),
+                ) orelse {
+                    log.warn("surface is not in a window, ignoring new_tab", .{});
+                    return false;
+                };
+
+                return window.selectTab(switch (tab) {
+                    .previous => .previous,
+                    .next => .next,
+                    .last => .last,
+                    else => .{ .n = @intCast(@intFromEnum(tab)) },
+                });
+            },
+        }
+    }
+
     pub fn mouseOverLink(
         target: apprt.Target,
         value: apprt.action.MouseOverLink,
@@ -1272,11 +1302,60 @@ const Action = struct {
         }
     }
 
+    pub fn moveTab(
+        target: apprt.Target,
+        value: apprt.action.MoveTab,
+    ) bool {
+        switch (target) {
+            .app => return false,
+            .surface => |core| {
+                const surface = core.rt_surface.surface;
+                const window = ext.getAncestor(
+                    Window,
+                    surface.as(gtk.Widget),
+                ) orelse {
+                    log.warn("surface is not in a window, ignoring new_tab", .{});
+                    return false;
+                };
+
+                return window.moveTab(
+                    surface,
+                    @intCast(value.amount),
+                );
+            },
+        }
+    }
+
+    pub fn newTab(target: apprt.Target) bool {
+        switch (target) {
+            .app => {
+                log.warn("new tab to app is unexpected", .{});
+                return false;
+            },
+
+            .surface => |core| {
+                // Get the window ancestor of the surface. Surfaces shouldn't
+                // be aware they might be in windows but at the app level we
+                // can do this.
+                const surface = core.rt_surface.surface;
+                const window = ext.getAncestor(
+                    Window,
+                    surface.as(gtk.Widget),
+                ) orelse {
+                    log.warn("surface is not in a window, ignoring new_tab", .{});
+                    return false;
+                };
+                window.newTab(core);
+                return true;
+            },
+        }
+    }
+
     pub fn newWindow(
         self: *Application,
         parent: ?*CoreSurface,
     ) !void {
-        const win = Window.new(self, parent);
+        const win = Window.new(self);
 
         // Setup a binding so that whenever our config changes so does the
         // window. There's never a time when the window config should be out
@@ -1288,6 +1367,9 @@ const Action = struct {
             "config",
             .{},
         );
+
+        // Create a new tab
+        win.newTab(parent);
 
         // Show the window
         gtk.Window.present(win.as(gtk.Window));
@@ -1432,6 +1514,25 @@ const Action = struct {
         switch (target) {
             .app => {},
             .surface => |v| v.rt_surface.surface.toggleMaximize(),
+        }
+    }
+
+    pub fn toggleTabOverview(target: apprt.Target) bool {
+        switch (target) {
+            .app => return false,
+            .surface => |core| {
+                const surface = core.rt_surface.surface;
+                const window = ext.getAncestor(
+                    Window,
+                    surface.as(gtk.Widget),
+                ) orelse {
+                    log.warn("surface is not in a window, ignoring new_tab", .{});
+                    return false;
+                };
+
+                window.toggleTabOverview();
+                return true;
+            },
         }
     }
 };

@@ -16,40 +16,80 @@ template $GhosttyWindow: Adw.ApplicationWindow {
   // GTK4 grabs F10 input by default to focus the menubar icon. We want
   // to disable this so that terminal programs can capture F10 (such as htop)
   handle-menubar-accel: false;
-  title: bind (template.active-surface as <$GhosttySurface>).title;
 
-  content: Box {
-    orientation: vertical;
+  content: Adw.TabOverview tab_overview {
+    create-tab => $overview_create_tab();
+    notify::open => $overview_notify_open();
+    enable-new-tab: true;
+    view: tab_view;
 
-    Adw.HeaderBar {
-      visible: bind template.headerbar-visible;
+    Adw.ToolbarView toolbar {
+      top-bar-style: bind template.toolbar-style;
+      bottom-bar-style: bind template.toolbar-style;
 
-      title-widget: Adw.WindowTitle {
-        title: bind (template.active-surface as <$GhosttySurface>).title;
-      };
+      [top]
+      Adw.HeaderBar {
+        visible: bind template.headerbar-visible;
 
-      [end]
-      Gtk.Box {
-        Gtk.MenuButton {
-          notify::active => $notify_menu_active();
-          icon-name: "open-menu-symbolic";
-          menu-model: main_menu;
-          tooltip-text: _("Main Menu");
-          can-focus: false;
+        title-widget: Adw.WindowTitle {
+          title: bind template.title;
+        };
+
+        [start]
+        Adw.SplitButton {
+          clicked => $new_tab();
+          icon-name: "tab-new-symbolic";
+          tooltip-text: _("New Tab");
+          dropdown-tooltip: _("New Split");
+          menu-model: split_menu;
+        }
+
+        [end]
+        Gtk.Box {
+          Gtk.ToggleButton {
+            icon-name: "view-grid-symbolic";
+            tooltip-text: _("View Open Tabs");
+            active: bind tab_overview.open bidirectional;
+            can-focus: false;
+            focus-on-click: false;
+          }
+
+          Gtk.MenuButton {
+            notify::active => $notify_menu_active();
+            icon-name: "open-menu-symbolic";
+            menu-model: main_menu;
+            tooltip-text: _("Main Menu");
+            can-focus: false;
+          }
         }
       }
-    }
 
-    $GhosttyDebugWarning {
-      visible: bind template.debug;
-    }
+      [top]
+      Adw.TabBar tab_bar {
+        autohide: bind template.tabs-autohide;
+        expand-tabs: bind template.tabs-wide;
+        view: tab_view;
+        visible: bind template.tabs-visible;
+      }
 
-    Adw.ToastOverlay toast_overlay {
-      $GhosttySurface surface {
-        close-request => $surface_close_request();
-        clipboard-write => $surface_clipboard_write();
-        toggle-fullscreen => $surface_toggle_fullscreen();
-        toggle-maximize => $surface_toggle_maximize();
+      Box {
+        orientation: vertical;
+
+        $GhosttyDebugWarning {
+          visible: bind template.debug;
+        }
+
+        Adw.ToastOverlay toast_overlay {
+          Adw.TabView tab_view {
+            notify::n-pages => $notify_n_pages();
+            notify::selected-page => $notify_selected_page();
+            close-page => $close_page();
+            page-attached => $page_attached();
+            page-detached => $page_detached();
+            create-window => $tab_create_window();
+            shortcuts: none;
+          }
+        }
       }
     }
   };
