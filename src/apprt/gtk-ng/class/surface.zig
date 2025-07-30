@@ -975,7 +975,13 @@ pub const Surface = extern struct {
     }
 
     pub fn getSize(self: *Self) apprt.SurfaceSize {
-        return self.private().size;
+        const priv = self.private();
+        // By the time this is called, we should be in a widget tree.
+        // This should not be called before that. We ensure this by initializing
+        // the surface in `glareaResize`. This is VERY important because it
+        // avoids the pty having an incorrect initial size.
+        assert(priv.size.width >= 0 and priv.size.height >= 0);
+        return priv.size;
     }
 
     pub fn getCursorPos(self: *Self) apprt.CursorPos {
@@ -1072,12 +1078,7 @@ pub const Surface = extern struct {
         priv.mouse_shape = .text;
         priv.mouse_hidden = false;
         priv.focused = true;
-        priv.size = .{
-            // Funky numbers on purpose so they stand out if for some reason
-            // our size doesn't get properly set.
-            .width = 111,
-            .height = 111,
-        };
+        priv.size = .{ .width = 0, .height = 0 };
 
         // If our configuration is null then we get the configuration
         // from the application.
@@ -1839,15 +1840,32 @@ pub const Surface = extern struct {
     ) callconv(.c) void {
         log.debug("realize", .{});
 
-        // Setup our core surface
-        self.realizeSurface() catch |err| {
-            log.warn("surface failed to realize err={}", .{err});
-        };
+        // If we already have an initialized surface then we notify it.
+        // If we don't, we'll initialize it on the first resize so we have
+        // our proper initial dimensions.
+        const priv = self.private();
+        if (priv.core_surface) |v| realize: {
+            // We need to make the context current so we can call GL functions.
+            // This is required for all surface operations.
+            priv.gl_area.makeCurrent();
+            if (priv.gl_area.getError()) |err| {
+                log.warn("failed to make GL context current: {s}", .{err.f_message orelse "(no message)"});
+                log.warn("this error is usually due to a driver or gtk bug", .{});
+                log.warn("this is a common cause of this issue: https://gitlab.gnome.org/GNOME/gtk/-/issues/4950", .{});
+                break :realize;
+            }
+
+            v.renderer.displayRealized() catch |err| {
+                log.warn("core displayRealized failed err={}", .{err});
+                break :realize;
+            };
+
+            self.redraw();
+        }
 
         // Setup our input method. We do this here because this will
         // create a strong reference back to ourself and we want to be
         // able to release that in unrealize.
-        const priv = self.private();
         priv.im_context.as(gtk.IMContext).setClientWidget(self.as(gtk.Widget));
     }
 
@@ -1949,49 +1967,24 @@ pub const Surface = extern struct {
 
             // Setup our resize overlay if configured
             self.resizeOverlaySchedule();
-        }
-    }
 
-    fn resizeOverlaySchedule(self: *Self) void {
-        const priv = self.private();
-        const surface = priv.core_surface orelse return;
-
-        // Only show the resize overlay if its enabled
-        const config = if (priv.config) |c| c.get() else return;
-        switch (config.@"resize-overlay") {
-            .always, .@"after-first" => {},
-            .never => return,
+            return;
         }
 
-        // If we have resize overlays enabled, setup an idler
-        // to show that. We do this in an idle tick because doing it
-        // during the resize results in flickering.
-        var buf: [32]u8 = undefined;
-        priv.resize_overlay.setLabel(text: {
-            const grid_size = surface.size.grid();
-            break :text std.fmt.bufPrintZ(
-                &buf,
-                "{d} x {d}",
-                .{
-                    grid_size.columns,
-                    grid_size.rows,
-                },
-            ) catch |err| err: {
-                log.warn("unable to format text: {}", .{err});
-                break :err "";
-            };
-        });
-        priv.resize_overlay.schedule();
+        // If we don't have a surface, then we initialize it.
+        self.initSurface() catch |err| {
+            log.warn("surface failed to initialize err={}", .{err});
+        };
     }
 
-    const RealizeError = Allocator.Error || error{
+    const InitError = Allocator.Error || error{
         GLAreaError,
-        RendererError,
         SurfaceError,
     };
 
-    fn realizeSurface(self: *Self) RealizeError!void {
+    fn initSurface(self: *Self) InitError!void {
         const priv = self.private();
+        assert(priv.core_surface == null);
         const gl_area = priv.gl_area;
 
         // We need to make the context current so we can call GL functions.
@@ -2002,16 +1995,6 @@ pub const Surface = extern struct {
             log.warn("this error is usually due to a driver or gtk bug", .{});
             log.warn("this is a common cause of this issue: https://gitlab.gnome.org/GNOME/gtk/-/issues/4950", .{});
             return error.GLAreaError;
-        }
-
-        // If we already have an initialized surface then we just notify.
-        if (priv.core_surface) |v| {
-            v.renderer.displayRealized() catch |err| {
-                log.warn("core displayRealized failed err={}", .{err});
-                return error.RendererError;
-            };
-            self.redraw();
-            return;
         }
 
         const app = Application.default();
@@ -2055,6 +2038,38 @@ pub const Surface = extern struct {
 
         // Store it!
         priv.core_surface = surface;
+    }
+
+    fn resizeOverlaySchedule(self: *Self) void {
+        const priv = self.private();
+        const surface = priv.core_surface orelse return;
+
+        // Only show the resize overlay if its enabled
+        const config = if (priv.config) |c| c.get() else return;
+        switch (config.@"resize-overlay") {
+            .always, .@"after-first" => {},
+            .never => return,
+        }
+
+        // If we have resize overlays enabled, setup an idler
+        // to show that. We do this in an idle tick because doing it
+        // during the resize results in flickering.
+        var buf: [32]u8 = undefined;
+        priv.resize_overlay.setLabel(text: {
+            const grid_size = surface.size.grid();
+            break :text std.fmt.bufPrintZ(
+                &buf,
+                "{d} x {d}",
+                .{
+                    grid_size.columns,
+                    grid_size.rows,
+                },
+            ) catch |err| err: {
+                log.warn("unable to format text: {}", .{err});
+                break :err "";
+            };
+        });
+        priv.resize_overlay.schedule();
     }
 
     fn ecUrlMouseEnter(

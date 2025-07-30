@@ -556,6 +556,13 @@ pub const Application = extern struct {
             .toggle_quick_terminal,
             .toggle_command_palette,
             .open_url,
+            => {
+                log.warn("unimplemented action={}", .{action});
+                return false;
+            },
+
+            // Unimplemented
+            .secure_input,
             .close_all_windows,
             .float_window,
             .toggle_visibility,
@@ -568,13 +575,6 @@ pub const Application = extern struct {
             .check_for_updates,
             .undo,
             .redo,
-            => {
-                log.warn("unimplemented action={}", .{action});
-                return false;
-            },
-
-            // Unimplemented
-            .secure_input,
             => {
                 log.warn("unimplemented action={}", .{action});
                 return false;
