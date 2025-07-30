@@ -15,7 +15,7 @@ help_strings: HelpStrings,
 metallib: ?*MetallibStep,
 unicode_tables: UnicodeTables,
 framedata: GhosttyFrameData,
-uucode_table_data: std.Build.LazyPath,
+uucode_tables_zig: std.Build.LazyPath,
 
 /// Used to keep track of a list of file sources.
 pub const LazyPathList = std.ArrayList(std.Build.LazyPath);
@@ -26,26 +26,12 @@ pub fn init(b: *std.Build, cfg: *const Config) !SharedDeps {
         .help_strings = try .init(b, cfg),
         .unicode_tables = try .init(b),
         .framedata = try .init(b),
-        .uucode_table_data = b.dependency("uucode", .{
-            // TODO: i'll add a nicer option to configure the tables rather
-            // than needing to type out the zig code as a string.
-            .@"table_configs.zig" = @as(
-                []const u8,
-                \\const types = @import("types.zig");
-                \\const config = @import("config.zig");
-                \\
-                \\pub const configs = [_]types.TableConfig{
-                \\    .override(&config.default, .{
-                \\        .fields = &.{
-                \\            "general_category",
-                \\            "has_emoji_presentation",
-                \\        },
-                \\    }),
-                \\};
-                \\
-                ,
-            ),
-        }).namedLazyPath("table_data.zig"),
+        .uucode_tables_zig = b.dependency("uucode", .{
+            .table_0_fields = @as([]const []const u8, &[_][]const u8{
+                "general_category",
+                "has_emoji_presentation",
+            }),
+        }).namedLazyPath("tables.zig"),
 
         // Setup by retarget
         .options = undefined,
@@ -439,7 +425,7 @@ pub fn add(
     if (b.lazyDependency("uucode", .{
         .target = target,
         .optimize = optimize,
-        .@"table_data.zig" = self.uucode_table_data,
+        .@"tables.zig" = self.uucode_tables_zig,
     })) |dep| {
         step.root_module.addImport("uucode", dep.module("uucode"));
     }
