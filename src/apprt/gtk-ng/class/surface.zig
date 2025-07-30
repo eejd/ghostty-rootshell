@@ -285,6 +285,19 @@ pub const Surface = extern struct {
             );
         };
 
+        /// Emitted when the focus wants to be brought to the top and
+        /// focused.
+        pub const @"present-request" = struct {
+            pub const name = "present-request";
+            pub const connect = impl.connect;
+            const impl = gobject.ext.defineSignal(
+                name,
+                Self,
+                &.{},
+                void,
+            );
+        };
+
         /// Emitted when this surface requests its container to toggle its
         /// fullscreen state.
         pub const @"toggle-fullscreen" = struct {
@@ -576,6 +589,17 @@ pub const Surface = extern struct {
         priv.progress_bar_timer = null;
         self.setProgressReport(.{ .state = .remove });
         return @intFromBool(glib.SOURCE_REMOVE);
+    }
+
+    /// Request that this terminal come to the front and become focused.
+    /// It is up to the embedding widget to react to this.
+    pub fn present(self: *Self) void {
+        signals.@"present-request".impl.emit(
+            self,
+            null,
+            .{},
+            null,
+        );
     }
 
     /// Key press event (press or release).
@@ -2173,6 +2197,7 @@ pub const Surface = extern struct {
             signals.bell.impl.register(.{});
             signals.@"clipboard-read".impl.register(.{});
             signals.@"clipboard-write".impl.register(.{});
+            signals.@"present-request".impl.register(.{});
             signals.@"toggle-fullscreen".impl.register(.{});
             signals.@"toggle-maximize".impl.register(.{});
 

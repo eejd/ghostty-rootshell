@@ -521,6 +521,8 @@ pub const Application = extern struct {
 
             .pwd => Action.pwd(target, value),
 
+            .present_terminal => return Action.presentTerminal(target),
+
             .progress_report => return Action.progressReport(target, value),
 
             .quit => self.quit(),
@@ -550,7 +552,6 @@ pub const Application = extern struct {
             .goto_split,
             .inspector,
             .desktop_notification,
-            .present_terminal,
             .initial_size,
             .size_limit,
             .toggle_split_zoom,
@@ -828,6 +829,7 @@ pub const Application = extern struct {
             .{ "new-window", actionNewWindow, null },
             .{ "new-window-command", actionNewWindow, as_variant_type },
             .{ "open-config", actionOpenConfig, null },
+            .{ "present-surface", actionPresentSurface, t_variant_type },
             .{ "quit", actionQuit, null },
             .{ "reload-config", actionReloadConfig, null },
         };
@@ -1156,6 +1158,50 @@ pub const Application = extern struct {
         _ = self.core().mailbox.push(.open_config, .forever);
     }
 
+    fn actionPresentSurface(
+        _: *gio.SimpleAction,
+        parameter_: ?*glib.Variant,
+        self: *Self,
+    ) callconv(.c) void {
+        const parameter = parameter_ orelse return;
+
+        const t = glib.ext.VariantType.newFor(u64);
+        defer glib.VariantType.free(t);
+
+        // Make sure that we've receiived a u64 from the system.
+        if (glib.Variant.isOfType(parameter, t) == 0) {
+            return;
+        }
+
+        // Convert that u64 to pointer to a core surface. A value of zero
+        // means that there was no target surface for the notification so
+        // we don't focus any surface.
+        //
+        // This is admittedly SUPER SUS and we should instead do what we
+        // do on macOS which is generate a UUID per surface and then pass
+        // that around. But, we do validate the pointer below so at worst
+        // this may result in focusing the wrong surface if the pointer was
+        // reused for a surface.
+        const ptr_int = parameter.getUint64();
+        if (ptr_int == 0) return;
+        const surface: *CoreSurface = @ptrFromInt(ptr_int);
+
+        // Send a message through the core app mailbox rather than presenting the
+        // surface directly so that it can validate that the surface pointer is
+        // valid. We could get an invalid pointer if a desktop notification outlives
+        // a Ghostty instance and a new one starts up, or there are multiple Ghostty
+        // instances running.
+        _ = self.core().mailbox.push(
+            .{
+                .surface_message = .{
+                    .surface = surface,
+                    .message = .present_surface,
+                },
+            },
+            .forever,
+        );
+    }
+
     //----------------------------------------------------------------
     // Boilerplate/Noise
 
@@ -1443,6 +1489,18 @@ const Action = struct {
             .start => self.startQuitTimer(),
             .stop => self.stopQuitTimer(),
         }
+    }
+
+    pub fn presentTerminal(
+        target: apprt.Target,
+    ) bool {
+        return switch (target) {
+            .app => false,
+            .surface => |v| surface: {
+                v.rt_surface.surface.present();
+                break :surface true;
+            },
+        };
     }
 
     pub fn progressReport(
