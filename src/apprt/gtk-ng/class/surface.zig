@@ -16,6 +16,7 @@ const renderer = @import("../../../renderer.zig");
 const terminal = @import("../../../terminal/main.zig");
 const CoreSurface = @import("../../../Surface.zig");
 const gresource = @import("../build/gresource.zig");
+const ext = @import("../ext.zig");
 const adw_version = @import("../adw_version.zig");
 const gtk_key = @import("../key.zig");
 const ApprtSurface = @import("../Surface.zig");
@@ -71,6 +72,20 @@ pub const Surface = extern struct {
                         &Private.offset,
                         "child_exited",
                     ),
+                },
+            );
+        };
+
+        pub const @"default-size" = struct {
+            pub const name = "default-size";
+            const impl = gobject.ext.defineProperty(
+                name,
+                Self,
+                ?*apprt.action.InitialSize,
+                .{
+                    .nick = "Default Size",
+                    .blurb = "The default size of the window for this surface.",
+                    .accessor = C.privateBoxedFieldAccessor("default_size"),
                 },
             );
         };
@@ -332,6 +347,9 @@ pub const Surface = extern struct {
         /// The cgroup created for this surface. This will be created
         /// if `Application.transient_cgroup_base` is set.
         cgroup_path: ?[]const u8 = null,
+
+        /// The default size for a window that embeds this surface.
+        default_size: ?*apprt.action.InitialSize = null,
 
         /// The requested font size. This only applies to initialization
         /// and has no effect later.
@@ -1182,6 +1200,10 @@ pub const Surface = extern struct {
             glib.free(@constCast(@ptrCast(v)));
             priv.mouse_hover_url = null;
         }
+        if (priv.default_size) |v| {
+            ext.boxedFree(apprt.action.InitialSize, v);
+            priv.default_size = null;
+        }
         if (priv.font_size_request) |v| {
             glib.ext.destroy(v);
             priv.font_size_request = null;
@@ -1221,6 +1243,28 @@ pub const Surface = extern struct {
         if (priv.config) |c| c.unref();
         priv.config = config.ref();
         self.as(gobject.Object).notifyByPspec(properties.config.impl.param_spec);
+    }
+
+    /// Return the default size, if set.
+    pub fn getDefaultSize(self: *Self) ?*apprt.action.InitialSize {
+        const priv = self.private();
+        return priv.default_size;
+    }
+
+    /// Set the default size for a window that contains this surface.
+    /// This is up to the embedding widget to respect this. Generally, only
+    /// the first surface in a window respects this.
+    pub fn setDefaultSize(self: *Self, width: u32, height: u32) void {
+        const priv = self.private();
+        if (priv.default_size) |v| ext.boxedFree(
+            apprt.action.InitialSize,
+            v,
+        );
+        priv.default_size = ext.boxedCopy(
+            apprt.action.InitialSize,
+            &.{ .width = width, .height = height },
+        );
+        self.as(gobject.Object).notifyByPspec(properties.@"default-size".impl.param_spec);
     }
 
     fn propConfig(
@@ -2182,6 +2226,7 @@ pub const Surface = extern struct {
             gobject.ext.registerProperties(class, &.{
                 properties.config.impl,
                 properties.@"child-exited".impl,
+                properties.@"default-size".impl,
                 properties.@"font-size-request".impl,
                 properties.focused.impl,
                 properties.@"mouse-shape".impl,

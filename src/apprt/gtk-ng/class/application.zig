@@ -501,6 +501,8 @@ pub const Application = extern struct {
 
             .goto_tab => return Action.gotoTab(target, value),
 
+            .initial_size => return Action.initialSize(target, value),
+
             .mouse_over_link => Action.mouseOverLink(target, value),
             .mouse_shape => Action.mouseShape(target, value),
             .mouse_visibility => Action.mouseVisibility(target, value),
@@ -548,7 +550,6 @@ pub const Application = extern struct {
             .toggle_tab_overview => return Action.toggleTabOverview(target),
 
             // Unimplemented but todo on gtk-ng branch
-            .initial_size,
             .size_limit,
             .prompt_title,
             .toggle_command_palette,
@@ -1342,6 +1343,23 @@ const Action = struct {
                     .last => .last,
                     else => .{ .n = @intCast(@intFromEnum(tab)) },
                 });
+            },
+        }
+    }
+
+    pub fn initialSize(
+        target: apprt.Target,
+        value: apprt.action.InitialSize,
+    ) bool {
+        switch (target) {
+            .app => return false,
+            .surface => |core| {
+                const surface = core.rt_surface.surface;
+                surface.setDefaultSize(
+                    value.width,
+                    value.height,
+                );
+                return true;
             },
         }
     }
