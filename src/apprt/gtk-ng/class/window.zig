@@ -983,6 +983,13 @@ pub const Window = extern struct {
             self,
             .{},
         );
+        _ = gobject.Object.signals.notify.connect(
+            surface,
+            *Self,
+            surfaceDefaultSize,
+            self,
+            .{ .detail = "default-size" },
+        );
     }
 
     fn tabViewPageDetached(
@@ -1170,6 +1177,23 @@ pub const Window = extern struct {
         }
 
         // We react to the changes in the propMaximized callback
+    }
+
+    fn surfaceDefaultSize(
+        surface: *Surface,
+        _: *gobject.ParamSpec,
+        self: *Self,
+    ) callconv(.c) void {
+        const size = surface.getDefaultSize() orelse return;
+
+        // We previously gated this on whether this was called before but
+        // its useful to always set this to whatever the expected value is
+        // so we can do a "return to default size" later. This call only
+        // affects the window on first load. It won't resize it again later.
+        self.as(gtk.Window).setDefaultSize(
+            @intCast(size.width),
+            @intCast(size.height),
+        );
     }
 
     fn actionAbout(
