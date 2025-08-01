@@ -15,6 +15,7 @@ const ext = @import("../ext.zig");
 const gtk_version = @import("../gtk_version.zig");
 const adw_version = @import("../adw_version.zig");
 const gresource = @import("../build/gresource.zig");
+const winprotopkg = @import("../winproto.zig");
 const Common = @import("../class.zig").Common;
 const Config = @import("config.zig").Config;
 const Application = @import("application.zig").Application;
@@ -131,6 +132,26 @@ pub const Window = extern struct {
             );
         };
 
+        pub const @"quick-terminal" = struct {
+            pub const name = "quick-terminal";
+            const impl = gobject.ext.defineProperty(
+                name,
+                Self,
+                bool,
+                .{
+                    .nick = "Quick Terminal",
+                    .blurb = "Whether this window behaves like a quick terminal.",
+                    .default = true,
+                    .accessor = gobject.ext.privateFieldAccessor(
+                        Self,
+                        Private,
+                        &Private.offset,
+                        "quick_terminal",
+                    ),
+                },
+            );
+        };
+
         pub const @"tabs-autohide" = struct {
             pub const name = "tabs-autohide";
             const impl = gobject.ext.defineProperty(
@@ -205,11 +226,18 @@ pub const Window = extern struct {
     };
 
     const Private = struct {
+        /// Whether this window is a quick terminal. If it is then it
+        /// behaves slightly differently under certain scenarios.
+        quick_terminal: bool = false,
+
         /// Binding group for our active tab.
         tab_bindings: *gobject.BindingGroup,
 
         /// The configuration that this surface is using.
         config: ?*Config = null,
+
+        /// State and logic for windowing protocol for a window.
+        winproto: winprotopkg.Window,
 
         /// Kind of hacky to have this but this lets us know if we've
         /// initialized any single surface yet. We need this because we
@@ -252,6 +280,10 @@ pub const Window = extern struct {
             const app = Application.default();
             priv.config = app.getConfig();
         }
+
+        // We initialize our windowing protocol to none because we can't
+        // actually initialize this until we get realized.
+        priv.winproto = .none;
 
         // Add our dev CSS class if we're in debug mode.
         if (comptime build_config.is_debug) {
@@ -535,11 +567,22 @@ pub const Window = extern struct {
     //---------------------------------------------------------------
     // Properties
 
+    /// Whether this terminal is a quick terminal or not.
+    pub fn isQuickTerminal(self: *Self) bool {
+        return self.private().quick_terminal;
+    }
+
     /// Get the currently active surface. See the "active-surface" property.
     /// This does not ref the value.
     fn getActiveSurface(self: *Self) ?*Surface {
         const tab = self.getSelectedTab() orelse return null;
         return tab.getActiveSurface();
+    }
+
+    /// Returns the configuration for this window. The reference count
+    /// is not increased.
+    pub fn getConfig(self: *Self) ?*Config {
+        return self.private().config;
     }
 
     /// Get the currently selected tab as a Tab object.
@@ -731,6 +774,7 @@ pub const Window = extern struct {
     fn finalize(self: *Self) callconv(.C) void {
         const priv = self.private();
         priv.tab_bindings.unref();
+        priv.winproto.deinit(Application.default().allocator());
 
         gobject.Object.virtual_methods.finalize.call(
             Class.parent,
@@ -740,6 +784,26 @@ pub const Window = extern struct {
 
     //---------------------------------------------------------------
     // Signal handlers
+
+    fn windowRealize(_: *gtk.Widget, self: *Window) callconv(.c) void {
+        const app = Application.default();
+
+        // Initialize our window protocol logic
+        if (winprotopkg.Window.init(
+            app.allocator(),
+            app.winproto(),
+            self,
+        )) |wp| {
+            self.private().winproto = wp;
+        } else |err| {
+            log.warn("failed to initialize window protocol error={}", .{err});
+            return;
+        }
+
+        // When we are realized we always setup our appearance since this
+        // calls some winproto functions.
+        self.syncAppearance();
+    }
 
     fn btnNewTab(_: *adw.SplitButton, self: *Self) callconv(.c) void {
         self.performBindingAction(.new_tab);
@@ -1376,6 +1440,7 @@ pub const Window = extern struct {
             class.bindTemplateChildPrivate("toast_overlay", .{});
 
             // Template Callbacks
+            class.bindTemplateCallback("realize", &windowRealize);
             class.bindTemplateCallback("new_tab", &btnNewTab);
             class.bindTemplateCallback("overview_create_tab", &tabOverviewCreateTab);
             class.bindTemplateCallback("overview_notify_open", &tabOverviewOpen);
