@@ -81,7 +81,7 @@ pub const Surface = extern struct {
             const impl = gobject.ext.defineProperty(
                 name,
                 Self,
-                ?*apprt.action.InitialSize,
+                ?*Size,
                 .{
                     .nick = "Default Size",
                     .blurb = "The default size of the window for this surface.",
@@ -120,6 +120,20 @@ pub const Surface = extern struct {
                         &Private.offset,
                         "focused",
                     ),
+                },
+            );
+        };
+
+        pub const @"min-size" = struct {
+            pub const name = "min-size";
+            const impl = gobject.ext.defineProperty(
+                name,
+                Self,
+                ?*Size,
+                .{
+                    .nick = "Minimum Size",
+                    .blurb = "The minimum size of the surface.",
+                    .accessor = C.privateBoxedFieldAccessor("min_size"),
                 },
             );
         };
@@ -300,6 +314,18 @@ pub const Surface = extern struct {
             );
         };
 
+        /// Emitted after the surface is initialized.
+        pub const init = struct {
+            pub const name = "init";
+            pub const connect = impl.connect;
+            const impl = gobject.ext.defineSignal(
+                name,
+                Self,
+                &.{},
+                void,
+            );
+        };
+
         /// Emitted when the focus wants to be brought to the top and
         /// focused.
         pub const @"present-request" = struct {
@@ -349,7 +375,11 @@ pub const Surface = extern struct {
         cgroup_path: ?[]const u8 = null,
 
         /// The default size for a window that embeds this surface.
-        default_size: ?*apprt.action.InitialSize = null,
+        default_size: ?*Size = null,
+
+        /// The minimum size for this surface. Embedders enforce this,
+        /// not the surface itself.
+        min_size: ?*Size = null,
 
         /// The requested font size. This only applies to initialization
         /// and has no effect later.
@@ -1201,12 +1231,16 @@ pub const Surface = extern struct {
             priv.mouse_hover_url = null;
         }
         if (priv.default_size) |v| {
-            ext.boxedFree(apprt.action.InitialSize, v);
+            ext.boxedFree(Size, v);
             priv.default_size = null;
         }
         if (priv.font_size_request) |v| {
             glib.ext.destroy(v);
             priv.font_size_request = null;
+        }
+        if (priv.min_size) |v| {
+            ext.boxedFree(Size, v);
+            priv.min_size = null;
         }
         if (priv.pwd) |v| {
             glib.free(@constCast(@ptrCast(v)));
@@ -1246,7 +1280,7 @@ pub const Surface = extern struct {
     }
 
     /// Return the default size, if set.
-    pub fn getDefaultSize(self: *Self) ?*apprt.action.InitialSize {
+    pub fn getDefaultSize(self: *Self) ?*Size {
         const priv = self.private();
         return priv.default_size;
     }
@@ -1254,17 +1288,39 @@ pub const Surface = extern struct {
     /// Set the default size for a window that contains this surface.
     /// This is up to the embedding widget to respect this. Generally, only
     /// the first surface in a window respects this.
-    pub fn setDefaultSize(self: *Self, width: u32, height: u32) void {
+    pub fn setDefaultSize(self: *Self, size: Size) void {
         const priv = self.private();
         if (priv.default_size) |v| ext.boxedFree(
-            apprt.action.InitialSize,
+            Size,
             v,
         );
         priv.default_size = ext.boxedCopy(
-            apprt.action.InitialSize,
-            &.{ .width = width, .height = height },
+            Size,
+            &size,
         );
         self.as(gobject.Object).notifyByPspec(properties.@"default-size".impl.param_spec);
+    }
+
+    /// Return the min size, if set.
+    pub fn getMinSize(self: *Self) ?*Size {
+        const priv = self.private();
+        return priv.min_size;
+    }
+
+    /// Set the min size for a window that contains this surface.
+    /// This is up to the embedding widget to respect this. Generally, only
+    /// the first surface in a window respects this.
+    pub fn setMinSize(self: *Self, size: Size) void {
+        const priv = self.private();
+        if (priv.min_size) |v| ext.boxedFree(
+            Size,
+            v,
+        );
+        priv.min_size = ext.boxedCopy(
+            Size,
+            &size,
+        );
+        self.as(gobject.Object).notifyByPspec(properties.@"min-size".impl.param_spec);
     }
 
     fn propConfig(
@@ -2106,6 +2162,14 @@ pub const Surface = extern struct {
 
         // Store it!
         priv.core_surface = surface;
+
+        // Emit the signal that we initialized the surface.
+        Surface.signals.init.impl.emit(
+            self,
+            null,
+            .{},
+            null,
+        );
     }
 
     fn resizeOverlaySchedule(self: *Self) void {
@@ -2229,6 +2293,7 @@ pub const Surface = extern struct {
                 properties.@"default-size".impl,
                 properties.@"font-size-request".impl,
                 properties.focused.impl,
+                properties.@"min-size".impl,
                 properties.@"mouse-shape".impl,
                 properties.@"mouse-hidden".impl,
                 properties.@"mouse-hover-url".impl,
@@ -2242,6 +2307,7 @@ pub const Surface = extern struct {
             signals.bell.impl.register(.{});
             signals.@"clipboard-read".impl.register(.{});
             signals.@"clipboard-write".impl.register(.{});
+            signals.init.impl.register(.{});
             signals.@"present-request".impl.register(.{});
             signals.@"toggle-fullscreen".impl.register(.{});
             signals.@"toggle-maximize".impl.register(.{});
@@ -2272,6 +2338,17 @@ pub const Surface = extern struct {
         pub const getGObjectType = gobject.ext.defineBoxed(
             CloseScope,
             .{ .name = "GhosttySurfaceCloseScope" },
+        );
+    };
+
+    /// Simple dimensions struct for the surface used by various properties.
+    pub const Size = extern struct {
+        width: u32,
+        height: u32,
+
+        pub const getGObjectType = gobject.ext.defineBoxed(
+            Size,
+            .{ .name = "GhosttySurfaceSize" },
         );
     };
 };

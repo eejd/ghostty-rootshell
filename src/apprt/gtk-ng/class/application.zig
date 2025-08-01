@@ -545,12 +545,13 @@ pub const Application = extern struct {
 
             .show_gtk_inspector => Action.showGtkInspector(),
 
+            .size_limit => return Action.sizeLimit(target, value),
+
             .toggle_maximize => Action.toggleMaximize(target),
             .toggle_fullscreen => Action.toggleFullscreen(target),
             .toggle_tab_overview => return Action.toggleTabOverview(target),
 
             // Unimplemented but todo on gtk-ng branch
-            .size_limit,
             .prompt_title,
             .toggle_command_palette,
             .inspector,
@@ -1355,10 +1356,10 @@ const Action = struct {
             .app => return false,
             .surface => |core| {
                 const surface = core.rt_surface.surface;
-                surface.setDefaultSize(
-                    value.width,
-                    value.height,
-                );
+                surface.setDefaultSize(.{
+                    .width = value.width,
+                    .height = value.height,
+                });
                 return true;
             },
         }
@@ -1664,6 +1665,26 @@ const Action = struct {
 
     pub fn showGtkInspector() void {
         gtk.Window.setInteractiveDebugging(@intFromBool(true));
+    }
+
+    pub fn sizeLimit(
+        target: apprt.Target,
+        value: apprt.action.SizeLimit,
+    ) bool {
+        switch (target) {
+            .app => return false,
+            .surface => |core| {
+                // Note: we ignore the max size currently because we have
+                // no mechanism to enforce it.
+                const surface = core.rt_surface.surface;
+                surface.setMinSize(.{
+                    .width = value.min_width,
+                    .height = value.min_height,
+                });
+
+                return true;
+            },
+        }
     }
 
     pub fn toggleFullscreen(target: apprt.Target) void {
