@@ -364,7 +364,11 @@ pub const Window = struct {
     /// Update the blur state of the window.
     fn syncBlur(self: *Window) !void {
         const manager = self.app_context.kde_blur_manager orelse return;
-        const blur = self.apprt_window.config.background_blur;
+        const config = if (self.apprt_window.getConfig()) |v|
+            v.get()
+        else
+            return;
+        const blur = config.@"background-blur";
 
         if (self.blur_token) |tok| {
             // Only release token when transitioning from blurred -> not blurred
@@ -392,7 +396,12 @@ pub const Window = struct {
     }
 
     fn getDecorationMode(self: Window) org.KdeKwinServerDecorationManager.Mode {
-        return switch (self.apprt_window.config.window_decoration) {
+        const config = if (self.apprt_window.getConfig()) |v|
+            v.get()
+        else
+            return .Client;
+
+        return switch (config.@"window-decoration") {
             .auto => self.app_context.default_deco_mode orelse .Client,
             .client => .Client,
             .server => .Server,
@@ -401,12 +410,15 @@ pub const Window = struct {
     }
 
     fn syncQuickTerminal(self: *Window) !void {
-        const window = self.apprt_window.window.as(gtk.Window);
-        const config = &self.apprt_window.config;
+        const window = self.apprt_window.as(gtk.Window);
+        const config = if (self.apprt_window.getConfig()) |v|
+            v.get()
+        else
+            return;
 
         layer_shell.setKeyboardMode(
             window,
-            switch (config.quick_terminal_keyboard_interactivity) {
+            switch (config.@"quick-terminal-keyboard-interactivity") {
                 .none => .none,
                 .@"on-demand" => on_demand: {
                     if (layer_shell.getProtocolVersion() < 4) {
@@ -419,7 +431,7 @@ pub const Window = struct {
             },
         );
 
-        const anchored_edge: ?layer_shell.ShellEdge = switch (config.quick_terminal_position) {
+        const anchored_edge: ?layer_shell.ShellEdge = switch (config.@"quick-terminal-position") {
             .left => .left,
             .right => .right,
             .top => .top,

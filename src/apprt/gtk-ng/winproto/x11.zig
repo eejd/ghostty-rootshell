@@ -239,7 +239,12 @@ pub const Window = struct {
     }
 
     pub fn clientSideDecorationEnabled(self: Window) bool {
-        return switch (self.config.window_decoration) {
+        const config = if (self.apprt_window.getConfig()) |v|
+            v.get()
+        else
+            return true;
+
+        return switch (config.@"window-decoration") {
             .auto, .client => true,
             .server, .none => false,
         };
@@ -255,13 +260,14 @@ pub const Window = struct {
         // (Wayland also has this visual artifact anyway...)
 
         const gtk_widget = self.apprt_window.as(gtk.Widget);
+        const config = if (self.apprt_window.getConfig()) |v| v.get() else return;
 
         // Transform surface coordinates to device coordinates.
-        const scale = self.apprt_window.as(gtk.Widget).getScaleFactor();
+        const scale = gtk_widget.getScaleFactor();
         self.blur_region.width = gtk_widget.getWidth() * scale;
         self.blur_region.height = gtk_widget.getHeight() * scale;
 
-        const blur = self.config.background_blur;
+        const blur = config.@"background-blur";
         log.debug("set blur={}, window xid={}, region={}", .{
             blur,
             self.x11_surface.getXid(),
@@ -283,6 +289,11 @@ pub const Window = struct {
     }
 
     fn syncDecorations(self: *Window) !void {
+        const config = if (self.apprt_window.getConfig()) |v|
+            v.get()
+        else
+            return;
+
         var hints: MotifWMHints = .{};
 
         self.getWindowProperty(
@@ -303,7 +314,7 @@ pub const Window = struct {
         };
 
         hints.flags.decorations = true;
-        hints.decorations.all = switch (self.config.window_decoration) {
+        hints.decorations.all = switch (config.@"window-decoration") {
             .server => true,
             .auto, .client, .none => false,
         };

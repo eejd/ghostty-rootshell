@@ -503,7 +503,17 @@ pub const Window = extern struct {
     /// happens that might affect how the window appears (config change,
     /// fullscreen, etc.).
     fn syncAppearance(self: *Self) void {
-        // TODO: CSD/SSD
+        const priv = self.private();
+        const csd_enabled = priv.winproto.clientSideDecorationEnabled();
+        self.as(gtk.Window).setDecorated(@intFromBool(csd_enabled));
+
+        // Fix any artifacting that may occur in window corners. The .ssd CSS
+        // class is defined in the GtkWindow documentation:
+        // https://docs.gtk.org/gtk4/class.Window.html#css-nodes. A definition
+        // for .ssd is provided by GTK and Adwaita.
+        self.toggleCssClass("csd", csd_enabled);
+        self.toggleCssClass("ssd", !csd_enabled);
+        self.toggleCssClass("no-border-radius", !csd_enabled);
 
         // Trigger all our dynamic properties that depend on the config.
         inline for (&.{
@@ -520,8 +530,16 @@ pub const Window = extern struct {
         }
 
         // Remainder uses the config
-        const priv = self.private();
         const config = if (priv.config) |v| v.get() else return;
+
+        // Apply class to color headerbar if window-theme is set to `ghostty` and
+        // GTK version is before 4.16. The conditional is because above 4.16
+        // we use GTK CSS color variables.
+        self.toggleCssClass(
+            "window-theme-ghostty",
+            !gtk_version.atLeast(4, 16, 0) and
+                config.@"window-theme" == .ghostty,
+        );
 
         // Move the tab bar to the proper location.
         priv.toolbar.remove(priv.tab_bar.as(gtk.Widget));
@@ -529,6 +547,11 @@ pub const Window = extern struct {
             .top => priv.toolbar.addTopBar(priv.tab_bar.as(gtk.Widget)),
             .bottom => priv.toolbar.addBottomBar(priv.tab_bar.as(gtk.Widget)),
         }
+
+        // Do our window-protocol specific appearance sync.
+        priv.winproto.syncAppearance() catch |err| {
+            log.warn("failed to sync winproto appearance error={}", .{err});
+        };
     }
 
     fn toggleCssClass(self: *Self, class: [:0]const u8, value: bool) void {
@@ -614,8 +637,14 @@ pub const Window = extern struct {
     }
 
     fn getHeaderbarVisible(self: *Self) bool {
-        // TODO: CSD/SSD
-        // TODO: QuickTerminal
+        const priv = self.private();
+
+        // Never display the header bar when CSDs are disabled.
+        const csd_enabled = priv.winproto.clientSideDecorationEnabled();
+        if (!csd_enabled) return false;
+
+        // Never display the header bar as a quick terminal.
+        if (priv.quick_terminal) return false;
 
         // If we're fullscreen we never show the header bar.
         if (self.as(gtk.Window).isFullscreen() != 0) return false;
@@ -747,6 +776,24 @@ pub const Window = extern struct {
         self: *Self,
     ) callconv(.c) void {
         self.toggleCssClass("background", self.getBackgroundOpaque());
+    }
+
+    fn propScaleFactor(
+        _: *adw.ApplicationWindow,
+        _: *gobject.ParamSpec,
+        self: *Self,
+    ) callconv(.c) void {
+        // On some platforms (namely X11) we need to refresh our appearance when
+        // the scale factor changes. In theory this could be more fine-grained as
+        // a full refresh could be expensive, but a) this *should* be rare, and
+        // b) quite noticeable visual bugs would occur if this is not present.
+        self.private().winproto.syncAppearance() catch |err| {
+            log.warn(
+                "failed to sync appearance after scale factor has been updated={}",
+                .{err},
+            );
+            return;
+        };
     }
 
     //---------------------------------------------------------------
@@ -1451,11 +1498,12 @@ pub const Window = extern struct {
             class.bindTemplateCallback("tab_create_window", &tabViewCreateWindow);
             class.bindTemplateCallback("notify_n_pages", &tabViewNPages);
             class.bindTemplateCallback("notify_selected_page", &tabViewSelectedPage);
+            class.bindTemplateCallback("notify_background_opaque", &propBackgroundOpaque);
             class.bindTemplateCallback("notify_config", &propConfig);
             class.bindTemplateCallback("notify_fullscreened", &propFullscreened);
             class.bindTemplateCallback("notify_maximized", &propMaximized);
             class.bindTemplateCallback("notify_menu_active", &propMenuActive);
-            class.bindTemplateCallback("notify_background_opaque", &propBackgroundOpaque);
+            class.bindTemplateCallback("notify_scale_factor", &propScaleFactor);
 
             // Virtual methods
             gobject.Object.virtual_methods.dispose.implement(class, &dispose);
