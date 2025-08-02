@@ -363,6 +363,11 @@ pub const Window = extern struct {
         }
     }
 
+    /// Winproto backend for this window.
+    pub fn winproto(self: *Self) *winprotopkg.Window {
+        return &self.private().winproto;
+    }
+
     /// Create a new tab with the given parent. The tab will be inserted
     /// at the position dictated by the `window-new-tab-position` config.
     /// The new tab will be selected.

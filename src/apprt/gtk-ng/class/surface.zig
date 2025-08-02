@@ -26,6 +26,7 @@ const Config = @import("config.zig").Config;
 const ResizeOverlay = @import("resize_overlay.zig").ResizeOverlay;
 const ChildExited = @import("surface_child_exited.zig").SurfaceChildExited;
 const ClipboardConfirmationDialog = @import("clipboard_confirmation_dialog.zig").ClipboardConfirmationDialog;
+const Window = @import("window.zig").Window;
 
 const log = std.log.scoped(.gtk_ghostty_surface);
 
@@ -1061,8 +1062,6 @@ pub const Surface = extern struct {
     }
 
     pub fn defaultTermioEnv(self: *Self) !std.process.EnvMap {
-        _ = self;
-
         const alloc = Application.default().allocator();
         var env = try internal_os.getEnvMap(alloc);
         errdefer env.deinit();
@@ -1097,6 +1096,14 @@ pub const Surface = extern struct {
             env.remove("GDK_PIXBUF_MODULEDIR");
             env.remove("GDK_PIXBUF_MODULE_FILE");
             env.remove("GTK_PATH");
+        }
+
+        // This is a hack because it ties ourselves (optionally) to the
+        // Window class. The right solution we should do is emit a signal
+        // here where the handler can modify our EnvMap, but boxing the
+        // EnvMap is a bit annoying so I'm punting it.
+        if (ext.getAncestor(Window, self.as(gtk.Widget))) |window| {
+            try window.winproto().addSubprocessEnv(&env);
         }
 
         return env;
