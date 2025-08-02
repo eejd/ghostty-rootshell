@@ -1727,20 +1727,20 @@ const Action = struct {
         // Find a quick terminal window.
         const list = gtk.Window.listToplevels();
         defer list.free();
-        const elem_: ?*glib.List = list.findCustom(null, struct {
-            fn callback(data: ?*const anyopaque, _: ?*const anyopaque) callconv(.c) c_int {
-                const ptr = data orelse return 1;
-                const gtk_window: *gtk.Window = @ptrCast(@alignCast(@constCast(ptr)));
-                const window = gobject.ext.cast(
+        if (ext.listFind(gtk.Window, list, struct {
+            fn find(gtk_win: *gtk.Window) bool {
+                const win = gobject.ext.cast(
                     Window,
-                    gtk_window,
-                ) orelse return 1;
-                if (window.isQuickTerminal()) return 0;
-                return 1;
+                    gtk_win,
+                ) orelse return false;
+                return win.isQuickTerminal();
             }
-        }.callback);
-        const elem = elem_ orelse return null;
-        return @ptrCast(@alignCast(elem.f_data));
+        }.find)) |w| return gobject.ext.cast(
+            Window,
+            w,
+        ).?;
+
+        return null;
     }
 
     pub fn toggleMaximize(target: apprt.Target) void {

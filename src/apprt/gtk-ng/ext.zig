@@ -6,6 +6,7 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
+const glib = @import("glib");
 const gobject = @import("gobject");
 const gtk = @import("gtk");
 
@@ -21,6 +22,24 @@ pub fn boxedFree(comptime T: type, ptr: ?*T) void {
         T.getGObjectType(),
         p,
     );
+}
+
+/// A wrapper around `glib.List.findCustom` to find an element in the list.
+/// The type `T` must be the guaranteed type of every list element.
+pub fn listFind(
+    comptime T: type,
+    list: *glib.List,
+    comptime func: *const fn (*T) bool,
+) ?*T {
+    const elem_: ?*glib.List = list.findCustom(null, struct {
+        fn callback(data: ?*const anyopaque, _: ?*const anyopaque) callconv(.c) c_int {
+            const ptr = data orelse return 1;
+            const v: *T = @ptrCast(@alignCast(@constCast(ptr)));
+            return if (func(v)) 0 else 1;
+        }
+    }.callback);
+    const elem = elem_ orelse return null;
+    return @ptrCast(@alignCast(elem.f_data));
 }
 
 /// Wrapper around `gtk.Widget.getAncestor` to get the widget ancestor
