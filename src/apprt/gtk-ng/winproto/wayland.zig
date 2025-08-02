@@ -127,7 +127,7 @@ pub const App = struct {
     }
 
     pub fn initQuickTerminal(_: *App, apprt_window: *ApprtWindow) !void {
-        const window = apprt_window.window.as(gtk.Window);
+        const window = apprt_window.as(gtk.Window);
 
         layer_shell.initForWindow(window);
         layer_shell.setLayer(window, .top);

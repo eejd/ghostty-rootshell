@@ -498,6 +498,12 @@ pub const Window = extern struct {
         tab_overview.setOpen(@intFromBool(!is_open));
     }
 
+    /// Toggle the visible property.
+    pub fn toggleVisibility(self: *Self) void {
+        const widget = self.as(gtk.Widget);
+        widget.setVisible(@intFromBool(widget.isVisible() == 0));
+    }
+
     /// Updates various appearance properties. This should always be safe
     /// to call multiple times. This should be called whenever a change
     /// happens that might affect how the window appears (config change,
@@ -766,6 +772,26 @@ pub const Window = extern struct {
             action_map.lookupAction("copy") orelse return,
         ) orelse return;
         action.setEnabled(@intFromBool(has_selection));
+    }
+
+    fn propQuickTerminal(
+        _: *adw.ApplicationWindow,
+        _: *gobject.ParamSpec,
+        self: *Self,
+    ) callconv(.c) void {
+        const priv = self.private();
+        if (priv.surface_init) {
+            log.warn("quick terminal property can't be changed after surfaces have been initialized", .{});
+            return;
+        }
+
+        if (priv.quick_terminal) {
+            // Initialize the quick terminal at the app-layer
+            Application.default().winproto().initQuickTerminal(self) catch |err| {
+                log.warn("failed to initialize quick terminal error={}", .{err});
+                return;
+            };
+        }
     }
 
     /// Add or remove "background" CSS class depending on if the background
@@ -1473,6 +1499,7 @@ pub const Window = extern struct {
                 properties.config.impl,
                 properties.debug.impl,
                 properties.@"headerbar-visible".impl,
+                properties.@"quick-terminal".impl,
                 properties.@"tabs-autohide".impl,
                 properties.@"tabs-visible".impl,
                 properties.@"tabs-wide".impl,
@@ -1503,6 +1530,7 @@ pub const Window = extern struct {
             class.bindTemplateCallback("notify_fullscreened", &propFullscreened);
             class.bindTemplateCallback("notify_maximized", &propMaximized);
             class.bindTemplateCallback("notify_menu_active", &propMenuActive);
+            class.bindTemplateCallback("notify_quick_terminal", &propQuickTerminal);
             class.bindTemplateCallback("notify_scale_factor", &propScaleFactor);
 
             // Virtual methods
