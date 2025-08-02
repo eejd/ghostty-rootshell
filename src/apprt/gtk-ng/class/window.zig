@@ -10,6 +10,7 @@ const gtk = @import("gtk");
 
 const i18n = @import("../../../os/main.zig").i18n;
 const apprt = @import("../../../apprt.zig");
+const configpkg = @import("../../../config.zig");
 const input = @import("../../../input.zig");
 const CoreSurface = @import("../../../Surface.zig");
 const ext = @import("../ext.zig");
@@ -230,6 +231,11 @@ pub const Window = extern struct {
         /// Whether this window is a quick terminal. If it is then it
         /// behaves slightly differently under certain scenarios.
         quick_terminal: bool = false,
+
+        /// The window decoration override. If this is not set then we'll
+        /// inherit whatever the config has. This allows overriding the
+        /// config on a per-window basis.
+        window_decoration: ?configpkg.WindowDecoration = null,
 
         /// Binding group for our active tab.
         tab_bindings: *gobject.BindingGroup,
@@ -636,6 +642,36 @@ pub const Window = extern struct {
     /// is not increased.
     pub fn getConfig(self: *Self) ?*Config {
         return self.private().config;
+    }
+
+    /// Get the current window decoration value for this window.
+    pub fn getWindowDecoration(self: *Self) configpkg.WindowDecoration {
+        const priv = self.private();
+        if (priv.window_decoration) |v| return v;
+        if (priv.config) |v| return v.get().@"window-decoration";
+        return .auto;
+    }
+
+    /// Toggle the window decorations for this window.
+    pub fn toggleWindowDecorations(self: *Self) void {
+        self.setWindowDecoration(switch (self.getWindowDecoration()) {
+            // Null will force using the central config
+            .none => null,
+
+            // Anything non-none to none
+            .auto, .client, .server => .none,
+        });
+    }
+
+    /// Set the window decoration override for this window. If this is null,
+    /// then we'll revert back to the configuration's default.
+    fn setWindowDecoration(
+        self: *Self,
+        new_: ?configpkg.WindowDecoration,
+    ) void {
+        const priv = self.private();
+        priv.window_decoration = new_;
+        self.syncAppearance();
     }
 
     /// Get the currently selected tab as a Tab object.

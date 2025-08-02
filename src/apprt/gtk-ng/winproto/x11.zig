@@ -239,12 +239,7 @@ pub const Window = struct {
     }
 
     pub fn clientSideDecorationEnabled(self: Window) bool {
-        const config = if (self.apprt_window.getConfig()) |v|
-            v.get()
-        else
-            return true;
-
-        return switch (config.@"window-decoration") {
+        return switch (self.apprt_window.getWindowDecoration()) {
             .auto, .client => true,
             .server, .none => false,
         };
@@ -289,11 +284,6 @@ pub const Window = struct {
     }
 
     fn syncDecorations(self: *Window) !void {
-        const config = if (self.apprt_window.getConfig()) |v|
-            v.get()
-        else
-            return;
-
         var hints: MotifWMHints = .{};
 
         self.getWindowProperty(
@@ -314,7 +304,7 @@ pub const Window = struct {
         };
 
         hints.flags.decorations = true;
-        hints.decorations.all = switch (config.@"window-decoration") {
+        hints.decorations.all = switch (self.apprt_window.getWindowDecoration()) {
             .server => true,
             .auto, .client, .none => false,
         };
