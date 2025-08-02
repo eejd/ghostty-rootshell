@@ -396,12 +396,7 @@ pub const Window = struct {
     }
 
     fn getDecorationMode(self: Window) org.KdeKwinServerDecorationManager.Mode {
-        const config = if (self.apprt_window.getConfig()) |v|
-            v.get()
-        else
-            return .Client;
-
-        return switch (config.@"window-decoration") {
+        return switch (self.apprt_window.getWindowDecoration()) {
             .auto => self.app_context.default_deco_mode orelse .Client,
             .client => .Client,
             .server => .Server,

@@ -551,6 +551,7 @@ pub const Application = extern struct {
             .toggle_fullscreen => Action.toggleFullscreen(target),
             .toggle_quick_terminal => return Action.toggleQuickTerminal(self),
             .toggle_tab_overview => return Action.toggleTabOverview(target),
+            .toggle_window_decorations => return Action.toggleWindowDecorations(target),
 
             // Unimplemented but todo on gtk-ng branch
             .prompt_title,
@@ -562,8 +563,6 @@ pub const Application = extern struct {
             .equalize_splits,
             .goto_split,
             .toggle_split_zoom,
-            // TODO: winproto
-            .toggle_window_decorations,
             => {
                 log.warn("unimplemented action={}", .{action});
                 return false;
@@ -1764,6 +1763,25 @@ const Action = struct {
                 };
 
                 window.toggleTabOverview();
+                return true;
+            },
+        }
+    }
+
+    pub fn toggleWindowDecorations(target: apprt.Target) bool {
+        switch (target) {
+            .app => return false,
+            .surface => |core| {
+                const surface = core.rt_surface.surface;
+                const window = ext.getAncestor(
+                    Window,
+                    surface.as(gtk.Widget),
+                ) orelse {
+                    log.warn("surface is not in a window, ignoring new_tab", .{});
+                    return false;
+                };
+
+                window.toggleWindowDecorations();
                 return true;
             },
         }

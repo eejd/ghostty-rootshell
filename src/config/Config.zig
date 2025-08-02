@@ -7434,11 +7434,21 @@ pub const BackgroundBlur = union(enum) {
 };
 
 /// See window-decoration
-pub const WindowDecoration = enum {
+pub const WindowDecoration = enum(c_int) {
     auto,
     client,
     server,
     none,
+
+    /// Make this a valid gobject if we're in a GTK environment.
+    pub const getGObjectType = switch (build_config.app_runtime) {
+        .gtk, .@"gtk-ng" => @import("gobject").ext.defineEnum(
+            WindowDecoration,
+            .{ .name = "GhosttyConfigWindowDecoration" },
+        ),
+
+        .none => void,
+    };
 
     pub fn parseCLI(input_: ?[]const u8) !WindowDecoration {
         const input = input_ orelse return .auto;
