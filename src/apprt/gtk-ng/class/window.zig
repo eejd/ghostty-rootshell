@@ -2,6 +2,7 @@ const std = @import("std");
 const build_config = @import("../../../build_config.zig");
 const assert = std.debug.assert;
 const adw = @import("adw");
+const gdk = @import("gdk");
 const gio = @import("gio");
 const glib = @import("glib");
 const gobject = @import("gobject");
@@ -301,6 +302,24 @@ pub const Window = extern struct {
 
         // Initialize our actions
         self.initActionMap();
+
+        // We need to setup resize notifications on our surface
+        if (self.as(gtk.Native).getSurface()) |gdk_surface| {
+            _ = gobject.Object.signals.notify.connect(
+                gdk_surface,
+                *Self,
+                propGdkSurfaceWidth,
+                self,
+                .{ .detail = "width" },
+            );
+            _ = gobject.Object.signals.notify.connect(
+                gdk_surface,
+                *Self,
+                propGdkSurfaceHeight,
+                self,
+                .{ .detail = "height" },
+            );
+        }
 
         // We always sync our appearance at the end because loading our
         // config and such can affect our bindings which ar setup initially
@@ -724,6 +743,36 @@ pub const Window = extern struct {
     ) callconv(.c) void {
         self.addToast(i18n._("Reloaded the configuration"));
         self.syncAppearance();
+    }
+
+    fn propGdkSurfaceHeight(
+        _: *gdk.Surface,
+        _: *gobject.ParamSpec,
+        self: *Self,
+    ) callconv(.c) void {
+        // X11 needs to fix blurring on resize, but winproto implementations
+        // could do anything.
+        self.private().winproto.resizeEvent() catch |err| {
+            log.warn(
+                "winproto resize event failed error={}",
+                .{err},
+            );
+        };
+    }
+
+    fn propGdkSurfaceWidth(
+        _: *gdk.Surface,
+        _: *gobject.ParamSpec,
+        self: *Self,
+    ) callconv(.c) void {
+        // X11 needs to fix blurring on resize, but winproto implementations
+        // could do anything.
+        self.private().winproto.resizeEvent() catch |err| {
+            log.warn(
+                "winproto resize event failed error={}",
+                .{err},
+            );
+        };
     }
 
     fn propFullscreened(
