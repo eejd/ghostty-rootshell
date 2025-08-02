@@ -2,6 +2,7 @@ const std = @import("std");
 const build_config = @import("../../../build_config.zig");
 const assert = std.debug.assert;
 const adw = @import("adw");
+const gdk = @import("gdk");
 const gio = @import("gio");
 const glib = @import("glib");
 const gobject = @import("gobject");
@@ -15,6 +16,7 @@ const ext = @import("../ext.zig");
 const gtk_version = @import("../gtk_version.zig");
 const adw_version = @import("../adw_version.zig");
 const gresource = @import("../build/gresource.zig");
+const winprotopkg = @import("../winproto.zig");
 const Common = @import("../class.zig").Common;
 const Config = @import("config.zig").Config;
 const Application = @import("application.zig").Application;
@@ -131,6 +133,26 @@ pub const Window = extern struct {
             );
         };
 
+        pub const @"quick-terminal" = struct {
+            pub const name = "quick-terminal";
+            const impl = gobject.ext.defineProperty(
+                name,
+                Self,
+                bool,
+                .{
+                    .nick = "Quick Terminal",
+                    .blurb = "Whether this window behaves like a quick terminal.",
+                    .default = true,
+                    .accessor = gobject.ext.privateFieldAccessor(
+                        Self,
+                        Private,
+                        &Private.offset,
+                        "quick_terminal",
+                    ),
+                },
+            );
+        };
+
         pub const @"tabs-autohide" = struct {
             pub const name = "tabs-autohide";
             const impl = gobject.ext.defineProperty(
@@ -205,11 +227,18 @@ pub const Window = extern struct {
     };
 
     const Private = struct {
+        /// Whether this window is a quick terminal. If it is then it
+        /// behaves slightly differently under certain scenarios.
+        quick_terminal: bool = false,
+
         /// Binding group for our active tab.
         tab_bindings: *gobject.BindingGroup,
 
         /// The configuration that this surface is using.
         config: ?*Config = null,
+
+        /// State and logic for windowing protocol for a window.
+        winproto: winprotopkg.Window,
 
         /// Kind of hacky to have this but this lets us know if we've
         /// initialized any single surface yet. We need this because we
@@ -253,6 +282,10 @@ pub const Window = extern struct {
             priv.config = app.getConfig();
         }
 
+        // We initialize our windowing protocol to none because we can't
+        // actually initialize this until we get realized.
+        priv.winproto = .none;
+
         // Add our dev CSS class if we're in debug mode.
         if (comptime build_config.is_debug) {
             self.as(gtk.Widget).addCssClass("devel");
@@ -269,6 +302,24 @@ pub const Window = extern struct {
 
         // Initialize our actions
         self.initActionMap();
+
+        // We need to setup resize notifications on our surface
+        if (self.as(gtk.Native).getSurface()) |gdk_surface| {
+            _ = gobject.Object.signals.notify.connect(
+                gdk_surface,
+                *Self,
+                propGdkSurfaceWidth,
+                self,
+                .{ .detail = "width" },
+            );
+            _ = gobject.Object.signals.notify.connect(
+                gdk_surface,
+                *Self,
+                propGdkSurfaceHeight,
+                self,
+                .{ .detail = "height" },
+            );
+        }
 
         // We always sync our appearance at the end because loading our
         // config and such can affect our bindings which ar setup initially
@@ -310,6 +361,11 @@ pub const Window = extern struct {
             );
             action_map.addAction(action.as(gio.Action));
         }
+    }
+
+    /// Winproto backend for this window.
+    pub fn winproto(self: *Self) *winprotopkg.Window {
+        return &self.private().winproto;
     }
 
     /// Create a new tab with the given parent. The tab will be inserted
@@ -466,12 +522,28 @@ pub const Window = extern struct {
         tab_overview.setOpen(@intFromBool(!is_open));
     }
 
+    /// Toggle the visible property.
+    pub fn toggleVisibility(self: *Self) void {
+        const widget = self.as(gtk.Widget);
+        widget.setVisible(@intFromBool(widget.isVisible() == 0));
+    }
+
     /// Updates various appearance properties. This should always be safe
     /// to call multiple times. This should be called whenever a change
     /// happens that might affect how the window appears (config change,
     /// fullscreen, etc.).
     fn syncAppearance(self: *Self) void {
-        // TODO: CSD/SSD
+        const priv = self.private();
+        const csd_enabled = priv.winproto.clientSideDecorationEnabled();
+        self.as(gtk.Window).setDecorated(@intFromBool(csd_enabled));
+
+        // Fix any artifacting that may occur in window corners. The .ssd CSS
+        // class is defined in the GtkWindow documentation:
+        // https://docs.gtk.org/gtk4/class.Window.html#css-nodes. A definition
+        // for .ssd is provided by GTK and Adwaita.
+        self.toggleCssClass("csd", csd_enabled);
+        self.toggleCssClass("ssd", !csd_enabled);
+        self.toggleCssClass("no-border-radius", !csd_enabled);
 
         // Trigger all our dynamic properties that depend on the config.
         inline for (&.{
@@ -488,8 +560,16 @@ pub const Window = extern struct {
         }
 
         // Remainder uses the config
-        const priv = self.private();
         const config = if (priv.config) |v| v.get() else return;
+
+        // Apply class to color headerbar if window-theme is set to `ghostty` and
+        // GTK version is before 4.16. The conditional is because above 4.16
+        // we use GTK CSS color variables.
+        self.toggleCssClass(
+            "window-theme-ghostty",
+            !gtk_version.atLeast(4, 16, 0) and
+                config.@"window-theme" == .ghostty,
+        );
 
         // Move the tab bar to the proper location.
         priv.toolbar.remove(priv.tab_bar.as(gtk.Widget));
@@ -497,6 +577,11 @@ pub const Window = extern struct {
             .top => priv.toolbar.addTopBar(priv.tab_bar.as(gtk.Widget)),
             .bottom => priv.toolbar.addBottomBar(priv.tab_bar.as(gtk.Widget)),
         }
+
+        // Do our window-protocol specific appearance sync.
+        priv.winproto.syncAppearance() catch |err| {
+            log.warn("failed to sync winproto appearance error={}", .{err});
+        };
     }
 
     fn toggleCssClass(self: *Self, class: [:0]const u8, value: bool) void {
@@ -535,11 +620,22 @@ pub const Window = extern struct {
     //---------------------------------------------------------------
     // Properties
 
+    /// Whether this terminal is a quick terminal or not.
+    pub fn isQuickTerminal(self: *Self) bool {
+        return self.private().quick_terminal;
+    }
+
     /// Get the currently active surface. See the "active-surface" property.
     /// This does not ref the value.
     fn getActiveSurface(self: *Self) ?*Surface {
         const tab = self.getSelectedTab() orelse return null;
         return tab.getActiveSurface();
+    }
+
+    /// Returns the configuration for this window. The reference count
+    /// is not increased.
+    pub fn getConfig(self: *Self) ?*Config {
+        return self.private().config;
     }
 
     /// Get the currently selected tab as a Tab object.
@@ -571,8 +667,14 @@ pub const Window = extern struct {
     }
 
     fn getHeaderbarVisible(self: *Self) bool {
-        // TODO: CSD/SSD
-        // TODO: QuickTerminal
+        const priv = self.private();
+
+        // Never display the header bar when CSDs are disabled.
+        const csd_enabled = priv.winproto.clientSideDecorationEnabled();
+        if (!csd_enabled) return false;
+
+        // Never display the header bar as a quick terminal.
+        if (priv.quick_terminal) return false;
 
         // If we're fullscreen we never show the header bar.
         if (self.as(gtk.Window).isFullscreen() != 0) return false;
@@ -648,6 +750,36 @@ pub const Window = extern struct {
         self.syncAppearance();
     }
 
+    fn propGdkSurfaceHeight(
+        _: *gdk.Surface,
+        _: *gobject.ParamSpec,
+        self: *Self,
+    ) callconv(.c) void {
+        // X11 needs to fix blurring on resize, but winproto implementations
+        // could do anything.
+        self.private().winproto.resizeEvent() catch |err| {
+            log.warn(
+                "winproto resize event failed error={}",
+                .{err},
+            );
+        };
+    }
+
+    fn propGdkSurfaceWidth(
+        _: *gdk.Surface,
+        _: *gobject.ParamSpec,
+        self: *Self,
+    ) callconv(.c) void {
+        // X11 needs to fix blurring on resize, but winproto implementations
+        // could do anything.
+        self.private().winproto.resizeEvent() catch |err| {
+            log.warn(
+                "winproto resize event failed error={}",
+                .{err},
+            );
+        };
+    }
+
     fn propFullscreened(
         _: *adw.ApplicationWindow,
         _: *gobject.ParamSpec,
@@ -696,6 +828,26 @@ pub const Window = extern struct {
         action.setEnabled(@intFromBool(has_selection));
     }
 
+    fn propQuickTerminal(
+        _: *adw.ApplicationWindow,
+        _: *gobject.ParamSpec,
+        self: *Self,
+    ) callconv(.c) void {
+        const priv = self.private();
+        if (priv.surface_init) {
+            log.warn("quick terminal property can't be changed after surfaces have been initialized", .{});
+            return;
+        }
+
+        if (priv.quick_terminal) {
+            // Initialize the quick terminal at the app-layer
+            Application.default().winproto().initQuickTerminal(self) catch |err| {
+                log.warn("failed to initialize quick terminal error={}", .{err});
+                return;
+            };
+        }
+    }
+
     /// Add or remove "background" CSS class depending on if the background
     /// should be opaque.
     fn propBackgroundOpaque(
@@ -704,6 +856,24 @@ pub const Window = extern struct {
         self: *Self,
     ) callconv(.c) void {
         self.toggleCssClass("background", self.getBackgroundOpaque());
+    }
+
+    fn propScaleFactor(
+        _: *adw.ApplicationWindow,
+        _: *gobject.ParamSpec,
+        self: *Self,
+    ) callconv(.c) void {
+        // On some platforms (namely X11) we need to refresh our appearance when
+        // the scale factor changes. In theory this could be more fine-grained as
+        // a full refresh could be expensive, but a) this *should* be rare, and
+        // b) quite noticeable visual bugs would occur if this is not present.
+        self.private().winproto.syncAppearance() catch |err| {
+            log.warn(
+                "failed to sync appearance after scale factor has been updated={}",
+                .{err},
+            );
+            return;
+        };
     }
 
     //---------------------------------------------------------------
@@ -731,6 +901,7 @@ pub const Window = extern struct {
     fn finalize(self: *Self) callconv(.C) void {
         const priv = self.private();
         priv.tab_bindings.unref();
+        priv.winproto.deinit(Application.default().allocator());
 
         gobject.Object.virtual_methods.finalize.call(
             Class.parent,
@@ -740,6 +911,26 @@ pub const Window = extern struct {
 
     //---------------------------------------------------------------
     // Signal handlers
+
+    fn windowRealize(_: *gtk.Widget, self: *Window) callconv(.c) void {
+        const app = Application.default();
+
+        // Initialize our window protocol logic
+        if (winprotopkg.Window.init(
+            app.allocator(),
+            app.winproto(),
+            self,
+        )) |wp| {
+            self.private().winproto = wp;
+        } else |err| {
+            log.warn("failed to initialize window protocol error={}", .{err});
+            return;
+        }
+
+        // When we are realized we always setup our appearance since this
+        // calls some winproto functions.
+        self.syncAppearance();
+    }
 
     fn btnNewTab(_: *adw.SplitButton, self: *Self) callconv(.c) void {
         self.performBindingAction(.new_tab);
@@ -1362,6 +1553,7 @@ pub const Window = extern struct {
                 properties.config.impl,
                 properties.debug.impl,
                 properties.@"headerbar-visible".impl,
+                properties.@"quick-terminal".impl,
                 properties.@"tabs-autohide".impl,
                 properties.@"tabs-visible".impl,
                 properties.@"tabs-wide".impl,
@@ -1376,6 +1568,7 @@ pub const Window = extern struct {
             class.bindTemplateChildPrivate("toast_overlay", .{});
 
             // Template Callbacks
+            class.bindTemplateCallback("realize", &windowRealize);
             class.bindTemplateCallback("new_tab", &btnNewTab);
             class.bindTemplateCallback("overview_create_tab", &tabOverviewCreateTab);
             class.bindTemplateCallback("overview_notify_open", &tabOverviewOpen);
@@ -1386,11 +1579,13 @@ pub const Window = extern struct {
             class.bindTemplateCallback("tab_create_window", &tabViewCreateWindow);
             class.bindTemplateCallback("notify_n_pages", &tabViewNPages);
             class.bindTemplateCallback("notify_selected_page", &tabViewSelectedPage);
+            class.bindTemplateCallback("notify_background_opaque", &propBackgroundOpaque);
             class.bindTemplateCallback("notify_config", &propConfig);
             class.bindTemplateCallback("notify_fullscreened", &propFullscreened);
             class.bindTemplateCallback("notify_maximized", &propMaximized);
             class.bindTemplateCallback("notify_menu_active", &propMenuActive);
-            class.bindTemplateCallback("notify_background_opaque", &propBackgroundOpaque);
+            class.bindTemplateCallback("notify_quick_terminal", &propQuickTerminal);
+            class.bindTemplateCallback("notify_scale_factor", &propScaleFactor);
 
             // Virtual methods
             gobject.Object.virtual_methods.dispose.implement(class, &dispose);

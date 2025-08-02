@@ -7,10 +7,13 @@ template $GhosttyWindow: Adw.ApplicationWindow {
   ]
 
   close-request => $close_request();
+  realize => $realize();
+  notify::background-opaque => $notify_background_opaque();
   notify::config => $notify_config();
   notify::fullscreened => $notify_fullscreened();
   notify::maximized => $notify_maximized();
-  notify::background-opaque => $notify_background_opaque();
+  notify::quick-terminal => $notify_quick_terminal();
+  notify::scale-factor => $notify_scale_factor();
   default-width: 800;
   default-height: 600;
   // GTK4 grabs F10 input by default to focus the menubar icon. We want
@@ -20,8 +23,13 @@ template $GhosttyWindow: Adw.ApplicationWindow {
   content: Adw.TabOverview tab_overview {
     create-tab => $overview_create_tab();
     notify::open => $overview_notify_open();
-    enable-new-tab: true;
     view: tab_view;
+    enable-new-tab: true;
+    // Disable the title buttons (close, maximize, minimize, ...)
+    // *inside* the tab overview if CSDs are disabled.
+    // We do spare the search button, though.
+    show-start-title-buttons: bind template.decorated;
+    show-end-title-buttons: bind template.decorated;
 
     Adw.ToolbarView toolbar {
       top-bar-style: bind template.toolbar-style;
