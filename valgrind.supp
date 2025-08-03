@@ -14,6 +14,21 @@
 # and quitting. Otherwise, we leave a number of GTK resources around.
 
 {
+   GTK CSS Provider Leak
+   Memcheck:Leak
+   match-leak-kinds: definite
+   fun:calloc
+   fun:g_malloc0
+   fun:gtk_css_value_alloc
+   fun:_gtk_css_reference_value_new
+   fun:parse_ruleset
+   fun:gtk_css_provider_load_internal
+   fun:gtk_css_provider_load_from_bytes
+   fun:gtk_css_provider_load_from_string
+  ...
+}
+
+{
    GDK SVG Loading Leaks
    Memcheck:Leak
    match-leak-kinds: possible

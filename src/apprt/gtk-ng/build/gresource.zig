@@ -49,9 +49,9 @@ pub const blueprints: []const Blueprint = &.{
 /// CSS files in css_path
 pub const css = [_][]const u8{
     "style.css",
-    // "style-dark.css",
-    // "style-hc.css",
-    // "style-hc-dark.css",
+    "style-dark.css",
+    "style-hc.css",
+    "style-hc-dark.css",
 };
 
 pub const Blueprint = struct {
