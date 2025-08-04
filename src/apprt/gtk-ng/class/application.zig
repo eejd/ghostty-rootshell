@@ -22,6 +22,7 @@ const xev = @import("../../../global.zig").xev;
 const CoreConfig = configpkg.Config;
 const CoreSurface = @import("../../../Surface.zig");
 
+const ext = @import("../ext.zig");
 const adw_version = @import("../adw_version.zig");
 const gtk_version = @import("../gtk_version.zig");
 const winprotopkg = @import("../winproto.zig");
@@ -127,6 +128,15 @@ pub const Application = extern struct {
         /// This is a WeakRef because the dialog can close on its own
         /// outside of our own lifecycle and that's okay.
         config_errors_dialog: WeakRef(ConfigErrorsDialog) = .{},
+
+        /// glib source for our signal handler.
+        signal_source: ?c_uint = null,
+
+        /// CSS Provider for any styles based on Ghostty configuration values.
+        css_provider: *gtk.CssProvider,
+
+        /// Providers for loading custom stylesheets defined by user
+        custom_css_providers: std.ArrayListUnmanaged(*gtk.CssProvider) = .empty,
 
         pub var offset: c_int = 0;
     };
@@ -263,6 +273,16 @@ pub const Application = extern struct {
         const config_obj: *Config = try .new(alloc, &config);
         errdefer config_obj.unref();
 
+        // Internally, GTK ensures that only one instance of this provider
+        // exists in the provider list for the display.
+        const css_provider = gtk.CssProvider.new();
+        gtk.StyleContext.addProviderForDisplay(
+            display,
+            css_provider.as(gtk.StyleProvider),
+            gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 3,
+        );
+        errdefer css_provider.unref();
+
         // Initialize the app.
         const self = gobject.ext.newInstance(Self, .{
             .application_id = app_id.ptr,
@@ -283,7 +303,21 @@ pub const Application = extern struct {
             .core_app = core_app,
             .config = config_obj,
             .winproto = wp,
+            .css_provider = css_provider,
+            .custom_css_providers = .empty,
         };
+
+        // Signals
+        _ = gobject.Object.signals.notify.connect(
+            self,
+            *Self,
+            propConfig,
+            self,
+            .{ .detail = "config" },
+        );
+
+        // Trigger initial config changes
+        self.as(gobject.Object).notifyByPspec(properties.config.impl.param_spec);
 
         return self;
     }
@@ -299,6 +333,22 @@ pub const Application = extern struct {
         priv.config.unref();
         priv.winproto.deinit(alloc);
         if (priv.transient_cgroup_base) |base| alloc.free(base);
+        if (gdk.Display.getDefault()) |display| {
+            gtk.StyleContext.removeProviderForDisplay(
+                display,
+                priv.css_provider.as(gtk.StyleProvider),
+            );
+
+            for (priv.custom_css_providers.items) |provider| {
+                gtk.StyleContext.removeProviderForDisplay(
+                    display,
+                    provider.as(gtk.StyleProvider),
+                );
+            }
+        }
+        priv.css_provider.unref();
+        for (priv.custom_css_providers.items) |provider| provider.unref();
+        priv.custom_css_providers.deinit(alloc);
     }
 
     /// The global allocator that all other classes should use by
@@ -493,9 +543,19 @@ pub const Application = extern struct {
                 value.config,
             ),
 
+            .desktop_notification => Action.desktopNotification(self, target, value),
+
+            .goto_tab => return Action.gotoTab(target, value),
+
+            .initial_size => return Action.initialSize(target, value),
+
             .mouse_over_link => Action.mouseOverLink(target, value),
             .mouse_shape => Action.mouseShape(target, value),
             .mouse_visibility => Action.mouseVisibility(target, value),
+
+            .move_tab => return Action.moveTab(target, value),
+
+            .new_tab => return Action.newTab(target),
 
             .new_window => try Action.newWindow(
                 self,
@@ -505,13 +565,19 @@ pub const Application = extern struct {
                 },
             ),
 
+            .open_config => return Action.openConfig(self),
+
+            .open_url => Action.openUrl(self, value),
+
             .pwd => Action.pwd(target, value),
+
+            .present_terminal => return Action.presentTerminal(target),
+
+            .progress_report => return Action.progressReport(target, value),
 
             .quit => self.quit(),
 
             .quit_timer => try Action.quitTimer(self, value),
-
-            .progress_report => return Action.progressReport(target, value),
 
             .reload_config => try Action.reloadConfig(self, target, value),
 
@@ -525,30 +591,31 @@ pub const Application = extern struct {
 
             .show_gtk_inspector => Action.showGtkInspector(),
 
+            .size_limit => return Action.sizeLimit(target, value),
+
             .toggle_maximize => Action.toggleMaximize(target),
             .toggle_fullscreen => Action.toggleFullscreen(target),
+            .toggle_quick_terminal => return Action.toggleQuickTerminal(self),
+            .toggle_tab_overview => return Action.toggleTabOverview(target),
+            .toggle_window_decorations => return Action.toggleWindowDecorations(target),
 
             // Unimplemented but todo on gtk-ng branch
-            .new_tab,
-            .goto_tab,
-            .move_tab,
+            .prompt_title,
+            .toggle_command_palette,
+            .inspector,
+            // TODO: splits
             .new_split,
             .resize_split,
             .equalize_splits,
             .goto_split,
-            .open_config,
-            .inspector,
-            .desktop_notification,
-            .present_terminal,
-            .initial_size,
-            .size_limit,
-            .toggle_tab_overview,
             .toggle_split_zoom,
-            .toggle_window_decorations,
-            .prompt_title,
-            .toggle_quick_terminal,
-            .toggle_command_palette,
-            .open_url,
+            => {
+                log.warn("unimplemented action={}", .{action});
+                return false;
+            },
+
+            // Unimplemented
+            .secure_input,
             .close_all_windows,
             .float_window,
             .toggle_visibility,
@@ -561,13 +628,6 @@ pub const Application = extern struct {
             .check_for_updates,
             .undo,
             .redo,
-            => {
-                log.warn("unimplemented action={}", .{action});
-                return false;
-            },
-
-            // Unimplemented
-            .secure_input,
             => {
                 log.warn("unimplemented action={}", .{action});
                 return false;
@@ -645,6 +705,155 @@ pub const Application = extern struct {
         }
     }
 
+    fn loadRuntimeCss(
+        self: *Self,
+    ) Allocator.Error!void {
+        const alloc = self.allocator();
+
+        var buf: std.ArrayListUnmanaged(u8) = .empty;
+        defer buf.deinit(alloc);
+
+        const writer = buf.writer(alloc);
+
+        const config = self.private().config.get();
+        const window_theme = config.@"window-theme";
+        const unfocused_fill: CoreConfig.Color = config.@"unfocused-split-fill" orelse config.background;
+        const headerbar_background = config.@"window-titlebar-background" orelse config.background;
+        const headerbar_foreground = config.@"window-titlebar-foreground" orelse config.foreground;
+
+        try writer.print(
+            \\widget.unfocused-split {{
+            \\ opacity: {d:.2};
+            \\ background-color: rgb({d},{d},{d});
+            \\}}
+        , .{
+            1.0 - config.@"unfocused-split-opacity",
+            unfocused_fill.r,
+            unfocused_fill.g,
+            unfocused_fill.b,
+        });
+
+        if (config.@"split-divider-color") |color| {
+            try writer.print(
+                \\.terminal-window .notebook separator {{
+                \\  color: rgb({[r]d},{[g]d},{[b]d});
+                \\  background: rgb({[r]d},{[g]d},{[b]d});
+                \\}}
+            , .{
+                .r = color.r,
+                .g = color.g,
+                .b = color.b,
+            });
+        }
+
+        if (config.@"window-title-font-family") |font_family| {
+            try writer.print(
+                \\.window headerbar {{
+                \\  font-family: "{[font_family]s}";
+                \\}}
+            , .{ .font_family = font_family });
+        }
+
+        switch (window_theme) {
+            .ghostty => try writer.print(
+                \\:root {{
+                \\  --ghostty-fg: rgb({d},{d},{d});
+                \\  --ghostty-bg: rgb({d},{d},{d});
+                \\  --headerbar-fg-color: var(--ghostty-fg);
+                \\  --headerbar-bg-color: var(--ghostty-bg);
+                \\  --headerbar-backdrop-color: oklab(from var(--headerbar-bg-color) calc(l * 0.9) a b / alpha);
+                \\  --overview-fg-color: var(--ghostty-fg);
+                \\  --overview-bg-color: var(--ghostty-bg);
+                \\  --popover-fg-color: var(--ghostty-fg);
+                \\  --popover-bg-color: var(--ghostty-bg);
+                \\  --window-fg-color: var(--ghostty-fg);
+                \\  --window-bg-color: var(--ghostty-bg);
+                \\}}
+                \\windowhandle {{
+                \\  background-color: var(--headerbar-bg-color);
+                \\  color: var(--headerbar-fg-color);
+                \\}}
+                \\windowhandle:backdrop {{
+                \\ background-color: var(--headerbar-backdrop-color);
+                \\}}
+            , .{
+                headerbar_foreground.r,
+                headerbar_foreground.g,
+                headerbar_foreground.b,
+                headerbar_background.r,
+                headerbar_background.g,
+                headerbar_background.b,
+            }),
+            else => {},
+        }
+
+        const data = try alloc.dupeZ(u8, buf.items);
+        defer alloc.free(data);
+
+        // Clears any previously loaded CSS from this provider
+        loadCssProviderFromData(
+            self.private().css_provider,
+            data,
+        );
+    }
+
+    fn loadCustomCss(self: *Self) !void {
+        const priv = self.private();
+        const alloc = self.allocator();
+        const display = gdk.Display.getDefault() orelse {
+            log.warn("unable to get display", .{});
+            return;
+        };
+
+        // unload the previously loaded style providers
+        for (priv.custom_css_providers.items) |provider| {
+            gtk.StyleContext.removeProviderForDisplay(
+                display,
+                provider.as(gtk.StyleProvider),
+            );
+            provider.unref();
+        }
+        priv.custom_css_providers.clearRetainingCapacity();
+
+        const config = priv.config.getMut();
+        for (config.@"gtk-custom-css".value.items) |p| {
+            const path, const optional = switch (p) {
+                .optional => |path| .{ path, true },
+                .required => |path| .{ path, false },
+            };
+            const file = std.fs.openFileAbsolute(path, .{}) catch |err| {
+                if (err != error.FileNotFound or !optional) {
+                    log.warn(
+                        "error opening gtk-custom-css file {s}: {}",
+                        .{ path, err },
+                    );
+                }
+                continue;
+            };
+            defer file.close();
+
+            log.info("loading gtk-custom-css path={s}", .{path});
+            const contents = try file.reader().readAllAlloc(
+                alloc,
+                5 * 1024 * 1024, // 5MB,
+            );
+            defer alloc.free(contents);
+
+            const data = try alloc.dupeZ(u8, contents);
+            defer alloc.free(data);
+
+            const provider = gtk.CssProvider.new();
+            errdefer provider.unref();
+            try priv.custom_css_providers.append(alloc, provider);
+            loadCssProviderFromData(provider, data);
+            gtk.StyleContext.addProviderForDisplay(
+                display,
+                provider.as(gtk.StyleProvider),
+                gtk.STYLE_PROVIDER_PRIORITY_USER,
+            );
+        }
+    }
+
     //---------------------------------------------------------------
     // Properties
 
@@ -668,6 +877,28 @@ pub const Application = extern struct {
 
         // Show our errors if we have any
         self.showConfigErrorsDialog();
+    }
+
+    fn propConfig(
+        _: *Application,
+        _: *gobject.ParamSpec,
+        self: *Self,
+    ) callconv(.c) void {
+        // Load our runtime and custom CSS. If this fails then our window is
+        // just stuck with the old CSS but we don't want to fail the entire
+        // config change operation.
+        self.loadRuntimeCss() catch |err| switch (err) {
+            error.OutOfMemory => log.warn(
+                "out of memory loading runtime CSS, no runtime CSS applied",
+                .{},
+            ),
+        };
+        self.loadCustomCss() catch |err| {
+            log.warn(
+                "failed to load custom CSS, no custom CSS applied, err={}",
+                .{err},
+            );
+        };
     }
 
     //---------------------------------------------------------------
@@ -697,6 +928,9 @@ pub const Application = extern struct {
 
         // Setup our style manager (light/dark mode)
         self.startupStyleManager();
+
+        // Setup some signal handlers
+        self.startupSignals();
 
         // Setup our action map
         self.startupActionMap();
@@ -786,6 +1020,17 @@ pub const Application = extern struct {
         );
     }
 
+    /// Setup signal handlers
+    fn startupSignals(self: *Self) void {
+        const priv = self.private();
+        assert(priv.signal_source == null);
+        priv.signal_source = glib.unixSignalAdd(
+            std.posix.SIG.USR2,
+            handleSigusr2,
+            self,
+        );
+    }
+
     /// Setup our action map.
     fn startupActionMap(self: *Self) void {
         const t_variant_type = glib.ext.VariantType.newFor(u64);
@@ -804,6 +1049,8 @@ pub const Application = extern struct {
         const actions = .{
             .{ "new-window", actionNewWindow, null },
             .{ "new-window-command", actionNewWindow, as_variant_type },
+            .{ "open-config", actionOpenConfig, null },
+            .{ "present-surface", actionPresentSurface, t_variant_type },
             .{ "quit", actionQuit, null },
             .{ "reload-config", actionReloadConfig, null },
         };
@@ -914,6 +1161,12 @@ pub const Application = extern struct {
             diag.close();
             diag.unref(); // strong ref from get()
         }
+        if (priv.signal_source) |v| {
+            if (glib.Source.remove(v) == 0) {
+                log.warn("unable to remove signal source", .{});
+            }
+            priv.signal_source = null;
+        }
 
         gobject.Object.virtual_methods.dispose.call(
             Class.parent,
@@ -931,6 +1184,26 @@ pub const Application = extern struct {
 
     //---------------------------------------------------------------
     // Signal Handlers
+
+    /// SIGUSR2 signal handler via g_unix_signal_add
+    fn handleSigusr2(ud: ?*anyopaque) callconv(.c) c_int {
+        const self: *Self = @ptrCast(@alignCast(ud orelse
+            return @intFromBool(glib.SOURCE_CONTINUE)));
+
+        log.info("received SIGUSR2, reloading configuration", .{});
+        Action.reloadConfig(
+            self,
+            .app,
+            .{},
+        ) catch |err| {
+            // If we fail to reload the configuration, then we want the
+            // user to know it. For now we log but we should show another
+            // GUI.
+            log.warn("error reloading config: {}", .{err});
+        };
+
+        return @intFromBool(glib.SOURCE_CONTINUE);
+    }
 
     fn handleCloseConfirmation(
         _: *CloseConfirmationDialog,
@@ -1098,6 +1371,58 @@ pub const Application = extern struct {
         }, .{ .forever = {} });
     }
 
+    pub fn actionOpenConfig(
+        _: *gio.SimpleAction,
+        _: ?*glib.Variant,
+        self: *Self,
+    ) callconv(.c) void {
+        _ = self.core().mailbox.push(.open_config, .forever);
+    }
+
+    fn actionPresentSurface(
+        _: *gio.SimpleAction,
+        parameter_: ?*glib.Variant,
+        self: *Self,
+    ) callconv(.c) void {
+        const parameter = parameter_ orelse return;
+
+        const t = glib.ext.VariantType.newFor(u64);
+        defer glib.VariantType.free(t);
+
+        // Make sure that we've receiived a u64 from the system.
+        if (glib.Variant.isOfType(parameter, t) == 0) {
+            return;
+        }
+
+        // Convert that u64 to pointer to a core surface. A value of zero
+        // means that there was no target surface for the notification so
+        // we don't focus any surface.
+        //
+        // This is admittedly SUPER SUS and we should instead do what we
+        // do on macOS which is generate a UUID per surface and then pass
+        // that around. But, we do validate the pointer below so at worst
+        // this may result in focusing the wrong surface if the pointer was
+        // reused for a surface.
+        const ptr_int = parameter.getUint64();
+        if (ptr_int == 0) return;
+        const surface: *CoreSurface = @ptrFromInt(ptr_int);
+
+        // Send a message through the core app mailbox rather than presenting the
+        // surface directly so that it can validate that the surface pointer is
+        // valid. We could get an invalid pointer if a desktop notification outlives
+        // a Ghostty instance and a new one starts up, or there are multiple Ghostty
+        // instances running.
+        _ = self.core().mailbox.push(
+            .{
+                .surface_message = .{
+                    .surface = surface,
+                    .message = .present_surface,
+                },
+            },
+            .forever,
+        );
+    }
+
     //----------------------------------------------------------------
     // Boilerplate/Noise
 
@@ -1171,6 +1496,91 @@ const Action = struct {
         }
     }
 
+    pub fn desktopNotification(
+        self: *Application,
+        target: apprt.Target,
+        n: apprt.action.DesktopNotification,
+    ) void {
+        // TODO: We should move the surface target to a function call
+        // on Surface and emit a signal that embedders can connect to. This
+        // will let us handle notifications differently depending on where
+        // a surface is presented. At the time of writing this, we always
+        // want to show the notification AND the logic below was directly
+        // ported from "legacy" GTK so this is fine, but I want to leave this
+        // note so we can do it one day.
+
+        // Set a default title if we don't already have one
+        const t = switch (n.title.len) {
+            0 => "Ghostty",
+            else => n.title,
+        };
+
+        const notification = gio.Notification.new(t);
+        defer notification.unref();
+        notification.setBody(n.body);
+
+        const icon = gio.ThemedIcon.new("com.mitchellh.ghostty");
+        defer icon.unref();
+        notification.setIcon(icon.as(gio.Icon));
+
+        const pointer = glib.Variant.newUint64(switch (target) {
+            .app => 0,
+            .surface => |v| @intFromPtr(v),
+        });
+        notification.setDefaultActionAndTargetValue(
+            "app.present-surface",
+            pointer,
+        );
+
+        // We set the notification ID to the body content. If the content is the
+        // same, this notification may replace a previous notification
+        const gio_app = self.as(gio.Application);
+        gio_app.sendNotification(n.body, notification);
+    }
+
+    pub fn gotoTab(
+        target: apprt.Target,
+        tab: apprt.action.GotoTab,
+    ) bool {
+        switch (target) {
+            .app => return false,
+            .surface => |core| {
+                const surface = core.rt_surface.surface;
+                const window = ext.getAncestor(
+                    Window,
+                    surface.as(gtk.Widget),
+                ) orelse {
+                    log.warn("surface is not in a window, ignoring new_tab", .{});
+                    return false;
+                };
+
+                return window.selectTab(switch (tab) {
+                    .previous => .previous,
+                    .next => .next,
+                    .last => .last,
+                    else => .{ .n = @intCast(@intFromEnum(tab)) },
+                });
+            },
+        }
+    }
+
+    pub fn initialSize(
+        target: apprt.Target,
+        value: apprt.action.InitialSize,
+    ) bool {
+        switch (target) {
+            .app => return false,
+            .surface => |core| {
+                const surface = core.rt_surface.surface;
+                surface.setDefaultSize(.{
+                    .width = value.width,
+                    .height = value.height,
+                });
+                return true;
+            },
+        }
+    }
+
     pub fn mouseOverLink(
         target: apprt.Target,
         value: apprt.action.MouseOverLink,
@@ -1229,12 +1639,68 @@ const Action = struct {
         }
     }
 
+    pub fn moveTab(
+        target: apprt.Target,
+        value: apprt.action.MoveTab,
+    ) bool {
+        switch (target) {
+            .app => return false,
+            .surface => |core| {
+                const surface = core.rt_surface.surface;
+                const window = ext.getAncestor(
+                    Window,
+                    surface.as(gtk.Widget),
+                ) orelse {
+                    log.warn("surface is not in a window, ignoring new_tab", .{});
+                    return false;
+                };
+
+                return window.moveTab(
+                    surface,
+                    @intCast(value.amount),
+                );
+            },
+        }
+    }
+
+    pub fn newTab(target: apprt.Target) bool {
+        switch (target) {
+            .app => {
+                log.warn("new tab to app is unexpected", .{});
+                return false;
+            },
+
+            .surface => |core| {
+                // Get the window ancestor of the surface. Surfaces shouldn't
+                // be aware they might be in windows but at the app level we
+                // can do this.
+                const surface = core.rt_surface.surface;
+                const window = ext.getAncestor(
+                    Window,
+                    surface.as(gtk.Widget),
+                ) orelse {
+                    log.warn("surface is not in a window, ignoring new_tab", .{});
+                    return false;
+                };
+                window.newTab(core);
+                return true;
+            },
+        }
+    }
+
     pub fn newWindow(
         self: *Application,
         parent: ?*CoreSurface,
     ) !void {
-        const win = Window.new(self, parent);
+        const win = Window.new(self);
+        initAndShowWindow(self, win, parent);
+    }
 
+    fn initAndShowWindow(
+        self: *Application,
+        win: *Window,
+        parent: ?*CoreSurface,
+    ) void {
         // Setup a binding so that whenever our config changes so does the
         // window. There's never a time when the window config should be out
         // of sync with the application config.
@@ -1246,8 +1712,42 @@ const Action = struct {
             .{},
         );
 
+        // Create a new tab
+        win.newTab(parent);
+
         // Show the window
         gtk.Window.present(win.as(gtk.Window));
+    }
+
+    pub fn openConfig(self: *Application) bool {
+        // Get the config file path
+        const alloc = self.allocator();
+        const path = configpkg.edit.openPath(alloc) catch |err| {
+            log.warn("error getting config file path: {}", .{err});
+            return false;
+        };
+        defer alloc.free(path);
+
+        // Open it using openURL. "path" isn't actually a URL but
+        // at the time of writing that works just fine for GTK.
+        openUrl(self, .{ .kind = .text, .url = path });
+        return true;
+    }
+
+    pub fn openUrl(
+        self: *Application,
+        value: apprt.action.OpenUrl,
+    ) void {
+        // TODO: use https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.OpenURI.html
+
+        // Fallback to the minimal cross-platform way of opening a URL.
+        // This is always a safe fallback and enables for example Windows
+        // to open URLs (GTK on Windows via WSL is a thing).
+        internal_os.open(
+            self.allocator(),
+            value.kind,
+            value.url,
+        ) catch |err| log.warn("unable to open url: {}", .{err});
     }
 
     pub fn pwd(
@@ -1276,6 +1776,18 @@ const Action = struct {
             .start => self.startQuitTimer(),
             .stop => self.stopQuitTimer(),
         }
+    }
+
+    pub fn presentTerminal(
+        target: apprt.Target,
+    ) bool {
+        return switch (target) {
+            .app => false,
+            .surface => |v| surface: {
+                v.rt_surface.surface.present();
+                break :surface true;
+            },
+        };
     }
 
     pub fn progressReport(
@@ -1378,6 +1890,26 @@ const Action = struct {
         gtk.Window.setInteractiveDebugging(@intFromBool(true));
     }
 
+    pub fn sizeLimit(
+        target: apprt.Target,
+        value: apprt.action.SizeLimit,
+    ) bool {
+        switch (target) {
+            .app => return false,
+            .surface => |core| {
+                // Note: we ignore the max size currently because we have
+                // no mechanism to enforce it.
+                const surface = core.rt_surface.surface;
+                surface.setMinSize(.{
+                    .width = value.min_width,
+                    .height = value.min_height,
+                });
+
+                return true;
+            },
+        }
+    }
+
     pub fn toggleFullscreen(target: apprt.Target) void {
         switch (target) {
             .app => {},
@@ -1385,10 +1917,90 @@ const Action = struct {
         }
     }
 
+    pub fn toggleQuickTerminal(self: *Application) bool {
+        // If we already have a quick terminal window, we just toggle the
+        // visibility of it.
+        if (getQuickTerminalWindow()) |win| {
+            win.toggleVisibility();
+            return true;
+        }
+
+        // If we don't support quick terminals then we do nothing.
+        const priv = self.private();
+        if (!priv.winproto.supportsQuickTerminal()) return false;
+
+        // Create our new window as a quick terminal
+        const win = gobject.ext.newInstance(Window, .{
+            .application = self,
+            .@"quick-terminal" = true,
+        });
+        assert(win.isQuickTerminal());
+        initAndShowWindow(self, win, null);
+        return true;
+    }
+
+    fn getQuickTerminalWindow() ?*Window {
+        // Find a quick terminal window.
+        const list = gtk.Window.listToplevels();
+        defer list.free();
+        if (ext.listFind(gtk.Window, list, struct {
+            fn find(gtk_win: *gtk.Window) bool {
+                const win = gobject.ext.cast(
+                    Window,
+                    gtk_win,
+                ) orelse return false;
+                return win.isQuickTerminal();
+            }
+        }.find)) |w| return gobject.ext.cast(
+            Window,
+            w,
+        ).?;
+
+        return null;
+    }
+
     pub fn toggleMaximize(target: apprt.Target) void {
         switch (target) {
             .app => {},
             .surface => |v| v.rt_surface.surface.toggleMaximize(),
+        }
+    }
+
+    pub fn toggleTabOverview(target: apprt.Target) bool {
+        switch (target) {
+            .app => return false,
+            .surface => |core| {
+                const surface = core.rt_surface.surface;
+                const window = ext.getAncestor(
+                    Window,
+                    surface.as(gtk.Widget),
+                ) orelse {
+                    log.warn("surface is not in a window, ignoring new_tab", .{});
+                    return false;
+                };
+
+                window.toggleTabOverview();
+                return true;
+            },
+        }
+    }
+
+    pub fn toggleWindowDecorations(target: apprt.Target) bool {
+        switch (target) {
+            .app => return false,
+            .surface => |core| {
+                const surface = core.rt_surface.surface;
+                const window = ext.getAncestor(
+                    Window,
+                    surface.as(gtk.Widget),
+                ) orelse {
+                    log.warn("surface is not in a window, ignoring new_tab", .{});
+                    return false;
+                };
+
+                window.toggleWindowDecorations();
+                return true;
+            },
         }
     }
 };
@@ -1506,4 +2118,9 @@ fn findActiveWindow(data: ?*const anyopaque, _: ?*const anyopaque) callconv(.c) 
     // but we want to return 0 to indicate equality.
     // Abusing integers to be enums and booleans is a terrible idea, C.
     return if (window.isActive() != 0) 0 else -1;
+}
+
+fn loadCssProviderFromData(provider: *gtk.CssProvider, data: [:0]const u8) void {
+    assert(gtk_version.runtimeAtLeast(4, 12, 0));
+    provider.loadFromString(data);
 }

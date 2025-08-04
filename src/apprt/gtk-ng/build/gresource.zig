@@ -37,20 +37,21 @@ pub const blueprints: []const Blueprint = &.{
     .{ .major = 1, .minor = 4, .name = "clipboard-confirmation-dialog" },
     .{ .major = 1, .minor = 2, .name = "close-confirmation-dialog" },
     .{ .major = 1, .minor = 2, .name = "config-errors-dialog" },
+    .{ .major = 1, .minor = 2, .name = "debug-warning" },
+    .{ .major = 1, .minor = 3, .name = "debug-warning" },
     .{ .major = 1, .minor = 2, .name = "resize-overlay" },
     .{ .major = 1, .minor = 2, .name = "surface" },
     .{ .major = 1, .minor = 3, .name = "surface-child-exited" },
+    .{ .major = 1, .minor = 5, .name = "tab" },
     .{ .major = 1, .minor = 5, .name = "window" },
-    .{ .major = 1, .minor = 2, .name = "debug-warning" },
-    .{ .major = 1, .minor = 3, .name = "debug-warning" },
 };
 
 /// CSS files in css_path
 pub const css = [_][]const u8{
     "style.css",
-    // "style-dark.css",
-    // "style-hc.css",
-    // "style-hc-dark.css",
+    "style-dark.css",
+    "style-hc.css",
+    "style-hc-dark.css",
 };
 
 pub const Blueprint = struct {

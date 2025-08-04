@@ -16,6 +16,7 @@ const renderer = @import("../../../renderer.zig");
 const terminal = @import("../../../terminal/main.zig");
 const CoreSurface = @import("../../../Surface.zig");
 const gresource = @import("../build/gresource.zig");
+const ext = @import("../ext.zig");
 const adw_version = @import("../adw_version.zig");
 const gtk_key = @import("../key.zig");
 const ApprtSurface = @import("../Surface.zig");
@@ -25,6 +26,7 @@ const Config = @import("config.zig").Config;
 const ResizeOverlay = @import("resize_overlay.zig").ResizeOverlay;
 const ChildExited = @import("surface_child_exited.zig").SurfaceChildExited;
 const ClipboardConfirmationDialog = @import("clipboard_confirmation_dialog.zig").ClipboardConfirmationDialog;
+const Window = @import("window.zig").Window;
 
 const log = std.log.scoped(.gtk_ghostty_surface);
 
@@ -75,6 +77,20 @@ pub const Surface = extern struct {
             );
         };
 
+        pub const @"default-size" = struct {
+            pub const name = "default-size";
+            const impl = gobject.ext.defineProperty(
+                name,
+                Self,
+                ?*Size,
+                .{
+                    .nick = "Default Size",
+                    .blurb = "The default size of the window for this surface.",
+                    .accessor = C.privateBoxedFieldAccessor("default_size"),
+                },
+            );
+        };
+
         pub const @"font-size-request" = struct {
             pub const name = "font-size-request";
             const impl = gobject.ext.defineProperty(
@@ -105,6 +121,20 @@ pub const Surface = extern struct {
                         &Private.offset,
                         "focused",
                     ),
+                },
+            );
+        };
+
+        pub const @"min-size" = struct {
+            pub const name = "min-size";
+            const impl = gobject.ext.defineProperty(
+                name,
+                Self,
+                ?*Size,
+                .{
+                    .nick = "Minimum Size",
+                    .blurb = "The minimum size of the surface.",
+                    .accessor = C.privateBoxedFieldAccessor("min_size"),
                 },
             );
         };
@@ -285,6 +315,31 @@ pub const Surface = extern struct {
             );
         };
 
+        /// Emitted after the surface is initialized.
+        pub const init = struct {
+            pub const name = "init";
+            pub const connect = impl.connect;
+            const impl = gobject.ext.defineSignal(
+                name,
+                Self,
+                &.{},
+                void,
+            );
+        };
+
+        /// Emitted when the focus wants to be brought to the top and
+        /// focused.
+        pub const @"present-request" = struct {
+            pub const name = "present-request";
+            pub const connect = impl.connect;
+            const impl = gobject.ext.defineSignal(
+                name,
+                Self,
+                &.{},
+                void,
+            );
+        };
+
         /// Emitted when this surface requests its container to toggle its
         /// fullscreen state.
         pub const @"toggle-fullscreen" = struct {
@@ -319,6 +374,13 @@ pub const Surface = extern struct {
         /// The cgroup created for this surface. This will be created
         /// if `Application.transient_cgroup_base` is set.
         cgroup_path: ?[]const u8 = null,
+
+        /// The default size for a window that embeds this surface.
+        default_size: ?*Size = null,
+
+        /// The minimum size for this surface. Embedders enforce this,
+        /// not the surface itself.
+        min_size: ?*Size = null,
 
         /// The requested font size. This only applies to initialization
         /// and has no effect later.
@@ -576,6 +638,17 @@ pub const Surface = extern struct {
         priv.progress_bar_timer = null;
         self.setProgressReport(.{ .state = .remove });
         return @intFromBool(glib.SOURCE_REMOVE);
+    }
+
+    /// Request that this terminal come to the front and become focused.
+    /// It is up to the embedding widget to react to this.
+    pub fn present(self: *Self) void {
+        signals.@"present-request".impl.emit(
+            self,
+            null,
+            .{},
+            null,
+        );
     }
 
     /// Key press event (press or release).
@@ -975,7 +1048,13 @@ pub const Surface = extern struct {
     }
 
     pub fn getSize(self: *Self) apprt.SurfaceSize {
-        return self.private().size;
+        const priv = self.private();
+        // By the time this is called, we should be in a widget tree.
+        // This should not be called before that. We ensure this by initializing
+        // the surface in `glareaResize`. This is VERY important because it
+        // avoids the pty having an incorrect initial size.
+        assert(priv.size.width >= 0 and priv.size.height >= 0);
+        return priv.size;
     }
 
     pub fn getCursorPos(self: *Self) apprt.CursorPos {
@@ -983,8 +1062,6 @@ pub const Surface = extern struct {
     }
 
     pub fn defaultTermioEnv(self: *Self) !std.process.EnvMap {
-        _ = self;
-
         const alloc = Application.default().allocator();
         var env = try internal_os.getEnvMap(alloc);
         errdefer env.deinit();
@@ -1021,6 +1098,14 @@ pub const Surface = extern struct {
             env.remove("GTK_PATH");
         }
 
+        // This is a hack because it ties ourselves (optionally) to the
+        // Window class. The right solution we should do is emit a signal
+        // here where the handler can modify our EnvMap, but boxing the
+        // EnvMap is a bit annoying so I'm punting it.
+        if (ext.getAncestor(Window, self.as(gtk.Widget))) |window| {
+            try window.winproto().addSubprocessEnv(&env);
+        }
+
         return env;
     }
 
@@ -1050,6 +1135,13 @@ pub const Surface = extern struct {
         );
     }
 
+    /// Focus this surface. This properly focuses the input part of
+    /// our surface.
+    pub fn grabFocus(self: *Self) void {
+        const priv = self.private();
+        _ = priv.gl_area.as(gtk.Widget).grabFocus();
+    }
+
     //---------------------------------------------------------------
     // Virtual Methods
 
@@ -1065,12 +1157,7 @@ pub const Surface = extern struct {
         priv.mouse_shape = .text;
         priv.mouse_hidden = false;
         priv.focused = true;
-        priv.size = .{
-            // Funky numbers on purpose so they stand out if for some reason
-            // our size doesn't get properly set.
-            .width = 111,
-            .height = 111,
-        };
+        priv.size = .{ .width = 0, .height = 0 };
 
         // If our configuration is null then we get the configuration
         // from the application.
@@ -1150,9 +1237,17 @@ pub const Surface = extern struct {
             glib.free(@constCast(@ptrCast(v)));
             priv.mouse_hover_url = null;
         }
+        if (priv.default_size) |v| {
+            ext.boxedFree(Size, v);
+            priv.default_size = null;
+        }
         if (priv.font_size_request) |v| {
             glib.ext.destroy(v);
             priv.font_size_request = null;
+        }
+        if (priv.min_size) |v| {
+            ext.boxedFree(Size, v);
+            priv.min_size = null;
         }
         if (priv.pwd) |v| {
             glib.free(@constCast(@ptrCast(v)));
@@ -1189,6 +1284,50 @@ pub const Surface = extern struct {
         if (priv.config) |c| c.unref();
         priv.config = config.ref();
         self.as(gobject.Object).notifyByPspec(properties.config.impl.param_spec);
+    }
+
+    /// Return the default size, if set.
+    pub fn getDefaultSize(self: *Self) ?*Size {
+        const priv = self.private();
+        return priv.default_size;
+    }
+
+    /// Set the default size for a window that contains this surface.
+    /// This is up to the embedding widget to respect this. Generally, only
+    /// the first surface in a window respects this.
+    pub fn setDefaultSize(self: *Self, size: Size) void {
+        const priv = self.private();
+        if (priv.default_size) |v| ext.boxedFree(
+            Size,
+            v,
+        );
+        priv.default_size = ext.boxedCopy(
+            Size,
+            &size,
+        );
+        self.as(gobject.Object).notifyByPspec(properties.@"default-size".impl.param_spec);
+    }
+
+    /// Return the min size, if set.
+    pub fn getMinSize(self: *Self) ?*Size {
+        const priv = self.private();
+        return priv.min_size;
+    }
+
+    /// Set the min size for a window that contains this surface.
+    /// This is up to the embedding widget to respect this. Generally, only
+    /// the first surface in a window respects this.
+    pub fn setMinSize(self: *Self, size: Size) void {
+        const priv = self.private();
+        if (priv.min_size) |v| ext.boxedFree(
+            Size,
+            v,
+        );
+        priv.min_size = ext.boxedCopy(
+            Size,
+            &size,
+        );
+        self.as(gobject.Object).notifyByPspec(properties.@"min-size".impl.param_spec);
     }
 
     fn propConfig(
@@ -1832,15 +1971,32 @@ pub const Surface = extern struct {
     ) callconv(.c) void {
         log.debug("realize", .{});
 
-        // Setup our core surface
-        self.realizeSurface() catch |err| {
-            log.warn("surface failed to realize err={}", .{err});
-        };
+        // If we already have an initialized surface then we notify it.
+        // If we don't, we'll initialize it on the first resize so we have
+        // our proper initial dimensions.
+        const priv = self.private();
+        if (priv.core_surface) |v| realize: {
+            // We need to make the context current so we can call GL functions.
+            // This is required for all surface operations.
+            priv.gl_area.makeCurrent();
+            if (priv.gl_area.getError()) |err| {
+                log.warn("failed to make GL context current: {s}", .{err.f_message orelse "(no message)"});
+                log.warn("this error is usually due to a driver or gtk bug", .{});
+                log.warn("this is a common cause of this issue: https://gitlab.gnome.org/GNOME/gtk/-/issues/4950", .{});
+                break :realize;
+            }
+
+            v.renderer.displayRealized() catch |err| {
+                log.warn("core displayRealized failed err={}", .{err});
+                break :realize;
+            };
+
+            self.redraw();
+        }
 
         // Setup our input method. We do this here because this will
         // create a strong reference back to ourself and we want to be
         // able to release that in unrealize.
-        const priv = self.private();
         priv.im_context.as(gtk.IMContext).setClientWidget(self.as(gtk.Widget));
     }
 
@@ -1942,49 +2098,24 @@ pub const Surface = extern struct {
 
             // Setup our resize overlay if configured
             self.resizeOverlaySchedule();
-        }
-    }
 
-    fn resizeOverlaySchedule(self: *Self) void {
-        const priv = self.private();
-        const surface = priv.core_surface orelse return;
-
-        // Only show the resize overlay if its enabled
-        const config = if (priv.config) |c| c.get() else return;
-        switch (config.@"resize-overlay") {
-            .always, .@"after-first" => {},
-            .never => return,
+            return;
         }
 
-        // If we have resize overlays enabled, setup an idler
-        // to show that. We do this in an idle tick because doing it
-        // during the resize results in flickering.
-        var buf: [32]u8 = undefined;
-        priv.resize_overlay.setLabel(text: {
-            const grid_size = surface.size.grid();
-            break :text std.fmt.bufPrintZ(
-                &buf,
-                "{d} x {d}",
-                .{
-                    grid_size.columns,
-                    grid_size.rows,
-                },
-            ) catch |err| err: {
-                log.warn("unable to format text: {}", .{err});
-                break :err "";
-            };
-        });
-        priv.resize_overlay.schedule();
+        // If we don't have a surface, then we initialize it.
+        self.initSurface() catch |err| {
+            log.warn("surface failed to initialize err={}", .{err});
+        };
     }
 
-    const RealizeError = Allocator.Error || error{
+    const InitError = Allocator.Error || error{
         GLAreaError,
-        RendererError,
         SurfaceError,
     };
 
-    fn realizeSurface(self: *Self) RealizeError!void {
+    fn initSurface(self: *Self) InitError!void {
         const priv = self.private();
+        assert(priv.core_surface == null);
         const gl_area = priv.gl_area;
 
         // We need to make the context current so we can call GL functions.
@@ -1995,16 +2126,6 @@ pub const Surface = extern struct {
             log.warn("this error is usually due to a driver or gtk bug", .{});
             log.warn("this is a common cause of this issue: https://gitlab.gnome.org/GNOME/gtk/-/issues/4950", .{});
             return error.GLAreaError;
-        }
-
-        // If we already have an initialized surface then we just notify.
-        if (priv.core_surface) |v| {
-            v.renderer.displayRealized() catch |err| {
-                log.warn("core displayRealized failed err={}", .{err});
-                return error.RendererError;
-            };
-            self.redraw();
-            return;
         }
 
         const app = Application.default();
@@ -2048,6 +2169,46 @@ pub const Surface = extern struct {
 
         // Store it!
         priv.core_surface = surface;
+
+        // Emit the signal that we initialized the surface.
+        Surface.signals.init.impl.emit(
+            self,
+            null,
+            .{},
+            null,
+        );
+    }
+
+    fn resizeOverlaySchedule(self: *Self) void {
+        const priv = self.private();
+        const surface = priv.core_surface orelse return;
+
+        // Only show the resize overlay if its enabled
+        const config = if (priv.config) |c| c.get() else return;
+        switch (config.@"resize-overlay") {
+            .always, .@"after-first" => {},
+            .never => return,
+        }
+
+        // If we have resize overlays enabled, setup an idler
+        // to show that. We do this in an idle tick because doing it
+        // during the resize results in flickering.
+        var buf: [32]u8 = undefined;
+        priv.resize_overlay.setLabel(text: {
+            const grid_size = surface.size.grid();
+            break :text std.fmt.bufPrintZ(
+                &buf,
+                "{d} x {d}",
+                .{
+                    grid_size.columns,
+                    grid_size.rows,
+                },
+            ) catch |err| err: {
+                log.warn("unable to format text: {}", .{err});
+                break :err "";
+            };
+        });
+        priv.resize_overlay.schedule();
     }
 
     fn ecUrlMouseEnter(
@@ -2136,8 +2297,10 @@ pub const Surface = extern struct {
             gobject.ext.registerProperties(class, &.{
                 properties.config.impl,
                 properties.@"child-exited".impl,
+                properties.@"default-size".impl,
                 properties.@"font-size-request".impl,
                 properties.focused.impl,
+                properties.@"min-size".impl,
                 properties.@"mouse-shape".impl,
                 properties.@"mouse-hidden".impl,
                 properties.@"mouse-hover-url".impl,
@@ -2151,6 +2314,8 @@ pub const Surface = extern struct {
             signals.bell.impl.register(.{});
             signals.@"clipboard-read".impl.register(.{});
             signals.@"clipboard-write".impl.register(.{});
+            signals.init.impl.register(.{});
+            signals.@"present-request".impl.register(.{});
             signals.@"toggle-fullscreen".impl.register(.{});
             signals.@"toggle-maximize".impl.register(.{});
 
@@ -2180,6 +2345,17 @@ pub const Surface = extern struct {
         pub const getGObjectType = gobject.ext.defineBoxed(
             CloseScope,
             .{ .name = "GhosttySurfaceCloseScope" },
+        );
+    };
+
+    /// Simple dimensions struct for the surface used by various properties.
+    pub const Size = extern struct {
+        width: u32,
+        height: u32,
+
+        pub const getGObjectType = gobject.ext.defineBoxed(
+            Size,
+            .{ .name = "GhosttySurfaceSize" },
         );
     };
 };

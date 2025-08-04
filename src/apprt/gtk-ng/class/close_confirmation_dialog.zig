@@ -57,6 +57,17 @@ pub const CloseConfirmationDialog = extern struct {
                 void,
             );
         };
+
+        pub const cancel = struct {
+            pub const name = "cancel";
+            pub const connect = impl.connect;
+            const impl = gobject.ext.defineSignal(
+                name,
+                Self,
+                &.{},
+                void,
+            );
+        };
     };
 
     const Private = struct {
@@ -72,14 +83,15 @@ pub const CloseConfirmationDialog = extern struct {
 
     fn init(self: *Self, _: *Class) callconv(.C) void {
         gtk.Widget.initTemplate(self.as(gtk.Widget));
+    }
 
+    pub fn present(self: *Self, parent: ?*gtk.Widget) void {
         // Setup our title/body text.
         const priv = self.private();
         self.as(Dialog.Parent).setHeading(priv.target.title());
         self.as(Dialog.Parent).setBody(priv.target.body());
-    }
 
-    pub fn present(self: *Self, parent: ?*gtk.Widget) void {
+        // Show it
         self.as(Dialog).present(parent);
     }
 
@@ -91,13 +103,21 @@ pub const CloseConfirmationDialog = extern struct {
         self: *Self,
         response_id: [*:0]const u8,
     ) callconv(.C) void {
-        if (std.mem.orderZ(u8, response_id, "close") != .eq) return;
-        signals.@"close-request".impl.emit(
-            self,
-            null,
-            .{},
-            null,
-        );
+        if (std.mem.orderZ(u8, response_id, "close") == .eq) {
+            signals.@"close-request".impl.emit(
+                self,
+                null,
+                .{},
+                null,
+            );
+        } else {
+            signals.cancel.impl.emit(
+                self,
+                null,
+                .{},
+                null,
+            );
+        }
     }
 
     fn dispose(self: *Self) callconv(.C) void {
@@ -141,6 +161,7 @@ pub const CloseConfirmationDialog = extern struct {
 
             // Signals
             signals.@"close-request".impl.register(.{});
+            signals.cancel.impl.register(.{});
 
             // Virtual methods
             gobject.Object.virtual_methods.dispose.implement(class, &dispose);
@@ -158,11 +179,13 @@ pub const CloseConfirmationDialog = extern struct {
 /// together into one struct that is the sole source of truth.
 pub const Target = enum(c_int) {
     app,
+    tab,
     window,
 
     pub fn title(self: Target) [*:0]const u8 {
         return switch (self) {
             .app => i18n._("Quit Ghostty?"),
+            .tab => i18n._("Close Tab?"),
             .window => i18n._("Close Window?"),
         };
     }
@@ -170,6 +193,7 @@ pub const Target = enum(c_int) {
     pub fn body(self: Target) [*:0]const u8 {
         return switch (self) {
             .app => i18n._("All terminal sessions will be terminated."),
+            .tab => i18n._("All terminal sessions in this tab will be terminated."),
             .window => i18n._("All terminal sessions in this window will be terminated."),
         };
     }

@@ -7,9 +7,7 @@ const gdk = @import("gdk");
 const Config = @import("../../config.zig").Config;
 const input = @import("../../input.zig");
 const key = @import("key.zig");
-
-// TODO: As we get to these APIs the compiler should tell us
-const ApprtWindow = void;
+const ApprtWindow = @import("class/window.zig").Window;
 
 pub const noop = @import("winproto/noop.zig");
 pub const x11 = @import("winproto/x11.zig");
