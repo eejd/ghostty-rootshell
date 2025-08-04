@@ -152,7 +152,7 @@ pub const GlobalShortcuts = extern struct {
         }
     }
 
-    fn refresh(self: *Self) !void {
+    fn refresh(self: *Self) Allocator.Error!void {
         // Always close our previous state first.
         self.close();
 
@@ -173,7 +173,7 @@ pub const GlobalShortcuts = extern struct {
         errdefer priv.map = .{};
 
         // Update map
-        var trigger_buf: [256]u8 = undefined;
+        var trigger_buf: [1024]u8 = undefined;
         var it = config.keybind.set.bindings.iterator();
         while (it.next()) |entry| {
             const leaf = switch (entry.value_ptr.*) {
@@ -183,10 +183,23 @@ pub const GlobalShortcuts = extern struct {
             };
             if (!leaf.flags.global) continue;
 
-            const trigger = try key.xdgShortcutFromTrigger(
+            const trigger = if (key.xdgShortcutFromTrigger(
                 &trigger_buf,
                 entry.key_ptr.*,
-            ) orelse continue;
+            )) |shortcut_|
+                shortcut_ orelse continue
+            else |err| switch (err) {
+                // If there isn't space to translate the trigger, then our
+                // buffer might be too small (but 1024 is insane!). In any case
+                // we don't want to stop registering globals.
+                error.NoSpaceLeft => {
+                    log.warn(
+                        "buffer too small to translate trigger, ignoring={}",
+                        .{entry.key_ptr.*},
+                    );
+                    continue;
+                },
+            };
 
             try priv.map.put(
                 alloc,
