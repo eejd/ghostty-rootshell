@@ -165,7 +165,7 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
             end
 
             # Execute SSH with TERM environment variable
-            env TERM="$ssh_term" command ssh $ssh_opts $argv
+            TERM="$ssh_term" command ssh $ssh_opts $argv
         end
     end
 
