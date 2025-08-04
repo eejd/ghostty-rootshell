@@ -5,6 +5,7 @@ const Binding = @This();
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
+const build_config = @import("../build_config.zig");
 const ziglyph = @import("ziglyph");
 const key = @import("key.zig");
 const KeyEvent = key.KeyEvent;
@@ -728,6 +729,16 @@ pub const Action = union(enum) {
     crash: CrashThread,
 
     pub const Key = @typeInfo(Action).@"union".tag_type.?;
+
+    /// Make this a valid gobject if we're in a GTK environment.
+    pub const getGObjectType = switch (build_config.app_runtime) {
+        .gtk, .@"gtk-ng" => @import("gobject").ext.defineBoxed(
+            Action,
+            .{ .name = "GhosttyBindingAction" },
+        ),
+
+        .none => void,
+    };
 
     pub const CrashThread = enum {
         main,
