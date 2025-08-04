@@ -117,23 +117,6 @@ pub const Window = extern struct {
             );
         };
 
-        pub const @"background-opaque" = struct {
-            pub const name = "background-opaque";
-            const impl = gobject.ext.defineProperty(
-                name,
-                Self,
-                bool,
-                .{
-                    .nick = "Background Opaque",
-                    .blurb = "True if the background should be opaque.",
-                    .default = true,
-                    .accessor = gobject.ext.typedAccessor(Self, bool, .{
-                        .getter = Self.getBackgroundOpaque,
-                    }),
-                },
-            );
-        };
-
         pub const @"quick-terminal" = struct {
             pub const name = "quick-terminal";
             const impl = gobject.ext.defineProperty(
@@ -553,7 +536,6 @@ pub const Window = extern struct {
 
         // Trigger all our dynamic properties that depend on the config.
         inline for (&.{
-            "background-opaque",
             "headerbar-visible",
             "tabs-autohide",
             "tabs-visible",
@@ -567,6 +549,12 @@ pub const Window = extern struct {
 
         // Remainder uses the config
         const config = if (priv.config) |v| v.get() else return;
+
+        // Only add a solid background if we're opaque.
+        self.toggleCssClass(
+            "background",
+            config.@"background-opacity" >= 1,
+        );
 
         // Apply class to color headerbar if window-theme is set to `ghostty` and
         // GTK version is before 4.16. The conditional is because above 4.16
@@ -751,12 +739,6 @@ pub const Window = extern struct {
         return config.@"gtk-titlebar";
     }
 
-    fn getBackgroundOpaque(self: *Self) bool {
-        const priv = self.private();
-        const config = (priv.config orelse return true).get();
-        return config.@"background-opacity" >= 1.0;
-    }
-
     fn getTabsAutohide(self: *Self) bool {
         const priv = self.private();
         const config = if (priv.config) |v| v.get() else return true;
@@ -887,16 +869,6 @@ pub const Window = extern struct {
                 return;
             };
         }
-    }
-
-    /// Add or remove "background" CSS class depending on if the background
-    /// should be opaque.
-    fn propBackgroundOpaque(
-        _: *adw.ApplicationWindow,
-        _: *gobject.ParamSpec,
-        self: *Self,
-    ) callconv(.c) void {
-        self.toggleCssClass("background", self.getBackgroundOpaque());
     }
 
     fn propScaleFactor(
@@ -1604,7 +1576,6 @@ pub const Window = extern struct {
             // Properties
             gobject.ext.registerProperties(class, &.{
                 properties.@"active-surface".impl,
-                properties.@"background-opaque".impl,
                 properties.config.impl,
                 properties.debug.impl,
                 properties.@"headerbar-visible".impl,
@@ -1634,7 +1605,6 @@ pub const Window = extern struct {
             class.bindTemplateCallback("tab_create_window", &tabViewCreateWindow);
             class.bindTemplateCallback("notify_n_pages", &tabViewNPages);
             class.bindTemplateCallback("notify_selected_page", &tabViewSelectedPage);
-            class.bindTemplateCallback("notify_background_opaque", &propBackgroundOpaque);
             class.bindTemplateCallback("notify_config", &propConfig);
             class.bindTemplateCallback("notify_fullscreened", &propFullscreened);
             class.bindTemplateCallback("notify_maximized", &propMaximized);
