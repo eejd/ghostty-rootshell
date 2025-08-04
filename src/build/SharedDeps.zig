@@ -21,17 +21,22 @@ uucode_tables_zig: std.Build.LazyPath,
 pub const LazyPathList = std.ArrayList(std.Build.LazyPath);
 
 pub fn init(b: *std.Build, cfg: *const Config) !SharedDeps {
+    const uucode_x = b.dependency("uucode_x", .{});
+    const uucode_x_config = uucode_x.module("uucode.x.config");
+
+    const uucode = b.dependency("uucode", .{
+        .build_config_path = b.path("src/build/uucode_build_config.zig"),
+    });
+    uucode.module("build_config").addImport("uucode.x.config", uucode_x_config);
+    uucode_x_config.addImport("config.zig", uucode.module("config.zig"));
+    uucode_x_config.addImport("types.zig", uucode.module("types.zig"));
+
     var result: SharedDeps = .{
         .config = cfg,
         .help_strings = try .init(b, cfg),
         .unicode_tables = try .init(b),
         .framedata = try .init(b),
-        .uucode_tables_zig = b.dependency("uucode", .{
-            .table_0_fields = @as([]const []const u8, &[_][]const u8{
-                "general_category",
-                "has_emoji_presentation",
-            }),
-        }).namedLazyPath("tables.zig"),
+        .uucode_tables_zig = uucode.namedLazyPath("tables.zig"),
 
         // Setup by retarget
         .options = undefined,
@@ -426,6 +431,7 @@ pub fn add(
         .target = target,
         .optimize = optimize,
         .@"tables.zig" = self.uucode_tables_zig,
+        .x_root_path = b.path("src/build/uucode_x.zig"),
     })) |dep| {
         step.root_module.addImport("uucode", dep.module("uucode"));
     }
