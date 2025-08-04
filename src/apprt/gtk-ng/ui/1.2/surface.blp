@@ -15,19 +15,32 @@ template $GhosttySurface: Adw.Bin {
     focusable: false;
     focus-on-click: false;
 
-    GLArea gl_area {
-      realize => $gl_realize();
-      unrealize => $gl_unrealize();
-      render => $gl_render();
-      resize => $gl_resize();
+    child: Box {
       hexpand: true;
       vexpand: true;
-      focusable: true;
-      focus-on-click: true;
-      has-stencil-buffer: false;
-      has-depth-buffer: false;
-      use-es: false;
-    }
+
+      GLArea gl_area {
+        realize => $gl_realize();
+        unrealize => $gl_unrealize();
+        render => $gl_render();
+        resize => $gl_resize();
+        hexpand: true;
+        vexpand: true;
+        focusable: true;
+        focus-on-click: true;
+        has-stencil-buffer: false;
+        has-depth-buffer: false;
+        use-es: false;
+      }
+
+      PopoverMenu context_menu {
+        closed => $context_menu_closed();
+        menu-model: context_menu_model;
+        flags: nested;
+        halign: start;
+        has-arrow: false;
+      }
+    };
 
     [overlay]
     ProgressBar progress_bar_overlay {
@@ -121,4 +134,105 @@ IMMulticontext im_context {
   preedit-changed => $im_preedit_changed();
   preedit-end => $im_preedit_end();
   commit => $im_commit();
+}
+
+menu context_menu_model {
+  section {
+    item {
+      label: _("Copy");
+      action: "win.copy";
+    }
+
+    item {
+      label: _("Paste");
+      action: "win.paste";
+    }
+  }
+
+  section {
+    item {
+      label: _("Clear");
+      action: "win.clear";
+    }
+
+    item {
+      label: _("Reset");
+      action: "win.reset";
+    }
+  }
+
+  section {
+    submenu {
+      label: _("Split");
+
+      item {
+        label: _("Change Title…");
+        action: "win.prompt-title";
+      }
+
+      item {
+        label: _("Split Up");
+        action: "win.split-up";
+      }
+
+      item {
+        label: _("Split Down");
+        action: "win.split-down";
+      }
+
+      item {
+        label: _("Split Left");
+        action: "win.split-left";
+      }
+
+      item {
+        label: _("Split Right");
+        action: "win.split-right";
+      }
+    }
+
+    submenu {
+      label: _("Tab");
+
+      item {
+        label: _("New Tab");
+        action: "win.new-tab";
+      }
+
+      item {
+        label: _("Close Tab");
+        action: "win.close-tab";
+      }
+    }
+
+    submenu {
+      label: _("Window");
+
+      item {
+        label: _("New Window");
+        action: "win.new-window";
+      }
+
+      item {
+        label: _("Close Window");
+        action: "win.close";
+      }
+    }
+  }
+
+  section {
+    submenu {
+      label: _("Config");
+
+      item {
+        label: _("Open Configuration");
+        action: "app.open-config";
+      }
+
+      item {
+        label: _("Reload Configuration");
+        action: "app.reload-config";
+      }
+    }
+  }
 }
