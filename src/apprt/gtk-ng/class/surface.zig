@@ -327,6 +327,18 @@ pub const Surface = extern struct {
             );
         };
 
+        /// Emitted just prior to the context menu appearing.
+        pub const menu = struct {
+            pub const name = "menu";
+            pub const connect = impl.connect;
+            const impl = gobject.ext.defineSignal(
+                name,
+                Self,
+                &.{},
+                void,
+            );
+        };
+
         /// Emitted when the focus wants to be brought to the top and
         /// focused.
         pub const @"present-request" = struct {
@@ -462,6 +474,7 @@ pub const Surface = extern struct {
 
         // Template binds
         child_exited_overlay: *ChildExited,
+        context_menu: *gtk.PopoverMenu,
         drop_target: *gtk.DropTarget,
         progress_bar_overlay: *gtk.ProgressBar,
 
@@ -1473,6 +1486,16 @@ pub const Surface = extern struct {
         self.close(.{ .surface = false });
     }
 
+    fn contextMenuClosed(
+        _: *gtk.PopoverMenu,
+        self: *Self,
+    ) callconv(.c) void {
+        // When the context menu closes, it moves focus back to the tab
+        // bar if there are tabs. That's not correct. We need to grab it
+        // on the surface.
+        self.grabFocus();
+    }
+
     fn dtDrop(
         _: *gtk.DropTarget,
         value: *gobject.Value,
@@ -1647,9 +1670,9 @@ pub const Surface = extern struct {
         }
 
         // Report the event
+        const button = translateMouseButton(gesture.as(gtk.GestureSingle).getCurrentButton());
         const consumed = if (priv.core_surface) |surface| consumed: {
             const gtk_mods = event.getModifierState();
-            const button = translateMouseButton(gesture.as(gtk.GestureSingle).getCurrentButton());
             const mods = gtk_key.translateMods(gtk_mods);
             break :consumed surface.mouseButtonCallback(
                 .press,
@@ -1661,10 +1684,28 @@ pub const Surface = extern struct {
             };
         } else false;
 
-        // TODO: context menu
-        _ = consumed;
-        _ = x;
-        _ = y;
+        // If a right click isn't consumed, mouseButtonCallback selects the hovered
+        // word and returns false. We can use this to handle the context menu
+        // opening under normal scenarios.
+        if (!consumed and button == .right) {
+            signals.menu.impl.emit(
+                self,
+                null,
+                .{},
+                null,
+            );
+
+            const rect: gdk.Rectangle = .{
+                .f_x = @intFromFloat(x),
+                .f_y = @intFromFloat(y),
+                .f_width = 1,
+                .f_height = 1,
+            };
+
+            const popover = priv.context_menu.as(gtk.Popover);
+            popover.setPointingTo(&rect);
+            popover.popup();
+        }
     }
 
     fn gcMouseUp(
@@ -2259,6 +2300,7 @@ pub const Surface = extern struct {
             class.bindTemplateChildPrivate("url_left", .{});
             class.bindTemplateChildPrivate("url_right", .{});
             class.bindTemplateChildPrivate("child_exited_overlay", .{});
+            class.bindTemplateChildPrivate("context_menu", .{});
             class.bindTemplateChildPrivate("progress_bar_overlay", .{});
             class.bindTemplateChildPrivate("resize_overlay", .{});
             class.bindTemplateChildPrivate("drop_target", .{});
@@ -2288,6 +2330,7 @@ pub const Surface = extern struct {
             class.bindTemplateCallback("url_mouse_enter", &ecUrlMouseEnter);
             class.bindTemplateCallback("url_mouse_leave", &ecUrlMouseLeave);
             class.bindTemplateCallback("child_exited_close", &childExitedClose);
+            class.bindTemplateCallback("context_menu_closed", &contextMenuClosed);
             class.bindTemplateCallback("notify_config", &propConfig);
             class.bindTemplateCallback("notify_mouse_hover_url", &propMouseHoverUrl);
             class.bindTemplateCallback("notify_mouse_hidden", &propMouseHidden);
@@ -2315,6 +2358,7 @@ pub const Surface = extern struct {
             signals.@"clipboard-read".impl.register(.{});
             signals.@"clipboard-write".impl.register(.{});
             signals.init.impl.register(.{});
+            signals.menu.impl.register(.{});
             signals.@"present-request".impl.register(.{});
             signals.@"toggle-fullscreen".impl.register(.{});
             signals.@"toggle-maximize".impl.register(.{});

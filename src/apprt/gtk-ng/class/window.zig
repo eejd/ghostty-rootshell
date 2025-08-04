@@ -590,6 +590,27 @@ pub const Window = extern struct {
         };
     }
 
+    /// Sync the state of any actions on this window.
+    fn syncActions(self: *Self) void {
+        const has_selection = selection: {
+            const surface = self.getActiveSurface() orelse
+                break :selection false;
+            const core_surface = surface.core() orelse
+                break :selection false;
+            break :selection core_surface.hasSelection();
+        };
+
+        const action_map: *gio.ActionMap = gobject.ext.cast(
+            gio.ActionMap,
+            self,
+        ) orelse return;
+        const action: *gio.SimpleAction = gobject.ext.cast(
+            gio.SimpleAction,
+            action_map.lookupAction("copy") orelse return,
+        ) orelse return;
+        action.setEnabled(@intFromBool(has_selection));
+    }
+
     fn toggleCssClass(self: *Self, class: [:0]const u8, value: bool) void {
         const widget = self.as(gtk.Widget);
         if (value)
@@ -845,23 +866,7 @@ pub const Window = extern struct {
         const active = button.getActive() != 0;
         if (!active) return;
 
-        const has_selection = selection: {
-            const surface = self.getActiveSurface() orelse
-                break :selection false;
-            const core_surface = surface.core() orelse
-                break :selection false;
-            break :selection core_surface.hasSelection();
-        };
-
-        const action_map: *gio.ActionMap = gobject.ext.cast(
-            gio.ActionMap,
-            self,
-        ) orelse return;
-        const action: *gio.SimpleAction = gobject.ext.cast(
-            gio.SimpleAction,
-            action_map.lookupAction("copy") orelse return,
-        ) orelse return;
-        action.setEnabled(@intFromBool(has_selection));
+        self.syncActions();
     }
 
     fn propQuickTerminal(
@@ -1210,6 +1215,13 @@ pub const Window = extern struct {
             self,
             .{},
         );
+        _ = Surface.signals.menu.connect(
+            surface,
+            *Self,
+            surfaceMenu,
+            self,
+            .{},
+        );
         _ = Surface.signals.@"toggle-fullscreen".connect(
             surface,
             *Self,
@@ -1353,6 +1365,13 @@ pub const Window = extern struct {
             // The only one we care about!
             .window => self.as(gtk.Window).close(),
         }
+    }
+
+    fn surfaceMenu(
+        _: *Surface,
+        self: *Self,
+    ) callconv(.c) void {
+        self.syncActions();
     }
 
     fn surfacePresentRequest(
