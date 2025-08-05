@@ -607,10 +607,10 @@ pub const Application = extern struct {
             .toggle_quick_terminal => return Action.toggleQuickTerminal(self),
             .toggle_tab_overview => return Action.toggleTabOverview(target),
             .toggle_window_decorations => return Action.toggleWindowDecorations(target),
+            .toggle_command_palette => return Action.toggleCommandPalette(target),
 
             // Unimplemented but todo on gtk-ng branch
             .prompt_title,
-            .toggle_command_palette,
             .inspector,
             // TODO: splits
             .new_split,
@@ -2108,6 +2108,15 @@ const Action = struct {
 
                 window.toggleWindowDecorations();
                 return true;
+            },
+        }
+    }
+
+    pub fn toggleCommandPalette(target: apprt.Target) bool {
+        switch (target) {
+            .app => return false,
+            .surface => |surface| {
+                return surface.rt_surface.gobj().toggleCommandPalette();
             },
         }
     }

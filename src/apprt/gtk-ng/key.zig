@@ -60,7 +60,7 @@ pub fn xdgShortcutFromTrigger(
     return slice[0 .. slice.len - 1 :0];
 }
 
-fn writeTriggerKey(writer: anytype, trigger: input.Binding.Trigger) !bool {
+fn writeTriggerKey(writer: anytype, trigger: input.Binding.Trigger) error{NoSpaceLeft}!bool {
     switch (trigger.key) {
         .physical => |k| {
             const keyval = keyvalFromKey(k) orelse return false;

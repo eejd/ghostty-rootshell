@@ -377,6 +377,19 @@ pub const Surface = extern struct {
                 void,
             );
         };
+
+        /// Emitted when this surface requests that the command palette be
+        /// toggled.
+        pub const @"toggle-command-palette" = struct {
+            pub const name = "toggle-command-palette";
+            pub const connect = impl.connect;
+            const impl = gobject.ext.defineSignal(
+                name,
+                Self,
+                &.{},
+                void,
+            );
+        };
     };
 
     const Private = struct {
@@ -564,6 +577,16 @@ pub const Surface = extern struct {
             .{},
             null,
         );
+    }
+
+    pub fn toggleCommandPalette(self: *Self) bool {
+        signals.@"toggle-command-palette".impl.emit(
+            self,
+            null,
+            .{},
+            null,
+        );
+        return true;
     }
 
     /// Set the current progress report state.
@@ -2362,6 +2385,7 @@ pub const Surface = extern struct {
             signals.@"present-request".impl.register(.{});
             signals.@"toggle-fullscreen".impl.register(.{});
             signals.@"toggle-maximize".impl.register(.{});
+            signals.@"toggle-command-palette".impl.register(.{});
 
             // Virtual methods
             gobject.Object.virtual_methods.dispose.implement(class, &dispose);
