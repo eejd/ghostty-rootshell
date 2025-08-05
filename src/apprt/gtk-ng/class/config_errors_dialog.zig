@@ -67,7 +67,7 @@ pub const ConfigErrorsDialog = extern struct {
         });
     }
 
-    fn init(self: *Self, _: *Class) callconv(.C) void {
+    fn init(self: *Self, _: *Class) callconv(.c) void {
         gtk.Widget.initTemplate(self.as(gtk.Widget));
     }
 
@@ -82,7 +82,7 @@ pub const ConfigErrorsDialog = extern struct {
     fn response(
         self: *Self,
         response_id: [*:0]const u8,
-    ) callconv(.C) void {
+    ) callconv(.c) void {
         if (std.mem.orderZ(u8, response_id, "reload") != .eq) return;
         signals.@"reload-config".impl.emit(
             self,
@@ -92,7 +92,7 @@ pub const ConfigErrorsDialog = extern struct {
         );
     }
 
-    fn dispose(self: *Self) callconv(.C) void {
+    fn dispose(self: *Self) callconv(.c) void {
         const priv = self.private();
         if (priv.config) |v| {
             v.unref();
@@ -134,7 +134,7 @@ pub const ConfigErrorsDialog = extern struct {
         var parent: *Parent.Class = undefined;
         pub const Instance = Self;
 
-        fn init(class: *Class) callconv(.C) void {
+        fn init(class: *Class) callconv(.c) void {
             gobject.ext.ensureType(Dialog);
             gtk.Widget.Class.setTemplateFromResource(
                 class.as(gtk.Widget.Class),

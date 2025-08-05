@@ -81,7 +81,7 @@ pub const CloseConfirmationDialog = extern struct {
         });
     }
 
-    fn init(self: *Self, _: *Class) callconv(.C) void {
+    fn init(self: *Self, _: *Class) callconv(.c) void {
         gtk.Widget.initTemplate(self.as(gtk.Widget));
     }
 
@@ -102,7 +102,7 @@ pub const CloseConfirmationDialog = extern struct {
     fn response(
         self: *Self,
         response_id: [*:0]const u8,
-    ) callconv(.C) void {
+    ) callconv(.c) void {
         if (std.mem.orderZ(u8, response_id, "close") == .eq) {
             signals.@"close-request".impl.emit(
                 self,
@@ -120,7 +120,7 @@ pub const CloseConfirmationDialog = extern struct {
         }
     }
 
-    fn dispose(self: *Self) callconv(.C) void {
+    fn dispose(self: *Self) callconv(.c) void {
         gtk.Widget.disposeTemplate(
             self.as(gtk.Widget),
             getGObjectType(),
@@ -143,7 +143,7 @@ pub const CloseConfirmationDialog = extern struct {
         var parent: *Parent.Class = undefined;
         pub const Instance = Self;
 
-        fn init(class: *Class) callconv(.C) void {
+        fn init(class: *Class) callconv(.c) void {
             gobject.ext.ensureType(Dialog);
             gtk.Widget.Class.setTemplateFromResource(
                 class.as(gtk.Widget.Class),

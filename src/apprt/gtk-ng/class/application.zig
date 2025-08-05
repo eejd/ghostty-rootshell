@@ -979,7 +979,7 @@ pub const Application = extern struct {
     //---------------------------------------------------------------
     // Virtual Methods
 
-    fn startup(self: *Self) callconv(.C) void {
+    fn startup(self: *Self) callconv(.c) void {
         log.debug("startup", .{});
 
         gio.Application.virtual_methods.startup.call(
@@ -1237,7 +1237,7 @@ pub const Application = extern struct {
         priv.transient_cgroup_base = path;
     }
 
-    fn activate(self: *Self) callconv(.C) void {
+    fn activate(self: *Self) callconv(.c) void {
         log.debug("activate", .{});
 
         // Queue a new window
@@ -1253,7 +1253,7 @@ pub const Application = extern struct {
         );
     }
 
-    fn dispose(self: *Self) callconv(.C) void {
+    fn dispose(self: *Self) callconv(.c) void {
         const priv = self.private();
         if (priv.config_errors_dialog.get()) |diag| {
             diag.close();
@@ -1272,7 +1272,7 @@ pub const Application = extern struct {
         );
     }
 
-    fn finalize(self: *Self) callconv(.C) void {
+    fn finalize(self: *Self) callconv(.c) void {
         self.deinit();
         gobject.Object.virtual_methods.finalize.call(
             Class.parent,
@@ -1545,7 +1545,7 @@ pub const Application = extern struct {
         var parent: *Parent.Class = undefined;
         pub const Instance = Self;
 
-        fn init(class: *Class) callconv(.C) void {
+        fn init(class: *Class) callconv(.c) void {
             // Register our compiled resources exactly once.
             {
                 const c = @cImport({
