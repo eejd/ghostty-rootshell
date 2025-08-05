@@ -25,6 +25,7 @@ const CloseConfirmationDialog = @import("close_confirmation_dialog.zig").CloseCo
 const Surface = @import("surface.zig").Surface;
 const Tab = @import("tab.zig").Tab;
 const DebugWarning = @import("debug_warning.zig").DebugWarning;
+const CommandPalette = @import("command_palette.zig").CommandPalette;
 
 const log = std.log.scoped(.gtk_ghostty_window);
 
@@ -244,6 +245,9 @@ pub const Window = extern struct {
         /// See tabOverviewOpen for why we have this.
         tab_overview_focus_timer: ?c_uint = null,
 
+        /// A weak reference to a command palette.
+        command_palette: gobject.WeakRef = std.mem.zeroes(gobject.WeakRef),
+
         // Template bindings
         tab_overview: *adw.TabOverview,
         tab_bar: *adw.TabBar,
@@ -332,6 +336,7 @@ pub const Window = extern struct {
             .{ "paste", actionPaste, null },
             .{ "reset", actionReset, null },
             .{ "clear", actionClear, null },
+            .{ "toggle-command-palette", actionToggleCommandPalette, null },
         };
 
         const action_map = self.as(gio.ActionMap);
@@ -1208,6 +1213,13 @@ pub const Window = extern struct {
             self,
             .{},
         );
+        _ = Surface.signals.@"toggle-command-palette".connect(
+            surface,
+            *Self,
+            surfaceToggleCommandPalette,
+            self,
+            .{},
+        );
 
         // If we've never had a surface initialize yet, then we register
         // this signal. Its theoretically possible to launch multiple surfaces
@@ -1418,6 +1430,15 @@ pub const Window = extern struct {
         // We react to the changes in the propMaximized callback
     }
 
+    /// React to a signal from a surface requesting that the command palette
+    /// be toggled.
+    fn surfaceToggleCommandPalette(
+        _: *Surface,
+        self: *Self,
+    ) callconv(.c) void {
+        self.toggleCommandPalette();
+    }
+
     fn surfaceInit(
         surface: *Surface,
         self: *Self,
@@ -1549,6 +1570,63 @@ pub const Window = extern struct {
         self: *Window,
     ) callconv(.c) void {
         self.performBindingAction(.clear_screen);
+    }
+
+    /// Toggle the command palette.
+    fn toggleCommandPalette(self: *Window) void {
+        const priv = self.private();
+        // Get a reference to a command palette. First check the weak reference
+        // that we save to see if we already have stored. If we don't then
+        // create a new one.
+        const command_palette = gobject.ext.cast(CommandPalette, priv.command_palette.get()) orelse command_palette: {
+            // Create a fresh command palette.
+            const command_palette = CommandPalette.new();
+
+            // Synchronize our config to the command palette's config.
+            _ = gobject.Object.bindProperty(
+                self.as(gobject.Object),
+                "config",
+                command_palette.as(gobject.Object),
+                "config",
+                .{ .sync_create = true },
+            );
+
+            // Listen to the activate signal to know if the user selected an option in
+            // the command palette.
+            _ = CommandPalette.signals.tigger.connect(
+                command_palette,
+                *Window,
+                signalCommandPaletteTrigger,
+                self,
+                .{},
+            );
+
+            break :command_palette command_palette;
+        };
+        defer command_palette.unref();
+
+        // Save a weak reference to the command palette. We use a weak reference to avoid
+        // reference counting cycles that might cause problems later.
+        priv.command_palette.set(command_palette.as(gobject.Object));
+
+        // Tell the command palette to toggle itself. If the dialog gets
+        // presented (instead of hidden) it will be modal over our window.
+        command_palette.toggle(self);
+    }
+
+    // React to a signal from a command palette asking an action to be performed.
+    fn signalCommandPaletteTrigger(_: *CommandPalette, action: *const input.Binding.Action, self: *Self) callconv(.c) void {
+        // If the activation actually has an action, perform it.
+        self.performBindingAction(action.*);
+    }
+
+    /// React to a GTK action requesting that the command palette be toggled.
+    fn actionToggleCommandPalette(
+        _: *gio.SimpleAction,
+        _: ?*glib.Variant,
+        self: *Window,
+    ) callconv(.c) void {
+        self.toggleCommandPalette();
     }
 
     const C = Common(Self, Private);

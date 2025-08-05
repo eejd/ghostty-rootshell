@@ -840,6 +840,26 @@
    fun:FcConfigSubstituteWithPat
 }
 
+{
+   FcConfigValues
+   Memcheck:Leak
+   match-leak-kinds: possible
+   fun:malloc
+   obj:/usr/lib*/libfontconfig.so*
+   obj:/usr/lib*/libfontconfig.so*
+   fun:FcConfigValues
+}
+
+{
+   FcValueSave
+   Memcheck:Leak
+   match-leak-kinds: possible
+   fun:malloc
+   obj:/usr/lib*/libfontconfig.so*
+   obj:/usr/lib*/libfontconfig.so*
+   fun:FcValueSave
+}
+
 # Pixman
 {
    pixman_image_composite32
