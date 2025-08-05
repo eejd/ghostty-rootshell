@@ -50,7 +50,7 @@ pub const CommandPalette = extern struct {
         /// action contains pointers to allocated data so if a receiver of this
         /// signal needs to keep the action around it will need to clone the
         /// action or there may be use-after-free errors.
-        pub const tigger = struct {
+        pub const trigger = struct {
             pub const name = "trigger";
             pub const connect = impl.connect;
             const impl = gobject.ext.defineSignal(
@@ -240,7 +240,7 @@ pub const CommandPalette = extern struct {
 
         // Signal that an an action has been selected. Signals are synchronous
         // so we shouldn't need to worry about cloning the action.
-        signals.tigger.impl.emit(
+        signals.trigger.impl.emit(
             self,
             null,
             .{&action},
@@ -290,7 +290,7 @@ pub const CommandPalette = extern struct {
             });
 
             // Signals
-            signals.tigger.impl.register(.{});
+            signals.trigger.impl.register(.{});
 
             // Virtual methods
             gobject.Object.virtual_methods.dispose.implement(class, &dispose);

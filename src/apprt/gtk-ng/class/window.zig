@@ -1593,7 +1593,7 @@ pub const Window = extern struct {
 
             // Listen to the activate signal to know if the user selected an option in
             // the command palette.
-            _ = CommandPalette.signals.tigger.connect(
+            _ = CommandPalette.signals.trigger.connect(
                 command_palette,
                 *Window,
                 signalCommandPaletteTrigger,
