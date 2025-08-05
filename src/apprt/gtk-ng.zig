@@ -7,6 +7,7 @@ pub const resourcesDir = internal_os.resourcesDir;
 
 // The exported API, custom for the apprt.
 pub const class = @import("gtk-ng/class.zig");
+pub const SplitTree = @import("gtk-ng/split_tree.zig").SplitTree;
 pub const WeakRef = @import("gtk-ng/weak_ref.zig").WeakRef;
 
 test {
