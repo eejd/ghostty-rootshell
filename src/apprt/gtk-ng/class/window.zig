@@ -260,7 +260,7 @@ pub const Window = extern struct {
         });
     }
 
-    fn init(self: *Self, _: *Class) callconv(.C) void {
+    fn init(self: *Self, _: *Class) callconv(.c) void {
         gtk.Widget.initTemplate(self.as(gtk.Widget));
 
         // If our configuration is null then we get the configuration
@@ -892,7 +892,7 @@ pub const Window = extern struct {
     //---------------------------------------------------------------
     // Virtual methods
 
-    fn dispose(self: *Self) callconv(.C) void {
+    fn dispose(self: *Self) callconv(.c) void {
         const priv = self.private();
         if (priv.config) |v| {
             v.unref();
@@ -911,7 +911,7 @@ pub const Window = extern struct {
         );
     }
 
-    fn finalize(self: *Self) callconv(.C) void {
+    fn finalize(self: *Self) callconv(.c) void {
         const priv = self.private();
         priv.tab_bindings.unref();
         priv.winproto.deinit(Application.default().allocator());
@@ -1562,7 +1562,7 @@ pub const Window = extern struct {
         var parent: *Parent.Class = undefined;
         pub const Instance = Self;
 
-        fn init(class: *Class) callconv(.C) void {
+        fn init(class: *Class) callconv(.c) void {
             gobject.ext.ensureType(DebugWarning);
             gtk.Widget.Class.setTemplateFromResource(
                 class.as(gtk.Widget.Class),

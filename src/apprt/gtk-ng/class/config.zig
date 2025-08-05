@@ -139,7 +139,7 @@ pub const Config = extern struct {
         return text_buf;
     }
 
-    fn finalize(self: *Self) callconv(.C) void {
+    fn finalize(self: *Self) callconv(.c) void {
         self.private().config.deinit();
 
         gobject.Object.virtual_methods.finalize.call(
@@ -159,7 +159,7 @@ pub const Config = extern struct {
         var parent: *Parent.Class = undefined;
         pub const Instance = Self;
 
-        fn init(class: *Class) callconv(.C) void {
+        fn init(class: *Class) callconv(.c) void {
             gobject.Object.virtual_methods.finalize.implement(class, &finalize);
             gobject.ext.registerProperties(class, &.{
                 properties.@"diagnostics-buffer",

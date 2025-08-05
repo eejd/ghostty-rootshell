@@ -147,7 +147,7 @@ pub const ResizeOverlay = extern struct {
         pub var offset: c_int = 0;
     };
 
-    fn init(self: *Self, _: *Class) callconv(.C) void {
+    fn init(self: *Self, _: *Class) callconv(.c) void {
         gtk.Widget.initTemplate(self.as(gtk.Widget));
 
         const priv = self.private();
@@ -228,7 +228,7 @@ pub const ResizeOverlay = extern struct {
     //---------------------------------------------------------------
     // Virtual methods
 
-    fn dispose(self: *Self) callconv(.C) void {
+    fn dispose(self: *Self) callconv(.c) void {
         const priv = self.private();
         if (priv.idler) |v| {
             if (glib.Source.remove(v) == 0) {
@@ -271,7 +271,7 @@ pub const ResizeOverlay = extern struct {
         var parent: *Parent.Class = undefined;
         pub const Instance = Self;
 
-        fn init(class: *Class) callconv(.C) void {
+        fn init(class: *Class) callconv(.c) void {
             gtk.Widget.Class.setTemplateFromResource(
                 class.as(gtk.Widget.Class),
                 comptime gresource.blueprint(.{

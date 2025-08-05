@@ -1158,7 +1158,7 @@ pub const Surface = extern struct {
     //---------------------------------------------------------------
     // Virtual Methods
 
-    fn init(self: *Self, _: *Class) callconv(.C) void {
+    fn init(self: *Self, _: *Class) callconv(.c) void {
         gtk.Widget.initTemplate(self.as(gtk.Widget));
 
         const priv = self.private();
@@ -1207,7 +1207,7 @@ pub const Surface = extern struct {
         self.propConfig(undefined, null);
     }
 
-    fn dispose(self: *Self) callconv(.C) void {
+    fn dispose(self: *Self) callconv(.c) void {
         const priv = self.private();
         if (priv.config) |v| {
             v.unref();
@@ -1231,7 +1231,7 @@ pub const Surface = extern struct {
         );
     }
 
-    fn finalize(self: *Self) callconv(.C) void {
+    fn finalize(self: *Self) callconv(.c) void {
         const priv = self.private();
         if (priv.core_surface) |v| {
             // Remove ourselves from the list of known surfaces in the app.
@@ -2283,7 +2283,7 @@ pub const Surface = extern struct {
         var parent: *Parent.Class = undefined;
         pub const Instance = Self;
 
-        fn init(class: *Class) callconv(.C) void {
+        fn init(class: *Class) callconv(.c) void {
             gobject.ext.ensureType(ResizeOverlay);
             gobject.ext.ensureType(ChildExited);
             gtk.Widget.Class.setTemplateFromResource(

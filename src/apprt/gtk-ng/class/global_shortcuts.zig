@@ -103,7 +103,7 @@ pub const GlobalShortcuts = extern struct {
         };
     };
 
-    fn init(self: *Self, _: *Class) callconv(.C) void {
+    fn init(self: *Self, _: *Class) callconv(.c) void {
         _ = gobject.Object.signals.notify.connect(
             self,
             *Self,
@@ -570,7 +570,7 @@ pub const GlobalShortcuts = extern struct {
     //---------------------------------------------------------------
     // Virtual methods
 
-    fn dispose(self: *Self) callconv(.C) void {
+    fn dispose(self: *Self) callconv(.c) void {
         // Since we drop references here we may lose access to things like
         // dbus connections, so we need to close all our connections right
         // away instead of in finalize.
@@ -603,7 +603,7 @@ pub const GlobalShortcuts = extern struct {
         var parent: *Parent.Class = undefined;
         pub const Instance = Self;
 
-        fn init(class: *Class) callconv(.C) void {
+        fn init(class: *Class) callconv(.c) void {
             // Properties
             gobject.ext.registerProperties(class, &.{
                 properties.config.impl,

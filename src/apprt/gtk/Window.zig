@@ -1121,7 +1121,7 @@ fn gtkActionToggleCommandPalette(
     _: *gio.SimpleAction,
     _: ?*glib.Variant,
     self: *Window,
-) callconv(.C) void {
+) callconv(.c) void {
     self.performBindingAction(.toggle_command_palette);
 }
 
