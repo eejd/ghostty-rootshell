@@ -245,8 +245,8 @@ pub fn SplitTree(comptime V: type) type {
             slots[0] = .{
                 .x = 0,
                 .y = 0,
-                .width = dim.width,
-                .height = dim.height,
+                .width = @floatFromInt(dim.width),
+                .height = @floatFromInt(dim.height),
             };
             self.fillSpatialSlots(slots, 0);
 
@@ -346,34 +346,101 @@ pub fn SplitTree(comptime V: type) type {
 
             if (self.nodes.len == 0) {
                 try writer.writeAll("empty");
-            } else {
-                try self.formatNode(writer, 0, 0);
+                return;
             }
-        }
 
-        fn formatNode(
-            self: *const Self,
-            writer: anytype,
-            handle: Node.Handle,
-            depth: usize,
-        ) !void {
-            const node = self.nodes[handle];
+            // Use our arena's GPA to allocate some intermediate memory.
+            // Requiring allocation for formatting is nasty but this is really
+            // only used for debugging and testing and shouldn't hit OOM
+            // scenarios.
+            var arena: ArenaAllocator = .init(self.arena.child_allocator);
+            defer arena.deinit();
+            const alloc = arena.allocator();
 
-            // Write indentation
-            for (0..depth) |_| try writer.writeAll("  ");
+            // Get our spatial representation.
+            const sp = try self.spatial(alloc);
 
-            // Write node
-            switch (node) {
-                .leaf => try writer.print("leaf({d})", .{handle}),
-                .split => |s| {
-                    try writer.print(
-                        "split({s}, {d:.2})\n",
-                        .{ @tagName(s.layout), s.ratio },
-                    );
-                    try self.formatNode(writer, s.left, depth + 1);
-                    try writer.writeAll("\n");
-                    try self.formatNode(writer, s.right, depth + 1);
-                },
+            // We need space for whitespace and ASCII art so add that.
+            // We need to accommodate the leaf handle, whitespace, and
+            // then the border.
+            const cell_width = cell_width: {
+                // The width we need for the largest label.
+                const max_label_width = std.math.log10(sp.slots.len) + 1;
+
+                // Border + whitespace + label + whitespace + border.
+                break :cell_width 2 + max_label_width + 2;
+            };
+            const cell_height = cell_height: {
+                // Border + label + border. No whitespace needed on the
+                // vertical axis.
+                break :cell_height 1 + 1 + 1;
+            };
+
+            // Make a grid that can fit our entire ASCII diagram. We know
+            // the width/height based on node 0.
+            const grid = grid: {
+                // Get our initial width/height. Each leaf is 1x1 in this.
+                var width: usize = @intFromFloat(@ceil(sp.slots[0].width));
+                var height: usize = @intFromFloat(@ceil(sp.slots[0].height));
+
+                // We need space for whitespace and ASCII art so add that.
+                // We need to accommodate the leaf handle, whitespace, and
+                // then the border.
+                width *= cell_width;
+                height *= cell_height;
+
+                const rows = try alloc.alloc([]u8, height);
+                for (0..rows.len) |y| {
+                    rows[y] = try alloc.alloc(u8, width + 1);
+                    @memset(rows[y], ' ');
+                    rows[y][width] = '\n';
+                }
+                break :grid rows;
+            };
+
+            // Draw each node
+            for (sp.slots, 0..) |slot, handle| {
+                var x: usize = @intFromFloat(@ceil(slot.x));
+                var y: usize = @intFromFloat(@ceil(slot.y));
+                var width: usize = @intFromFloat(@ceil(slot.width));
+                var height: usize = @intFromFloat(@ceil(slot.height));
+                x *= cell_width;
+                y *= cell_height;
+                width *= cell_width;
+                height *= cell_height;
+
+                // Top border
+                {
+                    const top = grid[y][x..][0..width];
+                    top[0] = '+';
+                    for (1..width - 1) |i| top[i] = '-';
+                    top[width - 1] = '+';
+                }
+
+                // Bottom border
+                {
+                    const bottom = grid[y + height - 1][x..][0..width];
+                    bottom[0] = '+';
+                    for (1..width - 1) |i| bottom[i] = '-';
+                    bottom[width - 1] = '+';
+                }
+
+                // Left border
+                for (y + 1..y + height - 1) |y_cur| grid[y_cur][x] = '|';
+                for (y + 1..y + height - 1) |y_cur| grid[y_cur][x + width - 1] = '|';
+
+                // Draw the handle in the center
+                const x_mid = width / 2 + x;
+                const y_mid = height / 2 + y;
+                const label_width = std.math.log10(handle + 1) + 1;
+                const label_start = x_mid - label_width / 2;
+                const row = grid[y_mid][label_start..];
+                _ = try std.fmt.bufPrint(row, "{d}", .{handle});
+            }
+
+            // Output every row
+            for (grid) |row| {
+                try writer.writeAll(row);
             }
         }
     };
@@ -418,11 +485,14 @@ test "SplitTree: single node" {
     const str = try std.fmt.allocPrint(alloc, "{}", .{t});
     defer alloc.free(str);
     try testing.expectEqualStrings(str,
-        \\leaf(0)
+        \\+---+
+        \\| 0 |
+        \\+---+
+        \\
     );
 }
 
-test "SplitTree: split" {
+test "SplitTree: split horizontal" {
     const testing = std.testing;
     const alloc = testing.allocator;
     var v: TestTree.View = .{};
@@ -443,8 +513,40 @@ test "SplitTree: split" {
     const str = try std.fmt.allocPrint(alloc, "{}", .{t3});
     defer alloc.free(str);
     try testing.expectEqualStrings(str,
-        \\split(horizontal, 0.50)
-        \\  leaf(2)
-        \\  leaf(1)
+        \\+---++---+
+        \\| 2 || 1 |
+        \\+---++---+
+        \\
+    );
+}
+
+test "SplitTree: split vertical" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var v: TestTree.View = .{};
+
+    var t1: TestTree = try .init(alloc, &v);
+    defer t1.deinit();
+    var t2: TestTree = try .init(alloc, &v);
+    defer t2.deinit();
+
+    var t3 = try t1.split(
+        alloc,
+        0, // at root
+        .down, // split down
+        &t2, // insert t2
+    );
+    defer t3.deinit();
+
+    const str = try std.fmt.allocPrint(alloc, "{}", .{t3});
+    defer alloc.free(str);
+    try testing.expectEqualStrings(str,
+        \\+---+
+        \\| 2 |
+        \\+---+
+        \\+---+
+        \\| 1 |
+        \\+---+
+        \\
     );
 }
