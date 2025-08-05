@@ -133,7 +133,12 @@ pub fn canonicalizeLocale(
     locale: []const u8,
 ) error{NoSpaceLeft}![:0]const u8 {
     // Fix zh locales for macOS
-    if (fixZhLocale(locale)) |fixed| return fixed;
+    if (fixZhLocale(locale)) |fixed| {
+        if (buf.len < fixed.len + 1) return error.NoSpaceLeft;
+        @memcpy(buf[0..fixed.len], fixed);
+        buf[fixed.len] = 0;
+        return buf[0..fixed.len :0];
+    }
 
     // Buffer must be 16 or at least as long as the locale and null term
     if (buf.len < @max(16, locale.len + 1)) return error.NoSpaceLeft;
