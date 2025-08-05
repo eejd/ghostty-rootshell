@@ -191,6 +191,146 @@ pub fn SplitTree(comptime V: type) type {
             return .{ .arena = arena, .nodes = nodes };
         }
 
+        /// Spatial representation of the split tree. This can be used to
+        /// better understand the layout of the tree in a 2D space.
+        ///
+        /// The bounds of the representation are always based on each split
+        /// being exactly 1 unit wide and high. The x and y coordinates
+        /// are offsets into that space. This means that the spatial
+        /// representation is a normalized representation of the actual
+        /// space.
+        ///
+        /// The top-left corner of the tree is always (0, 0).
+        ///
+        /// We use a normalized form because we can calculate it without
+        /// accessing to the actual rendered view sizes. These actual sizes
+        /// may not be available at various times because GUI toolkits often
+        /// only make them available once they're part of a widget tree and
+        /// a SplitTree can represent views that aren't currently visible.
+        pub const Spatial = struct {
+            /// The slots of the spatial representation in the same order
+            /// as the tree it was created from.
+            slots: []const Slot,
+
+            pub const empty: Spatial = .{ .slots = &.{} };
+
+            const Slot = struct {
+                x: f16,
+                y: f16,
+                width: f16,
+                height: f16,
+            };
+
+            pub fn deinit(self: *const Spatial, alloc: Allocator) void {
+                alloc.free(self.slots);
+                self.* = undefined;
+            }
+        };
+
+        /// Returns the spatial representation of this tree. See Spatial
+        /// for more details.
+        pub fn spatial(
+            self: *const Self,
+            alloc: Allocator,
+        ) Allocator.Error!Spatial {
+            // No nodes, empty spatial representation.
+            if (self.nodes.len == 0) return .empty;
+
+            // Get our total dimensions.
+            const dim = self.dimensions(0);
+
+            // Create our slots which will match our nodes exactly.
+            const slots = try alloc.alloc(Spatial.Slot, self.nodes.len);
+            errdefer alloc.free(slots);
+            slots[0] = .{
+                .x = 0,
+                .y = 0,
+                .width = dim.width,
+                .height = dim.height,
+            };
+            self.fillSpatialSlots(slots, 0);
+
+            return .{ .slots = slots };
+        }
+
+        fn fillSpatialSlots(
+            self: *const Self,
+            slots: []Spatial.Slot,
+            current: Node.Handle,
+        ) void {
+            assert(slots[current].width > 0 and slots[current].height > 0);
+
+            switch (self.nodes[current]) {
+                // Leaf node, current slot is already filled by caller.
+                .leaf => {},
+
+                .split => |s| {
+                    switch (s.layout) {
+                        .horizontal => {
+                            slots[s.left] = .{
+                                .x = slots[current].x,
+                                .y = slots[current].y,
+                                .width = slots[current].width * s.ratio,
+                                .height = slots[current].height,
+                            };
+                            slots[s.right] = .{
+                                .x = slots[current].x + slots[current].width * s.ratio,
+                                .y = slots[current].y,
+                                .width = slots[current].width * (1 - s.ratio),
+                                .height = slots[current].height,
+                            };
+                        },
+
+                        .vertical => {
+                            slots[s.left] = .{
+                                .x = slots[current].x,
+                                .y = slots[current].y,
+                                .width = slots[current].width,
+                                .height = slots[current].height * s.ratio,
+                            };
+                            slots[s.right] = .{
+                                .x = slots[current].x,
+                                .y = slots[current].y + slots[current].height * s.ratio,
+                                .width = slots[current].width,
+                                .height = slots[current].height * (1 - s.ratio),
+                            };
+                        },
+                    }
+
+                    self.fillSpatialSlots(slots, s.left);
+                    self.fillSpatialSlots(slots, s.right);
+                },
+            }
+        }
+
+        /// Get the dimensions of the tree starting from the given node.
+        ///
+        /// This creates relative dimensions (see Spatial) by assuming each
+        /// leaf is exactly 1x1 unit in size.
+        fn dimensions(self: *const Self, current: Node.Handle) struct {
+            width: u16,
+            height: u16,
+        } {
+            return switch (self.nodes[current]) {
+                .leaf => .{ .width = 1, .height = 1 },
+                .split => |s| split: {
+                    const left = self.dimensions(s.left);
+                    const right = self.dimensions(s.right);
+                    break :split switch (s.layout) {
+                        .horizontal => .{
+                            .width = left.width + right.width,
+                            .height = @max(left.height, right.height),
+                        },
+
+                        .vertical => .{
+                            .width = @max(left.width, right.width),
+                            .height = left.height + right.height,
+                        },
+                    };
+                },
+            };
+        }
+
         /// Format the tree in a human-readable format.
         ///
         /// NOTE: This is currently in node-order but we should change this
