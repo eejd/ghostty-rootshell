@@ -1,0 +1,16 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $GhosttySplitTree: Adw.Bin {
+  // This could be a lot more visually pleasing but in practice this doesn't
+  // ever happen at the time of writing this comment. A surface-less split
+  // tree always closes its parent.
+  Label {
+    visible: bind template.is-empty;
+    // Purposely not localized currently because this shouldn't really
+    // ever appear. When we have a situation it does appear, we may want
+    // to change the styling and text so I don't want to burden localizers
+    // to handle this yet.
+    label: "No surfaces.";
+  }
+}

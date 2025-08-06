@@ -18,6 +18,7 @@ const Common = @import("../class.zig").Common;
 const Config = @import("config.zig").Config;
 const Application = @import("application.zig").Application;
 const CloseConfirmationDialog = @import("close_confirmation_dialog.zig").CloseConfirmationDialog;
+const SplitTree = @import("split_tree.zig").SplitTree;
 const Surface = @import("surface.zig").Surface;
 
 const log = std.log.scoped(.gtk_ghostty_window);
@@ -251,6 +252,7 @@ pub const Tab = extern struct {
         pub const Instance = Self;
 
         fn init(class: *Class) callconv(.c) void {
+            gobject.ext.ensureType(SplitTree);
             gobject.ext.ensureType(Surface);
             gtk.Widget.Class.setTemplateFromResource(
                 class.as(gtk.Widget.Class),

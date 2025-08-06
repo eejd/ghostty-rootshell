@@ -5,6 +5,7 @@ template $GhosttyTab: Box {
     "tab",
   ]
 
+  orientation: vertical;
   hexpand: true;
   vexpand: true;
   // A tab currently just contains a surface directly. When we introduce
@@ -12,4 +13,6 @@ template $GhosttyTab: Box {
   $GhosttySurface surface {
     close-request => $surface_close_request();
   }
+
+  $GhosttySplitTree {}
 }

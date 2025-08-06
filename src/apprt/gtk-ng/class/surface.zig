@@ -9,6 +9,7 @@ const gobject = @import("gobject");
 const gtk = @import("gtk");
 
 const apprt = @import("../../../apprt.zig");
+const datastruct = @import("../../../datastruct/main.zig");
 const font = @import("../../../font/main.zig");
 const input = @import("../../../input.zig");
 const internal_os = @import("../../../os/main.zig");
@@ -41,6 +42,9 @@ pub const Surface = extern struct {
         .parent_class = &Class.parent,
         .private = .{ .Type = Private, .offset = &Private.offset },
     });
+
+    /// A SplitTree implementation that stores surfaces.
+    pub const Tree = datastruct.SplitTree(Self);
 
     pub const properties = struct {
         pub const config = struct {

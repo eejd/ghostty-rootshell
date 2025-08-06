@@ -40,6 +40,7 @@ pub const blueprints: []const Blueprint = &.{
     .{ .major = 1, .minor = 2, .name = "debug-warning" },
     .{ .major = 1, .minor = 3, .name = "debug-warning" },
     .{ .major = 1, .minor = 2, .name = "resize-overlay" },
+    .{ .major = 1, .minor = 5, .name = "split-tree" },
     .{ .major = 1, .minor = 2, .name = "surface" },
     .{ .major = 1, .minor = 3, .name = "surface-child-exited" },
     .{ .major = 1, .minor = 5, .name = "tab" },

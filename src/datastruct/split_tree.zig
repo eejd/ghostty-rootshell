@@ -37,6 +37,9 @@ const Allocator = std.mem.Allocator;
 ///     for the debug view. If this isn't specified then the node handle
 ///     will be used.
 ///
+/// Note: for both the ref and unref functions, the allocator is optional.
+/// If the functions take less arguments, then the allocator will not be
+/// passed.
 pub fn SplitTree(comptime V: type) type {
     return struct {
         const Self = @This();
@@ -88,8 +91,8 @@ pub fn SplitTree(comptime V: type) type {
             const alloc = arena.allocator();
 
             const nodes = try alloc.alloc(Node, 1);
-            nodes[0] = .{ .leaf = try view.ref(gpa) };
-            errdefer view.unref(gpa);
+            nodes[0] = .{ .leaf = try viewRef(view, gpa) };
+            errdefer viewUnref(view, gpa);
 
             return .{
                 .arena = arena,
@@ -104,13 +107,19 @@ pub fn SplitTree(comptime V: type) type {
                 // Unref all our views
                 const gpa: Allocator = self.arena.child_allocator;
                 for (self.nodes) |node| switch (node) {
-                    .leaf => |view| view.unref(gpa),
+                    .leaf => |view| viewUnref(view, gpa),
                     .split => {},
                 };
                 self.arena.deinit();
             }
 
             self.* = undefined;
+        }
+
+        /// Returns true if this is an empty tree.
+        pub fn isEmpty(self: *const Self) bool {
+            // An empty tree has no nodes.
+            return self.nodes.len == 0;
         }
 
         /// An iterator over all the views in the tree.
@@ -367,13 +376,13 @@ pub fn SplitTree(comptime V: type) type {
             errdefer for (0..reffed) |i| {
                 switch (nodes[i]) {
                     .split => {},
-                    .leaf => |view| view.unref(gpa),
+                    .leaf => |view| viewUnref(view, gpa),
                 }
             };
             for (0..nodes.len) |i| {
                 switch (nodes[i]) {
                     .split => {},
-                    .leaf => |view| nodes[i] = .{ .leaf = try view.ref(gpa) },
+                    .leaf => |view| nodes[i] = .{ .leaf = try viewRef(view, gpa) },
                 }
                 reffed = i;
             }
@@ -656,6 +665,24 @@ pub fn SplitTree(comptime V: type) type {
             // Output every row
             for (grid) |row| {
                 try writer.writeAll(row);
+            }
+        }
+
+        fn viewRef(view: *View, gpa: Allocator) Allocator.Error!*View {
+            const func = @typeInfo(@TypeOf(View.ref)).@"fn";
+            return switch (func.params.len) {
+                1 => view.ref(),
+                2 => try view.ref(gpa),
+                else => @compileError("invalid view ref function"),
+            };
+        }
+
+        fn viewUnref(view: *View, gpa: Allocator) void {
+            const func = @typeInfo(@TypeOf(View.unref)).@"fn";
+            switch (func.params.len) {
+                1 => view.unref(),
+                2 => view.unref(gpa),
+                else => @compileError("invalid view unref function"),
             }
         }
     };
