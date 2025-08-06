@@ -2,6 +2,7 @@ const props = @This();
 const std = @import("std");
 const assert = std.debug.assert;
 const ziglyph = @import("ziglyph");
+const uucode = @import("uucode");
 const lut = @import("lut.zig");
 
 /// The lookup tables for Ghostty.
@@ -121,10 +122,10 @@ pub const GraphemeBoundaryClass = enum(u4) {
 };
 
 pub fn get(cp: u21) Properties {
-    const zg_width = ziglyph.display_width.codePointWidth(cp, .half);
+    const wcwidth = if (cp < 0x110000) uucode.get("wcwidth", cp) else 0;
 
     return .{
-        .width = @intCast(@min(2, @max(0, zg_width))),
+        .width = @intCast(@min(2, @max(0, wcwidth))),
         .grapheme_boundary_class = .init(cp),
     };
 }

@@ -150,7 +150,7 @@ pub fn getIndex(
     // we'll do this multiple times if we recurse, but this is a cached function
     // call higher up (GroupCache) so this should be rare.
     const p_mode: Collection.PresentationMode = if (p) |v| .{ .explicit = v } else .{
-        .default = if (uucode.hasEmojiPresentation(@intCast(cp)))
+        .default = if (uucode.get("has_emoji_presentation", @intCast(cp)))
             .emoji
         else
             .text,

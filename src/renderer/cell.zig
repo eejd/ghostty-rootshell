@@ -237,7 +237,7 @@ pub fn constraintWidth(cell_pin: terminal.Pin) u2 {
     const cp = cell.codepoint();
 
     // If not a Co (Private Use) and not a Dingbats, use grid width.
-    if (uucode.generalCategory(cp) != .Co and
+    if (uucode.get("general_category", cp) != .Co and
         !ziglyph.blocks.isDingbats(cp))
     {
         return cell.gridWidth();
@@ -262,7 +262,7 @@ pub fn constraintWidth(cell_pin: terminal.Pin) u2 {
         if (isPowerline(prev_cp)) break :prev;
 
         // If it's Private Use (Co) use 1 as the width.
-        if (uucode.generalCategory(prev_cp) == .Co) {
+        if (uucode.get("general_category", prev_cp) == .Co) {
             return 1;
         }
     }

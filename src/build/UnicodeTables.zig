@@ -9,7 +9,7 @@ exe: *std.Build.Step.Compile,
 /// The output path for the unicode tables
 output: std.Build.LazyPath,
 
-pub fn init(b: *std.Build) !UnicodeTables {
+pub fn init(b: *std.Build, uucode_tables_zig: std.Build.LazyPath) !UnicodeTables {
     const exe = b.addExecutable(.{
         .name = "unigen",
         .root_module = b.createModule(.{
@@ -28,6 +28,13 @@ pub fn init(b: *std.Build) !UnicodeTables {
             "ziglyph",
             ziglyph_dep.module("ziglyph"),
         );
+    }
+
+    if (b.lazyDependency("uucode", .{
+        .target = b.graph.host,
+        .@"tables.zig" = uucode_tables_zig,
+    })) |dep| {
+        exe.root_module.addImport("uucode", dep.module("uucode"));
     }
 
     const run = b.addRunArtifact(exe);

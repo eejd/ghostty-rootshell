@@ -4,9 +4,9 @@ const d = config.default;
 
 pub const tables = [_]config.Table{
     .{
-        .extensions = &.{x.width},
+        .extensions = &.{x.wcwidth},
         .fields = &.{
-            x.width.field("width"),
+            x.wcwidth.field("wcwidth"),
             d.field("general_category"),
             d.field("has_emoji_presentation"),
         },
