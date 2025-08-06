@@ -521,9 +521,6 @@ pub fn SplitTree(comptime V: type) type {
         }
 
         /// Format the tree in a human-readable format.
-        ///
-        /// NOTE: This is currently in node-order but we should change this
-        /// to spatial ASCII drawings once we have better support for that.
         pub fn format(
             self: *const Self,
             comptime fmt: []const u8,
