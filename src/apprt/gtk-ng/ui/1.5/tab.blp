@@ -14,5 +14,7 @@ template $GhosttyTab: Box {
     close-request => $surface_close_request();
   }
 
-  $GhosttySplitTree split_tree {}
+  $GhosttySplitTree split_tree {
+    notify::tree => $notify_tree();
+  }
 }

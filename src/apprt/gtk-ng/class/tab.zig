@@ -74,6 +74,26 @@ pub const Tab = extern struct {
             );
         };
 
+        pub const @"surface-tree" = struct {
+            pub const name = "surface-tree";
+            const impl = gobject.ext.defineProperty(
+                name,
+                Self,
+                ?*Surface.Tree,
+                .{
+                    .nick = "Surface Tree",
+                    .blurb = "The surface tree that is contained in this tab.",
+                    .accessor = gobject.ext.typedAccessor(
+                        Self,
+                        ?*Surface.Tree,
+                        .{
+                            .getter = getSurfaceTree,
+                        },
+                    ),
+                },
+            );
+        };
+
         pub const title = struct {
             pub const name = "title";
             pub const get = impl.get;
@@ -184,6 +204,18 @@ pub const Tab = extern struct {
         return priv.surface;
     }
 
+    /// Get the surface tree of this tab.
+    pub fn getSurfaceTree(self: *Self) ?*Surface.Tree {
+        const priv = self.private();
+        return priv.split_tree.getTree();
+    }
+
+    /// Get the split tree widget that is in this tab.
+    pub fn getSplitTree(self: *Self) *SplitTree {
+        const priv = self.private();
+        return priv.split_tree;
+    }
+
     /// Returns true if this tab needs confirmation before quitting based
     /// on the various Ghostty configurations.
     pub fn getNeedsConfirmQuit(self: *Self) bool {
@@ -251,6 +283,14 @@ pub const Tab = extern struct {
         }
     }
 
+    fn propSplitTree(
+        _: *SplitTree,
+        _: *gobject.ParamSpec,
+        self: *Self,
+    ) callconv(.c) void {
+        self.as(gobject.Object).notifyByPspec(properties.@"surface-tree".impl.param_spec);
+    }
+
     const C = Common(Self, Private);
     pub const as = C.as;
     pub const ref = C.ref;
@@ -278,6 +318,7 @@ pub const Tab = extern struct {
             gobject.ext.registerProperties(class, &.{
                 properties.@"active-surface".impl,
                 properties.config.impl,
+                properties.@"surface-tree".impl,
                 properties.title.impl,
             });
 
@@ -287,6 +328,7 @@ pub const Tab = extern struct {
 
             // Template Callbacks
             class.bindTemplateCallback("surface_close_request", &surfaceCloseRequest);
+            class.bindTemplateCallback("notify_tree", &propSplitTree);
 
             // Signals
             signals.@"close-request".impl.register(.{});

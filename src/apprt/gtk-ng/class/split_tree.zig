@@ -81,7 +81,7 @@ pub const SplitTree = extern struct {
         /// The new value is given as the signal parameter. The old value
         /// can still be retrieved from the tree property.
         pub const @"tree-will-change" = struct {
-            pub const name = "tree-change";
+            pub const name = "tree-will-change";
             pub const connect = impl.connect;
             const impl = gobject.ext.defineSignal(
                 name,
