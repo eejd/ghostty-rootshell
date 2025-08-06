@@ -118,6 +118,7 @@ pub const Tab = extern struct {
         surface_bindings: *gobject.BindingGroup,
 
         // Template bindings
+        split_tree: *SplitTree,
         surface: *Surface,
 
         pub var offset: c_int = 0;
@@ -161,6 +162,16 @@ pub const Tab = extern struct {
         // We need to do this so that the title initializes properly,
         // I think because its a dynamic getter.
         self.as(gobject.Object).notifyByPspec(properties.@"active-surface".impl.param_spec);
+
+        // Setup our initial split tree.
+        // TODO: Probably make this a property
+        const surface: *Surface = .new();
+        defer surface.unref();
+        _ = surface.refSink();
+        const alloc = Application.default().allocator();
+        var tree = Surface.Tree.init(alloc, surface) catch unreachable;
+        defer tree.deinit();
+        priv.split_tree.setTree(&tree);
     }
 
     //---------------------------------------------------------------
@@ -271,6 +282,7 @@ pub const Tab = extern struct {
             });
 
             // Bindings
+            class.bindTemplateChildPrivate("split_tree", .{});
             class.bindTemplateChildPrivate("surface", .{});
 
             // Template Callbacks

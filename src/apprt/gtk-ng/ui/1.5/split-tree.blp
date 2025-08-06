@@ -7,9 +7,8 @@ template $GhosttySplitTree: Adw.Bin {
   Box {
     orientation: vertical;
 
-    Box surface_box {
+    Adw.Bin tree_bin {
       visible: bind template.is-empty inverted;
-      orientation: vertical;
       hexpand: true;
       vexpand: true;
     }

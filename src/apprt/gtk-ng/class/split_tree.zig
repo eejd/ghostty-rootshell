@@ -66,8 +66,28 @@ pub const SplitTree = extern struct {
                 .{
                     .nick = "Tree Model",
                     .blurb = "Underlying data model for the tree.",
-                    .accessor = C.privateBoxedFieldAccessor("tree"),
+                    .accessor = .{
+                        .getter = getTreeValue,
+                        .setter = setTreeValue,
+                    },
                 },
+            );
+        };
+    };
+
+    pub const signals = struct {
+        /// Emitted whenever the tree property is about to change.
+        ///
+        /// The new value is given as the signal parameter. The old value
+        /// can still be retrieved from the tree property.
+        pub const @"tree-will-change" = struct {
+            pub const name = "tree-change";
+            pub const connect = impl.connect;
+            const impl = gobject.ext.defineSignal(
+                name,
+                Self,
+                &.{?*const Surface.Tree},
+                void,
             );
         };
     };
@@ -75,6 +95,9 @@ pub const SplitTree = extern struct {
     const Private = struct {
         /// The tree datastructure containing all of our surface views.
         tree: ?*Surface.Tree,
+
+        // Template bindings
+        tree_bin: *adw.Bin,
 
         pub var offset: c_int = 0;
     };
@@ -89,6 +112,52 @@ pub const SplitTree = extern struct {
     pub fn getIsEmpty(self: *Self) bool {
         const tree: *const Surface.Tree = self.private().tree orelse &.empty;
         return tree.isEmpty();
+    }
+
+    /// Get the tree data model that we're showing in this widget. This
+    /// does not clone the tree.
+    pub fn getTree(self: *Self) ?*Surface.Tree {
+        return self.private().tree;
+    }
+
+    /// Set the tree data model that we're showing in this widget. This
+    /// will clone the given tree.
+    pub fn setTree(self: *Self, tree: ?*const Surface.Tree) void {
+        const priv = self.private();
+
+        // Emit the signal so that handlers can witness both the before and
+        // after values of the tree.
+        signals.@"tree-will-change".impl.emit(
+            self,
+            null,
+            .{tree},
+            null,
+        );
+
+        if (priv.tree) |old_tree| {
+            ext.boxedFree(Surface.Tree, old_tree);
+            priv.tree = null;
+        }
+
+        if (tree) |new_tree| {
+            priv.tree = ext.boxedCopy(Surface.Tree, new_tree);
+        }
+
+        self.as(gobject.Object).notifyByPspec(properties.tree.impl.param_spec);
+    }
+
+    fn getTreeValue(self: *Self, value: *gobject.Value) void {
+        gobject.ext.Value.set(
+            value,
+            self.private().tree,
+        );
+    }
+
+    fn setTreeValue(self: *Self, value: *const gobject.Value) void {
+        self.setTree(gobject.ext.Value.get(
+            value,
+            ?*Surface.Tree,
+        ));
     }
 
     //---------------------------------------------------------------
@@ -127,7 +196,46 @@ pub const SplitTree = extern struct {
         _: *gobject.ParamSpec,
         _: ?*anyopaque,
     ) callconv(.c) void {
+        const priv = self.private();
+        const tree: *const Surface.Tree = self.private().tree orelse &.empty;
+
+        // Reset our widget tree.
+        priv.tree_bin.setChild(null);
+        if (!tree.isEmpty()) {
+            priv.tree_bin.setChild(buildTree(tree, 0));
+        }
+
+        // Dependent properties
         self.as(gobject.Object).notifyByPspec(properties.@"is-empty".impl.param_spec);
+    }
+
+    /// Builds the widget tree associated with a surface split tree.
+    ///
+    /// The final returned widget is expected to be a floating reference,
+    /// ready to be attached to a parent widget.
+    fn buildTree(
+        tree: *const Surface.Tree,
+        current: Surface.Tree.Node.Handle,
+    ) *gtk.Widget {
+        switch (tree.nodes[current]) {
+            .leaf => |v| {
+                // We have to setup our signal handlers.
+                return v.as(gtk.Widget);
+            },
+
+            .split => |s| return gobject.ext.newInstance(
+                gtk.Paned,
+                .{
+                    .orientation = @as(gtk.Orientation, switch (s.layout) {
+                        .horizontal => .horizontal,
+                        .vertical => .vertical,
+                    }),
+                    .@"start-child" = buildTree(tree, s.left),
+                    .@"end-child" = buildTree(tree, s.right),
+                    // TODO: position/ratio
+                },
+            ).as(gtk.Widget),
+        }
     }
 
     //---------------------------------------------------------------
@@ -162,11 +270,13 @@ pub const SplitTree = extern struct {
             });
 
             // Bindings
+            class.bindTemplateChildPrivate("tree_bin", .{});
 
             // Template Callbacks
             class.bindTemplateCallback("notify_tree", &propTree);
 
             // Signals
+            signals.@"tree-will-change".impl.register(.{});
 
             // Virtual methods
             gobject.Object.virtual_methods.dispose.implement(class, &dispose);
