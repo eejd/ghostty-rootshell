@@ -1,7 +1,6 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
-const ziglyph = @import("ziglyph");
 const uucode = @import("uucode");
 const font = @import("../font/main.zig");
 const terminal = @import("../terminal/main.zig");
@@ -238,7 +237,7 @@ pub fn constraintWidth(cell_pin: terminal.Pin) u2 {
 
     // If not a Co (Private Use) and not a Dingbats, use grid width.
     if (uucode.get("general_category", cp) != .Co and
-        !ziglyph.blocks.isDingbats(cp))
+        uucode.get("block", cp) != .dingbats)
     {
         return cell.gridWidth();
     }

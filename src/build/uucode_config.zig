@@ -9,6 +9,7 @@ pub const tables = [_]config.Table{
             x.wcwidth.field("wcwidth"),
             d.field("general_category"),
             d.field("has_emoji_presentation"),
+            d.field("block"),
         },
     },
 };
