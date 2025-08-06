@@ -27,7 +27,7 @@ pub fn build(b: *std.Build) !void {
 
     // Ghostty resources like terminfo, shell integration, themes, etc.
     const resources = try buildpkg.GhosttyResources.init(b, &config);
-    const i18n = try buildpkg.GhosttyI18n.init(b, &config);
+    const i18n = if (config.i18n) try buildpkg.GhosttyI18n.init(b, &config) else null;
 
     // Ghostty dependencies used by many artifacts.
     const deps = try buildpkg.SharedDeps.init(b, &config);
@@ -79,7 +79,7 @@ pub fn build(b: *std.Build) !void {
     if (config.app_runtime != .none) {
         exe.install();
         resources.install();
-        i18n.install();
+        if (i18n) |v| v.install();
     } else {
         // Libghostty
         //
@@ -112,7 +112,7 @@ pub fn build(b: *std.Build) !void {
             // The xcframework build always installs resources because our
             // macOS xcode project contains references to them.
             resources.install();
-            i18n.install();
+            if (i18n) |v| v.install();
         }
 
         // Ghostty macOS app
@@ -122,7 +122,7 @@ pub fn build(b: *std.Build) !void {
             .{
                 .xcframework = &xcframework,
                 .docs = &docs,
-                .i18n = &i18n,
+                .i18n = if (i18n) |v| &v else null,
                 .resources = &resources,
             },
         );
@@ -166,7 +166,7 @@ pub fn build(b: *std.Build) !void {
                 .{
                     .xcframework = &xcframework_native,
                     .docs = &docs,
-                    .i18n = &i18n,
+                    .i18n = if (i18n) |v| &v else null,
                     .resources = &resources,
                 },
             );
@@ -204,5 +204,9 @@ pub fn build(b: *std.Build) !void {
 
     // update-translations does what it sounds like and updates the "pot"
     // files. These should be committed to the repo.
-    translations_step.dependOn(i18n.update_step);
+    if (i18n) |v| {
+        translations_step.dependOn(v.update_step);
+    } else {
+        try translations_step.addError("cannot update translations when i18n is disabled", .{});
+    }
 }

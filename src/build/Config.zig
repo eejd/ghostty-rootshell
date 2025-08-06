@@ -37,6 +37,7 @@ font_backend: font.Backend = .freetype,
 x11: bool = false,
 wayland: bool = false,
 sentry: bool = true,
+i18n: bool = true,
 wasm_shared: bool = true,
 
 /// Ghostty exe properties
@@ -174,6 +175,16 @@ pub fn init(b: *std.Build) !Config {
         "gtk-x11",
         "Enables linking against X11 libraries when using the GTK rendering backend.",
     ) orelse gtk_targets.x11;
+
+    config.i18n = b.option(
+        bool,
+        "i18n",
+        "Enables gettext-based internationalization. Enabled by default only for macOS, and other Unix-like systems like Linux and FreeBSD when using glibc.",
+    ) orelse switch (target.result.os.tag) {
+        .macos, .ios => true,
+        .linux, .freebsd => target.result.isGnuLibC(),
+        else => false,
+    };
 
     //---------------------------------------------------------------
     // Ghostty Exe Properties
@@ -420,6 +431,7 @@ pub fn addOptions(self: *const Config, step: *std.Build.Step.Options) !void {
     step.addOption(bool, "x11", self.x11);
     step.addOption(bool, "wayland", self.wayland);
     step.addOption(bool, "sentry", self.sentry);
+    step.addOption(bool, "i18n", self.i18n);
     step.addOption(apprt.Runtime, "app_runtime", self.app_runtime);
     step.addOption(font.Backend, "font_backend", self.font_backend);
     step.addOption(rendererpkg.Impl, "renderer", self.renderer);
@@ -467,6 +479,7 @@ pub fn fromOptions() Config {
         .exe_entrypoint = std.meta.stringToEnum(ExeEntrypoint, @tagName(options.exe_entrypoint)).?,
         .wasm_target = std.meta.stringToEnum(WasmTarget, @tagName(options.wasm_target)).?,
         .wasm_shared = options.wasm_shared,
+        .i18n = options.i18n,
     };
 }
 
