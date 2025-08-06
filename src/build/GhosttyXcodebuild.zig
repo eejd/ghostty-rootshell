@@ -17,7 +17,7 @@ xctest: *std.Build.Step.Run,
 pub const Deps = struct {
     xcframework: *const XCFramework,
     docs: *const Docs,
-    i18n: *const I18n,
+    i18n: ?*const I18n,
     resources: *const Resources,
 };
 
@@ -81,7 +81,7 @@ pub fn init(
         // We also need all these resources because the xcode project
         // references them via symlinks.
         deps.resources.addStepDependencies(&step.step);
-        deps.i18n.addStepDependencies(&step.step);
+        if (deps.i18n) |v| v.addStepDependencies(&step.step);
         deps.docs.installDummy(&step.step);
 
         // Expect success
@@ -113,7 +113,7 @@ pub fn init(
         // We also need all these resources because the xcode project
         // references them via symlinks.
         deps.resources.addStepDependencies(&step.step);
-        deps.i18n.addStepDependencies(&step.step);
+        if (deps.i18n) |v| v.addStepDependencies(&step.step);
         deps.docs.installDummy(&step.step);
 
         // Expect success
