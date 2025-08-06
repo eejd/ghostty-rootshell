@@ -5,6 +5,7 @@ const glib = @import("glib");
 const gobject = @import("gobject");
 const gtk = @import("gtk");
 
+const ext = @import("ext.zig");
 pub const Application = @import("class/application.zig").Application;
 pub const Window = @import("class/window.zig").Window;
 pub const Config = @import("class/config.zig").Config;
@@ -79,7 +80,10 @@ pub fn Common(
                     fn set(self: *Self, value: *const gobject.Value) void {
                         const priv = private(self);
                         if (@field(priv, name)) |v| {
-                            glib.ext.destroy(v);
+                            ext.boxedFree(
+                                @typeInfo(@TypeOf(v)).pointer.child,
+                                v,
+                            );
                         }
 
                         const T = @TypeOf(@field(priv, name));

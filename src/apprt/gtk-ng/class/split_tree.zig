@@ -13,6 +13,7 @@ const input = @import("../../../input.zig");
 const CoreSurface = @import("../../../Surface.zig");
 const gtk_version = @import("../gtk_version.zig");
 const adw_version = @import("../adw_version.zig");
+const ext = @import("../ext.zig");
 const gresource = @import("../build/gresource.zig");
 const Common = @import("../class.zig").Common;
 const Config = @import("config.zig").Config;
@@ -55,29 +56,39 @@ pub const SplitTree = extern struct {
                 },
             );
         };
+
+        pub const tree = struct {
+            pub const name = "tree";
+            const impl = gobject.ext.defineProperty(
+                name,
+                Self,
+                ?*Surface.Tree,
+                .{
+                    .nick = "Tree Model",
+                    .blurb = "Underlying data model for the tree.",
+                    .accessor = C.privateBoxedFieldAccessor("tree"),
+                },
+            );
+        };
     };
 
     const Private = struct {
         /// The tree datastructure containing all of our surface views.
-        tree: Surface.Tree,
+        tree: ?*Surface.Tree,
 
         pub var offset: c_int = 0;
     };
 
     fn init(self: *Self, _: *Class) callconv(.c) void {
         gtk.Widget.initTemplate(self.as(gtk.Widget));
-
-        // Start with an empty split tree.
-        const priv = self.private();
-        priv.tree = .empty;
     }
 
     //---------------------------------------------------------------
     // Properties
 
     pub fn getIsEmpty(self: *Self) bool {
-        const priv = self.private();
-        return priv.tree.isEmpty();
+        const tree: *const Surface.Tree = self.private().tree orelse &.empty;
+        return tree.isEmpty();
     }
 
     //---------------------------------------------------------------
@@ -97,8 +108,10 @@ pub const SplitTree = extern struct {
 
     fn finalize(self: *Self) callconv(.c) void {
         const priv = self.private();
-        priv.tree.deinit();
-        priv.tree = .empty;
+        if (priv.tree) |tree| {
+            ext.boxedFree(Surface.Tree, tree);
+            priv.tree = null;
+        }
 
         gobject.Object.virtual_methods.finalize.call(
             Class.parent,
@@ -108,6 +121,14 @@ pub const SplitTree = extern struct {
 
     //---------------------------------------------------------------
     // Signal handlers
+
+    fn propTree(
+        self: *Self,
+        _: *gobject.ParamSpec,
+        _: ?*anyopaque,
+    ) callconv(.c) void {
+        self.as(gobject.Object).notifyByPspec(properties.@"is-empty".impl.param_spec);
+    }
 
     //---------------------------------------------------------------
     // Class
@@ -137,11 +158,13 @@ pub const SplitTree = extern struct {
             // Properties
             gobject.ext.registerProperties(class, &.{
                 properties.@"is-empty".impl,
+                properties.tree.impl,
             });
 
             // Bindings
 
             // Template Callbacks
+            class.bindTemplateCallback("notify_tree", &propTree);
 
             // Signals
 

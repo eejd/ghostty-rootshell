@@ -1,5 +1,6 @@
 const std = @import("std");
 const assert = std.debug.assert;
+const build_config = @import("../build_config.zig");
 const ArenaAllocator = std.heap.ArenaAllocator;
 const Allocator = std.mem.Allocator;
 
@@ -114,6 +115,25 @@ pub fn SplitTree(comptime V: type) type {
             }
 
             self.* = undefined;
+        }
+
+        /// Clone this tree, returning a new tree with the same nodes.
+        pub fn clone(self: *const Self, gpa: Allocator) Allocator.Error!Self {
+            // Create a new arena allocator for the clone.
+            var arena = ArenaAllocator.init(gpa);
+            errdefer arena.deinit();
+            const alloc = arena.allocator();
+
+            // Allocate a new nodes array and copy the existing nodes into it.
+            const nodes = try alloc.dupe(Node, self.nodes);
+
+            // Increase the reference count of all the views in the nodes.
+            try refNodes(gpa, nodes);
+
+            return .{
+                .arena = arena,
+                .nodes = nodes,
+            };
         }
 
         /// Returns true if this is an empty tree.
@@ -685,6 +705,51 @@ pub fn SplitTree(comptime V: type) type {
                 else => @compileError("invalid view unref function"),
             }
         }
+
+        /// Make this a valid gobject if we're in a GTK environment.
+        pub const getGObjectType = switch (build_config.app_runtime) {
+            .gtk, .@"gtk-ng" => @import("gobject").ext.defineBoxed(
+                Self,
+                .{
+                    // To get the type name we get the non-qualified type name
+                    // of the view and append that to `GhosttySplitTree`.
+                    .name = name: {
+                        const type_name = @typeName(View);
+                        const last = if (std.mem.lastIndexOfScalar(
+                            u8,
+                            type_name,
+                            '.',
+                        )) |idx|
+                            type_name[idx + 1 ..]
+                        else
+                            type_name;
+                        assert(last.len > 0);
+                        break :name "GhosttySplitTree" ++ last;
+                    },
+
+                    .funcs = .{
+                        // The @ptrCast below is to workaround this bug:
+                        // https://github.com/ianprime0509/zig-gobject/issues/115
+                        .copy = @ptrCast(&struct {
+                            fn copy(self: *Self) callconv(.c) *Self {
+                                const ptr = @import("glib").ext.create(Self);
+                                const alloc = self.arena.child_allocator;
+                                ptr.* = self.clone(alloc) catch @panic("oom");
+                                return ptr;
+                            }
+                        }.copy),
+                        .free = @ptrCast(&struct {
+                            fn free(self: *Self) callconv(.c) void {
+                                self.deinit();
+                                @import("glib").ext.destroy(self);
+                            }
+                        }.free),
+                    },
+                },
+            ),
+
+            .none => void,
+        };
     };
 }
 
