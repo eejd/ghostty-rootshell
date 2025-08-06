@@ -1495,7 +1495,7 @@ pub const Surface = extern struct {
         };
 
         // Set our new cursor.
-        priv.gl_area.as(gtk.Widget).setCursorFromName(name.ptr);
+        self.as(gtk.Widget).setCursorFromName(name.ptr);
     }
 
     //---------------------------------------------------------------
