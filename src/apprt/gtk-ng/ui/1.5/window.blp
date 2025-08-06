@@ -79,6 +79,64 @@ template $GhosttyWindow: Adw.ApplicationWindow {
         expand-tabs: bind template.tabs-wide;
         view: tab_view;
         visible: bind template.tabs-visible;
+
+        [start]
+        Gtk.Box {
+          orientation: horizontal;
+          visible: bind $titlebar_style_is_tabs(template.titlebar-style) as <bool>;
+
+          Gtk.WindowControls {
+            side: start;
+          }
+
+          Adw.SplitButton {
+            styles [
+              "flat",
+            ]
+
+            clicked => $new_tab();
+            icon-name: "tab-new-symbolic";
+            tooltip-text: _("New Tab");
+            dropdown-tooltip: _("New Split");
+            menu-model: split_menu;
+            can-focus: false;
+            focus-on-click: false;
+          }
+        }
+
+        [end]
+        Gtk.Box {
+          orientation: horizontal;
+          visible: bind $titlebar_style_is_tabs(template.titlebar-style) as <bool>;
+
+          Gtk.ToggleButton {
+            styles [
+              "flat",
+            ]
+
+            icon-name: "view-grid-symbolic";
+            tooltip-text: _("View Open Tabs");
+            active: bind tab_overview.open bidirectional;
+            can-focus: false;
+            focus-on-click: false;
+          }
+
+          Gtk.MenuButton {
+            styles [
+              "flat",
+            ]
+
+            notify::active => $notify_menu_active();
+            icon-name: "open-menu-symbolic";
+            menu-model: main_menu;
+            tooltip-text: _("Main Menu");
+            can-focus: false;
+          }
+
+          Gtk.WindowControls {
+            side: end;
+          }
+        }
       }
 
       Box {
