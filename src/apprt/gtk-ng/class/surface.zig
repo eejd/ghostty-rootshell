@@ -1318,6 +1318,11 @@ pub const Surface = extern struct {
         return self.private().pwd;
     }
 
+    /// Returns the focus state of this surface.
+    pub fn getFocused(self: *Self) bool {
+        return self.private().focused;
+    }
+
     /// Change the configuration for this surface.
     pub fn setConfig(self: *Self, config: *Config) void {
         const priv = self.private();
@@ -1654,6 +1659,7 @@ pub const Surface = extern struct {
         priv.focused = true;
         priv.im_context.as(gtk.IMContext).focusIn();
         _ = glib.idleAddOnce(idleFocus, self.ref());
+        self.as(gobject.Object).notifyByPspec(properties.focused.impl.param_spec);
     }
 
     fn ecFocusLeave(_: *gtk.EventControllerFocus, self: *Self) callconv(.c) void {
@@ -1661,6 +1667,7 @@ pub const Surface = extern struct {
         priv.focused = false;
         priv.im_context.as(gtk.IMContext).focusOut();
         _ = glib.idleAddOnce(idleFocus, self.ref());
+        self.as(gobject.Object).notifyByPspec(properties.focused.impl.param_spec);
     }
 
     /// The focus callback must be triggered on an idle loop source because
