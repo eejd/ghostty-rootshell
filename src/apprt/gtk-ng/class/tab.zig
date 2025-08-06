@@ -172,19 +172,23 @@ pub const Tab = extern struct {
             .{},
         );
 
-        // We need to do this so that the title initializes properly,
-        // I think because its a dynamic getter.
-        self.as(gobject.Object).notifyByPspec(properties.@"active-surface".impl.param_spec);
-
-        // Setup our initial split tree.
-        // TODO: Probably make this a property
+        // A tab always starts with a single surface.
         const surface: *Surface = .new();
         defer surface.unref();
         _ = surface.refSink();
         const alloc = Application.default().allocator();
-        var tree = Surface.Tree.init(alloc, surface) catch unreachable;
-        defer tree.deinit();
-        priv.split_tree.setTree(&tree);
+        if (Surface.Tree.init(alloc, surface)) |tree| {
+            priv.split_tree.setTree(&tree);
+
+            // Hacky because we need a non-const result.
+            var mut = tree;
+            mut.deinit();
+        } else |_| {
+            // TODO: We should make our "no surfaces" state more aesthetically
+            // pleasing and show something like an "Oops, something went wrong"
+            // message. For now, this is incredibly unlikely.
+            @panic("oom");
+        }
     }
 
     fn connectSurfaceHandlers(
