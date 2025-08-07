@@ -42,8 +42,6 @@ pub const ResizeOverlay = extern struct {
                 Self,
                 c_uint,
                 .{
-                    .nick = "Duration",
-                    .blurb = "The duration this overlay appears in milliseconds.",
                     .default = 750,
                     .minimum = 250,
                     .maximum = std.math.maxInt(c_uint),
@@ -64,8 +62,6 @@ pub const ResizeOverlay = extern struct {
                 Self,
                 c_uint,
                 .{
-                    .nick = "First Delay",
-                    .blurb = "The delay in milliseconds before any overlay is shown for the first time.",
                     .default = 250,
                     .minimum = 250,
                     .maximum = std.math.maxInt(c_uint),
@@ -86,8 +82,6 @@ pub const ResizeOverlay = extern struct {
                 Self,
                 gtk.Align,
                 .{
-                    .nick = "halign",
-                    .blurb = "The alignment of the label.",
                     .default = .center,
                     .accessor = gobject.ext.privateFieldAccessor(
                         Self,
@@ -106,8 +100,6 @@ pub const ResizeOverlay = extern struct {
                 Self,
                 gtk.Align,
                 .{
-                    .nick = "valign",
-                    .blurb = "The alignment of the label.",
                     .default = .center,
                     .accessor = gobject.ext.privateFieldAccessor(
                         Self,

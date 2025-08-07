@@ -54,8 +54,6 @@ pub const Window = extern struct {
                 Self,
                 ?*Surface,
                 .{
-                    .nick = "Active Surface",
-                    .blurb = "The currently active surface.",
                     .accessor = gobject.ext.typedAccessor(
                         Self,
                         ?*Surface,
@@ -74,8 +72,6 @@ pub const Window = extern struct {
                 Self,
                 ?*Config,
                 .{
-                    .nick = "Config",
-                    .blurb = "The configuration that this surface is using.",
                     .accessor = C.privateObjFieldAccessor("config"),
                 },
             );
@@ -88,8 +84,6 @@ pub const Window = extern struct {
                 Self,
                 bool,
                 .{
-                    .nick = "Debug",
-                    .blurb = "True if runtime safety checks are enabled.",
                     .default = build_config.is_debug,
                     .accessor = gobject.ext.typedAccessor(Self, bool, .{
                         .getter = struct {
@@ -109,8 +103,6 @@ pub const Window = extern struct {
                 Self,
                 bool,
                 .{
-                    .nick = "Headerbar Visible",
-                    .blurb = "True if the headerbar is visible.",
                     .default = true,
                     .accessor = gobject.ext.typedAccessor(Self, bool, .{
                         .getter = Self.getHeaderbarVisible,
@@ -126,8 +118,6 @@ pub const Window = extern struct {
                 Self,
                 bool,
                 .{
-                    .nick = "Quick Terminal",
-                    .blurb = "Whether this window behaves like a quick terminal.",
                     .default = true,
                     .accessor = gobject.ext.privateFieldAccessor(
                         Self,
@@ -146,8 +136,6 @@ pub const Window = extern struct {
                 Self,
                 bool,
                 .{
-                    .nick = "Autohide Tab Bar",
-                    .blurb = "If true, tab bar should autohide.",
                     .default = true,
                     .accessor = gobject.ext.typedAccessor(Self, bool, .{
                         .getter = Self.getTabsAutohide,
@@ -163,8 +151,6 @@ pub const Window = extern struct {
                 Self,
                 bool,
                 .{
-                    .nick = "Wide Tabs",
-                    .blurb = "If true, tabs will be in the wide expanded style.",
                     .default = true,
                     .accessor = gobject.ext.typedAccessor(Self, bool, .{
                         .getter = Self.getTabsWide,
@@ -180,8 +166,6 @@ pub const Window = extern struct {
                 Self,
                 bool,
                 .{
-                    .nick = "Tab Bar Visibility",
-                    .blurb = "If true, tab bar should be visible.",
                     .default = true,
                     .accessor = gobject.ext.typedAccessor(Self, bool, .{
                         .getter = Self.getTabsVisible,
@@ -197,8 +181,6 @@ pub const Window = extern struct {
                 Self,
                 adw.ToolbarStyle,
                 .{
-                    .nick = "Toolbar Style",
-                    .blurb = "The style for the toolbar top/bottom bars.",
                     .default = .raised,
                     .accessor = gobject.ext.typedAccessor(
                         Self,

@@ -32,8 +32,6 @@ pub const CloseConfirmationDialog = extern struct {
                 Self,
                 Target,
                 .{
-                    .nick = "Target",
-                    .blurb = "The target for this close confirmation.",
                     .default = .app,
                     .accessor = gobject.ext.privateFieldAccessor(
                         Self,

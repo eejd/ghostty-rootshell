@@ -47,8 +47,6 @@ pub const Tab = extern struct {
                 Self,
                 ?*Surface,
                 .{
-                    .nick = "Active Surface",
-                    .blurb = "The currently active surface.",
                     .accessor = gobject.ext.typedAccessor(
                         Self,
                         ?*Surface,
@@ -67,8 +65,6 @@ pub const Tab = extern struct {
                 Self,
                 ?*Config,
                 .{
-                    .nick = "Config",
-                    .blurb = "The configuration that this surface is using.",
                     .accessor = C.privateObjFieldAccessor("config"),
                 },
             );
@@ -81,8 +77,6 @@ pub const Tab = extern struct {
                 Self,
                 ?*Surface.Tree,
                 .{
-                    .nick = "Surface Tree",
-                    .blurb = "The surface tree that is contained in this tab.",
                     .accessor = gobject.ext.typedAccessor(
                         Self,
                         ?*Surface.Tree,
@@ -103,8 +97,6 @@ pub const Tab = extern struct {
                 Self,
                 ?[:0]const u8,
                 .{
-                    .nick = "Title",
-                    .blurb = "The title of the active surface.",
                     .default = null,
                     .accessor = C.privateStringFieldAccessor("title"),
                 },
