@@ -409,22 +409,7 @@ pub fn SplitTree(comptime V: type) type {
             assert(reffed == nodes.len - 1);
         }
 
-        /// Spatial representation of the split tree. This can be used to
-        /// better understand the layout of the tree in a 2D space.
-        ///
-        /// The bounds of the representation are always based on each split
-        /// being exactly 1 unit wide and high. The x and y coordinates
-        /// are offsets into that space. This means that the spatial
-        /// representation is a normalized representation of the actual
-        /// space.
-        ///
-        /// The top-left corner of the tree is always (0, 0).
-        ///
-        /// We use a normalized form because we can calculate it without
-        /// accessing to the actual rendered view sizes. These actual sizes
-        /// may not be available at various times because GUI toolkits often
-        /// only make them available once they're part of a widget tree and
-        /// a SplitTree can represent views that aren't currently visible.
+        /// Spatial representation of the split tree. See spatial.
         pub const Spatial = struct {
             /// The slots of the spatial representation in the same order
             /// as the tree it was created from.
@@ -445,8 +430,22 @@ pub fn SplitTree(comptime V: type) type {
             }
         };
 
-        /// Returns the spatial representation of this tree. See Spatial
-        /// for more details.
+        /// Spatial representation of the split tree. This can be used to
+        /// better understand the layout of the tree in a 2D space.
+        ///
+        /// The bounds of the representation are always based on each split
+        /// being exactly 1 unit wide and high. The x and y coordinates
+        /// are offsets into that space. This means that the spatial
+        /// representation is a normalized representation of the actual
+        /// space.
+        ///
+        /// The top-left corner of the tree is always (0, 0).
+        ///
+        /// We use a normalized form because we can calculate it without
+        /// accessing to the actual rendered view sizes. These actual sizes
+        /// may not be available at various times because GUI toolkits often
+        /// only make them available once they're part of a widget tree and
+        /// a SplitTree can represent views that aren't currently visible.
         pub fn spatial(
             self: *const Self,
             alloc: Allocator,
@@ -549,14 +548,20 @@ pub fn SplitTree(comptime V: type) type {
             };
         }
 
-        /// Format the tree in a human-readable format.
+        /// Format the tree in a human-readable format. By default this will
+        /// output a diagram followed by a textual representation. This can
+        /// be controlled via the formatting string:
+        ///
+        ///   - `diagram` - Output a diagram of the split tree only.
+        ///   - `text` - Output a textual representation of the split tree only.
+        ///   - Empty - Output both a diagram and a textual representation.
+        ///
         pub fn format(
             self: *const Self,
             comptime fmt: []const u8,
             options: std.fmt.FormatOptions,
             writer: anytype,
         ) !void {
-            _ = fmt;
             _ = options;
 
             if (self.nodes.len == 0) {
@@ -564,6 +569,48 @@ pub fn SplitTree(comptime V: type) type {
                 return;
             }
 
+            if (std.mem.eql(u8, fmt, "diagram")) {
+                self.formatDiagram(writer) catch
+                    try writer.writeAll("failed to draw split tree diagram");
+            } else if (std.mem.eql(u8, fmt, "text")) {
+                try self.formatText(writer, 0, 0);
+            } else if (fmt.len == 0) {
+                self.formatDiagram(writer) catch {};
+                try self.formatText(writer, 0, 0);
+            } else {
+                return error.InvalidFormat;
+            }
+        }
+
+        fn formatText(
+            self: *const Self,
+            writer: anytype,
+            current: Node.Handle,
+            depth: usize,
+        ) !void {
+            for (0..depth) |_| try writer.writeAll("  ");
+
+            switch (self.nodes[current]) {
+                .leaf => |v| if (@hasDecl(View, "splitTreeLabel"))
+                    try writer.print("leaf: {s}\n", .{v.splitTreeLabel()})
+                else
+                    try writer.print("leaf: {d}\n", .{current}),
+
+                .split => |s| {
+                    try writer.print("split (layout: {s}, ratio: {d:.2})\n", .{
+                        @tagName(s.layout),
+                        s.ratio,
+                    });
+                    try self.formatText(writer, s.left, depth + 1);
+                    try self.formatText(writer, s.right, depth + 1);
+                },
+            }
+        }
+
+        fn formatDiagram(
+            self: *const Self,
+            writer: anytype,
+        ) !void {
             // Use our arena's GPA to allocate some intermediate memory.
             // Requiring allocation for formatting is nasty but this is really
             // only used for debugging and testing and shouldn't hit OOM
@@ -573,7 +620,29 @@ pub fn SplitTree(comptime V: type) type {
             const alloc = arena.allocator();
 
             // Get our spatial representation.
-            const sp = try self.spatial(alloc);
+            const sp = spatial: {
+                const sp = try self.spatial(alloc);
+
+                // Scale our spatial representation to have minimum width/height 1.
+                var min_w: f16 = 1;
+                var min_h: f16 = 1;
+                for (sp.slots) |slot| {
+                    min_w = @min(min_w, slot.width);
+                    min_h = @min(min_h, slot.height);
+                }
+
+                const ratio_w: f16 = 1 / min_w;
+                const ratio_h: f16 = 1 / min_h;
+                const slots = try alloc.dupe(Spatial.Slot, sp.slots);
+                for (slots) |*slot| {
+                    slot.x *= ratio_w;
+                    slot.y *= ratio_h;
+                    slot.width *= ratio_w;
+                    slot.height *= ratio_h;
+                }
+
+                break :spatial .{ .slots = slots };
+            };
 
             // The width we need for the largest label.
             const max_label_width: usize = max_label_width: {
@@ -795,7 +864,7 @@ test "SplitTree: single node" {
     var t: TestTree = try .init(alloc, &v);
     defer t.deinit();
 
-    const str = try std.fmt.allocPrint(alloc, "{}", .{t});
+    const str = try std.fmt.allocPrint(alloc, "{diagram}", .{t});
     defer alloc.free(str);
     try testing.expectEqualStrings(str,
         \\+---+
@@ -830,15 +899,17 @@ test "SplitTree: split horizontal" {
             \\+---++---+
             \\| A || B |
             \\+---++---+
+            \\split (layout: horizontal, ratio: 0.50)
+            \\  leaf: A
+            \\  leaf: B
             \\
         );
     }
 
+    // Split right at B
     var vC: TestTree.View = .{ .label = "C" };
     var tC: TestTree = try .init(alloc, &vC);
     defer tC.deinit();
-
-    // Split right at B
     var it = t3.iterator();
     var t4 = try t3.split(
         alloc,
@@ -856,11 +927,51 @@ test "SplitTree: split horizontal" {
         const str = try std.fmt.allocPrint(alloc, "{}", .{t4});
         defer alloc.free(str);
         try testing.expectEqualStrings(str,
-            \\+---++---++---+
-            \\| A || B || C |
-            \\+---++---++---+
+            \\+--------++---++---+
+            \\|    A   || B || C |
+            \\+--------++---++---+
+            \\split (layout: horizontal, ratio: 0.50)
+            \\  leaf: A
+            \\  split (layout: horizontal, ratio: 0.50)
+            \\    leaf: B
+            \\    leaf: C
             \\
         );
+    }
+
+    // Split right at C
+    var vD: TestTree.View = .{ .label = "D" };
+    var tD: TestTree = try .init(alloc, &vD);
+    defer tD.deinit();
+    it = t4.iterator();
+    var t5 = try t4.split(
+        alloc,
+        while (it.next()) |entry| {
+            if (std.mem.eql(u8, entry.view.label, "C")) {
+                break entry.handle;
+            }
+        } else return error.NotFound,
+        .right,
+        &tD,
+    );
+    defer t5.deinit();
+
+    {
+        const str = try std.fmt.allocPrint(alloc, "{}", .{t5});
+        defer alloc.free(str);
+        try testing.expectEqualStrings(
+            \\+------------------++--------++---++---+
+            \\|         A        ||    B   || C || D |
+            \\+------------------++--------++---++---+
+            \\split (layout: horizontal, ratio: 0.50)
+            \\  leaf: A
+            \\  split (layout: horizontal, ratio: 0.50)
+            \\    leaf: B
+            \\    split (layout: horizontal, ratio: 0.50)
+            \\      leaf: C
+            \\      leaf: D
+            \\
+        , str);
     }
 }
 
@@ -883,7 +994,7 @@ test "SplitTree: split vertical" {
     );
     defer t3.deinit();
 
-    const str = try std.fmt.allocPrint(alloc, "{}", .{t3});
+    const str = try std.fmt.allocPrint(alloc, "{diagram}", .{t3});
     defer alloc.free(str);
     try testing.expectEqualStrings(str,
         \\+---+
@@ -926,7 +1037,7 @@ test "SplitTree: remove leaf" {
     );
     defer t4.deinit();
 
-    const str = try std.fmt.allocPrint(alloc, "{}", .{t4});
+    const str = try std.fmt.allocPrint(alloc, "{diagram}", .{t4});
     defer alloc.free(str);
     try testing.expectEqualStrings(str,
         \\+---+
@@ -969,7 +1080,7 @@ test "SplitTree: split twice, remove intermediary" {
     defer split2.deinit();
 
     {
-        const str = try std.fmt.allocPrint(alloc, "{}", .{split2});
+        const str = try std.fmt.allocPrint(alloc, "{diagram}", .{split2});
         defer alloc.free(str);
         try testing.expectEqualStrings(str,
             \\+---++---+
@@ -995,7 +1106,7 @@ test "SplitTree: split twice, remove intermediary" {
     defer split3.deinit();
 
     {
-        const str = try std.fmt.allocPrint(alloc, "{}", .{split3});
+        const str = try std.fmt.allocPrint(alloc, "{diagram}", .{split3});
         defer alloc.free(str);
         try testing.expectEqualStrings(str,
             \\+---+

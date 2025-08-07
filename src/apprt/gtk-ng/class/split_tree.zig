@@ -379,7 +379,7 @@ pub const SplitTree = extern struct {
     ) *gtk.Widget {
         switch (tree.nodes[current]) {
             .leaf => |v| {
-                // We have to setup our signal handlers.
+                v.as(gtk.Widget).unparent();
                 return v.as(gtk.Widget);
             },
 
