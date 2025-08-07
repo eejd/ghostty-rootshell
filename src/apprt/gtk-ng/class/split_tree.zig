@@ -222,6 +222,12 @@ pub const SplitTree = extern struct {
             &single_tree,
         );
         defer new_tree.deinit();
+        log.debug(
+            "new split at={} direction={} old_tree={} new_tree={}",
+            .{ handle, direction, old_tree, &new_tree },
+        );
+
+        // Replace our tree
         self.setTree(&new_tree);
 
         // Focus our new surface

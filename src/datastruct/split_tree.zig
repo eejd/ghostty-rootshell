@@ -610,6 +610,8 @@ pub fn SplitTree(comptime V: type) type {
             // the width/height based on node 0.
             const grid = grid: {
                 // Get our initial width/height. Each leaf is 1x1 in this.
+                // We round up for this because partial widths/heights should
+                // take up an extra cell.
                 var width: usize = @intFromFloat(@ceil(sp.slots[0].width));
                 var height: usize = @intFromFloat(@ceil(sp.slots[0].height));
 
@@ -637,10 +639,10 @@ pub fn SplitTree(comptime V: type) type {
                     .split => continue,
                 }
 
-                var x: usize = @intFromFloat(@ceil(slot.x));
-                var y: usize = @intFromFloat(@ceil(slot.y));
-                var width: usize = @intFromFloat(@ceil(slot.width));
-                var height: usize = @intFromFloat(@ceil(slot.height));
+                var x: usize = @intFromFloat(@floor(slot.x));
+                var y: usize = @intFromFloat(@floor(slot.y));
+                var width: usize = @intFromFloat(@max(@floor(slot.width), 1));
+                var height: usize = @intFromFloat(@max(@floor(slot.height), 1));
                 x *= cell_width;
                 y *= cell_height;
                 width *= cell_width;
@@ -806,13 +808,13 @@ test "SplitTree: single node" {
 test "SplitTree: split horizontal" {
     const testing = std.testing;
     const alloc = testing.allocator;
+
     var v1: TestTree.View = .{ .label = "A" };
     var t1: TestTree = try .init(alloc, &v1);
     defer t1.deinit();
     var v2: TestTree.View = .{ .label = "B" };
     var t2: TestTree = try .init(alloc, &v2);
     defer t2.deinit();
-
     var t3 = try t1.split(
         alloc,
         0, // at root
@@ -821,14 +823,45 @@ test "SplitTree: split horizontal" {
     );
     defer t3.deinit();
 
-    const str = try std.fmt.allocPrint(alloc, "{}", .{t3});
-    defer alloc.free(str);
-    try testing.expectEqualStrings(str,
-        \\+---++---+
-        \\| A || B |
-        \\+---++---+
-        \\
+    {
+        const str = try std.fmt.allocPrint(alloc, "{}", .{t3});
+        defer alloc.free(str);
+        try testing.expectEqualStrings(str,
+            \\+---++---+
+            \\| A || B |
+            \\+---++---+
+            \\
+        );
+    }
+
+    var vC: TestTree.View = .{ .label = "C" };
+    var tC: TestTree = try .init(alloc, &vC);
+    defer tC.deinit();
+
+    // Split right at B
+    var it = t3.iterator();
+    var t4 = try t3.split(
+        alloc,
+        while (it.next()) |entry| {
+            if (std.mem.eql(u8, entry.view.label, "B")) {
+                break entry.handle;
+            }
+        } else return error.NotFound,
+        .right,
+        &tC,
     );
+    defer t4.deinit();
+
+    {
+        const str = try std.fmt.allocPrint(alloc, "{}", .{t4});
+        defer alloc.free(str);
+        try testing.expectEqualStrings(str,
+            \\+---++---++---+
+            \\| A || B || C |
+            \\+---++---++---+
+            \\
+        );
+    }
 }
 
 test "SplitTree: split vertical" {
