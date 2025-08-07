@@ -36,7 +36,7 @@ pub const Tab = extern struct {
     });
 
     pub const properties = struct {
-        /// The active surface is the focus that should be receiving all
+        /// The active surface is the surface that should be receiving all
         /// surface-targeted actions. This is usually the focused surface,
         /// but may also not be focused if the user has selected a non-surface
         /// widget.
@@ -164,23 +164,15 @@ pub const Tab = extern struct {
             .{},
         );
 
-        // A tab always starts with a single surface.
-        const surface: *Surface = .new();
-        defer surface.unref();
-        _ = surface.refSink();
-        const alloc = Application.default().allocator();
-        if (Surface.Tree.init(alloc, surface)) |tree| {
-            priv.split_tree.setTree(&tree);
-
-            // Hacky because we need a non-const result.
-            var mut = tree;
-            mut.deinit();
-        } else |_| {
-            // TODO: We should make our "no surfaces" state more aesthetically
-            // pleasing and show something like an "Oops, something went wrong"
-            // message. For now, this is incredibly unlikely.
-            @panic("oom");
-        }
+        // Create our initial surface in the split tree.
+        priv.split_tree.newSplit(.right, null) catch |err| switch (err) {
+            error.OutOfMemory => {
+                // TODO: We should make our "no surfaces" state more aesthetically
+                // pleasing and show something like an "Oops, something went wrong"
+                // message. For now, this is incredibly unlikely.
+                @panic("oom");
+            },
+        };
     }
 
     fn connectSurfaceHandlers(
@@ -232,13 +224,7 @@ pub const Tab = extern struct {
     /// Get the currently active surface. See the "active-surface" property.
     /// This does not ref the value.
     pub fn getActiveSurface(self: *Self) ?*Surface {
-        const tree = self.getSurfaceTree() orelse return null;
-        var it = tree.iterator();
-        while (it.next()) |entry| {
-            if (entry.view.getFocused()) return entry.view;
-        }
-
-        return null;
+        return self.getSplitTree().getActiveSurface();
     }
 
     /// Get the surface tree of this tab.
