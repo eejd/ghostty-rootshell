@@ -411,18 +411,19 @@ pub const Window = extern struct {
 
         // Bind signals
         const split_tree = tab.getSplitTree();
-        _ = SplitTree.signals.@"tree-will-change".connect(
+        _ = SplitTree.signals.changed.connect(
             split_tree,
             *Self,
-            tabSplitTreeWillChange,
+            tabSplitTreeChanged,
             self,
             .{},
         );
 
         // Run an initial notification for the surface tree so we can setup
         // initial state.
-        tabSplitTreeWillChange(
+        tabSplitTreeChanged(
             split_tree,
+            null,
             split_tree.getTree(),
             self,
         );
@@ -1507,13 +1508,14 @@ pub const Window = extern struct {
         }
     }
 
-    fn tabSplitTreeWillChange(
-        split_tree: *SplitTree,
+    fn tabSplitTreeChanged(
+        _: *SplitTree,
+        old_tree: ?*const Surface.Tree,
         new_tree: ?*const Surface.Tree,
         self: *Self,
     ) callconv(.c) void {
-        if (split_tree.getTree()) |old_tree| {
-            self.disconnectSurfaceHandlers(old_tree);
+        if (old_tree) |tree| {
+            self.disconnectSurfaceHandlers(tree);
         }
 
         if (new_tree) |tree| {

@@ -328,13 +328,14 @@ pub const Tab = extern struct {
         }
     }
 
-    fn splitTreeWillChange(
-        split_tree: *SplitTree,
+    fn splitTreeChanged(
+        _: *SplitTree,
+        old_tree: ?*const Surface.Tree,
         new_tree: ?*const Surface.Tree,
         self: *Self,
     ) callconv(.c) void {
-        if (split_tree.getTree()) |old_tree| {
-            self.disconnectSurfaceHandlers(old_tree);
+        if (old_tree) |tree| {
+            self.disconnectSurfaceHandlers(tree);
         }
 
         if (new_tree) |tree| {
@@ -406,7 +407,7 @@ pub const Tab = extern struct {
             class.bindTemplateChildPrivate("split_tree", .{});
 
             // Template Callbacks
-            class.bindTemplateCallback("tree_will_change", &splitTreeWillChange);
+            class.bindTemplateCallback("tree_changed", &splitTreeChanged);
             class.bindTemplateCallback("notify_active_surface", &propActiveSurface);
             class.bindTemplateCallback("notify_tree", &propSplitTree);
 

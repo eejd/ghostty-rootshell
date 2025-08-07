@@ -26,7 +26,7 @@ const log = std.log.scoped(.gtk_ghostty_split_tree);
 pub const SplitTree = extern struct {
     const Self = @This();
     parent_instance: Parent,
-    pub const Parent = adw.Bin;
+    pub const Parent = gtk.Box;
     pub const getGObjectType = gobject.ext.defineClass(Self, .{
         .name = "GhosttySplitTree",
         .instanceInit = &init,
@@ -36,21 +36,21 @@ pub const SplitTree = extern struct {
     });
 
     pub const properties = struct {
-        pub const @"is-empty" = struct {
-            pub const name = "is-empty";
+        pub const @"has-surfaces" = struct {
+            pub const name = "has-surfaces";
             const impl = gobject.ext.defineProperty(
                 name,
                 Self,
                 bool,
                 .{
-                    .nick = "Tree Is Empty",
-                    .blurb = "True when the tree has no surfaces.",
+                    .nick = "Has Surfaces",
+                    .blurb = "Tree has surfaces.",
                     .default = false,
                     .accessor = gobject.ext.typedAccessor(
                         Self,
                         bool,
                         .{
-                            .getter = getIsEmpty,
+                            .getter = getHasSurfaces,
                         },
                     ),
                 },
@@ -76,17 +76,15 @@ pub const SplitTree = extern struct {
     };
 
     pub const signals = struct {
-        /// Emitted whenever the tree property is about to change.
-        ///
-        /// The new value is given as the signal parameter. The old value
-        /// can still be retrieved from the tree property.
-        pub const @"tree-will-change" = struct {
-            pub const name = "tree-will-change";
+        /// Emitted whenever the tree property has changed, with access
+        /// to the previous and new values.
+        pub const changed = struct {
+            pub const name = "changed";
             pub const connect = impl.connect;
             const impl = gobject.ext.defineSignal(
                 name,
                 Self,
-                &.{?*const Surface.Tree},
+                &.{ ?*const Surface.Tree, ?*const Surface.Tree },
                 void,
             );
         };
@@ -109,9 +107,9 @@ pub const SplitTree = extern struct {
     //---------------------------------------------------------------
     // Properties
 
-    pub fn getIsEmpty(self: *Self) bool {
+    pub fn getHasSurfaces(self: *Self) bool {
         const tree: *const Surface.Tree = self.private().tree orelse &.empty;
-        return tree.isEmpty();
+        return !tree.isEmpty();
     }
 
     /// Get the tree data model that we're showing in this widget. This
@@ -127,10 +125,10 @@ pub const SplitTree = extern struct {
 
         // Emit the signal so that handlers can witness both the before and
         // after values of the tree.
-        signals.@"tree-will-change".impl.emit(
+        signals.changed.impl.emit(
             self,
             null,
-            .{tree},
+            .{ priv.tree, tree },
             null,
         );
 
@@ -206,7 +204,7 @@ pub const SplitTree = extern struct {
         }
 
         // Dependent properties
-        self.as(gobject.Object).notifyByPspec(properties.@"is-empty".impl.param_spec);
+        self.as(gobject.Object).notifyByPspec(properties.@"has-surfaces".impl.param_spec);
     }
 
     /// Builds the widget tree associated with a surface split tree.
@@ -265,7 +263,7 @@ pub const SplitTree = extern struct {
 
             // Properties
             gobject.ext.registerProperties(class, &.{
-                properties.@"is-empty".impl,
+                properties.@"has-surfaces".impl,
                 properties.tree.impl,
             });
 
@@ -276,7 +274,7 @@ pub const SplitTree = extern struct {
             class.bindTemplateCallback("notify_tree", &propTree);
 
             // Signals
-            signals.@"tree-will-change".impl.register(.{});
+            signals.changed.impl.register(.{});
 
             // Virtual methods
             gobject.Object.virtual_methods.dispose.implement(class, &dispose);

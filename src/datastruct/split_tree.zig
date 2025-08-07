@@ -728,22 +728,20 @@ pub fn SplitTree(comptime V: type) type {
                     },
 
                     .funcs = .{
-                        // The @ptrCast below is to workaround this bug:
-                        // https://github.com/ianprime0509/zig-gobject/issues/115
-                        .copy = @ptrCast(&struct {
+                        .copy = &struct {
                             fn copy(self: *Self) callconv(.c) *Self {
                                 const ptr = @import("glib").ext.create(Self);
                                 const alloc = self.arena.child_allocator;
                                 ptr.* = self.clone(alloc) catch @panic("oom");
                                 return ptr;
                             }
-                        }.copy),
-                        .free = @ptrCast(&struct {
+                        }.copy,
+                        .free = &struct {
                             fn free(self: *Self) callconv(.c) void {
                                 self.deinit();
                                 @import("glib").ext.destroy(self);
                             }
-                        }.free),
+                        }.free,
                     },
                 },
             ),
