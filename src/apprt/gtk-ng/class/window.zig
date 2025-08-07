@@ -22,6 +22,7 @@ const Common = @import("../class.zig").Common;
 const Config = @import("config.zig").Config;
 const Application = @import("application.zig").Application;
 const CloseConfirmationDialog = @import("close_confirmation_dialog.zig").CloseConfirmationDialog;
+const SplitTree = @import("split_tree.zig").SplitTree;
 const Surface = @import("surface.zig").Surface;
 const Tab = @import("tab.zig").Tab;
 const DebugWarning = @import("debug_warning.zig").DebugWarning;
@@ -408,6 +409,25 @@ pub const Window = extern struct {
             .{ .sync_create = true },
         );
 
+        // Bind signals
+        const split_tree = tab.getSplitTree();
+        _ = SplitTree.signals.changed.connect(
+            split_tree,
+            *Self,
+            tabSplitTreeChanged,
+            self,
+            .{},
+        );
+
+        // Run an initial notification for the surface tree so we can setup
+        // initial state.
+        tabSplitTreeChanged(
+            split_tree,
+            null,
+            split_tree.getTree(),
+            self,
+        );
+
         return page;
     }
 
@@ -635,6 +655,102 @@ pub const Window = extern struct {
         const toast = adw.Toast.new(title);
         toast.setTimeout(3);
         self.private().toast_overlay.addToast(toast);
+    }
+
+    fn connectSurfaceHandlers(
+        self: *Self,
+        tree: *const Surface.Tree,
+    ) void {
+        const priv = self.private();
+        var it = tree.iterator();
+        while (it.next()) |entry| {
+            const surface = entry.view;
+            _ = Surface.signals.@"close-request".connect(
+                surface,
+                *Self,
+                surfaceCloseRequest,
+                self,
+                .{},
+            );
+            _ = Surface.signals.@"present-request".connect(
+                surface,
+                *Self,
+                surfacePresentRequest,
+                self,
+                .{},
+            );
+            _ = Surface.signals.@"clipboard-write".connect(
+                surface,
+                *Self,
+                surfaceClipboardWrite,
+                self,
+                .{},
+            );
+            _ = Surface.signals.menu.connect(
+                surface,
+                *Self,
+                surfaceMenu,
+                self,
+                .{},
+            );
+            _ = Surface.signals.@"toggle-fullscreen".connect(
+                surface,
+                *Self,
+                surfaceToggleFullscreen,
+                self,
+                .{},
+            );
+            _ = Surface.signals.@"toggle-maximize".connect(
+                surface,
+                *Self,
+                surfaceToggleMaximize,
+                self,
+                .{},
+            );
+            _ = Surface.signals.@"toggle-command-palette".connect(
+                surface,
+                *Self,
+                surfaceToggleCommandPalette,
+                self,
+                .{},
+            );
+
+            // If we've never had a surface initialize yet, then we register
+            // this signal. Its theoretically possible to launch multiple surfaces
+            // before init so we could register this on multiple and that is not
+            // a problem because we'll check the flag again in each handler.
+            if (!priv.surface_init) {
+                _ = Surface.signals.init.connect(
+                    surface,
+                    *Self,
+                    surfaceInit,
+                    self,
+                    .{},
+                );
+            }
+        }
+    }
+
+    /// Disconnect all the surface handlers for the given tree. This should
+    /// be called whenever a tree is no longer present in the window, e.g.
+    /// when a tab is detached or the tree changes.
+    fn disconnectSurfaceHandlers(
+        self: *Self,
+        tree: *const Surface.Tree,
+    ) void {
+        var it = tree.iterator();
+        while (it.next()) |entry| {
+            const surface = entry.view;
+            _ = gobject.signalHandlersDisconnectMatched(
+                surface.as(gobject.Object),
+                .{ .data = true },
+                0,
+                0,
+                null,
+                null,
+                self,
+            );
+        }
     }
 
     //---------------------------------------------------------------
@@ -1134,8 +1250,6 @@ pub const Window = extern struct {
         _: c_int,
         self: *Self,
     ) callconv(.c) void {
-        const priv = self.private();
-
         // Get the attached page which must be a Tab object.
         const child = page.getChild();
         const tab = gobject.ext.cast(Tab, child) orelse return;
@@ -1168,71 +1282,8 @@ pub const Window = extern struct {
         // behavior is consistent with macOS and the previous GTK apprt,
         // but that behavior was all implicit and not documented, so here
         // I am.
-        //
-        // TODO: When we have a split tree we'll want to attach to that.
-        const surface = tab.getActiveSurface();
-        _ = Surface.signals.@"close-request".connect(
-            surface,
-            *Self,
-            surfaceCloseRequest,
-            self,
-            .{},
-        );
-        _ = Surface.signals.@"present-request".connect(
-            surface,
-            *Self,
-            surfacePresentRequest,
-            self,
-            .{},
-        );
-        _ = Surface.signals.@"clipboard-write".connect(
-            surface,
-            *Self,
-            surfaceClipboardWrite,
-            self,
-            .{},
-        );
-        _ = Surface.signals.menu.connect(
-            surface,
-            *Self,
-            surfaceMenu,
-            self,
-            .{},
-        );
-        _ = Surface.signals.@"toggle-fullscreen".connect(
-            surface,
-            *Self,
-            surfaceToggleFullscreen,
-            self,
-            .{},
-        );
-        _ = Surface.signals.@"toggle-maximize".connect(
-            surface,
-            *Self,
-            surfaceToggleMaximize,
-            self,
-            .{},
-        );
-        _ = Surface.signals.@"toggle-command-palette".connect(
-            surface,
-            *Self,
-            surfaceToggleCommandPalette,
-            self,
-            .{},
-        );
-
-        // If we've never had a surface initialize yet, then we register
-        // this signal. Its theoretically possible to launch multiple surfaces
-        // before init so we could register this on multiple and that is not
-        // a problem because we'll check the flag again in each handler.
-        if (!priv.surface_init) {
-            _ = Surface.signals.init.connect(
-                surface,
-                *Self,
-                surfaceInit,
-                self,
-                .{},
-            );
+        if (tab.getSurfaceTree()) |tree| {
+            self.connectSurfaceHandlers(tree);
         }
     }
 
@@ -1255,17 +1306,10 @@ pub const Window = extern struct {
             self,
         );
 
-        // Remove all the signals that have this window as the userdata.
-        const surface = tab.getActiveSurface();
-        _ = gobject.signalHandlersDisconnectMatched(
-            surface.as(gobject.Object),
-            .{ .data = true },
-            0,
-            0,
-            null,
-            null,
-            self,
-        );
+        // Remove the tree handlers
+        if (tab.getSurfaceTree()) |tree| {
+            self.disconnectSurfaceHandlers(tree);
+        }
     }
 
     fn tabViewCreateWindow(
@@ -1461,6 +1505,21 @@ pub const Window = extern struct {
                 @intCast(size.width),
                 @intCast(size.height),
             );
+        }
+    }
+
+    fn tabSplitTreeChanged(
+        _: *SplitTree,
+        old_tree: ?*const Surface.Tree,
+        new_tree: ?*const Surface.Tree,
+        self: *Self,
+    ) callconv(.c) void {
+        if (old_tree) |tree| {
+            self.disconnectSurfaceHandlers(tree);
+        }
+
+        if (new_tree) |tree| {
+            self.connectSurfaceHandlers(tree);
         }
     }
 

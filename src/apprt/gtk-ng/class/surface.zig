@@ -9,6 +9,7 @@ const gobject = @import("gobject");
 const gtk = @import("gtk");
 
 const apprt = @import("../../../apprt.zig");
+const datastruct = @import("../../../datastruct/main.zig");
 const font = @import("../../../font/main.zig");
 const input = @import("../../../input.zig");
 const internal_os = @import("../../../os/main.zig");
@@ -41,6 +42,9 @@ pub const Surface = extern struct {
         .parent_class = &Class.parent,
         .private = .{ .Type = Private, .offset = &Private.offset },
     });
+
+    /// A SplitTree implementation that stores surfaces.
+    pub const Tree = datastruct.SplitTree(Self);
 
     pub const properties = struct {
         pub const config = struct {
@@ -1314,6 +1318,11 @@ pub const Surface = extern struct {
         return self.private().pwd;
     }
 
+    /// Returns the focus state of this surface.
+    pub fn getFocused(self: *Self) bool {
+        return self.private().focused;
+    }
+
     /// Change the configuration for this surface.
     pub fn setConfig(self: *Self, config: *Config) void {
         const priv = self.private();
@@ -1650,6 +1659,7 @@ pub const Surface = extern struct {
         priv.focused = true;
         priv.im_context.as(gtk.IMContext).focusIn();
         _ = glib.idleAddOnce(idleFocus, self.ref());
+        self.as(gobject.Object).notifyByPspec(properties.focused.impl.param_spec);
     }
 
     fn ecFocusLeave(_: *gtk.EventControllerFocus, self: *Self) callconv(.c) void {
@@ -1657,6 +1667,7 @@ pub const Surface = extern struct {
         priv.focused = false;
         priv.im_context.as(gtk.IMContext).focusOut();
         _ = glib.idleAddOnce(idleFocus, self.ref());
+        self.as(gobject.Object).notifyByPspec(properties.focused.impl.param_spec);
     }
 
     /// The focus callback must be triggered on an idle loop source because
@@ -2298,6 +2309,7 @@ pub const Surface = extern struct {
     const C = Common(Self, Private);
     pub const as = C.as;
     pub const ref = C.ref;
+    pub const refSink = C.refSink;
     pub const unref = C.unref;
     const private = C.private;
 

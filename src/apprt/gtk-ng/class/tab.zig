@@ -18,6 +18,7 @@ const Common = @import("../class.zig").Common;
 const Config = @import("config.zig").Config;
 const Application = @import("application.zig").Application;
 const CloseConfirmationDialog = @import("close_confirmation_dialog.zig").CloseConfirmationDialog;
+const SplitTree = @import("split_tree.zig").SplitTree;
 const Surface = @import("surface.zig").Surface;
 
 const log = std.log.scoped(.gtk_ghostty_window);
@@ -73,6 +74,26 @@ pub const Tab = extern struct {
             );
         };
 
+        pub const @"surface-tree" = struct {
+            pub const name = "surface-tree";
+            const impl = gobject.ext.defineProperty(
+                name,
+                Self,
+                ?*Surface.Tree,
+                .{
+                    .nick = "Surface Tree",
+                    .blurb = "The surface tree that is contained in this tab.",
+                    .accessor = gobject.ext.typedAccessor(
+                        Self,
+                        ?*Surface.Tree,
+                        .{
+                            .getter = getSurfaceTree,
+                        },
+                    ),
+                },
+            );
+        };
+
         pub const title = struct {
             pub const name = "title";
             pub const get = impl.get;
@@ -117,7 +138,7 @@ pub const Tab = extern struct {
         surface_bindings: *gobject.BindingGroup,
 
         // Template bindings
-        surface: *Surface,
+        split_tree: *SplitTree,
 
         pub var offset: c_int = 0;
     };
@@ -125,12 +146,10 @@ pub const Tab = extern struct {
     /// Set the parent of this tab page. This only affects the first surface
     /// ever created for a tab. If a surface was already created this does
     /// nothing.
-    pub fn setParent(
-        self: *Self,
-        parent: *CoreSurface,
-    ) void {
-        const priv = self.private();
-        priv.surface.setParent(parent);
+    pub fn setParent(self: *Self, parent: *CoreSurface) void {
+        if (self.getActiveSurface()) |surface| {
+            surface.setParent(parent);
+        }
     }
 
     fn init(self: *Self, _: *Class) callconv(.c) void {
@@ -153,13 +172,66 @@ pub const Tab = extern struct {
             .{},
         );
 
-        // TODO: Eventually this should be set dynamically based on the
-        // current active surface.
-        priv.surface_bindings.setSource(priv.surface.as(gobject.Object));
+        // A tab always starts with a single surface.
+        const surface: *Surface = .new();
+        defer surface.unref();
+        _ = surface.refSink();
+        const alloc = Application.default().allocator();
+        if (Surface.Tree.init(alloc, surface)) |tree| {
+            priv.split_tree.setTree(&tree);
 
-        // We need to do this so that the title initializes properly,
-        // I think because its a dynamic getter.
-        self.as(gobject.Object).notifyByPspec(properties.@"active-surface".impl.param_spec);
+            // Hacky because we need a non-const result.
+            var mut = tree;
+            mut.deinit();
+        } else |_| {
+            // TODO: We should make our "no surfaces" state more aesthetically
+            // pleasing and show something like an "Oops, something went wrong"
+            // message. For now, this is incredibly unlikely.
+            @panic("oom");
+        }
+    }
+
+    fn connectSurfaceHandlers(
+        self: *Self,
+        tree: *const Surface.Tree,
+    ) void {
+        var it = tree.iterator();
+        while (it.next()) |entry| {
+            const surface = entry.view;
+            _ = Surface.signals.@"close-request".connect(
+                surface,
+                *Self,
+                surfaceCloseRequest,
+                self,
+                .{},
+            );
+            _ = gobject.Object.signals.notify.connect(
+                surface,
+                *Self,
+                propSurfaceFocused,
+                self,
+                .{ .detail = "focused" },
+            );
+        }
+    }
+
+    fn disconnectSurfaceHandlers(
+        self: *Self,
+        tree: *const Surface.Tree,
+    ) void {
+        var it = tree.iterator();
+        while (it.next()) |entry| {
+            const surface = entry.view;
+            _ = gobject.signalHandlersDisconnectMatched(
+                surface.as(gobject.Object),
+                .{ .data = true },
+                0,
+                0,
+                null,
+                null,
+                self,
+            );
+        }
     }
 
     //---------------------------------------------------------------
@@ -167,15 +239,32 @@ pub const Tab = extern struct {
 
     /// Get the currently active surface. See the "active-surface" property.
     /// This does not ref the value.
-    pub fn getActiveSurface(self: *Self) *Surface {
+    pub fn getActiveSurface(self: *Self) ?*Surface {
+        const tree = self.getSurfaceTree() orelse return null;
+        var it = tree.iterator();
+        while (it.next()) |entry| {
+            if (entry.view.getFocused()) return entry.view;
+        }
+
+        return null;
+    }
+
+    /// Get the surface tree of this tab.
+    pub fn getSurfaceTree(self: *Self) ?*Surface.Tree {
         const priv = self.private();
-        return priv.surface;
+        return priv.split_tree.getTree();
+    }
+
+    /// Get the split tree widget that is in this tab.
+    pub fn getSplitTree(self: *Self) *SplitTree {
+        const priv = self.private();
+        return priv.split_tree;
     }
 
     /// Returns true if this tab needs confirmation before quitting based
     /// on the various Ghostty configurations.
     pub fn getNeedsConfirmQuit(self: *Self) bool {
-        const surface = self.getActiveSurface();
+        const surface = self.getActiveSurface() orelse return false;
         const core_surface = surface.core() orelse return false;
         return core_surface.needsConfirmQuit();
     }
@@ -239,6 +328,50 @@ pub const Tab = extern struct {
         }
     }
 
+    fn splitTreeChanged(
+        _: *SplitTree,
+        old_tree: ?*const Surface.Tree,
+        new_tree: ?*const Surface.Tree,
+        self: *Self,
+    ) callconv(.c) void {
+        if (old_tree) |tree| {
+            self.disconnectSurfaceHandlers(tree);
+        }
+
+        if (new_tree) |tree| {
+            self.connectSurfaceHandlers(tree);
+        }
+    }
+
+    fn propSplitTree(
+        _: *SplitTree,
+        _: *gobject.ParamSpec,
+        self: *Self,
+    ) callconv(.c) void {
+        self.as(gobject.Object).notifyByPspec(properties.@"surface-tree".impl.param_spec);
+    }
+
+    fn propActiveSurface(
+        _: *Self,
+        _: *gobject.ParamSpec,
+        self: *Self,
+    ) callconv(.c) void {
+        const priv = self.private();
+        priv.surface_bindings.setSource(null);
+        if (self.getActiveSurface()) |surface| {
+            priv.surface_bindings.setSource(surface.as(gobject.Object));
+        }
+    }
+
+    fn propSurfaceFocused(
+        surface: *Surface,
+        _: *gobject.ParamSpec,
+        self: *Self,
+    ) callconv(.c) void {
+        if (!surface.getFocused()) return;
+        self.as(gobject.Object).notifyByPspec(properties.@"active-surface".impl.param_spec);
+    }
+
     const C = Common(Self, Private);
     pub const as = C.as;
     pub const ref = C.ref;
@@ -251,6 +384,7 @@ pub const Tab = extern struct {
         pub const Instance = Self;
 
         fn init(class: *Class) callconv(.c) void {
+            gobject.ext.ensureType(SplitTree);
             gobject.ext.ensureType(Surface);
             gtk.Widget.Class.setTemplateFromResource(
                 class.as(gtk.Widget.Class),
@@ -265,14 +399,17 @@ pub const Tab = extern struct {
             gobject.ext.registerProperties(class, &.{
                 properties.@"active-surface".impl,
                 properties.config.impl,
+                properties.@"surface-tree".impl,
                 properties.title.impl,
             });
 
             // Bindings
-            class.bindTemplateChildPrivate("surface", .{});
+            class.bindTemplateChildPrivate("split_tree", .{});
 
             // Template Callbacks
-            class.bindTemplateCallback("surface_close_request", &surfaceCloseRequest);
+            class.bindTemplateCallback("tree_changed", &splitTreeChanged);
+            class.bindTemplateCallback("notify_active_surface", &propActiveSurface);
+            class.bindTemplateCallback("notify_tree", &propSplitTree);
 
             // Signals
             signals.@"close-request".impl.register(.{});

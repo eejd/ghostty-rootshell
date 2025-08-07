@@ -5,11 +5,13 @@ template $GhosttyTab: Box {
     "tab",
   ]
 
+  notify::active-surface => $notify_active_surface();
+  orientation: vertical;
   hexpand: true;
   vexpand: true;
-  // A tab currently just contains a surface directly. When we introduce
-  // splits we probably want to replace this with the split widget type.
-  $GhosttySurface surface {
-    close-request => $surface_close_request();
+
+  $GhosttySplitTree split_tree {
+    notify::tree => $notify_tree();
+    changed => $tree_changed();
   }
 }
