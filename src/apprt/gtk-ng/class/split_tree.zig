@@ -43,8 +43,6 @@ pub const SplitTree = extern struct {
                 Self,
                 bool,
                 .{
-                    .nick = "Has Surfaces",
-                    .blurb = "Tree has surfaces.",
                     .default = false,
                     .accessor = gobject.ext.typedAccessor(
                         Self,
@@ -64,8 +62,6 @@ pub const SplitTree = extern struct {
                 Self,
                 ?*Surface.Tree,
                 .{
-                    .nick = "Tree Model",
-                    .blurb = "Underlying data model for the tree.",
                     .accessor = .{
                         .getter = getTreeValue,
                         .setter = setTreeValue,

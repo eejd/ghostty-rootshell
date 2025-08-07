@@ -54,8 +54,6 @@ pub const Surface = extern struct {
                 Self,
                 ?*Config,
                 .{
-                    .nick = "Config",
-                    .blurb = "The configuration that this surface is using.",
                     .accessor = C.privateObjFieldAccessor("config"),
                 },
             );
@@ -68,8 +66,6 @@ pub const Surface = extern struct {
                 Self,
                 bool,
                 .{
-                    .nick = "Child Exited",
-                    .blurb = "True when the child process has exited.",
                     .default = false,
                     .accessor = gobject.ext.privateFieldAccessor(
                         Self,
@@ -88,8 +84,6 @@ pub const Surface = extern struct {
                 Self,
                 ?*Size,
                 .{
-                    .nick = "Default Size",
-                    .blurb = "The default size of the window for this surface.",
                     .accessor = C.privateBoxedFieldAccessor("default_size"),
                 },
             );
@@ -102,8 +96,6 @@ pub const Surface = extern struct {
                 Self,
                 ?*font.face.DesiredSize,
                 .{
-                    .nick = "Desired Font Size",
-                    .blurb = "The desired font size, only affects initialization.",
                     .accessor = C.privateBoxedFieldAccessor("font_size_request"),
                 },
             );
@@ -116,8 +108,6 @@ pub const Surface = extern struct {
                 Self,
                 bool,
                 .{
-                    .nick = "Focused",
-                    .blurb = "The focused state of the surface.",
                     .default = false,
                     .accessor = gobject.ext.privateFieldAccessor(
                         Self,
@@ -136,8 +126,6 @@ pub const Surface = extern struct {
                 Self,
                 ?*Size,
                 .{
-                    .nick = "Minimum Size",
-                    .blurb = "The minimum size of the surface.",
                     .accessor = C.privateBoxedFieldAccessor("min_size"),
                 },
             );
@@ -150,8 +138,6 @@ pub const Surface = extern struct {
                 Self,
                 bool,
                 .{
-                    .nick = "Mouse Hidden",
-                    .blurb = "Whether the mouse cursor should be hidden.",
                     .default = false,
                     .accessor = gobject.ext.privateFieldAccessor(
                         Self,
@@ -170,8 +156,6 @@ pub const Surface = extern struct {
                 Self,
                 terminal.MouseShape,
                 .{
-                    .nick = "Mouse Shape",
-                    .blurb = "The current mouse shape to show for the surface.",
                     .default = .text,
                     .accessor = gobject.ext.privateFieldAccessor(
                         Self,
@@ -192,8 +176,6 @@ pub const Surface = extern struct {
                 Self,
                 ?[:0]const u8,
                 .{
-                    .nick = "Mouse Hover URL",
-                    .blurb = "The URL the mouse is currently hovering over (if any).",
                     .default = null,
                     .accessor = C.privateStringFieldAccessor("mouse_hover_url"),
                 },
@@ -209,8 +191,6 @@ pub const Surface = extern struct {
                 Self,
                 ?[:0]const u8,
                 .{
-                    .nick = "Working Directory",
-                    .blurb = "The current working directory as reported by core.",
                     .default = null,
                     .accessor = C.privateStringFieldAccessor("pwd"),
                 },
@@ -226,8 +206,6 @@ pub const Surface = extern struct {
                 Self,
                 ?[:0]const u8,
                 .{
-                    .nick = "Title",
-                    .blurb = "The title of the surface.",
                     .default = null,
                     .accessor = C.privateStringFieldAccessor("title"),
                 },
@@ -241,8 +219,6 @@ pub const Surface = extern struct {
                 Self,
                 bool,
                 .{
-                    .nick = "Zoom",
-                    .blurb = "Whether the surface should be zoomed.",
                     .default = false,
                     .accessor = gobject.ext.privateFieldAccessor(
                         Self,

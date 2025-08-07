@@ -79,8 +79,6 @@ pub const Application = extern struct {
                 Self,
                 ?*Config,
                 .{
-                    .nick = "Config",
-                    .blurb = "The current active configuration for the application.",
                     .accessor = gobject.ext.typedAccessor(
                         Self,
                         ?*Config,

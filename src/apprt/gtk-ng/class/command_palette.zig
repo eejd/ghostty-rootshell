@@ -37,8 +37,6 @@ pub const CommandPalette = extern struct {
                 Self,
                 ?*Config,
                 .{
-                    .nick = "Config",
-                    .blurb = "The configuration that this command palette is using.",
                     .accessor = C.privateObjFieldAccessor("config"),
                 },
             );
@@ -327,8 +325,6 @@ const Command = extern struct {
                 Self,
                 ?*Config,
                 .{
-                    .nick = "Config",
-                    .blurb = "The configuration that this command palette is using.",
                     .accessor = C.privateObjFieldAccessor("config"),
                 },
             );
@@ -341,7 +337,6 @@ const Command = extern struct {
                 Self,
                 ?[:0]const u8,
                 .{
-                    .nick = "Action Key",
                     .default = null,
                     .accessor = gobject.ext.typedAccessor(
                         Self,
@@ -362,7 +357,6 @@ const Command = extern struct {
                 Self,
                 ?[:0]const u8,
                 .{
-                    .nick = "Action",
                     .default = null,
                     .accessor = gobject.ext.typedAccessor(
                         Self,
@@ -383,7 +377,6 @@ const Command = extern struct {
                 Self,
                 ?[:0]const u8,
                 .{
-                    .nick = "Title",
                     .default = null,
                     .accessor = gobject.ext.typedAccessor(
                         Self,
@@ -404,7 +397,6 @@ const Command = extern struct {
                 Self,
                 ?[:0]const u8,
                 .{
-                    .nick = "Description",
                     .default = null,
                     .accessor = gobject.ext.typedAccessor(
                         Self,
