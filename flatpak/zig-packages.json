@@ -31,9 +31,9 @@
   },
   {
     "type": "archive",
-    "url": "https://github.com/jcollie/ghostty-gobject/releases/download/0.14.1-2025-07-23-28-1/ghostty-gobject-0.14.1-2025-07-23-28-1.tar.zst",
-    "dest": "vendor/p/gobject-0.3.0-Skun7EXXnAB96BrWabxhzOw7HY-NzVexaPOIYw5t-dIE",
-    "sha256": "c9b787a3e37071566ec94d37ed707efcea1f0e82282ec3e7c8d086da3ca25c2d"
+    "url": "https://github.com/jcollie/ghostty-gobject/releases/download/0.14.1-2025-08-07-34-1/ghostty-gobject-0.14.1-2025-08-07-34-1.tar.zst",
+    "dest": "vendor/p/gobject-0.3.0-Skun7F_XnABQYabYdzLoVbO3bCcJIwxE3NCPs1_fG2ma",
+    "sha256": "e3720888747927b3df806f495d2946802e96ced0b5d1f5f22211997d8f7171e4"
   },
   {
     "type": "archive",
