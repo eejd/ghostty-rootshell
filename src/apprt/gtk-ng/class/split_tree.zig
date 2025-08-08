@@ -467,7 +467,7 @@ pub const SplitTree = extern struct {
         // Rebuild our tree
         const tree: *const Surface.Tree = self.private().tree orelse &.empty;
         if (!tree.isEmpty()) {
-            priv.tree_bin.setChild(buildTree(tree, 0));
+            priv.tree_bin.setChild(self.buildTree(tree, 0));
         }
 
         // If we have a last focused surface, we need to refocus it, because
@@ -486,22 +486,17 @@ pub const SplitTree = extern struct {
     /// The final returned widget is expected to be a floating reference,
     /// ready to be attached to a parent widget.
     fn buildTree(
+        self: *Self,
         tree: *const Surface.Tree,
         current: Surface.Tree.Node.Handle,
     ) *gtk.Widget {
         return switch (tree.nodes[current]) {
             .leaf => |v| v.as(gtk.Widget),
-            .split => |s| gobject.ext.newInstance(
-                gtk.Paned,
-                .{
-                    .orientation = @as(gtk.Orientation, switch (s.layout) {
-                        .horizontal => .horizontal,
-                        .vertical => .vertical,
-                    }),
-                    .@"start-child" = buildTree(tree, s.left),
-                    .@"end-child" = buildTree(tree, s.right),
-                    // TODO: position/ratio
-                },
+            .split => |s| SplitTreeSplit.new(
+                current,
+                &s,
+                self.buildTree(tree, s.left),
+                self.buildTree(tree, s.right),
             ).as(gtk.Widget),
         };
     }
@@ -545,6 +540,270 @@ pub const SplitTree = extern struct {
 
             // Signals
             signals.changed.impl.register(.{});
+
+            // Virtual methods
+            gobject.Object.virtual_methods.dispose.implement(class, &dispose);
+            gobject.Object.virtual_methods.finalize.implement(class, &finalize);
+        }
+
+        pub const as = C.Class.as;
+        pub const bindTemplateChildPrivate = C.Class.bindTemplateChildPrivate;
+        pub const bindTemplateCallback = C.Class.bindTemplateCallback;
+    };
+};
+
+/// This is an internal-only widget that represents a split in the
+/// split tree. This is a wrapper around gtk.Paned that allows us to handle
+/// ratio (0 to 1) based positioning of the split, and also allows us to
+/// write back the updated ratio to the split tree when the user manually
+/// adjusts the split position.
+///
+/// Since this is internal, it expects to be nested within a SplitTree and
+/// will use `getAncestor` to find the SplitTree it belongs to.
+///
+/// This is an _immutable_ widget. It isn't meant to be updated after
+/// creation. As such, there are no properties or APIs to change the split,
+/// access the paned, etc.
+const SplitTreeSplit = extern struct {
+    const Self = @This();
+    parent_instance: Parent,
+    pub const Parent = adw.Bin;
+    pub const getGObjectType = gobject.ext.defineClass(Self, .{
+        .name = "GhosttySplitTreeSplit",
+        .instanceInit = &init,
+        .classInit = &Class.init,
+        .parent_class = &Class.parent,
+        .private = .{ .Type = Private, .offset = &Private.offset },
+    });
+
+    const Private = struct {
+        /// The handle of the node in the tree that this split represents.
+        /// Assumed to be correct.
+        handle: Surface.Tree.Node.Handle,
+
+        /// Source to handle repositioning the split when properties change.
+        idle: ?c_uint = null,
+
+        // Template bindings
+        paned: *gtk.Paned,
+
+        pub var offset: c_int = 0;
+    };
+
+    /// Create a new split.
+    ///
+    /// The reason we don't use GObject properties here is because this is
+    /// an immutable widget and we don't want to deal with the overhead of
+    /// all the boilerplate for properties, signals, bindings, etc.
+    pub fn new(
+        handle: Surface.Tree.Node.Handle,
+        split: *const Surface.Tree.Split,
+        start_child: *gtk.Widget,
+        end_child: *gtk.Widget,
+    ) *Self {
+        const self = gobject.ext.newInstance(Self, .{});
+        const priv = self.private();
+        priv.handle = handle;
+
+        // Setup our paned fields
+        const paned = priv.paned;
+        paned.setStartChild(start_child);
+        paned.setEndChild(end_child);
+        paned.as(gtk.Orientable).setOrientation(switch (split.layout) {
+            .horizontal => .horizontal,
+            .vertical => .vertical,
+        });
+
+        // Signals and so on are setup in the template.
+
+        return self;
+    }
+
+    fn init(self: *Self, _: *Class) callconv(.c) void {
+        gtk.Widget.initTemplate(self.as(gtk.Widget));
+    }
+
+    fn refresh(self: *Self) void {
+        const priv = self.private();
+        if (priv.idle == null) priv.idle = glib.idleAdd(
+            onIdle,
+            self,
+        );
+    }
+
+    fn onIdle(ud: ?*anyopaque) callconv(.c) c_int {
+        const self: *Self = @ptrCast(@alignCast(ud orelse return 0));
+        const priv = self.private();
+        const paned = priv.paned;
+
+        // Our idle source is always over
+        priv.idle = null;
+
+        // Get our split. This is the most dangerous part of this entire
+        // widget. We assume that this widget is always a child of a
+        // SplitTree, we assume that our handle is valid, and we assume
+        // the handle is always a split node.
+        const split: *Surface.Tree.Split = split: {
+            const split_tree = ext.getAncestor(
+                SplitTree,
+                self.as(gtk.Widget),
+            ) orelse return 0;
+            const tree = split_tree.getTree() orelse return 0;
+            // TODO: fix this constCast
+            break :split @constCast(&tree.nodes[priv.handle].split);
+        };
+
+        // Current, min, and max positions as pixels.
+        const pos = paned.getPosition();
+        const min = min: {
+            var val = gobject.ext.Value.new(c_int);
+            defer val.unset();
+            gobject.Object.getProperty(
+                paned.as(gobject.Object),
+                "min-position",
+                &val,
+            );
+            break :min gobject.ext.Value.get(&val, c_int);
+        };
+        const max = max: {
+            var val = gobject.ext.Value.new(c_int);
+            defer val.unset();
+            gobject.Object.getProperty(
+                paned.as(gobject.Object),
+                "max-position",
+                &val,
+            );
+            break :max gobject.ext.Value.get(&val, c_int);
+        };
+
+        // We don't actually use min, but we don't expect this to ever
+        // be non-zero, so let's add an assert to ensure that.
+        assert(min == 0);
+
+        // If our max is zero then we can't do any math. I don't know
+        // if this is possible but I suspect it can be if you make a nested
+        // split completely minimized.
+        if (max == 0) return 0;
+
+        // Determine our current ratio.
+        const current_ratio: f64 = ratio: {
+            const pos_f64: f64 = @floatFromInt(pos);
+            const max_f64: f64 = @floatFromInt(max);
+            break :ratio pos_f64 / max_f64;
+        };
+        const desired_ratio: f64 = @floatCast(split.ratio);
+
+        // If our ratio is close enough to our desired ratio, then
+        // we ignore the update. This is to avoid constant split updates
+        // for lossy floating point math.
+        if (std.math.approxEqAbs(
+            f64,
+            current_ratio,
+            desired_ratio,
+            0.001,
+        )) {
+            return 0;
+        }
+
+        // If we're out of bounds, then we need to either set the position
+        // to what we expect OR update our expected ratio.
+
+        const desired_pos: c_int = desired_pos: {
+            const max_f64: f64 = @floatFromInt(max);
+            break :desired_pos @intFromFloat(@round(max_f64 * desired_ratio));
+        };
+        paned.setPosition(desired_pos);
+
+        log.warn("DESIRED={} CURRENT={}", .{ desired_ratio, current_ratio });
+
+        return 0;
+    }
+
+    //---------------------------------------------------------------
+    // Signal handlers
+
+    fn propPosition(
+        _: *gtk.Paned,
+        _: *gobject.ParamSpec,
+        self: *Self,
+    ) callconv(.c) void {
+        self.refresh();
+    }
+
+    fn propMaxPosition(
+        _: *gtk.Paned,
+        _: *gobject.ParamSpec,
+        self: *Self,
+    ) callconv(.c) void {
+        self.refresh();
+    }
+
+    fn propMinPosition(
+        _: *gtk.Paned,
+        _: *gobject.ParamSpec,
+        self: *Self,
+    ) callconv(.c) void {
+        self.refresh();
+    }
+
+    //---------------------------------------------------------------
+    // Virtual methods
+
+    fn dispose(self: *Self) callconv(.c) void {
+        const priv = self.private();
+        if (priv.idle) |v| {
+            if (glib.Source.remove(v) == 0) {
+                log.warn("unable to remove idle source", .{});
+            }
+            priv.idle = null;
+        }
+
+        gtk.Widget.disposeTemplate(
+            self.as(gtk.Widget),
+            getGObjectType(),
+        );
+
+        gobject.Object.virtual_methods.dispose.call(
+            Class.parent,
+            self.as(Parent),
+        );
+    }
+
+    fn finalize(self: *Self) callconv(.c) void {
+        gobject.Object.virtual_methods.finalize.call(
+            Class.parent,
+            self.as(Parent),
+        );
+    }
+
+    const C = Common(Self, Private);
+    pub const as = C.as;
+    pub const ref = C.ref;
+    pub const unref = C.unref;
+    const private = C.private;
+
+    pub const Class = extern struct {
+        parent_class: Parent.Class,
+        var parent: *Parent.Class = undefined;
+        pub const Instance = Self;
+
+        fn init(class: *Class) callconv(.c) void {
+            gtk.Widget.Class.setTemplateFromResource(
+                class.as(gtk.Widget.Class),
+                comptime gresource.blueprint(.{
+                    .major = 1,
+                    .minor = 5,
+                    .name = "split-tree-split",
+                }),
+            );
+
+            // Bindings
+            class.bindTemplateChildPrivate("paned", .{});
+
+            // Template Callbacks
+            class.bindTemplateCallback("notify_max_position", &propMaxPosition);
+            class.bindTemplateCallback("notify_min_position", &propMinPosition);
+            class.bindTemplateCallback("notify_position", &propPosition);
 
             // Virtual methods
             gobject.Object.virtual_methods.dispose.implement(class, &dispose);
