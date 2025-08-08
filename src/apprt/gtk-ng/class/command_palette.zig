@@ -217,11 +217,11 @@ pub const CommandPalette = extern struct {
     /// Helper function to send a signal containing the action that should be
     /// performed.
     fn activated(self: *CommandPalette, pos: c_uint) void {
-        // add a reference to keep ourselves around until we're done
-        _ = self.ref();
-        defer self.unref();
-
         const priv = self.private();
+
+        // Use priv.model and not priv.source here to use the list of *visible* results
+        const object_ = priv.model.as(gio.ListModel).getObject(pos);
+        defer if (object_) |object| object.unref();
 
         // Close before running the action in order to avoid being replaced by
         // another dialog (such as the change title dialog). If that occurs then
@@ -229,12 +229,7 @@ pub const CommandPalette = extern struct {
         // and cannot receive focus when reopened.
         _ = priv.dialog.close();
 
-        // Use priv.model and not priv.source here to use the list of *visible* results
-        const object = priv.model.as(gio.ListModel).getObject(pos) orelse return;
-        defer object.unref();
-
-        const cmd = gobject.ext.cast(Command, object) orelse return;
-
+        const cmd = gobject.ext.cast(Command, object_ orelse return) orelse return;
         const action = cmd.getAction() orelse return;
 
         // Signal that an an action has been selected. Signals are synchronous
