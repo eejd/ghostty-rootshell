@@ -118,6 +118,10 @@ pub const SplitTree = extern struct {
         // Template bindings
         tree_bin: *adw.Bin,
 
+        /// The source that we use to rebuild the tree. This is also
+        /// used to debounce updates.
+        rebuild_source: ?c_uint = null,
+
         pub var offset: c_int = 0;
     };
 
@@ -310,6 +314,14 @@ pub const SplitTree = extern struct {
     // Virtual methods
 
     fn dispose(self: *Self) callconv(.c) void {
+        const priv = self.private();
+        if (priv.rebuild_source) |v| {
+            if (glib.Source.remove(v) == 0) {
+                log.warn("unable to remove rebuild source", .{});
+            }
+            priv.rebuild_source = null;
+        }
+
         gtk.Widget.disposeTemplate(
             self.as(gtk.Widget),
             getGObjectType(),
@@ -357,16 +369,40 @@ pub const SplitTree = extern struct {
         _: ?*anyopaque,
     ) callconv(.c) void {
         const priv = self.private();
-        const tree: *const Surface.Tree = self.private().tree orelse &.empty;
 
-        // Reset our widget tree.
+        // We need to reset our tree and create the new widget hierarchy
+        // on two separate event loop ticks to allow GTK to properly relayout
+        // our widgets.
+        //
+        // Doing this all at once will cause strange rendering glitches,
+        // the glarea to be gone forever (but not deallocated), etc. I think
+        // this is probably a bug in GTK we can minimize and report later.
+        //
+        // Using an idle callback also allows us to debounce updates.
         priv.tree_bin.setChild(null);
+        if (priv.rebuild_source == null) priv.rebuild_source = glib.idleAdd(
+            onRebuild,
+            self,
+        );
+
+        // Dependent properties
+        self.as(gobject.Object).notifyByPspec(properties.@"has-surfaces".impl.param_spec);
+    }
+
+    fn onRebuild(ud: ?*anyopaque) callconv(.c) c_int {
+        const self: *Self = @ptrCast(@alignCast(ud orelse return 0));
+
+        // Always mark our rebuild source as null since we're done.
+        const priv = self.private();
+        priv.rebuild_source = null;
+
+        // Rebuild our tree
+        const tree: *const Surface.Tree = self.private().tree orelse &.empty;
         if (!tree.isEmpty()) {
             priv.tree_bin.setChild(buildTree(tree, 0));
         }
 
-        // Dependent properties
-        self.as(gobject.Object).notifyByPspec(properties.@"has-surfaces".impl.param_spec);
+        return 0;
     }
 
     /// Builds the widget tree associated with a surface split tree.
@@ -377,13 +413,9 @@ pub const SplitTree = extern struct {
         tree: *const Surface.Tree,
         current: Surface.Tree.Node.Handle,
     ) *gtk.Widget {
-        switch (tree.nodes[current]) {
-            .leaf => |v| {
-                v.as(gtk.Widget).unparent();
-                return v.as(gtk.Widget);
-            },
-
-            .split => |s| return gobject.ext.newInstance(
+        return switch (tree.nodes[current]) {
+            .leaf => |v| v.as(gtk.Widget),
+            .split => |s| gobject.ext.newInstance(
                 gtk.Paned,
                 .{
                     .orientation = @as(gtk.Orientation, switch (s.layout) {
@@ -395,7 +427,7 @@ pub const SplitTree = extern struct {
                     // TODO: position/ratio
                 },
             ).as(gtk.Widget),
-        }
+        };
     }
 
     //---------------------------------------------------------------
