@@ -906,9 +906,7 @@ pub const Window = extern struct {
             .tabs => {
                 // *Conditionally* disable the tab bar when maximized, the titlebar
                 // style is tabs, and gtk-titlebar-hide-when-maximized is set.
-                if (self.isMaximized() and config.@"gtk-titlebar-hide-when-maximized") {
-                    return false;
-                }
+                if (self.isMaximized() and config.@"gtk-titlebar-hide-when-maximized") return false;
 
                 // If the titlebar style is tabs the tab bar must always be visible.
                 return true;
