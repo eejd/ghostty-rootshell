@@ -1693,16 +1693,9 @@ const Action = struct {
     ) void {
         switch (target) {
             .app => log.warn("mouse over link to app is unexpected", .{}),
-            .surface => |surface| {
-                var v = gobject.ext.Value.new([:0]const u8);
-                if (value.url.len > 0) gobject.ext.Value.set(&v, value.url);
-                defer v.unset();
-                gobject.Object.setProperty(
-                    surface.rt_surface.gobj().as(gobject.Object),
-                    "mouse-hover-url",
-                    &v,
-                );
-            },
+            .surface => |surface| surface.rt_surface.gobj().setMouseHoverUrl(
+                if (value.url.len > 0) value.url else null,
+            ),
         }
     }
 
@@ -1712,15 +1705,7 @@ const Action = struct {
     ) void {
         switch (target) {
             .app => log.warn("mouse shape to app is unexpected", .{}),
-            .surface => |surface| {
-                var value = gobject.ext.Value.newFrom(shape);
-                defer value.unset();
-                gobject.Object.setProperty(
-                    surface.rt_surface.gobj().as(gobject.Object),
-                    "mouse-shape",
-                    &value,
-                );
-            },
+            .surface => |surface| surface.rt_surface.gobj().setMouseShape(shape),
         }
     }
 
@@ -1730,18 +1715,10 @@ const Action = struct {
     ) void {
         switch (target) {
             .app => log.warn("mouse visibility to app is unexpected", .{}),
-            .surface => |surface| {
-                var value = gobject.ext.Value.newFrom(switch (visibility) {
-                    .visible => false,
-                    .hidden => true,
-                });
-                defer value.unset();
-                gobject.Object.setProperty(
-                    surface.rt_surface.gobj().as(gobject.Object),
-                    "mouse-hidden",
-                    &value,
-                );
-            },
+            .surface => |surface| surface.rt_surface.gobj().setMouseHidden(switch (visibility) {
+                .visible => false,
+                .hidden => true,
+            }),
         }
     }
 
@@ -1862,15 +1839,7 @@ const Action = struct {
     ) void {
         switch (target) {
             .app => log.warn("pwd to app is unexpected", .{}),
-            .surface => |surface| {
-                var v = gobject.ext.Value.newFrom(value.pwd);
-                defer v.unset();
-                gobject.Object.setProperty(
-                    surface.rt_surface.gobj().as(gobject.Object),
-                    "pwd",
-                    &v,
-                );
-            },
+            .surface => |surface| surface.rt_surface.gobj().setPwd(value.pwd),
         }
     }
 
@@ -1970,15 +1939,7 @@ const Action = struct {
     ) void {
         switch (target) {
             .app => log.warn("set_title to app is unexpected", .{}),
-            .surface => |surface| {
-                var v = gobject.ext.Value.newFrom(value.title);
-                defer v.unset();
-                gobject.Object.setProperty(
-                    surface.rt_surface.gobj().as(gobject.Object),
-                    "title",
-                    &v,
-                );
-            },
+            .surface => |surface| surface.rt_surface.gobj().setTitle(value.title),
         }
     }
 
