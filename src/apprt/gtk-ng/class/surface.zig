@@ -551,6 +551,7 @@ pub const Surface = extern struct {
     }
 
     pub fn toggleCommandPalette(self: *Self) bool {
+        // TODO: pass the surface with the action
         return self.as(gtk.Widget).activateAction("win.toggle-command-palette", null) != 0;
     }
 
