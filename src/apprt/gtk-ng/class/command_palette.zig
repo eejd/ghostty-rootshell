@@ -174,11 +174,14 @@ pub const CommandPalette = extern struct {
         }
     }
 
+    fn dialogClosed(_: adw.Dialog, self: *CommandPalette) callconv(.c) void {
+        self.unref();
+    }
+
     fn searchStopped(_: *gtk.SearchEntry, self: *CommandPalette) callconv(.c) void {
         // ESC was pressed - close the palette
         const priv = self.private();
         _ = priv.dialog.close();
-        self.unref();
     }
 
     fn searchActivated(_: *gtk.SearchEntry, self: *CommandPalette) callconv(.c) void {
@@ -198,11 +201,9 @@ pub const CommandPalette = extern struct {
     pub fn toggle(self: *CommandPalette, window: *Window) void {
         const priv = self.private();
 
-        // If the dialog has been shown, close it and unref ourselves so all of
-        // our memory is reclaimed.
+        // If the dialog has been shown, close it.
         if (priv.dialog.as(gtk.Widget).getRealized() != 0) {
             _ = priv.dialog.close();
-            self.unref();
             return;
         }
 
@@ -216,6 +217,10 @@ pub const CommandPalette = extern struct {
     /// Helper function to send a signal containing the action that should be
     /// performed.
     fn activated(self: *CommandPalette, pos: c_uint) void {
+        // add a reference to keep ourselves around until we're done
+        _ = self.ref();
+        defer self.unref();
+
         const priv = self.private();
 
         // Close before running the action in order to avoid being replaced by
@@ -223,10 +228,6 @@ pub const CommandPalette = extern struct {
         // the command palette dialog won't be counted as having closed properly
         // and cannot receive focus when reopened.
         _ = priv.dialog.close();
-
-        // We are always done with the command palette when this finishes, even
-        // if there were errors.
-        defer self.unref();
 
         // Use priv.model and not priv.source here to use the list of *visible* results
         const object = priv.model.as(gio.ListModel).getObject(pos) orelse return;
@@ -277,6 +278,7 @@ pub const CommandPalette = extern struct {
             class.bindTemplateChildPrivate("source", .{});
 
             // Template Callbacks
+            class.bindTemplateCallback("closed", &dialogClosed);
             class.bindTemplateCallback("notify_config", &propConfig);
             class.bindTemplateCallback("search_stopped", &searchStopped);
             class.bindTemplateCallback("search_activated", &searchActivated);

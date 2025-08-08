@@ -714,13 +714,6 @@ pub const Window = extern struct {
                 self,
                 .{},
             );
-            _ = Surface.signals.@"toggle-command-palette".connect(
-                surface,
-                *Self,
-                surfaceToggleCommandPalette,
-                self,
-                .{},
-            );
 
             // If we've never had a surface initialize yet, then we register
             // this signal. Its theoretically possible to launch multiple surfaces
@@ -1529,15 +1522,6 @@ pub const Window = extern struct {
         // We react to the changes in the propMaximized callback
     }
 
-    /// React to a signal from a surface requesting that the command palette
-    /// be toggled.
-    fn surfaceToggleCommandPalette(
-        _: *Surface,
-        self: *Self,
-    ) callconv(.c) void {
-        self.toggleCommandPalette();
-    }
-
     fn surfaceInit(
         surface: *Surface,
         self: *Self,
@@ -1722,7 +1706,7 @@ pub const Window = extern struct {
     fn toggleCommandPalette(self: *Window) void {
         const priv = self.private();
         // Get a reference to a command palette. First check the weak reference
-        // that we save to see if we already have stored. If we don't then
+        // that we save to see if we already have one stored. If we don't then
         // create a new one.
         const command_palette = gobject.ext.cast(CommandPalette, priv.command_palette.get()) orelse command_palette: {
             // Create a fresh command palette.
@@ -1747,13 +1731,13 @@ pub const Window = extern struct {
                 .{},
             );
 
+            // Save a weak reference to the command palette. We use a weak reference to avoid
+            // reference counting cycles that might cause problems later.
+            priv.command_palette.set(command_palette.as(gobject.Object));
+
             break :command_palette command_palette;
         };
         defer command_palette.unref();
-
-        // Save a weak reference to the command palette. We use a weak reference to avoid
-        // reference counting cycles that might cause problems later.
-        priv.command_palette.set(command_palette.as(gobject.Object));
 
         // Tell the command palette to toggle itself. If the dialog gets
         // presented (instead of hidden) it will be modal over our window.
