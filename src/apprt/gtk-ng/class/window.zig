@@ -1054,11 +1054,11 @@ pub const Window = extern struct {
     fn closureTitlebarStyleIsTab(
         _: *Self,
         value: TitlebarStyle,
-    ) callconv(.c) bool {
-        return switch (value) {
+    ) callconv(.c) c_int {
+        return @intFromBool(switch (value) {
             .native => false,
             .tabs => true,
-        };
+        });
     }
 
     //---------------------------------------------------------------

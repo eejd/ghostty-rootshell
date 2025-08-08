@@ -222,6 +222,11 @@ pub fn Common(
                     if (func_ti != .@"fn") {
                         @compileError("bound function must be a function pointer");
                     }
+                    if (func_ti.@"fn".return_type == bool) {
+                        // glib booleans are ints and returning a Zig bool type
+                        // I think uses a byte and causes ABI issues.
+                        @compileError("bound function must return c_int instead of bool");
+                    }
                 }
 
                 gtk.Widget.Class.bindTemplateCallbackFull(
