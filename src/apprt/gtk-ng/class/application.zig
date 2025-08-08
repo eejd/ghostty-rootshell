@@ -1257,6 +1257,7 @@ pub const Application = extern struct {
             diag.close();
             diag.unref(); // strong ref from get()
         }
+        priv.config_errors_dialog.set(null);
         if (priv.signal_source) |v| {
             if (glib.Source.remove(v) == 0) {
                 log.warn("unable to remove signal source", .{});
