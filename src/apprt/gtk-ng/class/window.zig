@@ -11,6 +11,7 @@ const gtk = @import("gtk");
 const i18n = @import("../../../os/main.zig").i18n;
 const apprt = @import("../../../apprt.zig");
 const configpkg = @import("../../../config.zig");
+const TitlebarStyle = configpkg.Config.GtkTitlebarStyle;
 const input = @import("../../../input.zig");
 const CoreSurface = @import("../../../Surface.zig");
 const ext = @import("../ext.zig");
@@ -92,6 +93,25 @@ pub const Window = extern struct {
                             }
                         }.getter,
                     }),
+                },
+            );
+        };
+
+        pub const @"titlebar-style" = struct {
+            pub const name = "titlebar-style";
+            const impl = gobject.ext.defineProperty(
+                name,
+                Self,
+                TitlebarStyle,
+                .{
+                    .default = .native,
+                    .accessor = gobject.ext.typedAccessor(
+                        Self,
+                        TitlebarStyle,
+                        .{
+                            .getter = Self.getTitlebarStyle,
+                        },
+                    ),
                 },
             );
         };
@@ -548,6 +568,7 @@ pub const Window = extern struct {
             "tabs-visible",
             "tabs-wide",
             "toolbar-style",
+            "titlebar-style",
         }) |key| {
             self.as(gobject.Object).notifyByPspec(
                 @field(properties, key).impl.param_spec,
@@ -814,6 +835,14 @@ pub const Window = extern struct {
         return false;
     }
 
+    fn isFullscreen(self: *Window) bool {
+        return self.as(gtk.Window).isFullscreen() != 0;
+    }
+
+    fn isMaximized(self: *Window) bool {
+        return self.as(gtk.Window).isMaximized() != 0;
+    }
+
     fn getHeaderbarVisible(self: *Self) bool {
         const priv = self.private();
 
@@ -825,46 +854,70 @@ pub const Window = extern struct {
         if (priv.quick_terminal) return false;
 
         // If we're fullscreen we never show the header bar.
-        if (self.as(gtk.Window).isFullscreen() != 0) return false;
+        if (self.isFullscreen()) return false;
 
         // The remainder needs a config
         const config_obj = self.private().config orelse return true;
         const config = config_obj.get();
 
-        // *Conditionally* disable the header bar when maximized,
-        // and gtk-titlebar-hide-when-maximized is set
-        if (self.as(gtk.Window).isMaximized() != 0 and
-            config.@"gtk-titlebar-hide-when-maximized")
-        {
+        // *Conditionally* disable the header bar when maximized, and
+        // gtk-titlebar-hide-when-maximized is set
+        if (self.isMaximized() and config.@"gtk-titlebar-hide-when-maximized") {
             return false;
         }
 
-        return config.@"gtk-titlebar";
+        return switch (config.@"gtk-titlebar-style") {
+            // If the titlebar style is tabs never show the titlebar.
+            .tabs => false,
+
+            // If the titlebar style is native show the titlebar if configured
+            // to do so.
+            .native => config.@"gtk-titlebar",
+        };
     }
 
     fn getTabsAutohide(self: *Self) bool {
         const priv = self.private();
         const config = if (priv.config) |v| v.get() else return true;
-        return switch (config.@"window-show-tab-bar") {
-            // Auto we always autohide... obviously.
-            .auto => true,
 
-            // Always we never autohide because we always show the tab bar.
-            .always => false,
+        return switch (config.@"gtk-titlebar-style") {
+            // If the titlebar style is tabs we cannot autohide.
+            .tabs => false,
 
-            // Never we autohide because it doesn't actually matter,
-            // since getTabsVisible will return false.
-            .never => true,
+            .native => switch (config.@"window-show-tab-bar") {
+                // Auto we always autohide... obviously.
+                .auto => true,
+
+                // Always we never autohide because we always show the tab bar.
+                .always => false,
+
+                // Never we autohide because it doesn't actually matter,
+                // since getTabsVisible will return false.
+                .never => true,
+            },
         };
     }
 
     fn getTabsVisible(self: *Self) bool {
         const priv = self.private();
         const config = if (priv.config) |v| v.get() else return true;
-        return switch (config.@"window-show-tab-bar") {
-            .always, .auto => true,
-            .never => false,
-        };
+
+        switch (config.@"gtk-titlebar-style") {
+            .tabs => {
+                // *Conditionally* disable the tab bar when maximized, the titlebar
+                // style is tabs, and gtk-titlebar-hide-when-maximized is set.
+                if (self.isMaximized() and config.@"gtk-titlebar-hide-when-maximized") return false;
+
+                // If the titlebar style is tabs the tab bar must always be visible.
+                return true;
+            },
+            .native => {
+                return switch (config.@"window-show-tab-bar") {
+                    .always, .auto => true,
+                    .never => false,
+                };
+            },
+        }
     }
 
     fn getTabsWide(self: *Self) bool {
@@ -881,6 +934,12 @@ pub const Window = extern struct {
             .raised => .raised,
             .@"raised-border" => .raised_border,
         };
+    }
+
+    fn getTitlebarStyle(self: *Self) TitlebarStyle {
+        const priv = self.private();
+        const config = if (priv.config) |v| v.get() else return .native;
+        return config.@"gtk-titlebar-style";
     }
 
     fn propConfig(
@@ -989,6 +1048,16 @@ pub const Window = extern struct {
                 .{err},
             );
             return;
+        };
+    }
+
+    fn closureTitlebarStyleIsTab(
+        _: *Self,
+        value: TitlebarStyle,
+    ) callconv(.c) bool {
+        return switch (value) {
+            .native => false,
+            .tabs => true,
         };
     }
 
@@ -1703,6 +1772,7 @@ pub const Window = extern struct {
                 properties.@"tabs-visible".impl,
                 properties.@"tabs-wide".impl,
                 properties.@"toolbar-style".impl,
+                properties.@"titlebar-style".impl,
             });
 
             // Bindings
@@ -1730,6 +1800,7 @@ pub const Window = extern struct {
             class.bindTemplateCallback("notify_menu_active", &propMenuActive);
             class.bindTemplateCallback("notify_quick_terminal", &propQuickTerminal);
             class.bindTemplateCallback("notify_scale_factor", &propScaleFactor);
+            class.bindTemplateCallback("titlebar_style_is_tabs", &closureTitlebarStyleIsTab);
 
             // Virtual methods
             gobject.Object.virtual_methods.dispose.implement(class, &dispose);
