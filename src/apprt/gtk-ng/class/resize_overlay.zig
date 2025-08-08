@@ -75,6 +75,19 @@ pub const ResizeOverlay = extern struct {
             );
         };
 
+        pub const label = struct {
+            pub const name = "label";
+            const impl = gobject.ext.defineProperty(
+                name,
+                Self,
+                ?[:0]const u8,
+                .{
+                    .default = null,
+                    .accessor = C.privateStringFieldAccessor("label_text"),
+                },
+            );
+        };
+
         pub const @"overlay-halign" = struct {
             pub const name = "overlay-halign";
             const impl = gobject.ext.defineProperty(
@@ -116,6 +129,9 @@ pub const ResizeOverlay = extern struct {
         /// The label with the text
         label: *gtk.Label,
 
+        /// The text to set on the label when scheduled.
+        label_text: ?[:0]const u8,
+
         /// The time that the overlay appears.
         duration: c_uint,
 
@@ -154,9 +170,12 @@ pub const ResizeOverlay = extern struct {
 
     /// Set the label for the overlay. This will not show the
     /// overlay if it is currently hidden; you must call schedule.
-    pub fn setLabel(self: *Self, label: [:0]const u8) void {
+    pub fn setLabel(self: *Self, label: ?[:0]const u8) void {
         const priv = self.private();
-        priv.label.setText(label.ptr);
+        if (priv.label_text) |v| glib.free(@constCast(@ptrCast(v)));
+        priv.label_text = null;
+        if (label) |v| priv.label_text = glib.ext.dupeZ(u8, v);
+        self.as(gobject.Object).notifyByPspec(properties.label.impl.param_spec);
     }
 
     /// Schedule the overlay to be shown. To avoid flickering during
@@ -184,15 +203,26 @@ pub const ResizeOverlay = extern struct {
         // No matter what our idler is complete with this callback
         priv.idler = null;
 
-        // Show ourselves
-        self.as(gtk.Widget).setVisible(1);
-
+        // Cancel our previous show timer no matter what.
         if (priv.timer) |timer| {
             if (glib.Source.remove(timer) == 0) {
                 log.warn("unable to remove size overlay timer", .{});
             }
+            priv.timer = null;
         }
 
+        // If we have a label to show, show ourselves. If we don't have
+        // label text, then hide our label.
+        const text = priv.label_text orelse {
+            self.as(gtk.Widget).setVisible(0);
+            return 0;
+        };
+
+        // Set our label and show it.
+        priv.label.setLabel(text);
+        self.as(gtk.Widget).setVisible(1);
+
+        // Setup the new timer to hide ourselves after the delay.
         priv.timer = glib.timeoutAdd(
             priv.duration,
             onTimer,
@@ -252,6 +282,19 @@ pub const ResizeOverlay = extern struct {
         );
     }
 
+    fn finalize(self: *Self) callconv(.c) void {
+        const priv = self.private();
+        if (priv.label_text) |v| {
+            glib.free(@constCast(@ptrCast(v)));
+            priv.label_text = null;
+        }
+
+        gobject.Object.virtual_methods.finalize.call(
+            Class.parent,
+            self.as(Parent),
+        );
+    }
+
     const C = Common(Self, Private);
     pub const as = C.as;
     pub const ref = C.ref;
@@ -279,6 +322,7 @@ pub const ResizeOverlay = extern struct {
             // Properties
             gobject.ext.registerProperties(class, &.{
                 properties.duration.impl,
+                properties.label.impl,
                 properties.@"first-delay".impl,
                 properties.@"overlay-halign".impl,
                 properties.@"overlay-valign".impl,
@@ -286,6 +330,7 @@ pub const ResizeOverlay = extern struct {
 
             // Virtual methods
             gobject.Object.virtual_methods.dispose.implement(class, &dispose);
+            gobject.Object.virtual_methods.finalize.implement(class, &finalize);
         }
 
         pub const as = C.Class.as;
