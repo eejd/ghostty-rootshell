@@ -139,11 +139,13 @@ pub const Surface = extern struct {
                 bool,
                 .{
                     .default = false,
-                    .accessor = gobject.ext.privateFieldAccessor(
+                    .accessor = gobject.ext.typedAccessor(
                         Self,
-                        Private,
-                        &Private.offset,
-                        "mouse_hidden",
+                        bool,
+                        .{
+                            .getter = getMouseHidden,
+                            .setter = setMouseHidden,
+                        },
                     ),
                 },
             );
@@ -157,11 +159,13 @@ pub const Surface = extern struct {
                 terminal.MouseShape,
                 .{
                     .default = .text,
-                    .accessor = gobject.ext.privateFieldAccessor(
+                    .accessor = gobject.ext.typedAccessor(
                         Self,
-                        Private,
-                        &Private.offset,
-                        "mouse_shape",
+                        terminal.MouseShape,
+                        .{
+                            .getter = getMouseShape,
+                            .setter = setMouseShape,
+                        },
                     ),
                 },
             );
@@ -1289,9 +1293,27 @@ pub const Surface = extern struct {
         return self.private().title;
     }
 
+    /// Set the title for this surface, copies the value.
+    pub fn setTitle(self: *Self, title: ?[:0]const u8) void {
+        const priv = self.private();
+        if (priv.title) |v| glib.free(@constCast(@ptrCast(v)));
+        priv.title = null;
+        if (title) |v| priv.title = glib.ext.dupeZ(u8, v);
+        self.as(gobject.Object).notifyByPspec(properties.title.impl.param_spec);
+    }
+
     /// Returns the pwd property without a copy.
     pub fn getPwd(self: *Self) ?[:0]const u8 {
         return self.private().pwd;
+    }
+
+    /// Set the pwd for this surface, copies the value.
+    pub fn setPwd(self: *Self, pwd: ?[:0]const u8) void {
+        const priv = self.private();
+        if (priv.pwd) |v| glib.free(@constCast(@ptrCast(v)));
+        priv.pwd = null;
+        if (pwd) |v| priv.pwd = glib.ext.dupeZ(u8, v);
+        self.as(gobject.Object).notifyByPspec(properties.pwd.impl.param_spec);
     }
 
     /// Returns the focus state of this surface.
@@ -1349,6 +1371,34 @@ pub const Surface = extern struct {
             &size,
         );
         self.as(gobject.Object).notifyByPspec(properties.@"min-size".impl.param_spec);
+    }
+
+    pub fn getMouseShape(self: *Self) terminal.MouseShape {
+        return self.private().mouse_shape;
+    }
+
+    pub fn setMouseShape(self: *Self, shape: terminal.MouseShape) void {
+        const priv = self.private();
+        priv.mouse_shape = shape;
+        self.as(gobject.Object).notifyByPspec(properties.@"mouse-shape".impl.param_spec);
+    }
+
+    pub fn getMouseHidden(self: *Self) bool {
+        return self.private().mouse_hidden;
+    }
+
+    pub fn setMouseHidden(self: *Self, hidden: bool) void {
+        const priv = self.private();
+        priv.mouse_hidden = hidden;
+        self.as(gobject.Object).notifyByPspec(properties.@"mouse-hidden".impl.param_spec);
+    }
+
+    pub fn setMouseHoverUrl(self: *Self, url: ?[:0]const u8) void {
+        const priv = self.private();
+        if (priv.mouse_hover_url) |v| glib.free(@constCast(@ptrCast(v)));
+        priv.mouse_hover_url = null;
+        if (url) |v| priv.mouse_hover_url = glib.ext.dupeZ(u8, v);
+        self.as(gobject.Object).notifyByPspec(properties.@"mouse-hover-url".impl.param_spec);
     }
 
     fn propConfig(
@@ -1480,7 +1530,7 @@ pub const Surface = extern struct {
         };
 
         // Set our new cursor.
-        self.as(gtk.Widget).setCursorFromName(name.ptr);
+        priv.gl_area.as(gtk.Widget).setCursorFromName(name.ptr);
     }
 
     //---------------------------------------------------------------
