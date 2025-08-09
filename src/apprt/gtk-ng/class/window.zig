@@ -28,6 +28,7 @@ const Surface = @import("surface.zig").Surface;
 const Tab = @import("tab.zig").Tab;
 const DebugWarning = @import("debug_warning.zig").DebugWarning;
 const CommandPalette = @import("command_palette.zig").CommandPalette;
+const WeakRef = @import("../weak_ref.zig").WeakRef;
 
 const log = std.log.scoped(.gtk_ghostty_window);
 
@@ -249,7 +250,7 @@ pub const Window = extern struct {
         tab_overview_focus_timer: ?c_uint = null,
 
         /// A weak reference to a command palette.
-        command_palette: gobject.WeakRef = std.mem.zeroes(gobject.WeakRef),
+        command_palette: WeakRef(CommandPalette) = .empty,
 
         // Template bindings
         tab_overview: *adw.TabOverview,
@@ -1065,7 +1066,7 @@ pub const Window = extern struct {
     fn dispose(self: *Self) callconv(.c) void {
         const priv = self.private();
 
-        if (priv.command_palette.get()) |object| object.unref();
+        priv.command_palette.set(null);
 
         if (priv.config) |v| {
             v.unref();
@@ -1716,11 +1717,7 @@ pub const Window = extern struct {
         // Get a reference to a command palette. First check the weak reference
         // that we save to see if we already have one stored. If we don't then
         // create a new one.
-        const command_palette = command_palette: {
-            if (priv.command_palette.get()) |object| not_command_palette: {
-                break :command_palette gobject.ext.cast(CommandPalette, object) orelse break :not_command_palette;
-            }
-
+        const command_palette = priv.command_palette.get() orelse command_palette: {
             // Create a fresh command palette.
             const command_palette = CommandPalette.new();
 
@@ -1745,7 +1742,7 @@ pub const Window = extern struct {
 
             // Save a weak reference to the command palette. We use a weak reference to avoid
             // reference counting cycles that might cause problems later.
-            priv.command_palette.set(command_palette.as(gobject.Object));
+            priv.command_palette.set(command_palette);
 
             break :command_palette command_palette;
         };
