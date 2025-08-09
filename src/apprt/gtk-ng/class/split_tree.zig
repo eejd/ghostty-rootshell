@@ -490,7 +490,6 @@ pub const SplitTree = extern struct {
             // Remove the surface from the tree.
             .surface => {
                 // TODO: close confirmation
-                // TODO: invalid free on final close
 
                 // Find the surface in the tree.
                 const tree = self.getTree() orelse return;

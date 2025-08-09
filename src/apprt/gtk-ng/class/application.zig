@@ -562,6 +562,8 @@ pub const Application = extern struct {
 
             .move_tab => return Action.moveTab(target, value),
 
+            .new_split => return Action.newSplit(target, value),
+
             .new_tab => return Action.newTab(target),
 
             .new_window => try Action.newWindow(
@@ -611,7 +613,6 @@ pub const Application = extern struct {
             .prompt_title,
             .inspector,
             // TODO: splits
-            .new_split,
             .resize_split,
             .equalize_splits,
             .goto_split,
@@ -1743,6 +1744,28 @@ const Action = struct {
                     surface,
                     @intCast(value.amount),
                 );
+            },
+        }
+    }
+
+    pub fn newSplit(
+        target: apprt.Target,
+        direction: apprt.action.SplitDirection,
+    ) bool {
+        switch (target) {
+            .app => {
+                log.warn("new split to app is unexpected", .{});
+                return false;
+            },
+
+            .surface => |core| {
+                const surface = core.rt_surface.surface;
+                return surface.as(gtk.Widget).activateAction(switch (direction) {
+                    .right => "split-tree.new-right",
+                    .left => "split-tree.new-left",
+                    .down => "split-tree.new-down",
+                    .up => "split-tree.new-up",
+                }, null) != 0;
             },
         }
     }
