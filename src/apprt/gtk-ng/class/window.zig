@@ -1065,11 +1065,7 @@ pub const Window = extern struct {
     fn dispose(self: *Self) callconv(.c) void {
         const priv = self.private();
 
-        command_palette: {
-            // TODO: this can be simplified once WeakRef.get() can return a null.
-            const command_palette = gobject.ext.cast(CommandPalette, priv.command_palette.get()) orelse break :command_palette;
-            command_palette.unref();
-        }
+        if (priv.command_palette.get()) |object| object.unref();
 
         if (priv.config) |v| {
             v.unref();
@@ -1720,9 +1716,11 @@ pub const Window = extern struct {
         // Get a reference to a command palette. First check the weak reference
         // that we save to see if we already have one stored. If we don't then
         // create a new one.
-        //
-        // TODO: once WeakRef.get() can return a null this will need to be fixed up.
-        const command_palette = gobject.ext.cast(CommandPalette, priv.command_palette.get()) orelse command_palette: {
+        const command_palette = command_palette: {
+            if (priv.command_palette.get()) |object| not_command_palette: {
+                break :command_palette gobject.ext.cast(CommandPalette, object) orelse break :not_command_palette;
+            }
+
             // Create a fresh command palette.
             const command_palette = CommandPalette.new();
 
