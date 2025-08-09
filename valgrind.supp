@@ -70,10 +70,6 @@
    fun:g_signal_emit_valist
    fun:g_signal_emit
    fun:gdk_surface_handle_event
-   fun:gdk_wayland_event_source_dispatch
-   fun:g_main_context_dispatch_unlocked
-   fun:g_main_context_iterate_unlocked.isra.0
-   fun:g_main_context_iteration
    ...
 }
 
