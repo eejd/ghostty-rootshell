@@ -1151,3 +1151,21 @@ test "SplitTree: split twice, remove intermediary" {
         t.deinit();
     }
 }
+
+test "SplitTree: clone empty tree" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var t: TestTree = .empty;
+    defer t.deinit();
+
+    var t2 = try t.clone(alloc);
+    defer t2.deinit();
+
+    {
+        const str = try std.fmt.allocPrint(alloc, "{}", .{t2});
+        defer alloc.free(str);
+        try testing.expectEqualStrings(str,
+            \\empty
+        );
+    }
+}

@@ -175,42 +175,6 @@ pub const Tab = extern struct {
         };
     }
 
-    fn connectSurfaceHandlers(
-        self: *Self,
-        tree: *const Surface.Tree,
-    ) void {
-        var it = tree.iterator();
-        while (it.next()) |entry| {
-            const surface = entry.view;
-            _ = gobject.Object.signals.notify.connect(
-                surface,
-                *Self,
-                propSurfaceFocused,
-                self,
-                .{ .detail = "focused" },
-            );
-        }
-    }
-
-    fn disconnectSurfaceHandlers(
-        self: *Self,
-        tree: *const Surface.Tree,
-    ) void {
-        var it = tree.iterator();
-        while (it.next()) |entry| {
-            const surface = entry.view;
-            _ = gobject.signalHandlersDisconnectMatched(
-                surface.as(gobject.Object),
-                .{ .data = true },
-                0,
-                0,
-                null,
-                null,
-                self,
-            );
-        }
-    }
-
     //---------------------------------------------------------------
     // Properties
 
@@ -280,14 +244,10 @@ pub const Tab = extern struct {
 
     fn splitTreeChanged(
         _: *SplitTree,
-        old_tree: ?*const Surface.Tree,
+        _: ?*const Surface.Tree,
         new_tree: ?*const Surface.Tree,
         self: *Self,
     ) callconv(.c) void {
-        if (old_tree) |tree| {
-            self.disconnectSurfaceHandlers(tree);
-        }
-
         // If our tree is empty we close the tab.
         const tree: *const Surface.Tree = new_tree orelse &.empty;
         if (tree.isEmpty()) {
@@ -299,9 +259,6 @@ pub const Tab = extern struct {
             );
             return;
         }
-
-        // Non-empty tree, connect handlers we care about.
-        self.connectSurfaceHandlers(tree);
     }
 
     fn propSplitTree(
@@ -313,7 +270,7 @@ pub const Tab = extern struct {
     }
 
     fn propActiveSurface(
-        _: *Self,
+        _: *SplitTree,
         _: *gobject.ParamSpec,
         self: *Self,
     ) callconv(.c) void {
@@ -322,14 +279,7 @@ pub const Tab = extern struct {
         if (self.getActiveSurface()) |surface| {
             priv.surface_bindings.setSource(surface.as(gobject.Object));
         }
-    }
 
-    fn propSurfaceFocused(
-        surface: *Surface,
-        _: *gobject.ParamSpec,
-        self: *Self,
-    ) callconv(.c) void {
-        if (!surface.getFocused()) return;
         self.as(gobject.Object).notifyByPspec(properties.@"active-surface".impl.param_spec);
     }
 

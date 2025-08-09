@@ -49,8 +49,6 @@ pub const SplitTree = extern struct {
                 Self,
                 ?*Surface,
                 .{
-                    .nick = "Active Surface",
-                    .blurb = "The currently active surface.",
                     .accessor = gobject.ext.typedAccessor(
                         Self,
                         ?*Surface,
@@ -481,6 +479,7 @@ pub const SplitTree = extern struct {
             // Remove the surface from the tree.
             .surface => {
                 // TODO: close confirmation
+                // TODO: invalid free on final close
 
                 // Find the surface in the tree.
                 const tree = self.getTree() orelse return;
@@ -517,6 +516,9 @@ pub const SplitTree = extern struct {
         // the surface is destroyed.
         if (!surface.getFocused()) return;
         self.private().last_focused.set(surface);
+
+        // Our active surface probably changed
+        self.as(gobject.Object).notifyByPspec(properties.@"active-surface".impl.param_spec);
     }
 
     fn propTree(
@@ -565,6 +567,9 @@ pub const SplitTree = extern struct {
             defer v.unref();
             v.grabFocus();
         }
+
+        // Our active surface may have changed
+        self.as(gobject.Object).notifyByPspec(properties.@"active-surface".impl.param_spec);
 
         return 0;
     }
@@ -616,6 +621,7 @@ pub const SplitTree = extern struct {
 
             // Properties
             gobject.ext.registerProperties(class, &.{
+                properties.@"active-surface".impl,
                 properties.@"has-surfaces".impl,
                 properties.tree.impl,
             });
