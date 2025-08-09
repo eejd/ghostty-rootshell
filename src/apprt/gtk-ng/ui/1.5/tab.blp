@@ -12,6 +12,5 @@ template $GhosttyTab: Box {
   $GhosttySplitTree split_tree {
     notify::active-surface => $notify_active_surface();
     notify::tree => $notify_tree();
-    changed => $tree_changed();
   }
 }

@@ -330,8 +330,17 @@ pub const SplitTree = extern struct {
 
     /// Set the tree data model that we're showing in this widget. This
     /// will clone the given tree.
-    pub fn setTree(self: *Self, tree: ?*const Surface.Tree) void {
+    pub fn setTree(self: *Self, tree_: ?*const Surface.Tree) void {
         const priv = self.private();
+
+        // We always normalize our tree parameter so that empty trees
+        // become null so that we don't have to deal with callers being
+        // confused about that.
+        const tree: ?*const Surface.Tree = tree: {
+            const tree = tree_ orelse break :tree null;
+            if (tree.isEmpty()) break :tree null;
+            break :tree tree;
+        };
 
         // Emit the signal so that handlers can witness both the before and
         // after values of the tree.
@@ -349,6 +358,8 @@ pub const SplitTree = extern struct {
         }
 
         if (tree) |new_tree| {
+            assert(priv.tree == null);
+            assert(!new_tree.isEmpty());
             priv.tree = ext.boxedCopy(Surface.Tree, new_tree);
             self.connectSurfaceHandlers();
         }

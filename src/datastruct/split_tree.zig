@@ -826,8 +826,10 @@ pub fn SplitTree(comptime V: type) type {
                         .copy = &struct {
                             fn copy(self: *Self) callconv(.c) *Self {
                                 const ptr = @import("glib").ext.create(Self);
-                                const alloc = self.arena.child_allocator;
-                                ptr.* = self.clone(alloc) catch @panic("oom");
+                                ptr.* = if (self.nodes.len == 0)
+                                    .empty
+                                else
+                                    self.clone(self.arena.child_allocator) catch @panic("oom");
                                 return ptr;
                             }
                         }.copy,

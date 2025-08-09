@@ -242,14 +242,15 @@ pub const Tab = extern struct {
     //---------------------------------------------------------------
     // Signal handlers
 
-    fn splitTreeChanged(
+    fn propSplitTree(
         _: *SplitTree,
-        _: ?*const Surface.Tree,
-        new_tree: ?*const Surface.Tree,
+        _: *gobject.ParamSpec,
         self: *Self,
     ) callconv(.c) void {
+        self.as(gobject.Object).notifyByPspec(properties.@"surface-tree".impl.param_spec);
+
         // If our tree is empty we close the tab.
-        const tree: *const Surface.Tree = new_tree orelse &.empty;
+        const tree: *const Surface.Tree = self.getSurfaceTree() orelse &.empty;
         if (tree.isEmpty()) {
             signals.@"close-request".impl.emit(
                 self,
@@ -259,14 +260,6 @@ pub const Tab = extern struct {
             );
             return;
         }
-    }
-
-    fn propSplitTree(
-        _: *SplitTree,
-        _: *gobject.ParamSpec,
-        self: *Self,
-    ) callconv(.c) void {
-        self.as(gobject.Object).notifyByPspec(properties.@"surface-tree".impl.param_spec);
     }
 
     fn propActiveSurface(
@@ -318,7 +311,6 @@ pub const Tab = extern struct {
             class.bindTemplateChildPrivate("split_tree", .{});
 
             // Template Callbacks
-            class.bindTemplateCallback("tree_changed", &splitTreeChanged);
             class.bindTemplateCallback("notify_active_surface", &propActiveSurface);
             class.bindTemplateCallback("notify_tree", &propSplitTree);
 
