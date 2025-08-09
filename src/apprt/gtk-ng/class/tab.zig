@@ -182,13 +182,6 @@ pub const Tab = extern struct {
         var it = tree.iterator();
         while (it.next()) |entry| {
             const surface = entry.view;
-            _ = Surface.signals.@"close-request".connect(
-                surface,
-                *Self,
-                surfaceCloseRequest,
-                self,
-                .{},
-            );
             _ = gobject.Object.signals.notify.connect(
                 surface,
                 *Self,
@@ -285,27 +278,6 @@ pub const Tab = extern struct {
     //---------------------------------------------------------------
     // Signal handlers
 
-    fn surfaceCloseRequest(
-        _: *Surface,
-        scope: *const Surface.CloseScope,
-        self: *Self,
-    ) callconv(.c) void {
-        switch (scope.*) {
-            // Handled upstream... we don't control our window close.
-            .window => return,
-
-            // Presently both the same, results in the tab closing.
-            .surface, .tab => {
-                signals.@"close-request".impl.emit(
-                    self,
-                    null,
-                    .{},
-                    null,
-                );
-            },
-        }
-    }
-
     fn splitTreeChanged(
         _: *SplitTree,
         old_tree: ?*const Surface.Tree,
@@ -316,9 +288,20 @@ pub const Tab = extern struct {
             self.disconnectSurfaceHandlers(tree);
         }
 
-        if (new_tree) |tree| {
-            self.connectSurfaceHandlers(tree);
+        // If our tree is empty we close the tab.
+        const tree: *const Surface.Tree = new_tree orelse &.empty;
+        if (tree.isEmpty()) {
+            signals.@"close-request".impl.emit(
+                self,
+                null,
+                .{},
+                null,
+            );
+            return;
         }
+
+        // Non-empty tree, connect handlers we care about.
+        self.connectSurfaceHandlers(tree);
     }
 
     fn propSplitTree(

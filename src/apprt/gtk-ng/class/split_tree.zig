@@ -272,6 +272,13 @@ pub const SplitTree = extern struct {
         var it = tree.iterator();
         while (it.next()) |entry| {
             const surface = entry.view;
+            _ = Surface.signals.@"close-request".connect(
+                surface,
+                *Self,
+                surfaceCloseRequest,
+                self,
+                .{},
+            );
             _ = gobject.Object.signals.notify.connect(
                 surface,
                 *Self,
@@ -459,6 +466,45 @@ pub const SplitTree = extern struct {
         ) catch |err| {
             log.warn("new split failed error={}", .{err});
         };
+    }
+
+    fn surfaceCloseRequest(
+        surface: *Surface,
+        scope: *const Surface.CloseScope,
+        self: *Self,
+    ) callconv(.c) void {
+        switch (scope.*) {
+            // Handled upstream... this will probably go away for widget
+            // actions eventually.
+            .window, .tab => return,
+
+            // Remove the surface from the tree.
+            .surface => {
+                // TODO: close confirmation
+
+                // Find the surface in the tree.
+                const tree = self.getTree() orelse return;
+                const handle: Surface.Tree.Node.Handle = handle: {
+                    var it = tree.iterator();
+                    while (it.next()) |entry| {
+                        if (entry.view == surface) break :handle entry.handle;
+                    }
+
+                    return;
+                };
+
+                // Remove it from the tree.
+                var new_tree = tree.remove(
+                    Application.default().allocator(),
+                    handle,
+                ) catch |err| {
+                    log.warn("unable to remove surface from tree: {}", .{err});
+                    return;
+                };
+                defer new_tree.deinit();
+                self.setTree(&new_tree);
+            },
+        }
     }
 
     fn propSurfaceFocused(

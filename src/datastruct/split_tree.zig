@@ -119,6 +119,9 @@ pub fn SplitTree(comptime V: type) type {
 
         /// Clone this tree, returning a new tree with the same nodes.
         pub fn clone(self: *const Self, gpa: Allocator) Allocator.Error!Self {
+            // If we're empty then return an empty tree.
+            if (self.isEmpty()) return .empty;
+
             // Create a new arena allocator for the clone.
             var arena = ArenaAllocator.init(gpa);
             errdefer arena.deinit();
