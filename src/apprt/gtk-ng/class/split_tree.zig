@@ -243,9 +243,6 @@ pub const SplitTree = extern struct {
 
         // Replace our tree
         self.setTree(&new_tree);
-
-        // Focus our new surface
-        surface.grabFocus();
     }
 
     fn disconnectSurfaceHandlers(self: *Self) void {
