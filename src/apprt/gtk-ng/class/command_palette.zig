@@ -174,14 +174,18 @@ pub const CommandPalette = extern struct {
         }
     }
 
-    fn dialogClosed(_: adw.Dialog, self: *CommandPalette) callconv(.c) void {
+    fn close(self: *CommandPalette) void {
+        const priv = self.private();
+        _ = priv.dialog.close();
+    }
+
+    fn dialogClosed(_: *adw.Dialog, self: *CommandPalette) callconv(.c) void {
         self.unref();
     }
 
     fn searchStopped(_: *gtk.SearchEntry, self: *CommandPalette) callconv(.c) void {
         // ESC was pressed - close the palette
-        const priv = self.private();
-        _ = priv.dialog.close();
+        self.close();
     }
 
     fn searchActivated(_: *gtk.SearchEntry, self: *CommandPalette) callconv(.c) void {
@@ -203,7 +207,7 @@ pub const CommandPalette = extern struct {
 
         // If the dialog has been shown, close it.
         if (priv.dialog.as(gtk.Widget).getRealized() != 0) {
-            _ = priv.dialog.close();
+            self.close();
             return;
         }
 
@@ -227,7 +231,7 @@ pub const CommandPalette = extern struct {
         // another dialog (such as the change title dialog). If that occurs then
         // the command palette dialog won't be counted as having closed properly
         // and cannot receive focus when reopened.
-        _ = priv.dialog.close();
+        self.close();
 
         const cmd = gobject.ext.cast(Command, object_ orelse return) orelse return;
         const action = cmd.getAction() orelse return;
