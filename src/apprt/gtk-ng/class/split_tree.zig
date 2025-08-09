@@ -643,15 +643,12 @@ const SplitTreeSplit = extern struct {
         // widget. We assume that this widget is always a child of a
         // SplitTree, we assume that our handle is valid, and we assume
         // the handle is always a split node.
-        const split: *Surface.Tree.Split = split: {
-            const split_tree = ext.getAncestor(
-                SplitTree,
-                self.as(gtk.Widget),
-            ) orelse return 0;
-            const tree = split_tree.getTree() orelse return 0;
-            // TODO: fix this constCast
-            break :split @constCast(&tree.nodes[priv.handle].split);
-        };
+        const split_tree = ext.getAncestor(
+            SplitTree,
+            self.as(gtk.Widget),
+        ) orelse return 0;
+        const tree = split_tree.getTree() orelse return 0;
+        const split: *const Surface.Tree.Split = &tree.nodes[priv.handle].split;
 
         // Current, min, and max positions as pixels.
         const pos = paned.getPosition();
@@ -674,6 +671,16 @@ const SplitTreeSplit = extern struct {
                 &val,
             );
             break :max gobject.ext.Value.get(&val, c_int);
+        };
+        const pos_set: bool = max: {
+            var val = gobject.ext.Value.new(c_int);
+            defer val.unset();
+            gobject.Object.getProperty(
+                paned.as(gobject.Object),
+                "position-set",
+                &val,
+            );
+            break :max gobject.ext.Value.get(&val, c_int) != 0;
         };
 
         // We don't actually use min, but we don't expect this to ever
@@ -708,13 +715,19 @@ const SplitTreeSplit = extern struct {
         // If we're out of bounds, then we need to either set the position
         // to what we expect OR update our expected ratio.
 
-        const desired_pos: c_int = desired_pos: {
-            const max_f64: f64 = @floatFromInt(max);
-            break :desired_pos @intFromFloat(@round(max_f64 * desired_ratio));
-        };
-        paned.setPosition(desired_pos);
+        // If we've never set the position, then we set it to the desired.
+        if (!pos_set) {
+            const desired_pos: c_int = desired_pos: {
+                const max_f64: f64 = @floatFromInt(max);
+                break :desired_pos @intFromFloat(@round(max_f64 * desired_ratio));
+            };
+            paned.setPosition(desired_pos);
+            return 0;
+        }
 
-        log.warn("DESIRED={} CURRENT={}", .{ desired_ratio, current_ratio });
+        // If we've set the position, then this is a manual human update
+        // and we need to write our update back to the tree.
+        tree.resizeInPlace(priv.handle, @floatCast(current_ratio));
 
         return 0;
     }

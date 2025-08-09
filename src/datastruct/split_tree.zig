@@ -174,6 +174,27 @@ pub fn SplitTree(comptime V: type) type {
             }
         };
 
+        /// Resize the given node in place. The node MUST be a split (asserted).
+        ///
+        /// In general, this is an immutable data structure so this is
+        /// heavily discouraged. However, this is provided for convenience
+        /// and performance reasons where its very important for GUIs to
+        /// update the ratio during a live resize than to redraw the entire
+        /// widget tree.
+        pub fn resizeInPlace(
+            self: *Self,
+            at: Node.Handle,
+            ratio: f16,
+        ) void {
+            // Let's talk about this constCast. Our member are const but
+            // we actually always own their memory. We don't want consumers
+            // who directly access the nodes to be able to modify them
+            // (without nasty stuff like this), but given this is internal
+            // usage its perfectly fine to modify the node in-place.
+            const s: *Split = @constCast(&self.nodes[at].split);
+            s.ratio = ratio;
+        }
+
         /// Insert another tree into this tree at the given node in the
         /// specified direction. The other tree will be inserted in the
         /// new direction. For example, if the direction is "right" then
