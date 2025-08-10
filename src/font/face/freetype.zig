@@ -356,6 +356,11 @@ pub const Face = struct {
             .force_autohint = self.load_flags.@"force-autohint",
             .no_autohint = !self.load_flags.autohint,
 
+            // If we're gonna be rendering this glyph in monochrome,
+            // then we should use the monochrome hinter as well, or
+            // else it won't look very good at all.
+            .target_mono = self.load_flags.monochrome,
+
             // NO_SVG set to true because we don't currently support rendering
             // SVG glyphs under FreeType, since that requires bundling another
             // dependency to handle rendering the SVG.
