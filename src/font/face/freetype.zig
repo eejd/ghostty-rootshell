@@ -417,6 +417,27 @@ pub const Face = struct {
         var x = glyph_size.x;
         const y = glyph_size.y;
 
+        // If the cell width was adjusted wider, we re-center all glyphs
+        // in the new width, so that they aren't weirdly off to the left.
+        if (metrics.original_cell_width) |original| recenter: {
+            // We don't do this if the constraint has a horizontal alignment,
+            // since in that case the position was already calculated with the
+            // new cell width in mind.
+            if (opts.constraint.align_horizontal != .none) break :recenter;
+
+            // If the original width was wider then we don't do anything.
+            if (original >= metrics.cell_width) break :recenter;
+
+            // We add half the difference to re-center.
+            //
+            // NOTE: We round this to a whole-pixel amount because under
+            //       FreeType, the outlines will be hinted, which isn't
+            //       the case under CoreText. If we move the outlines by
+            //       a non-whole-pixel amount, it completely ruins the
+            //       hinting.
+            x += @round((cell_width - @as(f64, @floatFromInt(original))) / 2);
+        }
+
         // Now we can render the glyph.
         var bitmap: freetype.c.FT_Bitmap = undefined;
         _ = freetype.c.FT_Bitmap_Init(&bitmap);
@@ -641,42 +662,7 @@ pub const Face = struct {
 
         // This should be the distance from the left of
         // the cell to the left of the glyph's bounding box.
-        const offset_x: i32 = offset_x: {
-            // If the glyph's advance is narrower than the cell width then we
-            // center the advance of the glyph within the cell width. At first
-            // I implemented this to proportionally scale the center position
-            // of the glyph but that messes up glyphs that are meant to align
-            // vertically with others, so this is a compromise.
-            //
-            // This makes it so that when the `adjust-cell-width` config is
-            // used, or when a fallback font with a different advance width
-            // is used, we don't get weirdly aligned glyphs.
-            //
-            // We don't do this if the constraint has a horizontal alignment,
-            // since in that case the position was already calculated with the
-            // new cell width in mind.
-            if (opts.constraint.align_horizontal == .none) {
-                const advance = f26dot6ToFloat(glyph.*.advance.x);
-                const new_advance =
-                    cell_width * @as(f64, @floatFromInt(opts.cell_width orelse 1));
-                // If the original advance is greater than the cell width then
-                // it's possible that this is a ligature or other glyph that is
-                // intended to overflow the cell to one side or the other, and
-                // adjusting the bearings could mess that up, so we just leave
-                // it alone if that's the case.
-                //
-                // We also don't want to do anything if the advance is zero or
-                // less, since this is used for stuff like combining characters.
-                if (advance > new_advance or advance <= 0.0) {
-                    break :offset_x @intFromFloat(@floor(x));
-                }
-                break :offset_x @intFromFloat(
-                    @floor(x + (new_advance - advance) / 2),
-                );
-            } else {
-                break :offset_x @intFromFloat(@floor(x));
-            }
-        };
+        const offset_x: i32 = @intFromFloat(@floor(x));
 
         return Glyph{
             .width = px_width,
