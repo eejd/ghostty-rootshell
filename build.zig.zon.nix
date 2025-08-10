@@ -162,11 +162,11 @@ in
       };
     }
     {
-      name = "N-V-__8AAN83XASXgcKp4RDTj_WcQ19E5X24C3FjQoffeMFv";
+      name = "N-V-__8AABemXQQj_VhMpwuOSOiSzywW_yGD6aEL9YGI9uBu";
       path = fetchZigArtifact {
         name = "iterm2_themes";
-        url = "https://github.com/mbadolato/iTerm2-Color-Schemes/archive/b2742b8baf86f556d6be4d9c6515bfd9d9c7a140.tar.gz";
-        hash = "sha256-w/biUQZ+AJv0atXypwQxJlKkHRUaFS0AlE/VlBJXlVU=";
+        url = "https://github.com/mbadolato/iTerm2-Color-Schemes/archive/3cbeca99efa10beba24b0efe86331736f09f9ed1.tar.gz";
+        hash = "sha256-gl42NOZ59ok+umHCHbdBQhWCgFVpj5PAZDVGhJRpbiA=";
       };
     }
     {
