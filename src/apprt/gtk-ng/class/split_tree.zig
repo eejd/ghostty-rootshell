@@ -125,6 +125,11 @@ pub const SplitTree = extern struct {
         /// used to debounce updates.
         rebuild_source: ?c_uint = null,
 
+        /// Tracks whether we want a rebuild to happen at the next tick
+        /// that our surface tree has no surfaces with parents. See the
+        /// propTree function for a lot more details.
+        rebuild_pending: bool,
+
         pub var offset: c_int = 0;
     };
 
@@ -281,6 +286,13 @@ pub const SplitTree = extern struct {
                 self,
                 .{ .detail = "focused" },
             );
+            _ = gobject.Object.signals.notify.connect(
+                surface.as(gtk.Widget),
+                *Self,
+                propSurfaceParent,
+                self,
+                .{ .detail = "parent" },
+            );
         }
     }
 
@@ -312,6 +324,20 @@ pub const SplitTree = extern struct {
         // in a multi-threaded context so this is safe.
         surface.unref();
         return surface;
+    }
+
+    /// Returns whether any of the surfaces in the tree have a parent.
+    /// This is important because we can only rebuild the widget tree
+    /// when every surface has no parent.
+    fn getTreeHasParents(self: *Self) bool {
+        const tree: *const Surface.Tree = self.getTree() orelse &.empty;
+        var it = tree.iterator();
+        while (it.next()) |entry| {
+            const surface = entry.view;
+            if (surface.as(gtk.Widget).getParent() != null) return true;
+        }
+
+        return false;
     }
 
     pub fn getHasSurfaces(self: *Self) bool {
@@ -528,6 +554,27 @@ pub const SplitTree = extern struct {
         self.as(gobject.Object).notifyByPspec(properties.@"active-surface".impl.param_spec);
     }
 
+    fn propSurfaceParent(
+        _: *gtk.Widget,
+        _: *gobject.ParamSpec,
+        self: *Self,
+    ) callconv(.c) void {
+        const priv = self.private();
+
+        // If we're not waiting to rebuild then ignore this.
+        if (!priv.rebuild_pending) return;
+
+        // If any parents still exist in our tree then don't do anything.
+        if (self.getTreeHasParents()) return;
+
+        // Schedule the rebuild. Note, I tried to do this immediately (not
+        // on an idle tick) and it didn't work and had obvious rendering
+        // glitches. Something to look into in the future.
+        assert(priv.rebuild_source == null);
+        priv.rebuild_pending = false;
+        priv.rebuild_source = glib.idleAdd(onRebuild, self);
+    }
+
     fn propTree(
         self: *Self,
         _: *gobject.ParamSpec,
@@ -535,20 +582,43 @@ pub const SplitTree = extern struct {
     ) callconv(.c) void {
         const priv = self.private();
 
-        // We need to reset our tree and create the new widget hierarchy
-        // on two separate event loop ticks to allow GTK to properly relayout
-        // our widgets.
+        // If we were planning a rebuild, always remove that so we can
+        // start from a clean slate.
+        if (priv.rebuild_source) |v| {
+            if (glib.Source.remove(v) == 0) {
+                log.warn("unable to remove rebuild source", .{});
+            }
+            priv.rebuild_source = null;
+        }
+
+        // We need to wait for all our previous surfaces to lose their
+        // parent before adding them to a new one. I'm not sure if its a GTK
+        // bug, but manually forcing an unparent of all prior surfaces AND
+        // adding them to a new parent in the same tick causes the GLArea
+        // to break (it seems). I didn't investigate too deeply.
         //
-        // Doing this all at once will cause strange rendering glitches,
-        // the glarea to be gone forever (but not deallocated), etc. I think
-        // this is probably a bug in GTK we can minimize and report later.
+        // Note, we also can't just defer to an idle tick (via idleAdd) because
+        // sometimes it takes more than one tick for all our surfaces to
+        // lose their parent.
         //
-        // Using an idle callback also allows us to debounce updates.
+        // To work around this issue, if we have any surfaces that have
+        // a parent, we set the build pending flag and wait for the tree
+        // to be fully parent-free before building.
+        priv.rebuild_pending = self.getTreeHasParents();
+
+        // Reset our prior bin. This will force all prior surfaces to
+        // unparent... eventually.
         priv.tree_bin.setChild(null);
-        if (priv.rebuild_source == null) priv.rebuild_source = glib.idleAdd(
-            onRebuild,
-            self,
-        );
+
+        // If none of the surfaces we plan on drawing require an unparent
+        // then we can setup our tree immediately. Otherwise, it'll happen
+        // via the `propSurfaceParent` callback.
+        if (!priv.rebuild_pending and priv.rebuild_source == null) {
+            priv.rebuild_source = glib.idleAdd(
+                onRebuild,
+                self,
+            );
+        }
 
         // Dependent properties
         self.as(gobject.Object).notifyByPspec(properties.@"has-surfaces".impl.param_spec);
@@ -560,6 +630,10 @@ pub const SplitTree = extern struct {
         // Always mark our rebuild source as null since we're done.
         const priv = self.private();
         priv.rebuild_source = null;
+
+        // Prior to rebuilding the tree, our surface tree must be
+        // comprised of fully orphaned surfaces.
+        assert(!self.getTreeHasParents());
 
         // Rebuild our tree
         const tree: *const Surface.Tree = self.private().tree orelse &.empty;
