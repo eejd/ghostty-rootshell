@@ -2,6 +2,10 @@ using Gtk 4.0;
 using Adw 1;
 
 template $GhosttySplitTreeSplit: Adw.Bin {
+  styles [
+    "split",
+  ]
+
   // The double-nesting is required due to a GTK bug where you can't
   // bind the first child of a builder layout. If you do, you get a double
   // dispose. Easiest way to see that is simply remove this and see the
