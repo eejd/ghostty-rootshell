@@ -130,6 +130,10 @@ pub const SplitTree = extern struct {
         /// propTree function for a lot more details.
         rebuild_pending: bool,
 
+        /// Used to store state about a pending surface close for the
+        /// close dialog.
+        pending_close: ?Surface.Tree.Node.Handle,
+
         pub var offset: c_int = 0;
     };
 
@@ -138,6 +142,10 @@ pub const SplitTree = extern struct {
 
         // Initialize our actions
         self.initActions();
+
+        // Initialize some basic state
+        const priv = self.private();
+        priv.pending_close = null;
     }
 
     fn initActions(self: *Self) void {
@@ -511,32 +519,70 @@ pub const SplitTree = extern struct {
             .window, .tab => return,
 
             // Remove the surface from the tree.
-            .surface => {
-                // TODO: close confirmation
-
-                // Find the surface in the tree.
-                const tree = self.getTree() orelse return;
-                const handle: Surface.Tree.Node.Handle = handle: {
-                    var it = tree.iterator();
-                    while (it.next()) |entry| {
-                        if (entry.view == surface) break :handle entry.handle;
-                    }
-
-                    return;
-                };
-
-                // Remove it from the tree.
-                var new_tree = tree.remove(
-                    Application.default().allocator(),
-                    handle,
-                ) catch |err| {
-                    log.warn("unable to remove surface from tree: {}", .{err});
-                    return;
-                };
-                defer new_tree.deinit();
-                self.setTree(&new_tree);
-            },
+            .surface => {},
         }
+
+        const core = surface.core() orelse return;
+
+        // Reset our pending close state
+        const priv = self.private();
+        priv.pending_close = null;
+
+        // Find the surface in the tree to verify this is valid and
+        // set our pending close handle.
+        priv.pending_close = handle: {
+            const tree = self.getTree() orelse return;
+            var it = tree.iterator();
+            while (it.next()) |entry| {
+                if (entry.view == surface) {
+                    break :handle entry.handle;
+                }
+            }
+
+            return;
+        };
+
+        // If we don't need to confirm then just close immediately.
+        if (!core.needsConfirmQuit()) {
+            closeConfirmationClose(
+                null,
+                self,
+            );
+            return;
+        }
+
+        // Show a confirmation dialog
+        const dialog: *CloseConfirmationDialog = .new(.surface);
+        _ = CloseConfirmationDialog.signals.@"close-request".connect(
+            dialog,
+            *Self,
+            closeConfirmationClose,
+            self,
+            .{},
+        );
+        dialog.present(self.as(gtk.Widget));
+    }
+
+    fn closeConfirmationClose(
+        _: ?*CloseConfirmationDialog,
+        self: *Self,
+    ) callconv(.c) void {
+        // Get the handle we're closing
+        const priv = self.private();
+        const handle = priv.pending_close orelse return;
+        priv.pending_close = null;
+
+        // Remove it from the tree.
+        const old_tree = self.getTree() orelse return;
+        var new_tree = old_tree.remove(
+            Application.default().allocator(),
+            handle,
+        ) catch |err| {
+            log.warn("unable to remove surface from tree: {}", .{err});
+            return;
+        };
+        defer new_tree.deinit();
+        self.setTree(&new_tree);
     }
 
     fn propSurfaceFocused(
