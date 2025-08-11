@@ -181,6 +181,33 @@ pub const Face = struct {
         return "";
     }
 
+    test "face name" {
+        const embedded = @import("../embedded.zig");
+
+        var lib: Library = try .init(testing.allocator);
+        defer lib.deinit();
+
+        {
+            var face: Face = try .init(lib, embedded.variable, .{ .size = .{ .points = 14 } });
+            defer face.deinit();
+
+            var buf: [1024]u8 = undefined;
+            const actual = try face.name(&buf);
+
+            try testing.expectEqualStrings("JetBrains Mono", actual);
+        }
+
+        {
+            var face: Face = try .init(lib, embedded.inconsolata, .{ .size = .{ .points = 14 } });
+            defer face.deinit();
+
+            var buf: [1024]u8 = undefined;
+            const actual = try face.name(&buf);
+
+            try testing.expectEqualStrings("Inconsolata", actual);
+        }
+    }
+
     /// Return a new face that is the same as this but also has synthetic
     /// bold applied.
     pub fn syntheticBold(self: *const Face, opts: font.face.Options) !Face {
