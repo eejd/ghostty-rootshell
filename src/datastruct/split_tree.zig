@@ -217,7 +217,7 @@ pub fn SplitTree(comptime V: type) type {
                     // Get our spatial representation.
                     var sp = try self.spatial(alloc);
                     defer sp.deinit(alloc);
-                    break :spatial sp.nearestLeaf(from, d);
+                    break :spatial self.nearest(sp, from, d);
                 },
             };
         }
@@ -336,6 +336,55 @@ pub fn SplitTree(comptime V: type) type {
             };
         }
 
+        /// Returns the nearest leaf node (view) in the given direction.
+        fn nearest(
+            self: *const Self,
+            sp: Spatial,
+            from: Node.Handle,
+            direction: Spatial.Direction,
+        ) ?Node.Handle {
+            const target = sp.slots[from];
+
+            var result: ?struct {
+                handle: Node.Handle,
+                distance: f16,
+            } = null;
+            for (sp.slots, 0..) |slot, handle| {
+                // Never match ourself
+                if (handle == from) continue;
+
+                // Only match leaves
+                switch (self.nodes[handle]) {
+                    .leaf => {},
+                    .split => continue,
+                }
+
+                // Ensure it is in the proper direction
+                if (!switch (direction) {
+                    .left => slot.maxX() <= target.x,
+                    .right => slot.x >= target.maxX(),
+                    .up => slot.maxY() <= target.y,
+                    .down => slot.y >= target.maxY(),
+                }) continue;
+
+                // Track our distance
+                const dx = slot.x - target.x;
+                const dy = slot.y - target.y;
+                const distance = @sqrt(dx * dx + dy * dy);
+
+                // If we have a nearest it must be closer.
+                if (result) |n| {
+                    if (distance >= n.distance) continue;
+                }
+                result = .{
+                    .handle = @intCast(handle),
+                    .distance = distance,
+                };
+            }
+
+            return if (result) |n| n.handle else null;
+        }
+
         /// Resize the given node in place. The node MUST be a split (asserted).
         ///
         /// In general, this is an immutable data structure so this is
@@ -370,6 +419,7 @@ pub fn SplitTree(comptime V: type) type {
             gpa: Allocator,
             at: Node.Handle,
             direction: Split.Direction,
+            ratio: f16,
             insert: *const Self,
         ) Allocator.Error!Self {
             // The new arena for our new tree.
@@ -414,7 +464,7 @@ pub fn SplitTree(comptime V: type) type {
             nodes[nodes.len - 1] = nodes[at];
             nodes[at] = .{ .split = .{
                 .layout = layout,
-                .ratio = 0.5,
+                .ratio = ratio,
                 .left = @intCast(if (left) self.nodes.len else nodes.len - 1),
                 .right = @intCast(if (left) nodes.len - 1 else self.nodes.len),
             } };
@@ -620,48 +670,6 @@ pub fn SplitTree(comptime V: type) type {
             pub fn deinit(self: *Spatial, alloc: Allocator) void {
                 alloc.free(self.slots);
                 self.* = undefined;
-            }
-
-            /// Returns the nearest leaf node (view) in the given direction.
-            pub fn nearestLeaf(
-                self: *const Spatial,
-                from: Node.Handle,
-                direction: Direction,
-            ) ?Node.Handle {
-                const target = self.slots[from];
-
-                var nearest: ?struct {
-                    handle: Node.Handle,
-                    distance: f16,
-                } = null;
-                for (self.slots, 0..) |slot, handle| {
-                    // Never match ourself
-                    if (handle == from) continue;
-
-                    // Ensure it is in the proper direction
-                    if (!switch (direction) {
-                        .left => slot.maxX() <= target.maxX(),
-                        .right => slot.x >= target.maxX(),
-                        .up => slot.maxY() <= target.y,
-                        .down => slot.y >= target.maxY(),
-                    }) continue;
-
-                    // Track our distance
-                    const dx = slot.x - target.x;
-                    const dy = slot.y - target.y;
-                    const distance = @sqrt(dx * dx + dy * dy);
-
-                    // If we have a nearest it must be closer.
-                    if (nearest) |n| {
-                        if (distance >= n.distance) continue;
-                    }
-                    nearest = .{
-                        .handle = @intCast(handle),
-                        .distance = distance,
-                    };
-                }
-
-                return if (nearest) |n| n.handle else null;
             }
         };
 
@@ -990,6 +998,12 @@ pub fn SplitTree(comptime V: type) type {
 
             // Output every row
             for (grid) |row| {
+                // We currently have a bug in our height calculation that
+                // results in trailing blank lines. Ignore those. We should
+                // really fix our height calculation instead. If someone wants
+                // to do that just remove this line and see the tests that fail
+                // and go from there.
+                if (row[0] == ' ') break;
                 try writer.writeAll(row);
             }
         }
@@ -1125,6 +1139,7 @@ test "SplitTree: split horizontal" {
         alloc,
         0, // at root
         .right, // split right
+        0.5,
         &t2, // insert t2
     );
     defer t3.deinit();
@@ -1156,6 +1171,7 @@ test "SplitTree: split horizontal" {
             }
         } else return error.NotFound,
         .right,
+        0.5,
         &tC,
     );
     defer t4.deinit();
@@ -1189,6 +1205,7 @@ test "SplitTree: split horizontal" {
             }
         } else return error.NotFound,
         .right,
+        0.5,
         &tD,
     );
     defer t5.deinit();
@@ -1287,6 +1304,7 @@ test "SplitTree: split vertical" {
         alloc,
         0, // at root
         .down, // split down
+        0.5,
         &t2, // insert t2
     );
     defer t3.deinit();
@@ -1318,6 +1336,7 @@ test "SplitTree: remove leaf" {
         alloc,
         0, // at root
         .right, // split right
+        0.5,
         &t2, // insert t2
     );
     defer t3.deinit();
@@ -1363,6 +1382,7 @@ test "SplitTree: split twice, remove intermediary" {
         alloc,
         0, // at root
         .right, // split right
+        0.5,
         &t2, // insert t2
     );
     defer split1.deinit();
@@ -1372,6 +1392,7 @@ test "SplitTree: split twice, remove intermediary" {
         alloc,
         0, // at root
         .down, // split down
+        0.5,
         &t3, // insert t3
     );
     defer split2.deinit();
@@ -1422,6 +1443,125 @@ test "SplitTree: split twice, remove intermediary" {
     for (0..split2.nodes.len) |i| {
         var t = try split2.remove(alloc, @intCast(i));
         t.deinit();
+    }
+}
+
+test "SplitTree: spatial goto" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var v1: TestTree.View = .{ .label = "A" };
+    var t1: TestTree = try .init(alloc, &v1);
+    defer t1.deinit();
+    var v2: TestTree.View = .{ .label = "B" };
+    var t2: TestTree = try .init(alloc, &v2);
+    defer t2.deinit();
+    var v3: TestTree.View = .{ .label = "C" };
+    var t3: TestTree = try .init(alloc, &v3);
+    defer t3.deinit();
+    var v4: TestTree.View = .{ .label = "D" };
+    var t4: TestTree = try .init(alloc, &v4);
+    defer t4.deinit();
+
+    // A | B horizontal
+    var splitAB = try t1.split(
+        alloc,
+        0, // at root
+        .right, // split right
+        0.5,
+        &t2, // insert t2
+    );
+    defer splitAB.deinit();
+
+    // A | C vertical
+    var splitAC = try splitAB.split(
+        alloc,
+        at: {
+            var it = splitAB.iterator();
+            break :at while (it.next()) |entry| {
+                if (std.mem.eql(u8, entry.view.label, "A")) {
+                    break entry.handle;
+                }
+            } else return error.NotFound;
+        },
+        .down, // split down
+        0.8,
+        &t3, // insert t3
+    );
+    defer splitAC.deinit();
+
+    // B | D vertical
+    var splitBD = try splitAC.split(
+        alloc,
+        at: {
+            var it = splitAB.iterator();
+            break :at while (it.next()) |entry| {
+                if (std.mem.eql(u8, entry.view.label, "B")) {
+                    break entry.handle;
+                }
+            } else return error.NotFound;
+        },
+        .down, // split down
+        0.3,
+        &t4, // insert t4
+    );
+    defer splitBD.deinit();
+    const split = splitBD;
+
+    {
+        const str = try std.fmt.allocPrint(alloc, "{diagram}", .{split});
+        defer alloc.free(str);
+        try testing.expectEqualStrings(str,
+            \\+---++---+
+            \\|   || B |
+            \\|   |+---+
+            \\|   |+---+
+            \\| A ||   |
+            \\|   ||   |
+            \\|   ||   |
+            \\|   || D |
+            \\+---+|   |
+            \\+---+|   |
+            \\| C ||   |
+            \\+---++---+
+            \\
+        );
+    }
+
+    // Spatial C => right
+    {
+        const target = (try split.goto(
+            alloc,
+            from: {
+                var it = split.iterator();
+                break :from while (it.next()) |entry| {
+                    if (std.mem.eql(u8, entry.view.label, "C")) {
+                        break entry.handle;
+                    }
+                } else return error.NotFound;
+            },
+            .{ .spatial = .right },
+        )).?;
+        const view = split.nodes[target].leaf;
+        try testing.expectEqualStrings(view.label, "D");
+    }
+
+    // Spatial D => left
+    {
+        const target = (try split.goto(
+            alloc,
+            from: {
+                var it = split.iterator();
+                break :from while (it.next()) |entry| {
+                    if (std.mem.eql(u8, entry.view.label, "D")) {
+                        break entry.handle;
+                    }
+                } else return error.NotFound;
+            },
+            .{ .spatial = .left },
+        )).?;
+        const view = split.nodes[target].leaf;
+        try testing.expectEqualStrings("A", view.label);
     }
 }
 

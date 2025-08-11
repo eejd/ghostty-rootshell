@@ -246,6 +246,7 @@ pub const SplitTree = extern struct {
             alloc,
             handle,
             direction,
+            0.5, // Always split equally for new splits
             &single_tree,
         );
         defer new_tree.deinit();
