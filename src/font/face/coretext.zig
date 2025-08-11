@@ -352,9 +352,9 @@ pub const Face = struct {
         var constraint = opts.constraint;
 
         // We eliminate any negative vertical padding since these overlap
-        // values aren't needed under CoreText with how precisely we apply
-        // constraints, and they can lead to extra height that looks bad
-        // for things like powerline glyphs.
+        // values aren't needed  with how precisely we apply constraints,
+        // and they can lead to extra height that looks bad for things like
+        // powerline glyphs.
         constraint.pad_top = @max(0.0, constraint.pad_top);
         constraint.pad_bottom = @max(0.0, constraint.pad_bottom);
 

@@ -328,19 +328,11 @@ pub const Face = struct {
         self.ft_mutex.lock();
         defer self.ft_mutex.unlock();
 
-        // We enable hinting by default, and disable it if either of the
-        // constraint alignments are not center or none, since this means
-        // that the glyph needs to be aligned flush to the cell edge, and
-        // hinting can mess that up.
-        const do_hinting = self.load_flags.hinting and
-            switch (opts.constraint.align_horizontal) {
-                .start, .end => false,
-                .center, .none => true,
-            } and
-            switch (opts.constraint.align_vertical) {
-                .start, .end => false,
-                .center, .none => true,
-            };
+        // Hinting should only be enabled if the configured load flags specify
+        // it and the provided constraint doesn't actually do anything, since
+        // if it does, then it'll mess up the hinting anyway when it moves or
+        // resizes the glyph.
+        const do_hinting = self.load_flags.hinting and !opts.constraint.doesAnything();
 
         // Load the glyph.
         try self.face.loadGlyph(glyph_index, .{
@@ -368,14 +360,45 @@ pub const Face = struct {
         });
         const glyph = self.face.handle.*.glyph;
 
-        const glyph_width: f64 = f26dot6ToF64(glyph.*.metrics.width);
-        const glyph_height: f64 = f26dot6ToF64(glyph.*.metrics.height);
+        // We get a rect that represents the position
+        // and size of the glyph before any changes.
+        const rect: struct {
+            x: f64,
+            y: f64,
+            width: f64,
+            height: f64,
+        } = metrics: {
+            // If we're dealing with an outline glyph then we get the
+            // outline's bounding box instead of using the built-in
+            // metrics, since that's more precise and allows better
+            // cell-fitting.
+            if (glyph.*.format == freetype.c.FT_GLYPH_FORMAT_OUTLINE) {
+                // Get the glyph's bounding box before we transform it at all.
+                // We use this rather than the metrics, since it's more precise.
+                var bbox: freetype.c.FT_BBox = undefined;
+                _ = freetype.c.FT_Outline_Get_BBox(&glyph.*.outline, &bbox);
+
+                break :metrics .{
+                    .x = f26dot6ToF64(bbox.xMin),
+                    .y = f26dot6ToF64(bbox.yMin),
+                    .width = f26dot6ToF64(bbox.xMax - bbox.xMin),
+                    .height = f26dot6ToF64(bbox.yMax - bbox.yMin),
+                };
+            }
+
+            break :metrics .{
+                .x = f26dot6ToF64(glyph.*.metrics.horiBearingX),
+                .y = f26dot6ToF64(glyph.*.metrics.horiBearingY - glyph.*.metrics.height),
+                .width = f26dot6ToF64(glyph.*.metrics.width),
+                .height = f26dot6ToF64(glyph.*.metrics.height),
+            };
+        };
 
         // If our glyph is smaller than a quarter pixel in either axis
         // then it has no outlines or they're too small to render.
         //
         // In this case we just return 0-sized glyph struct.
-        if (glyph_width < 0.25 or glyph_height < 0.25)
+        if (rect.width < 0.25 or rect.height < 0.25)
             return font.Glyph{
                 .width = 0,
                 .height = 0,
@@ -396,31 +419,49 @@ pub const Face = struct {
             _ = freetype.c.FT_Outline_Embolden(&glyph.*.outline, @intFromFloat(amount));
         }
 
-        // Next we need to apply any constraints.
         const metrics = opts.grid_metrics;
-
         const cell_width: f64 = @floatFromInt(metrics.cell_width);
-        // const cell_height: f64 = @floatFromInt(metrics.cell_height);
+        const cell_height: f64 = @floatFromInt(metrics.cell_height);
 
-        const glyph_x: f64 = f26dot6ToF64(glyph.*.metrics.horiBearingX);
-        const glyph_y: f64 = f26dot6ToF64(glyph.*.metrics.horiBearingY) - glyph_height;
+        // Next we apply any constraints to get the final size of the glyph.
+        var constraint = opts.constraint;
 
-        const glyph_size = opts.constraint.constrain(
+        // We eliminate any negative vertical padding since these overlap
+        // values aren't needed  with how precisely we apply constraints,
+        // and they can lead to extra height that looks bad for things like
+        // powerline glyphs.
+        constraint.pad_top = @max(0.0, constraint.pad_top);
+        constraint.pad_bottom = @max(0.0, constraint.pad_bottom);
+
+        // We need to add the baseline position before passing to the constrain
+        // function since it operates on cell-relative positions, not baseline.
+        const cell_baseline: f64 = @floatFromInt(metrics.cell_baseline);
+
+        const glyph_size = constraint.constrain(
             .{
-                .width = glyph_width,
-                .height = glyph_height,
-                .x = glyph_x,
-                .y = glyph_y + @as(f64, @floatFromInt(metrics.cell_baseline)),
+                .width = rect.width,
+                .height = rect.height,
+                .x = rect.x,
+                .y = rect.y + cell_baseline,
             },
             metrics,
             opts.constraint_width,
         );
 
-        const width = glyph_size.width;
-        const height = glyph_size.height;
-        // This may need to be adjusted later on.
+        var width = glyph_size.width;
+        var height = glyph_size.height;
         var x = glyph_size.x;
-        const y = glyph_size.y;
+        var y = glyph_size.y;
+
+        // If this is a bitmap glyph, it will always render as full pixels,
+        // not fractional pixels, so we need to quantize its position and
+        // size accordingly to align to full pixels so we get good results.
+        if (glyph.*.format == freetype.c.FT_GLYPH_FORMAT_BITMAP) {
+            width = cell_width - @round(cell_width - width - x) - @round(x);
+            height = cell_height - @round(cell_height - height - y) - @round(y);
+            x = @round(x);
+            y = @round(y);
+        }
 
         // If the cell width was adjusted wider, we re-center all glyphs
         // in the new width, so that they aren't weirdly off to the left.
@@ -455,8 +496,8 @@ pub const Face = struct {
                 // matrix, since that has 16.16 coefficients, and also I was having
                 // weird issues that I can only assume where due to freetype doing
                 // some bad caching or something when I did this using the matrix.
-                const scale_x = width / glyph_width;
-                const scale_y = height / glyph_height;
+                const scale_x = width / rect.width;
+                const scale_y = height / rect.height;
                 const skew: f64 =
                     if (self.synthetic.italic)
                         // We skew by 12 degrees to synthesize italics.
@@ -464,18 +505,23 @@ pub const Face = struct {
                     else
                         0.0;
 
-                var bbox_before: freetype.c.FT_BBox = undefined;
-                _ = freetype.c.FT_Outline_Get_BBox(&glyph.*.outline, &bbox_before);
-
                 const outline = &glyph.*.outline;
                 for (outline.points[0..@intCast(outline.n_points)]) |*p| {
                     // Convert to f64 for processing
                     var px = f26dot6ToF64(p.x);
                     var py = f26dot6ToF64(p.y);
 
+                    // Subtract original bearings
+                    px -= rect.x;
+                    py -= rect.y;
+
                     // Scale
                     px *= scale_x;
                     py *= scale_y;
+
+                    // Add new bearings
+                    px += x;
+                    py += y - cell_baseline;
 
                     // Skew
                     px += py * skew;
@@ -484,16 +530,6 @@ pub const Face = struct {
                     p.x = @as(i32, @bitCast(F26Dot6.from(px)));
                     p.y = @as(i32, @bitCast(F26Dot6.from(py)));
                 }
-
-                var bbox_after: freetype.c.FT_BBox = undefined;
-                _ = freetype.c.FT_Outline_Get_BBox(&glyph.*.outline, &bbox_after);
-
-                // If our bounding box changed, account for the lsb difference.
-                //
-                // This can happen when we skew glyphs that have a bit sticking
-                // out to the left higher up, like the top of the T or the serif
-                // on the lower case l in many monospace fonts.
-                x += f26dot6ToF64(bbox_after.xMin) - f26dot6ToF64(bbox_before.xMin);
 
                 try self.face.renderGlyph(
                     if (self.load_flags.monochrome)
@@ -592,6 +628,10 @@ pub const Face = struct {
                 ) != 0) {
                     return error.BitmapHandlingError;
                 }
+
+                // Update the bearings to account for the new positioning.
+                glyph.*.bitmap_top = @intFromFloat(@floor(y - cell_baseline + height));
+                glyph.*.bitmap_left = @intFromFloat(@floor(x));
             },
 
             else => |f| {
@@ -625,6 +665,20 @@ pub const Face = struct {
                 @panic("unsupported pixel mode");
             },
         }
+
+        // Our whole-pixel bearings for the final glyph.
+        // The fractional portion will be included in the rasterized position.
+        //
+        // For the Y position, FreeType's `bitmap_top` is the distance from the
+        // baseline to the top of the glyph, but we need the distance from the
+        // bottom of the cell to the bottom of the glyph, so first we add the
+        // baseline to get the distance from the bottom of the cell to the top
+        // of the glyph, then we subtract the height of the glyph to get the
+        // bottom.
+        const px_x: i32 = glyph.*.bitmap_left;
+        const px_y: i32 = glyph.*.bitmap_top +
+            @as(i32, @intCast(metrics.cell_baseline)) -
+            @as(i32, @intCast(bitmap.rows));
 
         const px_width = bitmap.width;
         const px_height = bitmap.rows;
@@ -661,13 +715,11 @@ pub const Face = struct {
 
         // This should be the distance from the bottom of
         // the cell to the top of the glyph's bounding box.
-        const offset_y: i32 =
-            @as(i32, @intFromFloat(@floor(y))) +
-            @as(i32, @intCast(px_height));
+        const offset_y: i32 = px_y + @as(i32, @intCast(px_height));
 
         // This should be the distance from the left of
         // the cell to the left of the glyph's bounding box.
-        const offset_x: i32 = @intFromFloat(@floor(x));
+        const offset_x: i32 = px_x;
 
         return Glyph{
             .width = px_width,
