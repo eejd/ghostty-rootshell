@@ -246,6 +246,7 @@ pub const SplitTree = extern struct {
             alloc,
             handle,
             direction,
+            0.5, // Always split equally for new splits
             &single_tree,
         );
         defer new_tree.deinit();
@@ -256,6 +257,34 @@ pub const SplitTree = extern struct {
 
         // Replace our tree
         self.setTree(&new_tree);
+    }
+
+    /// Move focus from the currently focused surface to the given
+    /// direction. Returns true if focus switched to a new surface.
+    pub fn goto(self: *Self, to: Surface.Tree.Goto) bool {
+        const tree = self.getTree() orelse return false;
+        const active = self.getActiveSurfaceHandle() orelse return false;
+        const target = if (tree.goto(
+            Application.default().allocator(),
+            active,
+            to,
+        )) |handle_|
+            handle_ orelse return false
+        else |err| switch (err) {
+            // Nothing we can do in this scenario. This is highly unlikely
+            // since split trees don't use that much memory. The application
+            // is probably about to crash in other ways.
+            error.OutOfMemory => return false,
+        };
+
+        // If we aren't changing targets then we did nothing.
+        if (active == target) return false;
+
+        // Get the surface at the target location and grab focus.
+        const surface = tree.nodes[target].leaf;
+        surface.grabFocus();
+
+        return true;
     }
 
     fn disconnectSurfaceHandlers(self: *Self) void {
@@ -572,8 +601,25 @@ pub const SplitTree = extern struct {
         const handle = priv.pending_close orelse return;
         priv.pending_close = null;
 
-        // Remove it from the tree.
+        // Figure out our next focus target. The next focus target is
+        // always the "previous" surface unless we're the leftmost then
+        // its the next.
         const old_tree = self.getTree() orelse return;
+        const next_focus: ?*Surface = next_focus: {
+            const alloc = Application.default().allocator();
+            const next_handle: Surface.Tree.Node.Handle =
+                (old_tree.goto(alloc, handle, .previous) catch null) orelse
+                (old_tree.goto(alloc, handle, .next) catch null) orelse
+                break :next_focus null;
+            if (next_handle == handle) break :next_focus null;
+
+            // Note: we don't need to ref this or anything because its
+            // guaranteed to remain in the new tree since its not part
+            // of the handle we're removing.
+            break :next_focus old_tree.nodes[next_handle].leaf;
+        };
+
+        // Remove it from the tree.
         var new_tree = old_tree.remove(
             Application.default().allocator(),
             handle,
@@ -583,6 +629,10 @@ pub const SplitTree = extern struct {
         };
         defer new_tree.deinit();
         self.setTree(&new_tree);
+
+        // Grab focus. We have to set this on the "last focused" because our
+        // focus will be set when the tree is redrawn.
+        if (next_focus) |v| priv.last_focused.set(v);
     }
 
     fn propSurfaceFocused(
