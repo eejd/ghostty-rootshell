@@ -152,16 +152,16 @@ pub fn SplitTree(comptime V: type) type {
             return .{ .nodes = self.nodes };
         }
 
+        pub const ViewEntry = struct {
+            handle: Node.Handle,
+            view: *View,
+        };
+
         pub const Iterator = struct {
             i: Node.Handle = 0,
             nodes: []const Node,
 
-            pub const Entry = struct {
-                handle: Node.Handle,
-                view: *View,
-            };
-
-            pub fn next(self: *Iterator) ?Entry {
+            pub fn next(self: *Iterator) ?ViewEntry {
                 // If we have no nodes, return null.
                 if (self.i >= self.nodes.len) return null;
 
@@ -176,6 +176,151 @@ pub fn SplitTree(comptime V: type) type {
                 };
             }
         };
+
+        pub const Goto = enum {
+            /// Previous view, null if we're the first view.
+            previous,
+
+            /// Next view, null if we're the last view.
+            next,
+
+            /// Previous view, but wrapped around to the last view. May
+            /// return the same view if this is the first view.
+            previous_wrapped,
+
+            /// Next view, but wrapped around to the first view. May return
+            /// the same view if this is the last view.
+            next_wrapped,
+        };
+
+        /// Goto a view from a certain point in the split tree. Returns null
+        /// if the direction results in no visitable view.
+        pub fn goto(
+            self: *const Self,
+            from: Node.Handle,
+            to: Goto,
+        ) ?Node.Handle {
+            return switch (to) {
+                .previous => self.previous(from),
+                .next => self.next(from),
+                .previous_wrapped => self.previous(from) orelse self.deepest(.right, 0),
+                .next_wrapped => self.next(from) orelse self.deepest(.left, 0),
+            };
+        }
+
+        pub const Side = enum { left, right };
+
+        /// Returns the deepest view in the tree in the given direction.
+        /// This can be used to find the leftmost/rightmost surface within
+        /// a given split structure.
+        pub fn deepest(
+            self: *const Self,
+            side: Side,
+            from: Node.Handle,
+        ) Node.Handle {
+            var current: Node.Handle = from;
+            while (true) {
+                switch (self.nodes[current]) {
+                    .leaf => return current,
+                    .split => |s| current = switch (side) {
+                        .left => s.left,
+                        .right => s.right,
+                    },
+                }
+            }
+        }
+
+        /// Returns the previous view from the given node handle (which itself
+        /// doesn't need to be a view). If there is no previous (this is the
+        /// most previous view) then this will return null.
+        ///
+        /// "Previous" is defined as the previous node in an in-order
+        /// traversal of the tree. This isn't a perfect definition and we
+        /// may want to change this to something that better matches a
+        /// spatial view of the tree later.
+        fn previous(self: *const Self, from: Node.Handle) ?Node.Handle {
+            return switch (self.previousBacktrack(from, 0)) {
+                .result => |v| v,
+                .backtrack, .deadend => null,
+            };
+        }
+
+        /// Same as `previous`, but returns the next view instead.
+        fn next(self: *const Self, from: Node.Handle) ?Node.Handle {
+            return switch (self.nextBacktrack(from, 0)) {
+                .result => |v| v,
+                .backtrack, .deadend => null,
+            };
+        }
+
+        // Design note: we use a recursive backtracking search because
+        // split trees are never that deep, so we can abuse the stack as
+        // a safe allocator (stack overflow unlikely unless the kernel is
+        // tuned in some really weird way).
+        const Backtrack = union(enum) {
+            deadend,
+            backtrack,
+            result: Node.Handle,
+        };
+
+        fn previousBacktrack(
+            self: *const Self,
+            from: Node.Handle,
+            current: Node.Handle,
+        ) Backtrack {
+            // If we reached the point that we're trying to find the previous
+            // value of, then we need to backtrack from here.
+            if (from == current) return .backtrack;
+
+            return switch (self.nodes[current]) {
+                // If we hit a leaf that isn't our target, then deadend.
+                .leaf => .deadend,
+
+                .split => |s| switch (self.previousBacktrack(from, s.left)) {
+                    .result => |v| .{ .result = v },
+
+                    // Backtrack from the left means we have to continue
+                    // backtracking because we can't see what's before the left.
+                    .backtrack => .backtrack,
+
+                    // If we hit a deadend on the left then let's move right.
+                    .deadend => switch (self.previousBacktrack(from, s.right)) {
+                        .result => |v| .{ .result = v },
+
+                        // Deadend means its not in this split at all since
+                        // we already tracked the left.
+                        .deadend => .deadend,
+
+                        // Backtrack means that its in our left view because
+                        // we can see the immediate previous and there MUST
+                        // be leaves (we can't have split-only leaves).
+                        .backtrack => .{ .result = self.deepest(.right, s.left) },
+                    },
+                },
+            };
+        }
+
+        // See previousBacktrack for detailed comments. This is a mirror
+        // of that.
+        fn nextBacktrack(
+            self: *const Self,
+            from: Node.Handle,
+            current: Node.Handle,
+        ) Backtrack {
+            if (from == current) return .backtrack;
+            return switch (self.nodes[current]) {
+                .leaf => .deadend,
+                .split => |s| switch (self.nextBacktrack(from, s.right)) {
+                    .result => |v| .{ .result = v },
+                    .backtrack => .backtrack,
+                    .deadend => switch (self.nextBacktrack(from, s.left)) {
+                        .result => |v| .{ .result = v },
+                        .deadend => .deadend,
+                        .backtrack => .{ .result = self.deepest(.left, s.right) },
+                    },
+                },
+            };
+        }
 
         /// Resize the given node in place. The node MUST be a split (asserted).
         ///
@@ -998,6 +1143,66 @@ test "SplitTree: split horizontal" {
             \\      leaf: D
             \\
         , str);
+    }
+
+    // Find "previous" from D back.
+    {
+        var current: u8 = 'D';
+        while (current != 'A') : (current -= 1) {
+            it = t5.iterator();
+            const handle = t5.previous(
+                while (it.next()) |entry| {
+                    if (std.mem.eql(u8, entry.view.label, &.{current})) {
+                        break entry.handle;
+                    }
+                } else return error.NotFound,
+            ).?;
+
+            const entry = t5.nodes[handle].leaf;
+            try testing.expectEqualStrings(
+                entry.label,
+                &.{current - 1},
+            );
+        }
+
+        it = t5.iterator();
+        try testing.expect(t5.previous(
+            while (it.next()) |entry| {
+                if (std.mem.eql(u8, entry.view.label, &.{current})) {
+                    break entry.handle;
+                }
+            } else return error.NotFound,
+        ) == null);
+    }
+
+    // Find "next" from A forward.
+    {
+        var current: u8 = 'A';
+        while (current != 'D') : (current += 1) {
+            it = t5.iterator();
+            const handle = t5.next(
+                while (it.next()) |entry| {
+                    if (std.mem.eql(u8, entry.view.label, &.{current})) {
+                        break entry.handle;
+                    }
+                } else return error.NotFound,
+            ).?;
+
+            const entry = t5.nodes[handle].leaf;
+            try testing.expectEqualStrings(
+                entry.label,
+                &.{current + 1},
+            );
+        }
+
+        it = t5.iterator();
+        try testing.expect(t5.next(
+            while (it.next()) |entry| {
+                if (std.mem.eql(u8, entry.view.label, &.{current})) {
+                    break entry.handle;
+                }
+            } else return error.NotFound,
+        ) == null);
     }
 }
 
