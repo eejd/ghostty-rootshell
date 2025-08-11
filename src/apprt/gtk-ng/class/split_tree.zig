@@ -258,6 +258,23 @@ pub const SplitTree = extern struct {
         self.setTree(&new_tree);
     }
 
+    /// Move focus from the currently focused surface to the given
+    /// direction. Returns true if focus switched to a new surface.
+    pub fn goto(self: *Self, to: Surface.Tree.Goto) bool {
+        const tree = self.getTree() orelse return false;
+        const active = self.getActiveSurfaceHandle() orelse return false;
+        const target = tree.goto(active, to) orelse return false;
+
+        // If we aren't changing targets then we did nothing.
+        if (active == target) return false;
+
+        // Get the surface at the target location and grab focus.
+        const surface = tree.nodes[target].leaf;
+        surface.grabFocus();
+
+        return true;
+    }
+
     fn disconnectSurfaceHandlers(self: *Self) void {
         const tree = self.getTree() orelse return;
         var it = tree.iterator();

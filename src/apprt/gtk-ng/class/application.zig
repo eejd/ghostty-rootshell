@@ -34,6 +34,7 @@ const Common = @import("../class.zig").Common;
 const WeakRef = @import("../weak_ref.zig").WeakRef;
 const Config = @import("config.zig").Config;
 const Surface = @import("surface.zig").Surface;
+const SplitTree = @import("split_tree.zig").SplitTree;
 const Window = @import("window.zig").Window;
 const CloseConfirmationDialog = @import("close_confirmation_dialog.zig").CloseConfirmationDialog;
 const ConfigErrorsDialog = @import("config_errors_dialog.zig").ConfigErrorsDialog;
@@ -552,6 +553,8 @@ pub const Application = extern struct {
 
             .desktop_notification => Action.desktopNotification(self, target, value),
 
+            .goto_split => return Action.gotoSplit(target, value),
+
             .goto_tab => return Action.gotoTab(target, value),
 
             .initial_size => return Action.initialSize(target, value),
@@ -615,7 +618,6 @@ pub const Application = extern struct {
             // TODO: splits
             .resize_split,
             .equalize_splits,
-            .goto_split,
             .toggle_split_zoom,
             => {
                 log.warn("unimplemented action={}", .{action});
@@ -1648,6 +1650,35 @@ const Action = struct {
         // same, this notification may replace a previous notification
         const gio_app = self.as(gio.Application);
         gio_app.sendNotification(n.body, notification);
+    }
+
+    pub fn gotoSplit(
+        target: apprt.Target,
+        to: apprt.action.GotoSplit,
+    ) bool {
+        switch (target) {
+            .app => return false,
+            .surface => |core| {
+                // Design note: we can't use widget actions here because
+                // we need to know whether there is a goto target for returning
+                // the proper perform result (boolean).
+
+                const surface = core.rt_surface.surface;
+                const tree = ext.getAncestor(
+                    SplitTree,
+                    surface.as(gtk.Widget),
+                ) orelse {
+                    log.warn("surface is not in a split tree, ignoring goto_split", .{});
+                    return false;
+                };
+
+                return tree.goto(switch (to) {
+                    .previous => .previous_wrapped,
+                    .next => .next_wrapped,
+                    else => @panic("TODO"),
+                });
+            },
+        }
     }
 
     pub fn gotoTab(
