@@ -882,6 +882,10 @@ pub const Application = extern struct {
         self.syncActionAccelerator("win.reset", .{ .reset = {} });
         self.syncActionAccelerator("win.clear", .{ .clear_screen = {} });
         self.syncActionAccelerator("win.prompt-title", .{ .prompt_surface_title = {} });
+        self.syncActionAccelerator("split-tree.new-left", .{ .new_split = .left });
+        self.syncActionAccelerator("split-tree.new-right", .{ .new_split = .right });
+        self.syncActionAccelerator("split-tree.new-up", .{ .new_split = .up });
+        self.syncActionAccelerator("split-tree.new-down", .{ .new_split = .down });
     }
 
     fn syncActionAccelerator(
