@@ -743,7 +743,7 @@ pub const Application = extern struct {
 
         if (config.@"split-divider-color") |color| {
             try writer.print(
-                \\.terminal-window .notebook separator {{
+                \\.window .split paned > separator {{
                 \\  color: rgb({[r]d},{[g]d},{[b]d});
                 \\  background: rgb({[r]d},{[g]d},{[b]d});
                 \\}}
