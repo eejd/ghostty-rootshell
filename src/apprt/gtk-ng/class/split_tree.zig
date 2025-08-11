@@ -163,6 +163,8 @@ pub const SplitTree = extern struct {
             .{ "new-right", actionNewRight, null },
             .{ "new-up", actionNewUp, null },
             .{ "new-down", actionNewDown, null },
+
+            .{ "equalize", actionEqualize, null },
         };
 
         // We need to collect our actions into a group since we're just
@@ -535,6 +537,22 @@ pub const SplitTree = extern struct {
         ) catch |err| {
             log.warn("new split failed error={}", .{err});
         };
+    }
+
+    pub fn actionEqualize(
+        _: *gio.SimpleAction,
+        parameter_: ?*glib.Variant,
+        self: *Self,
+    ) callconv(.c) void {
+        _ = parameter_;
+
+        const old_tree = self.getTree() orelse return;
+        var new_tree = old_tree.equalize(Application.default().allocator()) catch |err| {
+            log.warn("unable to equalize tree: {}", .{err});
+            return;
+        };
+        defer new_tree.deinit();
+        self.setTree(&new_tree);
     }
 
     fn surfaceCloseRequest(

@@ -553,6 +553,8 @@ pub const Application = extern struct {
 
             .desktop_notification => Action.desktopNotification(self, target, value),
 
+            .equalize_splits => return Action.equalizeSplits(target),
+
             .goto_split => return Action.gotoSplit(target, value),
 
             .goto_tab => return Action.gotoTab(target, value),
@@ -617,7 +619,6 @@ pub const Application = extern struct {
             .inspector,
             // TODO: splits
             .resize_split,
-            .equalize_splits,
             .toggle_split_zoom,
             => {
                 log.warn("unimplemented action={}", .{action});
@@ -1650,6 +1651,20 @@ const Action = struct {
         // same, this notification may replace a previous notification
         const gio_app = self.as(gio.Application);
         gio_app.sendNotification(n.body, notification);
+    }
+
+    pub fn equalizeSplits(target: apprt.Target) bool {
+        switch (target) {
+            .app => {
+                log.warn("equalize splits to app is unexpected", .{});
+                return false;
+            },
+
+            .surface => |core| {
+                const surface = core.rt_surface.surface;
+                return surface.as(gtk.Widget).activateAction("split-tree.equalize", null) != 0;
+            },
+        }
     }
 
     pub fn gotoSplit(
