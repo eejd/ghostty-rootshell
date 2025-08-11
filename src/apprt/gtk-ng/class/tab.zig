@@ -36,7 +36,7 @@ pub const Tab = extern struct {
     });
 
     pub const properties = struct {
-        /// The active surface is the focus that should be receiving all
+        /// The active surface is the surface that should be receiving all
         /// surface-targeted actions. This is usually the focused surface,
         /// but may also not be focused if the user has selected a non-surface
         /// widget.
@@ -164,66 +164,15 @@ pub const Tab = extern struct {
             .{},
         );
 
-        // A tab always starts with a single surface.
-        const surface: *Surface = .new();
-        defer surface.unref();
-        _ = surface.refSink();
-        const alloc = Application.default().allocator();
-        if (Surface.Tree.init(alloc, surface)) |tree| {
-            priv.split_tree.setTree(&tree);
-
-            // Hacky because we need a non-const result.
-            var mut = tree;
-            mut.deinit();
-        } else |_| {
-            // TODO: We should make our "no surfaces" state more aesthetically
-            // pleasing and show something like an "Oops, something went wrong"
-            // message. For now, this is incredibly unlikely.
-            @panic("oom");
-        }
-    }
-
-    fn connectSurfaceHandlers(
-        self: *Self,
-        tree: *const Surface.Tree,
-    ) void {
-        var it = tree.iterator();
-        while (it.next()) |entry| {
-            const surface = entry.view;
-            _ = Surface.signals.@"close-request".connect(
-                surface,
-                *Self,
-                surfaceCloseRequest,
-                self,
-                .{},
-            );
-            _ = gobject.Object.signals.notify.connect(
-                surface,
-                *Self,
-                propSurfaceFocused,
-                self,
-                .{ .detail = "focused" },
-            );
-        }
-    }
-
-    fn disconnectSurfaceHandlers(
-        self: *Self,
-        tree: *const Surface.Tree,
-    ) void {
-        var it = tree.iterator();
-        while (it.next()) |entry| {
-            const surface = entry.view;
-            _ = gobject.signalHandlersDisconnectMatched(
-                surface.as(gobject.Object),
-                .{ .data = true },
-                0,
-                0,
-                null,
-                null,
-                self,
-            );
-        }
+        // Create our initial surface in the split tree.
+        priv.split_tree.newSplit(.right, null) catch |err| switch (err) {
+            error.OutOfMemory => {
+                // TODO: We should make our "no surfaces" state more aesthetically
+                // pleasing and show something like an "Oops, something went wrong"
+                // message. For now, this is incredibly unlikely.
+                @panic("oom");
+            },
+        };
     }
 
     //---------------------------------------------------------------
@@ -232,13 +181,7 @@ pub const Tab = extern struct {
     /// Get the currently active surface. See the "active-surface" property.
     /// This does not ref the value.
     pub fn getActiveSurface(self: *Self) ?*Surface {
-        const tree = self.getSurfaceTree() orelse return null;
-        var it = tree.iterator();
-        while (it.next()) |entry| {
-            if (entry.view.getFocused()) return entry.view;
-        }
-
-        return null;
+        return self.getSplitTree().getActiveSurface();
     }
 
     /// Get the surface tree of this tab.
@@ -299,52 +242,28 @@ pub const Tab = extern struct {
     //---------------------------------------------------------------
     // Signal handlers
 
-    fn surfaceCloseRequest(
-        _: *Surface,
-        scope: *const Surface.CloseScope,
-        self: *Self,
-    ) callconv(.c) void {
-        switch (scope.*) {
-            // Handled upstream... we don't control our window close.
-            .window => return,
-
-            // Presently both the same, results in the tab closing.
-            .surface, .tab => {
-                signals.@"close-request".impl.emit(
-                    self,
-                    null,
-                    .{},
-                    null,
-                );
-            },
-        }
-    }
-
-    fn splitTreeChanged(
-        _: *SplitTree,
-        old_tree: ?*const Surface.Tree,
-        new_tree: ?*const Surface.Tree,
-        self: *Self,
-    ) callconv(.c) void {
-        if (old_tree) |tree| {
-            self.disconnectSurfaceHandlers(tree);
-        }
-
-        if (new_tree) |tree| {
-            self.connectSurfaceHandlers(tree);
-        }
-    }
-
     fn propSplitTree(
         _: *SplitTree,
         _: *gobject.ParamSpec,
         self: *Self,
     ) callconv(.c) void {
         self.as(gobject.Object).notifyByPspec(properties.@"surface-tree".impl.param_spec);
+
+        // If our tree is empty we close the tab.
+        const tree: *const Surface.Tree = self.getSurfaceTree() orelse &.empty;
+        if (tree.isEmpty()) {
+            signals.@"close-request".impl.emit(
+                self,
+                null,
+                .{},
+                null,
+            );
+            return;
+        }
     }
 
     fn propActiveSurface(
-        _: *Self,
+        _: *SplitTree,
         _: *gobject.ParamSpec,
         self: *Self,
     ) callconv(.c) void {
@@ -353,14 +272,7 @@ pub const Tab = extern struct {
         if (self.getActiveSurface()) |surface| {
             priv.surface_bindings.setSource(surface.as(gobject.Object));
         }
-    }
 
-    fn propSurfaceFocused(
-        surface: *Surface,
-        _: *gobject.ParamSpec,
-        self: *Self,
-    ) callconv(.c) void {
-        if (!surface.getFocused()) return;
         self.as(gobject.Object).notifyByPspec(properties.@"active-surface".impl.param_spec);
     }
 
@@ -399,7 +311,6 @@ pub const Tab = extern struct {
             class.bindTemplateChildPrivate("split_tree", .{});
 
             // Template Callbacks
-            class.bindTemplateCallback("tree_changed", &splitTreeChanged);
             class.bindTemplateCallback("notify_active_surface", &propActiveSurface);
             class.bindTemplateCallback("notify_tree", &propSplitTree);
 

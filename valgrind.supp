@@ -45,6 +45,34 @@
    ...
 }
 
+# Reproduction:
+#
+# 1. Launch Ghostty
+# 2. Split Right
+# 3. Hit "X" to close
+{
+   GTK CSS Node State
+   Memcheck:Leak
+   match-leak-kinds: possible
+   fun:malloc
+   fun:g_malloc
+   fun:g_memdup2
+   fun:gtk_css_node_declaration_set_state
+   fun:gtk_css_node_set_state
+   fun:gtk_widget_propagate_state
+   fun:gtk_widget_update_state_flags
+   fun:gtk_main_do_event
+   fun:surface_event
+   fun:_gdk_marshal_BOOLEAN__POINTERv
+   fun:gdk_surface_event_marshallerv
+   fun:_g_closure_invoke_va
+   fun:signal_emit_valist_unlocked
+   fun:g_signal_emit_valist
+   fun:g_signal_emit
+   fun:gdk_surface_handle_event
+   ...
+}
+
 {
    GTK CSS Provider Leak
    Memcheck:Leak
@@ -516,9 +544,7 @@
    pango font map 
    Memcheck:Leak
    match-leak-kinds: possible
-   fun:calloc
-   fun:g_malloc0
-   fun:g_rc_box_alloc_full
+   ...
    fun:pango_fc_font_map_load_fontset
    ...
 }

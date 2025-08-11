@@ -335,6 +335,10 @@ pub const Window = extern struct {
             .{ "close-tab", actionCloseTab, null },
             .{ "new-tab", actionNewTab, null },
             .{ "new-window", actionNewWindow, null },
+            .{ "split-right", actionSplitRight, null },
+            .{ "split-left", actionSplitLeft, null },
+            .{ "split-up", actionSplitUp, null },
+            .{ "split-down", actionSplitDown, null },
             .{ "copy", actionCopy, null },
             .{ "paste", actionPaste, null },
             .{ "reset", actionReset, null },
@@ -1648,6 +1652,38 @@ pub const Window = extern struct {
         self: *Window,
     ) callconv(.c) void {
         self.performBindingAction(.new_tab);
+    }
+
+    fn actionSplitRight(
+        _: *gio.SimpleAction,
+        _: ?*glib.Variant,
+        self: *Window,
+    ) callconv(.c) void {
+        self.performBindingAction(.{ .new_split = .right });
+    }
+
+    fn actionSplitLeft(
+        _: *gio.SimpleAction,
+        _: ?*glib.Variant,
+        self: *Window,
+    ) callconv(.c) void {
+        self.performBindingAction(.{ .new_split = .left });
+    }
+
+    fn actionSplitUp(
+        _: *gio.SimpleAction,
+        _: ?*glib.Variant,
+        self: *Window,
+    ) callconv(.c) void {
+        self.performBindingAction(.{ .new_split = .up });
+    }
+
+    fn actionSplitDown(
+        _: *gio.SimpleAction,
+        _: ?*glib.Variant,
+        self: *Window,
+    ) callconv(.c) void {
+        self.performBindingAction(.{ .new_split = .down });
     }
 
     fn actionCopy(
