@@ -119,7 +119,7 @@ pub const SplitTree = extern struct {
 
         /// Last focused surface in the tree. We need this to handle various
         /// tree change states.
-        last_focused: WeakRef(Surface) = .{},
+        last_focused: WeakRef(Surface) = .empty,
 
         /// The source that we use to rebuild the tree. This is also
         /// used to debounce updates.
