@@ -156,21 +156,56 @@ pub const Face = struct {
     /// but sometimes allocation isn't required and a static string is
     /// returned.
     pub fn name(self: *const Face, buf: []u8) Allocator.Error![]const u8 {
-        // We don't use this today but its possible the table below
-        // returns UTF-16 in which case we'd want to use this for conversion.
-        _ = buf;
-
         const count = self.face.getSfntNameCount();
 
         // We look for the font family entry.
         for (0..count) |i| {
             const entry = self.face.getSfntName(i) catch continue;
             if (entry.name_id == freetype.c.TT_NAME_ID_FONT_FAMILY) {
-                return entry.string[0..entry.string_len];
+                const string = entry.string[0..entry.string_len];
+                // There are other encodings that are something other than UTF-8
+                // but this is one we've seen "in the wild" so far.
+                if (entry.platform_id == freetype.c.TT_PLATFORM_MICROSOFT and entry.encoding_id == freetype.c.TT_MS_ID_UNICODE_CS) skip: {
+                    if (string.len % 2 != 0) break :skip;
+                    if (string.len > 1024) break :skip;
+                    var tmp: [512]u16 = undefined;
+                    const max = string.len / 2;
+                    for (@as([]const u16, @alignCast(@ptrCast(string))), 0..) |c, j| tmp[j] = @byteSwap(c);
+                    const len = std.unicode.utf16LeToUtf8(buf, tmp[0..max]) catch return string;
+                    return buf[0..len];
+                }
+                return string;
             }
         }
 
         return "";
+    }
+
+    test "face name" {
+        const embedded = @import("../embedded.zig");
+
+        var lib: Library = try .init(testing.allocator);
+        defer lib.deinit();
+
+        {
+            var face: Face = try .init(lib, embedded.variable, .{ .size = .{ .points = 14 } });
+            defer face.deinit();
+
+            var buf: [1024]u8 = undefined;
+            const actual = try face.name(&buf);
+
+            try testing.expectEqualStrings("JetBrains Mono", actual);
+        }
+
+        {
+            var face: Face = try .init(lib, embedded.inconsolata, .{ .size = .{ .points = 14 } });
+            defer face.deinit();
+
+            var buf: [1024]u8 = undefined;
+            const actual = try face.name(&buf);
+
+            try testing.expectEqualStrings("Inconsolata", actual);
+        }
     }
 
     /// Return a new face that is the same as this but also has synthetic
