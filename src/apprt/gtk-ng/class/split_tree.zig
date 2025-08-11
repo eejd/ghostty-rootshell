@@ -263,7 +263,18 @@ pub const SplitTree = extern struct {
     pub fn goto(self: *Self, to: Surface.Tree.Goto) bool {
         const tree = self.getTree() orelse return false;
         const active = self.getActiveSurfaceHandle() orelse return false;
-        const target = tree.goto(active, to) orelse return false;
+        const target = if (tree.goto(
+            Application.default().allocator(),
+            active,
+            to,
+        )) |handle_|
+            handle_ orelse return false
+        else |err| switch (err) {
+            // Nothing we can do in this scenario. This is highly unlikely
+            // since split trees don't use that much memory. The application
+            // is probably about to crash in other ways.
+            error.OutOfMemory => return false,
+        };
 
         // If we aren't changing targets then we did nothing.
         if (active == target) return false;
@@ -594,8 +605,10 @@ pub const SplitTree = extern struct {
         // its the next.
         const old_tree = self.getTree() orelse return;
         const next_focus: ?*Surface = next_focus: {
-            const next_handle = old_tree.goto(handle, .previous) orelse
-                old_tree.goto(handle, .next) orelse
+            const alloc = Application.default().allocator();
+            const next_handle: Surface.Tree.Node.Handle =
+                (old_tree.goto(alloc, handle, .previous) catch null) orelse
+                (old_tree.goto(alloc, handle, .next) catch null) orelse
                 break :next_focus null;
             if (next_handle == handle) break :next_focus null;
 

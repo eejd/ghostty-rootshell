@@ -177,7 +177,7 @@ pub fn SplitTree(comptime V: type) type {
             }
         };
 
-        pub const Goto = enum {
+        pub const Goto = union(enum) {
             /// Previous view, null if we're the first view.
             previous,
 
@@ -191,20 +191,34 @@ pub fn SplitTree(comptime V: type) type {
             /// Next view, but wrapped around to the first view. May return
             /// the same view if this is the last view.
             next_wrapped,
+
+            /// A spatial direction. "Spatial" means that the direction is
+            /// based on the nearest surface in the given direction visually
+            /// as the surfaces are laid out on a 2D grid.
+            spatial: Spatial.Direction,
         };
 
         /// Goto a view from a certain point in the split tree. Returns null
         /// if the direction results in no visitable view.
+        ///
+        /// Allocator is only used for temporary state for spatial navigation.
         pub fn goto(
             self: *const Self,
+            alloc: Allocator,
             from: Node.Handle,
             to: Goto,
-        ) ?Node.Handle {
+        ) Allocator.Error!?Node.Handle {
             return switch (to) {
                 .previous => self.previous(from),
                 .next => self.next(from),
                 .previous_wrapped => self.previous(from) orelse self.deepest(.right, 0),
                 .next_wrapped => self.next(from) orelse self.deepest(.left, 0),
+                .spatial => |d| spatial: {
+                    // Get our spatial representation.
+                    var sp = try self.spatial(alloc);
+                    defer sp.deinit(alloc);
+                    break :spatial sp.nearestLeaf(from, d);
+                },
             };
         }
 
@@ -586,16 +600,68 @@ pub fn SplitTree(comptime V: type) type {
 
             pub const empty: Spatial = .{ .slots = &.{} };
 
+            pub const Direction = enum { left, right, down, up };
+
             const Slot = struct {
                 x: f16,
                 y: f16,
                 width: f16,
                 height: f16,
+
+                fn maxX(self: *const Slot) f16 {
+                    return self.x + self.width;
+                }
+
+                fn maxY(self: *const Slot) f16 {
+                    return self.y + self.height;
+                }
             };
 
-            pub fn deinit(self: *const Spatial, alloc: Allocator) void {
+            pub fn deinit(self: *Spatial, alloc: Allocator) void {
                 alloc.free(self.slots);
                 self.* = undefined;
+            }
+
+            /// Returns the nearest leaf node (view) in the given direction.
+            pub fn nearestLeaf(
+                self: *const Spatial,
+                from: Node.Handle,
+                direction: Direction,
+            ) ?Node.Handle {
+                const target = self.slots[from];
+
+                var nearest: ?struct {
+                    handle: Node.Handle,
+                    distance: f16,
+                } = null;
+                for (self.slots, 0..) |slot, handle| {
+                    // Never match ourself
+                    if (handle == from) continue;
+
+                    // Ensure it is in the proper direction
+                    if (!switch (direction) {
+                        .left => slot.maxX() <= target.maxX(),
+                        .right => slot.x >= target.maxX(),
+                        .up => slot.maxY() <= target.y,
+                        .down => slot.y >= target.maxY(),
+                    }) continue;
+
+                    // Track our distance
+                    const dx = slot.x - target.x;
+                    const dy = slot.y - target.y;
+                    const distance = @sqrt(dx * dx + dy * dy);
+
+                    // If we have a nearest it must be closer.
+                    if (nearest) |n| {
+                        if (distance >= n.distance) continue;
+                    }
+                    nearest = .{
+                        .handle = @intCast(handle),
+                        .distance = distance,
+                    };
+                }
+
+                return if (nearest) |n| n.handle else null;
             }
         };
 

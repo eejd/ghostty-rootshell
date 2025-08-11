@@ -1675,7 +1675,10 @@ const Action = struct {
                 return tree.goto(switch (to) {
                     .previous => .previous_wrapped,
                     .next => .next_wrapped,
-                    else => @panic("TODO"),
+                    .up => .{ .spatial = .up },
+                    .down => .{ .spatial = .down },
+                    .left => .{ .spatial = .left },
+                    .right => .{ .spatial = .right },
                 });
             },
         }
