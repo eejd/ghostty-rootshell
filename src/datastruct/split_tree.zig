@@ -642,6 +642,62 @@ pub fn SplitTree(comptime V: type) type {
             assert(reffed == nodes.len - 1);
         }
 
+        /// Equalize this node and all its children, returning a new node with splits
+        /// adjusted so that each split's ratio is based on the relative weight
+        /// (number of leaves) of its children.
+        pub fn equalize(
+            self: *const Self,
+            gpa: Allocator,
+        ) Allocator.Error!Self {
+            if (self.isEmpty()) return .empty;
+
+            // Create a new arena allocator for the clone.
+            var arena = ArenaAllocator.init(gpa);
+            errdefer arena.deinit();
+            const alloc = arena.allocator();
+
+            // Allocate a new nodes array and copy the existing nodes into it.
+            const nodes = try alloc.dupe(Node, self.nodes);
+
+            // Go through and equalize our ratios based on weights.
+            for (nodes) |*node| switch (node.*) {
+                .leaf => {},
+                .split => |*s| {
+                    const weight_left = self.weight(s.left, s.layout, 0);
+                    const weight_right = self.weight(s.right, s.layout, 0);
+                    assert(weight_left > 0);
+                    assert(weight_right > 0);
+                    const total_f16: f16 = @floatFromInt(weight_left + weight_right);
+                    const weight_left_f16: f16 = @floatFromInt(weight_left);
+                    s.ratio = weight_left_f16 / total_f16;
+                },
+            };
+
+            // Increase the reference count of all the views in the nodes.
+            try refNodes(gpa, nodes);
+
+            return .{
+                .arena = arena,
+                .nodes = nodes,
+            };
+        }
+
+        fn weight(
+            self: *const Self,
+            from: Node.Handle,
+            layout: Split.Layout,
+            acc: usize,
+        ) usize {
+            return switch (self.nodes[from]) {
+                .leaf => acc + 1,
+                .split => |s| if (s.layout == layout)
+                    self.weight(s.left, layout, acc) +
+                        self.weight(s.right, layout, acc)
+                else
+                    1,
+            };
+        }
+
         /// Spatial representation of the split tree. See spatial.
         pub const Spatial = struct {
             /// The slots of the spatial representation in the same order
@@ -1562,6 +1618,24 @@ test "SplitTree: spatial goto" {
         )).?;
         const view = split.nodes[target].leaf;
         try testing.expectEqualStrings("A", view.label);
+    }
+
+    // Equalize
+    var equal = try split.equalize(alloc);
+    defer equal.deinit();
+
+    {
+        const str = try std.fmt.allocPrint(alloc, "{diagram}", .{equal});
+        defer alloc.free(str);
+        try testing.expectEqualStrings(str,
+            \\+---++---+
+            \\| A || B |
+            \\+---++---+
+            \\+---++---+
+            \\| C || D |
+            \\+---++---+
+            \\
+        );
     }
 }
 
