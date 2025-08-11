@@ -698,6 +698,112 @@ pub fn SplitTree(comptime V: type) type {
             };
         }
 
+        /// Resize the nearest split matching the layout by the given ratio.
+        /// Positive is right and down.
+        ///
+        /// The ratio is a value between 0 and 1 representing the percentage
+        /// to move the divider in the given direction. The percentage is
+        /// of the entire grid size, not just the specific split size.
+        /// We use the entire grid size because that's what Ghostty's
+        /// `resize_split` keybind does, because it maps to a general human
+        /// understanding of moving a split relative to the entire window
+        /// (generally).
+        ///
+        /// For example, a ratio of 0.1 and a layout of `vertical` will find
+        /// the nearest vertical split and move the divider down by 10% of
+        /// the total grid height.
+        ///
+        /// If no matching split is found, this does nothing, but will always
+        /// still return a cloned tree.
+        pub fn resize(
+            self: *const Self,
+            gpa: Allocator,
+            from: Node.Handle,
+            layout: Split.Layout,
+            ratio: f16,
+        ) Allocator.Error!Self {
+            assert(ratio >= 0 and ratio <= 1);
+
+            // Fast path empty trees.
+            if (self.isEmpty()) return .empty;
+
+            // From this point forward worst case we return a clone.
+            var result = try self.clone(gpa);
+            errdefer result.deinit();
+
+            // Find our nearest parent split node matching the layout.
+            const parent_handle = switch (self.findParentSplit(
+                layout,
+                from,
+                0,
+            )) {
+                .deadend, .backtrack => return result,
+                .result => |v| v,
+            };
+
+            // Get our spatial layout, because we need the dimensions of this
+            // split with regards to the entire grid.
+            var sp = try result.spatial(gpa);
+            defer sp.deinit(gpa);
+
+            // Get the ratio of the split relative to the full grid.
+            const full_ratio = full_ratio: {
+                // Our scale is the amount we need to multiply our individual
+                // ratio by to get the full ratio. Its actually a ratio on its
+                // own but I'm trying to avoid that word: its the ratio of
+                // our spatial width/height to the total.
+                const scale = switch (layout) {
+                    .horizontal => sp.slots[parent_handle].width / sp.slots[0].width,
+                    .vertical => sp.slots[parent_handle].height / sp.slots[0].height,
+                };
+
+                const current = result.nodes[parent_handle].split.ratio;
+                break :full_ratio current * scale;
+            };
+
+            // Set the final new ratio, clamping it to [0, 1]
+            result.resizeInPlace(
+                parent_handle,
+                @min(@max(full_ratio + ratio, 0), 1),
+            );
+            return result;
+        }
+
+        fn findParentSplit(
+            self: *const Self,
+            layout: Split.Layout,
+            from: Node.Handle,
+            current: Node.Handle,
+        ) Backtrack {
+            if (from == current) return .backtrack;
+            return switch (self.nodes[current]) {
+                .leaf => .deadend,
+                .split => |s| switch (self.findParentSplit(
+                    layout,
+                    from,
+                    s.left,
+                )) {
+                    .result => |v| .{ .result = v },
+                    .backtrack => if (s.layout == layout)
+                        .{ .result = current }
+                    else
+                        .backtrack,
+                    .deadend => switch (self.findParentSplit(
+                        layout,
+                        from,
+                        s.right,
+                    )) {
+                        .deadend => .deadend,
+                        .result => |v| .{ .result = v },
+                        .backtrack => if (s.layout == layout)
+                            .{ .result = current }
+                        else
+                            .backtrack,
+                    },
+                },
+            };
+        }
+
         /// Spatial representation of the split tree. See spatial.
         pub const Spatial = struct {
             /// The slots of the spatial representation in the same order
@@ -732,11 +838,11 @@ pub fn SplitTree(comptime V: type) type {
         /// Spatial representation of the split tree. This can be used to
         /// better understand the layout of the tree in a 2D space.
         ///
-        /// The bounds of the representation are always based on each split
-        /// being exactly 1 unit wide and high. The x and y coordinates
-        /// are offsets into that space. This means that the spatial
-        /// representation is a normalized representation of the actual
-        /// space.
+        /// The bounds of the representation are always based on the total
+        /// 2D space being 1x1. The x/y coordinates and width/height dimensions
+        /// of each individual split and leaf are relative to this.
+        /// This means that the spatial representation is a normalized
+        /// representation of the actual space.
         ///
         /// The top-left corner of the tree is always (0, 0).
         ///
@@ -765,6 +871,14 @@ pub fn SplitTree(comptime V: type) type {
                 .height = @floatFromInt(dim.height),
             };
             self.fillSpatialSlots(slots, 0);
+
+            // Normalize the dimensions to 1x1 grid.
+            for (slots) |*slot| {
+                slot.x /= @floatFromInt(dim.width);
+                slot.y /= @floatFromInt(dim.height);
+                slot.width /= @floatFromInt(dim.width);
+                slot.height /= @floatFromInt(dim.height);
+            }
 
             return .{ .slots = slots };
         }
@@ -1634,6 +1748,65 @@ test "SplitTree: spatial goto" {
             \\+---++---+
             \\| C || D |
             \\+---++---+
+            \\
+        );
+    }
+}
+
+test "SplitTree: resize" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var v1: TestTree.View = .{ .label = "A" };
+    var t1: TestTree = try .init(alloc, &v1);
+    defer t1.deinit();
+    var v2: TestTree.View = .{ .label = "B" };
+    var t2: TestTree = try .init(alloc, &v2);
+    defer t2.deinit();
+
+    // A | B horizontal
+    var split = try t1.split(
+        alloc,
+        0, // at root
+        .right, // split right
+        0.5,
+        &t2, // insert t2
+    );
+    defer split.deinit();
+
+    {
+        const str = try std.fmt.allocPrint(alloc, "{diagram}", .{split});
+        defer alloc.free(str);
+        try testing.expectEqualStrings(str,
+            \\+---++---+
+            \\| A || B |
+            \\+---++---+
+            \\
+        );
+    }
+
+    // Resize
+    {
+        var resized = try split.resize(
+            alloc,
+            at: {
+                var it = split.iterator();
+                break :at while (it.next()) |entry| {
+                    if (std.mem.eql(u8, entry.view.label, "B")) {
+                        break entry.handle;
+                    }
+                } else return error.NotFound;
+            },
+            .horizontal, // resize right
+            0.25,
+        );
+        defer resized.deinit();
+        const str = try std.fmt.allocPrint(alloc, "{diagram}", .{resized});
+        defer alloc.free(str);
+        try testing.expectEqualStrings(str,
+            \\+-------------++---+
+            \\|      A      || B |
+            \\+-------------++---+
             \\
         );
     }
