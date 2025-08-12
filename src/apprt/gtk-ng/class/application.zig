@@ -615,12 +615,11 @@ pub const Application = extern struct {
             .toggle_tab_overview => return Action.toggleTabOverview(target),
             .toggle_window_decorations => return Action.toggleWindowDecorations(target),
             .toggle_command_palette => return Action.toggleCommandPalette(target),
+            .toggle_split_zoom => return Action.toggleSplitZoom(target),
 
             // Unimplemented but todo on gtk-ng branch
             .prompt_title,
             .inspector,
-            // TODO: splits
-            .toggle_split_zoom,
             => {
                 log.warn("unimplemented action={}", .{action});
                 return false;
@@ -2119,6 +2118,21 @@ const Action = struct {
         assert(win.isQuickTerminal());
         initAndShowWindow(self, win, null);
         return true;
+    }
+
+    pub fn toggleSplitZoom(target: apprt.Target) bool {
+        switch (target) {
+            .app => {
+                log.warn("toggle_split_zoom to app is unexpected", .{});
+                return false;
+            },
+
+            .surface => |core| {
+                // TODO: pass surface ID when we have that
+                const surface = core.rt_surface.surface;
+                return surface.as(gtk.Widget).activateAction("split-tree.zoom", null) != 0;
+            },
+        }
     }
 
     fn getQuickTerminalWindow() ?*Window {
