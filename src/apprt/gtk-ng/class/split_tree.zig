@@ -909,6 +909,7 @@ pub const SplitTree = extern struct {
             gobject.ext.registerProperties(class, &.{
                 properties.@"active-surface".impl,
                 properties.@"has-surfaces".impl,
+                properties.@"is-zoomed".impl,
                 properties.tree.impl,
             });
 
