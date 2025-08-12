@@ -416,6 +416,12 @@ pub const Window = extern struct {
             "title",
             .{ .sync_create = true },
         );
+        _ = tab.as(gobject.Object).bindProperty(
+            "tooltip",
+            page.as(gobject.Object),
+            "tooltip",
+            .{ .sync_create = true },
+        );
 
         // Bind signals
         const split_tree = tab.getSplitTree();

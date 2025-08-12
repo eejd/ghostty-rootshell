@@ -88,6 +88,19 @@ pub const Tab = extern struct {
             );
         };
 
+        pub const tooltip = struct {
+            pub const name = "tooltip";
+            const impl = gobject.ext.defineProperty(
+                name,
+                Self,
+                ?[:0]const u8,
+                .{
+                    .default = null,
+                    .accessor = C.privateStringFieldAccessor("tooltip"),
+                },
+            );
+        };
+
         pub const title = struct {
             pub const name = "title";
             pub const get = impl.get;
@@ -125,6 +138,7 @@ pub const Tab = extern struct {
         /// The title to show for this tab. This is usually set to a binding
         /// with the active surface but can be manually set to anything.
         title: ?[:0]const u8 = null,
+        tooltip: ?[:0]const u8 = null,
 
         /// The binding groups for the current active surface.
         surface_bindings: *gobject.BindingGroup,
@@ -228,6 +242,10 @@ pub const Tab = extern struct {
 
     fn finalize(self: *Self) callconv(.c) void {
         const priv = self.private();
+        if (priv.tooltip) |v| {
+            glib.free(@constCast(@ptrCast(v)));
+            priv.tooltip = null;
+        }
         if (priv.title) |v| {
             glib.free(@constCast(@ptrCast(v)));
             priv.title = null;
@@ -305,6 +323,7 @@ pub const Tab = extern struct {
                 properties.config.impl,
                 properties.@"surface-tree".impl,
                 properties.title.impl,
+                properties.tooltip.impl,
             });
 
             // Bindings

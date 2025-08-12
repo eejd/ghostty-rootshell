@@ -8,6 +8,7 @@ template $GhosttyTab: Box {
   orientation: vertical;
   hexpand: true;
   vexpand: true;
+  tooltip: bind split_tree.active-surface as <$GhosttySurface>.pwd as <string>;
 
   $GhosttySplitTree split_tree {
     notify::active-surface => $notify_active_surface();
