@@ -888,7 +888,7 @@ pub fn SplitTree(comptime V: type) type {
             slots: []Spatial.Slot,
             current: Node.Handle,
         ) void {
-            assert(slots[current].width > 0 and slots[current].height > 0);
+            assert(slots[current].width >= 0 and slots[current].height >= 0);
 
             switch (self.nodes[current]) {
                 // Leaf node, current slot is already filled by caller.
@@ -1040,8 +1040,8 @@ pub fn SplitTree(comptime V: type) type {
                 var min_w: f16 = 1;
                 var min_h: f16 = 1;
                 for (sp.slots) |slot| {
-                    min_w = @min(min_w, slot.width);
-                    min_h = @min(min_h, slot.height);
+                    if (slot.width > 0) min_w = @min(min_w, slot.width);
+                    if (slot.height > 0) min_h = @min(min_h, slot.height);
                 }
 
                 const ratio_w: f16 = 1 / min_w;
@@ -1120,6 +1120,9 @@ pub fn SplitTree(comptime V: type) type {
                     .leaf => {},
                     .split => continue,
                 }
+
+                // If our width/height is zero then we skip this.
+                if (slot.width == 0 or slot.height == 0) continue;
 
                 var x: usize = @intFromFloat(@floor(slot.x));
                 var y: usize = @intFromFloat(@floor(slot.y));
@@ -1490,6 +1493,142 @@ test "SplitTree: split vertical" {
         \\+---+
         \\
     );
+}
+
+test "SplitTree: split horizontal with zero ratio" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var v1: TestTree.View = .{ .label = "A" };
+    var t1: TestTree = try .init(alloc, &v1);
+    defer t1.deinit();
+    var v2: TestTree.View = .{ .label = "B" };
+    var t2: TestTree = try .init(alloc, &v2);
+    defer t2.deinit();
+
+    // A | B horizontal
+    var splitAB = try t1.split(
+        alloc,
+        0, // at root
+        .right, // split right
+        0,
+        &t2, // insert t2
+    );
+    defer splitAB.deinit();
+    const split = splitAB;
+
+    {
+        const str = try std.fmt.allocPrint(alloc, "{diagram}", .{split});
+        defer alloc.free(str);
+        try testing.expectEqualStrings(str,
+            \\+---+
+            \\| B |
+            \\+---+
+            \\
+        );
+    }
+}
+
+test "SplitTree: split vertical with zero ratio" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var v1: TestTree.View = .{ .label = "A" };
+    var t1: TestTree = try .init(alloc, &v1);
+    defer t1.deinit();
+    var v2: TestTree.View = .{ .label = "B" };
+    var t2: TestTree = try .init(alloc, &v2);
+    defer t2.deinit();
+
+    // A | B horizontal
+    var splitAB = try t1.split(
+        alloc,
+        0, // at root
+        .down, // split right
+        0,
+        &t2, // insert t2
+    );
+    defer splitAB.deinit();
+    const split = splitAB;
+
+    {
+        const str = try std.fmt.allocPrint(alloc, "{diagram}", .{split});
+        defer alloc.free(str);
+        try testing.expectEqualStrings(str,
+            \\+---+
+            \\| B |
+            \\+---+
+            \\
+        );
+    }
+}
+
+test "SplitTree: split horizontal with full width" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var v1: TestTree.View = .{ .label = "A" };
+    var t1: TestTree = try .init(alloc, &v1);
+    defer t1.deinit();
+    var v2: TestTree.View = .{ .label = "B" };
+    var t2: TestTree = try .init(alloc, &v2);
+    defer t2.deinit();
+
+    // A | B horizontal
+    var splitAB = try t1.split(
+        alloc,
+        0, // at root
+        .right, // split right
+        1,
+        &t2, // insert t2
+    );
+    defer splitAB.deinit();
+    const split = splitAB;
+
+    {
+        const str = try std.fmt.allocPrint(alloc, "{diagram}", .{split});
+        defer alloc.free(str);
+        try testing.expectEqualStrings(str,
+            \\+---+
+            \\| A |
+            \\+---+
+            \\
+        );
+    }
+}
+
+test "SplitTree: split vertical with full width" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var v1: TestTree.View = .{ .label = "A" };
+    var t1: TestTree = try .init(alloc, &v1);
+    defer t1.deinit();
+    var v2: TestTree.View = .{ .label = "B" };
+    var t2: TestTree = try .init(alloc, &v2);
+    defer t2.deinit();
+
+    // A | B horizontal
+    var splitAB = try t1.split(
+        alloc,
+        0, // at root
+        .down, // split right
+        1,
+        &t2, // insert t2
+    );
+    defer splitAB.deinit();
+    const split = splitAB;
+
+    {
+        const str = try std.fmt.allocPrint(alloc, "{diagram}", .{split});
+        defer alloc.free(str);
+        try testing.expectEqualStrings(str,
+            \\+---+
+            \\| A |
+            \\+---+
+            \\
+        );
+    }
 }
 
 test "SplitTree: remove leaf" {
