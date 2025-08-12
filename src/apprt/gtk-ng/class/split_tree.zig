@@ -79,6 +79,25 @@ pub const SplitTree = extern struct {
             );
         };
 
+        pub const @"is-zoomed" = struct {
+            pub const name = "is-zoomed";
+            const impl = gobject.ext.defineProperty(
+                name,
+                Self,
+                bool,
+                .{
+                    .default = false,
+                    .accessor = gobject.ext.typedAccessor(
+                        Self,
+                        bool,
+                        .{
+                            .getter = getIsZoomed,
+                        },
+                    ),
+                },
+            );
+        };
+
         pub const tree = struct {
             pub const name = "tree";
             const impl = gobject.ext.defineProperty(
@@ -428,6 +447,11 @@ pub const SplitTree = extern struct {
     pub fn getHasSurfaces(self: *Self) bool {
         const tree: *const Surface.Tree = self.private().tree orelse &.empty;
         return !tree.isEmpty();
+    }
+
+    pub fn getIsZoomed(self: *Self) bool {
+        const tree: *const Surface.Tree = self.private().tree orelse &.empty;
+        return tree.zoomed != null;
     }
 
     /// Get the tree data model that we're showing in this widget. This
@@ -799,6 +823,7 @@ pub const SplitTree = extern struct {
 
         // Dependent properties
         self.as(gobject.Object).notifyByPspec(properties.@"has-surfaces".impl.param_spec);
+        self.as(gobject.Object).notifyByPspec(properties.@"is-zoomed".impl.param_spec);
     }
 
     fn onRebuild(ud: ?*anyopaque) callconv(.c) c_int {
