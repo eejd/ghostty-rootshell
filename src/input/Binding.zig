@@ -7,6 +7,7 @@ const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
 const build_config = @import("../build_config.zig");
 const ziglyph = @import("ziglyph");
+const uucode = @import("uucode");
 const key = @import("key.zig");
 const KeyEvent = key.KeyEvent;
 
@@ -1574,7 +1575,7 @@ pub const Trigger = struct {
     /// in more codepoints so we need to use a 3 element array.
     fn foldedCodepoint(cp: u21) [3]u21 {
         // ASCII fast path
-        if (ziglyph.letter.isAsciiLetter(cp)) {
+        if (uucode.ascii.isAlphabetic(cp)) {
             return .{ ziglyph.letter.toLower(cp), 0, 0 };
         }
 

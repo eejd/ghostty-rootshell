@@ -122,7 +122,7 @@ pub const GraphemeBoundaryClass = enum(u4) {
 };
 
 pub fn get(cp: u21) Properties {
-    const wcwidth = if (cp < 0x110000) uucode.get("wcwidth", cp) else 0;
+    const wcwidth = if (cp < 0x110000) uucode.get(.wcwidth, cp) else 0;
 
     return .{
         .width = @intCast(@min(2, @max(0, wcwidth))),
