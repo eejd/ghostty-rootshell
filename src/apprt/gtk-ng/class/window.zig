@@ -1804,6 +1804,7 @@ pub const Window = extern struct {
 
         fn init(class: *Class) callconv(.c) void {
             gobject.ext.ensureType(DebugWarning);
+            gobject.ext.ensureType(SplitTree);
             gobject.ext.ensureType(Surface);
             gobject.ext.ensureType(Tab);
             gtk.Widget.Class.setTemplateFromResource(
