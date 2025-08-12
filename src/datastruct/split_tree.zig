@@ -78,7 +78,24 @@ pub fn SplitTree(comptime V: type) type {
             /// A handle into the nodes array. This lets us keep track of
             /// nodes with 16-bit handles rather than full pointer-width
             /// values.
-            pub const Handle = u16;
+            pub const Handle = enum(Backing) {
+                root = 0,
+                _,
+
+                pub const Backing = u16;
+
+                pub inline fn idx(self: Handle) usize {
+                    return @intFromEnum(self);
+                }
+
+                /// Offset the handle by a given amount.
+                pub fn offset(self: Handle, v: usize) Handle {
+                    const self_usize: usize = @intCast(@intFromEnum(self));
+                    const final = self_usize + v;
+                    assert(final < std.math.maxInt(Backing));
+                    return @enumFromInt(final);
+                }
+            };
         };
 
         pub const Split = struct {
@@ -166,17 +183,17 @@ pub fn SplitTree(comptime V: type) type {
         };
 
         pub const Iterator = struct {
-            i: Node.Handle = 0,
+            i: Node.Handle = .root,
             nodes: []const Node,
 
             pub fn next(self: *Iterator) ?ViewEntry {
                 // If we have no nodes, return null.
-                if (self.i >= self.nodes.len) return null;
+                if (@intFromEnum(self.i) >= self.nodes.len) return null;
 
                 // Get the current node and increment the index.
                 const handle = self.i;
-                self.i += 1;
-                const node = self.nodes[handle];
+                self.i = @enumFromInt(handle.idx() + 1);
+                const node = self.nodes[handle.idx()];
 
                 return switch (node) {
                     .leaf => |v| .{ .handle = handle, .view = v },
@@ -188,7 +205,10 @@ pub fn SplitTree(comptime V: type) type {
         /// Change the zoomed state to the given node. Assumes the handle
         /// is valid.
         pub fn zoom(self: *Self, handle: ?Node.Handle) void {
-            if (handle) |v| assert(v >= 0 and v < self.nodes.len);
+            if (handle) |v| {
+                assert(@intFromEnum(v) >= 0);
+                assert(@intFromEnum(v) < self.nodes.len);
+            }
             self.zoomed = handle;
         }
 
@@ -226,8 +246,8 @@ pub fn SplitTree(comptime V: type) type {
             return switch (to) {
                 .previous => self.previous(from),
                 .next => self.next(from),
-                .previous_wrapped => self.previous(from) orelse self.deepest(.right, 0),
-                .next_wrapped => self.next(from) orelse self.deepest(.left, 0),
+                .previous_wrapped => self.previous(from) orelse self.deepest(.right, .root),
+                .next_wrapped => self.next(from) orelse self.deepest(.left, .root),
                 .spatial => |d| spatial: {
                     // Get our spatial representation.
                     var sp = try self.spatial(alloc);
@@ -249,7 +269,7 @@ pub fn SplitTree(comptime V: type) type {
         ) Node.Handle {
             var current: Node.Handle = from;
             while (true) {
-                switch (self.nodes[current]) {
+                switch (self.nodes[current.idx()]) {
                     .leaf => return current,
                     .split => |s| current = switch (side) {
                         .left => s.left,
@@ -268,7 +288,7 @@ pub fn SplitTree(comptime V: type) type {
         /// may want to change this to something that better matches a
         /// spatial view of the tree later.
         fn previous(self: *const Self, from: Node.Handle) ?Node.Handle {
-            return switch (self.previousBacktrack(from, 0)) {
+            return switch (self.previousBacktrack(from, .root)) {
                 .result => |v| v,
                 .backtrack, .deadend => null,
             };
@@ -276,7 +296,7 @@ pub fn SplitTree(comptime V: type) type {
 
         /// Same as `previous`, but returns the next view instead.
         fn next(self: *const Self, from: Node.Handle) ?Node.Handle {
-            return switch (self.nextBacktrack(from, 0)) {
+            return switch (self.nextBacktrack(from, .root)) {
                 .result => |v| v,
                 .backtrack, .deadend => null,
             };
@@ -301,7 +321,7 @@ pub fn SplitTree(comptime V: type) type {
             // value of, then we need to backtrack from here.
             if (from == current) return .backtrack;
 
-            return switch (self.nodes[current]) {
+            return switch (self.nodes[current.idx()]) {
                 // If we hit a leaf that isn't our target, then deadend.
                 .leaf => .deadend,
 
@@ -337,7 +357,7 @@ pub fn SplitTree(comptime V: type) type {
             current: Node.Handle,
         ) Backtrack {
             if (from == current) return .backtrack;
-            return switch (self.nodes[current]) {
+            return switch (self.nodes[current.idx()]) {
                 .leaf => .deadend,
                 .split => |s| switch (self.nextBacktrack(from, s.right)) {
                     .result => |v| .{ .result = v },
@@ -358,7 +378,7 @@ pub fn SplitTree(comptime V: type) type {
             from: Node.Handle,
             direction: Spatial.Direction,
         ) ?Node.Handle {
-            const target = sp.slots[from];
+            const target = sp.slots[from.idx()];
 
             var result: ?struct {
                 handle: Node.Handle,
@@ -366,7 +386,7 @@ pub fn SplitTree(comptime V: type) type {
             } = null;
             for (sp.slots, 0..) |slot, handle| {
                 // Never match ourself
-                if (handle == from) continue;
+                if (handle == from.idx()) continue;
 
                 // Only match leaves
                 switch (self.nodes[handle]) {
@@ -392,7 +412,7 @@ pub fn SplitTree(comptime V: type) type {
                     if (distance >= n.distance) continue;
                 }
                 result = .{
-                    .handle = @intCast(handle),
+                    .handle = @enumFromInt(handle),
                     .distance = distance,
                 };
             }
@@ -417,7 +437,7 @@ pub fn SplitTree(comptime V: type) type {
             // who directly access the nodes to be able to modify them
             // (without nasty stuff like this), but given this is internal
             // usage its perfectly fine to modify the node in-place.
-            const s: *Split = @constCast(&self.nodes[at].split);
+            const s: *Split = @constCast(&self.nodes[at.idx()].split);
             s.ratio = ratio;
         }
 
@@ -445,7 +465,7 @@ pub fn SplitTree(comptime V: type) type {
             // We know we're going to need the sum total of the nodes
             // between the two trees plus one for the new split node.
             const nodes = try alloc.alloc(Node, self.nodes.len + insert.nodes.len + 1);
-            if (nodes.len > std.math.maxInt(Node.Handle)) return error.OutOfMemory;
+            if (nodes.len > std.math.maxInt(Node.Handle.Backing)) return error.OutOfMemory;
 
             // We can copy our nodes exactly as they are, since they're
             // mostly not changing (only `at` is changing).
@@ -461,8 +481,8 @@ pub fn SplitTree(comptime V: type) type {
                 .leaf => {},
                 .split => |*s| {
                     // We need to offset the handles in the split
-                    s.left += @intCast(self.nodes.len);
-                    s.right += @intCast(self.nodes.len);
+                    s.left = s.left.offset(self.nodes.len);
+                    s.right = s.right.offset(self.nodes.len);
                 },
             };
 
@@ -476,12 +496,12 @@ pub fn SplitTree(comptime V: type) type {
 
             // Copy our previous value to the end of the nodes list and
             // create our new split node.
-            nodes[nodes.len - 1] = nodes[at];
-            nodes[at] = .{ .split = .{
+            nodes[nodes.len - 1] = nodes[at.idx()];
+            nodes[at.idx()] = .{ .split = .{
                 .layout = layout,
                 .ratio = ratio,
-                .left = @intCast(if (left) self.nodes.len else nodes.len - 1),
-                .right = @intCast(if (left) nodes.len - 1 else self.nodes.len),
+                .left = @enumFromInt(if (left) self.nodes.len else nodes.len - 1),
+                .right = @enumFromInt(if (left) nodes.len - 1 else self.nodes.len),
             } };
 
             // We need to increase the reference count of all the nodes.
@@ -501,10 +521,10 @@ pub fn SplitTree(comptime V: type) type {
             gpa: Allocator,
             at: Node.Handle,
         ) Allocator.Error!Self {
-            assert(at < self.nodes.len);
+            assert(at.idx() < self.nodes.len);
 
             // If we're removing node zero then we're clearing the tree.
-            if (at == 0) return .empty;
+            if (at == .root) return .empty;
 
             // The new arena for our new tree.
             var arena = ArenaAllocator.init(gpa);
@@ -514,7 +534,7 @@ pub fn SplitTree(comptime V: type) type {
             // Allocate our new nodes list with the number of nodes we'll
             // need after the removal.
             const nodes = try alloc.alloc(Node, self.countAfterRemoval(
-                0,
+                .root,
                 at,
                 0,
             ));
@@ -529,9 +549,9 @@ pub fn SplitTree(comptime V: type) type {
             assert(self.removeNode(
                 &result,
                 0,
-                0,
+                .root,
                 at,
-            ) > 0);
+            ) != 0);
 
             // Increase the reference count of all the nodes.
             try refNodes(gpa, nodes);
@@ -542,17 +562,17 @@ pub fn SplitTree(comptime V: type) type {
         fn removeNode(
             old: *Self,
             new: *Self,
-            new_offset: Node.Handle,
+            new_offset: usize,
             current: Node.Handle,
             target: Node.Handle,
-        ) Node.Handle {
+        ) usize {
             assert(current != target);
 
             // If we have a zoomed node and this is it then we migrate it.
             if (old.zoomed) |v| {
                 if (v == current) {
                     assert(new.zoomed == null);
-                    new.zoomed = new_offset;
+                    new.zoomed = @enumFromInt(new_offset);
                 }
             }
 
@@ -563,7 +583,7 @@ pub fn SplitTree(comptime V: type) type {
             // usage its perfectly fine to modify the node in-place.
             const new_nodes: []Node = @constCast(new.nodes);
 
-            switch (old.nodes[current]) {
+            switch (old.nodes[current.idx()]) {
                 // Leaf is simple, just copy it over. We don't ref anything
                 // yet because it'd make undo (errdefer) harder. We do that
                 // all at once later.
@@ -596,19 +616,19 @@ pub fn SplitTree(comptime V: type) type {
                         s.left,
                         target,
                     );
-                    assert(left > 0);
+                    assert(left != 0);
                     const right = old.removeNode(
                         new,
-                        new_offset + 1 + left,
+                        new_offset + left + 1,
                         s.right,
                         target,
                     );
-                    assert(right > 0);
+                    assert(right != 0);
                     new_nodes[new_offset] = .{ .split = .{
                         .layout = s.layout,
                         .ratio = s.ratio,
-                        .left = new_offset + 1,
-                        .right = new_offset + 1 + left,
+                        .left = @enumFromInt(new_offset + 1),
+                        .right = @enumFromInt(new_offset + 1 + left),
                     } };
 
                     return left + right + 1;
@@ -626,7 +646,7 @@ pub fn SplitTree(comptime V: type) type {
         ) usize {
             assert(current != target);
 
-            return switch (self.nodes[current]) {
+            return switch (self.nodes[current.idx()]) {
                 // Leaf is simple, always takes one node.
                 .leaf => acc + 1,
 
@@ -727,7 +747,7 @@ pub fn SplitTree(comptime V: type) type {
             layout: Split.Layout,
             acc: usize,
         ) usize {
-            return switch (self.nodes[from]) {
+            return switch (self.nodes[from.idx()]) {
                 .leaf => acc + 1,
                 .split => |s| if (s.layout == layout)
                     self.weight(s.left, layout, acc) +
@@ -776,7 +796,7 @@ pub fn SplitTree(comptime V: type) type {
             const parent_handle = switch (self.findParentSplit(
                 layout,
                 from,
-                0,
+                .root,
             )) {
                 .deadend, .backtrack => return result,
                 .result => |v| v,
@@ -794,11 +814,11 @@ pub fn SplitTree(comptime V: type) type {
                 // own but I'm trying to avoid that word: its the ratio of
                 // our spatial width/height to the total.
                 const scale = switch (layout) {
-                    .horizontal => sp.slots[parent_handle].width / sp.slots[0].width,
-                    .vertical => sp.slots[parent_handle].height / sp.slots[0].height,
+                    .horizontal => sp.slots[parent_handle.idx()].width / sp.slots[0].width,
+                    .vertical => sp.slots[parent_handle.idx()].height / sp.slots[0].height,
                 };
 
-                const current = result.nodes[parent_handle].split.ratio;
+                const current = result.nodes[parent_handle.idx()].split.ratio;
                 break :full_ratio current * scale;
             };
 
@@ -817,7 +837,7 @@ pub fn SplitTree(comptime V: type) type {
             current: Node.Handle,
         ) Backtrack {
             if (from == current) return .backtrack;
-            return switch (self.nodes[current]) {
+            return switch (self.nodes[current.idx()]) {
                 .leaf => .deadend,
                 .split => |s| switch (self.findParentSplit(
                     layout,
@@ -900,7 +920,7 @@ pub fn SplitTree(comptime V: type) type {
             if (self.nodes.len == 0) return .empty;
 
             // Get our total dimensions.
-            const dim = self.dimensions(0);
+            const dim = self.dimensions(.root);
 
             // Create our slots which will match our nodes exactly.
             const slots = try alloc.alloc(Spatial.Slot, self.nodes.len);
@@ -911,7 +931,7 @@ pub fn SplitTree(comptime V: type) type {
                 .width = @floatFromInt(dim.width),
                 .height = @floatFromInt(dim.height),
             };
-            self.fillSpatialSlots(slots, 0);
+            self.fillSpatialSlots(slots, .root);
 
             // Normalize the dimensions to 1x1 grid.
             for (slots) |*slot| {
@@ -927,10 +947,10 @@ pub fn SplitTree(comptime V: type) type {
         fn fillSpatialSlots(
             self: *const Self,
             slots: []Spatial.Slot,
-            current: Node.Handle,
+            current_: Node.Handle,
         ) void {
+            const current = current_.idx();
             assert(slots[current].width >= 0 and slots[current].height >= 0);
-
             switch (self.nodes[current]) {
                 // Leaf node, current slot is already filled by caller.
                 .leaf => {},
@@ -938,13 +958,13 @@ pub fn SplitTree(comptime V: type) type {
                 .split => |s| {
                     switch (s.layout) {
                         .horizontal => {
-                            slots[s.left] = .{
+                            slots[s.left.idx()] = .{
                                 .x = slots[current].x,
                                 .y = slots[current].y,
                                 .width = slots[current].width * s.ratio,
                                 .height = slots[current].height,
                             };
-                            slots[s.right] = .{
+                            slots[s.right.idx()] = .{
                                 .x = slots[current].x + slots[current].width * s.ratio,
                                 .y = slots[current].y,
                                 .width = slots[current].width * (1 - s.ratio),
@@ -953,13 +973,13 @@ pub fn SplitTree(comptime V: type) type {
                         },
 
                         .vertical => {
-                            slots[s.left] = .{
+                            slots[s.left.idx()] = .{
                                 .x = slots[current].x,
                                 .y = slots[current].y,
                                 .width = slots[current].width,
                                 .height = slots[current].height * s.ratio,
                             };
-                            slots[s.right] = .{
+                            slots[s.right.idx()] = .{
                                 .x = slots[current].x,
                                 .y = slots[current].y + slots[current].height * s.ratio,
                                 .width = slots[current].width,
@@ -982,7 +1002,7 @@ pub fn SplitTree(comptime V: type) type {
             width: u16,
             height: u16,
         } {
-            return switch (self.nodes[current]) {
+            return switch (self.nodes[current.idx()]) {
                 .leaf => .{ .width = 1, .height = 1 },
                 .split => |s| split: {
                     const left = self.dimensions(s.left);
@@ -1027,10 +1047,10 @@ pub fn SplitTree(comptime V: type) type {
                 self.formatDiagram(writer) catch
                     try writer.writeAll("failed to draw split tree diagram");
             } else if (std.mem.eql(u8, fmt, "text")) {
-                try self.formatText(writer, 0, 0);
+                try self.formatText(writer, .root, 0);
             } else if (fmt.len == 0) {
                 self.formatDiagram(writer) catch {};
-                try self.formatText(writer, 0, 0);
+                try self.formatText(writer, .root, 0);
             } else {
                 return error.InvalidFormat;
             }
@@ -1048,7 +1068,7 @@ pub fn SplitTree(comptime V: type) type {
                 try writer.writeAll("(zoomed) ");
             };
 
-            switch (self.nodes[current]) {
+            switch (self.nodes[current.idx()]) {
                 .leaf => |v| if (@hasDecl(View, "splitTreeLabel"))
                     try writer.print("leaf: {s}\n", .{v.splitTreeLabel()})
                 else
@@ -1355,7 +1375,7 @@ test "SplitTree: split horizontal" {
     defer t2.deinit();
     var t3 = try t1.split(
         alloc,
-        0, // at root
+        .root, // at root
         .right, // split right
         0.5,
         &t2, // insert t2
@@ -1459,7 +1479,7 @@ test "SplitTree: split horizontal" {
                 } else return error.NotFound,
             ).?;
 
-            const entry = t5.nodes[handle].leaf;
+            const entry = t5.nodes[handle.idx()].leaf;
             try testing.expectEqualStrings(
                 entry.label,
                 &.{current - 1},
@@ -1489,7 +1509,7 @@ test "SplitTree: split horizontal" {
                 } else return error.NotFound,
             ).?;
 
-            const entry = t5.nodes[handle].leaf;
+            const entry = t5.nodes[handle.idx()].leaf;
             try testing.expectEqualStrings(
                 entry.label,
                 &.{current + 1},
@@ -1520,7 +1540,7 @@ test "SplitTree: split vertical" {
 
     var t3 = try t1.split(
         alloc,
-        0, // at root
+        .root, // at root
         .down, // split down
         0.5,
         &t2, // insert t2
@@ -1554,7 +1574,7 @@ test "SplitTree: split horizontal with zero ratio" {
     // A | B horizontal
     var splitAB = try t1.split(
         alloc,
-        0, // at root
+        .root, // at root
         .right, // split right
         0,
         &t2, // insert t2
@@ -1588,7 +1608,7 @@ test "SplitTree: split vertical with zero ratio" {
     // A | B horizontal
     var splitAB = try t1.split(
         alloc,
-        0, // at root
+        .root, // at root
         .down, // split right
         0,
         &t2, // insert t2
@@ -1622,7 +1642,7 @@ test "SplitTree: split horizontal with full width" {
     // A | B horizontal
     var splitAB = try t1.split(
         alloc,
-        0, // at root
+        .root, // at root
         .right, // split right
         1,
         &t2, // insert t2
@@ -1656,7 +1676,7 @@ test "SplitTree: split vertical with full width" {
     // A | B horizontal
     var splitAB = try t1.split(
         alloc,
-        0, // at root
+        .root, // at root
         .down, // split right
         1,
         &t2, // insert t2
@@ -1688,7 +1708,7 @@ test "SplitTree: remove leaf" {
     defer t2.deinit();
     var t3 = try t1.split(
         alloc,
-        0, // at root
+        .root, // at root
         .right, // split right
         0.5,
         &t2, // insert t2
@@ -1734,7 +1754,7 @@ test "SplitTree: split twice, remove intermediary" {
     // A | B horizontal.
     var split1 = try t1.split(
         alloc,
-        0, // at root
+        .root, // at root
         .right, // split right
         0.5,
         &t2, // insert t2
@@ -1744,7 +1764,7 @@ test "SplitTree: split twice, remove intermediary" {
     // Insert C below that.
     var split2 = try split1.split(
         alloc,
-        0, // at root
+        .root, // at root
         .down, // split down
         0.5,
         &t3, // insert t3
@@ -1795,7 +1815,7 @@ test "SplitTree: split twice, remove intermediary" {
     // never crash. We don't test the result is correct, this just verifies
     // we don't hit any assertion failures.
     for (0..split2.nodes.len) |i| {
-        var t = try split2.remove(alloc, @intCast(i));
+        var t = try split2.remove(alloc, @enumFromInt(i));
         t.deinit();
     }
 }
@@ -1820,7 +1840,7 @@ test "SplitTree: spatial goto" {
     // A | B horizontal
     var splitAB = try t1.split(
         alloc,
-        0, // at root
+        .root, // at root
         .right, // split right
         0.5,
         &t2, // insert t2
@@ -1896,7 +1916,7 @@ test "SplitTree: spatial goto" {
             },
             .{ .spatial = .right },
         )).?;
-        const view = split.nodes[target].leaf;
+        const view = split.nodes[target.idx()].leaf;
         try testing.expectEqualStrings(view.label, "D");
     }
 
@@ -1914,7 +1934,7 @@ test "SplitTree: spatial goto" {
             },
             .{ .spatial = .left },
         )).?;
-        const view = split.nodes[target].leaf;
+        const view = split.nodes[target.idx()].leaf;
         try testing.expectEqualStrings("A", view.label);
     }
 
@@ -1951,7 +1971,7 @@ test "SplitTree: resize" {
     // A | B horizontal
     var split = try t1.split(
         alloc,
-        0, // at root
+        .root, // at root
         .right, // split right
         0.5,
         &t2, // insert t2
@@ -2028,7 +2048,7 @@ test "SplitTree: zoom" {
     // A | B horizontal
     var split = try t1.split(
         alloc,
-        0, // at root
+        .root, // at root
         .right, // split right
         0.5,
         &t2, // insert t2
@@ -2094,7 +2114,7 @@ test "SplitTree: split resets zoom" {
     // A | B horizontal
     var split = try t1.split(
         alloc,
-        0, // at root
+        .root, // at root
         .right, // split right
         0.5,
         &t2, // insert t2
@@ -2127,7 +2147,7 @@ test "SplitTree: remove and zoom" {
     // A | B horizontal
     var split = try t1.split(
         alloc,
-        0, // at root
+        .root, // at root
         .right, // split right
         0.5,
         &t2, // insert t2

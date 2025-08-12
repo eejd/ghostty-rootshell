@@ -242,7 +242,7 @@ pub const SplitTree = extern struct {
 
         // The handle we create the split relative to. Today this is the active
         // surface but this might be the handle of the given parent if we want.
-        const handle = self.getActiveSurfaceHandle() orelse 0;
+        const handle = self.getActiveSurfaceHandle() orelse .root;
 
         // Create our split!
         var new_tree = try old_tree.split(
@@ -329,7 +329,7 @@ pub const SplitTree = extern struct {
         if (active == target) return false;
 
         // Get the surface at the target location and grab focus.
-        const surface = tree.nodes[target].leaf;
+        const surface = tree.nodes[target.idx()].leaf;
         surface.grabFocus();
 
         return true;
@@ -389,7 +389,7 @@ pub const SplitTree = extern struct {
     pub fn getActiveSurface(self: *Self) ?*Surface {
         const tree = self.getTree() orelse return null;
         const handle = self.getActiveSurfaceHandle() orelse return null;
-        return tree.nodes[handle].leaf;
+        return tree.nodes[handle.idx()].leaf;
     }
 
     fn getActiveSurfaceHandle(self: *Self) ?Surface.Tree.Node.Handle {
@@ -697,7 +697,7 @@ pub const SplitTree = extern struct {
             // Note: we don't need to ref this or anything because its
             // guaranteed to remain in the new tree since its not part
             // of the handle we're removing.
-            break :next_focus old_tree.nodes[next_handle].leaf;
+            break :next_focus old_tree.nodes[next_handle.idx()].leaf;
         };
 
         // Remove it from the tree.
@@ -817,7 +817,7 @@ pub const SplitTree = extern struct {
         if (!tree.isEmpty()) {
             priv.tree_bin.setChild(self.buildTree(
                 tree,
-                tree.zoomed orelse 0,
+                tree.zoomed orelse .root,
             ));
         }
 
@@ -844,7 +844,7 @@ pub const SplitTree = extern struct {
         tree: *const Surface.Tree,
         current: Surface.Tree.Node.Handle,
     ) *gtk.Widget {
-        return switch (tree.nodes[current]) {
+        return switch (tree.nodes[current.idx()]) {
             .leaf => |v| v.as(gtk.Widget),
             .split => |s| SplitTreeSplit.new(
                 current,
@@ -1003,7 +1003,7 @@ const SplitTreeSplit = extern struct {
             self.as(gtk.Widget),
         ) orelse return 0;
         const tree = split_tree.getTree() orelse return 0;
-        const split: *const Surface.Tree.Split = &tree.nodes[priv.handle].split;
+        const split: *const Surface.Tree.Split = &tree.nodes[priv.handle.idx()].split;
 
         // Current, min, and max positions as pixels.
         const pos = paned.getPosition();
