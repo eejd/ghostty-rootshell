@@ -29,6 +29,8 @@ const ChildExited = @import("surface_child_exited.zig").SurfaceChildExited;
 const ClipboardConfirmationDialog = @import("clipboard_confirmation_dialog.zig").ClipboardConfirmationDialog;
 const TitleDialog = @import("surface_title_dialog.zig").SurfaceTitleDialog;
 const Window = @import("window.zig").Window;
+const WeakRef = @import("../weak_ref.zig").WeakRef;
+const InspectorWindow = @import("inspector_window.zig").InspectorWindow;
 
 const log = std.log.scoped(.gtk_ghostty_surface);
 
@@ -470,6 +472,9 @@ pub const Surface = extern struct {
         // false by a parent widget.
         bell_ringing: bool = false,
 
+        /// A weak reference to an inspector window.
+        inspector: WeakRef(InspectorWindow) = .empty,
+
         // Template binds
         child_exited_overlay: *ChildExited,
         context_menu: *gtk.PopoverMenu,
@@ -571,6 +576,58 @@ pub const Surface = extern struct {
     pub fn toggleCommandPalette(self: *Self) bool {
         // TODO: pass the surface with the action
         return self.as(gtk.Widget).activateAction("win.toggle-command-palette", null) != 0;
+    }
+
+    pub fn toggleInspector(self: *Self) bool {
+        const priv = self.private();
+        if (priv.inspector.get()) |inspector| {
+            defer inspector.unref();
+            inspector.shutdown();
+            priv.inspector.set(null);
+            return true;
+        }
+        const inspector = InspectorWindow.new(self);
+        defer inspector.unref();
+        priv.inspector.set(inspector);
+        inspector.present();
+        return true;
+    }
+
+    pub fn showInspector(self: *Self) bool {
+        const priv = self.private();
+        const inspector = priv.inspector.get() orelse inspector: {
+            const inspector = InspectorWindow.new(self);
+            priv.inspector.set(inspector);
+            break :inspector inspector;
+        };
+        defer inspector.unref();
+        inspector.present();
+        return true;
+    }
+
+    pub fn hideInspector(self: *Self) bool {
+        const priv = self.private();
+        if (priv.inspector.get()) |inspector| {
+            defer inspector.unref();
+            inspector.shutdown();
+            priv.inspector.set(null);
+        }
+        return true;
+    }
+
+    pub fn controlInspector(self: *Self, value: apprt.Action.Value(.inspector)) bool {
+        switch (value) {
+            .toggle => return self.toggleInspector(),
+            .show => return self.showInspector(),
+            .hide => return self.hideInspector(),
+        }
+    }
+    /// Redraw our inspector, if there is one associated with this surface.
+    pub fn redrawInspector(self: *Self) void {
+        const priv = self.private();
+        const inspector = priv.inspector.get() orelse return;
+        defer inspector.unref();
+        inspector.queueRender();
     }
 
     pub fn showOnScreenKeyboard(self: *Self, event: ?*gdk.Event) bool {
@@ -1287,15 +1344,22 @@ pub const Surface = extern struct {
 
     fn dispose(self: *Self) callconv(.c) void {
         const priv = self.private();
+
         if (priv.config) |v| {
             v.unref();
             priv.config = null;
         }
+
         if (priv.progress_bar_timer) |timer| {
             if (glib.Source.remove(timer) == 0) {
                 log.warn("unable to remove progress bar timer", .{});
             }
             priv.progress_bar_timer = null;
+        }
+
+        if (priv.inspector.get()) |inspector| {
+            defer inspector.unref();
+            inspector.shutdown();
         }
 
         gtk.Widget.disposeTemplate(

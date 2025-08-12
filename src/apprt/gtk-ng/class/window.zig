@@ -28,6 +28,7 @@ const Surface = @import("surface.zig").Surface;
 const Tab = @import("tab.zig").Tab;
 const DebugWarning = @import("debug_warning.zig").DebugWarning;
 const CommandPalette = @import("command_palette.zig").CommandPalette;
+const InspectorWindow = @import("inspector_window.zig").InspectorWindow;
 const WeakRef = @import("../weak_ref.zig").WeakRef;
 
 const log = std.log.scoped(.gtk_ghostty_window);
@@ -347,6 +348,7 @@ pub const Window = extern struct {
             .{ "clear", actionClear, null },
             // TODO: accept the surface that toggled the command palette
             .{ "toggle-command-palette", actionToggleCommandPalette, null },
+            .{ "toggle-inspector", actionToggleInspector, null },
         };
 
         const action_map = self.as(gio.ActionMap);
@@ -1818,6 +1820,23 @@ pub const Window = extern struct {
         // TODO: accept the surface that toggled the command palette as a
         // parameter
         self.toggleCommandPalette();
+    }
+
+    /// Toggle the Ghostty inspector for the active surface.
+    fn toggleInspector(self: *Self) void {
+        const surface = self.getActiveSurface() orelse return;
+        _ = surface.toggleInspector();
+    }
+
+    /// React to a GTK action requesting that the Ghostty inspector be toggled.
+    fn actionToggleInspector(
+        _: *gio.SimpleAction,
+        _: ?*glib.Variant,
+        self: *Window,
+    ) callconv(.c) void {
+        // TODO: accept the surface that toggled the command palette as a
+        // parameter
+        self.toggleInspector();
     }
 
     const C = Common(Self, Private);
