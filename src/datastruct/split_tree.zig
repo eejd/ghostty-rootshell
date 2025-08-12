@@ -723,6 +723,8 @@ pub fn SplitTree(comptime V: type) type {
             ratio: f16,
         ) Allocator.Error!Self {
             assert(ratio >= 0 and ratio <= 1);
+            assert(!std.math.isNan(ratio));
+            assert(!std.math.isInf(ratio));
 
             // Fast path empty trees.
             if (self.isEmpty()) return .empty;
