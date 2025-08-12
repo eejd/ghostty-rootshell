@@ -56,6 +56,11 @@ pub fn SplitTree(comptime V: type) type {
         /// All the nodes in the tree. Node at index 0 is always the root.
         nodes: []const Node,
 
+        /// The handle of the zoomed node. A "zoomed" node is one that is
+        /// expected to be made the full size of the split tree. Various
+        /// operations may unzoom (e.g. resize).
+        zoomed: ?Node.Handle,
+
         /// An empty tree.
         pub const empty: Self = .{
             // Arena can be undefined because we have zero allocated nodes.
@@ -63,6 +68,7 @@ pub fn SplitTree(comptime V: type) type {
             // arena.
             .arena = undefined,
             .nodes = &.{},
+            .zoomed = null,
         };
 
         pub const Node = union(enum) {
@@ -98,6 +104,7 @@ pub fn SplitTree(comptime V: type) type {
             return .{
                 .arena = arena,
                 .nodes = nodes,
+                .zoomed = null,
             };
         }
 
@@ -136,6 +143,7 @@ pub fn SplitTree(comptime V: type) type {
             return .{
                 .arena = arena,
                 .nodes = nodes,
+                .zoomed = self.zoomed,
             };
         }
 
@@ -176,6 +184,13 @@ pub fn SplitTree(comptime V: type) type {
                 };
             }
         };
+
+        /// Change the zoomed state to the given node. Assumes the handle
+        /// is valid.
+        pub fn zoom(self: *Self, handle: ?Node.Handle) void {
+            if (handle) |v| assert(v >= 0 and v < self.nodes.len);
+            self.zoomed = handle;
+        }
 
         pub const Goto = union(enum) {
             /// Previous view, null if we're the first view.
@@ -472,7 +487,12 @@ pub fn SplitTree(comptime V: type) type {
             // We need to increase the reference count of all the nodes.
             try refNodes(gpa, nodes);
 
-            return .{ .arena = arena, .nodes = nodes };
+            return .{
+                .arena = arena,
+                .nodes = nodes,
+                // Splitting always resets zoom state.
+                .zoomed = null,
+            };
         }
 
         /// Remove a node from the tree.
@@ -499,9 +519,15 @@ pub fn SplitTree(comptime V: type) type {
                 0,
             ));
 
+            var result: Self = .{
+                .arena = arena,
+                .nodes = nodes,
+                .zoomed = null,
+            };
+
             // Traverse the tree and copy all our nodes into place.
             assert(self.removeNode(
-                nodes,
+                &result,
                 0,
                 0,
                 at,
@@ -510,27 +536,39 @@ pub fn SplitTree(comptime V: type) type {
             // Increase the reference count of all the nodes.
             try refNodes(gpa, nodes);
 
-            return .{
-                .arena = arena,
-                .nodes = nodes,
-            };
+            return result;
         }
 
         fn removeNode(
-            self: *Self,
-            nodes: []Node,
+            old: *Self,
+            new: *Self,
             new_offset: Node.Handle,
             current: Node.Handle,
             target: Node.Handle,
         ) Node.Handle {
             assert(current != target);
 
-            switch (self.nodes[current]) {
+            // If we have a zoomed node and this is it then we migrate it.
+            if (old.zoomed) |v| {
+                if (v == current) {
+                    assert(new.zoomed == null);
+                    new.zoomed = new_offset;
+                }
+            }
+
+            // Let's talk about this constCast. Our member are const but
+            // we actually always own their memory. We don't want consumers
+            // who directly access the nodes to be able to modify them
+            // (without nasty stuff like this), but given this is internal
+            // usage its perfectly fine to modify the node in-place.
+            const new_nodes: []Node = @constCast(new.nodes);
+
+            switch (old.nodes[current]) {
                 // Leaf is simple, just copy it over. We don't ref anything
                 // yet because it'd make undo (errdefer) harder. We do that
                 // all at once later.
                 .leaf => |view| {
-                    nodes[new_offset] = .{ .leaf = view };
+                    new_nodes[new_offset] = .{ .leaf = view };
                     return 1;
                 },
 
@@ -538,35 +576,35 @@ pub fn SplitTree(comptime V: type) type {
                     // If we're removing one of the split node sides then
                     // we remove the split node itself as well and only add
                     // the other (non-removed) side.
-                    if (s.left == target) return self.removeNode(
-                        nodes,
+                    if (s.left == target) return old.removeNode(
+                        new,
                         new_offset,
                         s.right,
                         target,
                     );
-                    if (s.right == target) return self.removeNode(
-                        nodes,
+                    if (s.right == target) return old.removeNode(
+                        new,
                         new_offset,
                         s.left,
                         target,
                     );
 
                     // Neither side is being directly removed, so we traverse.
-                    const left = self.removeNode(
-                        nodes,
+                    const left = old.removeNode(
+                        new,
                         new_offset + 1,
                         s.left,
                         target,
                     );
                     assert(left > 0);
-                    const right = self.removeNode(
-                        nodes,
+                    const right = old.removeNode(
+                        new,
                         new_offset + 1 + left,
                         s.right,
                         target,
                     );
                     assert(right > 0);
-                    nodes[new_offset] = .{ .split = .{
+                    new_nodes[new_offset] = .{ .split = .{
                         .layout = s.layout,
                         .ratio = s.ratio,
                         .left = new_offset + 1,
@@ -679,6 +717,7 @@ pub fn SplitTree(comptime V: type) type {
             return .{
                 .arena = arena,
                 .nodes = nodes,
+                .zoomed = self.zoomed,
             };
         }
 
@@ -1004,6 +1043,10 @@ pub fn SplitTree(comptime V: type) type {
             depth: usize,
         ) !void {
             for (0..depth) |_| try writer.writeAll("  ");
+
+            if (self.zoomed) |zoomed| if (zoomed == current) {
+                try writer.writeAll("(zoomed) ");
+            };
 
             switch (self.nodes[current]) {
                 .leaf => |v| if (@hasDecl(View, "splitTreeLabel"))
@@ -1967,6 +2010,182 @@ test "SplitTree: clone empty tree" {
         defer alloc.free(str);
         try testing.expectEqualStrings(str,
             \\empty
+        );
+    }
+}
+
+test "SplitTree: zoom" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var v1: TestTree.View = .{ .label = "A" };
+    var t1: TestTree = try .init(alloc, &v1);
+    defer t1.deinit();
+    var v2: TestTree.View = .{ .label = "B" };
+    var t2: TestTree = try .init(alloc, &v2);
+    defer t2.deinit();
+
+    // A | B horizontal
+    var split = try t1.split(
+        alloc,
+        0, // at root
+        .right, // split right
+        0.5,
+        &t2, // insert t2
+    );
+    defer split.deinit();
+    split.zoom(at: {
+        var it = split.iterator();
+        break :at while (it.next()) |entry| {
+            if (std.mem.eql(u8, entry.view.label, "B")) {
+                break entry.handle;
+            }
+        } else return error.NotFound;
+    });
+
+    {
+        const str = try std.fmt.allocPrint(alloc, "{text}", .{split});
+        defer alloc.free(str);
+        try testing.expectEqualStrings(str,
+            \\split (layout: horizontal, ratio: 0.50)
+            \\  leaf: A
+            \\  (zoomed) leaf: B
+            \\
+        );
+    }
+
+    // Clone preserves zoom
+    var clone = try split.clone(alloc);
+    defer clone.deinit();
+
+    {
+        const str = try std.fmt.allocPrint(alloc, "{text}", .{clone});
+        defer alloc.free(str);
+        try testing.expectEqualStrings(str,
+            \\split (layout: horizontal, ratio: 0.50)
+            \\  leaf: A
+            \\  (zoomed) leaf: B
+            \\
+        );
+    }
+}
+
+test "SplitTree: split resets zoom" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var v1: TestTree.View = .{ .label = "A" };
+    var t1: TestTree = try .init(alloc, &v1);
+    defer t1.deinit();
+    var v2: TestTree.View = .{ .label = "B" };
+    var t2: TestTree = try .init(alloc, &v2);
+    defer t2.deinit();
+
+    // Zoom A
+    t1.zoom(at: {
+        var it = t1.iterator();
+        break :at while (it.next()) |entry| {
+            if (std.mem.eql(u8, entry.view.label, "A")) {
+                break entry.handle;
+            }
+        } else return error.NotFound;
+    });
+
+    // A | B horizontal
+    var split = try t1.split(
+        alloc,
+        0, // at root
+        .right, // split right
+        0.5,
+        &t2, // insert t2
+    );
+    defer split.deinit();
+
+    {
+        const str = try std.fmt.allocPrint(alloc, "{text}", .{split});
+        defer alloc.free(str);
+        try testing.expectEqualStrings(str,
+            \\split (layout: horizontal, ratio: 0.50)
+            \\  leaf: A
+            \\  leaf: B
+            \\
+        );
+    }
+}
+
+test "SplitTree: remove and zoom" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var v1: TestTree.View = .{ .label = "A" };
+    var t1: TestTree = try .init(alloc, &v1);
+    defer t1.deinit();
+    var v2: TestTree.View = .{ .label = "B" };
+    var t2: TestTree = try .init(alloc, &v2);
+    defer t2.deinit();
+
+    // A | B horizontal
+    var split = try t1.split(
+        alloc,
+        0, // at root
+        .right, // split right
+        0.5,
+        &t2, // insert t2
+    );
+    defer split.deinit();
+    split.zoom(at: {
+        var it = split.iterator();
+        break :at while (it.next()) |entry| {
+            if (std.mem.eql(u8, entry.view.label, "A")) {
+                break entry.handle;
+            }
+        } else return error.NotFound;
+    });
+
+    // Remove A, should unzoom
+    {
+        var removed = try split.remove(
+            alloc,
+            at: {
+                var it = split.iterator();
+                break :at while (it.next()) |entry| {
+                    if (std.mem.eql(u8, entry.view.label, "A")) {
+                        break entry.handle;
+                    }
+                } else return error.NotFound;
+            },
+        );
+        defer removed.deinit();
+        try testing.expect(removed.zoomed == null);
+
+        const str = try std.fmt.allocPrint(alloc, "{text}", .{removed});
+        defer alloc.free(str);
+        try testing.expectEqualStrings(str,
+            \\leaf: B
+            \\
+        );
+    }
+
+    // Remove B, should keep zoom
+    {
+        var removed = try split.remove(
+            alloc,
+            at: {
+                var it = split.iterator();
+                break :at while (it.next()) |entry| {
+                    if (std.mem.eql(u8, entry.view.label, "B")) {
+                        break entry.handle;
+                    }
+                } else return error.NotFound;
+            },
+        );
+        defer removed.deinit();
+
+        const str = try std.fmt.allocPrint(alloc, "{text}", .{removed});
+        defer alloc.free(str);
+        try testing.expectEqualStrings(str,
+            \\(zoomed) leaf: A
+            \\
         );
     }
 }

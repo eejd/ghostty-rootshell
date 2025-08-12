@@ -165,6 +165,7 @@ pub const SplitTree = extern struct {
             .{ "new-down", actionNewDown, null },
 
             .{ "equalize", actionEqualize, null },
+            .{ "zoom", actionZoom, null },
         };
 
         // We need to collect our actions into a group since we're just
@@ -600,6 +601,23 @@ pub const SplitTree = extern struct {
         self.setTree(&new_tree);
     }
 
+    pub fn actionZoom(
+        _: *gio.SimpleAction,
+        _: ?*glib.Variant,
+        self: *Self,
+    ) callconv(.c) void {
+        const tree = self.getTree() orelse return;
+        if (tree.zoomed != null) {
+            tree.zoomed = null;
+        } else {
+            const active = self.getActiveSurfaceHandle() orelse return;
+            if (tree.zoomed == active) return;
+            tree.zoom(active);
+        }
+
+        self.as(gobject.Object).notifyByPspec(properties.tree.impl.param_spec);
+    }
+
     fn surfaceCloseRequest(
         surface: *Surface,
         scope: *const Surface.CloseScope,
@@ -797,7 +815,10 @@ pub const SplitTree = extern struct {
         // Rebuild our tree
         const tree: *const Surface.Tree = self.private().tree orelse &.empty;
         if (!tree.isEmpty()) {
-            priv.tree_bin.setChild(self.buildTree(tree, 0));
+            priv.tree_bin.setChild(self.buildTree(
+                tree,
+                tree.zoomed orelse 0,
+            ));
         }
 
         // If we have a last focused surface, we need to refocus it, because
