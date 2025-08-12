@@ -11,6 +11,7 @@ const gtk = @import("gtk");
 const i18n = @import("../../../os/main.zig").i18n;
 const apprt = @import("../../../apprt.zig");
 const configpkg = @import("../../../config.zig");
+const TitlebarStyle = configpkg.Config.GtkTitlebarStyle;
 const input = @import("../../../input.zig");
 const CoreSurface = @import("../../../Surface.zig");
 const ext = @import("../ext.zig");
@@ -22,9 +23,12 @@ const Common = @import("../class.zig").Common;
 const Config = @import("config.zig").Config;
 const Application = @import("application.zig").Application;
 const CloseConfirmationDialog = @import("close_confirmation_dialog.zig").CloseConfirmationDialog;
+const SplitTree = @import("split_tree.zig").SplitTree;
 const Surface = @import("surface.zig").Surface;
 const Tab = @import("tab.zig").Tab;
 const DebugWarning = @import("debug_warning.zig").DebugWarning;
+const CommandPalette = @import("command_palette.zig").CommandPalette;
+const WeakRef = @import("../weak_ref.zig").WeakRef;
 
 const log = std.log.scoped(.gtk_ghostty_window);
 
@@ -52,8 +56,6 @@ pub const Window = extern struct {
                 Self,
                 ?*Surface,
                 .{
-                    .nick = "Active Surface",
-                    .blurb = "The currently active surface.",
                     .accessor = gobject.ext.typedAccessor(
                         Self,
                         ?*Surface,
@@ -72,8 +74,6 @@ pub const Window = extern struct {
                 Self,
                 ?*Config,
                 .{
-                    .nick = "Config",
-                    .blurb = "The configuration that this surface is using.",
                     .accessor = C.privateObjFieldAccessor("config"),
                 },
             );
@@ -86,8 +86,6 @@ pub const Window = extern struct {
                 Self,
                 bool,
                 .{
-                    .nick = "Debug",
-                    .blurb = "True if runtime safety checks are enabled.",
                     .default = build_config.is_debug,
                     .accessor = gobject.ext.typedAccessor(Self, bool, .{
                         .getter = struct {
@@ -100,6 +98,25 @@ pub const Window = extern struct {
             );
         };
 
+        pub const @"titlebar-style" = struct {
+            pub const name = "titlebar-style";
+            const impl = gobject.ext.defineProperty(
+                name,
+                Self,
+                TitlebarStyle,
+                .{
+                    .default = .native,
+                    .accessor = gobject.ext.typedAccessor(
+                        Self,
+                        TitlebarStyle,
+                        .{
+                            .getter = Self.getTitlebarStyle,
+                        },
+                    ),
+                },
+            );
+        };
+
         pub const @"headerbar-visible" = struct {
             pub const name = "headerbar-visible";
             const impl = gobject.ext.defineProperty(
@@ -107,28 +124,9 @@ pub const Window = extern struct {
                 Self,
                 bool,
                 .{
-                    .nick = "Headerbar Visible",
-                    .blurb = "True if the headerbar is visible.",
                     .default = true,
                     .accessor = gobject.ext.typedAccessor(Self, bool, .{
                         .getter = Self.getHeaderbarVisible,
-                    }),
-                },
-            );
-        };
-
-        pub const @"background-opaque" = struct {
-            pub const name = "background-opaque";
-            const impl = gobject.ext.defineProperty(
-                name,
-                Self,
-                bool,
-                .{
-                    .nick = "Background Opaque",
-                    .blurb = "True if the background should be opaque.",
-                    .default = true,
-                    .accessor = gobject.ext.typedAccessor(Self, bool, .{
-                        .getter = Self.getBackgroundOpaque,
                     }),
                 },
             );
@@ -141,8 +139,6 @@ pub const Window = extern struct {
                 Self,
                 bool,
                 .{
-                    .nick = "Quick Terminal",
-                    .blurb = "Whether this window behaves like a quick terminal.",
                     .default = true,
                     .accessor = gobject.ext.privateFieldAccessor(
                         Self,
@@ -161,8 +157,6 @@ pub const Window = extern struct {
                 Self,
                 bool,
                 .{
-                    .nick = "Autohide Tab Bar",
-                    .blurb = "If true, tab bar should autohide.",
                     .default = true,
                     .accessor = gobject.ext.typedAccessor(Self, bool, .{
                         .getter = Self.getTabsAutohide,
@@ -178,8 +172,6 @@ pub const Window = extern struct {
                 Self,
                 bool,
                 .{
-                    .nick = "Wide Tabs",
-                    .blurb = "If true, tabs will be in the wide expanded style.",
                     .default = true,
                     .accessor = gobject.ext.typedAccessor(Self, bool, .{
                         .getter = Self.getTabsWide,
@@ -195,8 +187,6 @@ pub const Window = extern struct {
                 Self,
                 bool,
                 .{
-                    .nick = "Tab Bar Visibility",
-                    .blurb = "If true, tab bar should be visible.",
                     .default = true,
                     .accessor = gobject.ext.typedAccessor(Self, bool, .{
                         .getter = Self.getTabsVisible,
@@ -212,8 +202,6 @@ pub const Window = extern struct {
                 Self,
                 adw.ToolbarStyle,
                 .{
-                    .nick = "Toolbar Style",
-                    .blurb = "The style for the toolbar top/bottom bars.",
                     .default = .raised,
                     .accessor = gobject.ext.typedAccessor(
                         Self,
@@ -261,6 +249,9 @@ pub const Window = extern struct {
         /// See tabOverviewOpen for why we have this.
         tab_overview_focus_timer: ?c_uint = null,
 
+        /// A weak reference to a command palette.
+        command_palette: WeakRef(CommandPalette) = .empty,
+
         // Template bindings
         tab_overview: *adw.TabOverview,
         tab_bar: *adw.TabBar,
@@ -277,7 +268,7 @@ pub const Window = extern struct {
         });
     }
 
-    fn init(self: *Self, _: *Class) callconv(.C) void {
+    fn init(self: *Self, _: *Class) callconv(.c) void {
         gtk.Widget.initTemplate(self.as(gtk.Widget));
 
         // If our configuration is null then we get the configuration
@@ -345,10 +336,16 @@ pub const Window = extern struct {
             .{ "close-tab", actionCloseTab, null },
             .{ "new-tab", actionNewTab, null },
             .{ "new-window", actionNewWindow, null },
+            .{ "split-right", actionSplitRight, null },
+            .{ "split-left", actionSplitLeft, null },
+            .{ "split-up", actionSplitUp, null },
+            .{ "split-down", actionSplitDown, null },
             .{ "copy", actionCopy, null },
             .{ "paste", actionPaste, null },
             .{ "reset", actionReset, null },
             .{ "clear", actionClear, null },
+            // TODO: accept the surface that toggled the command palette
+            .{ "toggle-command-palette", actionToggleCommandPalette, null },
         };
 
         const action_map = self.as(gio.ActionMap);
@@ -418,6 +415,25 @@ pub const Window = extern struct {
             page.as(gobject.Object),
             "title",
             .{ .sync_create = true },
+        );
+
+        // Bind signals
+        const split_tree = tab.getSplitTree();
+        _ = SplitTree.signals.changed.connect(
+            split_tree,
+            *Self,
+            tabSplitTreeChanged,
+            self,
+            .{},
+        );
+
+        // Run an initial notification for the surface tree so we can setup
+        // initial state.
+        tabSplitTreeChanged(
+            split_tree,
+            null,
+            split_tree.getTree(),
+            self,
         );
 
         return page;
@@ -553,12 +569,12 @@ pub const Window = extern struct {
 
         // Trigger all our dynamic properties that depend on the config.
         inline for (&.{
-            "background-opaque",
             "headerbar-visible",
             "tabs-autohide",
             "tabs-visible",
             "tabs-wide",
             "toolbar-style",
+            "titlebar-style",
         }) |key| {
             self.as(gobject.Object).notifyByPspec(
                 @field(properties, key).impl.param_spec,
@@ -567,6 +583,12 @@ pub const Window = extern struct {
 
         // Remainder uses the config
         const config = if (priv.config) |v| v.get() else return;
+
+        // Only add a solid background if we're opaque.
+        self.toggleCssClass(
+            "background",
+            config.@"background-opacity" >= 1,
+        );
 
         // Apply class to color headerbar if window-theme is set to `ghostty` and
         // GTK version is before 4.16. The conditional is because above 4.16
@@ -588,6 +610,27 @@ pub const Window = extern struct {
         priv.winproto.syncAppearance() catch |err| {
             log.warn("failed to sync winproto appearance error={}", .{err});
         };
+    }
+
+    /// Sync the state of any actions on this window.
+    fn syncActions(self: *Self) void {
+        const has_selection = selection: {
+            const surface = self.getActiveSurface() orelse
+                break :selection false;
+            const core_surface = surface.core() orelse
+                break :selection false;
+            break :selection core_surface.hasSelection();
+        };
+
+        const action_map: *gio.ActionMap = gobject.ext.cast(
+            gio.ActionMap,
+            self,
+        ) orelse return;
+        const action: *gio.SimpleAction = gobject.ext.cast(
+            gio.SimpleAction,
+            action_map.lookupAction("copy") orelse return,
+        ) orelse return;
+        action.setEnabled(@intFromBool(has_selection));
     }
 
     fn toggleCssClass(self: *Self, class: [:0]const u8, value: bool) void {
@@ -621,6 +664,95 @@ pub const Window = extern struct {
         const toast = adw.Toast.new(title);
         toast.setTimeout(3);
         self.private().toast_overlay.addToast(toast);
+    }
+
+    fn connectSurfaceHandlers(
+        self: *Self,
+        tree: *const Surface.Tree,
+    ) void {
+        const priv = self.private();
+        var it = tree.iterator();
+        while (it.next()) |entry| {
+            const surface = entry.view;
+            _ = Surface.signals.@"close-request".connect(
+                surface,
+                *Self,
+                surfaceCloseRequest,
+                self,
+                .{},
+            );
+            _ = Surface.signals.@"present-request".connect(
+                surface,
+                *Self,
+                surfacePresentRequest,
+                self,
+                .{},
+            );
+            _ = Surface.signals.@"clipboard-write".connect(
+                surface,
+                *Self,
+                surfaceClipboardWrite,
+                self,
+                .{},
+            );
+            _ = Surface.signals.menu.connect(
+                surface,
+                *Self,
+                surfaceMenu,
+                self,
+                .{},
+            );
+            _ = Surface.signals.@"toggle-fullscreen".connect(
+                surface,
+                *Self,
+                surfaceToggleFullscreen,
+                self,
+                .{},
+            );
+            _ = Surface.signals.@"toggle-maximize".connect(
+                surface,
+                *Self,
+                surfaceToggleMaximize,
+                self,
+                .{},
+            );
+
+            // If we've never had a surface initialize yet, then we register
+            // this signal. Its theoretically possible to launch multiple surfaces
+            // before init so we could register this on multiple and that is not
+            // a problem because we'll check the flag again in each handler.
+            if (!priv.surface_init) {
+                _ = Surface.signals.init.connect(
+                    surface,
+                    *Self,
+                    surfaceInit,
+                    self,
+                    .{},
+                );
+            }
+        }
+    }
+
+    /// Disconnect all the surface handlers for the given tree. This should
+    /// be called whenever a tree is no longer present in the window, e.g.
+    /// when a tab is detached or the tree changes.
+    fn disconnectSurfaceHandlers(
+        self: *Self,
+        tree: *const Surface.Tree,
+    ) void {
+        var it = tree.iterator();
+        while (it.next()) |entry| {
+            const surface = entry.view;
+            _ = gobject.signalHandlersDisconnectMatched(
+                surface.as(gobject.Object),
+                .{ .data = true },
+                0,
+                0,
+                null,
+                null,
+                self,
+            );
+        }
     }
 
     //---------------------------------------------------------------
@@ -702,6 +834,14 @@ pub const Window = extern struct {
         return false;
     }
 
+    fn isFullscreen(self: *Window) bool {
+        return self.as(gtk.Window).isFullscreen() != 0;
+    }
+
+    fn isMaximized(self: *Window) bool {
+        return self.as(gtk.Window).isMaximized() != 0;
+    }
+
     fn getHeaderbarVisible(self: *Self) bool {
         const priv = self.private();
 
@@ -713,52 +853,70 @@ pub const Window = extern struct {
         if (priv.quick_terminal) return false;
 
         // If we're fullscreen we never show the header bar.
-        if (self.as(gtk.Window).isFullscreen() != 0) return false;
+        if (self.isFullscreen()) return false;
 
         // The remainder needs a config
         const config_obj = self.private().config orelse return true;
         const config = config_obj.get();
 
-        // *Conditionally* disable the header bar when maximized,
-        // and gtk-titlebar-hide-when-maximized is set
-        if (self.as(gtk.Window).isMaximized() != 0 and
-            config.@"gtk-titlebar-hide-when-maximized")
-        {
+        // *Conditionally* disable the header bar when maximized, and
+        // gtk-titlebar-hide-when-maximized is set
+        if (self.isMaximized() and config.@"gtk-titlebar-hide-when-maximized") {
             return false;
         }
 
-        return config.@"gtk-titlebar";
-    }
+        return switch (config.@"gtk-titlebar-style") {
+            // If the titlebar style is tabs never show the titlebar.
+            .tabs => false,
 
-    fn getBackgroundOpaque(self: *Self) bool {
-        const priv = self.private();
-        const config = (priv.config orelse return true).get();
-        return config.@"background-opacity" >= 1.0;
+            // If the titlebar style is native show the titlebar if configured
+            // to do so.
+            .native => config.@"gtk-titlebar",
+        };
     }
 
     fn getTabsAutohide(self: *Self) bool {
         const priv = self.private();
         const config = if (priv.config) |v| v.get() else return true;
-        return switch (config.@"window-show-tab-bar") {
-            // Auto we always autohide... obviously.
-            .auto => true,
 
-            // Always we never autohide because we always show the tab bar.
-            .always => false,
+        return switch (config.@"gtk-titlebar-style") {
+            // If the titlebar style is tabs we cannot autohide.
+            .tabs => false,
 
-            // Never we autohide because it doesn't actually matter,
-            // since getTabsVisible will return false.
-            .never => true,
+            .native => switch (config.@"window-show-tab-bar") {
+                // Auto we always autohide... obviously.
+                .auto => true,
+
+                // Always we never autohide because we always show the tab bar.
+                .always => false,
+
+                // Never we autohide because it doesn't actually matter,
+                // since getTabsVisible will return false.
+                .never => true,
+            },
         };
     }
 
     fn getTabsVisible(self: *Self) bool {
         const priv = self.private();
         const config = if (priv.config) |v| v.get() else return true;
-        return switch (config.@"window-show-tab-bar") {
-            .always, .auto => true,
-            .never => false,
-        };
+
+        switch (config.@"gtk-titlebar-style") {
+            .tabs => {
+                // *Conditionally* disable the tab bar when maximized, the titlebar
+                // style is tabs, and gtk-titlebar-hide-when-maximized is set.
+                if (self.isMaximized() and config.@"gtk-titlebar-hide-when-maximized") return false;
+
+                // If the titlebar style is tabs the tab bar must always be visible.
+                return true;
+            },
+            .native => {
+                return switch (config.@"window-show-tab-bar") {
+                    .always, .auto => true,
+                    .never => false,
+                };
+            },
+        }
     }
 
     fn getTabsWide(self: *Self) bool {
@@ -775,6 +933,12 @@ pub const Window = extern struct {
             .raised => .raised,
             .@"raised-border" => .raised_border,
         };
+    }
+
+    fn getTitlebarStyle(self: *Self) TitlebarStyle {
+        const priv = self.private();
+        const config = if (priv.config) |v| v.get() else return .native;
+        return config.@"gtk-titlebar-style";
     }
 
     fn propConfig(
@@ -845,23 +1009,7 @@ pub const Window = extern struct {
         const active = button.getActive() != 0;
         if (!active) return;
 
-        const has_selection = selection: {
-            const surface = self.getActiveSurface() orelse
-                break :selection false;
-            const core_surface = surface.core() orelse
-                break :selection false;
-            break :selection core_surface.hasSelection();
-        };
-
-        const action_map: *gio.ActionMap = gobject.ext.cast(
-            gio.ActionMap,
-            self,
-        ) orelse return;
-        const action: *gio.SimpleAction = gobject.ext.cast(
-            gio.SimpleAction,
-            action_map.lookupAction("copy") orelse return,
-        ) orelse return;
-        action.setEnabled(@intFromBool(has_selection));
+        self.syncActions();
     }
 
     fn propQuickTerminal(
@@ -884,16 +1032,6 @@ pub const Window = extern struct {
         }
     }
 
-    /// Add or remove "background" CSS class depending on if the background
-    /// should be opaque.
-    fn propBackgroundOpaque(
-        _: *adw.ApplicationWindow,
-        _: *gobject.ParamSpec,
-        self: *Self,
-    ) callconv(.c) void {
-        self.toggleCssClass("background", self.getBackgroundOpaque());
-    }
-
     fn propScaleFactor(
         _: *adw.ApplicationWindow,
         _: *gobject.ParamSpec,
@@ -912,15 +1050,29 @@ pub const Window = extern struct {
         };
     }
 
+    fn closureTitlebarStyleIsTab(
+        _: *Self,
+        value: TitlebarStyle,
+    ) callconv(.c) c_int {
+        return @intFromBool(switch (value) {
+            .native => false,
+            .tabs => true,
+        });
+    }
+
     //---------------------------------------------------------------
     // Virtual methods
 
-    fn dispose(self: *Self) callconv(.C) void {
+    fn dispose(self: *Self) callconv(.c) void {
         const priv = self.private();
+
+        priv.command_palette.set(null);
+
         if (priv.config) |v| {
             v.unref();
             priv.config = null;
         }
+
         priv.tab_bindings.setSource(null);
 
         gtk.Widget.disposeTemplate(
@@ -934,7 +1086,7 @@ pub const Window = extern struct {
         );
     }
 
-    fn finalize(self: *Self) callconv(.C) void {
+    fn finalize(self: *Self) callconv(.c) void {
         const priv = self.private();
         priv.tab_bindings.unref();
         priv.winproto.deinit(Application.default().allocator());
@@ -1152,8 +1304,6 @@ pub const Window = extern struct {
         _: c_int,
         self: *Self,
     ) callconv(.c) void {
-        const priv = self.private();
-
         // Get the attached page which must be a Tab object.
         const child = page.getChild();
         const tab = gobject.ext.cast(Tab, child) orelse return;
@@ -1186,57 +1336,8 @@ pub const Window = extern struct {
         // behavior is consistent with macOS and the previous GTK apprt,
         // but that behavior was all implicit and not documented, so here
         // I am.
-        //
-        // TODO: When we have a split tree we'll want to attach to that.
-        const surface = tab.getActiveSurface();
-        _ = Surface.signals.@"close-request".connect(
-            surface,
-            *Self,
-            surfaceCloseRequest,
-            self,
-            .{},
-        );
-        _ = Surface.signals.@"present-request".connect(
-            surface,
-            *Self,
-            surfacePresentRequest,
-            self,
-            .{},
-        );
-        _ = Surface.signals.@"clipboard-write".connect(
-            surface,
-            *Self,
-            surfaceClipboardWrite,
-            self,
-            .{},
-        );
-        _ = Surface.signals.@"toggle-fullscreen".connect(
-            surface,
-            *Self,
-            surfaceToggleFullscreen,
-            self,
-            .{},
-        );
-        _ = Surface.signals.@"toggle-maximize".connect(
-            surface,
-            *Self,
-            surfaceToggleMaximize,
-            self,
-            .{},
-        );
-
-        // If we've never had a surface initialize yet, then we register
-        // this signal. Its theoretically possible to launch multiple surfaces
-        // before init so we could register this on multiple and that is not
-        // a problem because we'll check the flag again in each handler.
-        if (!priv.surface_init) {
-            _ = Surface.signals.init.connect(
-                surface,
-                *Self,
-                surfaceInit,
-                self,
-                .{},
-            );
+        if (tab.getSurfaceTree()) |tree| {
+            self.connectSurfaceHandlers(tree);
         }
     }
 
@@ -1259,17 +1360,10 @@ pub const Window = extern struct {
             self,
         );
 
-        // Remove all the signals that have this window as the userdata.
-        const surface = tab.getActiveSurface();
-        _ = gobject.signalHandlersDisconnectMatched(
-            surface.as(gobject.Object),
-            .{ .data = true },
-            0,
-            0,
-            null,
-            null,
-            self,
-        );
+        // Remove the tree handlers
+        if (tab.getSurfaceTree()) |tree| {
+            self.disconnectSurfaceHandlers(tree);
+        }
     }
 
     fn tabViewCreateWindow(
@@ -1353,6 +1447,13 @@ pub const Window = extern struct {
             // The only one we care about!
             .window => self.as(gtk.Window).close(),
         }
+    }
+
+    fn surfaceMenu(
+        _: *Surface,
+        self: *Self,
+    ) callconv(.c) void {
+        self.syncActions();
     }
 
     fn surfacePresentRequest(
@@ -1452,6 +1553,21 @@ pub const Window = extern struct {
         }
     }
 
+    fn tabSplitTreeChanged(
+        _: *SplitTree,
+        old_tree: ?*const Surface.Tree,
+        new_tree: ?*const Surface.Tree,
+        self: *Self,
+    ) callconv(.c) void {
+        if (old_tree) |tree| {
+            self.disconnectSurfaceHandlers(tree);
+        }
+
+        if (new_tree) |tree| {
+            self.connectSurfaceHandlers(tree);
+        }
+    }
+
     fn actionAbout(
         _: *gio.SimpleAction,
         _: ?*glib.Variant,
@@ -1528,6 +1644,38 @@ pub const Window = extern struct {
         self.performBindingAction(.new_tab);
     }
 
+    fn actionSplitRight(
+        _: *gio.SimpleAction,
+        _: ?*glib.Variant,
+        self: *Window,
+    ) callconv(.c) void {
+        self.performBindingAction(.{ .new_split = .right });
+    }
+
+    fn actionSplitLeft(
+        _: *gio.SimpleAction,
+        _: ?*glib.Variant,
+        self: *Window,
+    ) callconv(.c) void {
+        self.performBindingAction(.{ .new_split = .left });
+    }
+
+    fn actionSplitUp(
+        _: *gio.SimpleAction,
+        _: ?*glib.Variant,
+        self: *Window,
+    ) callconv(.c) void {
+        self.performBindingAction(.{ .new_split = .up });
+    }
+
+    fn actionSplitDown(
+        _: *gio.SimpleAction,
+        _: ?*glib.Variant,
+        self: *Window,
+    ) callconv(.c) void {
+        self.performBindingAction(.{ .new_split = .down });
+    }
+
     fn actionCopy(
         _: *gio.SimpleAction,
         _: ?*glib.Variant,
@@ -1560,6 +1708,68 @@ pub const Window = extern struct {
         self.performBindingAction(.clear_screen);
     }
 
+    /// Toggle the command palette.
+    ///
+    /// TODO: accept the surface that toggled the command palette as a parameter
+    fn toggleCommandPalette(self: *Window) void {
+        const priv = self.private();
+
+        // Get a reference to a command palette. First check the weak reference
+        // that we save to see if we already have one stored. If we don't then
+        // create a new one.
+        const command_palette = priv.command_palette.get() orelse command_palette: {
+            // Create a fresh command palette.
+            const command_palette = CommandPalette.new();
+
+            // Synchronize our config to the command palette's config.
+            _ = gobject.Object.bindProperty(
+                self.as(gobject.Object),
+                "config",
+                command_palette.as(gobject.Object),
+                "config",
+                .{ .sync_create = true },
+            );
+
+            // Listen to the activate signal to know if the user selected an option in
+            // the command palette.
+            _ = CommandPalette.signals.trigger.connect(
+                command_palette,
+                *Window,
+                signalCommandPaletteTrigger,
+                self,
+                .{},
+            );
+
+            // Save a weak reference to the command palette. We use a weak reference to avoid
+            // reference counting cycles that might cause problems later.
+            priv.command_palette.set(command_palette);
+
+            break :command_palette command_palette;
+        };
+        defer command_palette.unref();
+
+        // Tell the command palette to toggle itself. If the dialog gets
+        // presented (instead of hidden) it will be modal over our window.
+        command_palette.toggle(self);
+    }
+
+    // React to a signal from a command palette asking an action to be performed.
+    fn signalCommandPaletteTrigger(_: *CommandPalette, action: *const input.Binding.Action, self: *Self) callconv(.c) void {
+        // If the activation actually has an action, perform it.
+        self.performBindingAction(action.*);
+    }
+
+    /// React to a GTK action requesting that the command palette be toggled.
+    fn actionToggleCommandPalette(
+        _: *gio.SimpleAction,
+        _: ?*glib.Variant,
+        self: *Window,
+    ) callconv(.c) void {
+        // TODO: accept the surface that toggled the command palette as a
+        // parameter
+        self.toggleCommandPalette();
+    }
+
     const C = Common(Self, Private);
     pub const as = C.as;
     pub const ref = C.ref;
@@ -1571,7 +1781,7 @@ pub const Window = extern struct {
         var parent: *Parent.Class = undefined;
         pub const Instance = Self;
 
-        fn init(class: *Class) callconv(.C) void {
+        fn init(class: *Class) callconv(.c) void {
             gobject.ext.ensureType(DebugWarning);
             gtk.Widget.Class.setTemplateFromResource(
                 class.as(gtk.Widget.Class),
@@ -1585,7 +1795,6 @@ pub const Window = extern struct {
             // Properties
             gobject.ext.registerProperties(class, &.{
                 properties.@"active-surface".impl,
-                properties.@"background-opaque".impl,
                 properties.config.impl,
                 properties.debug.impl,
                 properties.@"headerbar-visible".impl,
@@ -1594,6 +1803,7 @@ pub const Window = extern struct {
                 properties.@"tabs-visible".impl,
                 properties.@"tabs-wide".impl,
                 properties.@"toolbar-style".impl,
+                properties.@"titlebar-style".impl,
             });
 
             // Bindings
@@ -1615,13 +1825,13 @@ pub const Window = extern struct {
             class.bindTemplateCallback("tab_create_window", &tabViewCreateWindow);
             class.bindTemplateCallback("notify_n_pages", &tabViewNPages);
             class.bindTemplateCallback("notify_selected_page", &tabViewSelectedPage);
-            class.bindTemplateCallback("notify_background_opaque", &propBackgroundOpaque);
             class.bindTemplateCallback("notify_config", &propConfig);
             class.bindTemplateCallback("notify_fullscreened", &propFullscreened);
             class.bindTemplateCallback("notify_maximized", &propMaximized);
             class.bindTemplateCallback("notify_menu_active", &propMenuActive);
             class.bindTemplateCallback("notify_quick_terminal", &propQuickTerminal);
             class.bindTemplateCallback("notify_scale_factor", &propScaleFactor);
+            class.bindTemplateCallback("titlebar_style_is_tabs", &closureTitlebarStyleIsTab);
 
             // Virtual methods
             gobject.Object.virtual_methods.dispose.implement(class, &dispose);

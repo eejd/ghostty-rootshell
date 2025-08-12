@@ -101,3 +101,39 @@ label.resize-overlay {
   /* after GTK 4.16 is a requirement, switch to the following: */
   /* background-color: color-mix(in srgb, var(--error-bg-color), transparent); */
 }
+
+/*
+ * Command Palette
+ */
+.command-palette-search > image:first-child {
+  margin-left: 8px;
+  margin-right: 4px;
+}
+
+.command-palette-search > image:last-child {
+  margin-left: 4px;
+  margin-right: 8px;
+}
+
+/*
+ * Splits
+ */
+
+.window .split paned > separator {
+  background-color: rgba(250, 250, 250, 1);
+  background-clip: content-box;
+
+  /* This works around the oversized drag area for the right side of GtkPaned.
+   *
+   * Upstream Gtk issue:
+   * https://gitlab.gnome.org/GNOME/gtk/-/issues/4484#note_2362002
+   *
+   * Ghostty issue:
+   * https://github.com/ghostty-org/ghostty/issues/3020
+   *
+   * Without this, it's not possible to select the first character on the
+   * right-hand side of a split.
+   */
+  margin: 0;
+  padding: 0;
+}

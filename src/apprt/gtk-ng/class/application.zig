@@ -15,14 +15,17 @@ const apprt = @import("../../../apprt.zig");
 const cgroup = @import("../cgroup.zig");
 const CoreApp = @import("../../../App.zig");
 const configpkg = @import("../../../config.zig");
+const input = @import("../../../input.zig");
 const internal_os = @import("../../../os/main.zig");
 const systemd = @import("../../../os/systemd.zig");
 const terminal = @import("../../../terminal/main.zig");
 const xev = @import("../../../global.zig").xev;
+const Binding = @import("../../../input.zig").Binding;
 const CoreConfig = configpkg.Config;
 const CoreSurface = @import("../../../Surface.zig");
 
 const ext = @import("../ext.zig");
+const key = @import("../key.zig");
 const adw_version = @import("../adw_version.zig");
 const gtk_version = @import("../gtk_version.zig");
 const winprotopkg = @import("../winproto.zig");
@@ -31,9 +34,11 @@ const Common = @import("../class.zig").Common;
 const WeakRef = @import("../weak_ref.zig").WeakRef;
 const Config = @import("config.zig").Config;
 const Surface = @import("surface.zig").Surface;
+const SplitTree = @import("split_tree.zig").SplitTree;
 const Window = @import("window.zig").Window;
 const CloseConfirmationDialog = @import("close_confirmation_dialog.zig").CloseConfirmationDialog;
 const ConfigErrorsDialog = @import("config_errors_dialog.zig").ConfigErrorsDialog;
+const GlobalShortcuts = @import("global_shortcuts.zig").GlobalShortcuts;
 
 const log = std.log.scoped(.gtk_ghostty_application);
 
@@ -75,8 +80,6 @@ pub const Application = extern struct {
                 Self,
                 ?*Config,
                 .{
-                    .nick = "Config",
-                    .blurb = "The current active configuration for the application.",
                     .accessor = gobject.ext.typedAccessor(
                         Self,
                         ?*Config,
@@ -105,6 +108,9 @@ pub const Application = extern struct {
         /// State and logic for the underlying windowing protocol.
         winproto: winprotopkg.App,
 
+        /// The global shortcut logic.
+        global_shortcuts: *GlobalShortcuts,
+
         /// The base path of the transient cgroup used to put all surfaces
         /// into their own cgroup. This is only set if cgroups are enabled
         /// and initialization was successful.
@@ -127,7 +133,7 @@ pub const Application = extern struct {
         /// If non-null, we're currently showing a config errors dialog.
         /// This is a WeakRef because the dialog can close on its own
         /// outside of our own lifecycle and that's okay.
-        config_errors_dialog: WeakRef(ConfigErrorsDialog) = .{},
+        config_errors_dialog: WeakRef(ConfigErrorsDialog) = .empty,
 
         /// glib source for our signal handler.
         signal_source: ?c_uint = null,
@@ -305,6 +311,7 @@ pub const Application = extern struct {
             .winproto = wp,
             .css_provider = css_provider,
             .custom_css_providers = .empty,
+            .global_shortcuts = gobject.ext.newInstance(GlobalShortcuts, .{}),
         };
 
         // Signals
@@ -332,6 +339,7 @@ pub const Application = extern struct {
         const priv = self.private();
         priv.config.unref();
         priv.winproto.deinit(alloc);
+        priv.global_shortcuts.unref();
         if (priv.transient_cgroup_base) |base| alloc.free(base);
         if (gdk.Display.getDefault()) |display| {
             gtk.StyleContext.removeProviderForDisplay(
@@ -545,6 +553,10 @@ pub const Application = extern struct {
 
             .desktop_notification => Action.desktopNotification(self, target, value),
 
+            .equalize_splits => return Action.equalizeSplits(target),
+
+            .goto_split => return Action.gotoSplit(target, value),
+
             .goto_tab => return Action.gotoTab(target, value),
 
             .initial_size => return Action.initialSize(target, value),
@@ -554,6 +566,8 @@ pub const Application = extern struct {
             .mouse_visibility => Action.mouseVisibility(target, value),
 
             .move_tab => return Action.moveTab(target, value),
+
+            .new_split => return Action.newSplit(target, value),
 
             .new_tab => return Action.newTab(target),
 
@@ -598,16 +612,13 @@ pub const Application = extern struct {
             .toggle_quick_terminal => return Action.toggleQuickTerminal(self),
             .toggle_tab_overview => return Action.toggleTabOverview(target),
             .toggle_window_decorations => return Action.toggleWindowDecorations(target),
+            .toggle_command_palette => return Action.toggleCommandPalette(target),
 
             // Unimplemented but todo on gtk-ng branch
             .prompt_title,
-            .toggle_command_palette,
             .inspector,
             // TODO: splits
-            .new_split,
             .resize_split,
-            .equalize_splits,
-            .goto_split,
             .toggle_split_zoom,
             => {
                 log.warn("unimplemented action={}", .{action});
@@ -735,7 +746,7 @@ pub const Application = extern struct {
 
         if (config.@"split-divider-color") |color| {
             try writer.print(
-                \\.terminal-window .notebook separator {{
+                \\.window .split paned > separator {{
                 \\  color: rgb({[r]d},{[g]d},{[b]d});
                 \\  background: rgb({[r]d},{[g]d},{[b]d});
                 \\}}
@@ -854,6 +865,65 @@ pub const Application = extern struct {
         }
     }
 
+    fn syncActionAccelerators(self: *Self) void {
+        self.syncActionAccelerator("app.quit", .{ .quit = {} });
+        self.syncActionAccelerator("app.open-config", .{ .open_config = {} });
+        self.syncActionAccelerator("app.reload-config", .{ .reload_config = {} });
+        self.syncActionAccelerator("win.toggle-inspector", .{ .inspector = .toggle });
+        self.syncActionAccelerator("app.show-gtk-inspector", .show_gtk_inspector);
+        self.syncActionAccelerator("win.toggle-command-palette", .toggle_command_palette);
+        self.syncActionAccelerator("win.close", .{ .close_window = {} });
+        self.syncActionAccelerator("win.new-window", .{ .new_window = {} });
+        self.syncActionAccelerator("win.new-tab", .{ .new_tab = {} });
+        self.syncActionAccelerator("win.close-tab", .{ .close_tab = {} });
+        self.syncActionAccelerator("win.split-right", .{ .new_split = .right });
+        self.syncActionAccelerator("win.split-down", .{ .new_split = .down });
+        self.syncActionAccelerator("win.split-left", .{ .new_split = .left });
+        self.syncActionAccelerator("win.split-up", .{ .new_split = .up });
+        self.syncActionAccelerator("win.copy", .{ .copy_to_clipboard = {} });
+        self.syncActionAccelerator("win.paste", .{ .paste_from_clipboard = {} });
+        self.syncActionAccelerator("win.reset", .{ .reset = {} });
+        self.syncActionAccelerator("win.clear", .{ .clear_screen = {} });
+        self.syncActionAccelerator("win.prompt-title", .{ .prompt_surface_title = {} });
+        self.syncActionAccelerator("split-tree.new-left", .{ .new_split = .left });
+        self.syncActionAccelerator("split-tree.new-right", .{ .new_split = .right });
+        self.syncActionAccelerator("split-tree.new-up", .{ .new_split = .up });
+        self.syncActionAccelerator("split-tree.new-down", .{ .new_split = .down });
+    }
+
+    fn syncActionAccelerator(
+        self: *Self,
+        gtk_action: [:0]const u8,
+        action: input.Binding.Action,
+    ) void {
+        const gtk_app = self.as(gtk.Application);
+
+        // Reset it initially
+        const zero = [_:null]?[*:0]const u8{};
+        gtk_app.setAccelsForAction(gtk_action, &zero);
+
+        const config = self.private().config.get();
+        const trigger = config.keybind.set.getTrigger(action) orelse return;
+        var buf: [1024]u8 = undefined;
+        const accel = if (key.accelFromTrigger(
+            &buf,
+            trigger,
+        )) |accel_|
+            accel_ orelse return
+        else |err| switch (err) {
+            // This should really never, never happen. Its not critical enough
+            // to actually crash, but this is a bug somewhere. An accelerator
+            // for a trigger can't possibly be more than 1024 bytes.
+            error.NoSpaceLeft => {
+                log.warn("accelerator somehow longer than 1024 bytes: {}", .{trigger});
+                return;
+            },
+        };
+        const accels = [_:null]?[*:0]const u8{accel};
+
+        gtk_app.setAccelsForAction(gtk_action, &accels);
+    }
+
     //---------------------------------------------------------------
     // Properties
 
@@ -884,6 +954,9 @@ pub const Application = extern struct {
         _: *gobject.ParamSpec,
         self: *Self,
     ) callconv(.c) void {
+        // Sync our accelerators for menu items.
+        self.syncActionAccelerators();
+
         // Load our runtime and custom CSS. If this fails then our window is
         // just stuck with the old CSS but we don't want to fail the entire
         // config change operation.
@@ -912,7 +985,7 @@ pub const Application = extern struct {
     //---------------------------------------------------------------
     // Virtual Methods
 
-    fn startup(self: *Self) callconv(.C) void {
+    fn startup(self: *Self) callconv(.c) void {
         log.debug("startup", .{});
 
         gio.Application.virtual_methods.startup.call(
@@ -934,6 +1007,9 @@ pub const Application = extern struct {
 
         // Setup our action map
         self.startupActionMap();
+
+        // Setup our global shortcuts
+        self.startupGlobalShortcuts();
 
         // Setup our cgroup for the application.
         self.startupCgroup() catch |err| {
@@ -1073,6 +1149,34 @@ pub const Application = extern struct {
         }
     }
 
+    /// Setup our global shortcuts.
+    fn startupGlobalShortcuts(self: *Self) void {
+        const priv = self.private();
+
+        // On startup, our dbus connection should be available.
+        priv.global_shortcuts.setDbusConnection(
+            self.as(gio.Application).getDbusConnection(),
+        );
+
+        // Setup a binding so that the shortcut config always matches the app.
+        _ = gobject.Object.bindProperty(
+            self.as(gobject.Object),
+            "config",
+            priv.global_shortcuts.as(gobject.Object),
+            "config",
+            .{ .sync_create = true },
+        );
+
+        // Setup the signal handler for global shortcut triggers
+        _ = GlobalShortcuts.signals.trigger.connect(
+            priv.global_shortcuts,
+            *Application,
+            globalShortcutTrigger,
+            self,
+            .{},
+        );
+    }
+
     const CgroupError = error{
         DbusConnectionFailed,
         CgroupInitFailed,
@@ -1139,7 +1243,7 @@ pub const Application = extern struct {
         priv.transient_cgroup_base = path;
     }
 
-    fn activate(self: *Self) callconv(.C) void {
+    fn activate(self: *Self) callconv(.c) void {
         log.debug("activate", .{});
 
         // Queue a new window
@@ -1155,12 +1259,13 @@ pub const Application = extern struct {
         );
     }
 
-    fn dispose(self: *Self) callconv(.C) void {
+    fn dispose(self: *Self) callconv(.c) void {
         const priv = self.private();
         if (priv.config_errors_dialog.get()) |diag| {
             diag.close();
             diag.unref(); // strong ref from get()
         }
+        priv.config_errors_dialog.set(null);
         if (priv.signal_source) |v| {
             if (glib.Source.remove(v) == 0) {
                 log.warn("unable to remove signal source", .{});
@@ -1174,7 +1279,7 @@ pub const Application = extern struct {
         );
     }
 
-    fn finalize(self: *Self) callconv(.C) void {
+    fn finalize(self: *Self) callconv(.c) void {
         self.deinit();
         gobject.Object.virtual_methods.finalize.call(
             Class.parent,
@@ -1301,6 +1406,16 @@ pub const Application = extern struct {
 
         // Show it
         dialog.present(null);
+    }
+
+    fn globalShortcutTrigger(
+        _: *GlobalShortcuts,
+        action: *const Binding.Action,
+        self: *Self,
+    ) callconv(.c) void {
+        self.core().performAllAction(self.rt(), action.*) catch |err| {
+            log.warn("failed to perform action={}", .{err});
+        };
     }
 
     fn actionReloadConfig(
@@ -1437,7 +1552,7 @@ pub const Application = extern struct {
         var parent: *Parent.Class = undefined;
         pub const Instance = Self;
 
-        fn init(class: *Class) callconv(.C) void {
+        fn init(class: *Class) callconv(.c) void {
             // Register our compiled resources exactly once.
             {
                 const c = @cImport({
@@ -1538,6 +1653,52 @@ const Action = struct {
         gio_app.sendNotification(n.body, notification);
     }
 
+    pub fn equalizeSplits(target: apprt.Target) bool {
+        switch (target) {
+            .app => {
+                log.warn("equalize splits to app is unexpected", .{});
+                return false;
+            },
+
+            .surface => |core| {
+                const surface = core.rt_surface.surface;
+                return surface.as(gtk.Widget).activateAction("split-tree.equalize", null) != 0;
+            },
+        }
+    }
+
+    pub fn gotoSplit(
+        target: apprt.Target,
+        to: apprt.action.GotoSplit,
+    ) bool {
+        switch (target) {
+            .app => return false,
+            .surface => |core| {
+                // Design note: we can't use widget actions here because
+                // we need to know whether there is a goto target for returning
+                // the proper perform result (boolean).
+
+                const surface = core.rt_surface.surface;
+                const tree = ext.getAncestor(
+                    SplitTree,
+                    surface.as(gtk.Widget),
+                ) orelse {
+                    log.warn("surface is not in a split tree, ignoring goto_split", .{});
+                    return false;
+                };
+
+                return tree.goto(switch (to) {
+                    .previous => .previous_wrapped,
+                    .next => .next_wrapped,
+                    .up => .{ .spatial = .up },
+                    .down => .{ .spatial = .down },
+                    .left => .{ .spatial = .left },
+                    .right => .{ .spatial = .right },
+                });
+            },
+        }
+    }
+
     pub fn gotoTab(
         target: apprt.Target,
         tab: apprt.action.GotoTab,
@@ -1587,16 +1748,9 @@ const Action = struct {
     ) void {
         switch (target) {
             .app => log.warn("mouse over link to app is unexpected", .{}),
-            .surface => |surface| {
-                var v = gobject.ext.Value.new([:0]const u8);
-                if (value.url.len > 0) gobject.ext.Value.set(&v, value.url);
-                defer v.unset();
-                gobject.Object.setProperty(
-                    surface.rt_surface.gobj().as(gobject.Object),
-                    "mouse-hover-url",
-                    &v,
-                );
-            },
+            .surface => |surface| surface.rt_surface.gobj().setMouseHoverUrl(
+                if (value.url.len > 0) value.url else null,
+            ),
         }
     }
 
@@ -1606,15 +1760,7 @@ const Action = struct {
     ) void {
         switch (target) {
             .app => log.warn("mouse shape to app is unexpected", .{}),
-            .surface => |surface| {
-                var value = gobject.ext.Value.newFrom(shape);
-                defer value.unset();
-                gobject.Object.setProperty(
-                    surface.rt_surface.gobj().as(gobject.Object),
-                    "mouse-shape",
-                    &value,
-                );
-            },
+            .surface => |surface| surface.rt_surface.gobj().setMouseShape(shape),
         }
     }
 
@@ -1624,18 +1770,10 @@ const Action = struct {
     ) void {
         switch (target) {
             .app => log.warn("mouse visibility to app is unexpected", .{}),
-            .surface => |surface| {
-                var value = gobject.ext.Value.newFrom(switch (visibility) {
-                    .visible => false,
-                    .hidden => true,
-                });
-                defer value.unset();
-                gobject.Object.setProperty(
-                    surface.rt_surface.gobj().as(gobject.Object),
-                    "mouse-hidden",
-                    &value,
-                );
-            },
+            .surface => |surface| surface.rt_surface.gobj().setMouseHidden(switch (visibility) {
+                .visible => false,
+                .hidden => true,
+            }),
         }
     }
 
@@ -1659,6 +1797,28 @@ const Action = struct {
                     surface,
                     @intCast(value.amount),
                 );
+            },
+        }
+    }
+
+    pub fn newSplit(
+        target: apprt.Target,
+        direction: apprt.action.SplitDirection,
+    ) bool {
+        switch (target) {
+            .app => {
+                log.warn("new split to app is unexpected", .{});
+                return false;
+            },
+
+            .surface => |core| {
+                const surface = core.rt_surface.surface;
+                return surface.as(gtk.Widget).activateAction(switch (direction) {
+                    .right => "split-tree.new-right",
+                    .left => "split-tree.new-left",
+                    .down => "split-tree.new-down",
+                    .up => "split-tree.new-up",
+                }, null) != 0;
             },
         }
     }
@@ -1756,15 +1916,7 @@ const Action = struct {
     ) void {
         switch (target) {
             .app => log.warn("pwd to app is unexpected", .{}),
-            .surface => |surface| {
-                var v = gobject.ext.Value.newFrom(value.pwd);
-                defer v.unset();
-                gobject.Object.setProperty(
-                    surface.rt_surface.gobj().as(gobject.Object),
-                    "pwd",
-                    &v,
-                );
-            },
+            .surface => |surface| surface.rt_surface.gobj().setPwd(value.pwd),
         }
     }
 
@@ -1864,15 +2016,7 @@ const Action = struct {
     ) void {
         switch (target) {
             .app => log.warn("set_title to app is unexpected", .{}),
-            .surface => |surface| {
-                var v = gobject.ext.Value.newFrom(value.title);
-                defer v.unset();
-                gobject.Object.setProperty(
-                    surface.rt_surface.gobj().as(gobject.Object),
-                    "title",
-                    &v,
-                );
-            },
+            .surface => |surface| surface.rt_surface.gobj().setTitle(value.title),
         }
     }
 
@@ -2000,6 +2144,15 @@ const Action = struct {
 
                 window.toggleWindowDecorations();
                 return true;
+            },
+        }
+    }
+
+    pub fn toggleCommandPalette(target: apprt.Target) bool {
+        switch (target) {
+            .app => return false,
+            .surface => |surface| {
+                return surface.rt_surface.gobj().toggleCommandPalette();
             },
         }
     }

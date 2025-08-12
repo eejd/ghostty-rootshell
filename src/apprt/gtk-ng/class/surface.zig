@@ -9,6 +9,7 @@ const gobject = @import("gobject");
 const gtk = @import("gtk");
 
 const apprt = @import("../../../apprt.zig");
+const datastruct = @import("../../../datastruct/main.zig");
 const font = @import("../../../font/main.zig");
 const input = @import("../../../input.zig");
 const internal_os = @import("../../../os/main.zig");
@@ -42,6 +43,9 @@ pub const Surface = extern struct {
         .private = .{ .Type = Private, .offset = &Private.offset },
     });
 
+    /// A SplitTree implementation that stores surfaces.
+    pub const Tree = datastruct.SplitTree(Self);
+
     pub const properties = struct {
         pub const config = struct {
             pub const name = "config";
@@ -50,8 +54,6 @@ pub const Surface = extern struct {
                 Self,
                 ?*Config,
                 .{
-                    .nick = "Config",
-                    .blurb = "The configuration that this surface is using.",
                     .accessor = C.privateObjFieldAccessor("config"),
                 },
             );
@@ -64,8 +66,6 @@ pub const Surface = extern struct {
                 Self,
                 bool,
                 .{
-                    .nick = "Child Exited",
-                    .blurb = "True when the child process has exited.",
                     .default = false,
                     .accessor = gobject.ext.privateFieldAccessor(
                         Self,
@@ -84,8 +84,6 @@ pub const Surface = extern struct {
                 Self,
                 ?*Size,
                 .{
-                    .nick = "Default Size",
-                    .blurb = "The default size of the window for this surface.",
                     .accessor = C.privateBoxedFieldAccessor("default_size"),
                 },
             );
@@ -98,8 +96,6 @@ pub const Surface = extern struct {
                 Self,
                 ?*font.face.DesiredSize,
                 .{
-                    .nick = "Desired Font Size",
-                    .blurb = "The desired font size, only affects initialization.",
                     .accessor = C.privateBoxedFieldAccessor("font_size_request"),
                 },
             );
@@ -112,8 +108,6 @@ pub const Surface = extern struct {
                 Self,
                 bool,
                 .{
-                    .nick = "Focused",
-                    .blurb = "The focused state of the surface.",
                     .default = false,
                     .accessor = gobject.ext.privateFieldAccessor(
                         Self,
@@ -132,8 +126,6 @@ pub const Surface = extern struct {
                 Self,
                 ?*Size,
                 .{
-                    .nick = "Minimum Size",
-                    .blurb = "The minimum size of the surface.",
                     .accessor = C.privateBoxedFieldAccessor("min_size"),
                 },
             );
@@ -146,14 +138,14 @@ pub const Surface = extern struct {
                 Self,
                 bool,
                 .{
-                    .nick = "Mouse Hidden",
-                    .blurb = "Whether the mouse cursor should be hidden.",
                     .default = false,
-                    .accessor = gobject.ext.privateFieldAccessor(
+                    .accessor = gobject.ext.typedAccessor(
                         Self,
-                        Private,
-                        &Private.offset,
-                        "mouse_hidden",
+                        bool,
+                        .{
+                            .getter = getMouseHidden,
+                            .setter = setMouseHidden,
+                        },
                     ),
                 },
             );
@@ -166,14 +158,14 @@ pub const Surface = extern struct {
                 Self,
                 terminal.MouseShape,
                 .{
-                    .nick = "Mouse Shape",
-                    .blurb = "The current mouse shape to show for the surface.",
                     .default = .text,
-                    .accessor = gobject.ext.privateFieldAccessor(
+                    .accessor = gobject.ext.typedAccessor(
                         Self,
-                        Private,
-                        &Private.offset,
-                        "mouse_shape",
+                        terminal.MouseShape,
+                        .{
+                            .getter = getMouseShape,
+                            .setter = setMouseShape,
+                        },
                     ),
                 },
             );
@@ -188,8 +180,6 @@ pub const Surface = extern struct {
                 Self,
                 ?[:0]const u8,
                 .{
-                    .nick = "Mouse Hover URL",
-                    .blurb = "The URL the mouse is currently hovering over (if any).",
                     .default = null,
                     .accessor = C.privateStringFieldAccessor("mouse_hover_url"),
                 },
@@ -205,8 +195,6 @@ pub const Surface = extern struct {
                 Self,
                 ?[:0]const u8,
                 .{
-                    .nick = "Working Directory",
-                    .blurb = "The current working directory as reported by core.",
                     .default = null,
                     .accessor = C.privateStringFieldAccessor("pwd"),
                 },
@@ -222,8 +210,6 @@ pub const Surface = extern struct {
                 Self,
                 ?[:0]const u8,
                 .{
-                    .nick = "Title",
-                    .blurb = "The title of the surface.",
                     .default = null,
                     .accessor = C.privateStringFieldAccessor("title"),
                 },
@@ -237,8 +223,6 @@ pub const Surface = extern struct {
                 Self,
                 bool,
                 .{
-                    .nick = "Zoom",
-                    .blurb = "Whether the surface should be zoomed.",
                     .default = false,
                     .accessor = gobject.ext.privateFieldAccessor(
                         Self,
@@ -318,6 +302,18 @@ pub const Surface = extern struct {
         /// Emitted after the surface is initialized.
         pub const init = struct {
             pub const name = "init";
+            pub const connect = impl.connect;
+            const impl = gobject.ext.defineSignal(
+                name,
+                Self,
+                &.{},
+                void,
+            );
+        };
+
+        /// Emitted just prior to the context menu appearing.
+        pub const menu = struct {
+            pub const name = "menu";
             pub const connect = impl.connect;
             const impl = gobject.ext.defineSignal(
                 name,
@@ -462,6 +458,7 @@ pub const Surface = extern struct {
 
         // Template binds
         child_exited_overlay: *ChildExited,
+        context_menu: *gtk.PopoverMenu,
         drop_target: *gtk.DropTarget,
         progress_bar_overlay: *gtk.ProgressBar,
 
@@ -551,6 +548,11 @@ pub const Surface = extern struct {
             .{},
             null,
         );
+    }
+
+    pub fn toggleCommandPalette(self: *Self) bool {
+        // TODO: pass the surface with the action
+        return self.as(gtk.Widget).activateAction("win.toggle-command-palette", null) != 0;
     }
 
     /// Set the current progress report state.
@@ -1145,7 +1147,7 @@ pub const Surface = extern struct {
     //---------------------------------------------------------------
     // Virtual Methods
 
-    fn init(self: *Self, _: *Class) callconv(.C) void {
+    fn init(self: *Self, _: *Class) callconv(.c) void {
         gtk.Widget.initTemplate(self.as(gtk.Widget));
 
         const priv = self.private();
@@ -1194,7 +1196,7 @@ pub const Surface = extern struct {
         self.propConfig(undefined, null);
     }
 
-    fn dispose(self: *Self) callconv(.C) void {
+    fn dispose(self: *Self) callconv(.c) void {
         const priv = self.private();
         if (priv.config) |v| {
             v.unref();
@@ -1218,7 +1220,7 @@ pub const Surface = extern struct {
         );
     }
 
-    fn finalize(self: *Self) callconv(.C) void {
+    fn finalize(self: *Self) callconv(.c) void {
         const priv = self.private();
         if (priv.core_surface) |v| {
             // Remove ourselves from the list of known surfaces in the app.
@@ -1273,9 +1275,32 @@ pub const Surface = extern struct {
         return self.private().title;
     }
 
+    /// Set the title for this surface, copies the value.
+    pub fn setTitle(self: *Self, title: ?[:0]const u8) void {
+        const priv = self.private();
+        if (priv.title) |v| glib.free(@constCast(@ptrCast(v)));
+        priv.title = null;
+        if (title) |v| priv.title = glib.ext.dupeZ(u8, v);
+        self.as(gobject.Object).notifyByPspec(properties.title.impl.param_spec);
+    }
+
     /// Returns the pwd property without a copy.
     pub fn getPwd(self: *Self) ?[:0]const u8 {
         return self.private().pwd;
+    }
+
+    /// Set the pwd for this surface, copies the value.
+    pub fn setPwd(self: *Self, pwd: ?[:0]const u8) void {
+        const priv = self.private();
+        if (priv.pwd) |v| glib.free(@constCast(@ptrCast(v)));
+        priv.pwd = null;
+        if (pwd) |v| priv.pwd = glib.ext.dupeZ(u8, v);
+        self.as(gobject.Object).notifyByPspec(properties.pwd.impl.param_spec);
+    }
+
+    /// Returns the focus state of this surface.
+    pub fn getFocused(self: *Self) bool {
+        return self.private().focused;
     }
 
     /// Change the configuration for this surface.
@@ -1328,6 +1353,34 @@ pub const Surface = extern struct {
             &size,
         );
         self.as(gobject.Object).notifyByPspec(properties.@"min-size".impl.param_spec);
+    }
+
+    pub fn getMouseShape(self: *Self) terminal.MouseShape {
+        return self.private().mouse_shape;
+    }
+
+    pub fn setMouseShape(self: *Self, shape: terminal.MouseShape) void {
+        const priv = self.private();
+        priv.mouse_shape = shape;
+        self.as(gobject.Object).notifyByPspec(properties.@"mouse-shape".impl.param_spec);
+    }
+
+    pub fn getMouseHidden(self: *Self) bool {
+        return self.private().mouse_hidden;
+    }
+
+    pub fn setMouseHidden(self: *Self, hidden: bool) void {
+        const priv = self.private();
+        priv.mouse_hidden = hidden;
+        self.as(gobject.Object).notifyByPspec(properties.@"mouse-hidden".impl.param_spec);
+    }
+
+    pub fn setMouseHoverUrl(self: *Self, url: ?[:0]const u8) void {
+        const priv = self.private();
+        if (priv.mouse_hover_url) |v| glib.free(@constCast(@ptrCast(v)));
+        priv.mouse_hover_url = null;
+        if (url) |v| priv.mouse_hover_url = glib.ext.dupeZ(u8, v);
+        self.as(gobject.Object).notifyByPspec(properties.@"mouse-hover-url".impl.param_spec);
     }
 
     fn propConfig(
@@ -1473,6 +1526,16 @@ pub const Surface = extern struct {
         self.close(.{ .surface = false });
     }
 
+    fn contextMenuClosed(
+        _: *gtk.PopoverMenu,
+        self: *Self,
+    ) callconv(.c) void {
+        // When the context menu closes, it moves focus back to the tab
+        // bar if there are tabs. That's not correct. We need to grab it
+        // on the surface.
+        self.grabFocus();
+    }
+
     fn dtDrop(
         _: *gtk.DropTarget,
         value: *gobject.Value,
@@ -1604,6 +1667,7 @@ pub const Surface = extern struct {
         priv.focused = true;
         priv.im_context.as(gtk.IMContext).focusIn();
         _ = glib.idleAddOnce(idleFocus, self.ref());
+        self.as(gobject.Object).notifyByPspec(properties.focused.impl.param_spec);
     }
 
     fn ecFocusLeave(_: *gtk.EventControllerFocus, self: *Self) callconv(.c) void {
@@ -1611,6 +1675,7 @@ pub const Surface = extern struct {
         priv.focused = false;
         priv.im_context.as(gtk.IMContext).focusOut();
         _ = glib.idleAddOnce(idleFocus, self.ref());
+        self.as(gobject.Object).notifyByPspec(properties.focused.impl.param_spec);
     }
 
     /// The focus callback must be triggered on an idle loop source because
@@ -1647,9 +1712,9 @@ pub const Surface = extern struct {
         }
 
         // Report the event
+        const button = translateMouseButton(gesture.as(gtk.GestureSingle).getCurrentButton());
         const consumed = if (priv.core_surface) |surface| consumed: {
             const gtk_mods = event.getModifierState();
-            const button = translateMouseButton(gesture.as(gtk.GestureSingle).getCurrentButton());
             const mods = gtk_key.translateMods(gtk_mods);
             break :consumed surface.mouseButtonCallback(
                 .press,
@@ -1661,10 +1726,28 @@ pub const Surface = extern struct {
             };
         } else false;
 
-        // TODO: context menu
-        _ = consumed;
-        _ = x;
-        _ = y;
+        // If a right click isn't consumed, mouseButtonCallback selects the hovered
+        // word and returns false. We can use this to handle the context menu
+        // opening under normal scenarios.
+        if (!consumed and button == .right) {
+            signals.menu.impl.emit(
+                self,
+                null,
+                .{},
+                null,
+            );
+
+            const rect: gdk.Rectangle = .{
+                .f_x = @intFromFloat(x),
+                .f_y = @intFromFloat(y),
+                .f_width = 1,
+                .f_height = 1,
+            };
+
+            const popover = priv.context_menu.as(gtk.Popover);
+            popover.setPointingTo(&rect);
+            popover.popup();
+        }
     }
 
     fn gcMouseUp(
@@ -2234,6 +2317,7 @@ pub const Surface = extern struct {
     const C = Common(Self, Private);
     pub const as = C.as;
     pub const ref = C.ref;
+    pub const refSink = C.refSink;
     pub const unref = C.unref;
     const private = C.private;
 
@@ -2242,7 +2326,7 @@ pub const Surface = extern struct {
         var parent: *Parent.Class = undefined;
         pub const Instance = Self;
 
-        fn init(class: *Class) callconv(.C) void {
+        fn init(class: *Class) callconv(.c) void {
             gobject.ext.ensureType(ResizeOverlay);
             gobject.ext.ensureType(ChildExited);
             gtk.Widget.Class.setTemplateFromResource(
@@ -2259,6 +2343,7 @@ pub const Surface = extern struct {
             class.bindTemplateChildPrivate("url_left", .{});
             class.bindTemplateChildPrivate("url_right", .{});
             class.bindTemplateChildPrivate("child_exited_overlay", .{});
+            class.bindTemplateChildPrivate("context_menu", .{});
             class.bindTemplateChildPrivate("progress_bar_overlay", .{});
             class.bindTemplateChildPrivate("resize_overlay", .{});
             class.bindTemplateChildPrivate("drop_target", .{});
@@ -2288,6 +2373,7 @@ pub const Surface = extern struct {
             class.bindTemplateCallback("url_mouse_enter", &ecUrlMouseEnter);
             class.bindTemplateCallback("url_mouse_leave", &ecUrlMouseLeave);
             class.bindTemplateCallback("child_exited_close", &childExitedClose);
+            class.bindTemplateCallback("context_menu_closed", &contextMenuClosed);
             class.bindTemplateCallback("notify_config", &propConfig);
             class.bindTemplateCallback("notify_mouse_hover_url", &propMouseHoverUrl);
             class.bindTemplateCallback("notify_mouse_hidden", &propMouseHidden);
@@ -2315,6 +2401,7 @@ pub const Surface = extern struct {
             signals.@"clipboard-read".impl.register(.{});
             signals.@"clipboard-write".impl.register(.{});
             signals.init.impl.register(.{});
+            signals.menu.impl.register(.{});
             signals.@"present-request".impl.register(.{});
             signals.@"toggle-fullscreen".impl.register(.{});
             signals.@"toggle-maximize".impl.register(.{});

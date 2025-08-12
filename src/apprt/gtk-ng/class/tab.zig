@@ -18,6 +18,7 @@ const Common = @import("../class.zig").Common;
 const Config = @import("config.zig").Config;
 const Application = @import("application.zig").Application;
 const CloseConfirmationDialog = @import("close_confirmation_dialog.zig").CloseConfirmationDialog;
+const SplitTree = @import("split_tree.zig").SplitTree;
 const Surface = @import("surface.zig").Surface;
 
 const log = std.log.scoped(.gtk_ghostty_window);
@@ -35,7 +36,7 @@ pub const Tab = extern struct {
     });
 
     pub const properties = struct {
-        /// The active surface is the focus that should be receiving all
+        /// The active surface is the surface that should be receiving all
         /// surface-targeted actions. This is usually the focused surface,
         /// but may also not be focused if the user has selected a non-surface
         /// widget.
@@ -46,8 +47,6 @@ pub const Tab = extern struct {
                 Self,
                 ?*Surface,
                 .{
-                    .nick = "Active Surface",
-                    .blurb = "The currently active surface.",
                     .accessor = gobject.ext.typedAccessor(
                         Self,
                         ?*Surface,
@@ -66,9 +65,25 @@ pub const Tab = extern struct {
                 Self,
                 ?*Config,
                 .{
-                    .nick = "Config",
-                    .blurb = "The configuration that this surface is using.",
                     .accessor = C.privateObjFieldAccessor("config"),
+                },
+            );
+        };
+
+        pub const @"surface-tree" = struct {
+            pub const name = "surface-tree";
+            const impl = gobject.ext.defineProperty(
+                name,
+                Self,
+                ?*Surface.Tree,
+                .{
+                    .accessor = gobject.ext.typedAccessor(
+                        Self,
+                        ?*Surface.Tree,
+                        .{
+                            .getter = getSurfaceTree,
+                        },
+                    ),
                 },
             );
         };
@@ -82,8 +97,6 @@ pub const Tab = extern struct {
                 Self,
                 ?[:0]const u8,
                 .{
-                    .nick = "Title",
-                    .blurb = "The title of the active surface.",
                     .default = null,
                     .accessor = C.privateStringFieldAccessor("title"),
                 },
@@ -117,7 +130,7 @@ pub const Tab = extern struct {
         surface_bindings: *gobject.BindingGroup,
 
         // Template bindings
-        surface: *Surface,
+        split_tree: *SplitTree,
 
         pub var offset: c_int = 0;
     };
@@ -125,15 +138,13 @@ pub const Tab = extern struct {
     /// Set the parent of this tab page. This only affects the first surface
     /// ever created for a tab. If a surface was already created this does
     /// nothing.
-    pub fn setParent(
-        self: *Self,
-        parent: *CoreSurface,
-    ) void {
-        const priv = self.private();
-        priv.surface.setParent(parent);
+    pub fn setParent(self: *Self, parent: *CoreSurface) void {
+        if (self.getActiveSurface()) |surface| {
+            surface.setParent(parent);
+        }
     }
 
-    fn init(self: *Self, _: *Class) callconv(.C) void {
+    fn init(self: *Self, _: *Class) callconv(.c) void {
         gtk.Widget.initTemplate(self.as(gtk.Widget));
 
         // If our configuration is null then we get the configuration
@@ -153,13 +164,15 @@ pub const Tab = extern struct {
             .{},
         );
 
-        // TODO: Eventually this should be set dynamically based on the
-        // current active surface.
-        priv.surface_bindings.setSource(priv.surface.as(gobject.Object));
-
-        // We need to do this so that the title initializes properly,
-        // I think because its a dynamic getter.
-        self.as(gobject.Object).notifyByPspec(properties.@"active-surface".impl.param_spec);
+        // Create our initial surface in the split tree.
+        priv.split_tree.newSplit(.right, null) catch |err| switch (err) {
+            error.OutOfMemory => {
+                // TODO: We should make our "no surfaces" state more aesthetically
+                // pleasing and show something like an "Oops, something went wrong"
+                // message. For now, this is incredibly unlikely.
+                @panic("oom");
+            },
+        };
     }
 
     //---------------------------------------------------------------
@@ -167,15 +180,26 @@ pub const Tab = extern struct {
 
     /// Get the currently active surface. See the "active-surface" property.
     /// This does not ref the value.
-    pub fn getActiveSurface(self: *Self) *Surface {
+    pub fn getActiveSurface(self: *Self) ?*Surface {
+        return self.getSplitTree().getActiveSurface();
+    }
+
+    /// Get the surface tree of this tab.
+    pub fn getSurfaceTree(self: *Self) ?*Surface.Tree {
         const priv = self.private();
-        return priv.surface;
+        return priv.split_tree.getTree();
+    }
+
+    /// Get the split tree widget that is in this tab.
+    pub fn getSplitTree(self: *Self) *SplitTree {
+        const priv = self.private();
+        return priv.split_tree;
     }
 
     /// Returns true if this tab needs confirmation before quitting based
     /// on the various Ghostty configurations.
     pub fn getNeedsConfirmQuit(self: *Self) bool {
-        const surface = self.getActiveSurface();
+        const surface = self.getActiveSurface() orelse return false;
         const core_surface = surface.core() orelse return false;
         return core_surface.needsConfirmQuit();
     }
@@ -183,7 +207,7 @@ pub const Tab = extern struct {
     //---------------------------------------------------------------
     // Virtual methods
 
-    fn dispose(self: *Self) callconv(.C) void {
+    fn dispose(self: *Self) callconv(.c) void {
         const priv = self.private();
         if (priv.config) |v| {
             v.unref();
@@ -202,7 +226,7 @@ pub const Tab = extern struct {
         );
     }
 
-    fn finalize(self: *Self) callconv(.C) void {
+    fn finalize(self: *Self) callconv(.c) void {
         const priv = self.private();
         if (priv.title) |v| {
             glib.free(@constCast(@ptrCast(v)));
@@ -218,25 +242,38 @@ pub const Tab = extern struct {
     //---------------------------------------------------------------
     // Signal handlers
 
-    fn surfaceCloseRequest(
-        _: *Surface,
-        scope: *const Surface.CloseScope,
+    fn propSplitTree(
+        _: *SplitTree,
+        _: *gobject.ParamSpec,
         self: *Self,
     ) callconv(.c) void {
-        switch (scope.*) {
-            // Handled upstream... we don't control our window close.
-            .window => return,
+        self.as(gobject.Object).notifyByPspec(properties.@"surface-tree".impl.param_spec);
 
-            // Presently both the same, results in the tab closing.
-            .surface, .tab => {
-                signals.@"close-request".impl.emit(
-                    self,
-                    null,
-                    .{},
-                    null,
-                );
-            },
+        // If our tree is empty we close the tab.
+        const tree: *const Surface.Tree = self.getSurfaceTree() orelse &.empty;
+        if (tree.isEmpty()) {
+            signals.@"close-request".impl.emit(
+                self,
+                null,
+                .{},
+                null,
+            );
+            return;
         }
+    }
+
+    fn propActiveSurface(
+        _: *SplitTree,
+        _: *gobject.ParamSpec,
+        self: *Self,
+    ) callconv(.c) void {
+        const priv = self.private();
+        priv.surface_bindings.setSource(null);
+        if (self.getActiveSurface()) |surface| {
+            priv.surface_bindings.setSource(surface.as(gobject.Object));
+        }
+
+        self.as(gobject.Object).notifyByPspec(properties.@"active-surface".impl.param_spec);
     }
 
     const C = Common(Self, Private);
@@ -250,7 +287,8 @@ pub const Tab = extern struct {
         var parent: *Parent.Class = undefined;
         pub const Instance = Self;
 
-        fn init(class: *Class) callconv(.C) void {
+        fn init(class: *Class) callconv(.c) void {
+            gobject.ext.ensureType(SplitTree);
             gobject.ext.ensureType(Surface);
             gtk.Widget.Class.setTemplateFromResource(
                 class.as(gtk.Widget.Class),
@@ -265,14 +303,16 @@ pub const Tab = extern struct {
             gobject.ext.registerProperties(class, &.{
                 properties.@"active-surface".impl,
                 properties.config.impl,
+                properties.@"surface-tree".impl,
                 properties.title.impl,
             });
 
             // Bindings
-            class.bindTemplateChildPrivate("surface", .{});
+            class.bindTemplateChildPrivate("split_tree", .{});
 
             // Template Callbacks
-            class.bindTemplateCallback("surface_close_request", &surfaceCloseRequest);
+            class.bindTemplateCallback("notify_active_surface", &propActiveSurface);
+            class.bindTemplateCallback("notify_tree", &propSplitTree);
 
             // Signals
             signals.@"close-request".impl.register(.{});

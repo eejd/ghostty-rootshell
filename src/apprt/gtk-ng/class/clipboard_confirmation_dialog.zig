@@ -37,8 +37,6 @@ pub const ClipboardConfirmationDialog = extern struct {
                 Self,
                 bool,
                 .{
-                    .nick = "Can Remember",
-                    .blurb = "Allow remembering the choice.",
                     .default = false,
                     .accessor = gobject.ext.privateFieldAccessor(
                         Self,
@@ -57,8 +55,6 @@ pub const ClipboardConfirmationDialog = extern struct {
                 Self,
                 ?*apprt.ClipboardRequest,
                 .{
-                    .nick = "Request",
-                    .blurb = "The clipboard request.",
                     .accessor = C.privateBoxedFieldAccessor("request"),
                 },
             );
@@ -71,8 +67,6 @@ pub const ClipboardConfirmationDialog = extern struct {
                 Self,
                 ?*gtk.TextBuffer,
                 .{
-                    .nick = "Clipboard Contents",
-                    .blurb = "The clipboard contents being read/written.",
                     .accessor = C.privateObjFieldAccessor("clipboard_contents"),
                 },
             );
@@ -85,8 +79,6 @@ pub const ClipboardConfirmationDialog = extern struct {
                 Self,
                 bool,
                 .{
-                    .nick = "Blur",
-                    .blurb = "Blur the contents, allowing the user to reveal.",
                     .default = false,
                     .accessor = gobject.ext.privateFieldAccessor(
                         Self,
@@ -150,7 +142,7 @@ pub const ClipboardConfirmationDialog = extern struct {
         return gobject.ext.newInstance(Self, .{});
     }
 
-    fn init(self: *Self, _: *Class) callconv(.C) void {
+    fn init(self: *Self, _: *Class) callconv(.c) void {
         gtk.Widget.initTemplate(self.as(gtk.Widget));
 
         // Trigger initial values
@@ -239,7 +231,7 @@ pub const ClipboardConfirmationDialog = extern struct {
     fn response(
         self: *Self,
         response_id: [*:0]const u8,
-    ) callconv(.C) void {
+    ) callconv(.c) void {
         const remember: bool = if (comptime can_remember) remember: {
             const priv = self.private();
             break :remember priv.remember_choice.getActive() != 0;
@@ -262,7 +254,7 @@ pub const ClipboardConfirmationDialog = extern struct {
         }
     }
 
-    fn dispose(self: *Self) callconv(.C) void {
+    fn dispose(self: *Self) callconv(.c) void {
         const priv = self.private();
         if (priv.clipboard_contents) |v| {
             v.unref();
@@ -280,7 +272,7 @@ pub const ClipboardConfirmationDialog = extern struct {
         );
     }
 
-    fn finalize(self: *Self) callconv(.C) void {
+    fn finalize(self: *Self) callconv(.c) void {
         const priv = self.private();
         if (priv.request) |v| {
             glib.ext.destroy(v);
@@ -304,7 +296,7 @@ pub const ClipboardConfirmationDialog = extern struct {
         var parent: *Parent.Class = undefined;
         pub const Instance = Self;
 
-        fn init(class: *Class) callconv(.C) void {
+        fn init(class: *Class) callconv(.c) void {
             gtk.Widget.Class.setTemplateFromResource(
                 class.as(gtk.Widget.Class),
                 if (comptime adw_version.atLeast(1, 4, 0))

@@ -32,8 +32,6 @@ pub const CloseConfirmationDialog = extern struct {
                 Self,
                 Target,
                 .{
-                    .nick = "Target",
-                    .blurb = "The target for this close confirmation.",
                     .default = .app,
                     .accessor = gobject.ext.privateFieldAccessor(
                         Self,
@@ -81,7 +79,7 @@ pub const CloseConfirmationDialog = extern struct {
         });
     }
 
-    fn init(self: *Self, _: *Class) callconv(.C) void {
+    fn init(self: *Self, _: *Class) callconv(.c) void {
         gtk.Widget.initTemplate(self.as(gtk.Widget));
     }
 
@@ -102,7 +100,7 @@ pub const CloseConfirmationDialog = extern struct {
     fn response(
         self: *Self,
         response_id: [*:0]const u8,
-    ) callconv(.C) void {
+    ) callconv(.c) void {
         if (std.mem.orderZ(u8, response_id, "close") == .eq) {
             signals.@"close-request".impl.emit(
                 self,
@@ -120,7 +118,7 @@ pub const CloseConfirmationDialog = extern struct {
         }
     }
 
-    fn dispose(self: *Self) callconv(.C) void {
+    fn dispose(self: *Self) callconv(.c) void {
         gtk.Widget.disposeTemplate(
             self.as(gtk.Widget),
             getGObjectType(),
@@ -135,6 +133,7 @@ pub const CloseConfirmationDialog = extern struct {
     const C = Common(Self, Private);
     pub const as = C.as;
     pub const ref = C.ref;
+    pub const refSink = C.refSink;
     pub const unref = C.unref;
     const private = C.private;
 
@@ -143,7 +142,7 @@ pub const CloseConfirmationDialog = extern struct {
         var parent: *Parent.Class = undefined;
         pub const Instance = Self;
 
-        fn init(class: *Class) callconv(.C) void {
+        fn init(class: *Class) callconv(.c) void {
             gobject.ext.ensureType(Dialog);
             gtk.Widget.Class.setTemplateFromResource(
                 class.as(gtk.Widget.Class),
@@ -181,12 +180,14 @@ pub const Target = enum(c_int) {
     app,
     tab,
     window,
+    surface,
 
     pub fn title(self: Target) [*:0]const u8 {
         return switch (self) {
             .app => i18n._("Quit Ghostty?"),
             .tab => i18n._("Close Tab?"),
             .window => i18n._("Close Window?"),
+            .surface => i18n._("Close Split?"),
         };
     }
 
@@ -195,6 +196,7 @@ pub const Target = enum(c_int) {
             .app => i18n._("All terminal sessions will be terminated."),
             .tab => i18n._("All terminal sessions in this tab will be terminated."),
             .window => i18n._("All terminal sessions in this window will be terminated."),
+            .surface => i18n._("The currently running process in this split will be terminated."),
         };
     }
 

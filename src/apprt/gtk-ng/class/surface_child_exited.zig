@@ -40,8 +40,6 @@ const SurfaceChildExitedBanner = extern struct {
                 Self,
                 ?*apprt.surface.Message.ChildExited,
                 .{
-                    .nick = "Data",
-                    .blurb = "The child exit data.",
                     .accessor = C.privateBoxedFieldAccessor("data"),
                 },
             );
@@ -72,7 +70,7 @@ const SurfaceChildExitedBanner = extern struct {
         pub var offset: c_int = 0;
     };
 
-    fn init(self: *Self, _: *Class) callconv(.C) void {
+    fn init(self: *Self, _: *Class) callconv(.c) void {
         gtk.Widget.initTemplate(self.as(gtk.Widget));
     }
 
@@ -134,7 +132,7 @@ const SurfaceChildExitedBanner = extern struct {
     //---------------------------------------------------------------
     // Virtual methods
 
-    fn dispose(self: *Self) callconv(.C) void {
+    fn dispose(self: *Self) callconv(.c) void {
         gtk.Widget.disposeTemplate(
             self.as(gtk.Widget),
             getGObjectType(),
@@ -146,7 +144,7 @@ const SurfaceChildExitedBanner = extern struct {
         );
     }
 
-    fn finalize(self: *Self) callconv(.C) void {
+    fn finalize(self: *Self) callconv(.c) void {
         const priv = self.private();
         if (priv.data) |v| {
             glib.ext.destroy(v);
@@ -170,7 +168,7 @@ const SurfaceChildExitedBanner = extern struct {
         var parent: *Parent.Class = undefined;
         pub const Instance = Self;
 
-        fn init(class: *Class) callconv(.C) void {
+        fn init(class: *Class) callconv(.c) void {
             gtk.Widget.Class.setTemplateFromResource(
                 class.as(gtk.Widget.Class),
                 comptime gresource.blueprint(.{
@@ -255,7 +253,7 @@ const SurfaceChildExitedNoop = extern struct {
         var parent: *Parent.Class = undefined;
         pub const Instance = Self;
 
-        fn init(class: *Class) callconv(.C) void {
+        fn init(class: *Class) callconv(.c) void {
             _ = class;
             signals.@"close-request".impl.register(.{});
         }
