@@ -261,6 +261,51 @@ pub const SplitTree = extern struct {
         self.setTree(&new_tree);
     }
 
+    pub fn resize(
+        self: *Self,
+        direction: Surface.Tree.Split.Direction,
+        amount: u16,
+    ) Allocator.Error!bool {
+        // Avoid useless work
+        if (amount == 0) return false;
+
+        const old_tree = self.getTree() orelse return false;
+        const active = self.getActiveSurfaceHandle() orelse return false;
+
+        // Get all our dimensions we're going to need to turn our
+        // amount into a percentage.
+        const priv = self.private();
+        const width = priv.tree_bin.as(gtk.Widget).getWidth();
+        const height = priv.tree_bin.as(gtk.Widget).getHeight();
+        if (width == 0 or height == 0) return false;
+        const width_f64: f64 = @floatFromInt(width);
+        const height_f64: f64 = @floatFromInt(height);
+        const amount_f64: f64 = @floatFromInt(amount);
+
+        // Get our ratio and use positive/neg for directions.
+        const ratio: f64 = switch (direction) {
+            .right => amount_f64 / width_f64,
+            .left => -(amount_f64 / width_f64),
+            .down => amount_f64 / height_f64,
+            .up => -(amount_f64 / height_f64),
+        };
+
+        const layout: Surface.Tree.Split.Layout = switch (direction) {
+            .left, .right => .horizontal,
+            .up, .down => .vertical,
+        };
+
+        var new_tree = try old_tree.resize(
+            Application.default().allocator(),
+            active,
+            layout,
+            @floatCast(ratio),
+        );
+        defer new_tree.deinit();
+        self.setTree(&new_tree);
+        return true;
+    }
+
     /// Move focus from the currently focused surface to the given
     /// direction. Returns true if focus switched to a new surface.
     pub fn goto(self: *Self, to: Surface.Tree.Goto) bool {

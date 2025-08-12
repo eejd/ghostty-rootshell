@@ -597,6 +597,8 @@ pub const Application = extern struct {
 
             .render => Action.render(target),
 
+            .resize_split => return Action.resizeSplit(target, value),
+
             .ring_bell => Action.ringBell(target),
 
             .set_title => Action.setTitle(target, value),
@@ -618,7 +620,6 @@ pub const Application = extern struct {
             .prompt_title,
             .inspector,
             // TODO: splits
-            .resize_split,
             .toggle_split_zoom,
             => {
                 log.warn("unimplemented action={}", .{action});
@@ -2000,6 +2001,43 @@ const Action = struct {
         switch (target) {
             .app => {},
             .surface => |v| v.rt_surface.surface.redraw(),
+        }
+    }
+
+    pub fn resizeSplit(
+        target: apprt.Target,
+        value: apprt.action.ResizeSplit,
+    ) bool {
+        switch (target) {
+            .app => {
+                log.warn("resize_split to app is unexpected", .{});
+                return false;
+            },
+            .surface => |core| {
+                const surface = core.rt_surface.surface;
+                const tree = ext.getAncestor(
+                    SplitTree,
+                    surface.as(gtk.Widget),
+                ) orelse {
+                    log.warn("surface is not in a split tree, ignoring goto_split", .{});
+                    return false;
+                };
+
+                return tree.resize(
+                    switch (value.direction) {
+                        .up => .up,
+                        .down => .down,
+                        .left => .left,
+                        .right => .right,
+                    },
+                    value.amount,
+                ) catch |err| switch (err) {
+                    error.OutOfMemory => {
+                        log.warn("unable to resize split, out of memory", .{});
+                        return false;
+                    },
+                };
+            },
         }
     }
 
