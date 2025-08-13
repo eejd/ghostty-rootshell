@@ -1951,29 +1951,29 @@ pub const Surface = extern struct {
         const event = gesture.as(gtk.EventController).getCurrentEvent() orelse return;
 
         const priv = self.private();
-        if (priv.core_surface) |surface| {
-            const gtk_mods = event.getModifierState();
-            const button = translateMouseButton(gesture.as(gtk.GestureSingle).getCurrentButton());
+        const surface = priv.core_surface orelse return;
+        const gtk_mods = event.getModifierState();
+        const button = translateMouseButton(gesture.as(gtk.GestureSingle).getCurrentButton());
 
-            // Trigger the on-screen keyboard if we have no selection.
-            //
-            // It's better to do this here rather than in the core callback
-            // since we have direct access to the underlying gdk.Event here.
-            if (button == .left and !surface.hasSelection()) {
-                if (!self.showOnScreenKeyboard(event)) {
-                    log.warn("failed to activate the on-screen keyboard", .{});
-                }
+        const mods = gtk_key.translateMods(gtk_mods);
+        const consumed = surface.mouseButtonCallback(
+            .release,
+            button,
+            mods,
+        ) catch |err| {
+            log.warn("error in key callback err={}", .{err});
+            return;
+        };
+
+        // Trigger the on-screen keyboard if we have no selection,
+        // and that the mouse event hasn't been intercepted by the callback.
+        //
+        // It's better to do this here rather than within the core callback
+        // since we have direct access to the underlying gdk.Event here.
+        if (!consumed and button == .left and !surface.hasSelection()) {
+            if (!self.showOnScreenKeyboard(event)) {
+                log.warn("failed to activate the on-screen keyboard", .{});
             }
-
-            const mods = gtk_key.translateMods(gtk_mods);
-            _ = surface.mouseButtonCallback(
-                .release,
-                button,
-                mods,
-            ) catch |err| {
-                log.warn("error in key callback err={}", .{err});
-                return;
-            };
         }
     }
 
