@@ -177,7 +177,7 @@ pub const Tab = extern struct {
         gtk.Widget.initTemplate(self.as(gtk.Widget));
 
         // Init our actions
-        self.initActions();
+        self.initActionMap();
 
         // If our configuration is null then we get the configuration
         // from the application.
@@ -198,45 +198,13 @@ pub const Tab = extern struct {
         };
     }
 
-    /// Setup our action map.
-    fn initActions(self: *Self) void {
-        // The set of actions. Each action has (in order):
-        // [0] The action name
-        // [1] The callback function
-        // [2] The glib.VariantType of the parameter
-        //
-        // For action names:
-        // https://docs.gtk.org/gio/type_func.Action.name_is_valid.html
-        const actions = .{
-            .{ "close", actionClose, null },
-            .{ "ring-bell", actionRingBell, null },
+    fn initActionMap(self: *Self) void {
+        const actions = [_]ext.Action(Self){
+            .init("close", actionClose, null),
+            .init("ring-bell", actionRingBell, null),
         };
 
-        // We need to collect our actions into a group since we're just
-        // a plain widget that doesn't implement ActionGroup directly.
-        const group = gio.SimpleActionGroup.new();
-        errdefer group.unref();
-        const map = group.as(gio.ActionMap);
-        inline for (actions) |entry| {
-            const action = gio.SimpleAction.new(
-                entry[0],
-                entry[2],
-            );
-            defer action.unref();
-            _ = gio.SimpleAction.signals.activate.connect(
-                action,
-                *Self,
-                entry[1],
-                self,
-                .{},
-            );
-            map.addAction(action.as(gio.Action));
-        }
-
-        self.as(gtk.Widget).insertActionGroup(
-            "tab",
-            group.as(gio.ActionGroup),
-        );
+        ext.addActionsAsGroup(Self, self, "tab", &actions);
     }
 
     //---------------------------------------------------------------
