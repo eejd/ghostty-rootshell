@@ -1,12 +1,12 @@
 const std = @import("std");
+const assert = std.debug.assert;
 
+const cimgui = @import("cimgui");
+const gl = @import("opengl");
 const adw = @import("adw");
 const gdk = @import("gdk");
 const gobject = @import("gobject");
 const gtk = @import("gtk");
-
-const cimgui = @import("cimgui");
-const gl = @import("opengl");
 
 const input = @import("../../../input.zig");
 const gresource = @import("../build/gresource.zig");
@@ -16,10 +16,11 @@ const Common = @import("../class.zig").Common;
 
 const log = std.log.scoped(.gtk_ghostty_imgui_widget);
 
-pub const RenderCallback = *const fn (?*anyopaque) void;
-pub const RenderUserdata = *anyopaque;
-
 /// A widget for embedding a Dear ImGui application.
+///
+/// It'd be a lot cleaner to use inheritance here but zig-gobject doesn't
+/// currently have a way to define virtual methods, so we have to use
+/// composition and signals instead.
 pub const ImguiWidget = extern struct {
     const Self = @This();
     parent_instance: Parent,
@@ -34,7 +35,37 @@ pub const ImguiWidget = extern struct {
 
     pub const properties = struct {};
 
-    pub const signals = struct {};
+    pub const signals = struct {
+        /// Emitted when the child widget should render. During the callback,
+        /// the Imgui context is valid.
+        pub const render = struct {
+            pub const name = "render";
+            pub const connect = impl.connect;
+            const impl = gobject.ext.defineSignal(
+                name,
+                Self,
+                &.{},
+                void,
+            );
+        };
+
+        /// Emitted when first realized to allow the embedded ImGui application
+        /// to initialize itself. When this is called, the ImGui context
+        /// is properly set.
+        ///
+        /// This might be called multiple times, but each time it is
+        /// called a new Imgui context will be created.
+        pub const setup = struct {
+            pub const name = "setup";
+            pub const connect = impl.connect;
+            const impl = gobject.ext.defineSignal(
+                name,
+                Self,
+                &.{},
+                void,
+            );
+        };
+    };
 
     const Private = struct {
         /// GL area where we display the Dear ImGui application.
@@ -43,18 +74,12 @@ pub const ImguiWidget = extern struct {
         /// GTK input method context
         im_context: *gtk.IMMulticontext,
 
-        /// Dear ImGui context
+        /// Dear ImGui context. We create a context per widget so that we can
+        /// have multiple active imgui views in the same application.
         ig_context: ?*cimgui.c.ImGuiContext = null,
-
-        /// True if the the Dear ImGui OpenGL backend was initialized.
-        ig_gl_backend_initialized: bool = false,
 
         /// Our previous instant used to calculate delta time for animations.
         instant: ?std.time.Instant = null,
-
-        /// This is called every frame to populate the Dear ImGui frame.
-        render_callback: ?RenderCallback = null,
-        render_userdata: ?RenderUserdata = null,
 
         pub var offset: c_int = 0;
     };
@@ -64,21 +89,6 @@ pub const ImguiWidget = extern struct {
 
     fn init(self: *Self, _: *Class) callconv(.c) void {
         gtk.Widget.initTemplate(self.as(gtk.Widget));
-
-        const priv = self.private();
-
-        priv.ig_context = ig_context: {
-            const ig_context = cimgui.c.igCreateContext(null) orelse {
-                log.warn("unable to initialize Dear ImGui context", .{});
-                break :ig_context null;
-            };
-            errdefer cimgui.c.igDestroyContext(ig_context);
-            cimgui.c.igSetCurrentContext(ig_context);
-            const io: *cimgui.c.ImGuiIO = cimgui.c.igGetIO();
-            io.BackendPlatformName = "ghostty_gtk";
-
-            break :ig_context ig_context;
-        };
     }
 
     fn dispose(self: *Self) callconv(.c) void {
@@ -93,48 +103,8 @@ pub const ImguiWidget = extern struct {
         );
     }
 
-    fn finalize(self: *Self) callconv(.c) void {
-        const priv = self.private();
-
-        // If the the Dear ImGui OpenGL backend was never initialized then we
-        // need to destroy the Dear ImGui context manually here. If it _was_
-        // initialized cleanup will be handled when the GLArea is unrealized.
-        if (!priv.ig_gl_backend_initialized) {
-            if (priv.ig_context) |ig_context| {
-                cimgui.c.igDestroyContext(ig_context);
-                priv.ig_context = null;
-            }
-        }
-
-        gobject.Object.virtual_methods.finalize.call(
-            Class.parent,
-            self.as(Parent),
-        );
-    }
-
     //---------------------------------------------------------------
     // Public methods
-
-    pub fn new() *Self {
-        return gobject.ext.newInstance(Self, .{});
-    }
-
-    /// Use to setup the Dear ImGui application.
-    pub fn setup(self: *Self, callback: *const fn () void) void {
-        self.setCurrentContext() catch return;
-        callback();
-    }
-
-    /// Set the callback used to render every frame.
-    pub fn setRenderCallback(
-        self: *Self,
-        callback: ?RenderCallback,
-        userdata: ?RenderUserdata,
-    ) void {
-        const priv = self.private();
-        priv.render_callback = callback;
-        priv.render_userdata = userdata;
-    }
 
     /// This should be called anytime the underlying data for the UI changes
     /// so that the UI can be refreshed.
@@ -146,7 +116,9 @@ pub const ImguiWidget = extern struct {
     //---------------------------------------------------------------
     // Private Methods
 
-    /// Set our imgui context to be current, or return an error.
+    /// Set our imgui context to be current, or return an error. This must be
+    /// called before any Dear ImGui API calls so that they're made against
+    /// the proper context.
     fn setCurrentContext(self: *Self) error{ContextNotInitialized}!void {
         const priv = self.private();
         const ig_context = priv.ig_context orelse {
@@ -238,24 +210,40 @@ pub const ImguiWidget = extern struct {
 
     fn glAreaRealize(_: *gtk.GLArea, self: *Self) callconv(.c) void {
         const priv = self.private();
+        assert(priv.ig_context == null);
 
         priv.gl_area.makeCurrent();
         if (priv.gl_area.getError()) |err| {
-            log.err("GLArea for Dear ImGui widget failed to realize: {s}", .{err.f_message orelse "(unknown)"});
+            log.warn("GLArea for Dear ImGui widget failed to realize: {s}", .{err.f_message orelse "(unknown)"});
             return;
         }
 
+        priv.ig_context = cimgui.c.igCreateContext(null) orelse {
+            log.warn("unable to initialize Dear ImGui context", .{});
+            return;
+        };
         self.setCurrentContext() catch return;
 
-        // realize means that our OpenGL context is ready, so we can now
+        // Setup some basic config
+        const io: *cimgui.c.ImGuiIO = cimgui.c.igGetIO();
+        io.BackendPlatformName = "ghostty_gtk";
+
+        // Realize means that our OpenGL context is ready, so we can now
         // initialize the ImgUI OpenGL backend for our context.
         _ = cimgui.ImGui_ImplOpenGL3_Init(null);
 
-        priv.ig_gl_backend_initialized = true;
+        // Setup our app
+        signals.setup.impl.emit(
+            self,
+            null,
+            .{},
+            null,
+        );
     }
 
     /// Handle a request to unrealize the GLArea
     fn glAreaUnrealize(_: *gtk.GLArea, self: *ImguiWidget) callconv(.c) void {
+        assert(self.private().ig_context != null);
         self.setCurrentContext() catch return;
         cimgui.ImGui_ImplOpenGL3_Shutdown();
     }
@@ -292,8 +280,12 @@ pub const ImguiWidget = extern struct {
             cimgui.c.igNewFrame();
 
             // Use the callback to draw the UI.
-            const priv = self.private();
-            if (priv.render_callback) |cb| cb(priv.render_userdata);
+            signals.render.impl.emit(
+                self,
+                null,
+                .{},
+                null,
+            );
 
             // Render
             cimgui.c.igRender();
@@ -308,17 +300,17 @@ pub const ImguiWidget = extern struct {
     }
 
     fn ecFocusEnter(_: *gtk.EventControllerFocus, self: *Self) callconv(.c) void {
-        self.queueRender();
         self.setCurrentContext() catch return;
         const io: *cimgui.c.ImGuiIO = cimgui.c.igGetIO();
         cimgui.c.ImGuiIO_AddFocusEvent(io, true);
+        self.queueRender();
     }
 
     fn ecFocusLeave(_: *gtk.EventControllerFocus, self: *Self) callconv(.c) void {
-        self.queueRender();
         self.setCurrentContext() catch return;
         const io: *cimgui.c.ImGuiIO = cimgui.c.igGetIO();
         cimgui.c.ImGuiIO_AddFocusEvent(io, false);
+        self.queueRender();
     }
 
     fn ecKeyPressed(
@@ -461,28 +453,22 @@ pub const ImguiWidget = extern struct {
             class.bindTemplateCallback("unrealize", &glAreaUnrealize);
             class.bindTemplateCallback("resize", &glAreaResize);
             class.bindTemplateCallback("render", &glAreaRender);
-
             class.bindTemplateCallback("focus_enter", &ecFocusEnter);
             class.bindTemplateCallback("focus_leave", &ecFocusLeave);
-
             class.bindTemplateCallback("key_pressed", &ecKeyPressed);
             class.bindTemplateCallback("key_released", &ecKeyReleased);
-
             class.bindTemplateCallback("mouse_pressed", &ecMousePressed);
             class.bindTemplateCallback("mouse_released", &ecMouseReleased);
             class.bindTemplateCallback("mouse_motion", &ecMouseMotion);
-
             class.bindTemplateCallback("scroll", &ecMouseScroll);
-
             class.bindTemplateCallback("im_commit", &imCommit);
 
-            // Properties
-
             // Signals
+            signals.render.impl.register(.{});
+            signals.setup.impl.register(.{});
 
             // Virtual methods
             gobject.Object.virtual_methods.dispose.implement(class, &dispose);
-            gobject.Object.virtual_methods.finalize.implement(class, &finalize);
         }
 
         pub const as = C.Class.as;

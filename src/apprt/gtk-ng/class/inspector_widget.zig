@@ -63,10 +63,6 @@ pub const InspectorWidget = extern struct {
 
     fn init(self: *Self, _: *Class) callconv(.c) void {
         gtk.Widget.initTemplate(self.as(gtk.Widget));
-
-        const priv = self.private();
-        priv.imgui_widget.setup(Inspector.setup);
-        priv.imgui_widget.setRenderCallback(imguiRender, self);
     }
 
     fn dispose(self: *Self) callconv(.c) void {
@@ -108,18 +104,6 @@ pub const InspectorWidget = extern struct {
 
     //---------------------------------------------------------------
     //  Private Methods
-
-    /// This is the callback from the embedded Dear ImGui widget that is called
-    /// to do the actual drawing.
-    fn imguiRender(ud: ?*anyopaque) void {
-        const self: *Self = @ptrCast(@alignCast(ud orelse return));
-        const priv = self.private();
-        const surface = priv.surface.get() orelse return;
-        defer surface.unref();
-        const core_surface = surface.core() orelse return;
-        const inspector = core_surface.inspector orelse return;
-        inspector.render();
-    }
 
     //---------------------------------------------------------------
     // Properties
@@ -166,6 +150,25 @@ pub const InspectorWidget = extern struct {
     //---------------------------------------------------------------
     // Signal Handlers
 
+    fn imguiRender(
+        _: *ImguiWidget,
+        self: *Self,
+    ) callconv(.c) void {
+        const priv = self.private();
+        const surface = priv.surface.get() orelse return;
+        defer surface.unref();
+        const core_surface = surface.core() orelse return;
+        const inspector = core_surface.inspector orelse return;
+        inspector.render();
+    }
+
+    fn imguiSetup(
+        _: *ImguiWidget,
+        _: *Self,
+    ) callconv(.c) void {
+        Inspector.setup();
+    }
+
     const C = Common(Self, Private);
     pub const as = C.as;
     pub const ref = C.ref;
@@ -191,6 +194,10 @@ pub const InspectorWidget = extern struct {
 
             // Bindings
             class.bindTemplateChildPrivate("imgui_widget", .{});
+
+            // Template callbacks
+            class.bindTemplateCallback("imgui_render", &imguiRender);
+            class.bindTemplateCallback("imgui_setup", &imguiSetup);
 
             // Properties
             gobject.ext.registerProperties(class, &.{

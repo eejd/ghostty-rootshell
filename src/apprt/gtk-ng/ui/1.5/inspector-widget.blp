@@ -10,6 +10,9 @@ template $GhosttyInspectorWidget: Adw.Bin {
   vexpand: true;
 
   Adw.Bin {
-    $GhosttyImguiWidget imgui_widget {}
+    $GhosttyImguiWidget imgui_widget {
+      render => $imgui_render();
+      setup => $imgui_setup();
+    }
   }
 }
