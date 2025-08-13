@@ -1233,7 +1233,7 @@ pub const Surface = extern struct {
         gtk.Widget.initTemplate(self.as(gtk.Widget));
 
         // Initialize our actions
-        self.initActions();
+        self.initActionMap();
 
         const priv = self.private();
 
@@ -1281,43 +1281,12 @@ pub const Surface = extern struct {
         self.propConfig(undefined, null);
     }
 
-    fn initActions(self: *Self) void {
-        // The set of actions. Each action has (in order):
-        // [0] The action name
-        // [1] The callback function
-        // [2] The glib.VariantType of the parameter
-        //
-        // For action names:
-        // https://docs.gtk.org/gio/type_func.Action.name_is_valid.html
-        const actions = .{
-            .{ "prompt-title", actionPromptTitle, null },
+    fn initActionMap(self: *Self) void {
+        const actions = [_]ext.Action(Self){
+            .init("prompt-title", actionPromptTitle, null),
         };
 
-        // We need to collect our actions into a group since we're just
-        // a plain widget that doesn't implement ActionGroup directly.
-        const group = gio.SimpleActionGroup.new();
-        errdefer group.unref();
-        const map = group.as(gio.ActionMap);
-        inline for (actions) |entry| {
-            const action = gio.SimpleAction.new(
-                entry[0],
-                entry[2],
-            );
-            defer action.unref();
-            _ = gio.SimpleAction.signals.activate.connect(
-                action,
-                *Self,
-                entry[1],
-                self,
-                .{},
-            );
-            map.addAction(action.as(gio.Action));
-        }
-
-        self.as(gtk.Widget).insertActionGroup(
-            "surface",
-            group.as(gio.ActionGroup),
-        );
+        ext.addActionsAsGroup(Self, self, "surface", &actions);
     }
 
     fn dispose(self: *Self) callconv(.c) void {
