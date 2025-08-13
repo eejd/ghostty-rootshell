@@ -618,6 +618,7 @@ pub const Application = extern struct {
             .toggle_window_decorations => return Action.toggleWindowDecorations(target),
             .toggle_command_palette => return Action.toggleCommandPalette(target),
             .toggle_split_zoom => return Action.toggleSplitZoom(target),
+            .show_on_screen_keyboard => return Action.showOnScreenKeyboard(target),
 
             // Unimplemented but todo on gtk-ng branch
             .inspector,
@@ -2143,6 +2144,21 @@ const Action = struct {
                 const surface = core.rt_surface.surface;
                 return surface.as(gtk.Widget).activateAction("split-tree.zoom", null) != 0;
             },
+        }
+    }
+
+    pub fn showOnScreenKeyboard(target: apprt.Target) bool {
+        switch (target) {
+            .app => {
+                log.warn("show_on_screen_keyboard to app is unexpected", .{});
+                return false;
+            },
+            // NOTE: Even though `activateOsk` takes a gdk.Event, it's currently
+            // unused by all implementations of `activateOsk` as of GTK 4.18.
+            // The commit that introduced the method (ce6aa73c) clarifies that
+            // the event *may* be used by other IM backends, but for Linux desktop
+            // environments this doesn't matter.
+            .surface => |v| return v.rt_surface.surface.showOnScreenKeyboard(null),
         }
     }
 
