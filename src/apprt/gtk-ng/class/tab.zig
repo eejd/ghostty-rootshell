@@ -11,6 +11,7 @@ const i18n = @import("../../../os/main.zig").i18n;
 const apprt = @import("../../../apprt.zig");
 const input = @import("../../../input.zig");
 const CoreSurface = @import("../../../Surface.zig");
+const ext = @import("../ext.zig");
 const gtk_version = @import("../gtk_version.zig");
 const adw_version = @import("../adw_version.zig");
 const gresource = @import("../build/gresource.zig");
@@ -175,6 +176,9 @@ pub const Tab = extern struct {
     fn init(self: *Self, _: *Class) callconv(.c) void {
         gtk.Widget.initTemplate(self.as(gtk.Widget));
 
+        // Init our actions
+        self.initActions();
+
         // If our configuration is null then we get the configuration
         // from the application.
         const priv = self.private();
@@ -192,6 +196,46 @@ pub const Tab = extern struct {
                 @panic("oom");
             },
         };
+    }
+
+    /// Setup our action map.
+    fn initActions(self: *Self) void {
+        // The set of actions. Each action has (in order):
+        // [0] The action name
+        // [1] The callback function
+        // [2] The glib.VariantType of the parameter
+        //
+        // For action names:
+        // https://docs.gtk.org/gio/type_func.Action.name_is_valid.html
+        const actions = .{
+            .{ "ring-bell", actionRingBell, null },
+        };
+
+        // We need to collect our actions into a group since we're just
+        // a plain widget that doesn't implement ActionGroup directly.
+        const group = gio.SimpleActionGroup.new();
+        errdefer group.unref();
+        const map = group.as(gio.ActionMap);
+        inline for (actions) |entry| {
+            const action = gio.SimpleAction.new(
+                entry[0],
+                entry[2],
+            );
+            defer action.unref();
+            _ = gio.SimpleAction.signals.activate.connect(
+                action,
+                *Self,
+                entry[1],
+                self,
+                .{},
+            );
+            map.addAction(action.as(gio.Action));
+        }
+
+        self.as(gtk.Widget).insertActionGroup(
+            "tab",
+            group.as(gio.ActionGroup),
+        );
     }
 
     //---------------------------------------------------------------
@@ -221,6 +265,15 @@ pub const Tab = extern struct {
         const surface = self.getActiveSurface() orelse return false;
         const core_surface = surface.core() orelse return false;
         return core_surface.needsConfirmQuit();
+    }
+
+    /// Get the tab page holding this tab, if any.
+    fn getTabPage(self: *Self) ?*adw.TabPage {
+        const tab_view = ext.getAncestor(
+            adw.TabView,
+            self.as(gtk.Widget),
+        ) orelse return null;
+        return tab_view.getPage(self.as(gtk.Widget));
     }
 
     //---------------------------------------------------------------
@@ -291,33 +344,66 @@ pub const Tab = extern struct {
         self.as(gobject.Object).notifyByPspec(properties.@"active-surface".impl.param_spec);
     }
 
+    fn actionRingBell(
+        _: *gio.SimpleAction,
+        _: ?*glib.Variant,
+        self: *Self,
+    ) callconv(.c) void {
+        // Future note: I actually don't like this logic living here at all.
+        // I think a better approach will be for the ring bell action to
+        // specify its sending surface and then do all this in the window.
+
+        // If the page is selected already we don't mark it as needing
+        // attention. We only want to mark unfocused pages. This will then
+        // clear when the page is selected.
+        const page = self.getTabPage() orelse return;
+        if (page.getSelected() != 0) return;
+        page.setNeedsAttention(@intFromBool(true));
+    }
+
     fn closureComputedTitle(
         _: *Self,
+        config_: ?*Config,
         plain_: ?[*:0]const u8,
         zoomed_: c_int,
+        bell_ringing_: c_int,
+        _: *gobject.ParamSpec,
     ) callconv(.c) ?[*:0]const u8 {
         const zoomed = zoomed_ != 0;
+        const bell_ringing = bell_ringing_ != 0;
+
         const plain = plain: {
             const default = "Ghostty";
             const plain = plain_ orelse break :plain default;
             break :plain std.mem.span(plain);
         };
 
-        // If we're zoomed, prefix with the magnifying glass emoji.
-        if (zoomed) zoomed: {
-            // This results in an extra allocation (that we free), but I
-            // prefer using the Zig APIs so much more than the libc ones.
-            const alloc = Application.default().allocator();
-            const slice = std.fmt.allocPrint(
-                alloc,
-                "🔍 {s}",
-                .{plain},
-            ) catch break :zoomed;
-            defer alloc.free(slice);
-            return glib.ext.dupeZ(u8, slice);
+        // We don't need a config in every case, but if we don't have a config
+        // let's just assume something went terribly wrong and use our
+        // default title. Its easier then guarding on the config existing
+        // in every case for something so unlikely.
+        const config = if (config_) |v| v.get() else {
+            log.warn("config unavailable for computed title, likely bug", .{});
+            return glib.ext.dupeZ(u8, plain);
+        };
+
+        // Use an allocator to build up our string as we write it.
+        var buf: std.ArrayList(u8) = .init(Application.default().allocator());
+        defer buf.deinit();
+        const writer = buf.writer();
+
+        // If our bell is ringing, then we prefix the bell icon to the title.
+        if (bell_ringing and config.@"bell-features".title) {
+            writer.writeAll("🔔 ") catch {};
         }
 
-        return glib.ext.dupeZ(u8, plain);
+        // If we're zoomed, prefix with the magnifying glass emoji.
+        if (zoomed) {
+            writer.writeAll("🔍 ") catch {};
+        }
+
+        writer.writeAll(plain) catch return glib.ext.dupeZ(u8, plain);
+        return glib.ext.dupeZ(u8, buf.items);
     }
 
     const C = Common(Self, Private);

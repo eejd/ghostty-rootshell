@@ -2043,7 +2043,7 @@ const Action = struct {
     pub fn ringBell(target: apprt.Target) void {
         switch (target) {
             .app => {},
-            .surface => |v| v.rt_surface.surface.ringBell(),
+            .surface => |v| v.rt_surface.surface.setBellRinging(true),
         }
     }
 

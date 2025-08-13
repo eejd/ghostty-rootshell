@@ -53,6 +53,23 @@ pub fn Common(
             }
         }).private else {};
 
+        /// A helper that creates a property that reads and writes a
+        /// private field with only shallow copies. This is good for primitives
+        /// such as bools, numbers, etc.
+        pub fn privateShallowFieldAccessor(
+            comptime name: []const u8,
+        ) gobject.ext.Accessor(
+            Self,
+            @FieldType(Private.?, name),
+        ) {
+            return gobject.ext.privateFieldAccessor(
+                Self,
+                Private.?,
+                &Private.?.offset,
+                name,
+            );
+        }
+
         /// A helper that can be used to create a property that reads and
         /// writes a private boxed gobject field type.
         ///

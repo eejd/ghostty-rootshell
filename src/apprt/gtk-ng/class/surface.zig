@@ -47,6 +47,19 @@ pub const Surface = extern struct {
     pub const Tree = datastruct.SplitTree(Self);
 
     pub const properties = struct {
+        pub const @"bell-ringing" = struct {
+            pub const name = "bell-ringing";
+            const impl = gobject.ext.defineProperty(
+                name,
+                Self,
+                bool,
+                .{
+                    .default = false,
+                    .accessor = C.privateShallowFieldAccessor("bell_ringing"),
+                },
+            );
+        };
+
         pub const config = struct {
             pub const name = "config";
             const impl = gobject.ext.defineProperty(
@@ -257,21 +270,6 @@ pub const Surface = extern struct {
             );
         };
 
-        /// The bell is rung.
-        ///
-        /// The surface view handles the audio bell feature but none of the
-        /// others so it is up to the embedding widget to react to this.
-        pub const bell = struct {
-            pub const name = "bell";
-            pub const connect = impl.connect;
-            const impl = gobject.ext.defineSignal(
-                name,
-                Self,
-                &.{},
-                void,
-            );
-        };
-
         /// Emitted whenever the clipboard has been written.
         pub const @"clipboard-write" = struct {
             pub const name = "clipboard-write";
@@ -456,6 +454,11 @@ pub const Surface = extern struct {
         // Progress bar
         progress_bar_timer: ?c_uint = null,
 
+        // True while the bell is ringing. This will be set to false (after
+        // true) under various scenarios, but can also manually be set to
+        // false by a parent widget.
+        bell_ringing: bool = false,
+
         // Template binds
         child_exited_overlay: *ChildExited,
         context_menu: *gtk.PopoverMenu,
@@ -518,18 +521,6 @@ pub const Surface = extern struct {
     pub fn redraw(self: *Self) void {
         const priv = self.private();
         priv.gl_area.queueRender();
-    }
-
-    /// Ring the bell.
-    pub fn ringBell(self: *Self) void {
-        // TODO: Audio feature
-
-        signals.bell.impl.emit(
-            self,
-            null,
-            .{},
-            null,
-        );
     }
 
     pub fn toggleFullscreen(self: *Self) void {
@@ -691,7 +682,7 @@ pub const Surface = extern struct {
         keycode: c_uint,
         gtk_mods: gdk.ModifierType,
     ) bool {
-        log.warn("keyEvent action={}", .{action});
+        //log.warn("keyEvent action={}", .{action});
         const event = ec_key.as(gtk.EventController).getCurrentEvent() orelse return false;
         const key_event = gobject.ext.cast(gdk.KeyEvent, event) orelse return false;
         const priv = self.private();
@@ -880,6 +871,10 @@ pub const Surface = extern struct {
                     priv.im_context.as(gtk.IMContext).reset();
                     surface.preeditCallback(null) catch {};
                 }
+
+                // Bell stops ringing when any key is pressed that is used by
+                // the core in any way.
+                self.setBellRinging(false);
 
                 return true;
             },
@@ -1383,6 +1378,17 @@ pub const Surface = extern struct {
         self.as(gobject.Object).notifyByPspec(properties.@"mouse-hover-url".impl.param_spec);
     }
 
+    pub fn getBellRinging(self: *Self) bool {
+        return self.private().bell_ringing;
+    }
+
+    pub fn setBellRinging(self: *Self, ringing: bool) void {
+        const priv = self.private();
+        if (priv.bell_ringing == ringing) return;
+        priv.bell_ringing = ringing;
+        self.as(gobject.Object).notifyByPspec(properties.@"bell-ringing".impl.param_spec);
+    }
+
     fn propConfig(
         self: *Self,
         _: *gobject.ParamSpec,
@@ -1513,6 +1519,64 @@ pub const Surface = extern struct {
 
         // Set our new cursor.
         priv.gl_area.as(gtk.Widget).setCursorFromName(name.ptr);
+    }
+
+    fn propBellRinging(
+        self: *Self,
+        _: *gobject.ParamSpec,
+        _: ?*anyopaque,
+    ) callconv(.c) void {
+        const priv = self.private();
+        if (!priv.bell_ringing) return;
+
+        // Activate actions if they exist
+        _ = self.as(gtk.Widget).activateAction("tab.ring-bell", null);
+        _ = self.as(gtk.Widget).activateAction("win.ring-bell", null);
+
+        // Do our sound
+        const config = if (priv.config) |c| c.get() else return;
+        if (config.@"bell-features".audio) audio: {
+            const config_path = config.@"bell-audio-path" orelse break :audio;
+            const path, const required = switch (config_path) {
+                .optional => |path| .{ path, false },
+                .required => |path| .{ path, true },
+            };
+
+            const volume = std.math.clamp(
+                config.@"bell-audio-volume",
+                0.0,
+                1.0,
+            );
+
+            assert(std.fs.path.isAbsolute(path));
+            const media_file = gtk.MediaFile.newForFilename(path);
+
+            // If the audio file is marked as required, we'll emit an error if
+            // there was a problem playing it. Otherwise there will be silence.
+            if (required) {
+                _ = gobject.Object.signals.notify.connect(
+                    media_file,
+                    ?*anyopaque,
+                    mediaFileError,
+                    null,
+                    .{ .detail = "error" },
+                );
+            }
+
+            // Watch for the "ended" signal so that we can clean up after
+            // ourselves.
+            _ = gobject.Object.signals.notify.connect(
+                media_file,
+                ?*anyopaque,
+                mediaFileEnded,
+                null,
+                .{ .detail = "ended" },
+            );
+
+            const media_stream = media_file.as(gtk.MediaStream);
+            media_stream.setVolume(volume);
+            media_stream.play();
+        }
     }
 
     //---------------------------------------------------------------
@@ -1668,6 +1732,9 @@ pub const Surface = extern struct {
         priv.im_context.as(gtk.IMContext).focusIn();
         _ = glib.idleAddOnce(idleFocus, self.ref());
         self.as(gobject.Object).notifyByPspec(properties.focused.impl.param_spec);
+
+        // Bell stops ringing as soon as we gain focus
+        self.setBellRinging(false);
     }
 
     fn ecFocusLeave(_: *gtk.EventControllerFocus, self: *Self) callconv(.c) void {
@@ -1703,6 +1770,9 @@ pub const Surface = extern struct {
         self: *Self,
     ) callconv(.c) void {
         const event = gesture.as(gtk.EventController).getCurrentEvent() orelse return;
+
+        // Bell stops ringing if any mouse button is pressed.
+        self.setBellRinging(false);
 
         // If we don't have focus, grab it.
         const priv = self.private();
@@ -2314,6 +2384,35 @@ pub const Surface = extern struct {
         right.setVisible(0);
     }
 
+    fn mediaFileError(
+        media_file: *gtk.MediaFile,
+        _: *gobject.ParamSpec,
+        _: ?*anyopaque,
+    ) callconv(.c) void {
+        const path = path: {
+            const file = media_file.getFile() orelse break :path null;
+            break :path file.getPath();
+        };
+        defer if (path) |p| glib.free(p);
+
+        const media_stream = media_file.as(gtk.MediaStream);
+        const err = media_stream.getError() orelse return;
+        log.warn("error playing bell from {s}: {s} {d} {s}", .{
+            path orelse "<<unknown>>",
+            glib.quarkToString(err.f_domain),
+            err.f_code,
+            err.f_message orelse "",
+        });
+    }
+
+    fn mediaFileEnded(
+        media_file: *gtk.MediaFile,
+        _: *gobject.ParamSpec,
+        _: ?*anyopaque,
+    ) callconv(.c) void {
+        media_file.unref();
+    }
+
     const C = Common(Self, Private);
     pub const as = C.as;
     pub const ref = C.ref;
@@ -2378,9 +2477,11 @@ pub const Surface = extern struct {
             class.bindTemplateCallback("notify_mouse_hover_url", &propMouseHoverUrl);
             class.bindTemplateCallback("notify_mouse_hidden", &propMouseHidden);
             class.bindTemplateCallback("notify_mouse_shape", &propMouseShape);
+            class.bindTemplateCallback("notify_bell_ringing", &propBellRinging);
 
             // Properties
             gobject.ext.registerProperties(class, &.{
+                properties.@"bell-ringing".impl,
                 properties.config.impl,
                 properties.@"child-exited".impl,
                 properties.@"default-size".impl,
@@ -2397,7 +2498,6 @@ pub const Surface = extern struct {
 
             // Signals
             signals.@"close-request".impl.register(.{});
-            signals.bell.impl.register(.{});
             signals.@"clipboard-read".impl.register(.{});
             signals.@"clipboard-write".impl.register(.{});
             signals.init.impl.register(.{});
