@@ -416,6 +416,12 @@ pub const Window = extern struct {
             "title",
             .{ .sync_create = true },
         );
+        _ = tab.as(gobject.Object).bindProperty(
+            "tooltip",
+            page.as(gobject.Object),
+            "tooltip",
+            .{ .sync_create = true },
+        );
 
         // Bind signals
         const split_tree = tab.getSplitTree();
@@ -1058,6 +1064,21 @@ pub const Window = extern struct {
             .native => false,
             .tabs => true,
         });
+    }
+
+    fn closureSubtitle(
+        _: *Self,
+        config_: ?*Config,
+        pwd_: ?[*:0]const u8,
+    ) callconv(.c) ?[*:0]const u8 {
+        const config = if (config_) |v| v.get() else return null;
+        return switch (config.@"window-subtitle") {
+            .false => null,
+            .@"working-directory" => pwd: {
+                const pwd = pwd_ orelse return null;
+                break :pwd glib.ext.dupeZ(u8, std.mem.span(pwd));
+            },
+        };
     }
 
     //---------------------------------------------------------------
@@ -1783,6 +1804,9 @@ pub const Window = extern struct {
 
         fn init(class: *Class) callconv(.c) void {
             gobject.ext.ensureType(DebugWarning);
+            gobject.ext.ensureType(SplitTree);
+            gobject.ext.ensureType(Surface);
+            gobject.ext.ensureType(Tab);
             gtk.Widget.Class.setTemplateFromResource(
                 class.as(gtk.Widget.Class),
                 comptime gresource.blueprint(.{
@@ -1832,6 +1856,7 @@ pub const Window = extern struct {
             class.bindTemplateCallback("notify_quick_terminal", &propQuickTerminal);
             class.bindTemplateCallback("notify_scale_factor", &propScaleFactor);
             class.bindTemplateCallback("titlebar_style_is_tabs", &closureTitlebarStyleIsTab);
+            class.bindTemplateCallback("computed_subtitle", &closureSubtitle);
 
             // Virtual methods
             gobject.Object.virtual_methods.dispose.implement(class, &dispose);

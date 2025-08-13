@@ -70,6 +70,24 @@ pub const Tab = extern struct {
             );
         };
 
+        pub const @"split-tree" = struct {
+            pub const name = "split-tree";
+            const impl = gobject.ext.defineProperty(
+                name,
+                Self,
+                ?*SplitTree,
+                .{
+                    .accessor = gobject.ext.typedAccessor(
+                        Self,
+                        ?*SplitTree,
+                        .{
+                            .getter = getSplitTree,
+                        },
+                    ),
+                },
+            );
+        };
+
         pub const @"surface-tree" = struct {
             pub const name = "surface-tree";
             const impl = gobject.ext.defineProperty(
@@ -88,10 +106,21 @@ pub const Tab = extern struct {
             );
         };
 
+        pub const tooltip = struct {
+            pub const name = "tooltip";
+            const impl = gobject.ext.defineProperty(
+                name,
+                Self,
+                ?[:0]const u8,
+                .{
+                    .default = null,
+                    .accessor = C.privateStringFieldAccessor("tooltip"),
+                },
+            );
+        };
+
         pub const title = struct {
             pub const name = "title";
-            pub const get = impl.get;
-            pub const set = impl.set;
             const impl = gobject.ext.defineProperty(
                 name,
                 Self,
@@ -122,12 +151,11 @@ pub const Tab = extern struct {
         /// The configuration that this surface is using.
         config: ?*Config = null,
 
-        /// The title to show for this tab. This is usually set to a binding
-        /// with the active surface but can be manually set to anything.
+        /// The title of this tab. This is usually bound to the active surface.
         title: ?[:0]const u8 = null,
 
-        /// The binding groups for the current active surface.
-        surface_bindings: *gobject.BindingGroup,
+        /// The tooltip of this tab. This is usually bound to the active surface.
+        tooltip: ?[:0]const u8 = null,
 
         // Template bindings
         split_tree: *SplitTree,
@@ -154,15 +182,6 @@ pub const Tab = extern struct {
             const app = Application.default();
             priv.config = app.getConfig();
         }
-
-        // Setup binding groups for surface properties
-        priv.surface_bindings = gobject.BindingGroup.new();
-        priv.surface_bindings.bind(
-            "title",
-            self.as(gobject.Object),
-            "title",
-            .{},
-        );
 
         // Create our initial surface in the split tree.
         priv.split_tree.newSplit(.right, null) catch |err| switch (err) {
@@ -213,7 +232,6 @@ pub const Tab = extern struct {
             v.unref();
             priv.config = null;
         }
-        priv.surface_bindings.setSource(null);
 
         gtk.Widget.disposeTemplate(
             self.as(gtk.Widget),
@@ -228,11 +246,14 @@ pub const Tab = extern struct {
 
     fn finalize(self: *Self) callconv(.c) void {
         const priv = self.private();
+        if (priv.tooltip) |v| {
+            glib.free(@constCast(@ptrCast(v)));
+            priv.tooltip = null;
+        }
         if (priv.title) |v| {
             glib.free(@constCast(@ptrCast(v)));
             priv.title = null;
         }
-        priv.surface_bindings.unref();
 
         gobject.Object.virtual_methods.finalize.call(
             Class.parent,
@@ -267,13 +288,36 @@ pub const Tab = extern struct {
         _: *gobject.ParamSpec,
         self: *Self,
     ) callconv(.c) void {
-        const priv = self.private();
-        priv.surface_bindings.setSource(null);
-        if (self.getActiveSurface()) |surface| {
-            priv.surface_bindings.setSource(surface.as(gobject.Object));
+        self.as(gobject.Object).notifyByPspec(properties.@"active-surface".impl.param_spec);
+    }
+
+    fn closureComputedTitle(
+        _: *Self,
+        plain_: ?[*:0]const u8,
+        zoomed_: c_int,
+    ) callconv(.c) ?[*:0]const u8 {
+        const zoomed = zoomed_ != 0;
+        const plain = plain: {
+            const default = "Ghostty";
+            const plain = plain_ orelse break :plain default;
+            break :plain std.mem.span(plain);
+        };
+
+        // If we're zoomed, prefix with the magnifying glass emoji.
+        if (zoomed) zoomed: {
+            // This results in an extra allocation (that we free), but I
+            // prefer using the Zig APIs so much more than the libc ones.
+            const alloc = Application.default().allocator();
+            const slice = std.fmt.allocPrint(
+                alloc,
+                "🔍 {s}",
+                .{plain},
+            ) catch break :zoomed;
+            defer alloc.free(slice);
+            return glib.ext.dupeZ(u8, slice);
         }
 
-        self.as(gobject.Object).notifyByPspec(properties.@"active-surface".impl.param_spec);
+        return glib.ext.dupeZ(u8, plain);
     }
 
     const C = Common(Self, Private);
@@ -303,14 +347,17 @@ pub const Tab = extern struct {
             gobject.ext.registerProperties(class, &.{
                 properties.@"active-surface".impl,
                 properties.config.impl,
+                properties.@"split-tree".impl,
                 properties.@"surface-tree".impl,
                 properties.title.impl,
+                properties.tooltip.impl,
             });
 
             // Bindings
             class.bindTemplateChildPrivate("split_tree", .{});
 
             // Template Callbacks
+            class.bindTemplateCallback("computed_title", &closureComputedTitle);
             class.bindTemplateCallback("notify_active_surface", &propActiveSurface);
             class.bindTemplateCallback("notify_tree", &propSplitTree);
 
