@@ -523,6 +523,22 @@ pub const Surface = extern struct {
         priv.gl_area.queueRender();
     }
 
+    /// Callback used to determine whether border should be shown around the
+    /// surface.
+    fn closureShouldBorderBeShown(
+        _: *Self,
+        config_: ?*Config,
+        bell_ringing_: c_int,
+    ) callconv(.c) c_int {
+        const config = if (config_) |v| v.get() else {
+            log.warn("config unavailable for computing whether border should be shown , likely bug", .{});
+            return @intFromBool(false);
+        };
+
+        const bell_ringing = bell_ringing_ != 0;
+        return @intFromBool(config.@"bell-features".border and bell_ringing);
+    }
+
     pub fn toggleFullscreen(self: *Self) void {
         signals.@"toggle-fullscreen".impl.emit(
             self,
@@ -2478,6 +2494,7 @@ pub const Surface = extern struct {
             class.bindTemplateCallback("notify_mouse_hidden", &propMouseHidden);
             class.bindTemplateCallback("notify_mouse_shape", &propMouseShape);
             class.bindTemplateCallback("notify_bell_ringing", &propBellRinging);
+            class.bindTemplateCallback("should_border_be_shown", &closureShouldBorderBeShown);
 
             // Properties
             gobject.ext.registerProperties(class, &.{

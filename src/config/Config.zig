@@ -2433,7 +2433,12 @@ keybind: Keybinds = .{},
 ///    Prepend a bell emoji (🔔) to the title of the alerted surface until the
 ///    terminal is re-focused or interacted with (such as on keyboard input).
 ///
-///    Only implemented on macOS.
+///  * `border`
+///
+///    Display a border around the alerted surface until the terminal is
+///    re-focused or interacted with (such as on keyboard input).
+///
+///    GTK only.
 ///
 /// Example: `audio`, `no-audio`, `system`, `no-system`
 ///
@@ -6988,6 +6993,7 @@ pub const BellFeatures = packed struct {
     audio: bool = false,
     attention: bool = true,
     title: bool = true,
+    border: bool = false,
 };
 
 /// See mouse-shift-capture
