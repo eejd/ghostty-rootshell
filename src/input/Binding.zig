@@ -6,7 +6,6 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
 const build_config = @import("../build_config.zig");
-const ziglyph = @import("ziglyph");
 const uucode = @import("uucode");
 const key = @import("key.zig");
 const KeyEvent = key.KeyEvent;
@@ -1566,6 +1565,8 @@ pub const Trigger = struct {
             .unicode => |cp| std.hash.autoHash(
                 hasher,
                 foldedCodepoint(cp),
+                // Alternative, just use simple case folding:
+                // uucode.get(.case_folding_simple, cp),
             ),
         }
         std.hash.autoHash(hasher, self.mods.binding());
@@ -1576,14 +1577,16 @@ pub const Trigger = struct {
     fn foldedCodepoint(cp: u21) [3]u21 {
         // ASCII fast path
         if (uucode.ascii.isAlphabetic(cp)) {
-            return .{ ziglyph.letter.toLower(cp), 0, 0 };
+            return .{ uucode.ascii.toLower(cp), 0, 0 };
         }
 
-        // Unicode slow path. Case folding can resultin more codepoints.
+        // Unicode slow path. Case folding can result in more codepoints.
         // If more codepoints are produced then we return the codepoint
         // as-is which isn't correct but until we have a failing test
         // then I don't want to handle this.
-        return ziglyph.letter.toCaseFold(cp);
+        var folded: [3]u21 = .{ 0, 0, 0 };
+        _ = uucode.get(.case_folding_full, cp).copy(&folded, cp);
+        return folded;
     }
 
     /// Convert the trigger to a C API compatible trigger.
