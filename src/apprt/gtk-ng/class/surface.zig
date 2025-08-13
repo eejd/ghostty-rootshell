@@ -47,6 +47,19 @@ pub const Surface = extern struct {
     pub const Tree = datastruct.SplitTree(Self);
 
     pub const properties = struct {
+        pub const @"bell-ringing" = struct {
+            pub const name = "bell-ringing";
+            const impl = gobject.ext.defineProperty(
+                name,
+                Self,
+                bool,
+                .{
+                    .default = false,
+                    .accessor = C.privateShallowFieldAccessor("bell_ringing"),
+                },
+            );
+        };
+
         pub const config = struct {
             pub const name = "config";
             const impl = gobject.ext.defineProperty(
@@ -456,6 +469,11 @@ pub const Surface = extern struct {
         // Progress bar
         progress_bar_timer: ?c_uint = null,
 
+        // True while the bell is ringing. This will be set to false (after
+        // true) under various scenarios, but can also manually be set to
+        // false by a parent widget.
+        bell_ringing: bool = false,
+
         // Template binds
         child_exited_overlay: *ChildExited,
         context_menu: *gtk.PopoverMenu,
@@ -522,7 +540,11 @@ pub const Surface = extern struct {
 
     /// Ring the bell.
     pub fn ringBell(self: *Self) void {
-        // TODO: Audio feature
+        self.as(gobject.Object).freezeNotify();
+        defer self.as(gobject.Object).thawNotify();
+
+        // Enable our bell ringing state
+        self.setBellRinging(true);
 
         signals.bell.impl.emit(
             self,
@@ -691,10 +713,13 @@ pub const Surface = extern struct {
         keycode: c_uint,
         gtk_mods: gdk.ModifierType,
     ) bool {
-        log.warn("keyEvent action={}", .{action});
+        //log.warn("keyEvent action={}", .{action});
         const event = ec_key.as(gtk.EventController).getCurrentEvent() orelse return false;
         const key_event = gobject.ext.cast(gdk.KeyEvent, event) orelse return false;
         const priv = self.private();
+
+        // Bell stops ringing under any key event (press or release).
+        self.setBellRinging(false);
 
         // The block below is all related to input method handling. See the function
         // comment for some high level details and then the comments within
@@ -1383,6 +1408,17 @@ pub const Surface = extern struct {
         self.as(gobject.Object).notifyByPspec(properties.@"mouse-hover-url".impl.param_spec);
     }
 
+    pub fn getBellRinging(self: *Self) bool {
+        return self.private().bell_ringing;
+    }
+
+    pub fn setBellRinging(self: *Self, ringing: bool) void {
+        const priv = self.private();
+        if (priv.bell_ringing == ringing) return;
+        priv.bell_ringing = ringing;
+        self.as(gobject.Object).notifyByPspec(properties.@"bell-ringing".impl.param_spec);
+    }
+
     fn propConfig(
         self: *Self,
         _: *gobject.ParamSpec,
@@ -1668,6 +1704,9 @@ pub const Surface = extern struct {
         priv.im_context.as(gtk.IMContext).focusIn();
         _ = glib.idleAddOnce(idleFocus, self.ref());
         self.as(gobject.Object).notifyByPspec(properties.focused.impl.param_spec);
+
+        // Bell stops ringing as soon as we gain focus
+        self.setBellRinging(false);
     }
 
     fn ecFocusLeave(_: *gtk.EventControllerFocus, self: *Self) callconv(.c) void {
@@ -1703,6 +1742,9 @@ pub const Surface = extern struct {
         self: *Self,
     ) callconv(.c) void {
         const event = gesture.as(gtk.EventController).getCurrentEvent() orelse return;
+
+        // Bell stops ringing if any mouse button is pressed.
+        self.setBellRinging(false);
 
         // If we don't have focus, grab it.
         const priv = self.private();
@@ -2381,6 +2423,7 @@ pub const Surface = extern struct {
 
             // Properties
             gobject.ext.registerProperties(class, &.{
+                properties.@"bell-ringing".impl,
                 properties.config.impl,
                 properties.@"child-exited".impl,
                 properties.@"default-size".impl,
