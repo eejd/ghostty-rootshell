@@ -573,6 +573,11 @@ pub const Surface = extern struct {
         return self.as(gtk.Widget).activateAction("win.toggle-command-palette", null) != 0;
     }
 
+    pub fn showOnScreenKeyboard(self: *Self, event: ?*gdk.Event) bool {
+        const priv = self.private();
+        return priv.im_context.as(gtk.IMContext).activateOsk(event) != 0;
+    }
+
     /// Set the current progress report state.
     pub fn setProgressReport(
         self: *Self,
@@ -1952,11 +1957,10 @@ pub const Surface = extern struct {
 
             // Trigger the on-screen keyboard if we have no selection.
             //
-            // This cannot be easily implemented with e.g. bindings or apprt
-            // actions since the API accepts a gdk.Event, making it inherently
-            // apprt-specific.
+            // It's better to do this here rather than in the core callback
+            // since we have direct access to the underlying gdk.Event here.
             if (button == .left and !surface.hasSelection()) {
-                if (priv.im_context.as(gtk.IMContext).activateOsk(event) == 0) {
+                if (!self.showOnScreenKeyboard(event)) {
                     log.warn("failed to activate the on-screen keyboard", .{});
                 }
             }

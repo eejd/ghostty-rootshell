@@ -4804,6 +4804,12 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             {},
         ),
 
+        .show_on_screen_keyboard => return try self.rt_app.performAction(
+            .{ .surface = self },
+            .show_on_screen_keyboard,
+            {},
+        ),
+
         .select_all => {
             const sel = self.io.terminal.screen.selectAll();
             if (sel) |s| {
