@@ -35,12 +35,10 @@ pub const InspectorWidget = extern struct {
                 Self,
                 ?*Surface,
                 .{
-                    .accessor = gobject.ext.typedAccessor(Self, ?*Surface, .{
-                        .getter = getSurface,
-                        .getter_transfer = .full,
-                        .setter = setSurface,
-                        .setter_transfer = .none,
-                    }),
+                    .accessor = .{
+                        .getter = getSurfaceValue,
+                        .setter = setSurfaceValue,
+                    },
                 },
             );
         };
@@ -49,8 +47,9 @@ pub const InspectorWidget = extern struct {
     pub const signals = struct {};
 
     const Private = struct {
-        /// The surface that we are attached to
-        surface: WeakRef(Surface) = .empty,
+        /// The surface that we are attached to. This is NOT referenced.
+        /// We attach a weak notify to the object.
+        surface: ?*Surface = null,
 
         /// The embedded Dear ImGui widget.
         imgui_widget: *ImguiWidget,
@@ -66,15 +65,8 @@ pub const InspectorWidget = extern struct {
     }
 
     fn dispose(self: *Self) callconv(.c) void {
-        const priv = self.private();
-
-        deactivate: {
-            const surface = priv.surface.get() orelse break :deactivate;
-            defer surface.unref();
-
-            const core_surface = surface.core() orelse break :deactivate;
-            core_surface.deactivateInspector();
-        }
+        // Clear our surface so it deactivates the inspector.
+        self.setSurface(null);
 
         gtk.Widget.disposeTemplate(
             self.as(gtk.Widget),
@@ -108,41 +100,66 @@ pub const InspectorWidget = extern struct {
     //---------------------------------------------------------------
     // Properties
 
-    fn getSurface(self: *Self) ?*Surface {
-        const priv = self.private();
-        return priv.surface.get();
+    fn getSurfaceValue(self: *Self, value: *gobject.Value) void {
+        gobject.ext.Value.set(
+            value,
+            self.private().surface,
+        );
     }
 
-    fn setSurface(self: *Self, newvalue_: ?*Surface) void {
+    fn setSurfaceValue(self: *Self, value: *const gobject.Value) void {
+        self.setSurface(gobject.ext.Value.get(
+            value,
+            ?*Surface,
+        ));
+    }
+
+    pub fn setSurface(self: *Self, surface_: ?*Surface) void {
         const priv = self.private();
 
-        if (priv.surface.get()) |oldvalue| oldvalue: {
-            defer oldvalue.unref();
+        // Do nothing if we're not changing the value.
+        if (surface_ == priv.surface) return;
 
-            // We don't need to do anything if we're just setting the same surface.
-            if (newvalue_) |newvalue| if (newvalue == oldvalue) return;
+        // Setup our notification to happen at the end because we're
+        // changing values no matter what.
+        self.as(gobject.Object).freezeNotify();
+        defer self.as(gobject.Object).thawNotify();
+        self.as(gobject.Object).notifyByPspec(properties.surface.impl.param_spec);
 
-            // Deactivate the inspector on the old surface.
-            const core_surface = oldvalue.core() orelse break :oldvalue;
+        // Deactivate the inspector on the old surface if it exists
+        // and set our value to null.
+        if (priv.surface) |old| old: {
+            priv.surface = null;
+
+            // Remove our weak ref
+            old.as(gobject.Object).weakUnref(
+                surfaceWeakNotify,
+                self,
+            );
+
+            // Deactivate the inspector
+            const core_surface = old.core() orelse break :old;
             core_surface.deactivateInspector();
         }
 
-        const newvalue = newvalue_ orelse {
-            priv.surface.set(null);
-            return;
-        };
-
-        const core_surface = newvalue.core() orelse {
-            priv.surface.set(null);
-            return;
-        };
-
         // Activate the inspector on the new surface.
+        const surface = surface_ orelse return;
+        const core_surface = surface.core() orelse return;
         core_surface.activateInspector() catch |err| {
-            log.err("failed to activate inspector err={}", .{err});
+            log.warn("failed to activate inspector err={}", .{err});
+            return;
         };
 
-        priv.surface.set(newvalue);
+        // We use a weak reference on surface to determine if the surface
+        // was closed while our inspector was active.
+        surface.as(gobject.Object).weakRef(
+            surfaceWeakNotify,
+            self,
+        );
+
+        // Store our surface. We don't need to ref this because we setup
+        // the weak notify above.
+        priv.surface = surface;
 
         self.queueRender();
     }
@@ -150,13 +167,39 @@ pub const InspectorWidget = extern struct {
     //---------------------------------------------------------------
     // Signal Handlers
 
+    fn surfaceWeakNotify(
+        ud: ?*anyopaque,
+        surface: *gobject.Object,
+    ) callconv(.c) void {
+        const self: *Self = @ptrCast(@alignCast(ud orelse return));
+        const priv = self.private();
+
+        // The weak notify docs call out that we can specifically use the
+        // pointer values for comparison, but the objects themselves are unsafe.
+        if (@intFromPtr(priv.surface) != @intFromPtr(surface)) return;
+
+        // Note: we very explicitly DO NOT want to call setSurface here
+        // because we can't safely use `surface` so we want to ensure we
+        // manually clear our ref and notify.
+        const old = priv.surface orelse return;
+        const core_surface = old.core() orelse return;
+        core_surface.deactivateInspector();
+        priv.surface = null;
+        self.as(gobject.Object).notifyByPspec(properties.surface.impl.param_spec);
+
+        // Note: in the future we should probably show some content on our
+        // window to note that the surface went away in case our embedding
+        // widget doesn't close itself. As I type this, our window closes
+        // immediately when the surface goes away so you don't see this, but
+        // for completeness sake we should clean this up.
+    }
+
     fn imguiRender(
         _: *ImguiWidget,
         self: *Self,
     ) callconv(.c) void {
         const priv = self.private();
-        const surface = priv.surface.get() orelse return;
-        defer surface.unref();
+        const surface = priv.surface orelse return;
         const core_surface = surface.core() orelse return;
         const inspector = core_surface.inspector orelse return;
         inspector.render();
