@@ -275,7 +275,8 @@ pub const Surface = extern struct {
         /// The surface view handles the audio bell feature but none of the
         /// others so it is up to the embedding widget to react to this.
         ///
-        /// Bell ringing will also emit the win.ring-bell action.
+        /// Bell ringing will also emit the tab.ring-bell and win.ring-bell
+        /// actions.
         pub const bell = struct {
             pub const name = "bell";
             pub const connect = impl.connect;
@@ -557,6 +558,7 @@ pub const Surface = extern struct {
         );
 
         // Activate a window action if it exists
+        _ = self.as(gtk.Widget).activateAction("tab.ring-bell", null);
         _ = self.as(gtk.Widget).activateAction("win.ring-bell", null);
     }
 

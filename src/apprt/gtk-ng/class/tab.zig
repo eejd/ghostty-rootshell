@@ -11,6 +11,7 @@ const i18n = @import("../../../os/main.zig").i18n;
 const apprt = @import("../../../apprt.zig");
 const input = @import("../../../input.zig");
 const CoreSurface = @import("../../../Surface.zig");
+const ext = @import("../ext.zig");
 const gtk_version = @import("../gtk_version.zig");
 const adw_version = @import("../adw_version.zig");
 const gresource = @import("../build/gresource.zig");
@@ -175,6 +176,9 @@ pub const Tab = extern struct {
     fn init(self: *Self, _: *Class) callconv(.c) void {
         gtk.Widget.initTemplate(self.as(gtk.Widget));
 
+        // Init our actions
+        self.initActions();
+
         // If our configuration is null then we get the configuration
         // from the application.
         const priv = self.private();
@@ -192,6 +196,46 @@ pub const Tab = extern struct {
                 @panic("oom");
             },
         };
+    }
+
+    /// Setup our action map.
+    fn initActions(self: *Self) void {
+        // The set of actions. Each action has (in order):
+        // [0] The action name
+        // [1] The callback function
+        // [2] The glib.VariantType of the parameter
+        //
+        // For action names:
+        // https://docs.gtk.org/gio/type_func.Action.name_is_valid.html
+        const actions = .{
+            .{ "ring-bell", actionRingBell, null },
+        };
+
+        // We need to collect our actions into a group since we're just
+        // a plain widget that doesn't implement ActionGroup directly.
+        const group = gio.SimpleActionGroup.new();
+        errdefer group.unref();
+        const map = group.as(gio.ActionMap);
+        inline for (actions) |entry| {
+            const action = gio.SimpleAction.new(
+                entry[0],
+                entry[2],
+            );
+            defer action.unref();
+            _ = gio.SimpleAction.signals.activate.connect(
+                action,
+                *Self,
+                entry[1],
+                self,
+                .{},
+            );
+            map.addAction(action.as(gio.Action));
+        }
+
+        self.as(gtk.Widget).insertActionGroup(
+            "tab",
+            group.as(gio.ActionGroup),
+        );
     }
 
     //---------------------------------------------------------------
@@ -221,6 +265,15 @@ pub const Tab = extern struct {
         const surface = self.getActiveSurface() orelse return false;
         const core_surface = surface.core() orelse return false;
         return core_surface.needsConfirmQuit();
+    }
+
+    /// Get the tab page holding this tab, if any.
+    fn getTabPage(self: *Self) ?*adw.TabPage {
+        const tab_view = ext.getAncestor(
+            adw.TabView,
+            self.as(gtk.Widget),
+        ) orelse return null;
+        return tab_view.getPage(self.as(gtk.Widget));
     }
 
     //---------------------------------------------------------------
@@ -289,6 +342,23 @@ pub const Tab = extern struct {
         self: *Self,
     ) callconv(.c) void {
         self.as(gobject.Object).notifyByPspec(properties.@"active-surface".impl.param_spec);
+    }
+
+    fn actionRingBell(
+        _: *gio.SimpleAction,
+        _: ?*glib.Variant,
+        self: *Self,
+    ) callconv(.c) void {
+        // Future note: I actually don't like this logic living here at all.
+        // I think a better approach will be for the ring bell action to
+        // specify its sending surface and then do all this in the window.
+
+        // If the page is selected already we don't mark it as needing
+        // attention. We only want to mark unfocused pages. This will then
+        // clear when the page is selected.
+        const page = self.getTabPage() orelse return;
+        if (page.getSelected() != 0) return;
+        page.setNeedsAttention(@intFromBool(true));
     }
 
     fn closureComputedTitle(
