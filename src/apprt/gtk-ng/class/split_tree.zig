@@ -418,6 +418,20 @@ pub const SplitTree = extern struct {
             if (entry.view.getFocused()) return entry.handle;
         }
 
+        // If none are currently focused, the most previously focused
+        // surface (if it exists) is our active surface. This lets things
+        // like apprt actions and bell ringing continue to work in the
+        // background.
+        if (self.private().last_focused.get()) |v| {
+            defer v.unref();
+
+            // We need to find the handle of the last focused surface.
+            it = tree.iterator();
+            while (it.next()) |entry| {
+                if (entry.view == v) return entry.handle;
+            }
+        }
+
         return null;
     }
 
