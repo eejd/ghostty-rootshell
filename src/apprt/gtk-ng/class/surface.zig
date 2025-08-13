@@ -1780,10 +1780,7 @@ pub const Surface = extern struct {
     ) callconv(.c) c_int {
         const alloc = Application.default().allocator();
 
-        if (g_value_holds(
-            value,
-            gdk.FileList.getGObjectType(),
-        )) {
+        if (ext.gValueHolds(value, gdk.FileList.getGObjectType())) {
             var data = std.ArrayList(u8).init(alloc);
             defer data.deinit();
 
@@ -1827,7 +1824,7 @@ pub const Surface = extern struct {
             return 1;
         }
 
-        if (g_value_holds(value, gio.File.getGObjectType())) {
+        if (ext.gValueHolds(value, gio.File.getGObjectType())) {
             const object = value.getObject() orelse return 0;
             const file = gobject.ext.cast(gio.File, object) orelse return 0;
             const path = file.getPath() orelse return 0;
@@ -1855,7 +1852,7 @@ pub const Surface = extern struct {
             return 1;
         }
 
-        if (g_value_holds(value, gobject.ext.types.string)) {
+        if (ext.gValueHolds(value, gobject.ext.types.string)) {
             if (value.getString()) |string| {
                 Clipboard.paste(self, std.mem.span(string));
             }
@@ -3038,16 +3035,6 @@ const Clipboard = struct {
         state: apprt.ClipboardRequest,
     };
 };
-
-/// Check a GValue to see what's type its wrapping. This is equivalent to GTK's
-/// `G_VALUE_HOLDS` macro but Zig's C translator does not like it.
-fn g_value_holds(value_: ?*gobject.Value, g_type: gobject.Type) bool {
-    if (value_) |value| {
-        if (value.f_g_type == g_type) return true;
-        return gobject.typeCheckValueHolds(value, g_type) != 0;
-    }
-    return false;
-}
 
 /// Compute a fraction [0.0, 1.0] from the supplied progress, which is clamped
 /// to [0, 100].
