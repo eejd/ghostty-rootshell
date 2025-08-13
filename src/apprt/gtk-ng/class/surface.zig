@@ -1949,6 +1949,18 @@ pub const Surface = extern struct {
         if (priv.core_surface) |surface| {
             const gtk_mods = event.getModifierState();
             const button = translateMouseButton(gesture.as(gtk.GestureSingle).getCurrentButton());
+
+            // Trigger the on-screen keyboard if we have no selection.
+            //
+            // This cannot be easily implemented with e.g. bindings or apprt
+            // actions since the API accepts a gdk.Event, making it inherently
+            // apprt-specific.
+            if (button == .left and !surface.hasSelection()) {
+                if (priv.im_context.as(gtk.IMContext).activateOsk(event) == 0) {
+                    log.warn("failed to activate the on-screen keyboard", .{});
+                }
+            }
+
             const mods = gtk_key.translateMods(gtk_mods);
             _ = surface.mouseButtonCallback(
                 .release,
