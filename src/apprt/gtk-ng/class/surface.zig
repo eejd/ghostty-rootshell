@@ -1240,7 +1240,7 @@ pub const Surface = extern struct {
             renderer.OpenGL.MIN_VERSION_MAJOR,
             renderer.OpenGL.MIN_VERSION_MINOR,
         );
-        gl_area.as(gtk.Widget).setCursorFromName("text");
+        self.as(gtk.Widget).setCursorFromName("text");
 
         // Initialize our config
         self.propConfig(undefined, null);
@@ -1570,7 +1570,7 @@ pub const Surface = extern struct {
 
         // If we're hidden we set it to "none"
         if (priv.mouse_hidden) {
-            priv.gl_area.as(gtk.Widget).setCursorFromName("none");
+            self.as(gtk.Widget).setCursorFromName("none");
             return;
         }
 
@@ -1628,7 +1628,7 @@ pub const Surface = extern struct {
         };
 
         // Set our new cursor.
-        priv.gl_area.as(gtk.Widget).setCursorFromName(name.ptr);
+        self.as(gtk.Widget).setCursorFromName(name.ptr);
     }
 
     fn propBellRinging(
