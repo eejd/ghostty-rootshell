@@ -718,9 +718,6 @@ pub const Surface = extern struct {
         const key_event = gobject.ext.cast(gdk.KeyEvent, event) orelse return false;
         const priv = self.private();
 
-        // Bell stops ringing under any key event (press or release).
-        self.setBellRinging(false);
-
         // The block below is all related to input method handling. See the function
         // comment for some high level details and then the comments within
         // the block for more specifics.
@@ -905,6 +902,10 @@ pub const Surface = extern struct {
                     priv.im_context.as(gtk.IMContext).reset();
                     surface.preeditCallback(null) catch {};
                 }
+
+                // Bell stops ringing when any key is pressed that is used by
+                // the core in any way.
+                self.setBellRinging(false);
 
                 return true;
             },

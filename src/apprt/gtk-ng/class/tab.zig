@@ -293,31 +293,47 @@ pub const Tab = extern struct {
 
     fn closureComputedTitle(
         _: *Self,
+        config_: ?*Config,
         plain_: ?[*:0]const u8,
         zoomed_: c_int,
+        bell_ringing_: c_int,
+        _: *gobject.ParamSpec,
     ) callconv(.c) ?[*:0]const u8 {
         const zoomed = zoomed_ != 0;
+        const bell_ringing = bell_ringing_ != 0;
+
         const plain = plain: {
             const default = "Ghostty";
             const plain = plain_ orelse break :plain default;
             break :plain std.mem.span(plain);
         };
 
-        // If we're zoomed, prefix with the magnifying glass emoji.
-        if (zoomed) zoomed: {
-            // This results in an extra allocation (that we free), but I
-            // prefer using the Zig APIs so much more than the libc ones.
-            const alloc = Application.default().allocator();
-            const slice = std.fmt.allocPrint(
-                alloc,
-                "🔍 {s}",
-                .{plain},
-            ) catch break :zoomed;
-            defer alloc.free(slice);
-            return glib.ext.dupeZ(u8, slice);
+        // We don't need a config in every case, but if we don't have a config
+        // let's just assume something went terribly wrong and use our
+        // default title. Its easier then guarding on the config existing
+        // in every case for something so unlikely.
+        const config = if (config_) |v| v.get() else {
+            log.warn("config unavailable for computed title, likely bug", .{});
+            return glib.ext.dupeZ(u8, plain);
+        };
+
+        // Use an allocator to build up our string as we write it.
+        var buf: std.ArrayList(u8) = .init(Application.default().allocator());
+        defer buf.deinit();
+        const writer = buf.writer();
+
+        // If our bell is ringing, then we prefix the bell icon to the title.
+        if (bell_ringing and config.@"bell-features".title) {
+            writer.writeAll("🔔 ") catch {};
         }
 
-        return glib.ext.dupeZ(u8, plain);
+        // If we're zoomed, prefix with the magnifying glass emoji.
+        if (zoomed) {
+            writer.writeAll("🔍 ") catch {};
+        }
+
+        writer.writeAll(plain) catch return glib.ext.dupeZ(u8, plain);
+        return glib.ext.dupeZ(u8, buf.items);
     }
 
     const C = Common(Self, Private);
