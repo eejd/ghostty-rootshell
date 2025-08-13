@@ -6,6 +6,7 @@ template $GhosttySurface: Adw.Bin {
     "surface",
   ]
 
+  notify::bell-ringing => $notify_bell_ringing();
   notify::config => $notify_config();
   notify::mouse-hover-url => $notify_mouse_hover_url();
   notify::mouse-hidden => $notify_mouse_hidden();

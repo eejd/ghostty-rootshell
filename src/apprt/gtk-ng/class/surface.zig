@@ -270,24 +270,6 @@ pub const Surface = extern struct {
             );
         };
 
-        /// The bell is rung.
-        ///
-        /// The surface view handles the audio bell feature but none of the
-        /// others so it is up to the embedding widget to react to this.
-        ///
-        /// Bell ringing will also emit the tab.ring-bell and win.ring-bell
-        /// actions.
-        pub const bell = struct {
-            pub const name = "bell";
-            pub const connect = impl.connect;
-            const impl = gobject.ext.defineSignal(
-                name,
-                Self,
-                &.{},
-                void,
-            );
-        };
-
         /// Emitted whenever the clipboard has been written.
         pub const @"clipboard-write" = struct {
             pub const name = "clipboard-write";
@@ -539,27 +521,6 @@ pub const Surface = extern struct {
     pub fn redraw(self: *Self) void {
         const priv = self.private();
         priv.gl_area.queueRender();
-    }
-
-    /// Ring the bell.
-    pub fn ringBell(self: *Self) void {
-        self.as(gobject.Object).freezeNotify();
-        defer self.as(gobject.Object).thawNotify();
-
-        // Enable our bell ringing state
-        self.setBellRinging(true);
-
-        // Emit our direct signal for anyone who cares
-        signals.bell.impl.emit(
-            self,
-            null,
-            .{},
-            null,
-        );
-
-        // Activate a window action if it exists
-        _ = self.as(gtk.Widget).activateAction("tab.ring-bell", null);
-        _ = self.as(gtk.Widget).activateAction("win.ring-bell", null);
     }
 
     pub fn toggleFullscreen(self: *Self) void {
@@ -1560,6 +1521,64 @@ pub const Surface = extern struct {
         priv.gl_area.as(gtk.Widget).setCursorFromName(name.ptr);
     }
 
+    fn propBellRinging(
+        self: *Self,
+        _: *gobject.ParamSpec,
+        _: ?*anyopaque,
+    ) callconv(.c) void {
+        const priv = self.private();
+        if (!priv.bell_ringing) return;
+
+        // Activate actions if they exist
+        _ = self.as(gtk.Widget).activateAction("tab.ring-bell", null);
+        _ = self.as(gtk.Widget).activateAction("win.ring-bell", null);
+
+        // Do our sound
+        const config = if (priv.config) |c| c.get() else return;
+        if (config.@"bell-features".audio) audio: {
+            const config_path = config.@"bell-audio-path" orelse break :audio;
+            const path, const required = switch (config_path) {
+                .optional => |path| .{ path, false },
+                .required => |path| .{ path, true },
+            };
+
+            const volume = std.math.clamp(
+                config.@"bell-audio-volume",
+                0.0,
+                1.0,
+            );
+
+            assert(std.fs.path.isAbsolute(path));
+            const media_file = gtk.MediaFile.newForFilename(path);
+
+            // If the audio file is marked as required, we'll emit an error if
+            // there was a problem playing it. Otherwise there will be silence.
+            if (required) {
+                _ = gobject.Object.signals.notify.connect(
+                    media_file,
+                    ?*anyopaque,
+                    mediaFileError,
+                    null,
+                    .{ .detail = "error" },
+                );
+            }
+
+            // Watch for the "ended" signal so that we can clean up after
+            // ourselves.
+            _ = gobject.Object.signals.notify.connect(
+                media_file,
+                ?*anyopaque,
+                mediaFileEnded,
+                null,
+                .{ .detail = "ended" },
+            );
+
+            const media_stream = media_file.as(gtk.MediaStream);
+            media_stream.setVolume(volume);
+            media_stream.play();
+        }
+    }
+
     //---------------------------------------------------------------
     // Signal Handlers
 
@@ -2365,6 +2384,35 @@ pub const Surface = extern struct {
         right.setVisible(0);
     }
 
+    fn mediaFileError(
+        media_file: *gtk.MediaFile,
+        _: *gobject.ParamSpec,
+        _: ?*anyopaque,
+    ) callconv(.c) void {
+        const path = path: {
+            const file = media_file.getFile() orelse break :path null;
+            break :path file.getPath();
+        };
+        defer if (path) |p| glib.free(p);
+
+        const media_stream = media_file.as(gtk.MediaStream);
+        const err = media_stream.getError() orelse return;
+        log.warn("error playing bell from {s}: {s} {d} {s}", .{
+            path orelse "<<unknown>>",
+            glib.quarkToString(err.f_domain),
+            err.f_code,
+            err.f_message orelse "",
+        });
+    }
+
+    fn mediaFileEnded(
+        media_file: *gtk.MediaFile,
+        _: *gobject.ParamSpec,
+        _: ?*anyopaque,
+    ) callconv(.c) void {
+        media_file.unref();
+    }
+
     const C = Common(Self, Private);
     pub const as = C.as;
     pub const ref = C.ref;
@@ -2429,6 +2477,7 @@ pub const Surface = extern struct {
             class.bindTemplateCallback("notify_mouse_hover_url", &propMouseHoverUrl);
             class.bindTemplateCallback("notify_mouse_hidden", &propMouseHidden);
             class.bindTemplateCallback("notify_mouse_shape", &propMouseShape);
+            class.bindTemplateCallback("notify_bell_ringing", &propBellRinging);
 
             // Properties
             gobject.ext.registerProperties(class, &.{
@@ -2449,7 +2498,6 @@ pub const Surface = extern struct {
 
             // Signals
             signals.@"close-request".impl.register(.{});
-            signals.bell.impl.register(.{});
             signals.@"clipboard-read".impl.register(.{});
             signals.@"clipboard-write".impl.register(.{});
             signals.init.impl.register(.{});
