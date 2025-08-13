@@ -274,6 +274,8 @@ pub const Surface = extern struct {
         ///
         /// The surface view handles the audio bell feature but none of the
         /// others so it is up to the embedding widget to react to this.
+        ///
+        /// Bell ringing will also emit the win.ring-bell action.
         pub const bell = struct {
             pub const name = "bell";
             pub const connect = impl.connect;
@@ -546,12 +548,16 @@ pub const Surface = extern struct {
         // Enable our bell ringing state
         self.setBellRinging(true);
 
+        // Emit our direct signal for anyone who cares
         signals.bell.impl.emit(
             self,
             null,
             .{},
             null,
         );
+
+        // Activate a window action if it exists
+        _ = self.as(gtk.Widget).activateAction("win.ring-bell", null);
     }
 
     pub fn toggleFullscreen(self: *Self) void {

@@ -336,6 +336,7 @@ pub const Window = extern struct {
             .{ "close-tab", actionCloseTab, null },
             .{ "new-tab", actionNewTab, null },
             .{ "new-window", actionNewWindow, null },
+            .{ "ring-bell", actionRingBell, null },
             .{ "split-right", actionSplitRight, null },
             .{ "split-left", actionSplitLeft, null },
             .{ "split-up", actionSplitUp, null },
@@ -1317,6 +1318,10 @@ pub const Window = extern struct {
         // Setup our binding group. This ensures things like the title
         // are synced from the active tab.
         priv.tab_bindings.setSource(child.as(gobject.Object));
+
+        // If the tab was previously marked as needing attention
+        // (e.g. due to a bell character), we now unmark that
+        page.setNeedsAttention(@intFromBool(false));
     }
 
     fn tabViewPageAttached(
@@ -1727,6 +1732,30 @@ pub const Window = extern struct {
         self: *Window,
     ) callconv(.c) void {
         self.performBindingAction(.clear_screen);
+    }
+
+    fn actionRingBell(
+        _: *gio.SimpleAction,
+        _: ?*glib.Variant,
+        self: *Window,
+    ) callconv(.c) void {
+        const priv = self.private();
+        const config = if (priv.config) |v| v.get() else return;
+
+        if (config.@"bell-features".system) system: {
+            const native = self.as(gtk.Native).getSurface() orelse {
+                log.warn("unable to get native surface from window", .{});
+                break :system;
+            };
+            native.beep();
+        }
+
+        if (config.@"bell-features".attention) {
+            // Request user attention
+            self.winproto().setUrgent(true) catch |err| {
+                log.warn("failed to request user attention={}", .{err});
+            };
+        }
     }
 
     /// Toggle the command palette.
