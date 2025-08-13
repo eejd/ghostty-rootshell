@@ -589,6 +589,8 @@ pub const Application = extern struct {
 
             .progress_report => return Action.progressReport(target, value),
 
+            .prompt_title => return Action.promptTitle(target),
+
             .quit => self.quit(),
 
             .quit_timer => try Action.quitTimer(self, value),
@@ -618,7 +620,6 @@ pub const Application = extern struct {
             .toggle_split_zoom => return Action.toggleSplitZoom(target),
 
             // Unimplemented but todo on gtk-ng branch
-            .prompt_title,
             .inspector,
             => {
                 log.warn("unimplemented action={}", .{action});
@@ -1953,6 +1954,16 @@ const Action = struct {
                 break :surface true;
             },
         };
+    }
+
+    pub fn promptTitle(target: apprt.Target) bool {
+        switch (target) {
+            .app => return false,
+            .surface => |v| {
+                v.rt_surface.surface.promptTitle();
+                return true;
+            },
+        }
     }
 
     /// Reload the configuration for the application and propagate it

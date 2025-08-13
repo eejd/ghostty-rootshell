@@ -27,6 +27,7 @@ const Config = @import("config.zig").Config;
 const ResizeOverlay = @import("resize_overlay.zig").ResizeOverlay;
 const ChildExited = @import("surface_child_exited.zig").SurfaceChildExited;
 const ClipboardConfirmationDialog = @import("clipboard_confirmation_dialog.zig").ClipboardConfirmationDialog;
+const TitleDialog = @import("surface_title_dialog.zig").SurfaceTitleDialog;
 const Window = @import("window.zig").Window;
 
 const log = std.log.scoped(.gtk_ghostty_surface);
@@ -186,8 +187,6 @@ pub const Surface = extern struct {
 
         pub const @"mouse-hover-url" = struct {
             pub const name = "mouse-hover-url";
-            pub const get = impl.get;
-            pub const set = impl.set;
             const impl = gobject.ext.defineProperty(
                 name,
                 Self,
@@ -201,8 +200,6 @@ pub const Surface = extern struct {
 
         pub const pwd = struct {
             pub const name = "pwd";
-            pub const get = impl.get;
-            pub const set = impl.set;
             const impl = gobject.ext.defineProperty(
                 name,
                 Self,
@@ -216,8 +213,6 @@ pub const Surface = extern struct {
 
         pub const title = struct {
             pub const name = "title";
-            pub const get = impl.get;
-            pub const set = impl.set;
             const impl = gobject.ext.defineProperty(
                 name,
                 Self,
@@ -225,6 +220,19 @@ pub const Surface = extern struct {
                 .{
                     .default = null,
                     .accessor = C.privateStringFieldAccessor("title"),
+                },
+            );
+        };
+
+        pub const @"title-override" = struct {
+            pub const name = "title-override";
+            const impl = gobject.ext.defineProperty(
+                name,
+                Self,
+                ?[:0]const u8,
+                .{
+                    .default = null,
+                    .accessor = C.privateStringFieldAccessor("title_override"),
                 },
             );
         };
@@ -400,6 +408,9 @@ pub const Surface = extern struct {
 
         /// The title of this surface, if any has been set.
         title: ?[:0]const u8 = null,
+
+        /// The manually overridden title of this surface from `promptTitle`.
+        title_override: ?[:0]const u8 = null,
 
         /// The current focus state of the terminal based on the
         /// focus events.
@@ -899,6 +910,26 @@ pub const Surface = extern struct {
         return false;
     }
 
+    /// Prompt for a manual title change for the surface.
+    pub fn promptTitle(self: *Self) void {
+        const priv = self.private();
+        const dialog = gobject.ext.newInstance(
+            TitleDialog,
+            .{
+                .@"initial-value" = priv.title_override orelse priv.title,
+            },
+        );
+        _ = TitleDialog.signals.set.connect(
+            dialog,
+            *Self,
+            titleDialogSet,
+            self,
+            .{},
+        );
+
+        dialog.present(self.as(gtk.Widget));
+    }
+
     /// Scale x/y by the GDK device scale.
     fn scaledCoordinates(
         self: *Self,
@@ -1161,6 +1192,9 @@ pub const Surface = extern struct {
     fn init(self: *Self, _: *Class) callconv(.c) void {
         gtk.Widget.initTemplate(self.as(gtk.Widget));
 
+        // Initialize our actions
+        self.initActions();
+
         const priv = self.private();
 
         // Initialize some private fields so they aren't undefined
@@ -1205,6 +1239,45 @@ pub const Surface = extern struct {
 
         // Initialize our config
         self.propConfig(undefined, null);
+    }
+
+    fn initActions(self: *Self) void {
+        // The set of actions. Each action has (in order):
+        // [0] The action name
+        // [1] The callback function
+        // [2] The glib.VariantType of the parameter
+        //
+        // For action names:
+        // https://docs.gtk.org/gio/type_func.Action.name_is_valid.html
+        const actions = .{
+            .{ "prompt-title", actionPromptTitle, null },
+        };
+
+        // We need to collect our actions into a group since we're just
+        // a plain widget that doesn't implement ActionGroup directly.
+        const group = gio.SimpleActionGroup.new();
+        errdefer group.unref();
+        const map = group.as(gio.ActionMap);
+        inline for (actions) |entry| {
+            const action = gio.SimpleAction.new(
+                entry[0],
+                entry[2],
+            );
+            defer action.unref();
+            _ = gio.SimpleAction.signals.activate.connect(
+                action,
+                *Self,
+                entry[1],
+                self,
+                .{},
+            );
+            map.addAction(action.as(gio.Action));
+        }
+
+        self.as(gtk.Widget).insertActionGroup(
+            "surface",
+            group.as(gio.ActionGroup),
+        );
     }
 
     fn dispose(self: *Self) callconv(.c) void {
@@ -1270,6 +1343,10 @@ pub const Surface = extern struct {
             glib.free(@constCast(@ptrCast(v)));
             priv.title = null;
         }
+        if (priv.title_override) |v| {
+            glib.free(@constCast(@ptrCast(v)));
+            priv.title_override = null;
+        }
         self.clearCgroup();
 
         gobject.Object.virtual_methods.finalize.call(
@@ -1286,13 +1363,25 @@ pub const Surface = extern struct {
         return self.private().title;
     }
 
-    /// Set the title for this surface, copies the value.
+    /// Set the title for this surface, copies the value. This should always
+    /// be the title as set by the terminal program, not any manually set
+    /// title. For manually set titles see `setTitleOverride`.
     pub fn setTitle(self: *Self, title: ?[:0]const u8) void {
         const priv = self.private();
         if (priv.title) |v| glib.free(@constCast(@ptrCast(v)));
         priv.title = null;
         if (title) |v| priv.title = glib.ext.dupeZ(u8, v);
         self.as(gobject.Object).notifyByPspec(properties.title.impl.param_spec);
+    }
+
+    /// Overridden title. This will be generally be shown over the title
+    /// unless this is unset (null).
+    pub fn setTitleOverride(self: *Self, title: ?[:0]const u8) void {
+        const priv = self.private();
+        if (priv.title_override) |v| glib.free(@constCast(@ptrCast(v)));
+        priv.title_override = null;
+        if (title) |v| priv.title_override = glib.ext.dupeZ(u8, v);
+        self.as(gobject.Object).notifyByPspec(properties.@"title-override".impl.param_spec);
     }
 
     /// Returns the pwd property without a copy.
@@ -1597,6 +1686,17 @@ pub const Surface = extern struct {
 
     //---------------------------------------------------------------
     // Signal Handlers
+
+    pub fn actionPromptTitle(
+        _: *gio.SimpleAction,
+        _: ?*glib.Variant,
+        self: *Self,
+    ) callconv(.c) void {
+        const surface = self.core() orelse return;
+        _ = surface.performBindingAction(.prompt_surface_title) catch |err| {
+            log.warn("unable to perform prompt title action err={}", .{err});
+        };
+    }
 
     fn childExitedClose(
         _: *ChildExited,
@@ -2429,6 +2529,15 @@ pub const Surface = extern struct {
         media_file.unref();
     }
 
+    fn titleDialogSet(
+        _: *TitleDialog,
+        title_ptr: [*:0]const u8,
+        self: *Self,
+    ) callconv(.c) void {
+        const title = std.mem.span(title_ptr);
+        self.setTitleOverride(if (title.len == 0) null else title);
+    }
+
     const C = Common(Self, Private);
     pub const as = C.as;
     pub const ref = C.ref;
@@ -2510,6 +2619,7 @@ pub const Surface = extern struct {
                 properties.@"mouse-hover-url".impl,
                 properties.pwd.impl,
                 properties.title.impl,
+                properties.@"title-override".impl,
                 properties.zoom.impl,
             });
 

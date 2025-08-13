@@ -364,7 +364,8 @@ pub const Tab = extern struct {
     fn closureComputedTitle(
         _: *Self,
         config_: ?*Config,
-        plain_: ?[*:0]const u8,
+        terminal_: ?[*:0]const u8,
+        override_: ?[*:0]const u8,
         zoomed_: c_int,
         bell_ringing_: c_int,
         _: *gobject.ParamSpec,
@@ -372,9 +373,13 @@ pub const Tab = extern struct {
         const zoomed = zoomed_ != 0;
         const bell_ringing = bell_ringing_ != 0;
 
+        // Our plain title is the overridden title if it exists, otherwise
+        // the terminal title if it exists, otherwise a default string.
         const plain = plain: {
             const default = "Ghostty";
-            const plain = plain_ orelse break :plain default;
+            const plain = override_ orelse
+                terminal_ orelse
+                break :plain default;
             break :plain std.mem.span(plain);
         };
 
