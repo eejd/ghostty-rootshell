@@ -8,7 +8,6 @@ const gresource = @import("../build/gresource.zig");
 const Inspector = @import("../../../inspector/Inspector.zig");
 
 const Common = @import("../class.zig").Common;
-const WeakRef = @import("../weak_ref.zig").WeakRef;
 const Surface = @import("surface.zig").Surface;
 const ImguiWidget = @import("imgui_widget.zig").ImguiWidget;
 

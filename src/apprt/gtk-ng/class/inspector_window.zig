@@ -111,12 +111,9 @@ pub const InspectorWindow = extern struct {
     // Public methods
 
     pub fn new(surface: *Surface) *Self {
-        const self = gobject.ext.newInstance(Self, .{
+        return gobject.ext.newInstance(Self, .{
             .surface = surface,
         });
-
-        // Bump the ref so that we aren't immediately closed.
-        return self.ref();
     }
 
     /// Present the window.

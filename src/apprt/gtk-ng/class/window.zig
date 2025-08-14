@@ -1825,7 +1825,7 @@ pub const Window = extern struct {
     /// Toggle the Ghostty inspector for the active surface.
     fn toggleInspector(self: *Self) void {
         const surface = self.getActiveSurface() orelse return;
-        _ = surface.toggleInspector();
+        _ = surface.controlInspector(.toggle);
     }
 
     /// React to a GTK action requesting that the Ghostty inspector be toggled.

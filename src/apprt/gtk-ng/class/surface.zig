@@ -473,7 +473,7 @@ pub const Surface = extern struct {
         bell_ringing: bool = false,
 
         /// A weak reference to an inspector window.
-        inspector: WeakRef(InspectorWindow) = .empty,
+        inspector: ?*InspectorWindow = null,
 
         // Template binds
         child_exited_overlay: *ChildExited,
@@ -578,55 +578,34 @@ pub const Surface = extern struct {
         return self.as(gtk.Widget).activateAction("win.toggle-command-palette", null) != 0;
     }
 
-    pub fn toggleInspector(self: *Self) bool {
+    pub fn controlInspector(
+        self: *Self,
+        value: apprt.Action.Value(.inspector),
+    ) bool {
+        // Let's see if we have an inspector already.
         const priv = self.private();
-        if (priv.inspector.get()) |inspector| {
-            defer inspector.unref();
-            priv.inspector.set(null);
-            return true;
-        }
-        const inspector = InspectorWindow.new(self);
-        defer inspector.unref();
-        priv.inspector.set(inspector);
-        inspector.present();
-        return true;
-    }
+        if (priv.inspector) |inspector| switch (value) {
+            .show => {},
+            // Our weak ref will set our private value to null
+            .toggle, .hide => inspector.as(gtk.Window).destroy(),
+        } else switch (value) {
+            .toggle, .show => {
+                const inspector = InspectorWindow.new(self);
+                inspector.present();
+                inspector.as(gobject.Object).weakRef(inspectorWeakNotify, self);
+                priv.inspector = inspector;
+            },
 
-    pub fn showInspector(self: *Self) bool {
-        const priv = self.private();
-        const inspector = priv.inspector.get() orelse inspector: {
-            const inspector = InspectorWindow.new(self);
-            priv.inspector.set(inspector);
-            break :inspector inspector;
-        };
-        defer inspector.unref();
-        inspector.present();
-        return true;
-    }
-
-    pub fn hideInspector(self: *Self) bool {
-        const priv = self.private();
-        if (priv.inspector.get()) |inspector| {
-            defer inspector.unref();
-            priv.inspector.set(null);
+            .hide => {},
         }
-        return true;
-    }
 
-    pub fn controlInspector(self: *Self, value: apprt.Action.Value(.inspector)) bool {
-        switch (value) {
-            .toggle => return self.toggleInspector(),
-            .show => return self.showInspector(),
-            .hide => return self.hideInspector(),
-        }
+        return true;
     }
 
     /// Redraw our inspector, if there is one associated with this surface.
     pub fn redrawInspector(self: *Self) void {
         const priv = self.private();
-        const inspector = priv.inspector.get() orelse return;
-        defer inspector.unref();
-        inspector.queueRender();
+        if (priv.inspector) |v| v.queueRender();
     }
 
     pub fn showOnScreenKeyboard(self: *Self, event: ?*gdk.Event) bool {
@@ -1356,10 +1335,6 @@ pub const Surface = extern struct {
             priv.progress_bar_timer = null;
         }
 
-        if (priv.inspector.get()) |inspector| {
-            defer inspector.unref();
-        }
-
         gtk.Widget.disposeTemplate(
             self.as(gtk.Widget),
             getGObjectType(),
@@ -1785,6 +1760,15 @@ pub const Surface = extern struct {
         // bar if there are tabs. That's not correct. We need to grab it
         // on the surface.
         self.grabFocus();
+    }
+
+    fn inspectorWeakNotify(
+        ud: ?*anyopaque,
+        _: *gobject.Object,
+    ) callconv(.c) void {
+        const self: *Self = @ptrCast(@alignCast(ud orelse return));
+        const priv = self.private();
+        priv.inspector = null;
     }
 
     fn dtDrop(
