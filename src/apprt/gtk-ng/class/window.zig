@@ -683,13 +683,6 @@ pub const Window = extern struct {
         var it = tree.iterator();
         while (it.next()) |entry| {
             const surface = entry.view;
-            _ = Surface.signals.@"close-request".connect(
-                surface,
-                *Self,
-                surfaceCloseRequest,
-                self,
-                .{},
-            );
             _ = Surface.signals.@"present-request".connect(
                 surface,
                 *Self,
@@ -1456,25 +1449,6 @@ pub const Window = extern struct {
             self.addToast(i18n._("Copied to clipboard"))
         else
             self.addToast(i18n._("Cleared clipboard"));
-    }
-
-    fn surfaceCloseRequest(
-        _: *Surface,
-        scope: *const Surface.CloseScope,
-        self: *Self,
-    ) callconv(.c) void {
-        switch (scope.*) {
-            // Handled directly by the tab. If the surface is the last
-            // surface then the tab will emit its own signal to request
-            // closing itself.
-            .surface => return,
-
-            // Also handled directly by the tab.
-            .tab => return,
-
-            // The only one we care about!
-            .window => self.as(gtk.Window).close(),
-        }
     }
 
     fn surfaceMenu(

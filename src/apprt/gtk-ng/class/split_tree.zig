@@ -407,6 +407,22 @@ pub const SplitTree = extern struct {
     //---------------------------------------------------------------
     // Properties
 
+    /// Returns true if this split tree needs confirmation before quitting based
+    /// on the various Ghostty configurations.
+    pub fn getNeedsConfirmQuit(self: *Self) bool {
+        const tree = self.getTree() orelse return false;
+        var it = tree.iterator();
+        while (it.next()) |entry| {
+            if (entry.view.core()) |core| {
+                if (core.needsConfirmQuit()) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
     /// Get the currently active surface. See the "active-surface" property.
     /// This does not ref the value.
     pub fn getActiveSurface(self: *Self) ?*Surface {
@@ -636,18 +652,8 @@ pub const SplitTree = extern struct {
 
     fn surfaceCloseRequest(
         surface: *Surface,
-        scope: *const Surface.CloseScope,
         self: *Self,
     ) callconv(.c) void {
-        switch (scope.*) {
-            // Handled upstream... this will probably go away for widget
-            // actions eventually.
-            .window, .tab => return,
-
-            // Remove the surface from the tree.
-            .surface => {},
-        }
-
         const core = surface.core() orelse return;
 
         // Reset our pending close state

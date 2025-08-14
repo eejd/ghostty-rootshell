@@ -208,6 +208,7 @@ pub const Tab = extern struct {
         // For action names:
         // https://docs.gtk.org/gio/type_func.Action.name_is_valid.html
         const actions = .{
+            .{ "close", actionClose, null },
             .{ "ring-bell", actionRingBell, null },
         };
 
@@ -262,9 +263,8 @@ pub const Tab = extern struct {
     /// Returns true if this tab needs confirmation before quitting based
     /// on the various Ghostty configurations.
     pub fn getNeedsConfirmQuit(self: *Self) bool {
-        const surface = self.getActiveSurface() orelse return false;
-        const core_surface = surface.core() orelse return false;
-        return core_surface.needsConfirmQuit();
+        const tree = self.getSplitTree();
+        return tree.getNeedsConfirmQuit();
     }
 
     /// Get the tab page holding this tab, if any.
@@ -342,6 +342,22 @@ pub const Tab = extern struct {
         self: *Self,
     ) callconv(.c) void {
         self.as(gobject.Object).notifyByPspec(properties.@"active-surface".impl.param_spec);
+    }
+
+    fn actionClose(
+        _: *gio.SimpleAction,
+        _: ?*glib.Variant,
+        self: *Self,
+    ) callconv(.c) void {
+        const tab_view = ext.getAncestor(
+            adw.TabView,
+            self.as(gtk.Widget),
+        ) orelse return;
+        const page = tab_view.getPage(self.as(gtk.Widget));
+
+        // Delegate to our parent to handle this, since this will emit
+        // a close-page signal that the parent can intercept.
+        tab_view.closePage(page);
     }
 
     fn actionRingBell(
