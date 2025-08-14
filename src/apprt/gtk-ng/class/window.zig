@@ -557,16 +557,46 @@ pub const Window = extern struct {
     /// fullscreen, etc.).
     fn syncAppearance(self: *Self) void {
         const priv = self.private();
-        const csd_enabled = priv.winproto.clientSideDecorationEnabled();
-        self.as(gtk.Window).setDecorated(@intFromBool(csd_enabled));
+        const widget = self.as(gtk.Widget);
 
-        // Fix any artifacting that may occur in window corners. The .ssd CSS
-        // class is defined in the GtkWindow documentation:
-        // https://docs.gtk.org/gtk4/class.Window.html#css-nodes. A definition
-        // for .ssd is provided by GTK and Adwaita.
-        self.toggleCssClass("csd", csd_enabled);
-        self.toggleCssClass("ssd", !csd_enabled);
-        self.toggleCssClass("no-border-radius", !csd_enabled);
+        // Toggle style classes based on whether we're using CSDs or SSDs.
+        //
+        // These classes are defined in the gtk.Window documentation:
+        // https://docs.gtk.org/gtk4/class.Window.html#css-nodes.
+        {
+            // Reset all style classes first
+            inline for (&.{
+                "ssd",
+                "csd",
+                "solid-csd",
+                "no-border-radius",
+            }) |class|
+                widget.removeCssClass(class);
+
+            const csd_enabled = priv.winproto.clientSideDecorationEnabled();
+            self.as(gtk.Window).setDecorated(@intFromBool(csd_enabled));
+
+            if (csd_enabled) {
+                const display = widget.getDisplay();
+
+                // We do the exact same check GTK is doing internally and toggle
+                // either the `csd` or `solid-csd` style, based on whether the user's
+                // window manager is deemed _non-compositing_.
+                //
+                // In practice this only impacts users of traditional X11 window
+                // managers (e.g. i3, dwm, awesomewm, etc.) and not X11 desktop
+                // environments or Wayland compositors/DEs.
+                if (display.isRgba() != 0 and display.isComposited() != 0) {
+                    widget.addCssClass("csd");
+                } else {
+                    widget.addCssClass("solid-csd");
+                }
+            } else {
+                widget.addCssClass("ssd");
+                // Fix any artifacting that may occur in window corners.
+                widget.addCssClass("no-border-radius");
+            }
+        }
 
         // Trigger all our dynamic properties that depend on the config.
         inline for (&.{
