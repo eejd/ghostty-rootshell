@@ -160,62 +160,26 @@ pub const SplitTree = extern struct {
         gtk.Widget.initTemplate(self.as(gtk.Widget));
 
         // Initialize our actions
-        self.initActions();
+        self.initActionMap();
 
         // Initialize some basic state
         const priv = self.private();
         priv.pending_close = null;
     }
 
-    fn initActions(self: *Self) void {
-        // The set of actions. Each action has (in order):
-        // [0] The action name
-        // [1] The callback function
-        // [2] The glib.VariantType of the parameter
-        //
-        // For action names:
-        // https://docs.gtk.org/gio/type_func.Action.name_is_valid.html
-        const actions: []const struct {
-            [:0]const u8,
-            *const fn (*gio.SimpleAction, ?*glib.Variant, *Self) callconv(.c) void,
-            ?*glib.VariantType,
-        } = &.{
+    fn initActionMap(self: *Self) void {
+        const s_variant_type = glib.ext.VariantType.newFor([:0]const u8);
+        defer s_variant_type.free();
+
+        const actions = [_]ext.actions.Action(Self){
             // All of these will eventually take a target surface parameter.
             // For now all our targets originate from the focused surface.
-            .{ "new-split", &actionNewSplit, glib.ext.VariantType.newFor([:0]const u8) },
-            .{ "equalize", &actionEqualize, null },
-            .{ "zoom", &actionZoom, null },
+            .init("new-split", actionNewSplit, s_variant_type),
+            .init("equalize", actionEqualize, null),
+            .init("zoom", actionZoom, null),
         };
 
-        // We need to collect our actions into a group since we're just
-        // a plain widget that doesn't implement ActionGroup directly.
-        const group = gio.SimpleActionGroup.new();
-        errdefer group.unref();
-        const map = group.as(gio.ActionMap);
-        for (actions) |entry| {
-            const action = gio.SimpleAction.new(
-                entry[0],
-                entry[2],
-            );
-            defer {
-                action.unref();
-                if (entry[2]) |ptype| ptype.free();
-            }
-
-            _ = gio.SimpleAction.signals.activate.connect(
-                action,
-                *Self,
-                entry[1],
-                self,
-                .{},
-            );
-            map.addAction(action.as(gio.Action));
-        }
-
-        self.as(gtk.Widget).insertActionGroup(
-            "split-tree",
-            group.as(gio.ActionGroup),
-        );
+        ext.actions.addAsGroup(Self, self, "split-tree", &actions);
     }
 
     /// Create a new split in the given direction from the currently

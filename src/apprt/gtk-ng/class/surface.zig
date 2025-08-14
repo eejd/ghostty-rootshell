@@ -1233,7 +1233,7 @@ pub const Surface = extern struct {
         gtk.Widget.initTemplate(self.as(gtk.Widget));
 
         // Initialize our actions
-        self.initActions();
+        self.initActionMap();
 
         const priv = self.private();
 
@@ -1281,43 +1281,12 @@ pub const Surface = extern struct {
         self.propConfig(undefined, null);
     }
 
-    fn initActions(self: *Self) void {
-        // The set of actions. Each action has (in order):
-        // [0] The action name
-        // [1] The callback function
-        // [2] The glib.VariantType of the parameter
-        //
-        // For action names:
-        // https://docs.gtk.org/gio/type_func.Action.name_is_valid.html
-        const actions = .{
-            .{ "prompt-title", actionPromptTitle, null },
+    fn initActionMap(self: *Self) void {
+        const actions = [_]ext.actions.Action(Self){
+            .init("prompt-title", actionPromptTitle, null),
         };
 
-        // We need to collect our actions into a group since we're just
-        // a plain widget that doesn't implement ActionGroup directly.
-        const group = gio.SimpleActionGroup.new();
-        errdefer group.unref();
-        const map = group.as(gio.ActionMap);
-        inline for (actions) |entry| {
-            const action = gio.SimpleAction.new(
-                entry[0],
-                entry[2],
-            );
-            defer action.unref();
-            _ = gio.SimpleAction.signals.activate.connect(
-                action,
-                *Self,
-                entry[1],
-                self,
-                .{},
-            );
-            map.addAction(action.as(gio.Action));
-        }
-
-        self.as(gtk.Widget).insertActionGroup(
-            "surface",
-            group.as(gio.ActionGroup),
-        );
+        ext.actions.addAsGroup(Self, self, "surface", &actions);
     }
 
     fn dispose(self: *Self) callconv(.c) void {
@@ -1780,10 +1749,7 @@ pub const Surface = extern struct {
     ) callconv(.c) c_int {
         const alloc = Application.default().allocator();
 
-        if (g_value_holds(
-            value,
-            gdk.FileList.getGObjectType(),
-        )) {
+        if (ext.gValueHolds(value, gdk.FileList.getGObjectType())) {
             var data = std.ArrayList(u8).init(alloc);
             defer data.deinit();
 
@@ -1827,7 +1793,7 @@ pub const Surface = extern struct {
             return 1;
         }
 
-        if (g_value_holds(value, gio.File.getGObjectType())) {
+        if (ext.gValueHolds(value, gio.File.getGObjectType())) {
             const object = value.getObject() orelse return 0;
             const file = gobject.ext.cast(gio.File, object) orelse return 0;
             const path = file.getPath() orelse return 0;
@@ -1855,7 +1821,7 @@ pub const Surface = extern struct {
             return 1;
         }
 
-        if (g_value_holds(value, gobject.ext.types.string)) {
+        if (ext.gValueHolds(value, gobject.ext.types.string)) {
             if (value.getString()) |string| {
                 Clipboard.paste(self, std.mem.span(string));
             }
@@ -3038,16 +3004,6 @@ const Clipboard = struct {
         state: apprt.ClipboardRequest,
     };
 };
-
-/// Check a GValue to see what's type its wrapping. This is equivalent to GTK's
-/// `G_VALUE_HOLDS` macro but Zig's C translator does not like it.
-fn g_value_holds(value_: ?*gobject.Value, g_type: gobject.Type) bool {
-    if (value_) |value| {
-        if (value.f_g_type == g_type) return true;
-        return gobject.typeCheckValueHolds(value, g_type) != 0;
-    }
-    return false;
-}
 
 /// Compute a fraction [0.0, 1.0] from the supplied progress, which is clamped
 /// to [0, 100].

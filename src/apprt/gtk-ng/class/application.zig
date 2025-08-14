@@ -1112,38 +1112,16 @@ pub const Application = extern struct {
         const as_variant_type = glib.VariantType.new("as");
         defer as_variant_type.free();
 
-        // The set of actions. Each action has (in order):
-        // [0] The action name
-        // [1] The callback function
-        // [2] The glib.VariantType of the parameter
-        //
-        // For action names:
-        // https://docs.gtk.org/gio/type_func.Action.name_is_valid.html
-        const actions = .{
-            .{ "new-window", actionNewWindow, null },
-            .{ "new-window-command", actionNewWindow, as_variant_type },
-            .{ "open-config", actionOpenConfig, null },
-            .{ "present-surface", actionPresentSurface, t_variant_type },
-            .{ "quit", actionQuit, null },
-            .{ "reload-config", actionReloadConfig, null },
+        const actions = [_]ext.actions.Action(Self){
+            .init("new-window", actionNewWindow, null),
+            .init("new-window-command", actionNewWindow, as_variant_type),
+            .init("open-config", actionOpenConfig, null),
+            .init("present-surface", actionPresentSurface, t_variant_type),
+            .init("quit", actionQuit, null),
+            .init("reload-config", actionReloadConfig, null),
         };
 
-        const action_map = self.as(gio.ActionMap);
-        inline for (actions) |entry| {
-            const action = gio.SimpleAction.new(
-                entry[0],
-                entry[2],
-            );
-            defer action.unref();
-            _ = gio.SimpleAction.signals.activate.connect(
-                action,
-                *Self,
-                entry[1],
-                self,
-                .{},
-            );
-            action_map.addAction(action.as(gio.Action));
-        }
+        ext.actions.add(Self, self, &actions);
     }
 
     /// Setup our global shortcuts.

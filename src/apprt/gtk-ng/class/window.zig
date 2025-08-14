@@ -331,42 +331,27 @@ pub const Window = extern struct {
 
     /// Setup our action map.
     fn initActionMap(self: *Self) void {
-        const actions = .{
-            .{ "about", actionAbout, null },
-            .{ "close", actionClose, null },
-            .{ "close-tab", actionCloseTab, null },
-            .{ "new-tab", actionNewTab, null },
-            .{ "new-window", actionNewWindow, null },
-            .{ "ring-bell", actionRingBell, null },
-            .{ "split-right", actionSplitRight, null },
-            .{ "split-left", actionSplitLeft, null },
-            .{ "split-up", actionSplitUp, null },
-            .{ "split-down", actionSplitDown, null },
-            .{ "copy", actionCopy, null },
-            .{ "paste", actionPaste, null },
-            .{ "reset", actionReset, null },
-            .{ "clear", actionClear, null },
+        const actions = [_]ext.actions.Action(Self){
+            .init("about", actionAbout, null),
+            .init("close", actionClose, null),
+            .init("close-tab", actionCloseTab, null),
+            .init("new-tab", actionNewTab, null),
+            .init("new-window", actionNewWindow, null),
+            .init("ring-bell", actionRingBell, null),
+            .init("split-right", actionSplitRight, null),
+            .init("split-left", actionSplitLeft, null),
+            .init("split-up", actionSplitUp, null),
+            .init("split-down", actionSplitDown, null),
+            .init("copy", actionCopy, null),
+            .init("paste", actionPaste, null),
+            .init("reset", actionReset, null),
+            .init("clear", actionClear, null),
             // TODO: accept the surface that toggled the command palette
-            .{ "toggle-command-palette", actionToggleCommandPalette, null },
-            .{ "toggle-inspector", actionToggleInspector, null },
+            .init("toggle-command-palette", actionToggleCommandPalette, null),
+            .init("toggle-inspector", actionToggleInspector, null),
         };
 
-        const action_map = self.as(gio.ActionMap);
-        inline for (actions) |entry| {
-            const action = gio.SimpleAction.new(
-                entry[0],
-                entry[2],
-            );
-            defer action.unref();
-            _ = gio.SimpleAction.signals.activate.connect(
-                action,
-                *Self,
-                entry[1],
-                self,
-                .{},
-            );
-            action_map.addAction(action.as(gio.Action));
-        }
+        ext.actions.add(Self, self, &actions);
     }
 
     /// Winproto backend for this window.
