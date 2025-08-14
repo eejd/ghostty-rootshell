@@ -104,6 +104,10 @@ pub const InspectorWidget = extern struct {
         ));
     }
 
+    pub fn getSurface(self: *Self) ?*Surface {
+        return self.private().surface;
+    }
+
     pub fn setSurface(self: *Self, surface_: ?*Surface) void {
         const priv = self.private();
 

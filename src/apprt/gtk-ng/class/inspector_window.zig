@@ -157,6 +157,22 @@ pub const InspectorWindow = extern struct {
         ));
     }
 
+    //---------------------------------------------------------------
+    // Signal Handlers
+
+    fn propInspectorSurface(
+        inspector: *InspectorWidget,
+        _: *gobject.ParamSpec,
+        self: *Self,
+    ) callconv(.c) void {
+        // If the inspector's surface went away, we destroy the window.
+        // The inspector has a weak notify on the surface so it knows
+        // if it goes nil.
+        if (inspector.getSurface() == null) {
+            self.as(gtk.Window).destroy();
+        }
+    }
+
     const C = Common(Self, Private);
     pub const as = C.as;
     pub const ref = C.ref;
@@ -183,6 +199,9 @@ pub const InspectorWindow = extern struct {
 
             // Template Bindings
             class.bindTemplateChildPrivate("inspector_widget", .{});
+
+            // Template callbacks
+            class.bindTemplateCallback("notify_inspector_surface", &propInspectorSurface);
 
             // Properties
             gobject.ext.registerProperties(class, &.{

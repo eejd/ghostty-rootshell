@@ -30,6 +30,7 @@ template $GhosttyInspectorWindow: Adw.ApplicationWindow {
       }
 
       $GhosttyInspectorWidget inspector_widget {
+        notify::surface => $notify_inspector_surface();
         surface: bind template.surface;
       }
     }
