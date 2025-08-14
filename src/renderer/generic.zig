@@ -395,6 +395,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             }
 
             pub fn deinit(self: *FrameState) void {
+                self.target.deinit();
                 self.uniforms.deinit();
                 self.cells.deinit();
                 self.cells_bg.deinit();
