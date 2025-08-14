@@ -96,6 +96,13 @@ pub const InspectorWindow = extern struct {
     }
 
     fn dispose(self: *Self) callconv(.c) void {
+        // You MUST clear all weak refs in dispose, otherwise it causes
+        // memory corruption on dispose on the TARGET (weak referenced)
+        // object. The only way we caught this is via Valgrind. Its not a leak,
+        // its an invalid memory read. In practice, I found this sometimes
+        // caused hanging!
+        self.setSurface(null);
+
         gtk.Widget.disposeTemplate(
             self.as(gtk.Widget),
             getGObjectType(),
