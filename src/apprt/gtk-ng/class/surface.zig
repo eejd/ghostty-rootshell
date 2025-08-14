@@ -582,7 +582,6 @@ pub const Surface = extern struct {
         const priv = self.private();
         if (priv.inspector.get()) |inspector| {
             defer inspector.unref();
-            inspector.shutdown();
             priv.inspector.set(null);
             return true;
         }
@@ -609,7 +608,6 @@ pub const Surface = extern struct {
         const priv = self.private();
         if (priv.inspector.get()) |inspector| {
             defer inspector.unref();
-            inspector.shutdown();
             priv.inspector.set(null);
         }
         return true;
@@ -622,6 +620,7 @@ pub const Surface = extern struct {
             .hide => return self.hideInspector(),
         }
     }
+
     /// Redraw our inspector, if there is one associated with this surface.
     pub fn redrawInspector(self: *Self) void {
         const priv = self.private();
@@ -1359,7 +1358,6 @@ pub const Surface = extern struct {
 
         if (priv.inspector.get()) |inspector| {
             defer inspector.unref();
-            inspector.shutdown();
         }
 
         gtk.Widget.disposeTemplate(
@@ -1380,6 +1378,10 @@ pub const Surface = extern struct {
             // We do this before deinit in case a callback triggers
             // searching for this surface.
             Application.default().core().deleteSurface(self.rt());
+
+            // NOTE: We must deinit the surface in the finalize call and NOT
+            // the dispose call because the inspector widget relies on this
+            // behavior with a weakRef to properly deactivate.
 
             // Deinit the surface
             v.deinit();

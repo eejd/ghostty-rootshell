@@ -82,20 +82,11 @@ pub const InspectorWidget = extern struct {
     //---------------------------------------------------------------
     // Public methods
 
-    pub fn new(surface: *Surface) *Self {
-        return gobject.ext.newInstance(Self, .{
-            .surface = surface,
-        });
-    }
-
     /// Queue a render of the Dear ImGui widget.
     pub fn queueRender(self: *Self) void {
         const priv = self.private();
         priv.imgui_widget.queueRender();
     }
-
-    //---------------------------------------------------------------
-    //  Private Methods
 
     //---------------------------------------------------------------
     // Properties
@@ -178,9 +169,10 @@ pub const InspectorWidget = extern struct {
         // pointer values for comparison, but the objects themselves are unsafe.
         if (@intFromPtr(priv.surface) != @intFromPtr(surface)) return;
 
-        // Note: we very explicitly DO NOT want to call setSurface here
-        // because we can't safely use `surface` so we want to ensure we
-        // manually clear our ref and notify.
+        // According to weak notify docs, "surface" is in the "dispose" state.
+        // Our surface doesn't clear the core surface until the "finalize"
+        // state so we should be able to safely access it here. We need to
+        // be really careful though.
         const old = priv.surface orelse return;
         const core_surface = old.core() orelse return;
         core_surface.deactivateInspector();

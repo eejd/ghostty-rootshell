@@ -39,12 +39,10 @@ pub const InspectorWindow = extern struct {
                 Self,
                 ?*Surface,
                 .{
-                    .accessor = gobject.ext.typedAccessor(Self, ?*Surface, .{
-                        .getter = getSurface,
-                        .getter_transfer = .full,
-                        .setter = setSurface,
-                        .setter_transfer = .none,
-                    }),
+                    .accessor = .{
+                        .getter = getSurfaceValue,
+                        .setter = setSurfaceValue,
+                    },
                 },
             );
         };
@@ -132,48 +130,27 @@ pub const InspectorWindow = extern struct {
         priv.inspector_widget.queueRender();
     }
 
-    /// The surface we are connected to is going away, shut ourselves down.
-    pub fn shutdown(self: *Self) void {
-        const priv = self.private();
-        priv.surface.set(null);
-        self.as(gobject.Object).notifyByPspec(properties.surface.impl.param_spec);
-        self.as(gtk.Window).close();
-    }
-
-    //---------------------------------------------------------------
-    // Private Methods
-
-    fn isFullscreen(self: *Self) bool {
-        return self.as(gtk.Window).isFullscreen() != 0;
-    }
-
-    fn isMaximized(self: *Self) bool {
-        return self.as(gtk.Window).isMaximized() != 0;
-    }
-
     //---------------------------------------------------------------
     // Properties
-
-    fn getSurface(self: *Self) ?*Surface {
-        const priv = self.private();
-        return priv.surface.get();
-    }
 
     fn setSurface(self: *Self, newvalue: ?*Surface) void {
         const priv = self.private();
         priv.surface.set(newvalue);
     }
 
-    //---------------------------------------------------------------
-    // Signal Handlers
+    fn getSurfaceValue(self: *Self, value: *gobject.Value) void {
+        // Important: get() refs, so we take to not increase ref twice
+        gobject.ext.Value.take(
+            value,
+            self.private().surface.get(),
+        );
+    }
 
-    /// The user has clicked on the close button.
-    fn closeRequest(_: *gtk.Window, self: *Self) callconv(.c) c_int {
-        const priv = self.private();
-        priv.surface.set(null);
-        self.as(gobject.Object).notifyByPspec(properties.surface.impl.param_spec);
-        self.as(gtk.Window).destroy();
-        return @intFromBool(false);
+    fn setSurfaceValue(self: *Self, value: *const gobject.Value) void {
+        self.setSurface(gobject.ext.Value.get(
+            value,
+            ?*Surface,
+        ));
     }
 
     const C = Common(Self, Private);
@@ -203,16 +180,11 @@ pub const InspectorWindow = extern struct {
             // Template Bindings
             class.bindTemplateChildPrivate("inspector_widget", .{});
 
-            // Template Callbacks
-            class.bindTemplateCallback("close_request", &closeRequest);
-
             // Properties
             gobject.ext.registerProperties(class, &.{
                 properties.surface.impl,
                 properties.debug.impl,
             });
-
-            // Signals
 
             // Virtual methods
             gobject.Object.virtual_methods.dispose.implement(class, &dispose);
