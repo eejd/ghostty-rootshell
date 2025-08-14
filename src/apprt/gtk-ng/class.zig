@@ -53,6 +53,18 @@ pub fn Common(
             }
         }).private else {};
 
+        /// Get the class structure for the object.
+        ///
+        /// This seems ugly and unsafe to me but this is what GObject is doing
+        /// under the hood.
+        ///
+        /// https://gitlab.gnome.org/GNOME/glib/-/blob/main/gobject/gtype.h?ref_type=heads#L555-571
+        /// https://gitlab.gnome.org/GNOME/glib/-/blob/main/gobject/gtype.h?ref_type=heads#L2673
+        pub fn getClass(self: *Self) ?*Self.Class {
+            const type_instance: *gobject.TypeInstance = @ptrCast(self);
+            return @ptrCast(type_instance.f_g_class orelse return null);
+        }
+
         /// A helper that creates a property that reads and writes a
         /// private field with only shallow copies. This is good for primitives
         /// such as bools, numbers, etc.
