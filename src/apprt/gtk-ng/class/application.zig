@@ -542,8 +542,8 @@ pub const Application = extern struct {
         value: apprt.Action.Value(action),
     ) !bool {
         switch (action) {
-            .close_tab => Action.close(target, .tab),
-            .close_window => Action.close(target, .window),
+            .close_tab => return Action.closeTab(target),
+            .close_window => return Action.closeWindow(target),
 
             .config_change => try Action.configChange(
                 self,
@@ -1582,13 +1582,23 @@ pub const Application = extern struct {
 
 /// All apprt action handlers
 const Action = struct {
-    pub fn close(
-        target: apprt.Target,
-        scope: Surface.CloseScope,
-    ) void {
+    pub fn closeTab(target: apprt.Target) bool {
         switch (target) {
-            .app => {},
-            .surface => |v| v.rt_surface.surface.close(scope),
+            .app => return false,
+            .surface => |core| {
+                const surface = core.rt_surface.surface;
+                return surface.as(gtk.Widget).activateAction("tab.close", null) != 0;
+            },
+        }
+    }
+
+    pub fn closeWindow(target: apprt.Target) bool {
+        switch (target) {
+            .app => return false,
+            .surface => |core| {
+                const surface = core.rt_surface.surface;
+                return surface.as(gtk.Widget).activateAction("win.close", null) != 0;
+            },
         }
     }
 

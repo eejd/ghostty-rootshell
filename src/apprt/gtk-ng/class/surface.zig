@@ -275,7 +275,7 @@ pub const Surface = extern struct {
             const impl = gobject.ext.defineSignal(
                 name,
                 Self,
-                &.{*const CloseScope},
+                &.{},
                 void,
             );
         };
@@ -1047,11 +1047,11 @@ pub const Surface = extern struct {
     //---------------------------------------------------------------
     // Libghostty Callbacks
 
-    pub fn close(self: *Self, scope: CloseScope) void {
+    pub fn close(self: *Self) void {
         signals.@"close-request".impl.emit(
             self,
             null,
-            .{&scope},
+            .{},
             null,
         );
     }
@@ -1749,7 +1749,7 @@ pub const Surface = extern struct {
         self: *Self,
     ) callconv(.c) void {
         // This closes the surface with no confirmation.
-        self.close(.{ .surface = false });
+        self.close();
     }
 
     fn contextMenuClosed(
@@ -2707,25 +2707,6 @@ pub const Surface = extern struct {
         pub const as = C.Class.as;
         pub const bindTemplateChildPrivate = C.Class.bindTemplateChildPrivate;
         pub const bindTemplateCallback = C.Class.bindTemplateCallback;
-    };
-
-    /// The scope of a close request.
-    pub const CloseScope = union(enum) {
-        /// Close the surface. The boolean determines if there is a
-        /// process active.
-        surface: bool,
-
-        /// Close the tab. We can't know if there are processes active
-        /// for the entire tab scope so listeners must query the app.
-        tab,
-
-        /// Close the window.
-        window,
-
-        pub const getGObjectType = gobject.ext.defineBoxed(
-            CloseScope,
-            .{ .name = "GhosttySurfaceCloseScope" },
-        );
     };
 
     /// Simple dimensions struct for the surface used by various properties.
