@@ -60,20 +60,22 @@ pub const Runtime = enum {
     /// This is only useful if you're only interested in the lib only (macOS).
     none,
 
-    /// GTK-backed. Rich windowed application. GTK is dynamically linked.
-    gtk,
-
-    /// GTK4. The "-ng" variant is a rewrite of the GTK backend using
-    /// GTK-native technologies such as full GObject classes, Blueprint
-    /// files, etc.
+    /// GTK4. Rich windowed application. This uses a full GObject-based
+    /// approach to building the application.
     @"gtk-ng",
 
+    /// GTK-backed. Rich windowed application. GTK is dynamically linked.
+    /// WARNING: Deprecated. This will be removed very soon. All bug fixes
+    /// and features should go into the gtk-ng backend.
+    gtk,
+
     pub fn default(target: std.Target) Runtime {
-        // The Linux default is GTK because it is full featured.
-        if (target.os.tag == .linux) return .gtk;
+        // The Linux default is GTK because it is a full featured application.
+        if (target.os.tag == .linux) return .@"gtk-ng";
 
         // Otherwise, we do NONE so we don't create an exe and we
-        // create libghostty.
+        // create libghostty. On macOS, Xcode is used to build the app
+        // that links to libghostty.
         return .none;
     }
 };

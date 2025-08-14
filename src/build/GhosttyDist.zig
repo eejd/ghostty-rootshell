@@ -25,6 +25,11 @@ pub fn init(b: *std.Build, cfg: *const Config) !GhosttyDist {
         try resources.append(alloc, gtk.resources_c);
         try resources.append(alloc, gtk.resources_h);
     }
+    {
+        const gtk = SharedDeps.gtkNgDistResources(b);
+        try resources.append(alloc, gtk.resources_c);
+        try resources.append(alloc, gtk.resources_h);
+    }
 
     // git archive to create the final tarball. "git archive" is the
     // easiest way I can find to create a tarball that ignores stuff
