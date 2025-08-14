@@ -194,22 +194,26 @@ menu context_menu_model {
 
       item {
         label: _("Split Up");
-        action: "split-tree.new-up";
+        action: "split-tree.new-split";
+        target: "up";
       }
 
       item {
         label: _("Split Down");
-        action: "split-tree.new-down";
+        action: "split-tree.new-split";
+        target: "down";
       }
 
       item {
         label: _("Split Left");
-        action: "split-tree.new-left";
+        action: "split-tree.new-split";
+        target: "left";
       }
 
       item {
         label: _("Split Right");
-        action: "split-tree.new-right";
+        action: "split-tree.new-split";
+        target: "right";
       }
     }
 

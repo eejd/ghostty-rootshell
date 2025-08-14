@@ -175,16 +175,16 @@ pub const SplitTree = extern struct {
         //
         // For action names:
         // https://docs.gtk.org/gio/type_func.Action.name_is_valid.html
-        const actions = .{
+        const actions: []const struct {
+            [:0]const u8,
+            *const fn (*gio.SimpleAction, ?*glib.Variant, *Self) callconv(.c) void,
+            ?*glib.VariantType,
+        } = &.{
             // All of these will eventually take a target surface parameter.
             // For now all our targets originate from the focused surface.
-            .{ "new-left", actionNewLeft, null },
-            .{ "new-right", actionNewRight, null },
-            .{ "new-up", actionNewUp, null },
-            .{ "new-down", actionNewDown, null },
-
-            .{ "equalize", actionEqualize, null },
-            .{ "zoom", actionZoom, null },
+            .{ "new-split", &actionNewSplit, glib.ext.VariantType.newFor([:0]const u8) },
+            .{ "equalize", &actionEqualize, null },
+            .{ "zoom", &actionZoom, null },
         };
 
         // We need to collect our actions into a group since we're just
@@ -192,12 +192,16 @@ pub const SplitTree = extern struct {
         const group = gio.SimpleActionGroup.new();
         errdefer group.unref();
         const map = group.as(gio.ActionMap);
-        inline for (actions) |entry| {
+        for (actions) |entry| {
             const action = gio.SimpleAction.new(
                 entry[0],
                 entry[2],
             );
-            defer action.unref();
+            defer {
+                action.unref();
+                if (entry[2]) |ptype| ptype.free();
+            }
+
             _ = gio.SimpleAction.signals.activate.connect(
                 action,
                 *Self,
@@ -567,56 +571,30 @@ pub const SplitTree = extern struct {
     //---------------------------------------------------------------
     // Signal handlers
 
-    pub fn actionNewLeft(
+    pub fn actionNewSplit(
         _: *gio.SimpleAction,
-        parameter_: ?*glib.Variant,
+        args_: ?*glib.Variant,
         self: *Self,
     ) callconv(.c) void {
-        _ = parameter_;
-        self.newSplit(
-            .left,
-            self.getActiveSurface(),
-        ) catch |err| {
-            log.warn("new split failed error={}", .{err});
+        const args = args_ orelse {
+            log.warn("split-tree.new-split called without a parameter", .{});
+            return;
         };
-    }
 
-    pub fn actionNewRight(
-        _: *gio.SimpleAction,
-        parameter_: ?*glib.Variant,
-        self: *Self,
-    ) callconv(.c) void {
-        _ = parameter_;
-        self.newSplit(
-            .right,
-            self.getActiveSurface(),
-        ) catch |err| {
-            log.warn("new split failed error={}", .{err});
+        var dir: ?[*:0]const u8 = null;
+        args.get("&s", &dir);
+
+        const direction = std.meta.stringToEnum(
+            Surface.Tree.Split.Direction,
+            std.mem.span(dir) orelse return,
+        ) orelse {
+            // Need to be defensive here since actions can be triggered externally.
+            log.warn("invalid split direction for split-tree.new-split: {s}", .{dir.?});
+            return;
         };
-    }
 
-    pub fn actionNewUp(
-        _: *gio.SimpleAction,
-        parameter_: ?*glib.Variant,
-        self: *Self,
-    ) callconv(.c) void {
-        _ = parameter_;
         self.newSplit(
-            .up,
-            self.getActiveSurface(),
-        ) catch |err| {
-            log.warn("new split failed error={}", .{err});
-        };
-    }
-
-    pub fn actionNewDown(
-        _: *gio.SimpleAction,
-        parameter_: ?*glib.Variant,
-        self: *Self,
-    ) callconv(.c) void {
-        _ = parameter_;
-        self.newSplit(
-            .down,
+            direction,
             self.getActiveSurface(),
         ) catch |err| {
             log.warn("new split failed error={}", .{err});
