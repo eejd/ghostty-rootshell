@@ -319,8 +319,15 @@ pub const Window = extern struct {
             );
         }
 
+        // Start states based on config.
+        if (priv.config) |config_obj| {
+            const config = config_obj.get();
+            if (config.maximize) self.as(gtk.Window).maximize();
+            if (config.fullscreen) self.as(gtk.Window).fullscreen();
+        }
+
         // We always sync our appearance at the end because loading our
-        // config and such can affect our bindings which ar setup initially
+        // config and such can affect our bindings which are setup initially
         // in initTemplate.
         self.syncAppearance();
 
