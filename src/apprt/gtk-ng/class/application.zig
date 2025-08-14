@@ -561,6 +561,8 @@ pub const Application = extern struct {
 
             .initial_size => return Action.initialSize(target, value),
 
+            .inspector => return Action.controlInspector(target, value),
+
             .mouse_over_link => Action.mouseOverLink(target, value),
             .mouse_shape => Action.mouseShape(target, value),
             .mouse_visibility => Action.mouseVisibility(target, value),
@@ -619,13 +621,6 @@ pub const Application = extern struct {
             .toggle_command_palette => return Action.toggleCommandPalette(target),
             .toggle_split_zoom => return Action.toggleSplitZoom(target),
             .show_on_screen_keyboard => return Action.showOnScreenKeyboard(target),
-
-            // Unimplemented but todo on gtk-ng branch
-            .inspector,
-            => {
-                log.warn("unimplemented action={}", .{action});
-                return false;
-            },
 
             // Unimplemented
             .secure_input,
@@ -2232,6 +2227,15 @@ const Action = struct {
             .app => return false,
             .surface => |surface| {
                 return surface.rt_surface.gobj().toggleCommandPalette();
+            },
+        }
+    }
+
+    pub fn controlInspector(target: apprt.Target, value: apprt.Action.Value(.inspector)) bool {
+        switch (target) {
+            .app => return false,
+            .surface => |surface| {
+                return surface.rt_surface.gobj().controlInspector(value);
             },
         }
     }

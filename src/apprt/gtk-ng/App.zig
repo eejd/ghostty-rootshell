@@ -99,7 +99,6 @@ pub fn performIpc(
 }
 
 /// Redraw the inspector for the given surface.
-pub fn redrawInspector(self: *App, surface: *Surface) void {
-    _ = self;
-    _ = surface;
+pub fn redrawInspector(_: *App, surface: *Surface) void {
+    surface.redrawInspector();
 }

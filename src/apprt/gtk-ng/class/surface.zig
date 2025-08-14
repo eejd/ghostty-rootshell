@@ -29,6 +29,8 @@ const ChildExited = @import("surface_child_exited.zig").SurfaceChildExited;
 const ClipboardConfirmationDialog = @import("clipboard_confirmation_dialog.zig").ClipboardConfirmationDialog;
 const TitleDialog = @import("surface_title_dialog.zig").SurfaceTitleDialog;
 const Window = @import("window.zig").Window;
+const WeakRef = @import("../weak_ref.zig").WeakRef;
+const InspectorWindow = @import("inspector_window.zig").InspectorWindow;
 
 const log = std.log.scoped(.gtk_ghostty_surface);
 
@@ -470,6 +472,9 @@ pub const Surface = extern struct {
         // false by a parent widget.
         bell_ringing: bool = false,
 
+        /// A weak reference to an inspector window.
+        inspector: ?*InspectorWindow = null,
+
         // Template binds
         child_exited_overlay: *ChildExited,
         context_menu: *gtk.PopoverMenu,
@@ -571,6 +576,36 @@ pub const Surface = extern struct {
     pub fn toggleCommandPalette(self: *Self) bool {
         // TODO: pass the surface with the action
         return self.as(gtk.Widget).activateAction("win.toggle-command-palette", null) != 0;
+    }
+
+    pub fn controlInspector(
+        self: *Self,
+        value: apprt.Action.Value(.inspector),
+    ) bool {
+        // Let's see if we have an inspector already.
+        const priv = self.private();
+        if (priv.inspector) |inspector| switch (value) {
+            .show => {},
+            // Our weak ref will set our private value to null
+            .toggle, .hide => inspector.as(gtk.Window).destroy(),
+        } else switch (value) {
+            .toggle, .show => {
+                const inspector = InspectorWindow.new(self);
+                inspector.present();
+                inspector.as(gobject.Object).weakRef(inspectorWeakNotify, self);
+                priv.inspector = inspector;
+            },
+
+            .hide => {},
+        }
+
+        return true;
+    }
+
+    /// Redraw our inspector, if there is one associated with this surface.
+    pub fn redrawInspector(self: *Self) void {
+        const priv = self.private();
+        if (priv.inspector) |v| v.queueRender();
     }
 
     pub fn showOnScreenKeyboard(self: *Self, event: ?*gdk.Event) bool {
@@ -1287,10 +1322,12 @@ pub const Surface = extern struct {
 
     fn dispose(self: *Self) callconv(.c) void {
         const priv = self.private();
+
         if (priv.config) |v| {
             v.unref();
             priv.config = null;
         }
+
         if (priv.progress_bar_timer) |timer| {
             if (glib.Source.remove(timer) == 0) {
                 log.warn("unable to remove progress bar timer", .{});
@@ -1316,6 +1353,10 @@ pub const Surface = extern struct {
             // We do this before deinit in case a callback triggers
             // searching for this surface.
             Application.default().core().deleteSurface(self.rt());
+
+            // NOTE: We must deinit the surface in the finalize call and NOT
+            // the dispose call because the inspector widget relies on this
+            // behavior with a weakRef to properly deactivate.
 
             // Deinit the surface
             v.deinit();
@@ -1719,6 +1760,15 @@ pub const Surface = extern struct {
         // bar if there are tabs. That's not correct. We need to grab it
         // on the surface.
         self.grabFocus();
+    }
+
+    fn inspectorWeakNotify(
+        ud: ?*anyopaque,
+        _: *gobject.Object,
+    ) callconv(.c) void {
+        const self: *Self = @ptrCast(@alignCast(ud orelse return));
+        const priv = self.private();
+        priv.inspector = null;
     }
 
     fn dtDrop(

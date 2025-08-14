@@ -530,6 +530,17 @@
 }
 
 {
+   pango fontset
+   Memcheck:Leak
+   match-leak-kinds: possible
+   fun:*alloc
+   ...
+   fun:FcFontRenderPrepare
+   fun:pango_fc_fontset_get_font_at
+   ...
+}
+
+{
    pango and fontconfig
    Memcheck:Leak
    match-leak-kinds: definite
