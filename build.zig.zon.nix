@@ -290,11 +290,11 @@ in
       };
     }
     {
-      name = "z2d-0.7.0-j5P_Hg_DDACq-2H2Zh7rAq6_TXWdQzv7JAUfnrdeDosg";
+      name = "z2d-0.7.1-j5P_HhFQDQC6T5srG235r_nQpCrNwI15Gu2zqVrtUxN5";
       path = fetchZigArtifact {
         name = "z2d";
-        url = "https://github.com/vancluever/z2d/archive/8bbd035f4101f02b1d27947def0d7da3215df7fe.tar.gz";
-        hash = "sha256-wfadegeixcbgxRzRtf6M2H34CTuvDM22XVIhuufFBG4=";
+        url = "https://github.com/vancluever/z2d/archive/refs/tags/v0.7.1.tar.gz";
+        hash = "sha256-6ZqgrO/bcjgnuQcfq89VYptUUodsErM8Fz6nwBZhTJs=";
       };
     }
     {
