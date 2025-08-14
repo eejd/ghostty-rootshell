@@ -199,12 +199,12 @@ pub const Tab = extern struct {
     }
 
     fn initActionMap(self: *Self) void {
-        const actions = [_]ext.Action(Self){
+        const actions = [_]ext.actions.Action(Self){
             .init("close", actionClose, null),
             .init("ring-bell", actionRingBell, null),
         };
 
-        ext.addActionsAsGroup(Self, self, "tab", &actions);
+        ext.actions.addAsGroup(Self, self, "tab", &actions);
     }
 
     //---------------------------------------------------------------

@@ -1282,11 +1282,11 @@ pub const Surface = extern struct {
     }
 
     fn initActionMap(self: *Self) void {
-        const actions = [_]ext.Action(Self){
+        const actions = [_]ext.actions.Action(Self){
             .init("prompt-title", actionPromptTitle, null),
         };
 
-        ext.addActionsAsGroup(Self, self, "surface", &actions);
+        ext.actions.addAsGroup(Self, self, "surface", &actions);
     }
 
     fn dispose(self: *Self) callconv(.c) void {

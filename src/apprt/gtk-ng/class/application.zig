@@ -1112,7 +1112,7 @@ pub const Application = extern struct {
         const as_variant_type = glib.VariantType.new("as");
         defer as_variant_type.free();
 
-        const actions = [_]ext.Action(Self){
+        const actions = [_]ext.actions.Action(Self){
             .init("new-window", actionNewWindow, null),
             .init("new-window-command", actionNewWindow, as_variant_type),
             .init("open-config", actionOpenConfig, null),
@@ -1121,7 +1121,7 @@ pub const Application = extern struct {
             .init("reload-config", actionReloadConfig, null),
         };
 
-        ext.addActions(Self, self, &actions);
+        ext.actions.add(Self, self, &actions);
     }
 
     /// Setup our global shortcuts.

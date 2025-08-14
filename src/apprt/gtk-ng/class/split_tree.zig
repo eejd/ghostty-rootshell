@@ -171,7 +171,7 @@ pub const SplitTree = extern struct {
         const s_variant_type = glib.ext.VariantType.newFor([:0]const u8);
         defer s_variant_type.free();
 
-        const actions = [_]ext.Action(Self){
+        const actions = [_]ext.actions.Action(Self){
             // All of these will eventually take a target surface parameter.
             // For now all our targets originate from the focused surface.
             .init("new-split", actionNewSplit, s_variant_type),
@@ -179,7 +179,7 @@ pub const SplitTree = extern struct {
             .init("zoom", actionZoom, null),
         };
 
-        ext.addActionsAsGroup(Self, self, "split-tree", &actions);
+        ext.actions.addAsGroup(Self, self, "split-tree", &actions);
     }
 
     /// Create a new split in the given direction from the currently

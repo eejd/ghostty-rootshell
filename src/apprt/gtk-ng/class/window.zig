@@ -331,7 +331,7 @@ pub const Window = extern struct {
 
     /// Setup our action map.
     fn initActionMap(self: *Self) void {
-        const actions = [_]ext.Action(Self){
+        const actions = [_]ext.actions.Action(Self){
             .init("about", actionAbout, null),
             .init("close", actionClose, null),
             .init("close-tab", actionCloseTab, null),
@@ -351,7 +351,7 @@ pub const Window = extern struct {
             .init("toggle-inspector", actionToggleInspector, null),
         };
 
-        ext.addActions(Self, self, &actions);
+        ext.actions.add(Self, self, &actions);
     }
 
     /// Winproto backend for this window.
