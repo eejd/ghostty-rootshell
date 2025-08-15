@@ -86,6 +86,11 @@ pub const Region = extern struct {
     height: u32,
 };
 
+/// Number of nodes to preallocate in the list on init.
+///
+/// TODO: figure out optimal prealloc based on real world usage
+const node_prealloc: usize = 64;
+
 pub fn init(alloc: Allocator, size: u32, format: Format) Allocator.Error!Atlas {
     var result = Atlas{
         .data = try alloc.alloc(u8, size * size * format.depth()),
@@ -95,8 +100,8 @@ pub fn init(alloc: Allocator, size: u32, format: Format) Allocator.Error!Atlas {
     };
     errdefer result.deinit(alloc);
 
-    // TODO: figure out optimal prealloc based on real world usage
-    try result.nodes.ensureUnusedCapacity(alloc, 64);
+    // Prealloc some nodes.
+    result.nodes = try .initCapacity(alloc, node_prealloc);
 
     // This sets up our initial state
     result.clear();
@@ -743,4 +748,50 @@ test "grow BGR" {
     _ = try atlas.reserve(alloc, 1, 3);
     _ = try atlas.reserve(alloc, 2, 1);
     try testing.expectError(Error.AtlasFull, atlas.reserve(alloc, 1, 1));
+}
+
+test "grow OOM" {
+    // We use a fixed buffer allocator so that we can consistently hit OOM.
+    //
+    // We calculate the size to exactly fit the 4x4 pixels and node list.
+    var buf: [
+        4 * 4 * 1 // 4x4 pixels, each 1 byte.
+        + node_prealloc * @sizeOf(Node) // preallocated nodes.
+    ]u8 = undefined;
+    var fba: std.heap.FixedBufferAllocator = .init(&buf);
+    const alloc = fba.allocator();
+
+    var atlas = try init(alloc, 4, .grayscale); // +2 for 1px border
+    defer atlas.deinit(alloc);
+
+    const reg = try atlas.reserve(alloc, 2, 2);
+    try testing.expectError(
+        Error.AtlasFull,
+        atlas.reserve(alloc, 1, 1),
+    );
+
+    // Write some data so we can verify that attempted growing doesn't mess it up.
+    atlas.set(reg, &[_]u8{ 1, 2, 3, 4 });
+    try testing.expectEqual(@as(u8, 1), atlas.data[5]);
+    try testing.expectEqual(@as(u8, 2), atlas.data[6]);
+    try testing.expectEqual(@as(u8, 3), atlas.data[9]);
+    try testing.expectEqual(@as(u8, 4), atlas.data[10]);
+
+    // Expand by 1, should give OOM, modified and resized should be unchanged.
+    const old_modified = atlas.modified.load(.monotonic);
+    const old_resized = atlas.resized.load(.monotonic);
+    try testing.expectError(
+        Allocator.Error.OutOfMemory,
+        atlas.grow(alloc, atlas.size + 1),
+    );
+    const new_modified = atlas.modified.load(.monotonic);
+    const new_resized = atlas.resized.load(.monotonic);
+    try testing.expectEqual(old_modified, new_modified);
+    try testing.expectEqual(old_resized, new_resized);
+
+    // Ensure our data is still set.
+    try testing.expectEqual(@as(u8, 1), atlas.data[5]);
+    try testing.expectEqual(@as(u8, 2), atlas.data[6]);
+    try testing.expectEqual(@as(u8, 3), atlas.data[9]);
+    try testing.expectEqual(@as(u8, 4), atlas.data[10]);
 }
