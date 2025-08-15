@@ -1091,6 +1091,11 @@ pub const Application = extern struct {
             self,
             .{ .detail = "dark" },
         );
+
+        // Do an initial color scheme sync. This is idempotent and does nothing
+        // if our current theme matches what libghostty has so its safe to
+        // call.
+        handleStyleManagerDark(style, undefined, self);
     }
 
     /// Setup signal handlers
@@ -1304,14 +1309,25 @@ pub const Application = extern struct {
         _: *gobject.ParamSpec,
         self: *Self,
     ) callconv(.c) void {
-        _ = self;
-
-        const color_scheme: apprt.ColorScheme = if (style.getDark() == 0)
+        const scheme: apprt.ColorScheme = if (style.getDark() == 0)
             .light
         else
             .dark;
+        log.debug("style manager changed scheme={}", .{scheme});
 
-        log.debug("style manager changed scheme={}", .{color_scheme});
+        const priv = self.private();
+        const core_app = priv.core_app;
+        core_app.colorSchemeEvent(self.rt(), scheme) catch |err| {
+            log.warn("error updating app color scheme err={}", .{err});
+        };
+        for (core_app.surfaces.items) |surface| {
+            surface.core().colorSchemeCallback(scheme) catch |err| {
+                log.warn(
+                    "unable to tell surface about color scheme change err={}",
+                    .{err},
+                );
+            };
+        }
     }
 
     fn handleReloadConfig(
