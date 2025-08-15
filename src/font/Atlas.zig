@@ -287,27 +287,30 @@ pub fn grow(self: *Atlas, alloc: Allocator, size_new: u32) Allocator.Error!void 
     assert(size_new >= self.size);
     if (size_new == self.size) return;
 
+    // We reserve space ahead of time for the new node, so that we
+    // won't have to handle any errors after allocating our new data.
     try self.nodes.ensureUnusedCapacity(alloc, 1);
-    const data_new = try alloc.alloc(u8, size_new * size_new * self.format.depth());
-    errdefer comptime unreachable; // End resource reservation phase.
 
-    // Preserve our old values so we can copy the old data
+    const data_new = try alloc.alloc(
+        u8,
+        size_new * size_new * self.format.depth(),
+    );
+
+    // Function is infallible from this point.
+    errdefer comptime unreachable;
+
+    // Keep track of our old data so that we can copy it.
     const data_old = self.data;
     const size_old = self.size;
 
+    // Update our data and size to our new ones.
     self.data = data_new;
+    self.size = size_new;
+
+    // Free the old data once we're done with it.
     defer alloc.free(data_old);
 
-    // Add our new rectangle for our added righthand space.
-    self.nodes.appendAssumeCapacity(alloc, .{
-        .x = size_old - 1,
-        .y = 1,
-        .width = size_new - size_old,
-    });
-
-    // If our allocation and rectangle add succeeded, we can go ahead
-    // and persist our new size and copy over the old data.
-    self.size = size_new;
+    // Zero the new data out and copy the old data over.
     @memset(self.data, 0);
     self.set(.{
         .x = 0, // don't bother skipping border so we can avoid strides
@@ -315,6 +318,13 @@ pub fn grow(self: *Atlas, alloc: Allocator, size_new: u32) Allocator.Error!void 
         .width = size_old,
         .height = size_old - 2, // skip the last border row
     }, data_old[size_old * self.format.depth() ..]);
+
+    // Add the new rectangle for our added righthand space.
+    self.nodes.appendAssumeCapacity(.{
+        .x = size_old - 1,
+        .y = 1,
+        .width = size_new - size_old,
+    });
 
     // We are both modified and resized
     _ = self.modified.fetchAdd(1, .monotonic);
