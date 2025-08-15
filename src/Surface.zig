@@ -1833,6 +1833,32 @@ fn clipboardWrite(self: *const Surface, data: []const u8, loc: apprt.Clipboard) 
     };
 }
 
+fn copySelectionToClipboards(
+    self: *Surface,
+    sel: terminal.Selection,
+    clipboards: []const apprt.Clipboard,
+) void {
+    const buf = self.io.terminal.screen.selectionString(self.alloc, .{
+        .sel = sel,
+        .trim = self.config.clipboard_trim_trailing_spaces,
+    }) catch |err| {
+        log.err("error reading selection string err={}", .{err});
+        return;
+    };
+    defer self.alloc.free(buf);
+
+    for (clipboards) |clipboard| self.rt_surface.setClipboardString(
+        buf,
+        clipboard,
+        false,
+    ) catch |err| {
+        log.err(
+            "error setting clipboard string clipboard={} err={}",
+            .{ clipboard, err },
+        );
+    };
+}
+
 /// Set the selection contents.
 ///
 /// This must be called with the renderer mutex held.
@@ -1850,33 +1876,13 @@ fn setSelection(self: *Surface, sel_: ?terminal.Selection) !void {
     const sel = sel_ orelse return;
     if (prev_) |prev| if (sel.eql(prev)) return;
 
-    const buf = self.io.terminal.screen.selectionString(self.alloc, .{
-        .sel = sel,
-        .trim = self.config.clipboard_trim_trailing_spaces,
-    }) catch |err| {
-        log.err("error reading selection string err={}", .{err});
-        return;
-    };
-    defer self.alloc.free(buf);
-
-    // Set the clipboard. This is not super DRY but it is clear what
-    // we're doing for each setting without being clever.
     switch (self.config.copy_on_select) {
         .false => unreachable, // handled above with an early exit
 
         // Both standard and selection clipboards are set.
         .clipboard => {
             const clipboards: []const apprt.Clipboard = &.{ .standard, .selection };
-            for (clipboards) |clipboard| self.rt_surface.setClipboardString(
-                buf,
-                clipboard,
-                false,
-            ) catch |err| {
-                log.err(
-                    "error setting clipboard string clipboard={} err={}",
-                    .{ clipboard, err },
-                );
-            };
+            copySelectionToClipboards(self, sel, clipboards);
         },
 
         // The selection clipboard is set if supported, otherwise the standard.
@@ -1885,17 +1891,7 @@ fn setSelection(self: *Surface, sel_: ?terminal.Selection) !void {
                 .selection
             else
                 .standard;
-
-            self.rt_surface.setClipboardString(
-                buf,
-                clipboard,
-                false,
-            ) catch |err| {
-                log.err(
-                    "error setting clipboard string clipboard={} err={}",
-                    .{ clipboard, err },
-                );
-            };
+            copySelectionToClipboards(self, sel, &.{clipboard});
         },
     }
 }
