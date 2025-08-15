@@ -141,7 +141,12 @@ pub const Contents = struct {
     }
 
     /// Set the cursor value. If the value is null then the cursor is hidden.
-    pub fn setCursor(self: *Contents, v: ?shaderpkg.CellText, cursor_style: ?renderer.CursorStyle) void {
+    pub fn setCursor(
+        self: *Contents,
+        v: ?shaderpkg.CellText,
+        cursor_style: ?renderer.CursorStyle,
+    ) void {
+        if (self.size.rows == 0) return;
         self.fg_rows.lists[0].clearRetainingCapacity();
         self.fg_rows.lists[self.size.rows + 1].clearRetainingCapacity();
 
@@ -158,6 +163,7 @@ pub const Contents = struct {
 
     /// Returns the current cursor glyph if present, checking both cursor lists.
     pub fn getCursorGlyph(self: *Contents) ?shaderpkg.CellText {
+        if (self.size.rows == 0) return null;
         if (self.fg_rows.lists[0].items.len > 0) {
             return self.fg_rows.lists[0].items[0];
         }
@@ -468,4 +474,15 @@ test "Contents clear last added content" {
     try testing.expectEqual(bg_cell_1, c.bgCell(1, 4).*);
     // Fg row index is +1 because of cursor list at start
     try testing.expectEqual(fg_cell_1, c.fg_rows.lists[2].items[0]);
+}
+
+test "Contents with zero-sized screen" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var c: Contents = .{};
+    defer c.deinit(alloc);
+
+    c.setCursor(null, null);
+    try testing.expect(c.getCursorGlyph() == null);
 }
