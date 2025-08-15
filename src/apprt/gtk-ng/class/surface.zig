@@ -523,10 +523,18 @@ pub const Surface = extern struct {
         priv.font_size_request = font_size_ptr;
         self.as(gobject.Object).notifyByPspec(properties.@"font-size-request".impl.param_spec);
 
-        // Setup our pwd
-        if (parent.rt_surface.surface.getPwd()) |pwd| {
-            priv.pwd = glib.ext.dupeZ(u8, pwd);
-            self.as(gobject.Object).notifyByPspec(properties.pwd.impl.param_spec);
+        // Remainder needs a config. If there is no config we just assume
+        // we aren't inheriting any of these values.
+        if (priv.config) |config_obj| {
+            const config = config_obj.get();
+
+            // Setup our pwd if configured to inherit
+            if (config.@"window-inherit-working-directory") {
+                if (parent.rt_surface.surface.getPwd()) |pwd| {
+                    priv.pwd = glib.ext.dupeZ(u8, pwd);
+                    self.as(gobject.Object).notifyByPspec(properties.pwd.impl.param_spec);
+                }
+            }
         }
     }
 
