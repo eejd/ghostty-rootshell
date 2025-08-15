@@ -287,22 +287,19 @@ pub fn grow(self: *Atlas, alloc: Allocator, size_new: u32) Allocator.Error!void 
     assert(size_new >= self.size);
     if (size_new == self.size) return;
 
+    try self.nodes.ensureUnusedCapacity(alloc, 1);
+    const data_new = try alloc.alloc(u8, size_new * size_new * self.format.depth());
+    errdefer comptime unreachable; // End resource reservation phase.
+
     // Preserve our old values so we can copy the old data
     const data_old = self.data;
     const size_old = self.size;
 
-    // Allocate our new data
-    self.data = try alloc.alloc(u8, size_new * size_new * self.format.depth());
+    self.data = data_new;
     defer alloc.free(data_old);
-    errdefer {
-        alloc.free(self.data);
-        self.data = data_old;
-    }
 
-    // Add our new rectangle for our added righthand space. We do this
-    // right away since its the only operation that can fail and we want
-    // to make error cleanup easier.
-    try self.nodes.append(alloc, .{
+    // Add our new rectangle for our added righthand space.
+    self.nodes.appendAssumeCapacity(alloc, .{
         .x = size_old - 1,
         .y = 1,
         .width = size_new - size_old,
