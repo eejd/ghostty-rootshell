@@ -58,8 +58,8 @@ pub fn Common(
         /// This seems ugly and unsafe to me but this is what GObject is doing
         /// under the hood.
         ///
-        /// https://gitlab.gnome.org/GNOME/glib/-/blob/main/gobject/gtype.h?ref_type=heads#L555-571
-        /// https://gitlab.gnome.org/GNOME/glib/-/blob/main/gobject/gtype.h?ref_type=heads#L2673
+        /// https://gitlab.gnome.org/GNOME/glib/-/blob/2c08654b62d52a31c4e4d13d7d85e12b989e72be/gobject/gtype.h#L555-571
+        /// https://gitlab.gnome.org/GNOME/glib/-/blob/2c08654b62d52a31c4e4d13d7d85e12b989e72be/gobject/gtype.h#L2673
         pub fn getClass(self: *Self) ?*Self.Class {
             const type_instance: *gobject.TypeInstance = @ptrCast(self);
             return @ptrCast(type_instance.f_g_class orelse return null);
