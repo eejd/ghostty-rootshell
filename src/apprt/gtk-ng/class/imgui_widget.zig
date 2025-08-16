@@ -35,37 +35,7 @@ pub const ImguiWidget = extern struct {
 
     pub const properties = struct {};
 
-    pub const signals = struct {
-        /// Emitted when the child widget should render. During the callback,
-        /// the Imgui context is valid.
-        pub const render = struct {
-            pub const name = "render";
-            pub const connect = impl.connect;
-            const impl = gobject.ext.defineSignal(
-                name,
-                Self,
-                &.{},
-                void,
-            );
-        };
-
-        /// Emitted when first realized to allow the embedded ImGui application
-        /// to initialize itself. When this is called, the ImGui context
-        /// is properly set.
-        ///
-        /// This might be called multiple times, but each time it is
-        /// called a new Imgui context will be created.
-        pub const setup = struct {
-            pub const name = "setup";
-            pub const connect = impl.connect;
-            const impl = gobject.ext.defineSignal(
-                name,
-                Self,
-                &.{},
-                void,
-            );
-        };
-    };
+    pub const signals = struct {};
 
     pub const virtual_methods = struct {
         /// This virtual method will be called to allow the Dear ImGui
@@ -484,8 +454,8 @@ pub const ImguiWidget = extern struct {
         parent_class: Parent.Class,
 
         /// Function pointers for virtual methods.
-        setup: ?*const fn (*Self) callconv(.c) void = null,
-        render: ?*const fn (*Self) callconv(.c) void = null,
+        setup: ?*const fn (*Self) callconv(.c) void,
+        render: ?*const fn (*Self) callconv(.c) void,
 
         var parent: *Parent.Class = undefined;
         pub const Instance = Self;
@@ -524,8 +494,6 @@ pub const ImguiWidget = extern struct {
             class.bindTemplateCallback("im_commit", &imCommit);
 
             // Signals
-            signals.render.impl.register(.{});
-            signals.setup.impl.register(.{});
 
             // Virtual methods
             gobject.Object.virtual_methods.dispose.implement(class, &dispose);
