@@ -55,8 +55,29 @@ pub fn Common(
 
         /// Get the class for the object.
         ///
-        /// This _seems_ ugly and unsafe but this is what GObject is doing
-        /// under the hood when it wants to access the class instance:
+        /// This _seems_ ugly and unsafe but this is how GObject
+        /// works under the hood. From the [GObject Type System
+        /// Concepts](https://docs.gtk.org/gobject/concepts.html) documentation:
+        ///
+        ///     Every object must define two structures: its class structure
+        ///     and its instance structure. All class structures must contain
+        ///     as first member a GTypeClass structure. All instance structures
+        ///     must contain as first member a GTypeInstance structure.
+        ///     …
+        ///     These constraints allow the type system to make sure that
+        ///     every object instance (identified by a pointer to the object’s
+        ///     instance structure) contains in its first bytes a pointer to the
+        ///     object’s class structure.
+        ///     …
+        ///     The C standard mandates that the first field of a C structure is
+        ///     stored starting in the first byte of the buffer used to hold the
+        ///     structure’s fields in memory. This means that the first field of
+        ///     an instance of an object B is A’s first field which in turn is
+        ///     GTypeInstance‘s first field which in turn is g_class, a pointer
+        ///     to B’s class structure.
+        ///
+        /// This means that to access the class structure for an object you cast it
+        /// to `*gobject.TypeInstance` and then access the `f_g_class` field.
         ///
         /// https://gitlab.gnome.org/GNOME/glib/-/blob/2c08654b62d52a31c4e4d13d7d85e12b989e72be/gobject/gtype.h#L555-571
         /// https://gitlab.gnome.org/GNOME/glib/-/blob/2c08654b62d52a31c4e4d13d7d85e12b989e72be/gobject/gtype.h#L2673
