@@ -1574,7 +1574,8 @@ pub const Trigger = struct {
             .unicode => |cp| std.hash.autoHash(
                 hasher,
                 foldedCodepoint(cp),
-                // Alternative, just use simple case folding:
+                // Alternative, just use simple case folding, and delete
+                // `foldedCodepoint` below:
                 // uucode.get(.case_folding_simple, cp),
             ),
         }
@@ -1593,9 +1594,7 @@ pub const Trigger = struct {
         // If more codepoints are produced then we return the codepoint
         // as-is which isn't correct but until we have a failing test
         // then I don't want to handle this.
-        var folded: [3]u21 = .{ 0, 0, 0 };
-        _ = uucode.get(.case_folding_full, cp).copy(&folded, cp);
-        return folded;
+        return uucode.get(.case_folding_full, cp).array(cp);
     }
 
     /// Convert the trigger to a C API compatible trigger.
