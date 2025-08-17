@@ -32,7 +32,8 @@ pub fn rtApp(self: *Self) *ApprtApp {
 }
 
 pub fn close(self: *Self, process_active: bool) void {
-    self.surface.close(.{ .surface = process_active });
+    _ = process_active;
+    self.surface.close();
 }
 
 pub fn cgroup(self: *Self) ?[]const u8 {
@@ -94,4 +95,9 @@ pub fn setClipboardString(
 
 pub fn defaultTermioEnv(self: *Self) !std.process.EnvMap {
     return try self.surface.defaultTermioEnv();
+}
+
+/// Redraw the inspector for our surface.
+pub fn redrawInspector(self: *Self) void {
+    self.surface.redrawInspector();
 }

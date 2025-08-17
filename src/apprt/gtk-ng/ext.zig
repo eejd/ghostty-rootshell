@@ -5,10 +5,14 @@
 
 const std = @import("std");
 const assert = std.debug.assert;
+const testing = std.testing;
 
+const gio = @import("gio");
 const glib = @import("glib");
 const gobject = @import("gobject");
 const gtk = @import("gtk");
+
+pub const actions = @import("ext/actions.zig");
 
 /// Wrapper around `gobject.boxedCopy` to copy a boxed type `T`.
 pub fn boxedCopy(comptime T: type, ptr: *const T) *T {
@@ -49,4 +53,16 @@ pub fn getAncestor(comptime T: type, widget: *gtk.Widget) ?*T {
     const ancestor = ancestor_ orelse return null;
     // We can assert the unwrap because getAncestor above
     return gobject.ext.cast(T, ancestor).?;
+}
+
+/// Check a gobject.Value to see what type it is wrapping. This is equivalent to GTK's
+/// `G_VALUE_HOLDS()` macro but Zig's C translator does not like it.
+pub fn gValueHolds(value_: ?*const gobject.Value, g_type: gobject.Type) bool {
+    const value = value_ orelse return false;
+    if (value.f_g_type == g_type) return true;
+    return gobject.typeCheckValueHolds(value, g_type) != 0;
+}
+
+test {
+    _ = actions;
 }

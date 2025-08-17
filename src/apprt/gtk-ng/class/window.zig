@@ -28,6 +28,7 @@ const Surface = @import("surface.zig").Surface;
 const Tab = @import("tab.zig").Tab;
 const DebugWarning = @import("debug_warning.zig").DebugWarning;
 const CommandPalette = @import("command_palette.zig").CommandPalette;
+const InspectorWindow = @import("inspector_window.zig").InspectorWindow;
 const WeakRef = @import("../weak_ref.zig").WeakRef;
 
 const log = std.log.scoped(.gtk_ghostty_window);
@@ -318,8 +319,15 @@ pub const Window = extern struct {
             );
         }
 
+        // Start states based on config.
+        if (priv.config) |config_obj| {
+            const config = config_obj.get();
+            if (config.maximize) self.as(gtk.Window).maximize();
+            if (config.fullscreen) self.as(gtk.Window).fullscreen();
+        }
+
         // We always sync our appearance at the end because loading our
-        // config and such can affect our bindings which ar setup initially
+        // config and such can affect our bindings which are setup initially
         // in initTemplate.
         self.syncAppearance();
 
@@ -330,40 +338,27 @@ pub const Window = extern struct {
 
     /// Setup our action map.
     fn initActionMap(self: *Self) void {
-        const actions = .{
-            .{ "about", actionAbout, null },
-            .{ "close", actionClose, null },
-            .{ "close-tab", actionCloseTab, null },
-            .{ "new-tab", actionNewTab, null },
-            .{ "new-window", actionNewWindow, null },
-            .{ "split-right", actionSplitRight, null },
-            .{ "split-left", actionSplitLeft, null },
-            .{ "split-up", actionSplitUp, null },
-            .{ "split-down", actionSplitDown, null },
-            .{ "copy", actionCopy, null },
-            .{ "paste", actionPaste, null },
-            .{ "reset", actionReset, null },
-            .{ "clear", actionClear, null },
+        const actions = [_]ext.actions.Action(Self){
+            .init("about", actionAbout, null),
+            .init("close", actionClose, null),
+            .init("close-tab", actionCloseTab, null),
+            .init("new-tab", actionNewTab, null),
+            .init("new-window", actionNewWindow, null),
+            .init("ring-bell", actionRingBell, null),
+            .init("split-right", actionSplitRight, null),
+            .init("split-left", actionSplitLeft, null),
+            .init("split-up", actionSplitUp, null),
+            .init("split-down", actionSplitDown, null),
+            .init("copy", actionCopy, null),
+            .init("paste", actionPaste, null),
+            .init("reset", actionReset, null),
+            .init("clear", actionClear, null),
             // TODO: accept the surface that toggled the command palette
-            .{ "toggle-command-palette", actionToggleCommandPalette, null },
+            .init("toggle-command-palette", actionToggleCommandPalette, null),
+            .init("toggle-inspector", actionToggleInspector, null),
         };
 
-        const action_map = self.as(gio.ActionMap);
-        inline for (actions) |entry| {
-            const action = gio.SimpleAction.new(
-                entry[0],
-                entry[2],
-            );
-            defer action.unref();
-            _ = gio.SimpleAction.signals.activate.connect(
-                action,
-                *Self,
-                entry[1],
-                self,
-                .{},
-            );
-            action_map.addAction(action.as(gio.Action));
-        }
+        ext.actions.add(Self, self, &actions);
     }
 
     /// Winproto backend for this window.
@@ -414,6 +409,12 @@ pub const Window = extern struct {
             "title",
             page.as(gobject.Object),
             "title",
+            .{ .sync_create = true },
+        );
+        _ = tab.as(gobject.Object).bindProperty(
+            "tooltip",
+            page.as(gobject.Object),
+            "tooltip",
             .{ .sync_create = true },
         );
 
@@ -556,16 +557,46 @@ pub const Window = extern struct {
     /// fullscreen, etc.).
     fn syncAppearance(self: *Self) void {
         const priv = self.private();
-        const csd_enabled = priv.winproto.clientSideDecorationEnabled();
-        self.as(gtk.Window).setDecorated(@intFromBool(csd_enabled));
+        const widget = self.as(gtk.Widget);
 
-        // Fix any artifacting that may occur in window corners. The .ssd CSS
-        // class is defined in the GtkWindow documentation:
-        // https://docs.gtk.org/gtk4/class.Window.html#css-nodes. A definition
-        // for .ssd is provided by GTK and Adwaita.
-        self.toggleCssClass("csd", csd_enabled);
-        self.toggleCssClass("ssd", !csd_enabled);
-        self.toggleCssClass("no-border-radius", !csd_enabled);
+        // Toggle style classes based on whether we're using CSDs or SSDs.
+        //
+        // These classes are defined in the gtk.Window documentation:
+        // https://docs.gtk.org/gtk4/class.Window.html#css-nodes.
+        {
+            // Reset all style classes first
+            inline for (&.{
+                "ssd",
+                "csd",
+                "solid-csd",
+                "no-border-radius",
+            }) |class|
+                widget.removeCssClass(class);
+
+            const csd_enabled = priv.winproto.clientSideDecorationEnabled();
+            self.as(gtk.Window).setDecorated(@intFromBool(csd_enabled));
+
+            if (csd_enabled) {
+                const display = widget.getDisplay();
+
+                // We do the exact same check GTK is doing internally and toggle
+                // either the `csd` or `solid-csd` style, based on whether the user's
+                // window manager is deemed _non-compositing_.
+                //
+                // In practice this only impacts users of traditional X11 window
+                // managers (e.g. i3, dwm, awesomewm, etc.) and not X11 desktop
+                // environments or Wayland compositors/DEs.
+                if (display.isRgba() != 0 and display.isComposited() != 0) {
+                    widget.addCssClass("csd");
+                } else {
+                    widget.addCssClass("solid-csd");
+                }
+            } else {
+                widget.addCssClass("ssd");
+                // Fix any artifacting that may occur in window corners.
+                widget.addCssClass("no-border-radius");
+            }
+        }
 
         // Trigger all our dynamic properties that depend on the config.
         inline for (&.{
@@ -674,13 +705,6 @@ pub const Window = extern struct {
         var it = tree.iterator();
         while (it.next()) |entry| {
             const surface = entry.view;
-            _ = Surface.signals.@"close-request".connect(
-                surface,
-                *Self,
-                surfaceCloseRequest,
-                self,
-                .{},
-            );
             _ = Surface.signals.@"present-request".connect(
                 surface,
                 *Self,
@@ -1060,6 +1084,21 @@ pub const Window = extern struct {
         });
     }
 
+    fn closureSubtitle(
+        _: *Self,
+        config_: ?*Config,
+        pwd_: ?[*:0]const u8,
+    ) callconv(.c) ?[*:0]const u8 {
+        const config = if (config_) |v| v.get() else return null;
+        return switch (config.@"window-subtitle") {
+            .false => null,
+            .@"working-directory" => pwd: {
+                const pwd = pwd_ orelse return null;
+                break :pwd glib.ext.dupeZ(u8, std.mem.span(pwd));
+            },
+        };
+    }
+
     //---------------------------------------------------------------
     // Virtual methods
 
@@ -1296,6 +1335,10 @@ pub const Window = extern struct {
         // Setup our binding group. This ensures things like the title
         // are synced from the active tab.
         priv.tab_bindings.setSource(child.as(gobject.Object));
+
+        // If the tab was previously marked as needing attention
+        // (e.g. due to a bell character), we now unmark that
+        page.setNeedsAttention(@intFromBool(false));
     }
 
     fn tabViewPageAttached(
@@ -1428,25 +1471,6 @@ pub const Window = extern struct {
             self.addToast(i18n._("Copied to clipboard"))
         else
             self.addToast(i18n._("Cleared clipboard"));
-    }
-
-    fn surfaceCloseRequest(
-        _: *Surface,
-        scope: *const Surface.CloseScope,
-        self: *Self,
-    ) callconv(.c) void {
-        switch (scope.*) {
-            // Handled directly by the tab. If the surface is the last
-            // surface then the tab will emit its own signal to request
-            // closing itself.
-            .surface => return,
-
-            // Also handled directly by the tab.
-            .tab => return,
-
-            // The only one we care about!
-            .window => self.as(gtk.Window).close(),
-        }
     }
 
     fn surfaceMenu(
@@ -1708,6 +1732,30 @@ pub const Window = extern struct {
         self.performBindingAction(.clear_screen);
     }
 
+    fn actionRingBell(
+        _: *gio.SimpleAction,
+        _: ?*glib.Variant,
+        self: *Window,
+    ) callconv(.c) void {
+        const priv = self.private();
+        const config = if (priv.config) |v| v.get() else return;
+
+        if (config.@"bell-features".system) system: {
+            const native = self.as(gtk.Native).getSurface() orelse {
+                log.warn("unable to get native surface from window", .{});
+                break :system;
+            };
+            native.beep();
+        }
+
+        if (config.@"bell-features".attention) {
+            // Request user attention
+            self.winproto().setUrgent(true) catch |err| {
+                log.warn("failed to request user attention={}", .{err});
+            };
+        }
+    }
+
     /// Toggle the command palette.
     ///
     /// TODO: accept the surface that toggled the command palette as a parameter
@@ -1770,6 +1818,23 @@ pub const Window = extern struct {
         self.toggleCommandPalette();
     }
 
+    /// Toggle the Ghostty inspector for the active surface.
+    fn toggleInspector(self: *Self) void {
+        const surface = self.getActiveSurface() orelse return;
+        _ = surface.controlInspector(.toggle);
+    }
+
+    /// React to a GTK action requesting that the Ghostty inspector be toggled.
+    fn actionToggleInspector(
+        _: *gio.SimpleAction,
+        _: ?*glib.Variant,
+        self: *Window,
+    ) callconv(.c) void {
+        // TODO: accept the surface that toggled the command palette as a
+        // parameter
+        self.toggleInspector();
+    }
+
     const C = Common(Self, Private);
     pub const as = C.as;
     pub const ref = C.ref;
@@ -1783,6 +1848,9 @@ pub const Window = extern struct {
 
         fn init(class: *Class) callconv(.c) void {
             gobject.ext.ensureType(DebugWarning);
+            gobject.ext.ensureType(SplitTree);
+            gobject.ext.ensureType(Surface);
+            gobject.ext.ensureType(Tab);
             gtk.Widget.Class.setTemplateFromResource(
                 class.as(gtk.Widget.Class),
                 comptime gresource.blueprint(.{
@@ -1832,6 +1900,7 @@ pub const Window = extern struct {
             class.bindTemplateCallback("notify_quick_terminal", &propQuickTerminal);
             class.bindTemplateCallback("notify_scale_factor", &propScaleFactor);
             class.bindTemplateCallback("titlebar_style_is_tabs", &closureTitlebarStyleIsTab);
+            class.bindTemplateCallback("computed_subtitle", &closureSubtitle);
 
             // Virtual methods
             gobject.Object.virtual_methods.dispose.implement(class, &dispose);

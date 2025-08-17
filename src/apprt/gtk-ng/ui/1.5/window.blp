@@ -40,6 +40,13 @@ template $GhosttyWindow: Adw.ApplicationWindow {
 
         title-widget: Adw.WindowTitle {
           title: bind template.title;
+          // Blueprint auto-formatter won't let me split this into multiple
+          // lines. Let me explain myself. All parameters to a closure are used
+          // as notifications to recompute the value of the closure. All
+          // elements of a property chain are also subscribed to for changes.
+          // This one long, ugly line saves us from manually building up this
+          // massive notify chain in code.
+          subtitle: bind $computed_subtitle(template.config, tab_view.selected-page.child as <$GhosttyTab>.active-surface as <$GhosttySurface>.pwd) as <string>;
         };
 
         [start]
