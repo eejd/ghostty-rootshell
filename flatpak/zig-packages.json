@@ -132,6 +132,18 @@
     "sha256": "ffc668a310e77607d393f3c18b32715f223da1eac4c4d6e0579a11df8e6b59cf"
   },
   {
+    "type": "archive",
+    "url": "https://github.com/jacobsandlund/uucode/archive/658743f845f25f8f8d30f535329829660c808eaf.tar.gz",
+    "dest": "vendor/p/uucode-0.0.0-ZZjBPjWBPACBbQFG11xoSRCP8NztUnPCieiCtBx0t57i",
+    "sha256": "d6ae67ddeaa8a558b5aabb20dd73ad877664568d9a8765a07321e466b57bdbad"
+  },
+  {
+    "type": "archive",
+    "url": "https://github.com/jacobsandlund/uucode.x/archive/ca9a9a4560307a30319d206b1ac68a7fc2f2fce9.tar.gz",
+    "dest": "vendor/p/uucode_x-0.0.0-5_D0j04hAADjn00a4Jfsjqz-gO6oF8FTLWUXmmvO1_MQ",
+    "sha256": "9ebdedba34a01abe6a13ef9cb635c6c92fbd3eb55d22da2f5471e06e8f67b563"
+  },
+  {
     "type": "git",
     "url": "https://github.com/rockorager/libvaxis",
     "commit": "1f41c121e8fc153d9ce8c6eb64b2bbab68ad7d23",
@@ -196,12 +208,6 @@
     "url": "https://github.com/TUSF/zigimg",
     "commit": "31268548fe3276c0e95f318a6c0d2ab10565b58d",
     "dest": "vendor/p/zigimg-0.1.0-lly-O6N2EABOxke8dqyzCwhtUCAafqP35zC7wsZ4Ddxj"
-  },
-  {
-    "type": "archive",
-    "url": "https://deps.files.ghostty.org/ziglyph-b89d43d1e3fb01b6074bc1f7fc980324b04d26a5.tar.gz",
-    "dest": "vendor/p/ziglyph-0.11.2-AAAAAHPtHwB4Mbzn1KvOV7Wpjo82NYEc_v0WC8oCLrkf",
-    "sha256": "72c7bdf3e16df105235fe3fcf32c987dac49389190f4ced89b0ee31710f3f3d9"
   },
   {
     "type": "archive",

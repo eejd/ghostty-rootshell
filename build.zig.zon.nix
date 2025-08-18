@@ -258,6 +258,22 @@ in
       };
     }
     {
+      name = "uucode-0.0.0-ZZjBPjWBPACBbQFG11xoSRCP8NztUnPCieiCtBx0t57i";
+      path = fetchZigArtifact {
+        name = "uucode";
+        url = "https://github.com/jacobsandlund/uucode/archive/658743f845f25f8f8d30f535329829660c808eaf.tar.gz";
+        hash = "sha256-1q5n3eqopVi1qrsg3XOth3ZkVo2ah2WgcyHkZrV7260=";
+      };
+    }
+    {
+      name = "uucode_x-0.0.0-5_D0j04hAADjn00a4Jfsjqz-gO6oF8FTLWUXmmvO1_MQ";
+      path = fetchZigArtifact {
+        name = "uucode_x";
+        url = "https://github.com/jacobsandlund/uucode.x/archive/ca9a9a4560307a30319d206b1ac68a7fc2f2fce9.tar.gz";
+        hash = "sha256-nr3tujSgGr5qE++ctjXGyS+9PrVdItovVHHgbo9ntWM=";
+      };
+    }
+    {
       name = "vaxis-0.1.0-BWNV_FUICQAFZnTCL11TUvnUr1Y0_ZdqtXHhd51d76Rn";
       path = fetchZigArtifact {
         name = "vaxis";
@@ -343,14 +359,6 @@ in
         name = "zigimg";
         url = "git+https://github.com/TUSF/zigimg#31268548fe3276c0e95f318a6c0d2ab10565b58d";
         hash = "sha256-oblfr2FIzuqq0FLo/RrzCwUX1NJJuT53EwD3nP3KwN0=";
-      };
-    }
-    {
-      name = "ziglyph-0.11.2-AAAAAHPtHwB4Mbzn1KvOV7Wpjo82NYEc_v0WC8oCLrkf";
-      path = fetchZigArtifact {
-        name = "ziglyph";
-        url = "https://deps.files.ghostty.org/ziglyph-b89d43d1e3fb01b6074bc1f7fc980324b04d26a5.tar.gz";
-        hash = "sha256-cse98+Ft8QUjX+P88yyYfaxJOJGQ9M7Ymw7jFxDz89k=";
       };
     }
     {
