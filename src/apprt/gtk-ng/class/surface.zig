@@ -554,13 +554,21 @@ pub const Surface = extern struct {
         config_: ?*Config,
         bell_ringing_: c_int,
     ) callconv(.c) c_int {
+        const bell_ringing = bell_ringing_ != 0;
+
+        // If the bell isn't ringing exit early because when the surface is
+        // first created there's a race between this code being run and the
+        // config being set on the surface. That way we don't overwhelm people
+        // with the warning that we issue if the config isn't set and overwhelm
+        // ourselves with large numbers of bug reports.
+        if (!bell_ringing) return @intFromBool(false);
+
         const config = if (config_) |v| v.get() else {
-            log.warn("config unavailable for computing whether border should be shown , likely bug", .{});
+            log.warn("config unavailable for computing whether border should be shown, likely bug", .{});
             return @intFromBool(false);
         };
 
-        const bell_ringing = bell_ringing_ != 0;
-        return @intFromBool(config.@"bell-features".border and bell_ringing);
+        return @intFromBool(config.@"bell-features".border);
     }
 
     pub fn toggleFullscreen(self: *Self) void {
