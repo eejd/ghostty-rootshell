@@ -37,8 +37,8 @@
             .lazy = true,
         },
         .uucode = .{
-            .url = "https://github.com/jacobsandlund/uucode/archive/658743f845f25f8f8d30f535329829660c808eaf.tar.gz",
-            .hash = "uucode-0.0.0-ZZjBPjWBPACBbQFG11xoSRCP8NztUnPCieiCtBx0t57i",
+            .url = "https://github.com/jacobsandlund/uucode/archive/aaa2aef70dd37e7c3975bb973fcc36bf93faab9f.tar.gz",
+            .hash = "uucode-0.0.0-ZZjBPi6BPAC5vZ7yoeYp_5uMNSVx_JsgzY-r54DEgt3a",
         },
         .uucode_x = .{
             .url = "https://github.com/jacobsandlund/uucode.x/archive/ca9a9a4560307a30319d206b1ac68a7fc2f2fce9.tar.gz",

@@ -10,7 +10,7 @@ pub const tables = [_]config.Table{
             wcwidth.field("wcwidth"),
             d.field("general_category"),
             d.field("block"),
-            d.field("has_emoji_presentation"),
+            d.field("is_emoji_presentation"),
             d.field("case_folding_full"),
             // Alternative:
             // d.field("case_folding_simple"),
