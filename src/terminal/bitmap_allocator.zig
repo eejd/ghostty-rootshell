@@ -188,50 +188,56 @@ fn findFreeChunks(bitmaps: []u64, n: usize) ?usize {
     // I'm not a bit twiddling expert. Perhaps even SIMD could be used here
     // but unsure. Contributor friendly: let's benchmark and improve this!
 
-    // Large chunks require special handling. In this case we look for
-    // divFloor sequential chunks that are maxInt, then look for the mod
-    // normally in the next bitmap.
+    // Large chunks require special handling.
     if (n > @bitSizeOf(u64)) {
-        const div = @divFloor(n, @bitSizeOf(u64));
-        const mod = n % @bitSizeOf(u64);
-        var seq: usize = 0;
-        for (bitmaps, 0..) |*bitmap, idx| {
-            // If we aren't fully empty then reset the sequence
-            if (bitmap.* != std.math.maxInt(u64)) {
-                seq = 0;
+        var i: usize = 0;
+        search: while (i < bitmaps.len) {
+            // Number of chunks available at the end of this bitmap.
+            const prefix = @clz(~bitmaps[i]);
+
+            // If there are no chunks available at the end of this bitmap
+            // then we can't start in it, so we'll try the next one.
+            if (prefix == 0) {
+                i += 1;
                 continue;
             }
 
-            // If we haven't reached the sequence count we're looking for
-            // then add one and continue, we're still accumulating blanks.
-            if (seq != div) {
-                seq += 1;
-                if (seq != div or mod > 0) continue;
+            // Starting position if we manage to find the span we need here.
+            const start_bitmap = i;
+            const start_bit = 64 - prefix;
+
+            // The remaining number of sequential free chunks we need to find.
+            var rem: usize = n - prefix;
+
+            i += 1;
+            while (rem > 64) : (i += 1) {
+                // We ran out of bitmaps, there's no sufficiently large gap.
+                if (i >= bitmaps.len) return null;
+
+                // There's more than 64 remaining chunks and this bitmap has
+                // content in it, so we try starting again with this bitmap.
+                if (bitmaps[i] != std.math.maxInt(u64)) continue :search;
+
+                // This bitmap is completely free, we can subtract 64 from
+                // our remaining number.
+                rem -= 64;
             }
 
-            // We've reached the seq count see if this has mod starting empty
-            // blanks.
-            if (mod > 0) {
-                const final = @as(u64, std.math.maxInt(u64)) >> @intCast(64 - mod);
-                if (bitmap.* & final == 0) {
-                    // No blanks, reset.
-                    seq = 0;
-                    continue;
-                }
+            // If the number of available chunks at the start of this bitmap
+            // is less than the remaining required, we have to try again.
+            if (@ctz(~bitmaps[i]) < rem) continue;
 
-                bitmap.* ^= final;
+            const suffix = (n - prefix) % 64;
+
+            // Found! Mark everything between our start and end as full.
+            bitmaps[start_bitmap] ^= ~@as(u64, 0) >> @intCast(start_bit) << @intCast(start_bit);
+            const full_bitmaps = @divFloor(n - prefix - suffix, 64);
+            for (bitmaps[start_bitmap + 1 ..][0..full_bitmaps]) |*bitmap| {
+                bitmap.* = 0;
             }
+            if (suffix > 0) bitmaps[i] ^= ~@as(u64, 0) >> @intCast(64 - suffix);
 
-            // Found! Set all in our sequence to full and mask our final.
-            // The "zero_mod" modifier below handles the case where we have
-            // a perfectly divisible number of chunks so we don't have to
-            // mark the trailing bitmap.
-            const zero_mod = @intFromBool(mod == 0);
-            const start_idx = idx - (seq - zero_mod);
-            const end_idx = idx + zero_mod;
-            for (start_idx..end_idx) |i| bitmaps[i] = 0;
-
-            return (start_idx * 64);
+            return start_bitmap * 64 + start_bit;
         }
 
         return null;
@@ -349,18 +355,18 @@ test "findFreeChunks larger than 64 chunks not at beginning" {
     };
     const idx = findFreeChunks(&bitmaps, 65).?;
     try testing.expectEqual(
-        0b11111111_00000000_00000000_00000000_00000000_00000000_00000000_00000000,
+        0b00000000_00000000_00000000_00000000_00000000_00000000_00000000_00000000,
         bitmaps[0],
     );
     try testing.expectEqual(
-        0b00000000_00000000_00000000_00000000_00000000_00000000_00000000_00000000,
+        0b11111110_00000000_00000000_00000000_00000000_00000000_00000000_00000000,
         bitmaps[1],
     );
     try testing.expectEqual(
-        0b11111111_11111111_11111111_11111111_11111111_11111111_11111111_11111110,
+        0b11111111_11111111_11111111_11111111_11111111_11111111_11111111_11111111,
         bitmaps[2],
     );
-    try testing.expectEqual(@as(usize, 64), idx);
+    try testing.expectEqual(@as(usize, 56), idx);
 }
 
 test "findFreeChunks larger than 64 chunks exact" {
