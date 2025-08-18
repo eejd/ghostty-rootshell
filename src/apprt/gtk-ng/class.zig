@@ -1,6 +1,7 @@
 //! This files contains all the GObject classes for the GTK apprt
 //! along with helpers to work with them.
 
+const std = @import("std");
 const glib = @import("glib");
 const gobject = @import("gobject");
 const gtk = @import("gtk");
@@ -85,6 +86,77 @@ pub fn Common(
         pub fn getClass(self: *Self) ?*Self.Class {
             const type_instance: *gobject.TypeInstance = @ptrCast(self);
             return @ptrCast(type_instance.f_g_class orelse return null);
+        }
+
+        /// Define a virtual method. The `Self.Class` type must have a field
+        /// named `name` which is a function pointer in the following form:
+        ///
+        ///   ?*const fn (*Self) callconv(.c) void
+        ///
+        /// The virtual method may take additional parameters and specify
+        /// a non-void return type. The parameters and return type must be
+        /// valid for the C calling convention.
+        pub fn defineVirtualMethod(
+            comptime name: [:0]const u8,
+        ) type {
+            return struct {
+                pub fn call(
+                    class: anytype,
+                    object: *ClassInstance(@TypeOf(class)),
+                    params: anytype,
+                ) (fn_info.return_type orelse void) {
+                    const func = @field(
+                        gobject.ext.as(Self.Class, class),
+                        name,
+                    ).?;
+                    @call(.auto, func, .{
+                        gobject.ext.as(Self, object),
+                    } ++ params);
+                }
+
+                pub fn implement(
+                    class: anytype,
+                    implementation: *const ImplementFunc(@TypeOf(class)),
+                ) void {
+                    @field(gobject.ext.as(
+                        Self.Class,
+                        class,
+                    ), name) = @ptrCast(implementation);
+                }
+
+                /// The type info of the virtual method.
+                const fn_info = fn_info: {
+                    // This is broken down like this so its slightly more
+                    // readable. We expect a field named "name" on the Class
+                    // with the rough type of `?*const fn` and we need the
+                    // function info.
+                    const Field = @FieldType(Self.Class, name);
+                    const opt = @typeInfo(Field).optional;
+                    const ptr = @typeInfo(opt.child).pointer;
+                    break :fn_info @typeInfo(ptr.child).@"fn";
+                };
+
+                /// The instance type for a class.
+                fn ClassInstance(comptime T: type) type {
+                    return @typeInfo(T).pointer.child.Instance;
+                }
+
+                /// The function type for implementations. This is the same type
+                /// as the virtual method but the self parameter points to the
+                /// target instead of the original class.
+                fn ImplementFunc(comptime T: type) type {
+                    var params: [fn_info.params.len]std.builtin.Type.Fn.Param = undefined;
+                    @memcpy(&params, fn_info.params);
+                    params[0].type = *ClassInstance(T);
+                    return @Type(.{ .@"fn" = .{
+                        .calling_convention = fn_info.calling_convention,
+                        .is_generic = fn_info.is_generic,
+                        .is_var_args = fn_info.is_var_args,
+                        .return_type = fn_info.return_type,
+                        .params = &params,
+                    } });
+                }
+            };
         }
 
         /// A helper that creates a property that reads and writes a

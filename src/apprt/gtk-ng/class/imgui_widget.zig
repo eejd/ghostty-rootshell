@@ -41,28 +41,12 @@ pub const ImguiWidget = extern struct {
         /// This virtual method will be called to allow the Dear ImGui
         /// application to do one-time setup of the context. The correct context
         /// will be current when the virtual method is called.
-        pub const setup = struct {
-            pub fn call(class: anytype, object: *@typeInfo(@TypeOf(class)).pointer.child.Instance) void {
-                return gobject.ext.as(Self.Class, class).setup.?(gobject.ext.as(Self, object));
-            }
-
-            pub fn implement(class: anytype, implementation: *const fn (p_object: *@typeInfo(@TypeOf(class)).pointer.child.Instance) callconv(.c) void) void {
-                gobject.ext.as(Self.Class, class).setup = @ptrCast(implementation);
-            }
-        };
+        pub const setup = C.defineVirtualMethod("setup");
 
         /// This virtual method will be called at each frame to allow the Dear
         /// ImGui application to draw the application. The correct context will
         /// be current when the virtual method is called.
-        pub const render = struct {
-            pub fn call(class: anytype, object: *@typeInfo(@TypeOf(class)).pointer.child.Instance) void {
-                return gobject.ext.as(Self.Class, class).render.?(gobject.ext.as(Self, object));
-            }
-
-            pub fn implement(class: anytype, implementation: *const fn (p_object: *@typeInfo(@TypeOf(class)).pointer.child.Instance) callconv(.c) void) void {
-                gobject.ext.as(Self.Class, class).render = @ptrCast(implementation);
-            }
-        };
+        pub const render = C.defineVirtualMethod("render");
     };
 
     const Private = struct {
@@ -119,7 +103,7 @@ pub const ImguiWidget = extern struct {
     /// when the virtual method is called.
     pub fn setup(self: *Self) callconv(.c) void {
         const class = self.getClass() orelse return;
-        virtual_methods.setup.call(class, self);
+        virtual_methods.setup.call(class, self, .{});
     }
 
     /// This virtual method will be called at each frame to allow the Dear ImGui
@@ -127,7 +111,7 @@ pub const ImguiWidget = extern struct {
     /// when the virtual method is called.
     pub fn render(self: *Self) callconv(.c) void {
         const class = self.getClass() orelse return;
-        virtual_methods.render.call(class, self);
+        virtual_methods.render.call(class, self, .{});
     }
 
     //---------------------------------------------------------------
