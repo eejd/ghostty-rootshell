@@ -35,36 +35,18 @@ pub const ImguiWidget = extern struct {
 
     pub const properties = struct {};
 
-    pub const signals = struct {
-        /// Emitted when the child widget should render. During the callback,
-        /// the Imgui context is valid.
-        pub const render = struct {
-            pub const name = "render";
-            pub const connect = impl.connect;
-            const impl = gobject.ext.defineSignal(
-                name,
-                Self,
-                &.{},
-                void,
-            );
-        };
+    pub const signals = struct {};
 
-        /// Emitted when first realized to allow the embedded ImGui application
-        /// to initialize itself. When this is called, the ImGui context
-        /// is properly set.
-        ///
-        /// This might be called multiple times, but each time it is
-        /// called a new Imgui context will be created.
-        pub const setup = struct {
-            pub const name = "setup";
-            pub const connect = impl.connect;
-            const impl = gobject.ext.defineSignal(
-                name,
-                Self,
-                &.{},
-                void,
-            );
-        };
+    pub const virtual_methods = struct {
+        /// This virtual method will be called to allow the Dear ImGui
+        /// application to do one-time setup of the context. The correct context
+        /// will be current when the virtual method is called.
+        pub const setup = C.defineVirtualMethod("setup");
+
+        /// This virtual method will be called at each frame to allow the Dear
+        /// ImGui application to draw the application. The correct context will
+        /// be current when the virtual method is called.
+        pub const render = C.defineVirtualMethod("render");
     };
 
     const Private = struct {
@@ -111,6 +93,25 @@ pub const ImguiWidget = extern struct {
     pub fn queueRender(self: *ImguiWidget) void {
         const priv = self.private();
         priv.gl_area.queueRender();
+    }
+
+    //---------------------------------------------------------------
+    // Public wrappers for virtual methods
+
+    /// This virtual method will be called to allow the Dear ImGui application
+    /// to do one-time setup of the context. The correct context will be current
+    /// when the virtual method is called.
+    pub fn setup(self: *Self) callconv(.c) void {
+        const class = self.getClass() orelse return;
+        virtual_methods.setup.call(class, self, .{});
+    }
+
+    /// This virtual method will be called at each frame to allow the Dear ImGui
+    /// application to draw the application. The correct context will be current
+    /// when the virtual method is called.
+    pub fn render(self: *Self) callconv(.c) void {
+        const class = self.getClass() orelse return;
+        virtual_methods.render.call(class, self, .{});
     }
 
     //---------------------------------------------------------------
@@ -232,13 +233,8 @@ pub const ImguiWidget = extern struct {
         // initialize the ImgUI OpenGL backend for our context.
         _ = cimgui.ImGui_ImplOpenGL3_Init(null);
 
-        // Setup our app
-        signals.setup.impl.emit(
-            self,
-            null,
-            .{},
-            null,
-        );
+        // Call the virtual method to setup the UI.
+        self.setup();
     }
 
     /// Handle a request to unrealize the GLArea
@@ -279,13 +275,8 @@ pub const ImguiWidget = extern struct {
             self.newFrame();
             cimgui.c.igNewFrame();
 
-            // Use the callback to draw the UI.
-            signals.render.impl.emit(
-                self,
-                null,
-                .{},
-                null,
-            );
+            // Call the virtual method to draw the UI.
+            self.render();
 
             // Render
             cimgui.c.igRender();
@@ -422,15 +413,34 @@ pub const ImguiWidget = extern struct {
         cimgui.c.ImGuiIO_AddInputCharactersUTF8(io, bytes);
     }
 
+    //---------------------------------------------------------------
+    // Default virtual method handlers
+
+    /// Default setup function. Does nothing but log a warning.
+    fn defaultSetup(_: *Self) callconv(.c) void {
+        log.warn("default Dear ImGui setup called, this is a bug.", .{});
+    }
+
+    /// Default render function. Does nothing but log a warning.
+    fn defaultRender(_: *Self) callconv(.c) void {
+        log.warn("default Dear ImGui render called, this is a bug.", .{});
+    }
+
     const C = Common(Self, Private);
     pub const as = C.as;
     pub const ref = C.ref;
     pub const refSink = C.refSink;
     pub const unref = C.unref;
+    pub const getClass = C.getClass;
     const private = C.private;
 
     pub const Class = extern struct {
         parent_class: Parent.Class,
+
+        /// Function pointers for virtual methods.
+        setup: ?*const fn (*Self) callconv(.c) void,
+        render: ?*const fn (*Self) callconv(.c) void,
+
         var parent: *Parent.Class = undefined;
         pub const Instance = Self;
 
@@ -443,6 +453,10 @@ pub const ImguiWidget = extern struct {
                     .name = "imgui-widget",
                 }),
             );
+
+            // Initialize our virtual methods with default functions.
+            class.setup = defaultSetup;
+            class.render = defaultRender;
 
             // Bindings
             class.bindTemplateChildPrivate("gl_area", .{});
@@ -464,8 +478,6 @@ pub const ImguiWidget = extern struct {
             class.bindTemplateCallback("im_commit", &imCommit);
 
             // Signals
-            signals.render.impl.register(.{});
-            signals.setup.impl.register(.{});
 
             // Virtual methods
             gobject.Object.virtual_methods.dispose.implement(class, &dispose);
