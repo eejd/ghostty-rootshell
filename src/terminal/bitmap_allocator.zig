@@ -108,28 +108,59 @@ pub fn BitmapAllocator(comptime chunk_size: comptime_int) type {
             const chunks = self.chunks.ptr(base);
             const chunk_idx = @divExact(@intFromPtr(slice.ptr) - @intFromPtr(chunks), chunk_size);
 
-            // From the chunk index, we can find the starting bitmap index
-            // and the bit within the last bitmap.
-            var bitmap_idx = @divFloor(chunk_idx, 64);
-            const bitmap_bit = chunk_idx % 64;
             const bitmaps = self.bitmap.ptr(base);
 
-            // If our chunk count is over 64 then we need to handle the
-            // case where we have to mark multiple bitmaps.
-            if (chunk_count > 64) {
-                const bitmaps_full = @divFloor(chunk_count, 64);
-                for (0..bitmaps_full) |i| bitmaps[bitmap_idx + i] = std.math.maxInt(u64);
-                bitmap_idx += bitmaps_full;
+            // Current bitmap index.
+            var i: usize = @divFloor(chunk_idx, 64);
+            // Number of chunks we still have to mark as free.
+            var rem: usize = chunk_count;
+
+            // Mark any bits in the starting bitmap that need to be marked.
+            {
+                // Bit index.
+                const bit = chunk_idx % 64;
+                // Number of bits we need to mark in this bitmap.
+                const bits = @min(rem, 64 - bit);
+
+                bitmaps[i] |= ~@as(u64, 0) >> @intCast(64 - bits) << @intCast(bit);
+                rem -= bits;
             }
 
-            // Set the bitmap to mark the chunks as free. Note we have to
-            // do chunk_count % 64 to handle the case where our chunk count
-            // is using multiple bitmaps.
-            const bitmap = &bitmaps[bitmap_idx];
-            for (0..chunk_count % 64) |i| {
-                const mask = @as(u64, 1) << @intCast(bitmap_bit + i);
-                bitmap.* |= mask;
+            // Mark any full bitmaps worth of bits that need to be marked.
+            i += 1;
+            while (rem > 64) : (i += 1) {
+                bitmaps[i] = std.math.maxInt(u64);
+                rem -= 64;
             }
+
+            // Mark any bits at the start of this last bitmap if it needs it.
+            if (rem > 0) {
+                bitmaps[i] |= ~@as(u64, 0) >> @intCast(64 - rem);
+            }
+        }
+
+        /// For testing only.
+        fn isAllocated(self: *Self, base: anytype, slice: anytype) bool {
+            comptime assert(@import("builtin").is_test);
+
+            const bytes = std.mem.sliceAsBytes(slice);
+            const aligned_len = std.mem.alignForward(usize, bytes.len, chunk_size);
+            const chunk_count = @divExact(aligned_len, chunk_size);
+
+            const chunks = self.chunks.ptr(base);
+            const chunk_idx = @divExact(@intFromPtr(slice.ptr) - @intFromPtr(chunks), chunk_size);
+
+            const bitmaps = self.bitmap.ptr(base);
+
+            for (chunk_idx..chunk_idx + chunk_count) |i| {
+                const bitmap = @divFloor(i, bitmap_bit_size);
+                const bit = i % bitmap_bit_size;
+                if (bitmaps[bitmap] & (@as(u64, 1) << @intCast(bit)) != 0) {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         /// For debugging
@@ -488,4 +519,439 @@ test "BitmapAllocator alloc large" {
     const ptr = try bm.alloc(u8, buf, 129);
     ptr[0] = 'A';
     bm.free(buf, ptr);
+}
+
+test "BitmapAllocator alloc and free one bitmap" {
+    const Alloc = BitmapAllocator(1);
+    // Capacity such that we'll have 3 bitmaps.
+    const cap = Alloc.bitmap_bit_size * 3;
+
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    const layout = Alloc.layout(cap);
+    const buf = try alloc.alignedAlloc(u8, Alloc.base_align, layout.total_size);
+    defer alloc.free(buf);
+
+    var bm = Alloc.init(.init(buf), layout);
+
+    // Allocate exactly one bitmap worth of bytes.
+    const slice = try bm.alloc(u8, buf, Alloc.bitmap_bit_size);
+    try testing.expectEqual(Alloc.bitmap_bit_size, slice.len);
+
+    @memset(slice, 0x11);
+    try testing.expectEqualSlices(
+        u8,
+        &@as([Alloc.bitmap_bit_size]u8, @splat(0x11)),
+        slice,
+    );
+
+    // Free it
+    try testing.expect(bm.isAllocated(buf, slice));
+    bm.free(buf, slice);
+    try testing.expect(!bm.isAllocated(buf, slice));
+
+    // All of our bitmaps should be free.
+    try testing.expectEqualSlices(
+        u64,
+        &@as([3]u64, @splat(~@as(u64, 0))),
+        bm.bitmap.ptr(buf)[0..3],
+    );
+}
+
+test "BitmapAllocator alloc and free half bitmap" {
+    const Alloc = BitmapAllocator(1);
+    // Capacity such that we'll have 3 bitmaps.
+    const cap = Alloc.bitmap_bit_size * 3;
+
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    const layout = Alloc.layout(cap);
+    const buf = try alloc.alignedAlloc(u8, Alloc.base_align, layout.total_size);
+    defer alloc.free(buf);
+
+    var bm = Alloc.init(.init(buf), layout);
+
+    // Allocate exactly half a bitmap worth of bytes.
+    const slice = try bm.alloc(u8, buf, Alloc.bitmap_bit_size / 2);
+    try testing.expectEqual(Alloc.bitmap_bit_size / 2, slice.len);
+
+    @memset(slice, 0x11);
+    try testing.expectEqualSlices(
+        u8,
+        &@as([Alloc.bitmap_bit_size / 2]u8, @splat(0x11)),
+        slice,
+    );
+
+    // Free it
+    try testing.expect(bm.isAllocated(buf, slice));
+    bm.free(buf, slice);
+    try testing.expect(!bm.isAllocated(buf, slice));
+
+    // All of our bitmaps should be free.
+    try testing.expectEqualSlices(
+        u64,
+        &@as([3]u64, @splat(~@as(u64, 0))),
+        bm.bitmap.ptr(buf)[0..3],
+    );
+}
+
+test "BitmapAllocator alloc and free two half bitmaps" {
+    const Alloc = BitmapAllocator(1);
+    // Capacity such that we'll have 3 bitmaps.
+    const cap = Alloc.bitmap_bit_size * 3;
+
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    const layout = Alloc.layout(cap);
+    const buf = try alloc.alignedAlloc(u8, Alloc.base_align, layout.total_size);
+    defer alloc.free(buf);
+
+    var bm = Alloc.init(.init(buf), layout);
+
+    // Allocate exactly one bitmap worth of bytes across two allocations.
+    const slice = try bm.alloc(u8, buf, Alloc.bitmap_bit_size / 2);
+    try testing.expectEqual(Alloc.bitmap_bit_size / 2, slice.len);
+
+    @memset(slice, 0x11);
+    try testing.expectEqualSlices(
+        u8,
+        &@as([Alloc.bitmap_bit_size / 2]u8, @splat(0x11)),
+        slice,
+    );
+
+    const slice2 = try bm.alloc(u8, buf, Alloc.bitmap_bit_size / 2);
+    try testing.expectEqual(Alloc.bitmap_bit_size / 2, slice2.len);
+
+    @memset(slice2, 0x22);
+    try testing.expectEqualSlices(
+        u8,
+        &@as([Alloc.bitmap_bit_size / 2]u8, @splat(0x22)),
+        slice2,
+    );
+    try testing.expectEqualSlices(
+        u8,
+        &@as([Alloc.bitmap_bit_size / 2]u8, @splat(0x11)),
+        slice,
+    );
+
+    // Free them
+    try testing.expect(bm.isAllocated(buf, slice2));
+    bm.free(buf, slice2);
+    try testing.expect(!bm.isAllocated(buf, slice2));
+    try testing.expect(bm.isAllocated(buf, slice));
+    bm.free(buf, slice);
+    try testing.expect(!bm.isAllocated(buf, slice));
+
+    // All of our bitmaps should be free.
+    try testing.expectEqualSlices(
+        u64,
+        &@as([3]u64, @splat(~@as(u64, 0))),
+        bm.bitmap.ptr(buf)[0..3],
+    );
+}
+
+test "BitmapAllocator alloc and free 1.5 bitmaps" {
+    const Alloc = BitmapAllocator(1);
+    // Capacity such that we'll have 3 bitmaps.
+    const cap = Alloc.bitmap_bit_size * 3;
+
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    const layout = Alloc.layout(cap);
+    const buf = try alloc.alignedAlloc(u8, Alloc.base_align, layout.total_size);
+    defer alloc.free(buf);
+
+    var bm = Alloc.init(.init(buf), layout);
+
+    // Allocate exactly 1.5 bitmaps worth of bytes.
+    const slice = try bm.alloc(u8, buf, 3 * Alloc.bitmap_bit_size / 2);
+    try testing.expectEqual(3 * Alloc.bitmap_bit_size / 2, slice.len);
+
+    @memset(slice, 0x11);
+    try testing.expectEqualSlices(
+        u8,
+        &@as([3 * Alloc.bitmap_bit_size / 2]u8, @splat(0x11)),
+        slice,
+    );
+
+    // Free them
+    try testing.expect(bm.isAllocated(buf, slice));
+    bm.free(buf, slice);
+    try testing.expect(!bm.isAllocated(buf, slice));
+
+    // All of our bitmaps should be free.
+    try testing.expectEqualSlices(
+        u64,
+        &@as([3]u64, @splat(~@as(u64, 0))),
+        bm.bitmap.ptr(buf)[0..3],
+    );
+}
+
+test "BitmapAllocator alloc and free two 1.5 bitmaps" {
+    const Alloc = BitmapAllocator(1);
+    // Capacity such that we'll have 3 bitmaps.
+    const cap = Alloc.bitmap_bit_size * 3;
+
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    const layout = Alloc.layout(cap);
+    const buf = try alloc.alignedAlloc(u8, Alloc.base_align, layout.total_size);
+    defer alloc.free(buf);
+
+    var bm = Alloc.init(.init(buf), layout);
+
+    // Allocate exactly 3 bitmaps worth of bytes across two allocations.
+    const slice = try bm.alloc(u8, buf, 3 * Alloc.bitmap_bit_size / 2);
+    try testing.expectEqual(3 * Alloc.bitmap_bit_size / 2, slice.len);
+
+    @memset(slice, 0x11);
+    try testing.expectEqualSlices(
+        u8,
+        &@as([3 * Alloc.bitmap_bit_size / 2]u8, @splat(0x11)),
+        slice,
+    );
+
+    const slice2 = try bm.alloc(u8, buf, 3 * Alloc.bitmap_bit_size / 2);
+    try testing.expectEqual(3 * Alloc.bitmap_bit_size / 2, slice2.len);
+
+    @memset(slice2, 0x22);
+    try testing.expectEqualSlices(
+        u8,
+        &@as([3 * Alloc.bitmap_bit_size / 2]u8, @splat(0x22)),
+        slice2,
+    );
+    try testing.expectEqualSlices(
+        u8,
+        &@as([3 * Alloc.bitmap_bit_size / 2]u8, @splat(0x11)),
+        slice,
+    );
+
+    // Free them
+    try testing.expect(bm.isAllocated(buf, slice2));
+    bm.free(buf, slice2);
+    try testing.expect(!bm.isAllocated(buf, slice2));
+    try testing.expect(bm.isAllocated(buf, slice));
+    bm.free(buf, slice);
+    try testing.expect(!bm.isAllocated(buf, slice));
+
+    // All of our bitmaps should be free.
+    try testing.expectEqualSlices(
+        u64,
+        &@as([3]u64, @splat(~@as(u64, 0))),
+        bm.bitmap.ptr(buf)[0..3],
+    );
+}
+
+test "BitmapAllocator alloc and free 1.5 bitmaps offset by 0.75" {
+    const Alloc = BitmapAllocator(1);
+    // Capacity such that we'll have 3 bitmaps.
+    const cap = Alloc.bitmap_bit_size * 3;
+
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    const layout = Alloc.layout(cap);
+    const buf = try alloc.alignedAlloc(u8, Alloc.base_align, layout.total_size);
+    defer alloc.free(buf);
+
+    var bm = Alloc.init(.init(buf), layout);
+
+    // Allocate three quarters of a bitmap first.
+    const slice = try bm.alloc(u8, buf, 3 * Alloc.bitmap_bit_size / 4);
+    try testing.expectEqual(3 * Alloc.bitmap_bit_size / 4, slice.len);
+
+    @memset(slice, 0x11);
+    try testing.expectEqualSlices(
+        u8,
+        &@as([3 * Alloc.bitmap_bit_size / 4]u8, @splat(0x11)),
+        slice,
+    );
+
+    // Then a 1.5 bitmap sized allocation, so that it spans
+    // from 0.75 to 2.25, occupying bits in 3 different bitmaps.
+    const slice2 = try bm.alloc(u8, buf, 3 * Alloc.bitmap_bit_size / 2);
+    try testing.expectEqual(3 * Alloc.bitmap_bit_size / 2, slice2.len);
+
+    @memset(slice2, 0x22);
+    try testing.expectEqualSlices(
+        u8,
+        &@as([3 * Alloc.bitmap_bit_size / 2]u8, @splat(0x22)),
+        slice2,
+    );
+    try testing.expectEqualSlices(
+        u8,
+        &@as([3 * Alloc.bitmap_bit_size / 4]u8, @splat(0x11)),
+        slice,
+    );
+
+    // Free them
+    try testing.expect(bm.isAllocated(buf, slice2));
+    bm.free(buf, slice2);
+    try testing.expect(!bm.isAllocated(buf, slice2));
+    try testing.expect(bm.isAllocated(buf, slice));
+    bm.free(buf, slice);
+    try testing.expect(!bm.isAllocated(buf, slice));
+
+    // All of our bitmaps should be free.
+    try testing.expectEqualSlices(
+        u64,
+        &@as([3]u64, @splat(~@as(u64, 0))),
+        bm.bitmap.ptr(buf)[0..3],
+    );
+}
+
+test "BitmapAllocator alloc and free three 0.75 bitmaps" {
+    const Alloc = BitmapAllocator(1);
+    // Capacity such that we'll have 3 bitmaps.
+    const cap = Alloc.bitmap_bit_size * 3;
+
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    const layout = Alloc.layout(cap);
+    const buf = try alloc.alignedAlloc(u8, Alloc.base_align, layout.total_size);
+    defer alloc.free(buf);
+
+    var bm = Alloc.init(.init(buf), layout);
+
+    // Allocate three quarters of a bitmap three times.
+    const slice = try bm.alloc(u8, buf, 3 * Alloc.bitmap_bit_size / 4);
+    try testing.expectEqual(3 * Alloc.bitmap_bit_size / 4, slice.len);
+
+    @memset(slice, 0x11);
+    try testing.expectEqualSlices(
+        u8,
+        &@as([3 * Alloc.bitmap_bit_size / 4]u8, @splat(0x11)),
+        slice,
+    );
+
+    const slice2 = try bm.alloc(u8, buf, 3 * Alloc.bitmap_bit_size / 4);
+    try testing.expectEqual(3 * Alloc.bitmap_bit_size / 4, slice2.len);
+
+    @memset(slice2, 0x22);
+    try testing.expectEqualSlices(
+        u8,
+        &@as([3 * Alloc.bitmap_bit_size / 4]u8, @splat(0x22)),
+        slice2,
+    );
+    try testing.expectEqualSlices(
+        u8,
+        &@as([3 * Alloc.bitmap_bit_size / 4]u8, @splat(0x11)),
+        slice,
+    );
+
+    const slice3 = try bm.alloc(u8, buf, 3 * Alloc.bitmap_bit_size / 4);
+    try testing.expectEqual(3 * Alloc.bitmap_bit_size / 4, slice3.len);
+
+    @memset(slice3, 0x33);
+    try testing.expectEqualSlices(
+        u8,
+        &@as([3 * Alloc.bitmap_bit_size / 4]u8, @splat(0x33)),
+        slice3,
+    );
+    try testing.expectEqualSlices(
+        u8,
+        &@as([3 * Alloc.bitmap_bit_size / 4]u8, @splat(0x22)),
+        slice2,
+    );
+    try testing.expectEqualSlices(
+        u8,
+        &@as([3 * Alloc.bitmap_bit_size / 4]u8, @splat(0x11)),
+        slice,
+    );
+
+    // Free them
+    try testing.expect(bm.isAllocated(buf, slice2));
+    bm.free(buf, slice2);
+    try testing.expect(!bm.isAllocated(buf, slice2));
+    try testing.expect(bm.isAllocated(buf, slice));
+    bm.free(buf, slice);
+    try testing.expect(!bm.isAllocated(buf, slice));
+    try testing.expect(bm.isAllocated(buf, slice3));
+    bm.free(buf, slice3);
+    try testing.expect(!bm.isAllocated(buf, slice3));
+
+    // All of our bitmaps should be free.
+    try testing.expectEqualSlices(
+        u64,
+        &@as([3]u64, @splat(~@as(u64, 0))),
+        bm.bitmap.ptr(buf)[0..3],
+    );
+}
+
+test "BitmapAllocator alloc and free two 1.5 bitmaps offset 0.75" {
+    const Alloc = BitmapAllocator(1);
+    // Capacity such that we'll have 4 bitmaps.
+    const cap = Alloc.bitmap_bit_size * 4;
+
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    const layout = Alloc.layout(cap);
+    const buf = try alloc.alignedAlloc(u8, Alloc.base_align, layout.total_size);
+    defer alloc.free(buf);
+
+    var bm = Alloc.init(.init(buf), layout);
+
+    // First allocate a 0.75 bitmap
+    const slice = try bm.alloc(u8, buf, 3 * Alloc.bitmap_bit_size / 4);
+    try testing.expectEqual(3 * Alloc.bitmap_bit_size / 4, slice.len);
+
+    @memset(slice, 0x11);
+    try testing.expectEqualSlices(
+        u8,
+        &@as([3 * Alloc.bitmap_bit_size / 4]u8, @splat(0x11)),
+        slice,
+    );
+
+    // Then two 1.5 bitmaps
+    const slice2 = try bm.alloc(u8, buf, 3 * Alloc.bitmap_bit_size / 2);
+    try testing.expectEqual(3 * Alloc.bitmap_bit_size / 2, slice2.len);
+
+    @memset(slice2, 0x22);
+    try testing.expectEqualSlices(
+        u8,
+        &@as([3 * Alloc.bitmap_bit_size / 2]u8, @splat(0x22)),
+        slice2,
+    );
+    try testing.expectEqualSlices(
+        u8,
+        &@as([3 * Alloc.bitmap_bit_size / 4]u8, @splat(0x11)),
+        slice,
+    );
+
+    const slice3 = try bm.alloc(u8, buf, 3 * Alloc.bitmap_bit_size / 2);
+    try testing.expectEqual(3 * Alloc.bitmap_bit_size / 2, slice3.len);
+
+    @memset(slice3, 0x33);
+    try testing.expectEqualSlices(
+        u8,
+        &@as([3 * Alloc.bitmap_bit_size / 2]u8, @splat(0x33)),
+        slice3,
+    );
+    try testing.expectEqualSlices(
+        u8,
+        &@as([3 * Alloc.bitmap_bit_size / 2]u8, @splat(0x22)),
+        slice2,
+    );
+    try testing.expectEqualSlices(
+        u8,
+        &@as([3 * Alloc.bitmap_bit_size / 4]u8, @splat(0x11)),
+        slice,
+    );
+
+    // Free them
+    try testing.expect(bm.isAllocated(buf, slice2));
+    bm.free(buf, slice2);
+    try testing.expect(!bm.isAllocated(buf, slice2));
+    try testing.expect(bm.isAllocated(buf, slice));
+    bm.free(buf, slice);
+    try testing.expect(!bm.isAllocated(buf, slice));
+    try testing.expect(bm.isAllocated(buf, slice3));
+    bm.free(buf, slice3);
+    try testing.expect(!bm.isAllocated(buf, slice3));
+
+    // All of our bitmaps should be free.
+    try testing.expectEqualSlices(
+        u64,
+        &@as([4]u64, @splat(~@as(u64, 0))),
+        bm.bitmap.ptr(buf)[0..4],
+    );
 }
