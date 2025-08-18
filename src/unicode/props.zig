@@ -1,7 +1,6 @@
 const props = @This();
 const std = @import("std");
 const assert = std.debug.assert;
-const ziglyph = @import("ziglyph");
 const uucode = @import("uucode");
 const lut = @import("lut.zig");
 
@@ -78,33 +77,33 @@ pub const GraphemeBoundaryClass = enum(u4) {
     extended_pictographic_base, // \p{Extended_Pictographic} & \p{Emoji_Modifier_Base}
     emoji_modifier, // \p{Emoji_Modifier}
 
-    /// Gets the grapheme boundary class for a codepoint. This is VERY
-    /// SLOW. The use case for this is only in generating lookup tables.
+    /// Gets the grapheme boundary class for a codepoint.
+    /// The use case for this is only in generating lookup tables.
     pub fn init(cp: u21) GraphemeBoundaryClass {
-        // We special-case modifier bases because we should not break
-        // if a modifier isn't next to a base.
-        if (ziglyph.emoji.isEmojiModifierBase(cp)) {
-            assert(ziglyph.emoji.isExtendedPictographic(cp));
-            return .extended_pictographic_base;
+        if (cp < uucode.code_point_range_end) {
+            return switch (uucode.get(.grapheme_break, cp)) {
+                .emoji_modifier_base => .extended_pictographic_base,
+                .emoji_modifier => .emoji_modifier,
+                .extended_pictographic => .extended_pictographic,
+                .l => .L,
+                .v => .V,
+                .t => .T,
+                .lv => .LV,
+                .lvt => .LVT,
+                .prepend => .prepend,
+                .extend => .extend,
+                .zwj => .zwj,
+                .spacing_mark => .spacing_mark,
+                .regional_indicator => .regional_indicator,
+
+                // This is obviously not INVALID invalid, there is SOME grapheme
+                // boundary class for every codepoint. But we don't care about
+                // anything that doesn't fit into the above categories.
+                .other, .cr, .lf, .control => .invalid,
+            };
+        } else {
+            return .invalid;
         }
-
-        if (ziglyph.emoji.isEmojiModifier(cp)) return .emoji_modifier;
-        if (ziglyph.emoji.isExtendedPictographic(cp)) return .extended_pictographic;
-        if (ziglyph.grapheme_break.isL(cp)) return .L;
-        if (ziglyph.grapheme_break.isV(cp)) return .V;
-        if (ziglyph.grapheme_break.isT(cp)) return .T;
-        if (ziglyph.grapheme_break.isLv(cp)) return .LV;
-        if (ziglyph.grapheme_break.isLvt(cp)) return .LVT;
-        if (ziglyph.grapheme_break.isPrepend(cp)) return .prepend;
-        if (ziglyph.grapheme_break.isExtend(cp)) return .extend;
-        if (ziglyph.grapheme_break.isZwj(cp)) return .zwj;
-        if (ziglyph.grapheme_break.isSpacingmark(cp)) return .spacing_mark;
-        if (ziglyph.grapheme_break.isRegionalIndicator(cp)) return .regional_indicator;
-
-        // This is obviously not INVALID invalid, there is SOME grapheme
-        // boundary class for every codepoint. But we don't care about
-        // anything that doesn't fit into the above categories.
-        return .invalid;
     }
 
     /// Returns true if this is an extended pictographic type. This
@@ -122,7 +121,7 @@ pub const GraphemeBoundaryClass = enum(u4) {
 };
 
 pub fn get(cp: u21) Properties {
-    const wcwidth = if (cp < 0x110000) uucode.get(.wcwidth, cp) else 0;
+    const wcwidth = if (cp < uucode.code_point_range_end) uucode.get(.wcwidth, cp) else 0;
 
     return .{
         .width = @intCast(@min(2, @max(0, wcwidth))),
@@ -167,16 +166,16 @@ pub fn main() !void {
 
 // This is not very fast in debug modes, so its commented by default.
 // IMPORTANT: UNCOMMENT THIS WHENEVER MAKING CODEPOINTWIDTH CHANGES.
-// test "tables match ziglyph" {
-//     const testing = std.testing;
+//test "tables match uucode" {
+//    const testing = std.testing;
 //
-//     const min = 0xFF + 1; // start outside ascii
-//     for (min..std.math.maxInt(u21)) |cp| {
-//         const t = table.get(@intCast(cp));
-//         const zg = @min(2, @max(0, ziglyph.display_width.codePointWidth(@intCast(cp), .half)));
-//         if (t.width != zg) {
-//             std.log.warn("mismatch cp=U+{x} t={} zg={}", .{ cp, t, zg });
-//             try testing.expect(false);
-//         }
-//     }
-// }
+//    const min = 0xFF + 1; // start outside ascii
+//    for (min..uucode.code_point_range_end) |cp| {
+//        const t = table.get(@intCast(cp));
+//        const uu = @min(2, @max(0, uucode.get(.wcwidth, @intCast(cp))));
+//        if (t.width != uu) {
+//            std.log.warn("mismatch cp=U+{x} t={} uucode={}", .{ cp, t, uu });
+//            try testing.expect(false);
+//        }
+//    }
+//}

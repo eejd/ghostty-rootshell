@@ -152,6 +152,12 @@ fn graphemeBreakClass(
 /// If you build this file as a binary, we will verify the grapheme break
 /// implementation. This iterates over billions of codepoints so it is
 /// SLOW. It's not meant to be run in CI, but it's useful for debugging.
+/// TODO: this is hard to build with newer zig build, so
+/// https://github.com/ghostty-org/ghostty/pull/7806 took the approach of
+/// adding a `-Demit-unicode-test` option for `zig build`, but that
+/// hasn't been done here yet.
+/// TODO: this also still uses `ziglyph`, but could be switched to use
+/// `uucode`'s grapheme break once that is implemented.
 pub fn main() !void {
     const ziglyph = @import("ziglyph");
 

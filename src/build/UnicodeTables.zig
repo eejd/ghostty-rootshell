@@ -21,15 +21,6 @@ pub fn init(b: *std.Build, uucode_tables_zig: std.Build.LazyPath) !UnicodeTables
         }),
     });
 
-    if (b.lazyDependency("ziglyph", .{
-        .target = b.graph.host,
-    })) |ziglyph_dep| {
-        exe.root_module.addImport(
-            "ziglyph",
-            ziglyph_dep.module("ziglyph"),
-        );
-    }
-
     if (b.lazyDependency("uucode", .{
         .target = b.graph.host,
         .@"tables.zig" = uucode_tables_zig,

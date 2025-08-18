@@ -14,6 +14,7 @@ pub const tables = [_]config.Table{
             d.field("case_folding_full"),
             // Alternative:
             // d.field("case_folding_simple"),
+            d.field("grapheme_break"),
         },
     },
 };
