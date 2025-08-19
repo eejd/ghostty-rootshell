@@ -1128,14 +1128,23 @@ const ReflowCursor = struct {
                     self.page.memory,
                     style,
                     cell.style_id,
-                ) catch id: {
-                    // We have no space for this style,
-                    // so make a new page for this row.
-                    try self.moveLastRowToNewPage(list, cap);
+                ) catch |err| id: {
+                    // If the add failed then either the set needs to grow
+                    // or it needs to be rehashed. Either one of those can
+                    // be accomplished by adjusting capacity, either with
+                    // no actual change or with an increased style cap.
+                    try self.adjustCapacity(list, switch (err) {
+                        error.OutOfMemory => .{
+                            .styles = cap.styles * 2,
+                        },
+                        error.NeedsRehash => .{},
+                    });
 
-                    break :id try self.page.styles.add(
+                    // We assume this one will succeed.
+                    break :id try self.page.styles.addWithId(
                         self.page.memory,
                         style,
+                        cell.style_id,
                     );
                 } orelse cell.style_id;
 
