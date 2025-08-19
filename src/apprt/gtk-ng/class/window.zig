@@ -301,24 +301,6 @@ pub const Window = extern struct {
         // Initialize our actions
         self.initActionMap();
 
-        // We need to setup resize notifications on our surface
-        if (self.as(gtk.Native).getSurface()) |gdk_surface| {
-            _ = gobject.Object.signals.notify.connect(
-                gdk_surface,
-                *Self,
-                propGdkSurfaceWidth,
-                self,
-                .{ .detail = "width" },
-            );
-            _ = gobject.Object.signals.notify.connect(
-                gdk_surface,
-                *Self,
-                propGdkSurfaceHeight,
-                self,
-                .{ .detail = "height" },
-            );
-        }
-
         // Start states based on config.
         if (priv.config) |config_obj| {
             const config = config_obj.get();
@@ -1122,6 +1104,25 @@ pub const Window = extern struct {
         } else |err| {
             log.warn("failed to initialize window protocol error={}", .{err});
             return;
+        }
+
+        // We need to setup resize notifications on our surface,
+        // which is only available after the window had been realized.
+        if (self.as(gtk.Native).getSurface()) |gdk_surface| {
+            _ = gobject.Object.signals.notify.connect(
+                gdk_surface,
+                *Self,
+                propGdkSurfaceWidth,
+                self,
+                .{ .detail = "width" },
+            );
+            _ = gobject.Object.signals.notify.connect(
+                gdk_surface,
+                *Self,
+                propGdkSurfaceHeight,
+                self,
+                .{ .detail = "height" },
+            );
         }
 
         // When we are realized we always setup our appearance since this
