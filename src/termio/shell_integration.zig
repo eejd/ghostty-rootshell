@@ -670,3 +670,27 @@ fn setupZsh(
     );
     try env.put("ZDOTDIR", integ_dir);
 }
+
+test "zsh" {
+    const testing = std.testing;
+
+    var env = EnvMap.init(testing.allocator);
+    defer env.deinit();
+
+    try setupZsh(".", &env);
+    try testing.expectEqualStrings("./shell-integration/zsh", env.get("ZDOTDIR").?);
+    try testing.expect(env.get("GHOSTTY_ZSH_ZDOTDIR") == null);
+}
+
+test "zsh: ZDOTDIR" {
+    const testing = std.testing;
+
+    var env = EnvMap.init(testing.allocator);
+    defer env.deinit();
+
+    try env.put("ZDOTDIR", "$HOME/.config/zsh");
+
+    try setupZsh(".", &env);
+    try testing.expectEqualStrings("./shell-integration/zsh", env.get("ZDOTDIR").?);
+    try testing.expectEqualStrings("$HOME/.config/zsh", env.get("GHOSTTY_ZSH_ZDOTDIR").?);
+}
