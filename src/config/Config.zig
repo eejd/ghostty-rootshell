@@ -592,24 +592,24 @@ foreground: Color = .{ .r = 0xFF, .g = 0xFF, .b = 0xFF },
 ///
 ///  * `contain`
 ///
-///     Preserving the aspect ratio, scale the background image to the largest
-///     size that can still be contained within the terminal, so that the whole
-///     image is visible.
+///    Preserving the aspect ratio, scale the background image to the largest
+///    size that can still be contained within the terminal, so that the whole
+///    image is visible.
 ///
 ///  * `cover`
 ///
-///     Preserving the aspect ratio, scale the background image to the smallest
-///     size that can completely cover the terminal. This may result in one or
-///     more edges of the image being clipped by the edge of the terminal.
+///    Preserving the aspect ratio, scale the background image to the smallest
+///    size that can completely cover the terminal. This may result in one or
+///    more edges of the image being clipped by the edge of the terminal.
 ///
 ///  * `stretch`
 ///
-///     Stretch the background image to the full size of the terminal, without
-///     preserving the aspect ratio.
+///    Stretch the background image to the full size of the terminal, without
+///    preserving the aspect ratio.
 ///
 ///  * `none`
 ///
-///     Don't scale the background image.
+///    Don't scale the background image.
 ///
 /// The default value is `contain`.
 ///
@@ -1330,53 +1330,59 @@ class: ?[:0]const u8 = null,
 /// The keybind trigger can be prefixed with some special values to change
 /// the behavior of the keybind. These are:
 ///
-///   * `all:` - Make the keybind apply to all terminal surfaces. By default,
-///     keybinds only apply to the focused terminal surface. If this is true,
-///     then the keybind will be sent to all terminal surfaces. This only
-///     applies to actions that are surface-specific. For actions that
-///     are already global (e.g. `quit`), this prefix has no effect.
+///  * `all:`
 ///
-///     Available since: 1.0.0
+///    Make the keybind apply to all terminal surfaces. By default,
+///    keybinds only apply to the focused terminal surface. If this is true,
+///    then the keybind will be sent to all terminal surfaces. This only
+///    applies to actions that are surface-specific. For actions that
+///    are already global (e.g. `quit`), this prefix has no effect.
 ///
-///   * `global:` - Make the keybind global. By default, keybinds only work
-///     within Ghostty and under the right conditions (application focused,
-///     sometimes terminal focused, etc.). If you want a keybind to work
-///     globally across your system (e.g. even when Ghostty is not focused),
-///     specify this prefix. This prefix implies `all:`. Note: this does not
-///     work in all environments; see the additional notes below for more
-///     information.
+///    Available since: 1.0.0
 ///
-///     Available since: 1.0.0 (on macOS)
-///     Available since: 1.2.0 (on GTK)
+///  * `global:`
 ///
-///   * `unconsumed:` - Do not consume the input. By default, a keybind
-///     will consume the input, meaning that the associated encoding (if
-///     any) will not be sent to the running program in the terminal. If
-///     you wish to send the encoded value to the program, specify the
-///     `unconsumed:` prefix before the entire keybind. For example:
-///     `unconsumed:ctrl+a=reload_config`. `global:` and `all:`-prefixed
-///     keybinds will always consume the input regardless of this setting.
-///     Since they are not associated with a specific terminal surface,
-///     they're never encoded.
+///    Make the keybind global. By default, keybinds only work within Ghostty
+///    and under the right conditions (application focused, sometimes terminal
+///    focused, etc.). If you want a keybind to work globally across your system
+///    (e.g. even when Ghostty is not focused), specify this prefix.
+///    This prefix implies `all:`.
 ///
-///     Available since: 1.0.0
+///    Note: this does not work in all environments; see the additional notes
+///    below for more information.
 ///
-///   * `performable:` - Only consume the input if the action is able to be
-///     performed. For example, the `copy_to_clipboard` action will only
-///     consume the input if there is a selection to copy. If there is no
-///     selection, Ghostty behaves as if the keybind was not set. This has
-///     no effect with `global:` or `all:`-prefixed keybinds. For key
-///     sequences, this will reset the sequence if the action is not
-///     performable (acting identically to not having a keybind set at
-///     all).
+///    Available since: 1.0.0 on macOS, 1.2.0 on GTK
 ///
-///     Performable keybinds will not appear as menu shortcuts in the
-///     application menu. This is because the menu shortcuts force the
-///     action to be performed regardless of the state of the terminal.
-///     Performable keybinds will still work, they just won't appear as
-///     a shortcut label in the menu.
+///  * `unconsumed:`
 ///
-///     Available since: 1.1.0
+///    Do not consume the input. By default, a keybind will consume the input,
+///    meaning that the associated encoding (if any) will not be sent to the
+///    running program in the terminal. If you wish to send the encoded value
+///    to the program, specify the `unconsumed:` prefix before the entire
+///    keybind. For example: `unconsumed:ctrl+a=reload_config`. `global:` and
+///    `all:`-prefixed keybinds will always consume the input regardless of
+///    this setting. Since they are not associated with a specific terminal
+///    surface, they're never encoded.
+///
+///    Available since: 1.0.0
+///
+///  * `performable:`
+///
+///    Only consume the input if the action is able to be performed.
+///    For example, the `copy_to_clipboard` action will only consume the input
+///    if there is a selection to copy. If there is no selection, Ghostty
+///    behaves as if the keybind was not set. This has no effect with `global:`
+///    or `all:`-prefixed keybinds. For key sequences, this will reset the
+///    sequence if the action is not performable (acting identically to not
+///    having a keybind set at all).
+///
+///    Performable keybinds will not appear as menu shortcuts in the
+///    application menu. This is because the menu shortcuts force the
+///    action to be performed regardless of the state of the terminal.
+///    Performable keybinds will still work, they just won't appear as
+///    a shortcut label in the menu.
+///
+///    Available since: 1.1.0
 ///
 /// Keybind triggers are not unique per prefix combination. For example,
 /// `ctrl+a` and `global:ctrl+a` are not two separate keybinds. The keybind
@@ -1522,28 +1528,36 @@ keybind: Keybinds = .{},
 ///
 /// Valid values:
 ///
-///   * `none` - All window decorations will be disabled. Titlebar,
-///     borders, etc. will not be shown. On macOS, this will also disable
-///     tabs (enforced by the system).
+///  * `none`
 ///
-///   * `auto` - Automatically decide to use either client-side or server-side
-///     decorations based on the detected preferences of the current OS and
-///     desktop environment. This option usually makes Ghostty look the most
-///     "native" for your desktop.
+///    All window decorations will be disabled. Titlebar, borders, etc. will
+///    not be shown. On macOS, this will also disable tabs (enforced by the
+///    system).
 ///
-///   * `client` - Prefer client-side decorations.
+///  * `auto`
 ///
-///     Available since: 1.1.0
+///    Automatically decide to use either client-side or server-side
+///    decorations based on the detected preferences of the current OS and
+///    desktop environment. This option usually makes Ghostty look the most
+///    "native" for your desktop.
 ///
-///   * `server` - Prefer server-side decorations. This is only relevant
-///     on Linux with GTK, either on X11, or Wayland on a compositor that
-///     supports the `org_kde_kwin_server_decoration` protocol (e.g. KDE Plasma,
-///     but almost any non-GNOME desktop supports this protocol).
+///  * `client`
 ///
-///     If `server` is set but the environment doesn't support server-side
-///     decorations, client-side decorations will be used instead.
+///    Prefer client-side decorations.
 ///
-///     Available since: 1.1.0
+///    Available since: 1.1.0
+///
+///  * `server`
+///
+///    Prefer server-side decorations. This is only relevant on Linux with GTK,
+///    either on X11, or Wayland on a compositor that supports the
+///    `org_kde_kwin_server_decoration` protocol (e.g. KDE Plasma, but almost
+///    any non-GNOME desktop supports this protocol).
+///
+///    If `server` is set but the environment doesn't support server-side
+///    decorations, client-side decorations will be used instead.
+///
+///    Available since: 1.1.0
 ///
 /// The default value is `auto`.
 ///
@@ -2316,9 +2330,9 @@ keybind: Keybinds = .{},
 ///
 ///  * `sampler2D iChannel0` - Input texture.
 ///
-///     A texture containing the current terminal screen. If multiple custom
-///     shaders are specified, the output of previous shaders is written to
-///     this texture, to allow combining multiple effects.
+///    A texture containing the current terminal screen. If multiple custom
+///    shaders are specified, the output of previous shaders is written to
+///    this texture, to allow combining multiple effects.
 ///
 ///  * `vec3 iResolution` - Output texture size, `[width, height, 1]` (in px).
 ///
