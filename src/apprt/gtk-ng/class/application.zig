@@ -2216,7 +2216,7 @@ const Action = struct {
                     Window,
                     surface.as(gtk.Widget),
                 ) orelse {
-                    log.warn("surface is not in a window, ignoring new_tab", .{});
+                    log.warn("surface is not in a window, ignoring toggle_window_decorations", .{});
                     return false;
                 };
 

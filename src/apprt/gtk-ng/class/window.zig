@@ -810,9 +810,18 @@ pub const Window = extern struct {
 
     /// Toggle the window decorations for this window.
     pub fn toggleWindowDecorations(self: *Self) void {
-        self.setWindowDecoration(switch (self.getWindowDecoration()) {
-            // Null will force using the central config
-            .none => null,
+        const priv = self.private();
+
+        if (priv.window_decoration) |_| {
+            // Unset any previously set window decoration settings
+            self.setWindowDecoration(null);
+            return;
+        }
+
+        const config = if (priv.config) |v| v.get() else return;
+        self.setWindowDecoration(switch (config.@"window-decoration") {
+            // Use auto when the decoration is initially none
+            .none => .auto,
 
             // Anything non-none to none
             .auto, .client, .server => .none,
