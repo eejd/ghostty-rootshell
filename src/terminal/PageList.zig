@@ -1032,25 +1032,67 @@ const ReflowCursor = struct {
                 const src_id = src_page.lookupHyperlink(cell).?;
                 const src_link = src_page.hyperlink_set.get(src_page.memory, src_id);
 
-                // If our page can't support an additional cell with
-                // a hyperlink ID then we create a new page for this row.
+                // If our page can't support an additional cell
+                // with a hyperlink then we increase capacity.
                 if (self.page.hyperlinkCount() >= self.page.hyperlinkCapacity()) {
-                    try self.moveLastRowToNewPage(list, cap);
+                    try self.adjustCapacity(list, .{
+                        .hyperlink_bytes = cap.hyperlink_bytes * 2,
+                    });
+                }
+
+                // Ensure that the string alloc has sufficient capacity
+                // to dupe the link (and the ID if it's not implicit).
+                const additional_required_string_capacity =
+                    src_link.uri.len +
+                    switch (src_link.id) {
+                        .explicit => |v| v.len,
+                        .implicit => 0,
+                    };
+                if (self.page.string_alloc.alloc(
+                    u8,
+                    self.page.memory,
+                    additional_required_string_capacity,
+                )) |slice| {
+                    // We have enough capacity, free the test alloc.
+                    self.page.string_alloc.free(self.page.memory, slice);
+                } else |_| {
+                    // Grow our capacity until we can
+                    // definitely fit the extra bytes.
+                    var new_string_capacity: usize = cap.string_bytes;
+                    while (new_string_capacity - cap.string_bytes < additional_required_string_capacity) {
+                        new_string_capacity *= 2;
+                    }
+                    try self.adjustCapacity(list, .{
+                        .string_bytes = new_string_capacity,
+                    });
                 }
 
                 const dst_id = self.page.hyperlink_set.addWithIdContext(
                     self.page.memory,
+                    // We made sure there was enough capacity for this above.
                     try src_link.dupe(src_page, self.page),
                     src_id,
                     .{ .page = self.page },
-                ) catch id: {
-                    // We have no space for this link,
-                    // so make a new page for this row.
-                    try self.moveLastRowToNewPage(list, cap);
+                ) catch |err| id: {
+                    // If the add failed then either the set needs to grow
+                    // or it needs to be rehashed. Either one of those can
+                    // be accomplished by adjusting capacity, either with
+                    // no actual change or with an increased hyperlink cap.
+                    try self.adjustCapacity(list, switch (err) {
+                        error.OutOfMemory => .{
+                            .hyperlink_bytes = cap.hyperlink_bytes * 2,
+                        },
+                        error.NeedsRehash => .{},
+                    });
 
-                    break :id try self.page.hyperlink_set.addContext(
+                    // We assume this one will succeed. We dupe the link
+                    // again, and don't have to worry about the other one
+                    // because adjusting the capacity naturally clears up
+                    // any managed memory not associated with a cell yet.
+                    break :id try self.page.hyperlink_set.addWithIdContext(
                         self.page.memory,
                         try src_link.dupe(src_page, self.page),
+                        src_id,
                         .{ .page = self.page },
                     );
                 } orelse src_id;
@@ -1148,6 +1190,22 @@ const ReflowCursor = struct {
             list.pages.remove(old_node);
             list.destroyNode(old_node);
         }
+    }
+
+    /// Adjust the capacity of the current page.
+    fn adjustCapacity(
+        self: *ReflowCursor,
+        list: *PageList,
+        adjustment: AdjustCapacity,
+    ) !void {
+        const old_x = self.x;
+        const old_y = self.y;
+
+        self.* = .init(try list.adjustCapacity(
+            self.node,
+            adjustment,
+        ));
+        self.cursorAbsolute(old_x, old_y);
     }
 
     /// True if this cursor is at the bottom of the page by capacity,
@@ -7862,6 +7920,7 @@ test "PageList resize reflow less cols wrapped rows with graphemes" {
         try testing.expectEqual(@as(u21, 'A'), cps[0]);
     }
 }
+
 test "PageList resize reflow less cols cursor in wrapped row" {
     const testing = std.testing;
     const alloc = testing.allocator;
