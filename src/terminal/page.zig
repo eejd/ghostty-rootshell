@@ -34,7 +34,7 @@ const grapheme_chunk_len = 4;
 const grapheme_chunk = grapheme_chunk_len * @sizeOf(u21);
 const GraphemeAlloc = BitmapAllocator(grapheme_chunk);
 const grapheme_count_default = GraphemeAlloc.bitmap_bit_size;
-const grapheme_bytes_default = grapheme_count_default * grapheme_chunk;
+pub const grapheme_bytes_default = grapheme_count_default * grapheme_chunk;
 const GraphemeMap = AutoOffsetHashMap(Offset(Cell), Offset(u21).Slice);
 
 /// The allocator used for shared utf8-encoded strings within a page.
