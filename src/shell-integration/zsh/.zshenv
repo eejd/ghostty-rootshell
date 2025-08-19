@@ -45,6 +45,7 @@ fi
         'builtin' 'autoload' '--' 'is-at-least'
         'is-at-least' "5.1" || {
             builtin echo "ZSH ${ZSH_VERSION} is too old for ghostty shell integration" > /dev/stderr
+            'builtin' 'unset' '_ghostty_file'
             return
         }
         # ${(%):-%x} is the path to the current file.
