@@ -53,7 +53,7 @@ const string_chunk_len = 32;
 const string_chunk = string_chunk_len * @sizeOf(u8);
 const StringAlloc = BitmapAllocator(string_chunk);
 const string_count_default = StringAlloc.bitmap_bit_size;
-const string_bytes_default = string_count_default * string_chunk;
+pub const string_bytes_default = string_count_default * string_chunk;
 
 /// Default number of hyperlinks we support.
 ///

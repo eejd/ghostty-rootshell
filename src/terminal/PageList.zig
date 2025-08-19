@@ -7029,6 +7029,7 @@ test "PageList resize reflow less cols wrap across page boundary cursor in secon
         try testing.expect(!cells[3].hasText());
     }
 }
+
 test "PageList resize reflow more cols cursor in wrapped row" {
     const testing = std.testing;
     const alloc = testing.allocator;
@@ -7220,6 +7221,100 @@ test "PageList resize reflow more cols no reflow preserves semantic prompt" {
         const rac = page.getRowAndCell(0, 1);
         try testing.expect(rac.row.semantic_prompt == .prompt);
     }
+}
+
+test "PageList resize reflow exceeds hyperlink memory forcing capacity increase" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, 2, 10, 0);
+    defer s.deinit();
+    try testing.expectEqual(@as(usize, 1), s.totalPages());
+
+    // Grow to the capacity of the first page and add
+    // one more row so that we have two pages total.
+    {
+        const page = &s.pages.first.?.data;
+        page.pauseIntegrityChecks(true);
+        for (page.size.rows..page.capacity.rows) |_| {
+            _ = try s.grow();
+        }
+        page.pauseIntegrityChecks(false);
+        try testing.expectEqual(@as(usize, 1), s.totalPages());
+        try s.growRows(1);
+        try testing.expectEqual(@as(usize, 2), s.totalPages());
+
+        // We now have two pages.
+        try std.testing.expect(s.pages.first.? != s.pages.last.?);
+        try std.testing.expectEqual(s.pages.last.?, s.pages.first.?.next);
+    }
+
+    // We use almost all string alloc capacity with a hyperlink in the final
+    // row of the first page, and do the same on the first row of the second
+    // page. We also mark the row as wrapped so that when we resize with more
+    // cols the row unwraps and we have a single row that requires almost two
+    // times the base string alloc capacity.
+    //
+    // This forces the reflow to increase capacity.
+    //
+    //  +--+ = PAGE 0
+    //  :  :
+    //  | X… <- where X is hyperlinked with almost all string cap.
+    //  +--+
+    //  +--+ = PAGE 1
+    //  …X | <- X here also almost hits string cap with a hyperlink.
+    //  +--+
+
+    // Almost hit string alloc cap in bottom right of first page.
+    // Mark the final row as wrapped.
+    {
+        const page = &s.pages.first.?.data;
+        const id = try page.insertHyperlink(.{
+            .id = .{ .implicit = 0 },
+            .uri = "a" ** (pagepkg.string_bytes_default - 1),
+        });
+        const rac = page.getRowAndCell(page.size.cols - 1, page.size.rows - 1);
+        rac.row.wrap = true;
+        rac.cell.* = .{
+            .content_tag = .codepoint,
+            .content = .{ .codepoint = 'X' },
+        };
+        try page.setHyperlink(rac.row, rac.cell, id);
+        try std.testing.expectError(
+            error.StringsOutOfMemory,
+            page.insertHyperlink(.{
+                .id = .{ .implicit = 1 },
+                .uri = "AAAAAAAAAAAAAAAAAAAAAAAAAA",
+            }),
+        );
+    }
+
+    // Almost hit string alloc cap in top left of second page.
+    // Mark the first row as a wrap continuation.
+    {
+        const page = &s.pages.last.?.data;
+        const id = try page.insertHyperlink(.{
+            .id = .{ .implicit = 1 },
+            .uri = "a" ** (pagepkg.string_bytes_default - 1),
+        });
+        const rac = page.getRowAndCell(0, 0);
+        rac.row.wrap_continuation = true;
+        rac.cell.* = .{
+            .content_tag = .codepoint,
+            .content = .{ .codepoint = 'X' },
+        };
+        try page.setHyperlink(rac.row, rac.cell, id);
+        try std.testing.expectError(
+            error.StringsOutOfMemory,
+            page.insertHyperlink(.{
+                .id = .{ .implicit = 2 },
+                .uri = "AAAAAAAAAAAAAAAAAAAAAAAAAA",
+            }),
+        );
+    }
+
+    // Resize to 1 column wider, unwrapping the row.
+    try s.resize(.{ .cols = s.cols + 1, .reflow = true });
 }
 
 test "PageList resize reflow more cols unwrap wide spacer head" {
