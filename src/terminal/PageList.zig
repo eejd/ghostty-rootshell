@@ -1004,23 +1004,34 @@ const ReflowCursor = struct {
                 // Copy the graphemes
                 const cps = src_page.lookupGrapheme(cell).?;
 
-                // If our page can't support an additional cell with
-                // graphemes then we create a new page for this row.
+                // If our page can't support an additional cell
+                // with graphemes then we increase capacity.
                 if (self.page.graphemeCount() >= self.page.graphemeCapacity()) {
-                    try self.moveLastRowToNewPage(list, cap);
-                } else {
-                    // Attempt to allocate the space that would be required for
-                    // these graphemes, and if it's not available, create a new
-                    // page for this row.
-                    if (self.page.grapheme_alloc.alloc(
-                        u21,
-                        self.page.memory,
-                        cps.len,
-                    )) |slice| {
-                        self.page.grapheme_alloc.free(self.page.memory, slice);
-                    } else |_| {
-                        try self.moveLastRowToNewPage(list, cap);
+                    try self.adjustCapacity(list, .{
+                        .hyperlink_bytes = cap.grapheme_bytes * 2,
+                    });
+                }
+
+                // Attempt to allocate the space that would be required
+                // for these graphemes, and if it's not available, then
+                // increase capacity.
+                if (self.page.grapheme_alloc.alloc(
+                    u21,
+                    self.page.memory,
+                    cps.len,
+                )) |slice| {
+                    self.page.grapheme_alloc.free(self.page.memory, slice);
+                } else |_| {
+                    // Grow our capacity until we can
+                    // definitely fit the extra bytes.
+                    const required = cps.len * @sizeOf(u21);
+                    var new_grapheme_capacity: usize = cap.grapheme_bytes;
+                    while (new_grapheme_capacity - cap.grapheme_bytes < required) {
+                        new_grapheme_capacity *= 2;
                     }
+                    try self.adjustCapacity(list, .{
+                        .grapheme_bytes = new_grapheme_capacity,
+                    });
                 }
 
                 // This shouldn't fail since we made sure we have space above.
