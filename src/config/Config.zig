@@ -1900,6 +1900,19 @@ keybind: Keybinds = .{},
     else => .false,
 },
 
+/// The action to take when the user right-clicks on the terminal surface.
+///
+/// Valid values:
+///   * `context-menu` - Show the context menu.
+///   * `paste` - Paste the contents of the clipboard.
+///   * `copy` - Copy the selected text to the clipboard.
+///   * `copy-or-paste` - If there is a selection, copy the selected text to
+///      the clipboard; otherwise, paste the contents of the clipboard.
+///   * `ignore` - Do nothing, ignore the right-click.
+///
+/// The default value is `context-menu`.
+@"right-click-action": RightClickAction = .@"context-menu",
+
 /// The time in milliseconds between clicks to consider a click a repeat
 /// (double, triple, etc.) or an entirely new single click. A value of zero will
 /// use a platform-specific default. The default on macOS is determined by the
@@ -6707,6 +6720,25 @@ pub const CopyOnSelect = enum {
     /// Copy on select is enabled and goes to both the system clipboard
     /// and the selection clipboard (for Linux).
     clipboard,
+};
+
+/// Options for right-click actions.
+pub const RightClickAction = enum {
+    /// No action is taken on right-click.
+    ignore,
+
+    /// Pastes from the system clipboard.
+    paste,
+
+    /// Copies the selected text to the system clipboard.
+    copy,
+
+    /// Copies the selected text to the system clipboard and
+    /// pastes the clipboard if no text is selected.
+    @"copy-or-paste",
+
+    /// Shows a context menu with options.
+    @"context-menu",
 };
 
 /// Shell integration values
