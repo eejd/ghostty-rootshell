@@ -7442,10 +7442,12 @@ test "PageList resize reflow exceeds grapheme memory forcing capacity increase" 
             rac.row,
             rac.cell,
             &@as(
-                [@divFloor(
-                    pagepkg.grapheme_bytes_default - 1,
-                    @sizeOf(u21),
-                )]u21,
+                [
+                    @divFloor(
+                        pagepkg.grapheme_bytes_default - 1,
+                        @sizeOf(u21),
+                    )
+                ]u21,
                 @splat('a'),
             ),
         );
@@ -7473,10 +7475,12 @@ test "PageList resize reflow exceeds grapheme memory forcing capacity increase" 
             rac.row,
             rac.cell,
             &@as(
-                [@divFloor(
-                    pagepkg.grapheme_bytes_default - 1,
-                    @sizeOf(u21),
-                )]u21,
+                [
+                    @divFloor(
+                        pagepkg.grapheme_bytes_default - 1,
+                        @sizeOf(u21),
+                    )
+                ]u21,
                 @splat('a'),
             ),
         );
@@ -7492,6 +7496,90 @@ test "PageList resize reflow exceeds grapheme memory forcing capacity increase" 
 
     // Resize to 1 column wider, unwrapping the row.
     try s.resize(.{ .cols = s.cols + 1, .reflow = true });
+}
+
+test "PageList resize reflow exceeds style memory forcing capacity increase" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, pagepkg.std_capacity.styles - 1, 10, 0);
+    defer s.deinit();
+    try testing.expectEqual(@as(usize, 1), s.totalPages());
+
+    // Grow to the capacity of the first page and add
+    // one more row so that we have two pages total.
+    {
+        const page = &s.pages.first.?.data;
+        page.pauseIntegrityChecks(true);
+        for (page.size.rows..page.capacity.rows) |_| {
+            _ = try s.grow();
+        }
+        page.pauseIntegrityChecks(false);
+        try testing.expectEqual(@as(usize, 1), s.totalPages());
+        try s.growRows(1);
+        try testing.expectEqual(@as(usize, 2), s.totalPages());
+
+        // We now have two pages.
+        try std.testing.expect(s.pages.first.? != s.pages.last.?);
+        try std.testing.expectEqual(s.pages.last.?, s.pages.first.?.next);
+    }
+
+    // Give each cell in the final row of the first page a unique style.
+    // Mark the final row as wrapped.
+    {
+        const page = &s.pages.first.?.data;
+        for (0..s.cols) |x| {
+            const id = page.styles.add(
+                page.memory,
+                .{
+                    .bg_color = .{ .rgb = .{
+                        .r = @truncate(x),
+                        .g = @truncate(x >> 8),
+                        .b = @truncate(x >> 16),
+                    } },
+                },
+            ) catch break;
+
+            const rac = page.getRowAndCell(x, page.size.rows - 1);
+            rac.row.wrap = true;
+            rac.row.styled = true;
+            rac.cell.* = .{
+                .content_tag = .codepoint,
+                .content = .{ .codepoint = 'X' },
+                .style_id = id,
+            };
+        }
+    }
+
+    // Do the same for the first row of the second page.
+    // Mark the first row as a wrap continuation.
+    {
+        const page = &s.pages.last.?.data;
+        for (0..s.cols) |x| {
+            const id = page.styles.add(
+                page.memory,
+                .{
+                    .fg_color = .{ .rgb = .{
+                        .r = @truncate(x),
+                        .g = @truncate(x >> 8),
+                        .b = @truncate(x >> 16),
+                    } },
+                },
+            ) catch break;
+
+            const rac = page.getRowAndCell(x, 0);
+            rac.row.wrap_continuation = true;
+            rac.row.styled = true;
+            rac.cell.* = .{
+                .content_tag = .codepoint,
+                .content = .{ .codepoint = 'X' },
+                .style_id = id,
+            };
+        }
+    }
+
+    // Resize to twice as wide, fully unwrapping the row.
+    try s.resize(.{ .cols = s.cols * 2, .reflow = true });
 }
 
 test "PageList resize reflow more cols unwrap wide spacer head" {
