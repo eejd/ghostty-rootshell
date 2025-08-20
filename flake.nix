@@ -94,19 +94,6 @@
             x11-gnome = runVM ./nix/vm/x11-gnome.nix;
             x11-plasma6 = runVM ./nix/vm/x11-plasma6.nix;
             x11-xfce = runVM ./nix/vm/x11-xfce.nix;
-            valgrind = let
-              script = pkgs.writeShellScript "valgrind" ''
-                zig build -Dcpu=baseline -Doptimize=Debug
-                valgrind \
-                  --leak-check=full \
-                  --num-callers=50 \
-                  --suppressions=valgrind.supp \
-                  ./zig-out/bin/ghostty "$@"
-              '';
-            in {
-              type = "app";
-              program = "${script}";
-            };
           };
         }
         # Our supported systems are the same supported systems as the Zig binaries.

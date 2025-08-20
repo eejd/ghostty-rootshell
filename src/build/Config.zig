@@ -53,6 +53,7 @@ patch_rpath: ?[]const u8 = null,
 flatpak: bool = false,
 emit_bench: bool = false,
 emit_docs: bool = false,
+emit_exe: bool = false,
 emit_helpgen: bool = false,
 emit_macos_app: bool = false,
 emit_terminfo: bool = false,
@@ -286,6 +287,12 @@ pub fn init(b: *std.Build) !Config {
     //---------------------------------------------------------------
     // Artifacts to Emit
 
+    config.emit_exe = b.option(
+        bool,
+        "emit-exe",
+        "Build and install main executables with 'build'",
+    ) orelse true;
+
     config.emit_test_exe = b.option(
         bool,
         "emit-test-exe",
@@ -458,6 +465,22 @@ pub fn addOptions(self: *const Config, step: *std.Build.Step.Options) !void {
             break :channel .tip;
         },
     );
+}
+
+/// Returns a baseline CPU target retaining all the other CPU configs.
+pub fn baselineTarget(self: *const Config) std.Build.ResolvedTarget {
+    // Set our cpu model as baseline. There may need to be other modifications
+    // we need to make such as resetting CPU features but for now this works.
+    var q = self.target.query;
+    q.cpu_model = .baseline;
+
+    // Same logic as build.resolveTargetQuery but we don't need to
+    // handle the native case.
+    return .{
+        .query = q,
+        .result = std.zig.system.resolveTargetQuery(q) catch
+            @panic("unable to resolve baseline query"),
+    };
 }
 
 /// Rehydrate our Config from the comptime options. Note that not all
