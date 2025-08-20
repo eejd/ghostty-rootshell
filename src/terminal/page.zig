@@ -346,6 +346,11 @@ pub const Page = struct {
         //   used for the same reason as styles above.
         //
 
+        // We don't run integrity checks on Valgrind because its soooooo slow,
+        // Valgrind is our integrity checker, and we run these during unit
+        // tests (non-Valgrind) anyways so we're verifying anyways.
+        if (std.valgrind.runningOnValgrind() > 0) return;
+
         if (build_config.slow_runtime_safety) {
             if (self.pause_integrity_checks > 0) return;
         }
