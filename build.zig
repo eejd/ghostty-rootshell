@@ -19,7 +19,15 @@ pub fn build(b: *std.Build) !void {
     // All our steps which we'll hook up later. The steps are shown
     // up here just so that they are more self-documenting.
     const run_step = b.step("run", "Run the app");
-    const test_step = b.step("test", "Run all tests");
+    const run_valgrind_step = b.step(
+        "run-valgrind",
+        "Run the app under valgrind",
+    );
+    const test_step = b.step("test", "Run tests");
+    const test_valgrind_step = b.step(
+        "test-valgrind",
+        "Run tests under valgrind",
+    );
     const translations_step = b.step(
         "update-translations",
         "Update translation files",
@@ -77,9 +85,11 @@ pub fn build(b: *std.Build) !void {
 
     // Runtime "none" is libghostty, anything else is an executable.
     if (config.app_runtime != .none) {
-        exe.install();
-        resources.install();
-        if (i18n) |v| v.install();
+        if (config.emit_exe) {
+            exe.install();
+            resources.install();
+            if (i18n) |v| v.install();
+        }
     } else {
         // Libghostty
         //
@@ -181,6 +191,31 @@ pub fn build(b: *std.Build) !void {
         }
     }
 
+    // Valgrind
+    if (config.app_runtime != .none) {
+        // We need to rebuild Ghostty with a baseline CPU target.
+        const valgrind_exe = exe: {
+            var valgrind_config = config;
+            valgrind_config.target = valgrind_config.baselineTarget();
+            break :exe try buildpkg.GhosttyExe.init(
+                b,
+                &valgrind_config,
+                &deps,
+            );
+        };
+
+        const run_cmd = b.addSystemCommand(&.{
+            "valgrind",
+            "--leak-check=full",
+            "--num-callers=50",
+            b.fmt("--suppressions={s}", .{b.pathFromRoot("valgrind.supp")}),
+            "--gen-suppressions=all",
+        });
+        run_cmd.addArtifactArg(valgrind_exe.exe);
+        if (b.args) |args| run_cmd.addArgs(args);
+        run_valgrind_step.dependOn(&run_cmd.step);
+    }
+
     // Tests
     {
         const test_exe = b.addTest(.{
@@ -188,7 +223,7 @@ pub fn build(b: *std.Build) !void {
             .filters = if (test_filter) |v| &.{v} else &.{},
             .root_module = b.createModule(.{
                 .root_source_file = b.path("src/main.zig"),
-                .target = config.target,
+                .target = config.baselineTarget(),
                 .optimize = .Debug,
                 .strip = false,
                 .omit_frame_pointer = false,
@@ -198,8 +233,21 @@ pub fn build(b: *std.Build) !void {
 
         if (config.emit_test_exe) b.installArtifact(test_exe);
         _ = try deps.add(test_exe);
+
+        // Normal test running
         const test_run = b.addRunArtifact(test_exe);
         test_step.dependOn(&test_run.step);
+
+        // Valgrind test running
+        const valgrind_run = b.addSystemCommand(&.{
+            "valgrind",
+            "--leak-check=full",
+            "--num-callers=50",
+            b.fmt("--suppressions={s}", .{b.pathFromRoot("valgrind.supp")}),
+            "--gen-suppressions=all",
+        });
+        valgrind_run.addArtifactArg(test_exe);
+        test_valgrind_step.dependOn(&valgrind_run.step);
     }
 
     // update-translations does what it sounds like and updates the "pot"
