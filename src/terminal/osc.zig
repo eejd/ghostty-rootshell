@@ -16,6 +16,10 @@ const kitty = @import("kitty.zig");
 const log = std.log.scoped(.osc);
 
 pub const Command = union(enum) {
+    /// This generally shouldn't ever be set except as an initial zero value.
+    /// Ignore it.
+    invalid,
+
     /// Set the window title of the terminal
     ///
     /// If title mode 0  is set text is expect to be hex encoded (i.e. utf-8
@@ -433,6 +437,7 @@ pub const Parser = struct {
         var result: Parser = .{
             .alloc = null,
             .state = .empty,
+            .command = .invalid,
             .buf_start = 0,
             .buf_idx = 0,
             .buf_dynamic = null,
@@ -440,14 +445,12 @@ pub const Parser = struct {
 
             // Keeping all our undefined values together so we can
             // visually easily duplicate them in the Valgrind check below.
-            .command = undefined,
             .buf = undefined,
             .temp_state = undefined,
         };
         if (std.valgrind.runningOnValgrind() > 0) {
             // Initialize our undefined fields so Valgrind can catch it.
             // https://github.com/ziglang/zig/issues/19148
-            result.command = undefined;
             result.buf = undefined;
             result.temp_state = undefined;
         }
@@ -478,31 +481,23 @@ pub const Parser = struct {
             return;
         }
 
+        // Some commands have their own memory management we need to clear.
+        switch (self.command) {
+            .kitty_color_protocol => |*v| v.list.deinit(),
+            .color_operation => |*v| v.operations.deinit(self.alloc.?),
+            else => {},
+        }
+
         self.state = .empty;
         self.buf_start = 0;
         self.buf_idx = 0;
+        self.command = .invalid;
         self.complete = false;
         if (self.buf_dynamic) |ptr| {
             const alloc = self.alloc.?;
             ptr.deinit(alloc);
             alloc.destroy(ptr);
             self.buf_dynamic = null;
-        }
-
-        // Some commands have their own memory management we need to clear.
-        // After cleaning up these command, we reset the command to
-        // some nonsense (but valid) command so we don't double free.
-        const default: Command = .{ .hyperlink_end = {} };
-        switch (self.command) {
-            .kitty_color_protocol => |*v| {
-                v.list.deinit();
-                self.command = default;
-            },
-            .color_operation => |*v| {
-                v.operations.deinit(self.alloc.?);
-                self.command = default;
-            },
-            else => {},
         }
     }
 

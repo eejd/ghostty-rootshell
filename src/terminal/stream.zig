@@ -1608,6 +1608,12 @@ pub fn Stream(comptime Handler: type) type {
                 .sleep, .show_message_box, .change_conemu_tab_title, .wait_input => {
                     log.warn("unimplemented OSC callback: {}", .{cmd});
                 },
+
+                .invalid => {
+                    // This is an invalid internal state, not an invalid OSC
+                    // string being parsed. We shouldn't see this.
+                    log.warn("invalid OSC, should never happen", .{});
+                },
             }
 
             // Fall through for when we don't have a handler.
