@@ -223,10 +223,12 @@ param_acc: u16 = 0,
 param_acc_idx: u8 = 0,
 
 /// Parser for OSC sequences
-osc_parser: osc.Parser = .{},
+osc_parser: osc.Parser,
 
 pub fn init() Parser {
-    return .{};
+    return .{
+        .osc_parser = .init(),
+    };
 }
 
 pub fn deinit(self: *Parser) void {
