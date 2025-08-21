@@ -575,6 +575,18 @@
 }
 
 {
+   pango language
+   Memcheck:Leak
+   match-leak-kinds: possible
+   fun:calloc
+   fun:g_malloc0
+   fun:pango_language_from_string
+   fun:pango_language_get_default
+   fun:gtk_get_locale_direction
+   fun:gtk_init_check
+   ...
+}
+{
    Adwaita Stylesheet Load
    Memcheck:Leak
    match-leak-kinds: definite
