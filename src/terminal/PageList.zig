@@ -2395,8 +2395,8 @@ pub fn eraseRows(
                 break;
             }
 
-            self.erasePage(chunk.node);
             erased += chunk.node.data.size.rows;
+            self.erasePage(chunk.node);
             continue;
         }
 
