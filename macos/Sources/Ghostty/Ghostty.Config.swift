@@ -302,6 +302,7 @@ extension Ghostty {
         }
 
         var macosCustomIcon: String {
+            #if os(macOS)
             let homeDirURL = FileManager.default.homeDirectoryForCurrentUser
             let ghosttyConfigIconPath = homeDirURL.appendingPathComponent(
                 ".config/ghostty/Ghostty.icns",
@@ -313,6 +314,9 @@ extension Ghostty {
             guard ghostty_config_get(config, &v, key, UInt(key.count)) else { return defaultValue }
             guard let ptr = v else { return defaultValue }
             return String(cString: ptr)
+            #else
+            return ""
+            #endif
         }
 
         var macosIconFrame: MacOSIconFrame {
