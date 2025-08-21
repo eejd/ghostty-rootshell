@@ -3042,6 +3042,10 @@ test "Page moveCells graphemes" {
 }
 
 test "Page verifyIntegrity graphemes good" {
+    // Too slow, and not really necessary because the integrity tests are
+    // only run in debug builds and unit tests verify they work well enough.
+    if (std.valgrind.runningOnValgrind() > 0) return error.SkipZigTest;
+
     var page = try Page.init(.{
         .cols = 10,
         .rows = 10,
@@ -3063,6 +3067,10 @@ test "Page verifyIntegrity graphemes good" {
 }
 
 test "Page verifyIntegrity grapheme row not marked" {
+    // Too slow, and not really necessary because the integrity tests are
+    // only run in debug builds and unit tests verify they work well enough.
+    if (std.valgrind.runningOnValgrind() > 0) return error.SkipZigTest;
+
     var page = try Page.init(.{
         .cols = 10,
         .rows = 10,
@@ -3090,6 +3098,10 @@ test "Page verifyIntegrity grapheme row not marked" {
 }
 
 test "Page verifyIntegrity styles good" {
+    // Too slow, and not really necessary because the integrity tests are
+    // only run in debug builds and unit tests verify they work well enough.
+    if (std.valgrind.runningOnValgrind() > 0) return error.SkipZigTest;
+
     var page = try Page.init(.{
         .cols = 10,
         .rows = 10,
@@ -3122,6 +3134,10 @@ test "Page verifyIntegrity styles good" {
 }
 
 test "Page verifyIntegrity styles ref count mismatch" {
+    // Too slow, and not really necessary because the integrity tests are
+    // only run in debug builds and unit tests verify they work well enough.
+    if (std.valgrind.runningOnValgrind() > 0) return error.SkipZigTest;
+
     var page = try Page.init(.{
         .cols = 10,
         .rows = 10,
@@ -3160,6 +3176,10 @@ test "Page verifyIntegrity styles ref count mismatch" {
 }
 
 test "Page verifyIntegrity zero rows" {
+    // Too slow, and not really necessary because the integrity tests are
+    // only run in debug builds and unit tests verify they work well enough.
+    if (std.valgrind.runningOnValgrind() > 0) return error.SkipZigTest;
+
     var page = try Page.init(.{
         .cols = 10,
         .rows = 10,
@@ -3174,6 +3194,10 @@ test "Page verifyIntegrity zero rows" {
 }
 
 test "Page verifyIntegrity zero cols" {
+    // Too slow, and not really necessary because the integrity tests are
+    // only run in debug builds and unit tests verify they work well enough.
+    if (std.valgrind.runningOnValgrind() > 0) return error.SkipZigTest;
+
     var page = try Page.init(.{
         .cols = 10,
         .rows = 10,
