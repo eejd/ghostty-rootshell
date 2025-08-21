@@ -282,6 +282,17 @@ extension Ghostty {
             return MacOSTitlebarProxyIcon(rawValue: str) ?? defaultValue
         }
 
+        var macosDockDropBehavior: MacDockDropBehavior {
+            let defaultValue = MacDockDropBehavior.new_tab
+            guard let config = self.config else { return defaultValue }
+            var v: UnsafePointer<Int8>? = nil
+            let key = "macos-dock-drop-behavior"
+            guard ghostty_config_get(config, &v, key, UInt(key.count)) else { return defaultValue }
+            guard let ptr = v else { return defaultValue }
+            let str = String(cString: ptr)
+            return MacDockDropBehavior(rawValue: str) ?? defaultValue
+        }
+
         var macosWindowShadow: Bool {
             guard let config = self.config else { return false }
             var v = false;
@@ -606,6 +617,11 @@ extension Ghostty.Config {
         static let audio = BellFeatures(rawValue: 1 << 1)
         static let attention = BellFeatures(rawValue: 1 << 2)
         static let title = BellFeatures(rawValue: 1 << 3)
+    }
+    
+    enum MacDockDropBehavior: String {
+        case new_tab = "new-tab"
+        case new_window = "new-window"
     }
 
     enum MacHidden : String {

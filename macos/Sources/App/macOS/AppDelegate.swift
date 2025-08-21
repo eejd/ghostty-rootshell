@@ -402,11 +402,9 @@ class AppDelegate: NSObject,
         var config = Ghostty.SurfaceConfiguration()
 
         if (isDirectory.boolValue) {
-            // When opening a directory, create a new tab in the main
-            // window with that as the working directory.
-            // If no windows exist, a new one will be created.
+            // When opening a directory, check the configuration to decide
+            // whether to open in a new tab or new window.
             config.workingDirectory = filename
-            _ = TerminalController.newTab(ghostty, withBaseConfig: config)
         } else {
             // When opening a file, we want to execute the file. To do this, we
             // don't override the command directly, because it won't load the
@@ -418,8 +416,11 @@ class AppDelegate: NSObject,
             // Set the parent directory to our working directory so that relative
             // paths in scripts work.
             config.workingDirectory = (filename as NSString).deletingLastPathComponent
-
-            _ = TerminalController.newWindow(ghostty, withBaseConfig: config)
+        }
+        
+        switch ghostty.config.macosDockDropBehavior {
+        case .new_tab: _ = TerminalController.newTab(ghostty, withBaseConfig: config)
+        case .new_window: _ = TerminalController.newWindow(ghostty, withBaseConfig: config)
         }
 
         return true
