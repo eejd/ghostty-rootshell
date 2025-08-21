@@ -2043,10 +2043,13 @@ pub const Cell = packed struct(u64) {
 
     /// Helper to make a cell that just has a codepoint.
     pub fn init(cp: u21) Cell {
-        return .{
-            .content_tag = .codepoint,
-            .content = .{ .codepoint = cp },
-        };
+        // We have to use this bitCast here to ensure that our memory is
+        // zeroed. Otherwise, the content below will leave some uninitialized
+        // memory in the packed union. Valgrind verifies this.
+        var cell: Cell = @bitCast(@as(u64, 0));
+        cell.content_tag = .codepoint;
+        cell.content = .{ .codepoint = cp };
+        return cell;
     }
 
     pub fn isZero(self: Cell) bool {
