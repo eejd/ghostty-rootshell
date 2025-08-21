@@ -511,6 +511,9 @@ fn testDrawRanges(
 }
 
 test "sprite face render all sprites" {
+    // This test is way too slow to run under Valgrind, unfortunately.
+    if (std.valgrind.runningOnValgrind() > 0) return error.SkipZigTest;
+
     // Renders all sprites to an atlas and compares
     // it to a ground truth for regression testing.
 
