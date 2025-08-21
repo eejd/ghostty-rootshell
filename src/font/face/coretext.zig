@@ -408,18 +408,15 @@ pub const Face = struct {
         const px_x: i32 = @intFromFloat(@floor(x));
         const px_y: i32 = @intFromFloat(@floor(y));
 
-        // We offset our glyph by its bearings when we draw it, so that it's
-        // rendered fully inside our canvas area, but we make sure to keep the
-        // fractional pixel offset so that we rasterize with the appropriate
-        // sub-pixel position.
+        // We keep track of the fractional part of the pixel bearings, which
+        // we will add as an offset when rasterizing to make sure we get the
+        // correct sub-pixel position.
         const frac_x = x - @floor(x);
         const frac_y = y - @floor(y);
-        const draw_x = -rect.origin.x + frac_x;
-        const draw_y = -rect.origin.y + frac_y;
 
         // Add the fractional pixel to the width and height and take
         // the ceiling to get a canvas size that will definitely fit
-        // our drawn glyph.
+        // our drawn glyph, including the fractional offset.
         const px_width: u32 = @intFromFloat(@ceil(width + frac_x));
         const px_height: u32 = @intFromFloat(@ceil(height + frac_y));
 
@@ -525,6 +522,17 @@ pub const Face = struct {
             context.setLineWidth(ctx, line_width);
         }
 
+        // Translate our drawing context so that when we draw our
+        // glyph the bottom/left edge is at the correct sub-pixel
+        // position. The bottom/left edges are guaranteed to be at
+        // exactly [0, 0] relative to this because when we call to
+        // `drawGlyphs`, we pass the negated bearings.
+        context.translateCTM(
+            ctx,
+            frac_x,
+            frac_y,
+        );
+
         // Scale the drawing context so that when we draw
         // our glyph it's stretched to the constrained size.
         context.scaleCTM(
@@ -534,7 +542,15 @@ pub const Face = struct {
         );
 
         // Draw our glyph.
-        self.font.drawGlyphs(&glyphs, &.{.{ .x = draw_x, .y = draw_y }}, ctx);
+        //
+        // We offset the position by the negated bearings so that the
+        // glyph is drawn at exactly [0, 0], which is then offset to
+        // the appropriate fractional position by the translation we
+        // did before scaling.
+        self.font.drawGlyphs(&glyphs, &.{.{
+            .x = -rect.origin.x,
+            .y = -rect.origin.y,
+        }}, ctx);
 
         // Write our rasterized glyph to the atlas.
         const region = try atlas.reserve(alloc, px_width, px_height);
