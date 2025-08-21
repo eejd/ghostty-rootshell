@@ -105,6 +105,9 @@ test "adding actions to an object" {
     // This test requires a connection to an active display environment.
     if (gtk.initCheck() == 0) return error.SkipZigTest;
 
+    _ = glib.MainContext.acquire(null);
+    defer glib.MainContext.release(null);
+
     const callbacks = struct {
         fn callback(_: *gio.SimpleAction, variant_: ?*glib.Variant, self: *gtk.Box) callconv(.c) void {
             const i32_variant_type = glib.ext.VariantType.newFor(i32);
@@ -155,4 +158,6 @@ test "adding actions to an object" {
 
     const actual = value.getInt();
     try testing.expectEqual(expected, actual);
+
+    while (glib.MainContext.iteration(null, 0) != 0) {}
 }
