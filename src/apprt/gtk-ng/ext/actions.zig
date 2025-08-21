@@ -103,7 +103,7 @@ pub fn addAsGroup(comptime T: type, self: *T, comptime name: [:0]const u8, actio
 
 test "adding actions to an object" {
     // This test requires a connection to an active display environment.
-    if (gtk.initCheck() == 0) return;
+    if (gtk.initCheck() == 0) return error.SkipZigTest;
 
     const callbacks = struct {
         fn callback(_: *gio.SimpleAction, variant_: ?*glib.Variant, self: *gtk.Box) callconv(.c) void {
