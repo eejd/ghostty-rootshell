@@ -3555,26 +3555,7 @@ pub fn mouseButtonCallback(
         };
 
         switch (self.config.right_click_action) {
-            .ignore => {
-                // Return early to skip clearing the selection.
-                try self.queueRender();
-                return true;
-            },
-            .copy => {
-                if (self.io.terminal.screen.selection) |sel| {
-                    self.copySelectionToClipboards(sel, &.{.standard});
-                }
-            },
-            .@"copy-or-paste" => {
-                if (self.io.terminal.screen.selection) |sel| {
-                    self.copySelectionToClipboards(sel, &.{.standard});
-                } else {
-                    try self.startClipboardRequest(.standard, .paste);
-                }
-            },
-            .paste => {
-                try self.startClipboardRequest(.standard, .paste);
-            },
+            .ignore => {},
             .@"context-menu" => {
                 // If we already have a selection and the selection contains
                 // where we clicked then we don't want to modify the selection.
@@ -3588,12 +3569,45 @@ pub fn mouseButtonCallback(
                 const sel = screen.selectWord(pin) orelse break :sel;
                 try self.setSelection(sel);
                 try self.queueRender();
+
+                // Don't consume so that we show the context menu in apprt.
                 return false;
             },
-        }
+            .copy => {
+                if (self.io.terminal.screen.selection) |sel| {
+                    self.copySelectionToClipboards(sel, &.{.standard});
+                }
 
-        try self.setSelection(null);
-        try self.queueRender();
+                try self.setSelection(null);
+                try self.queueRender();
+            },
+            .@"copy-or-paste" => if (self.io.terminal.screen.selection) |sel| {
+                self.copySelectionToClipboards(sel, &.{.standard});
+                try self.setSelection(null);
+                try self.queueRender();
+            } else {
+                // Pasting can trigger a lock grab in complete clipboard
+                // request so we need to unlock.
+                self.renderer_state.mutex.unlock();
+                defer self.renderer_state.mutex.lock();
+                try self.startClipboardRequest(.standard, .paste);
+
+                // We don't need to clear selection because we didn't have
+                // one to begin with.
+            },
+            .paste => {
+                // Before we yield the lock, clear our selection if we have
+                // one.
+                try self.setSelection(null);
+                try self.queueRender();
+
+                // Pasting can trigger a lock grab in complete clipboard
+                // request so we need to unlock.
+                self.renderer_state.mutex.unlock();
+                defer self.renderer_state.mutex.lock();
+                try self.startClipboardRequest(.standard, .paste);
+            },
+        }
 
         // Consume the event such that the context menu is not displayed.
         return true;
