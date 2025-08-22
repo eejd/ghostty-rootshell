@@ -13,11 +13,7 @@ pub fn build(b: *std.Build) !void {
 
     const unit_tests = b.addTest(.{
         .name = "test",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/main.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
+        .root_module = module,
     });
     unit_tests.linkLibC();
 
@@ -31,12 +27,6 @@ pub fn build(b: *std.Build) !void {
     if (b.lazyDependency("wuffs", .{})) |wuffs_dep| {
         module.addIncludePath(wuffs_dep.path("release/c"));
         module.addCSourceFile(.{
-            .file = wuffs_dep.path("release/c/wuffs-v0.4.c"),
-            .flags = flags.items,
-        });
-
-        unit_tests.addIncludePath(wuffs_dep.path("release/c"));
-        unit_tests.addCSourceFile(.{
             .file = wuffs_dep.path("release/c/wuffs-v0.4.c"),
             .flags = flags.items,
         });

@@ -1327,7 +1327,7 @@ extension Ghostty {
             var item: NSMenuItem
 
             // If we have a selection, add copy
-            if self.selectedRange().length > 0 {
+            if let text = self.accessibilitySelectedText(), text.count > 0 {
                 menu.addItem(withTitle: "Copy", action: #selector(copy(_:)), keyEquivalent: "")
             }
             menu.addItem(withTitle: "Paste", action: #selector(paste(_:)), keyEquivalent: "")

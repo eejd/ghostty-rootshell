@@ -226,6 +226,10 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             }
 
             c.showWindow(self)
+
+            // All new_window actions force our app to be active, so that the new
+            // window is focused and visible.
+            NSApp.activate(ignoringOtherApps: true)
         }
 
         // Setup our undo
@@ -332,6 +336,10 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
 
             controller.showWindow(self)
             window.makeKeyAndOrderFront(self)
+
+            // We also activate our app so that it becomes front. This may be
+            // necessary for the dock menu.
+            NSApp.activate(ignoringOtherApps: true)
         }
 
         // It takes an event loop cycle until the macOS tabGroup state becomes

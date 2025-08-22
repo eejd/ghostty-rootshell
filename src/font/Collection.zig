@@ -937,6 +937,9 @@ test init {
 }
 
 test "add full" {
+    // This test is way too slow to run under Valgrind, unfortunately.
+    if (std.valgrind.runningOnValgrind() > 0) return error.SkipZigTest;
+
     const testing = std.testing;
     const alloc = testing.allocator;
     const testFont = font.embedded.regular;

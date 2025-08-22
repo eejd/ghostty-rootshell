@@ -62,7 +62,7 @@ pub fn create(
             .cols = opts.@"terminal-cols",
         }),
         .handler = .{ .t = &ptr.terminal },
-        .stream = .{ .handler = &ptr.handler },
+        .stream = .init(&ptr.handler),
     };
 
     return ptr;

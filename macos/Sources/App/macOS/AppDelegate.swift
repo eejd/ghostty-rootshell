@@ -119,6 +119,9 @@ class AppDelegate: NSObject,
     @Published private(set) var appIcon: NSImage? = nil {
         didSet {
             NSApplication.shared.applicationIconImage = appIcon
+            let appPath = Bundle.main.bundlePath
+            NSWorkspace.shared.setIcon(appIcon, forFile: appPath, options: [])
+            NSWorkspace.shared.noteFileSystemChanged(appPath)
         }
     }
 
@@ -255,13 +258,13 @@ class AppDelegate: NSObject,
 
         // Setup signal handlers
         setupSignals()
-        
+
         // If we launched via zig run then we need to force foreground.
         if Ghostty.launchSource == .zig_run {
             // This never gets called until we click the dock icon. This forces it
             // activate immediately.
             applicationDidBecomeActive(.init(name: NSApplication.didBecomeActiveNotification))
-            
+
             // We run in the background, this forces us to the front.
             DispatchQueue.main.async {
                 NSApp.setActivationPolicy(.regular)
@@ -399,11 +402,9 @@ class AppDelegate: NSObject,
         var config = Ghostty.SurfaceConfiguration()
 
         if (isDirectory.boolValue) {
-            // When opening a directory, create a new tab in the main
-            // window with that as the working directory.
-            // If no windows exist, a new one will be created.
+            // When opening a directory, check the configuration to decide
+            // whether to open in a new tab or new window.
             config.workingDirectory = filename
-            _ = TerminalController.newTab(ghostty, withBaseConfig: config)
         } else {
             // When opening a file, we want to execute the file. To do this, we
             // don't override the command directly, because it won't load the
@@ -415,8 +416,11 @@ class AppDelegate: NSObject,
             // Set the parent directory to our working directory so that relative
             // paths in scripts work.
             config.workingDirectory = (filename as NSString).deletingLastPathComponent
-
-            _ = TerminalController.newWindow(ghostty, withBaseConfig: config)
+        }
+        
+        switch ghostty.config.macosDockDropBehavior {
+        case .new_tab: _ = TerminalController.newTab(ghostty, withBaseConfig: config)
+        case .new_window: _ = TerminalController.newWindow(ghostty, withBaseConfig: config)
         }
 
         return true
@@ -834,6 +838,13 @@ class AppDelegate: NSObject,
         case .xray:
             self.appIcon = NSImage(named: "XrayImage")!
 
+        case .custom:
+            if let userIcon = NSImage(contentsOfFile: config.macosCustomIcon) {
+                self.appIcon = userIcon
+            } else {
+                self.appIcon = nil // Revert back to official icon if invalid location
+            }
+
         case .customStyle:
             guard let ghostColor = config.macosIconGhostColor else { break }
             guard let screenColors = config.macosIconScreenColor else { break }
@@ -946,18 +957,10 @@ class AppDelegate: NSObject,
 
     @IBAction func newWindow(_ sender: Any?) {
         _ = TerminalController.newWindow(ghostty)
-
-        // We also activate our app so that it becomes front. This may be
-        // necessary for the dock menu.
-        NSApp.activate(ignoringOtherApps: true)
     }
 
     @IBAction func newTab(_ sender: Any?) {
         _ = TerminalController.newTab(ghostty)
-
-        // We also activate our app so that it becomes front. This may be
-        // necessary for the dock menu.
-        NSApp.activate(ignoringOtherApps: true)
     }
 
     @IBAction func closeAllWindows(_ sender: Any?) {

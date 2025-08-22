@@ -16,6 +16,10 @@ const kitty = @import("kitty.zig");
 const log = std.log.scoped(.osc);
 
 pub const Command = union(enum) {
+    /// This generally shouldn't ever be set except as an initial zero value.
+    /// Ignore it.
+    invalid,
+
     /// Set the window title of the terminal
     ///
     /// If title mode 0  is set text is expect to be hex encoded (i.e. utf-8
@@ -282,23 +286,23 @@ pub const Parser = struct {
     /// Optional allocator used to accept data longer than MAX_BUF.
     /// This only applies to some commands (e.g. OSC 52) that can
     /// reasonably exceed MAX_BUF.
-    alloc: ?Allocator = null,
+    alloc: ?Allocator,
 
     /// Current state of the parser.
-    state: State = .empty,
+    state: State,
 
     /// Current command of the parser, this accumulates.
-    command: Command = undefined,
+    command: Command,
 
     /// Buffer that stores the input we see for a single OSC command.
     /// Slices in Command are offsets into this buffer.
-    buf: [MAX_BUF]u8 = undefined,
-    buf_start: usize = 0,
-    buf_idx: usize = 0,
-    buf_dynamic: ?*std.ArrayListUnmanaged(u8) = null,
+    buf: [MAX_BUF]u8,
+    buf_start: usize,
+    buf_idx: usize,
+    buf_dynamic: ?*std.ArrayListUnmanaged(u8),
 
     /// True when a command is complete/valid to return.
-    complete: bool = false,
+    complete: bool,
 
     /// Temporary state that is dependent on the current state.
     temp_state: union {
@@ -310,7 +314,7 @@ pub const Parser = struct {
 
         /// Temporary state for key/value pairs
         key: []const u8,
-    } = undefined,
+    },
 
     // Maximum length of a single OSC command. This is the full OSC command
     // sequence length (excluding ESC ]). This is arbitrary, I couldn't find
@@ -429,6 +433,37 @@ pub const Parser = struct {
         conemu_progress_value,
     };
 
+    pub fn init() Parser {
+        var result: Parser = .{
+            .alloc = null,
+            .state = .empty,
+            .command = .invalid,
+            .buf_start = 0,
+            .buf_idx = 0,
+            .buf_dynamic = null,
+            .complete = false,
+
+            // Keeping all our undefined values together so we can
+            // visually easily duplicate them in the Valgrind check below.
+            .buf = undefined,
+            .temp_state = undefined,
+        };
+        if (std.valgrind.runningOnValgrind() > 0) {
+            // Initialize our undefined fields so Valgrind can catch it.
+            // https://github.com/ziglang/zig/issues/19148
+            result.buf = undefined;
+            result.temp_state = undefined;
+        }
+
+        return result;
+    }
+
+    pub fn initAlloc(alloc: Allocator) Parser {
+        var result: Parser = .init();
+        result.alloc = alloc;
+        return result;
+    }
+
     /// This must be called to clean up any allocated memory.
     pub fn deinit(self: *Parser) void {
         self.reset();
@@ -446,31 +481,23 @@ pub const Parser = struct {
             return;
         }
 
+        // Some commands have their own memory management we need to clear.
+        switch (self.command) {
+            .kitty_color_protocol => |*v| v.list.deinit(),
+            .color_operation => |*v| v.operations.deinit(self.alloc.?),
+            else => {},
+        }
+
         self.state = .empty;
         self.buf_start = 0;
         self.buf_idx = 0;
+        self.command = .invalid;
         self.complete = false;
         if (self.buf_dynamic) |ptr| {
             const alloc = self.alloc.?;
             ptr.deinit(alloc);
             alloc.destroy(ptr);
             self.buf_dynamic = null;
-        }
-
-        // Some commands have their own memory management we need to clear.
-        // After cleaning up these command, we reset the command to
-        // some nonsense (but valid) command so we don't double free.
-        const default: Command = .{ .hyperlink_end = {} };
-        switch (self.command) {
-            .kitty_color_protocol => |*v| {
-                v.list.deinit();
-                self.command = default;
-            },
-            .color_operation => |*v| {
-                v.operations.deinit(self.alloc.?);
-                self.command = default;
-            },
-            else => {},
         }
     }
 
@@ -1590,7 +1617,7 @@ pub const Parser = struct {
 test "OSC: change_window_title" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
     p.next('0');
     p.next(';');
     p.next('a');
@@ -1603,7 +1630,7 @@ test "OSC: change_window_title" {
 test "OSC: change_window_title with 2" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
     p.next('2');
     p.next(';');
     p.next('a');
@@ -1616,7 +1643,7 @@ test "OSC: change_window_title with 2" {
 test "OSC: change_window_title with utf8" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
     p.next('2');
     p.next(';');
     // '—' EM DASH U+2014 (E2 80 94)
@@ -1638,7 +1665,7 @@ test "OSC: change_window_title with utf8" {
 test "OSC: change_window_title empty" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
     p.next('2');
     p.next(';');
     const cmd = p.end(null).?;
@@ -1649,7 +1676,7 @@ test "OSC: change_window_title empty" {
 test "OSC: change_window_icon" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
     p.next('1');
     p.next(';');
     p.next('a');
@@ -1662,7 +1689,7 @@ test "OSC: change_window_icon" {
 test "OSC: prompt_start" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "133;A";
     for (input) |ch| p.next(ch);
@@ -1676,7 +1703,7 @@ test "OSC: prompt_start" {
 test "OSC: prompt_start with single option" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "133;A;aid=14";
     for (input) |ch| p.next(ch);
@@ -1689,7 +1716,7 @@ test "OSC: prompt_start with single option" {
 test "OSC: prompt_start with redraw disabled" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "133;A;redraw=0";
     for (input) |ch| p.next(ch);
@@ -1702,7 +1729,7 @@ test "OSC: prompt_start with redraw disabled" {
 test "OSC: prompt_start with redraw invalid value" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "133;A;redraw=42";
     for (input) |ch| p.next(ch);
@@ -1716,7 +1743,7 @@ test "OSC: prompt_start with redraw invalid value" {
 test "OSC: prompt_start with continuation" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "133;A;k=c";
     for (input) |ch| p.next(ch);
@@ -1729,7 +1756,7 @@ test "OSC: prompt_start with continuation" {
 test "OSC: prompt_start with secondary" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "133;A;k=s";
     for (input) |ch| p.next(ch);
@@ -1742,7 +1769,7 @@ test "OSC: prompt_start with secondary" {
 test "OSC: end_of_command no exit code" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "133;D";
     for (input) |ch| p.next(ch);
@@ -1754,7 +1781,7 @@ test "OSC: end_of_command no exit code" {
 test "OSC: end_of_command with exit code" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "133;D;25";
     for (input) |ch| p.next(ch);
@@ -1767,7 +1794,7 @@ test "OSC: end_of_command with exit code" {
 test "OSC: prompt_end" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "133;B";
     for (input) |ch| p.next(ch);
@@ -1779,7 +1806,7 @@ test "OSC: prompt_end" {
 test "OSC: end_of_input" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "133;C";
     for (input) |ch| p.next(ch);
@@ -1791,7 +1818,7 @@ test "OSC: end_of_input" {
 test "OSC: OSC110: reset foreground color" {
     const testing = std.testing;
 
-    var p: Parser = .{ .alloc = testing.allocator };
+    var p: Parser = .initAlloc(testing.allocator);
     defer p.deinit();
 
     const input = "110";
@@ -1817,7 +1844,7 @@ test "OSC: OSC110: reset foreground color" {
 test "OSC: OSC111: reset background color" {
     const testing = std.testing;
 
-    var p: Parser = .{ .alloc = testing.allocator };
+    var p: Parser = .initAlloc(testing.allocator);
     defer p.deinit();
 
     const input = "111";
@@ -1843,7 +1870,7 @@ test "OSC: OSC111: reset background color" {
 test "OSC: OSC112: reset cursor color" {
     const testing = std.testing;
 
-    var p: Parser = .{ .alloc = testing.allocator };
+    var p: Parser = .initAlloc(testing.allocator);
     defer p.deinit();
 
     const input = "112";
@@ -1869,7 +1896,7 @@ test "OSC: OSC112: reset cursor color" {
 test "OSC: OSC112: reset cursor color with semicolon" {
     const testing = std.testing;
 
-    var p: Parser = .{ .alloc = testing.allocator };
+    var p: Parser = .initAlloc(testing.allocator);
     defer p.deinit();
 
     const input = "112;";
@@ -1896,7 +1923,7 @@ test "OSC: OSC112: reset cursor color with semicolon" {
 test "OSC: get/set clipboard" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "52;s;?";
     for (input) |ch| p.next(ch);
@@ -1910,7 +1937,7 @@ test "OSC: get/set clipboard" {
 test "OSC: get/set clipboard (optional parameter)" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "52;;?";
     for (input) |ch| p.next(ch);
@@ -1924,7 +1951,7 @@ test "OSC: get/set clipboard (optional parameter)" {
 test "OSC: get/set clipboard with allocator" {
     const testing = std.testing;
 
-    var p: Parser = .{ .alloc = testing.allocator };
+    var p: Parser = .initAlloc(testing.allocator);
     defer p.deinit();
 
     const input = "52;s;?";
@@ -1939,7 +1966,7 @@ test "OSC: get/set clipboard with allocator" {
 test "OSC: clear clipboard" {
     const testing = std.testing;
 
-    var p: Parser = .{ .alloc = testing.allocator };
+    var p: Parser = .init();
     defer p.deinit();
 
     const input = "52;;";
@@ -1954,7 +1981,7 @@ test "OSC: clear clipboard" {
 test "OSC: report pwd" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "7;file:///tmp/example";
     for (input) |ch| p.next(ch);
@@ -1967,7 +1994,7 @@ test "OSC: report pwd" {
 test "OSC: report pwd empty" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "7;";
     for (input) |ch| p.next(ch);
@@ -1979,7 +2006,7 @@ test "OSC: report pwd empty" {
 test "OSC: pointer cursor" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "22;pointer";
     for (input) |ch| p.next(ch);
@@ -1992,7 +2019,7 @@ test "OSC: pointer cursor" {
 test "OSC: longer than buffer" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "0;" ++ "a" ** (Parser.MAX_BUF + 2);
     for (input) |ch| p.next(ch);
@@ -2004,7 +2031,7 @@ test "OSC: longer than buffer" {
 test "OSC: OSC10: report foreground color" {
     const testing = std.testing;
 
-    var p: Parser = .{ .alloc = testing.allocator };
+    var p: Parser = .initAlloc(testing.allocator);
     defer p.deinit();
 
     const input = "10;?";
@@ -2032,7 +2059,7 @@ test "OSC: OSC10: report foreground color" {
 test "OSC: OSC10: set foreground color" {
     const testing = std.testing;
 
-    var p: Parser = .{ .alloc = testing.allocator };
+    var p: Parser = .initAlloc(testing.allocator);
     defer p.deinit();
 
     const input = "10;rgbi:0.0/0.5/1.0";
@@ -2062,7 +2089,7 @@ test "OSC: OSC10: set foreground color" {
 test "OSC: OSC11: report background color" {
     const testing = std.testing;
 
-    var p: Parser = .{ .alloc = testing.allocator };
+    var p: Parser = .initAlloc(testing.allocator);
     defer p.deinit();
 
     const input = "11;?";
@@ -2090,7 +2117,7 @@ test "OSC: OSC11: report background color" {
 test "OSC: OSC11: set background color" {
     const testing = std.testing;
 
-    var p: Parser = .{ .alloc = testing.allocator };
+    var p: Parser = .initAlloc(testing.allocator);
     defer p.deinit();
 
     const input = "11;rgb:f/ff/ffff";
@@ -2120,7 +2147,7 @@ test "OSC: OSC11: set background color" {
 test "OSC: OSC12: report cursor color" {
     const testing = std.testing;
 
-    var p: Parser = .{ .alloc = testing.allocator };
+    var p: Parser = .initAlloc(testing.allocator);
     defer p.deinit();
 
     const input = "12;?";
@@ -2148,7 +2175,7 @@ test "OSC: OSC12: report cursor color" {
 test "OSC: OSC12: set cursor color" {
     const testing = std.testing;
 
-    var p: Parser = .{ .alloc = testing.allocator };
+    var p: Parser = .initAlloc(testing.allocator);
     defer p.deinit();
 
     const input = "12;rgb:f/ff/ffff";
@@ -2178,7 +2205,7 @@ test "OSC: OSC12: set cursor color" {
 test "OSC: OSC4: get palette color 1" {
     const testing = std.testing;
 
-    var p: Parser = .{ .alloc = testing.allocator };
+    var p: Parser = .initAlloc(testing.allocator);
     defer p.deinit();
 
     const input = "4;1;?";
@@ -2204,7 +2231,7 @@ test "OSC: OSC4: get palette color 1" {
 test "OSC: OSC4: get palette color 2" {
     const testing = std.testing;
 
-    var p: Parser = .{ .alloc = testing.allocator };
+    var p: Parser = .initAlloc(testing.allocator);
     defer p.deinit();
 
     const input = "4;1;?;2;?";
@@ -2238,7 +2265,7 @@ test "OSC: OSC4: get palette color 2" {
 test "OSC: OSC4: set palette color 1" {
     const testing = std.testing;
 
-    var p: Parser = .{ .alloc = testing.allocator };
+    var p: Parser = .initAlloc(testing.allocator);
     defer p.deinit();
 
     const input = "4;17;rgb:aa/bb/cc";
@@ -2267,7 +2294,7 @@ test "OSC: OSC4: set palette color 1" {
 test "OSC: OSC4: set palette color 2" {
     const testing = std.testing;
 
-    var p: Parser = .{ .alloc = testing.allocator };
+    var p: Parser = .initAlloc(testing.allocator);
     defer p.deinit();
 
     const input = "4;17;rgb:aa/bb/cc;1;rgb:00/11/22";
@@ -2308,7 +2335,7 @@ test "OSC: OSC4: set palette color 2" {
 test "OSC: OSC4: get with invalid index 1" {
     const testing = std.testing;
 
-    var p: Parser = .{ .alloc = testing.allocator };
+    var p: Parser = .initAlloc(testing.allocator);
     defer p.deinit();
 
     const input = "4;1111;?;1;?";
@@ -2333,7 +2360,7 @@ test "OSC: OSC4: get with invalid index 1" {
 test "OSC: OSC4: get with invalid index 2" {
     const testing = std.testing;
 
-    var p: Parser = .{ .alloc = testing.allocator };
+    var p: Parser = .initAlloc(testing.allocator);
     defer p.deinit();
 
     const input = "4;5;?;1111;?;1;?";
@@ -2367,7 +2394,7 @@ test "OSC: OSC4: get with invalid index 2" {
 test "OSC: OSC4: multiple get 8a" {
     const testing = std.testing;
 
-    var p: Parser = .{ .alloc = testing.allocator };
+    var p: Parser = .initAlloc(testing.allocator);
     defer p.deinit();
 
     const input = "4;0;?;1;?;2;?;3;?;4;?;5;?;6;?;7;?";
@@ -2449,7 +2476,7 @@ test "OSC: OSC4: multiple get 8a" {
 test "OSC: OSC4: multiple get 8b" {
     const testing = std.testing;
 
-    var p: Parser = .{ .alloc = testing.allocator };
+    var p: Parser = .initAlloc(testing.allocator);
     defer p.deinit();
 
     const input = "4;8;?;9;?;10;?;11;?;12;?;13;?;14;?;15;?";
@@ -2530,7 +2557,7 @@ test "OSC: OSC4: multiple get 8b" {
 test "OSC: OSC4: set with invalid index" {
     const testing = std.testing;
 
-    var p: Parser = .{ .alloc = testing.allocator };
+    var p: Parser = .initAlloc(testing.allocator);
     defer p.deinit();
 
     const input = "4;256;#ffffff;1;#aabbcc";
@@ -2559,7 +2586,7 @@ test "OSC: OSC4: set with invalid index" {
 test "OSC: OSC4: mix get/set palette color" {
     const testing = std.testing;
 
-    var p: Parser = .{ .alloc = testing.allocator };
+    var p: Parser = .initAlloc(testing.allocator);
     defer p.deinit();
 
     const input = "4;17;rgb:aa/bb/cc;254;?";
@@ -2596,7 +2623,7 @@ test "OSC: OSC4: mix get/set palette color" {
 test "OSC: OSC4: incomplete color/spec 1" {
     const testing = std.testing;
 
-    var p: Parser = .{ .alloc = testing.allocator };
+    var p: Parser = .initAlloc(testing.allocator);
     defer p.deinit();
 
     const input = "4;17";
@@ -2613,7 +2640,7 @@ test "OSC: OSC4: incomplete color/spec 1" {
 test "OSC: OSC4: incomplete color/spec 2" {
     const testing = std.testing;
 
-    var p: Parser = .{ .alloc = testing.allocator };
+    var p: Parser = .initAlloc(testing.allocator);
     defer p.deinit();
 
     const input = "4;17;?;42";
@@ -2638,7 +2665,7 @@ test "OSC: OSC4: incomplete color/spec 2" {
 test "OSC: OSC104: reset palette color 1" {
     const testing = std.testing;
 
-    var p: Parser = .{ .alloc = testing.allocator };
+    var p: Parser = .initAlloc(testing.allocator);
     defer p.deinit();
 
     const input = "104;17";
@@ -2663,7 +2690,7 @@ test "OSC: OSC104: reset palette color 1" {
 test "OSC: OSC104: reset palette color 2" {
     const testing = std.testing;
 
-    var p: Parser = .{ .alloc = testing.allocator };
+    var p: Parser = .initAlloc(testing.allocator);
     defer p.deinit();
 
     const input = "104;17;111";
@@ -2696,7 +2723,7 @@ test "OSC: OSC104: reset palette color 2" {
 test "OSC: OSC104: invalid palette index" {
     const testing = std.testing;
 
-    var p: Parser = .{ .alloc = testing.allocator };
+    var p: Parser = .initAlloc(testing.allocator);
     defer p.deinit();
 
     const input = "104;ffff;111";
@@ -2721,7 +2748,7 @@ test "OSC: OSC104: invalid palette index" {
 test "OSC: OSC104: empty palette index" {
     const testing = std.testing;
 
-    var p: Parser = .{ .alloc = testing.allocator };
+    var p: Parser = .initAlloc(testing.allocator);
     defer p.deinit();
 
     const input = "104;;111";
@@ -2746,7 +2773,7 @@ test "OSC: OSC104: empty palette index" {
 test "OSC: conemu sleep" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "9;1;420";
     for (input) |ch| p.next(ch);
@@ -2760,7 +2787,7 @@ test "OSC: conemu sleep" {
 test "OSC: conemu sleep with no value default to 100ms" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "9;1;";
     for (input) |ch| p.next(ch);
@@ -2774,7 +2801,7 @@ test "OSC: conemu sleep with no value default to 100ms" {
 test "OSC: conemu sleep cannot exceed 10000ms" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "9;1;12345";
     for (input) |ch| p.next(ch);
@@ -2788,7 +2815,7 @@ test "OSC: conemu sleep cannot exceed 10000ms" {
 test "OSC: conemu sleep invalid input" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "9;1;foo";
     for (input) |ch| p.next(ch);
@@ -2802,7 +2829,7 @@ test "OSC: conemu sleep invalid input" {
 test "OSC: show desktop notification" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "9;Hello world";
     for (input) |ch| p.next(ch);
@@ -2816,7 +2843,7 @@ test "OSC: show desktop notification" {
 test "OSC: show desktop notification with title" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "777;notify;Title;Body";
     for (input) |ch| p.next(ch);
@@ -2830,7 +2857,7 @@ test "OSC: show desktop notification with title" {
 test "OSC: conemu message box" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "9;2;hello world";
     for (input) |ch| p.next(ch);
@@ -2843,7 +2870,7 @@ test "OSC: conemu message box" {
 test "OSC: conemu message box invalid input" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "9;2";
     for (input) |ch| p.next(ch);
@@ -2855,7 +2882,7 @@ test "OSC: conemu message box invalid input" {
 test "OSC: conemu message box empty message" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "9;2;";
     for (input) |ch| p.next(ch);
@@ -2868,7 +2895,7 @@ test "OSC: conemu message box empty message" {
 test "OSC: conemu message box spaces only message" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "9;2;   ";
     for (input) |ch| p.next(ch);
@@ -2881,7 +2908,7 @@ test "OSC: conemu message box spaces only message" {
 test "OSC: conemu change tab title" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "9;3;foo bar";
     for (input) |ch| p.next(ch);
@@ -2894,7 +2921,7 @@ test "OSC: conemu change tab title" {
 test "OSC: conemu change tab reset title" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "9;3;";
     for (input) |ch| p.next(ch);
@@ -2908,7 +2935,7 @@ test "OSC: conemu change tab reset title" {
 test "OSC: conemu change tab spaces only title" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "9;3;   ";
     for (input) |ch| p.next(ch);
@@ -2922,7 +2949,7 @@ test "OSC: conemu change tab spaces only title" {
 test "OSC: conemu change tab invalid input" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "9;3";
     for (input) |ch| p.next(ch);
@@ -2934,7 +2961,7 @@ test "OSC: conemu change tab invalid input" {
 test "OSC: OSC9 progress set" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "9;4;1;100";
     for (input) |ch| p.next(ch);
@@ -2948,7 +2975,7 @@ test "OSC: OSC9 progress set" {
 test "OSC: OSC9 progress set overflow" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "9;4;1;900";
     for (input) |ch| p.next(ch);
@@ -2962,7 +2989,7 @@ test "OSC: OSC9 progress set overflow" {
 test "OSC: OSC9 progress set single digit" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "9;4;1;9";
     for (input) |ch| p.next(ch);
@@ -2976,7 +3003,7 @@ test "OSC: OSC9 progress set single digit" {
 test "OSC: OSC9 progress set double digit" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "9;4;1;94";
     for (input) |ch| p.next(ch);
@@ -2990,7 +3017,7 @@ test "OSC: OSC9 progress set double digit" {
 test "OSC: OSC9 progress set extra semicolon ignored" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "9;4;1;100";
     for (input) |ch| p.next(ch);
@@ -3004,7 +3031,7 @@ test "OSC: OSC9 progress set extra semicolon ignored" {
 test "OSC: OSC9 progress remove with no progress" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "9;4;0;";
     for (input) |ch| p.next(ch);
@@ -3018,7 +3045,7 @@ test "OSC: OSC9 progress remove with no progress" {
 test "OSC: OSC9 progress remove with double semicolon" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "9;4;0;;";
     for (input) |ch| p.next(ch);
@@ -3032,7 +3059,7 @@ test "OSC: OSC9 progress remove with double semicolon" {
 test "OSC: OSC9 progress remove ignores progress" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "9;4;0;100";
     for (input) |ch| p.next(ch);
@@ -3046,7 +3073,7 @@ test "OSC: OSC9 progress remove ignores progress" {
 test "OSC: OSC9 progress remove extra semicolon" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "9;4;0;100;";
     for (input) |ch| p.next(ch);
@@ -3059,7 +3086,7 @@ test "OSC: OSC9 progress remove extra semicolon" {
 test "OSC: OSC9 progress error" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "9;4;2";
     for (input) |ch| p.next(ch);
@@ -3073,7 +3100,7 @@ test "OSC: OSC9 progress error" {
 test "OSC: OSC9 progress error with progress" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "9;4;2;100";
     for (input) |ch| p.next(ch);
@@ -3087,7 +3114,7 @@ test "OSC: OSC9 progress error with progress" {
 test "OSC: OSC9 progress pause" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "9;4;4";
     for (input) |ch| p.next(ch);
@@ -3101,7 +3128,7 @@ test "OSC: OSC9 progress pause" {
 test "OSC: OSC9 progress pause with progress" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "9;4;4;100";
     for (input) |ch| p.next(ch);
@@ -3115,7 +3142,7 @@ test "OSC: OSC9 progress pause with progress" {
 test "OSC: OSC9 conemu wait input" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "9;5";
     for (input) |ch| p.next(ch);
@@ -3127,7 +3154,7 @@ test "OSC: OSC9 conemu wait input" {
 test "OSC: OSC9 conemu wait ignores trailing characters" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "9;5;foo";
     for (input) |ch| p.next(ch);
@@ -3139,7 +3166,7 @@ test "OSC: OSC9 conemu wait ignores trailing characters" {
 test "OSC: empty param" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "4;;";
     for (input) |ch| p.next(ch);
@@ -3151,7 +3178,7 @@ test "OSC: empty param" {
 test "OSC: hyperlink" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "8;;http://example.com";
     for (input) |ch| p.next(ch);
@@ -3164,7 +3191,7 @@ test "OSC: hyperlink" {
 test "OSC: hyperlink with id set" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "8;id=foo;http://example.com";
     for (input) |ch| p.next(ch);
@@ -3178,7 +3205,7 @@ test "OSC: hyperlink with id set" {
 test "OSC: hyperlink with empty id" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "8;id=;http://example.com";
     for (input) |ch| p.next(ch);
@@ -3192,7 +3219,7 @@ test "OSC: hyperlink with empty id" {
 test "OSC: hyperlink with incomplete key" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "8;id;http://example.com";
     for (input) |ch| p.next(ch);
@@ -3206,7 +3233,7 @@ test "OSC: hyperlink with incomplete key" {
 test "OSC: hyperlink with empty key" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "8;=value;http://example.com";
     for (input) |ch| p.next(ch);
@@ -3220,7 +3247,7 @@ test "OSC: hyperlink with empty key" {
 test "OSC: hyperlink with empty key and id" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "8;=value:id=foo;http://example.com";
     for (input) |ch| p.next(ch);
@@ -3234,7 +3261,7 @@ test "OSC: hyperlink with empty key and id" {
 test "OSC: hyperlink with empty uri" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "8;id=foo;";
     for (input) |ch| p.next(ch);
@@ -3246,7 +3273,7 @@ test "OSC: hyperlink with empty uri" {
 test "OSC: hyperlink end" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
 
     const input = "8;;";
     for (input) |ch| p.next(ch);
@@ -3259,7 +3286,7 @@ test "OSC: kitty color protocol" {
     const testing = std.testing;
     const Kind = kitty.color.Kind;
 
-    var p: Parser = .{ .alloc = testing.allocator };
+    var p: Parser = .initAlloc(testing.allocator);
     defer p.deinit();
 
     const input = "21;foreground=?;background=rgb:f0/f8/ff;cursor=aliceblue;cursor_text;visual_bell=;selection_foreground=#xxxyyzz;selection_background=?;selection_background=#aabbcc;2=?;3=rgbi:1.0/1.0/1.0";
@@ -3330,7 +3357,7 @@ test "OSC: kitty color protocol" {
 test "OSC: kitty color protocol without allocator" {
     const testing = std.testing;
 
-    var p: Parser = .{};
+    var p: Parser = .init();
     defer p.deinit();
 
     const input = "21;foreground=?";
@@ -3341,7 +3368,7 @@ test "OSC: kitty color protocol without allocator" {
 test "OSC: kitty color protocol double reset" {
     const testing = std.testing;
 
-    var p: Parser = .{ .alloc = testing.allocator };
+    var p: Parser = .initAlloc(testing.allocator);
     defer p.deinit();
 
     const input = "21;foreground=?;background=rgb:f0/f8/ff;cursor=aliceblue;cursor_text;visual_bell=;selection_foreground=#xxxyyzz;selection_background=?;selection_background=#aabbcc;2=?;3=rgbi:1.0/1.0/1.0";
@@ -3357,7 +3384,7 @@ test "OSC: kitty color protocol double reset" {
 test "OSC: kitty color protocol reset after invalid" {
     const testing = std.testing;
 
-    var p: Parser = .{ .alloc = testing.allocator };
+    var p: Parser = .initAlloc(testing.allocator);
     defer p.deinit();
 
     const input = "21;foreground=?;background=rgb:f0/f8/ff;cursor=aliceblue;cursor_text;visual_bell=;selection_foreground=#xxxyyzz;selection_background=?;selection_background=#aabbcc;2=?;3=rgbi:1.0/1.0/1.0";
@@ -3378,7 +3405,7 @@ test "OSC: kitty color protocol reset after invalid" {
 test "OSC: kitty color protocol no key" {
     const testing = std.testing;
 
-    var p: Parser = .{ .alloc = testing.allocator };
+    var p: Parser = .initAlloc(testing.allocator);
     defer p.deinit();
 
     const input = "21;";

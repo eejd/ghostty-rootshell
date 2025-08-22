@@ -301,24 +301,6 @@ pub const Window = extern struct {
         // Initialize our actions
         self.initActionMap();
 
-        // We need to setup resize notifications on our surface
-        if (self.as(gtk.Native).getSurface()) |gdk_surface| {
-            _ = gobject.Object.signals.notify.connect(
-                gdk_surface,
-                *Self,
-                propGdkSurfaceWidth,
-                self,
-                .{ .detail = "width" },
-            );
-            _ = gobject.Object.signals.notify.connect(
-                gdk_surface,
-                *Self,
-                propGdkSurfaceHeight,
-                self,
-                .{ .detail = "height" },
-            );
-        }
-
         // Start states based on config.
         if (priv.config) |config_obj| {
             const config = config_obj.get();
@@ -810,9 +792,18 @@ pub const Window = extern struct {
 
     /// Toggle the window decorations for this window.
     pub fn toggleWindowDecorations(self: *Self) void {
-        self.setWindowDecoration(switch (self.getWindowDecoration()) {
-            // Null will force using the central config
-            .none => null,
+        const priv = self.private();
+
+        if (priv.window_decoration) |_| {
+            // Unset any previously set window decoration settings
+            self.setWindowDecoration(null);
+            return;
+        }
+
+        const config = if (priv.config) |v| v.get() else return;
+        self.setWindowDecoration(switch (config.@"window-decoration") {
+            // Use auto when the decoration is initially none
+            .none => .auto,
 
             // Anything non-none to none
             .auto, .client, .server => .none,
@@ -1152,6 +1143,25 @@ pub const Window = extern struct {
         } else |err| {
             log.warn("failed to initialize window protocol error={}", .{err});
             return;
+        }
+
+        // We need to setup resize notifications on our surface,
+        // which is only available after the window had been realized.
+        if (self.as(gtk.Native).getSurface()) |gdk_surface| {
+            _ = gobject.Object.signals.notify.connect(
+                gdk_surface,
+                *Self,
+                propGdkSurfaceWidth,
+                self,
+                .{ .detail = "width" },
+            );
+            _ = gobject.Object.signals.notify.connect(
+                gdk_surface,
+                *Self,
+                propGdkSurfaceHeight,
+                self,
+                .{ .detail = "height" },
+            );
         }
 
         // When we are realized we always setup our appearance since this

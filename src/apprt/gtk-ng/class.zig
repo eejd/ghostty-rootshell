@@ -1,6 +1,7 @@
 //! This files contains all the GObject classes for the GTK apprt
 //! along with helpers to work with them.
 
+const std = @import("std");
 const glib = @import("glib");
 const gobject = @import("gobject");
 const gtk = @import("gtk");
@@ -52,6 +53,111 @@ pub fn Common(
                 );
             }
         }).private else {};
+
+        /// Get the class for the object.
+        ///
+        /// This _seems_ ugly and unsafe but this is how GObject
+        /// works under the hood. From the [GObject Type System
+        /// Concepts](https://docs.gtk.org/gobject/concepts.html) documentation:
+        ///
+        ///     Every object must define two structures: its class structure
+        ///     and its instance structure. All class structures must contain
+        ///     as first member a GTypeClass structure. All instance structures
+        ///     must contain as first member a GTypeInstance structure.
+        ///     …
+        ///     These constraints allow the type system to make sure that
+        ///     every object instance (identified by a pointer to the object’s
+        ///     instance structure) contains in its first bytes a pointer to the
+        ///     object’s class structure.
+        ///     …
+        ///     The C standard mandates that the first field of a C structure is
+        ///     stored starting in the first byte of the buffer used to hold the
+        ///     structure’s fields in memory. This means that the first field of
+        ///     an instance of an object B is A’s first field which in turn is
+        ///     GTypeInstance‘s first field which in turn is g_class, a pointer
+        ///     to B’s class structure.
+        ///
+        /// This means that to access the class structure for an object you cast it
+        /// to `*gobject.TypeInstance` and then access the `f_g_class` field.
+        ///
+        /// https://gitlab.gnome.org/GNOME/glib/-/blob/2c08654b62d52a31c4e4d13d7d85e12b989e72be/gobject/gtype.h#L555-571
+        /// https://gitlab.gnome.org/GNOME/glib/-/blob/2c08654b62d52a31c4e4d13d7d85e12b989e72be/gobject/gtype.h#L2673
+        ///
+        pub fn getClass(self: *Self) ?*Self.Class {
+            const type_instance: *gobject.TypeInstance = @ptrCast(self);
+            return @ptrCast(type_instance.f_g_class orelse return null);
+        }
+
+        /// Define a virtual method. The `Self.Class` type must have a field
+        /// named `name` which is a function pointer in the following form:
+        ///
+        ///   ?*const fn (*Self) callconv(.c) void
+        ///
+        /// The virtual method may take additional parameters and specify
+        /// a non-void return type. The parameters and return type must be
+        /// valid for the C calling convention.
+        pub fn defineVirtualMethod(
+            comptime name: [:0]const u8,
+        ) type {
+            return struct {
+                pub fn call(
+                    class: anytype,
+                    object: *ClassInstance(@TypeOf(class)),
+                    params: anytype,
+                ) (fn_info.return_type orelse void) {
+                    const func = @field(
+                        gobject.ext.as(Self.Class, class),
+                        name,
+                    ).?;
+                    @call(.auto, func, .{
+                        gobject.ext.as(Self, object),
+                    } ++ params);
+                }
+
+                pub fn implement(
+                    class: anytype,
+                    implementation: *const ImplementFunc(@TypeOf(class)),
+                ) void {
+                    @field(gobject.ext.as(
+                        Self.Class,
+                        class,
+                    ), name) = @ptrCast(implementation);
+                }
+
+                /// The type info of the virtual method.
+                const fn_info = fn_info: {
+                    // This is broken down like this so its slightly more
+                    // readable. We expect a field named "name" on the Class
+                    // with the rough type of `?*const fn` and we need the
+                    // function info.
+                    const Field = @FieldType(Self.Class, name);
+                    const opt = @typeInfo(Field).optional;
+                    const ptr = @typeInfo(opt.child).pointer;
+                    break :fn_info @typeInfo(ptr.child).@"fn";
+                };
+
+                /// The instance type for a class.
+                fn ClassInstance(comptime T: type) type {
+                    return @typeInfo(T).pointer.child.Instance;
+                }
+
+                /// The function type for implementations. This is the same type
+                /// as the virtual method but the self parameter points to the
+                /// target instead of the original class.
+                fn ImplementFunc(comptime T: type) type {
+                    var params: [fn_info.params.len]std.builtin.Type.Fn.Param = undefined;
+                    @memcpy(&params, fn_info.params);
+                    params[0].type = *ClassInstance(T);
+                    return @Type(.{ .@"fn" = .{
+                        .calling_convention = fn_info.calling_convention,
+                        .is_generic = fn_info.is_generic,
+                        .is_var_args = fn_info.is_var_args,
+                        .return_type = fn_info.return_type,
+                        .params = &params,
+                    } });
+                }
+            };
+        }
 
         /// A helper that creates a property that reads and writes a
         /// private field with only shallow copies. This is good for primitives

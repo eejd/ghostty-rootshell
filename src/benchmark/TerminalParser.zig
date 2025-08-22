@@ -77,7 +77,7 @@ fn step(ptr: *anyopaque) Benchmark.Error!void {
     const f = self.data_f orelse return;
     var r = std.io.bufferedReader(f.reader());
 
-    var p: terminalpkg.Parser = .{};
+    var p: terminalpkg.Parser = .init();
 
     var buf: [4096]u8 = undefined;
     while (true) {

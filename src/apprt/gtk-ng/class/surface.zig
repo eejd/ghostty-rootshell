@@ -554,13 +554,21 @@ pub const Surface = extern struct {
         config_: ?*Config,
         bell_ringing_: c_int,
     ) callconv(.c) c_int {
+        const bell_ringing = bell_ringing_ != 0;
+
+        // If the bell isn't ringing exit early because when the surface is
+        // first created there's a race between this code being run and the
+        // config being set on the surface. That way we don't overwhelm people
+        // with the warning that we issue if the config isn't set and overwhelm
+        // ourselves with large numbers of bug reports.
+        if (!bell_ringing) return @intFromBool(false);
+
         const config = if (config_) |v| v.get() else {
-            log.warn("config unavailable for computing whether border should be shown , likely bug", .{});
+            log.warn("config unavailable for computing whether border should be shown, likely bug", .{});
             return @intFromBool(false);
         };
 
-        const bell_ringing = bell_ringing_ != 0;
-        return @intFromBool(config.@"bell-features".border and bell_ringing);
+        return @intFromBool(config.@"bell-features".border);
     }
 
     pub fn toggleFullscreen(self: *Self) void {
@@ -830,7 +838,7 @@ pub const Surface = extern struct {
                 // such as single quote on a US international keyboard layout.
                 if (priv.im_composing) return true;
 
-                // If we were composing and now we're not it means that we committed
+                // If we were composing and now we're not, it means that we committed
                 // the text. We also don't want to encode a key event for this.
                 // Example: enable Japanese input method, press "konn" and then
                 // press enter. The final enter should not be encoded and "konn"
@@ -870,9 +878,24 @@ pub const Surface = extern struct {
 
         // We want to get the physical unmapped key to process physical keybinds.
         // (These are keybinds explicitly marked as requesting physical mapping).
-        const physical_key = keycode: for (input.keycodes.entries) |entry| {
-            if (entry.native == keycode) break :keycode entry.key;
-        } else .unidentified;
+        const physical_key = keycode: {
+            const w3c_key: input.Key = w3c: for (input.keycodes.entries) |entry| {
+                if (entry.native == keycode) break :w3c entry.key;
+            } else .unidentified;
+
+            // If the key should be remappable, then consult the pre-remapped
+            // XKB keyval/keysym to get the (possibly) remapped key.
+            //
+            // See the docs for `shouldBeRemappable` for why we even have to
+            // do this in the first place.
+            if (w3c_key.shouldBeRemappable()) {
+                if (gtk_key.keyFromKeyval(keyval)) |remapped|
+                    break :keycode remapped;
+            }
+
+            // Return the original physical key
+            break :keycode w3c_key;
+        };
 
         // Get our modifier for the event
         const mods: input.Mods = gtk_key.eventMods(

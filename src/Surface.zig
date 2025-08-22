@@ -247,6 +247,7 @@ const DerivedConfig = struct {
     clipboard_paste_protection: bool,
     clipboard_paste_bracketed_safe: bool,
     copy_on_select: configpkg.CopyOnSelect,
+    right_click_action: configpkg.RightClickAction,
     confirm_close_surface: configpkg.ConfirmCloseSurface,
     cursor_click_to_move: bool,
     desktop_notifications: bool,
@@ -314,6 +315,7 @@ const DerivedConfig = struct {
             .clipboard_paste_protection = config.@"clipboard-paste-protection",
             .clipboard_paste_bracketed_safe = config.@"clipboard-paste-bracketed-safe",
             .copy_on_select = config.@"copy-on-select",
+            .right_click_action = config.@"right-click-action",
             .confirm_close_surface = config.@"confirm-close-surface",
             .cursor_click_to_move = config.@"cursor-click-to-move",
             .desktop_notifications = config.@"desktop-notifications",
@@ -1529,11 +1531,6 @@ pub const Text = struct {
 
     /// The viewport information about this text, if it is visible in
     /// the viewport.
-    ///
-    /// NOTE(mitchellh): This will only be non-null currently if the entirety
-    /// of the selection is contained within the viewport. We don't have a
-    /// use case currently for partial bounds but we should support this
-    /// eventually.
     viewport: ?Viewport = null,
 
     pub const Viewport = struct {
@@ -1544,6 +1541,13 @@ pub const Text = struct {
         /// The linear offset of the start of the selection and the length.
         /// This is "linear" in the sense that it is the offset in the
         /// flattened viewport as a single array of text.
+        ///
+        /// Note: these values are currently wrong if there is a partially
+        /// visible selection in the viewport (i.e. the top-left or
+        /// bottom-right of the selection is outside the viewport). But the
+        /// apprt usecase we have right now doesn't require these to be
+        /// correct so... let's fix this later. The wrong values will always
+        /// be within the text bounds so we aren't risking an overflow.
         offset_start: u32,
         offset_len: u32,
     };
@@ -1585,17 +1589,57 @@ pub fn dumpTextLocked(
 
     // Calculate our viewport info if we can.
     const vp: ?Text.Viewport = viewport: {
-        // If our tl or br is not in the viewport then we don't
-        // have a viewport. One day we should extend this to support
-        // partial selections that are in the viewport.
-        const tl_pt = self.io.terminal.screen.pages.pointFromPin(
+        // If our bottom right pin is before the viewport, then we can't
+        // possibly have this text be within the viewport.
+        const vp_tl_pin = self.io.terminal.screen.pages.getTopLeft(.viewport);
+        const br_pin = sel.bottomRight(&self.io.terminal.screen);
+        if (br_pin.before(vp_tl_pin)) break :viewport null;
+
+        // If our top-left pin is after the viewport, then we can't possibly
+        // have this text be within the viewport.
+        const vp_br_pin = self.io.terminal.screen.pages.getBottomRight(.viewport) orelse {
+            // I don't think this is possible but I don't want to crash on
+            // that assertion so let's just break out...
+            log.warn("viewport bottom-right pin not found, bug?", .{});
+            break :viewport null;
+        };
+        const tl_pin = sel.topLeft(&self.io.terminal.screen);
+        if (vp_br_pin.before(tl_pin)) break :viewport null;
+
+        // We established that our top-left somewhere before the viewport
+        // bottom-right and that our bottom-right is somewhere after
+        // the top-left. This means that at least some portion of our
+        // selection is within the viewport.
+
+        // Our top-left point. If it doesn't exist in the viewport it must
+        // be before and we can return (0,0).
+        const tl_pt: terminal.Point = self.io.terminal.screen.pages.pointFromPin(
             .viewport,
-            sel.topLeft(&self.io.terminal.screen),
-        ) orelse break :viewport null;
+            tl_pin,
+        ) orelse tl: {
+            if (comptime std.debug.runtime_safety) {
+                assert(tl_pin.before(vp_tl_pin));
+            }
+
+            break :tl .{ .viewport = .{} };
+        };
+
+        // Our bottom-right point. If it doesn't exist in the viewport
+        // it must be the bottom-right of the viewport.
         const br_pt = self.io.terminal.screen.pages.pointFromPin(
             .viewport,
-            sel.bottomRight(&self.io.terminal.screen),
-        ) orelse break :viewport null;
+            br_pin,
+        ) orelse br: {
+            if (comptime std.debug.runtime_safety) {
+                assert(vp_br_pin.before(br_pin));
+            }
+
+            break :br self.io.terminal.screen.pages.pointFromPin(
+                .viewport,
+                vp_br_pin,
+            ).?;
+        };
+
         const tl_coord = tl_pt.coord();
         const br_coord = br_pt.coord();
 
@@ -1664,73 +1708,6 @@ pub fn selectionString(self: *Surface, alloc: Allocator) !?[:0]const u8 {
         .sel = sel,
         .trim = false,
     });
-}
-
-/// Return the apprt selection metadata used by apprt's for implementing
-/// things like contextual information on right click and so on.
-///
-/// This only returns non-null if the selection is fully contained within
-/// the viewport. The use case for this function at the time of authoring
-/// it is for apprt's to implement right-click contextual menus and
-/// those only make sense for selections fully contained within the
-/// viewport. We don't handle the case where you right click a word-wrapped
-/// word at the end of the viewport yet.
-pub fn selectionInfo(self: *const Surface) ?apprt.Selection {
-    self.renderer_state.mutex.lock();
-    defer self.renderer_state.mutex.unlock();
-    const sel = self.io.terminal.screen.selection orelse return null;
-
-    // Get the TL/BR pins for the selection and convert to viewport.
-    const tl = sel.topLeft(&self.io.terminal.screen);
-    const br = sel.bottomRight(&self.io.terminal.screen);
-    const tl_pt = self.io.terminal.screen.pages.pointFromPin(.viewport, tl) orelse return null;
-    const br_pt = self.io.terminal.screen.pages.pointFromPin(.viewport, br) orelse return null;
-    const tl_coord = tl_pt.coord();
-    const br_coord = br_pt.coord();
-
-    // Utilize viewport sizing to convert to offsets
-    const start = tl_coord.y * self.io.terminal.screen.pages.cols + tl_coord.x;
-    const end = br_coord.y * self.io.terminal.screen.pages.cols + br_coord.x;
-
-    // Our sizes are all scaled so we need to send the unscaled values back.
-    const content_scale = self.rt_surface.getContentScale() catch .{ .x = 1, .y = 1 };
-
-    const x: f64 = x: {
-        // Simple x * cell width gives the left
-        var x: f64 = @floatFromInt(tl_coord.x * self.size.cell.width);
-
-        // Add padding
-        x += @floatFromInt(self.size.padding.left);
-
-        // Scale
-        x /= content_scale.x;
-
-        break :x x;
-    };
-
-    const y: f64 = y: {
-        // Simple y * cell height gives the top
-        var y: f64 = @floatFromInt(tl_coord.y * self.size.cell.height);
-
-        // We want the text baseline
-        y += @floatFromInt(self.size.cell.height);
-        y -= @floatFromInt(self.font_metrics.cell_baseline);
-
-        // Add padding
-        y += @floatFromInt(self.size.padding.top);
-
-        // Scale
-        y /= content_scale.y;
-
-        break :y y;
-    };
-
-    return .{
-        .tl_x_px = x,
-        .tl_y_px = y,
-        .offset_start = start,
-        .offset_len = end - start,
-    };
 }
 
 /// Returns the pwd of the terminal, if any. This is always copied because
@@ -1833,6 +1810,32 @@ fn clipboardWrite(self: *const Surface, data: []const u8, loc: apprt.Clipboard) 
     };
 }
 
+fn copySelectionToClipboards(
+    self: *Surface,
+    sel: terminal.Selection,
+    clipboards: []const apprt.Clipboard,
+) void {
+    const buf = self.io.terminal.screen.selectionString(self.alloc, .{
+        .sel = sel,
+        .trim = self.config.clipboard_trim_trailing_spaces,
+    }) catch |err| {
+        log.err("error reading selection string err={}", .{err});
+        return;
+    };
+    defer self.alloc.free(buf);
+
+    for (clipboards) |clipboard| self.rt_surface.setClipboardString(
+        buf,
+        clipboard,
+        false,
+    ) catch |err| {
+        log.err(
+            "error setting clipboard string clipboard={} err={}",
+            .{ clipboard, err },
+        );
+    };
+}
+
 /// Set the selection contents.
 ///
 /// This must be called with the renderer mutex held.
@@ -1850,33 +1853,12 @@ fn setSelection(self: *Surface, sel_: ?terminal.Selection) !void {
     const sel = sel_ orelse return;
     if (prev_) |prev| if (sel.eql(prev)) return;
 
-    const buf = self.io.terminal.screen.selectionString(self.alloc, .{
-        .sel = sel,
-        .trim = self.config.clipboard_trim_trailing_spaces,
-    }) catch |err| {
-        log.err("error reading selection string err={}", .{err});
-        return;
-    };
-    defer self.alloc.free(buf);
-
-    // Set the clipboard. This is not super DRY but it is clear what
-    // we're doing for each setting without being clever.
     switch (self.config.copy_on_select) {
         .false => unreachable, // handled above with an early exit
 
         // Both standard and selection clipboards are set.
         .clipboard => {
-            const clipboards: []const apprt.Clipboard = &.{ .standard, .selection };
-            for (clipboards) |clipboard| self.rt_surface.setClipboardString(
-                buf,
-                clipboard,
-                false,
-            ) catch |err| {
-                log.err(
-                    "error setting clipboard string clipboard={} err={}",
-                    .{ clipboard, err },
-                );
-            };
+            self.copySelectionToClipboards(sel, &.{ .standard, .selection });
         },
 
         // The selection clipboard is set if supported, otherwise the standard.
@@ -1885,17 +1867,7 @@ fn setSelection(self: *Surface, sel_: ?terminal.Selection) !void {
                 .selection
             else
                 .standard;
-
-            self.rt_surface.setClipboardString(
-                buf,
-                clipboard,
-                false,
-            ) catch |err| {
-                log.err(
-                    "error setting clipboard string clipboard={} err={}",
-                    .{ clipboard, err },
-                );
-            };
+            self.copySelectionToClipboards(sel, &.{clipboard});
         },
     }
 }
@@ -3582,18 +3554,49 @@ pub fn mouseButtonCallback(
             break :pin pin;
         };
 
-        // If we already have a selection and the selection contains
-        // where we clicked then we don't want to modify the selection.
-        if (self.io.terminal.screen.selection) |prev_sel| {
-            if (prev_sel.contains(screen, pin)) break :sel;
+        switch (self.config.right_click_action) {
+            .ignore => {
+                // Return early to skip clearing the selection.
+                try self.queueRender();
+                return true;
+            },
+            .copy => {
+                if (self.io.terminal.screen.selection) |sel| {
+                    self.copySelectionToClipboards(sel, &.{.standard});
+                }
+            },
+            .@"copy-or-paste" => {
+                if (self.io.terminal.screen.selection) |sel| {
+                    self.copySelectionToClipboards(sel, &.{.standard});
+                } else {
+                    try self.startClipboardRequest(.standard, .paste);
+                }
+            },
+            .paste => {
+                try self.startClipboardRequest(.standard, .paste);
+            },
+            .@"context-menu" => {
+                // If we already have a selection and the selection contains
+                // where we clicked then we don't want to modify the selection.
+                if (self.io.terminal.screen.selection) |prev_sel| {
+                    if (prev_sel.contains(screen, pin)) break :sel;
 
-            // The selection doesn't contain our pin, so we create a new
-            // word selection where we clicked.
+                    // The selection doesn't contain our pin, so we create a new
+                    // word selection where we clicked.
+                }
+
+                const sel = screen.selectWord(pin) orelse break :sel;
+                try self.setSelection(sel);
+                try self.queueRender();
+                return false;
+            },
         }
 
-        const sel = screen.selectWord(pin) orelse break :sel;
-        try self.setSelection(sel);
+        try self.setSelection(null);
         try self.queueRender();
+
+        // Consume the event such that the context menu is not displayed.
+        return true;
     }
 
     return false;
