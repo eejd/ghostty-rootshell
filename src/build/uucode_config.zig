@@ -15,6 +15,8 @@ pub const tables = [_]config.Table{
             // Alternative:
             // d.field("case_folding_simple"),
             d.field("grapheme_break"),
+            d.field("is_emoji_modifier"),
+            d.field("is_emoji_modifier_base"),
         },
     },
 };

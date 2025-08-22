@@ -81,9 +81,10 @@ pub const GraphemeBoundaryClass = enum(u4) {
     /// The use case for this is only in generating lookup tables.
     pub fn init(cp: u21) GraphemeBoundaryClass {
         if (cp < uucode.code_point_range_end) {
+            if (uucode.get(.is_emoji_modifier, cp)) return .emoji_modifier;
+            if (uucode.get(.is_emoji_modifier_base, cp)) return .extended_pictographic_base;
+
             return switch (uucode.get(.grapheme_break, cp)) {
-                .emoji_modifier_base => .extended_pictographic_base,
-                .emoji_modifier => .emoji_modifier,
                 .extended_pictographic => .extended_pictographic,
                 .l => .L,
                 .v => .V,
@@ -91,15 +92,24 @@ pub const GraphemeBoundaryClass = enum(u4) {
                 .lv => .LV,
                 .lvt => .LVT,
                 .prepend => .prepend,
-                .extend => .extend,
                 .zwj => .zwj,
                 .spacing_mark => .spacing_mark,
                 .regional_indicator => .regional_indicator,
 
+                .zwnj,
+                .indic_conjunct_break_extend,
+                .indic_conjunct_break_linker,
+                => .extend,
+
                 // This is obviously not INVALID invalid, there is SOME grapheme
                 // boundary class for every codepoint. But we don't care about
                 // anything that doesn't fit into the above categories.
-                .other, .cr, .lf, .control => .invalid,
+                .other,
+                .indic_conjunct_break_consonant,
+                .cr,
+                .lf,
+                .control,
+                => .invalid,
             };
         } else {
             return .invalid;
