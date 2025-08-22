@@ -1689,3 +1689,35 @@ test "execCommand: direct command, error passwd" {
     try testing.expectEqualStrings(result[0], "foo");
     try testing.expectEqualStrings(result[1], "bar baz");
 }
+
+test "execCommand: direct command, config freed" {
+    if (comptime builtin.os.tag == .windows) return error.SkipZigTest;
+
+    const testing = std.testing;
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var command_arena = ArenaAllocator.init(alloc);
+    const command_alloc = command_arena.allocator();
+    const command = try (configpkg.Command{
+        .direct = &.{
+            "foo",
+            "bar baz",
+        },
+    }).clone(command_alloc);
+
+    const result = try execCommand(alloc, command, struct {
+        fn get(_: Allocator) !PasswdEntry {
+            // Failed passwd entry means we can't construct a macOS
+            // login command and falls back to POSIX behavior.
+            return error.Fail;
+        }
+    });
+
+    command_arena.deinit();
+
+    try testing.expectEqual(2, result.len);
+    try testing.expectEqualStrings(result[0], "foo");
+    try testing.expectEqualStrings(result[1], "bar baz");
+}
