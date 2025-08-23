@@ -25,8 +25,6 @@ pub fn init(b: *std.Build, cfg: *const Config) !SharedDeps {
         const uucode = b.dependency("uucode", .{
             .build_config_path = b.path("src/build/uucode_config.zig"),
         });
-        const uucode_x = b.dependency("uucode_x", .{});
-        @import("uucode_x").connectBuild(uucode_x, uucode);
 
         break :blk uucode.namedLazyPath("tables.zig");
     };
@@ -425,16 +423,9 @@ pub fn add(
         .target = target,
         .optimize = optimize,
         .@"tables.zig" = self.uucode_tables_zig,
+        .build_config_path = b.path("src/build/uucode_config.zig"),
     })) |dep| {
         step.root_module.addImport("uucode", dep.module("uucode"));
-    }
-    if (b.lazyDependency("uucode_x", .{
-        .target = target,
-        .optimize = optimize,
-    })) |dep| {
-        const mod = dep.module("uucode.x");
-        step.root_module.addImport("uucode.x", mod);
-        mod.addImport("root_module", step.root_module);
     }
     if (b.lazyDependency("zf", .{
         .target = target,
