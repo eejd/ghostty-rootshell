@@ -196,7 +196,12 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
 
         if let parent {
             if parent.styleMask.contains(.fullScreen) {
-                parent.toggleFullScreen(nil)
+                // If our previous window was fullscreen then we want our new window to
+                // be fullscreen. This behavior actually doesn't match the native tabbing
+                // behavior of macOS apps where new windows create tabs when in native
+                // fullscreen but this is how we've always done it. This matches iTerm2
+                // behavior.
+                c.toggleFullscreen(mode: .native)
             } else if ghostty.config.windowFullscreen {
                 switch (ghostty.config.windowFullscreenMode) {
                 case .native:
@@ -747,6 +752,9 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         alert.alertStyle = .warning
         alert.beginSheetModal(for: alertWindow, completionHandler: { response in
             if (response == .alertFirstButtonReturn) {
+                // This is important so that we avoid losing focus when Stage
+                // Manager is used (#8336)
+                alert.window.orderOut(nil)
                 closeAllWindowsImmediately()
             }
         })

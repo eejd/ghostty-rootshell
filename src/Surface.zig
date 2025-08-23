@@ -3555,26 +3555,7 @@ pub fn mouseButtonCallback(
         };
 
         switch (self.config.right_click_action) {
-            .ignore => {
-                // Return early to skip clearing the selection.
-                try self.queueRender();
-                return true;
-            },
-            .copy => {
-                if (self.io.terminal.screen.selection) |sel| {
-                    self.copySelectionToClipboards(sel, &.{.standard});
-                }
-            },
-            .@"copy-or-paste" => {
-                if (self.io.terminal.screen.selection) |sel| {
-                    self.copySelectionToClipboards(sel, &.{.standard});
-                } else {
-                    try self.startClipboardRequest(.standard, .paste);
-                }
-            },
-            .paste => {
-                try self.startClipboardRequest(.standard, .paste);
-            },
+            .ignore => {},
             .@"context-menu" => {
                 // If we already have a selection and the selection contains
                 // where we clicked then we don't want to modify the selection.
@@ -3588,12 +3569,45 @@ pub fn mouseButtonCallback(
                 const sel = screen.selectWord(pin) orelse break :sel;
                 try self.setSelection(sel);
                 try self.queueRender();
+
+                // Don't consume so that we show the context menu in apprt.
                 return false;
             },
-        }
+            .copy => {
+                if (self.io.terminal.screen.selection) |sel| {
+                    self.copySelectionToClipboards(sel, &.{.standard});
+                }
 
-        try self.setSelection(null);
-        try self.queueRender();
+                try self.setSelection(null);
+                try self.queueRender();
+            },
+            .@"copy-or-paste" => if (self.io.terminal.screen.selection) |sel| {
+                self.copySelectionToClipboards(sel, &.{.standard});
+                try self.setSelection(null);
+                try self.queueRender();
+            } else {
+                // Pasting can trigger a lock grab in complete clipboard
+                // request so we need to unlock.
+                self.renderer_state.mutex.unlock();
+                defer self.renderer_state.mutex.lock();
+                try self.startClipboardRequest(.standard, .paste);
+
+                // We don't need to clear selection because we didn't have
+                // one to begin with.
+            },
+            .paste => {
+                // Before we yield the lock, clear our selection if we have
+                // one.
+                try self.setSelection(null);
+                try self.queueRender();
+
+                // Pasting can trigger a lock grab in complete clipboard
+                // request so we need to unlock.
+                self.renderer_state.mutex.unlock();
+                defer self.renderer_state.mutex.lock();
+                try self.startClipboardRequest(.standard, .paste);
+            },
+        }
 
         // Consume the event such that the context menu is not displayed.
         return true;
@@ -4494,19 +4508,32 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
 
             const pos = try self.rt_surface.getCursorPos();
             if (try self.linkAtPos(pos)) |link_info| {
-                // Get the URL text from selection
-                const url_text = (self.io.terminal.screen.selectionString(self.alloc, .{
-                    .sel = link_info[1],
-                    .trim = self.config.clipboard_trim_trailing_spaces,
-                })) catch |err| {
-                    log.err("error reading url string err={}", .{err});
-                    return false;
+                const url_text = switch (link_info[0]) {
+                    .open => url_text: {
+                        // For regex links, get the text from selection
+                        break :url_text (self.io.terminal.screen.selectionString(self.alloc, .{
+                            .sel = link_info[1],
+                            .trim = self.config.clipboard_trim_trailing_spaces,
+                        })) catch |err| {
+                            log.err("error reading url string err={}", .{err});
+                            return false;
+                        };
+                    },
+
+                    ._open_osc8 => url_text: {
+                        // For OSC8 links, get the URI directly from hyperlink data
+                        const uri = self.osc8URI(link_info[1].start()) orelse {
+                            log.warn("failed to get URI for OSC8 hyperlink", .{});
+                            return false;
+                        };
+                        break :url_text try self.alloc.dupeZ(u8, uri);
+                    },
                 };
                 defer self.alloc.free(url_text);
 
                 self.rt_surface.setClipboardString(url_text, .standard, false) catch |err| {
                     log.err("error copying url to clipboard err={}", .{err});
-                    return true;
+                    return false;
                 };
 
                 return true;
