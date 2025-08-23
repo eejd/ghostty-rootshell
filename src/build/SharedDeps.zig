@@ -428,6 +428,14 @@ pub fn add(
     })) |dep| {
         step.root_module.addImport("uucode", dep.module("uucode"));
     }
+    if (b.lazyDependency("uucode_x", .{
+        .target = target,
+        .optimize = optimize,
+    })) |dep| {
+        const mod = dep.module("uucode.x");
+        step.root_module.addImport("uucode.x", mod);
+        mod.addImport("root_module", step.root_module);
+    }
     if (b.lazyDependency("zf", .{
         .target = target,
         .optimize = optimize,

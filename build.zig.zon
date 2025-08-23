@@ -37,12 +37,12 @@
             .lazy = true,
         },
         .uucode = .{
-            .url = "https://github.com/jacobsandlund/uucode/archive/907218a2c8097688554e54bb0999e6dbd59b226e.tar.gz",
-            .hash = "uucode-0.0.0-ZZjBPopfPwDqH70dn65Zklni_Yo8KWdLcVMEvmPoj1vW",
+            .url = "https://github.com/jacobsandlund/uucode/archive/7e2bde7c3cd90a5b754cd62b7d0059f70f5eea3f.tar.gz",
+            .hash = "uucode-0.0.0-ZZjBPn1iPwCsTwd680sxrXcqNZxA8r_EmnpMiP53h5a5",
         },
         .uucode_x = .{
-            .url = "https://github.com/jacobsandlund/uucode.x/archive/9f5cfb1b48ab923677e837e22aa33c2a4380fc47.tar.gz",
-            .hash = "uucode_x-0.0.0-5_D0j2YhAAC8KvciYTFrV3hKANPbXke5havA5OIEf7XT",
+            .url = "https://github.com/jacobsandlund/uucode.x/archive/5964041fa51234a5d86dedda88f2af6bb9adf361.tar.gz",
+            .hash = "uucode_x-0.0.0-5_D0j200AAB5nu0QR5oQiceKujDN8C1WqMNlZiaxqNu0",
         },
         .zig_wayland = .{
             // codeberg ifreund/zig-wayland
