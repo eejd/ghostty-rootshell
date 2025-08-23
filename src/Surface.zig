@@ -4840,6 +4840,12 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             {},
         ),
 
+        .close_other_tabs => return try self.rt_app.performAction(
+            .{ .surface = self },
+            .close_other_tabs,
+            {},
+        ),
+
         .select_all => {
             const sel = self.io.terminal.screen.selectAll();
             if (sel) |s| {

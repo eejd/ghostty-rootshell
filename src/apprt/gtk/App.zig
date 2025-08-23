@@ -528,6 +528,7 @@ pub fn performAction(
 
         // Unimplemented
         .close_all_windows,
+        .close_other_tabs,
         .float_window,
         .toggle_visibility,
         .cell_size,

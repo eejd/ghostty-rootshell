@@ -375,6 +375,12 @@ fn actionCommands(action: Action.Key) []const Command {
             .description = "Show the on-screen keyboard if present.",
         }},
 
+        .close_other_tabs => comptime &.{.{
+            .action = .close_other_tabs,
+            .title = "Close Other Tabs",
+            .description = "Close all tabs in this window except the current one.",
+        }},
+
         .open_config => comptime &.{.{
             .action = .open_config,
             .title = "Open Config",

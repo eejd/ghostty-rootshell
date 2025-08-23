@@ -625,6 +625,7 @@ pub const Application = extern struct {
             // Unimplemented
             .secure_input,
             .close_all_windows,
+            .close_other_tabs,
             .float_window,
             .toggle_visibility,
             .cell_size,
