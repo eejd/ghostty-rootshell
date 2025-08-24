@@ -49,6 +49,7 @@
       inherit name rev hash;
       url = url_without_query;
       deepClone = false;
+      fetchSubmodules = false;
     };
 
   fetchZigArtifact = {
