@@ -558,6 +558,12 @@ pub const Action = union(enum) {
     /// of the `confirm-close-surface` configuration setting.
     close_tab,
 
+    /// Close all tabs other than the currently focused one within the same
+    /// window.
+    ///
+    /// Only available on macOS currently.
+    close_other_tabs,
+
     /// Close the current window and all tabs and splits therein.
     ///
     /// This might trigger a close confirmation popup, depending on the value
@@ -1052,6 +1058,7 @@ pub const Action = union(enum) {
             .write_selection_file,
             .close_surface,
             .close_tab,
+            .close_other_tabs,
             .close_window,
             .toggle_maximize,
             .toggle_fullscreen,

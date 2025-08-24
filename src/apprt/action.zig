@@ -86,6 +86,10 @@ pub const Action = union(Key) {
     /// Closes the tab belonging to the currently focused split.
     close_tab,
 
+    /// Closes all tabs in the current window other than the currently
+    /// focused tab.
+    close_other_tabs,
+
     /// Create a new split. The value determines the location of the split
     /// relative to the target.
     new_split: SplitDirection,
@@ -300,6 +304,7 @@ pub const Action = union(Key) {
         new_window,
         new_tab,
         close_tab,
+        close_other_tabs,
         new_split,
         close_all_windows,
         toggle_maximize,

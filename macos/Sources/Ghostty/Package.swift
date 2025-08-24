@@ -329,6 +329,9 @@ extension Notification.Name {
     /// Close tab
     static let ghosttyCloseTab = Notification.Name("com.mitchellh.ghostty.closeTab")
 
+    /// Close other tabs
+    static let ghosttyCloseOtherTabs = Notification.Name("com.mitchellh.ghostty.closeOtherTabs")
+
     /// Close window
     static let ghosttyCloseWindow = Notification.Name("com.mitchellh.ghostty.closeWindow")
 

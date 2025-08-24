@@ -108,6 +108,7 @@ pub fn updateConfig(self: *CommandPalette, config: *const configpkg.Config) !voi
         // or don't make sense for GTK
         switch (command.action) {
             .close_all_windows,
+            .close_other_tabs,
             .toggle_secure_input,
             .check_for_updates,
             .redo,
