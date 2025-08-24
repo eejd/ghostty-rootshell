@@ -2,14 +2,15 @@
 # Copyright (C) 2025 Mitchell Hashimoto, Ghostty contributors
 # This file is distributed under the same license as the com.mitchellh.ghostty package.
 # Danylo Zalizchuk <danilmail0110@gmail.com>, 2025.
+# Volodymyr Chernetskyi <19735328+chernetskyi@users.noreply.github.com>, 2025.
 #
 msgid ""
 msgstr ""
 "Project-Id-Version: com.mitchellh.ghostty\n"
 "Report-Msgid-Bugs-To: m@mitchellh.com\n"
 "POT-Creation-Date: 2025-07-22 17:18+0000\n"
-"PO-Revision-Date: 2025-03-16 20:16+0200\n"
-"Last-Translator: Danylo Zalizchuk <danilmail0110@gmail.com>\n"
+"PO-Revision-Date: 2025-08-24 22:57+0100\n"
+"Last-Translator: Volodymyr Chernetskyi <19735328+chernetskyi@users.noreply.github.com>\n"
 "Language-Team: Ukrainian <trans-uk@lists.fedoraproject.org>\n"
 "Language: uk\n"
 "MIME-Version: 1.0\n"
@@ -20,17 +21,17 @@ msgstr ""
 
 #: src/apprt/gtk/ui/1.5/prompt-title-dialog.blp:5
 msgid "Change Terminal Title"
-msgstr "Змінити назву терміналу"
+msgstr "Змінити заголовок терміналу"
 
 #: src/apprt/gtk/ui/1.5/prompt-title-dialog.blp:6
 msgid "Leave blank to restore the default title."
-msgstr "Залиште порожнім, щоб відновити назву за замовчуванням."
+msgstr "Залиште порожнім, щоб відновити заголовок за замовчуванням."
 
 #: src/apprt/gtk/ui/1.5/prompt-title-dialog.blp:9
 #: src/apprt/gtk/ui/1.5/ccw-paste.blp:10 src/apprt/gtk/ui/1.2/ccw-paste.blp:10
 #: src/apprt/gtk/CloseDialog.zig:44
 msgid "Cancel"
-msgstr "Відмінити"
+msgstr "Скасувати"
 
 #: src/apprt/gtk/ui/1.5/prompt-title-dialog.blp:10
 msgid "OK"
@@ -47,7 +48,7 @@ msgid ""
 "One or more configuration errors were found. Please review the errors below, "
 "and either reload your configuration or ignore these errors."
 msgstr ""
-"Виявлено одну або декілька помилок у конфігурації. Будь ласка, перегляньте "
+"Виявлено одну або декілька помилок конфігурації. Будь ласка, перегляньте "
 "наведені нижче помилки і або перезавантажте конфігурацію, або проігноруйте "
 "ці помилки."
 
@@ -67,13 +68,13 @@ msgstr "Перезавантажити конфігурацію"
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:38
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:50
 msgid "Split Up"
-msgstr "Розділити панель вгору"
+msgstr "Розділити панель догори"
 
 #: src/apprt/gtk/ui/1.0/menu-headerbar-split_menu.blp:11
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:43
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:55
 msgid "Split Down"
-msgstr "Розділити панель вниз"
+msgstr "Розділити панель донизу"
 
 #: src/apprt/gtk/ui/1.0/menu-headerbar-split_menu.blp:16
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:48
@@ -89,7 +90,7 @@ msgstr "Розділити панель праворуч"
 
 #: src/apprt/gtk/ui/1.5/command-palette.blp:16
 msgid "Execute a command…"
-msgstr ""
+msgstr "Виконати команду…"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:6
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:6
@@ -162,7 +163,7 @@ msgstr "Відкрити конфігурацію"
 
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:85
 msgid "Command Palette"
-msgstr ""
+msgstr "Палітра команд"
 
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:90
 msgid "Terminal Inspector"
@@ -198,7 +199,7 @@ msgstr ""
 #: src/apprt/gtk/ui/1.2/ccw-osc-52-read.blp:10
 #: src/apprt/gtk/ui/1.2/ccw-osc-52-write.blp:10
 msgid "Deny"
-msgstr "Відхилити"
+msgstr "Заборонити"
 
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-read.blp:11
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-write.blp:11
@@ -210,12 +211,12 @@ msgstr "Дозволити"
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-read.blp:81
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-write.blp:77
 msgid "Remember choice for this split"
-msgstr ""
+msgstr "Запамʼятати вибір для цієї розділеної панелі"
 
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-read.blp:82
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-write.blp:78
 msgid "Reload configuration to show this prompt again"
-msgstr ""
+msgstr "Перезавантажте конфігурацію, щоб показати це повідомлення знову"
 
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-write.blp:7
 #: src/apprt/gtk/ui/1.2/ccw-osc-52-write.blp:7
@@ -272,24 +273,23 @@ msgstr "Всі сесії терміналу в цій вкладці будут
 
 #: src/apprt/gtk/CloseDialog.zig:99
 msgid "The currently running process in this split will be terminated."
-msgstr ""
-"Поточний процес, що виконується в цій розділеній панелі, буде завершено."
+msgstr "Процес, що виконується в цій розділеній панелі, буде завершено."
 
 #: src/apprt/gtk/Surface.zig:1266
 msgid "Copied to clipboard"
-msgstr "Скопійовано в буфер обміну"
+msgstr "Скопійовано до буферa обміну"
 
 #: src/apprt/gtk/Surface.zig:1268
 msgid "Cleared clipboard"
-msgstr ""
+msgstr "Очищено буфер обміну"
 
 #: src/apprt/gtk/Surface.zig:2525
 msgid "Command succeeded"
-msgstr ""
+msgstr "Команда завершилась успішно"
 
 #: src/apprt/gtk/Surface.zig:2527
 msgid "Command failed"
-msgstr ""
+msgstr "Команда завершилась з помилкою"
 
 #: src/apprt/gtk/Window.zig:216
 msgid "Main Menu"
@@ -301,7 +301,7 @@ msgstr "Переглянути відкриті вкладки"
 
 #: src/apprt/gtk/Window.zig:266
 msgid "New Split"
-msgstr ""
+msgstr "Нова розділена панель"
 
 #: src/apprt/gtk/Window.zig:329
 msgid ""
