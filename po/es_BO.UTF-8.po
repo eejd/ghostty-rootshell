@@ -208,7 +208,7 @@ msgstr "Permitir"
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-read.blp:81
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-write.blp:77
 msgid "Remember choice for this split"
-msgstr "Recordar su elección para esta división"
+msgstr "Recordar su elección para esta división de ventana"
 
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-read.blp:82
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-write.blp:78
@@ -298,7 +298,7 @@ msgstr "Ver pestañas abiertas"
 
 #: src/apprt/gtk/Window.zig:266
 msgid "New Split"
-msgstr "Nueva división"
+msgstr "Nueva ventana dividida"
 
 #: src/apprt/gtk/Window.zig:329
 msgid ""
