@@ -352,12 +352,8 @@ pub const Tab = extern struct {
         // Delegate to our parent to handle this, since this will emit
         // a close-page signal that the parent can intercept.
         switch (mode) {
-            .this => {
-                tab_view.closePage(page);
-            },
-            .other => {
-                log.warn("close-tab:other is not implemented", .{});
-            },
+            .this => tab_view.closePage(page),
+            .other => log.warn("close-tab:other is not implemented", .{}),
         }
     }
 
