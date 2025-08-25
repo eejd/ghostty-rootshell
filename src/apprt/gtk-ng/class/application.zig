@@ -116,6 +116,11 @@ pub const Application = extern struct {
         /// and initialization was successful.
         transient_cgroup_base: ?[]const u8 = null,
 
+        /// This is set to true so long as we request a window exactly
+        /// once. This prevents quitting the app before we've shown one
+        /// window.
+        requested_window: bool = false,
+
         /// This is set to false internally when the event loop
         /// should exit and the application should quit. This must
         /// only be set by the main loop thread.
@@ -461,7 +466,13 @@ pub const Application = extern struct {
                 // If the quit timer has expired, quit.
                 if (priv.quit_timer == .expired) break :q true;
 
-                // There's no quit timer running, or it hasn't expired, don't quit.
+                // If we have no windows attached to our app, also quit.
+                if (priv.requested_window and @as(
+                    ?*glib.List,
+                    self.as(gtk.Application).getWindows(),
+                ) == null) break :q true;
+
+                // No quit conditions met
                 break :q false;
             };
 
@@ -1858,6 +1869,13 @@ const Action = struct {
         self: *Application,
         parent: ?*CoreSurface,
     ) !void {
+        // Note that we've requested a window at least once. This is used
+        // to trigger quit on no windows. Note I'm not sure if this is REALLY
+        // necessary, but I don't want to risk a bug where on a slow machine
+        // or something we quit immediately after starting up because there
+        // was a delay in the event loop before we created a Window.
+        self.private().requested_window = true;
+
         const win = Window.new(self);
         initAndShowWindow(self, win, parent);
     }

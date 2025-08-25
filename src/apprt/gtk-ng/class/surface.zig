@@ -105,6 +105,24 @@ pub const Surface = extern struct {
             );
         };
 
+        pub const @"error" = struct {
+            pub const name = "error";
+            const impl = gobject.ext.defineProperty(
+                name,
+                Self,
+                bool,
+                .{
+                    .default = false,
+                    .accessor = gobject.ext.privateFieldAccessor(
+                        Self,
+                        Private,
+                        &Private.offset,
+                        "error",
+                    ),
+                },
+            );
+        };
+
         pub const @"font-size-request" = struct {
             pub const name = "font-size-request";
             const impl = gobject.ext.defineProperty(
@@ -472,6 +490,12 @@ pub const Surface = extern struct {
         // false by a parent widget.
         bell_ringing: bool = false,
 
+        /// True if this surface is in an error state. This is currently
+        /// a simple boolean with no additional information on WHAT the
+        /// error state is, because we don't yet need it or use it. For now,
+        /// if this is true, then it means the terminal is non-functional.
+        @"error": bool = false,
+
         /// A weak reference to an inspector window.
         inspector: ?*InspectorWindow = null,
 
@@ -569,6 +593,17 @@ pub const Surface = extern struct {
         };
 
         return @intFromBool(config.@"bell-features".border);
+    }
+
+    fn closureStackChildName(
+        _: *Self,
+        error_: c_int,
+    ) callconv(.c) ?[*:0]const u8 {
+        const err = error_ != 0;
+        return if (err)
+            glib.ext.dupeZ(u8, "error")
+        else
+            glib.ext.dupeZ(u8, "terminal");
     }
 
     pub fn toggleFullscreen(self: *Self) void {
@@ -1540,6 +1575,12 @@ pub const Surface = extern struct {
         self.as(gobject.Object).notifyByPspec(properties.@"bell-ringing".impl.param_spec);
     }
 
+    pub fn setError(self: *Self, v: bool) void {
+        const priv = self.private();
+        priv.@"error" = v;
+        self.as(gobject.Object).notifyByPspec(properties.@"error".impl.param_spec);
+    }
+
     fn propConfig(
         self: *Self,
         _: *gobject.ParamSpec,
@@ -1590,6 +1631,28 @@ pub const Surface = extern struct {
                 &valign,
             );
         }
+    }
+
+    fn propError(
+        self: *Self,
+        _: *gobject.ParamSpec,
+        _: ?*anyopaque,
+    ) callconv(.c) void {
+        const priv = self.private();
+        if (priv.@"error") {
+            // Ensure we have an opaque background. The window will NOT set
+            // this if we have transparency set and we need an opaque
+            // background for the error message to be readable.
+            self.as(gtk.Widget).addCssClass("background");
+        } else {
+            // Regardless of transparency setting, we remove the background
+            // CSS class from this widget. Parent widgets will set it
+            // appropriately (see window.zig for example).
+            self.as(gtk.Widget).removeCssClass("background");
+        }
+
+        // Note above: in both cases setting our error view is handled by
+        // a Gtk.Stack visible-child-name binding.
     }
 
     fn propMouseHoverUrl(
@@ -1942,8 +2005,11 @@ pub const Surface = extern struct {
         // Bell stops ringing if any mouse button is pressed.
         self.setBellRinging(false);
 
-        // If we don't have focus, grab it.
+        // Get our surface. If we don't have one, ignore this.
         const priv = self.private();
+        const core_surface = priv.core_surface orelse return;
+
+        // If we don't have focus, grab it.
         const gl_area_widget = priv.gl_area.as(gtk.Widget);
         if (gl_area_widget.hasFocus() == 0) {
             _ = gl_area_widget.grabFocus();
@@ -1951,10 +2017,10 @@ pub const Surface = extern struct {
 
         // Report the event
         const button = translateMouseButton(gesture.as(gtk.GestureSingle).getCurrentButton());
-        const consumed = if (priv.core_surface) |surface| consumed: {
+        const consumed = consumed: {
             const gtk_mods = event.getModifierState();
             const mods = gtk_key.translateMods(gtk_mods);
-            break :consumed surface.mouseButtonCallback(
+            break :consumed core_surface.mouseButtonCallback(
                 .press,
                 button,
                 mods,
@@ -1962,7 +2028,7 @@ pub const Surface = extern struct {
                 log.warn("error in key callback err={}", .{err});
                 break :err false;
             };
-        } else false;
+        };
 
         // If a right click isn't consumed, mouseButtonCallback selects the hovered
         // word and returns false. We can use this to handle the context menu
@@ -2303,21 +2369,23 @@ pub const Surface = extern struct {
     ) callconv(.c) void {
         log.debug("realize", .{});
 
+        // Make the GL area current so we can detect any OpenGL errors. If
+        // we have errors here we can't render and we switch to the error
+        // state.
+        const priv = self.private();
+        priv.gl_area.makeCurrent();
+        if (priv.gl_area.getError()) |err| {
+            log.warn("failed to make GL context current: {s}", .{err.f_message orelse "(no message)"});
+            log.warn("this error is almost always due to a library, driver, or GTK issue", .{});
+            log.warn("this is a common cause of this issue: https://ghostty.org/docs/help/gtk-opengl-context", .{});
+            self.setError(true);
+            return;
+        }
+
         // If we already have an initialized surface then we notify it.
         // If we don't, we'll initialize it on the first resize so we have
         // our proper initial dimensions.
-        const priv = self.private();
         if (priv.core_surface) |v| realize: {
-            // We need to make the context current so we can call GL functions.
-            // This is required for all surface operations.
-            priv.gl_area.makeCurrent();
-            if (priv.gl_area.getError()) |err| {
-                log.warn("failed to make GL context current: {s}", .{err.f_message orelse "(no message)"});
-                log.warn("this error is usually due to a driver or gtk bug", .{});
-                log.warn("this is a common cause of this issue: https://gitlab.gnome.org/GNOME/gtk/-/issues/4950", .{});
-                break :realize;
-            }
-
             v.renderer.displayRealized() catch |err| {
                 log.warn("core displayRealized failed err={}", .{err});
                 break :realize;
@@ -2662,11 +2730,13 @@ pub const Surface = extern struct {
             class.bindTemplateCallback("child_exited_close", &childExitedClose);
             class.bindTemplateCallback("context_menu_closed", &contextMenuClosed);
             class.bindTemplateCallback("notify_config", &propConfig);
+            class.bindTemplateCallback("notify_error", &propError);
             class.bindTemplateCallback("notify_mouse_hover_url", &propMouseHoverUrl);
             class.bindTemplateCallback("notify_mouse_hidden", &propMouseHidden);
             class.bindTemplateCallback("notify_mouse_shape", &propMouseShape);
             class.bindTemplateCallback("notify_bell_ringing", &propBellRinging);
             class.bindTemplateCallback("should_border_be_shown", &closureShouldBorderBeShown);
+            class.bindTemplateCallback("stack_child_name", &closureStackChildName);
 
             // Properties
             gobject.ext.registerProperties(class, &.{
@@ -2674,6 +2744,7 @@ pub const Surface = extern struct {
                 properties.config.impl,
                 properties.@"child-exited".impl,
                 properties.@"default-size".impl,
+                properties.@"error".impl,
                 properties.@"font-size-request".impl,
                 properties.focused.impl,
                 properties.@"min-size".impl,
