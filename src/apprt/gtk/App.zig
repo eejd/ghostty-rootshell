@@ -491,7 +491,7 @@ pub fn performAction(
         .toggle_maximize => self.toggleMaximize(target),
         .toggle_fullscreen => self.toggleFullscreen(target, value),
         .new_tab => try self.newTab(target),
-        .close_tab => return try self.closeTab(target),
+        .close_tab => return try self.closeTab(target, value),
         .goto_tab => return self.gotoTab(target, value),
         .move_tab => self.moveTab(target, value),
         .new_split => try self.newSplit(target, value),
@@ -528,7 +528,6 @@ pub fn performAction(
 
         // Unimplemented
         .close_all_windows,
-        .close_other_tabs,
         .float_window,
         .toggle_visibility,
         .cell_size,
@@ -586,7 +585,7 @@ fn newTab(_: *App, target: apprt.Target) !void {
     }
 }
 
-fn closeTab(_: *App, target: apprt.Target) !bool {
+fn closeTab(_: *App, target: apprt.Target, value: apprt.Action.Value(.close_tab)) !bool {
     switch (target) {
         .app => return false,
         .surface => |v| {
@@ -598,8 +597,16 @@ fn closeTab(_: *App, target: apprt.Target) !bool {
                 return false;
             };
 
-            tab.closeWithConfirmation();
-            return true;
+            switch (value) {
+                .this => {
+                    tab.closeWithConfirmation();
+                    return true;
+                },
+                .other => {
+                    log.warn("close-tab:other is not implemented", .{});
+                    return false;
+                },
+            }
         },
     }
 }
@@ -1146,7 +1153,7 @@ fn syncActionAccelerators(self: *App) !void {
     try self.syncActionAccelerator("win.close", .{ .close_window = {} });
     try self.syncActionAccelerator("win.new-window", .{ .new_window = {} });
     try self.syncActionAccelerator("win.new-tab", .{ .new_tab = {} });
-    try self.syncActionAccelerator("win.close-tab", .{ .close_tab = {} });
+    try self.syncActionAccelerator("win.close-tab", .{ .close_tab = .this });
     try self.syncActionAccelerator("win.split-right", .{ .new_split = .right });
     try self.syncActionAccelerator("win.split-down", .{ .new_split = .down });
     try self.syncActionAccelerator("win.split-left", .{ .new_split = .left });
