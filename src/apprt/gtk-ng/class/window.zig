@@ -987,6 +987,22 @@ pub const Window = extern struct {
         };
     }
 
+    fn propIsActive(
+        _: *gtk.Window,
+        _: *gobject.ParamSpec,
+        self: *Self,
+    ) callconv(.c) void {
+        // Don't change urgency if we're not the active window.
+        if (self.as(gtk.Window).isActive() == 0) return;
+
+        self.winproto().setUrgent(false) catch |err| {
+            log.warn(
+                "winproto failed to reset urgency={}",
+                .{err},
+            );
+        };
+    }
+
     fn propGdkSurfaceWidth(
         _: *gdk.Surface,
         _: *gobject.ParamSpec,
@@ -1765,10 +1781,13 @@ pub const Window = extern struct {
             native.beep();
         }
 
-        if (config.@"bell-features".attention) {
+        if (config.@"bell-features".attention) attention: {
+            // Dont set urgency if the window is already active.
+            if (self.as(gtk.Window).isActive() != 0) break :attention;
+
             // Request user attention
             self.winproto().setUrgent(true) catch |err| {
-                log.warn("failed to request user attention={}", .{err});
+                log.warn("winproto failed to set urgency={}", .{err});
             };
         }
     }
@@ -1912,6 +1931,7 @@ pub const Window = extern struct {
             class.bindTemplateCallback("notify_selected_page", &tabViewSelectedPage);
             class.bindTemplateCallback("notify_config", &propConfig);
             class.bindTemplateCallback("notify_fullscreened", &propFullscreened);
+            class.bindTemplateCallback("notify_is_active", &propIsActive);
             class.bindTemplateCallback("notify_maximized", &propMaximized);
             class.bindTemplateCallback("notify_menu_active", &propMenuActive);
             class.bindTemplateCallback("notify_quick_terminal", &propQuickTerminal);
