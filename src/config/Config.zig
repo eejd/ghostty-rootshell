@@ -7198,6 +7198,53 @@ pub const QuickTerminalSize = struct {
         height: u32,
     };
 
+    /// C API structure for QuickTerminalSize
+    pub const C = extern struct {
+        primary: C.Size,
+        secondary: C.Size,
+
+        pub const Size = extern struct {
+            tag: Tag,
+            value: Value,
+
+            pub const Tag = enum(u8) { none, percentage, pixels };
+
+            pub const Value = extern union {
+                percentage: f32,
+                pixels: u32,
+            };
+
+            pub const none: C.Size = .{ .tag = .none, .value = undefined };
+
+            pub fn percentage(v: f32) C.Size {
+                return .{
+                    .tag = .percentage,
+                    .value = .{ .percentage = v },
+                };
+            }
+
+            pub fn pixels(v: u32) C.Size {
+                return .{
+                    .tag = .pixels,
+                    .value = .{ .pixels = v },
+                };
+            }
+        };
+    };
+
+    pub fn cval(self: QuickTerminalSize) C {
+        return .{
+            .primary = if (self.primary) |p| switch (p) {
+                .percentage => |v| .percentage(v),
+                .pixels => |v| .pixels(v),
+            } else .none,
+            .secondary = if (self.secondary) |s| switch (s) {
+                .percentage => |v| .percentage(v),
+                .pixels => |v| .pixels(v),
+            } else .none,
+        };
+    }
+
     pub fn calculate(
         self: QuickTerminalSize,
         position: QuickTerminalPosition,
@@ -7271,6 +7318,7 @@ pub const QuickTerminalSize = struct {
 
         try formatter.formatEntry([]const u8, fbs.getWritten());
     }
+
     test "parse QuickTerminalSize" {
         const testing = std.testing;
         var v: QuickTerminalSize = undefined;
