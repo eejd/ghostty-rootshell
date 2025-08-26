@@ -7318,6 +7318,7 @@ pub const QuickTerminalSize = struct {
 
         try formatter.formatEntry([]const u8, fbs.getWritten());
     }
+
     test "parse QuickTerminalSize" {
         const testing = std.testing;
         var v: QuickTerminalSize = undefined;

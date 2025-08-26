@@ -7,49 +7,57 @@ enum QuickTerminalPosition : String {
     case right
     case center
 
-    /// Set the loaded state for a window.
+    /// Set the loaded state for a window. This should only be called when the window is first loaded,
+    /// usually in `windowDidLoad` or in a similar callback. This is the initial state.
     func setLoaded(_ window: NSWindow, size: QuickTerminalSize) {
         guard let screen = window.screen ?? NSScreen.main else { return }
-        let dimensions = size.calculate(position: self, screenDimensions: screen.frame.size)
         window.setFrame(.init(
             origin: window.frame.origin,
-            size: .init(
-                width: dimensions.width,
-                height: dimensions.height)
+            size: size.calculate(position: self, screenDimensions: screen.frame.size)
         ), display: false)
     }
 
-    /// Set the initial state for a window for animating out of this position.
-    func setInitial(in window: NSWindow, on screen: NSScreen, terminalSize: QuickTerminalSize, preserveSize: NSSize? = nil) {
-        // We always start invisible
+    /// Set the initial state for a window NOT yet into position (either before animating in or
+    /// after animating out).
+    func setInitial(
+        in window: NSWindow,
+        on screen: NSScreen,
+        terminalSize: QuickTerminalSize,
+        closedFrame: NSRect? = nil
+    ) {
+        // Invisible
         window.alphaValue = 0
 
         // Position depends
         window.setFrame(.init(
             origin: initialOrigin(for: window, on: screen),
-            size: configuredFrameSize(on: screen, terminalSize: terminalSize, preserveExisting: preserveSize)
+            size: closedFrame?.size ?? configuredFrameSize(
+                on: screen,
+                terminalSize: terminalSize)
         ), display: false)
     }
 
     /// Set the final state for a window in this position.
-    func setFinal(in window: NSWindow, on screen: NSScreen, terminalSize: QuickTerminalSize, preserveSize: NSSize? = nil) {
+    func setFinal(
+        in window: NSWindow,
+        on screen: NSScreen,
+        terminalSize: QuickTerminalSize,
+        closedFrame: NSRect? = nil
+    ) {
         // We always end visible
         window.alphaValue = 1
 
         // Position depends
         window.setFrame(.init(
             origin: finalOrigin(for: window, on: screen),
-            size: configuredFrameSize(on: screen, terminalSize: terminalSize, preserveExisting: preserveSize)
+            size: closedFrame?.size ?? configuredFrameSize(
+                on: screen,
+                terminalSize: terminalSize)
         ), display: true)
     }
 
     /// Get the configured frame size for initial positioning and animations.
-    func configuredFrameSize(on screen: NSScreen, terminalSize: QuickTerminalSize, preserveExisting: NSSize? = nil) -> NSSize {
-        // If we have existing dimensions from manual resizing, preserve them
-        if let existing = preserveExisting, existing.width > 0 && existing.height > 0 {
-            return existing
-        }
-        
+    func configuredFrameSize(on screen: NSScreen, terminalSize: QuickTerminalSize) -> NSSize {
         let dimensions = terminalSize.calculate(position: self, screenDimensions: screen.frame.size)
         return NSSize(width: dimensions.width, height: dimensions.height)
     }

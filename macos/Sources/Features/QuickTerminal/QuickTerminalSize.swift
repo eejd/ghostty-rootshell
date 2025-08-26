@@ -1,5 +1,11 @@
 import GhosttyKit
 
+/// Represents the Ghostty `quick-terminal-size` configuration. See the documentation for
+/// that for more details on exactly how it works. Some of those docs will be reproduced in various comments
+/// in this file but that is the best source of truth for it.
+///
+/// The size determines the size of the quick terminal along the primary and secondary axis. The primary and
+/// secondary axis is defined by the `quick-terminal-position`.
 struct QuickTerminalSize {
     let primary: Size?
     let secondary: Size?
@@ -41,23 +47,20 @@ struct QuickTerminalSize {
         }
     }
 
-    struct Dimensions {
-        let width: CGFloat
-        let height: CGFloat
-    }
 
-    func calculate(position: QuickTerminalPosition, screenDimensions: CGSize) -> Dimensions {
-        let dims = Dimensions(width: screenDimensions.width, height: screenDimensions.height)
+    /// This is an almost direct port of th Zig function QuickTerminalSize.calculate
+    func calculate(position: QuickTerminalPosition, screenDimensions: CGSize) -> CGSize {
+        let dims = CGSize(width: screenDimensions.width, height: screenDimensions.height)
 
         switch position {
         case .left, .right:
-            return Dimensions(
+            return CGSize(
                 width: primary?.toPixels(parentDimension: dims.width) ?? 400,
                 height: secondary?.toPixels(parentDimension: dims.height) ?? dims.height
             )
 
         case .top, .bottom:
-            return Dimensions(
+            return CGSize(
                 width: secondary?.toPixels(parentDimension: dims.width) ?? dims.width,
                 height: primary?.toPixels(parentDimension: dims.height) ?? 400
             )
@@ -65,13 +68,13 @@ struct QuickTerminalSize {
         case .center:
             if dims.width >= dims.height {
                 // Landscape
-                return Dimensions(
+                return CGSize(
                     width: primary?.toPixels(parentDimension: dims.width) ?? 800,
                     height: secondary?.toPixels(parentDimension: dims.height) ?? 400
                 )
             } else {
                 // Portrait
-                return Dimensions(
+                return CGSize(
                     width: secondary?.toPixels(parentDimension: dims.width) ?? 400,
                     height: primary?.toPixels(parentDimension: dims.height) ?? 800
                 )

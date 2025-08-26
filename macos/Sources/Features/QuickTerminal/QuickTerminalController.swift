@@ -217,46 +217,28 @@ class QuickTerminalController: BaseTerminalController {
         }
     }
 
-    func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
-        // Allow unrestricted resizing - users have full control
-        return frameSize
-    }
-
     override func windowDidResize(_ notification: Notification) {
         guard let window = notification.object as? NSWindow,
               window == self.window,
               visible,
               !isHandlingResize else { return }
+        guard let screen = window.screen ?? NSScreen.main else { return }
         
-        // For centered positions (top, bottom, center), we need to recenter the window
-        // when it's manually resized to maintain proper positioning
+        // Prevent recursive loops
+        isHandlingResize = true
+        defer { isHandlingResize = false }
+        
         switch position {
         case .top, .bottom, .center:
-            recenterWindow(window)
+            // For centered positions (top, bottom, center), we need to recenter the window
+            // when it's manually resized to maintain proper positioning
+            let newOrigin = position.centeredOrigin(for: window, on: screen)
+            window.setFrameOrigin(newOrigin)
         case .left, .right:
             // For side positions, we may need to adjust vertical centering
-            recenterWindowVertically(window)
+            let newOrigin = position.verticallyCenteredOrigin(for: window, on: screen)
+            window.setFrameOrigin(newOrigin)
         }
-    }
-
-    private func recenterWindow(_ window: NSWindow) {
-        guard let screen = window.screen ?? NSScreen.main else { return }
-        
-        isHandlingResize = true
-        defer { isHandlingResize = false }
-        
-        let newOrigin = position.centeredOrigin(for: window, on: screen)
-        window.setFrameOrigin(newOrigin)
-    }
-
-    private func recenterWindowVertically(_ window: NSWindow) {
-        guard let screen = window.screen ?? NSScreen.main else { return }
-        
-        isHandlingResize = true
-        defer { isHandlingResize = false }
-        
-        let newOrigin = position.verticallyCenteredOrigin(for: window, on: screen)
-        window.setFrameOrigin(newOrigin)
     }
 
     // MARK: Base Controller Overrides
@@ -376,17 +358,17 @@ class QuickTerminalController: BaseTerminalController {
 
     private func animateWindowIn(window: NSWindow, from position: QuickTerminalPosition) {
         guard let screen = derivedConfig.quickTerminalScreen.screen else { return }
+        
+        // Grab our last closed frame to use, and clear our state since we're animating in.
+        let lastClosedFrame = self.lastClosedFrame
+        self.lastClosedFrame = nil
 
-        // Restore our previous frame if we have one
-        var preserveSize: NSSize? = nil
-        if let lastClosedFrame {
-            window.setFrame(lastClosedFrame, display: false)
-            preserveSize = lastClosedFrame.size
-            self.lastClosedFrame = nil
-        }
-
-        // Move our window off screen to the top
-        position.setInitial(in: window, on: screen, terminalSize: derivedConfig.quickTerminalSize, preserveSize: preserveSize)
+        // Move our window off screen to the initial animation position.
+        position.setInitial(
+            in: window,
+            on: screen,
+            terminalSize: derivedConfig.quickTerminalSize,
+            closedFrame: lastClosedFrame)
 
         // We need to set our window level to a high value. In testing, only
         // popUpMenu and above do what we want. This gets it above the menu bar
@@ -417,7 +399,11 @@ class QuickTerminalController: BaseTerminalController {
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = derivedConfig.quickTerminalAnimationDuration
             context.timingFunction = .init(name: .easeIn)
-            position.setFinal(in: window.animator(), on: screen, terminalSize: derivedConfig.quickTerminalSize, preserveSize: preserveSize)
+            position.setFinal(
+                in: window.animator(),
+                on: screen,
+                terminalSize: derivedConfig.quickTerminalSize,
+                closedFrame: lastClosedFrame)
         }, completionHandler: {
             // There is a very minor delay here so waiting at least an event loop tick
             // keeps us safe from the view not being on the window.
@@ -499,7 +485,9 @@ class QuickTerminalController: BaseTerminalController {
         // the user's preferred window size and position for when the quick
         // terminal is reactivated with a new surface. Without this, SwiftUI
         // would reset the window to its minimum content size.
-        lastClosedFrame = window.frame
+        if window.frame.width > 0 && window.frame.height > 0 {
+            lastClosedFrame = window.frame
+        }
 
         // If we hid the dock then we unhide it.
         hiddenDock = nil
@@ -541,7 +529,11 @@ class QuickTerminalController: BaseTerminalController {
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = derivedConfig.quickTerminalAnimationDuration
             context.timingFunction = .init(name: .easeIn)
-            position.setInitial(in: window.animator(), on: screen, terminalSize: derivedConfig.quickTerminalSize, preserveSize: window.frame.size)
+            position.setInitial(
+                in: window.animator(),
+                on: screen,
+                terminalSize: derivedConfig.quickTerminalSize,
+                closedFrame: window.frame)
         }, completionHandler: {
             // This causes the window to be removed from the screen list and macOS
             // handles what should be focused next.
