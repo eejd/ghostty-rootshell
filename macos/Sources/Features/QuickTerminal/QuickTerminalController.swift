@@ -223,7 +223,7 @@ class QuickTerminalController: BaseTerminalController {
               visible,
               !isHandlingResize else { return }
         guard let screen = window.screen ?? NSScreen.main else { return }
-        
+
         // Prevent recursive loops
         isHandlingResize = true
         defer { isHandlingResize = false }
@@ -481,6 +481,12 @@ class QuickTerminalController: BaseTerminalController {
     }
 
     private func animateWindowOut(window: NSWindow, to position: QuickTerminalPosition) {
+        // If we are in fullscreen, then we exit fullscreen. We do this immediately so
+        // we have th correct window.frame for the save state below.
+        if let fullscreenStyle, fullscreenStyle.isFullscreen {
+            fullscreenStyle.exit()
+        }
+
         // Save the current window frame before animating out. This preserves
         // the user's preferred window size and position for when the quick
         // terminal is reactivated with a new surface. Without this, SwiftUI
@@ -502,11 +508,6 @@ class QuickTerminalController: BaseTerminalController {
 
         // We always animate out to whatever screen the window is actually on.
         guard let screen = window.screen ?? NSScreen.main else { return }
-
-        // If we are in fullscreen, then we exit fullscreen.
-        if let fullscreenStyle, fullscreenStyle.isFullscreen {
-            fullscreenStyle.exit()
-        }
 
         // If we have a previously active application, restore focus to it. We
         // do this BEFORE the animation below because when the animation completes
