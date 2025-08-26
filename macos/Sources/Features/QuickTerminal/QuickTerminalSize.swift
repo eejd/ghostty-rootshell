@@ -19,16 +19,13 @@ struct QuickTerminalSize {
         case pixels(UInt32)
 
         init?(from cStruct: ghostty_quick_terminal_size_s) {
-            switch cStruct.type {
+            switch cStruct.tag {
             case GHOSTTY_QUICK_TERMINAL_SIZE_NONE:
                 return nil
             case GHOSTTY_QUICK_TERMINAL_SIZE_PERCENTAGE:
-                let floatValue = withUnsafePointer(to: cStruct.value) { ptr in
-                    ptr.withMemoryRebound(to: Float.self, capacity: 1) { $0.pointee }
-                }
-                self = .percentage(floatValue)
+                self = .percentage(cStruct.value.percentage)
             case GHOSTTY_QUICK_TERMINAL_SIZE_PIXELS:
-                self = .pixels(cStruct.value)
+                self = .pixels(cStruct.value.pixels)
             default:
                 return nil
             }

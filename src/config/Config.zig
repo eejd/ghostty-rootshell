@@ -7200,25 +7200,36 @@ pub const QuickTerminalSize = struct {
 
     /// C API structure for QuickTerminalSize
     pub const C = extern struct {
-        primary: CSize,
-        secondary: CSize,
-    };
+        primary: C.Size,
+        secondary: C.Size,
 
-    pub const CSize = extern struct {
-        type: Type,
-        value: u32,
+        pub const Size = extern struct {
+            tag: Tag,
+            value: Value,
 
-        pub const Type = enum(u8) { none, percentage, pixels };
+            pub const Tag = enum(u8) { none, percentage, pixels };
 
-        pub const none: CSize = .{ .type = .none, .value = 0 };
+            pub const Value = extern union {
+                percentage: f32,
+                pixels: u32,
+            };
 
-        fn percentage(v: f32) CSize {
-            return .{ .type = .percentage, .value = @bitCast(v) };
-        }
+            pub const none: C.Size = .{ .tag = .none, .value = undefined };
 
-        fn pixels(v: u32) CSize {
-            return .{ .type = .pixels, .value = v };
-        }
+            pub fn percentage(v: f32) C.Size {
+                return .{
+                    .tag = .percentage,
+                    .value = .{ .percentage = v },
+                };
+            }
+
+            pub fn pixels(v: u32) C.Size {
+                return .{
+                    .tag = .pixels,
+                    .value = .{ .pixels = v },
+                };
+            }
+        };
     };
 
     pub fn cval(self: QuickTerminalSize) C {

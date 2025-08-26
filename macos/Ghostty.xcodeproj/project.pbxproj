@@ -490,7 +490,6 @@
 		A55B7BB429B6F4410055DE60 /* Ghostty */ = {
 			isa = PBXGroup;
 			children = (
-				A5BB78B82DF9D8CE009AC3FA /* QuickTerminalSize.swift */,
 				A55B7BB729B6F53A0055DE60 /* Package.swift */,
 				A55B7BBB29B6FC330055DE60 /* SurfaceView.swift */,
 				A5333E212B5A2128008AEFF7 /* SurfaceView_AppKit.swift */,
@@ -640,6 +639,7 @@
 				CFBB5FE92D231E5000FD62EE /* QuickTerminalSpaceBehavior.swift */,
 				A5CBD0632CA122E70017A1AE /* QuickTerminalPosition.swift */,
 				A52FFF562CA90481000C6A5B /* QuickTerminalScreen.swift */,
+				A5BB78B82DF9D8CE009AC3FA /* QuickTerminalSize.swift */,
 				A5CBD05F2CA0C9080017A1AE /* QuickTerminalWindow.swift */,
 			);
 			path = QuickTerminal;

@@ -455,11 +455,16 @@ typedef enum {
   GHOSTTY_QUICK_TERMINAL_SIZE_NONE,
   GHOSTTY_QUICK_TERMINAL_SIZE_PERCENTAGE,
   GHOSTTY_QUICK_TERMINAL_SIZE_PIXELS,
-} ghostty_quick_terminal_size_e;
+} ghostty_quick_terminal_size_tag_e;
+
+typedef union {
+  float percentage;
+  uint32_t pixels;
+} ghostty_quick_terminal_size_value_u;
 
 typedef struct {
-  ghostty_quick_terminal_size_e type;
-  uint32_t value;
+  ghostty_quick_terminal_size_tag_e tag;
+  ghostty_quick_terminal_size_value_u value;
 } ghostty_quick_terminal_size_s;
 
 typedef struct {
