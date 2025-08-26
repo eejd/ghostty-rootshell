@@ -8,7 +8,7 @@ msgstr ""
 "Project-Id-Version: com.mitchellh.ghostty\n"
 "Report-Msgid-Bugs-To: m@mitchellh.com\n"
 "POT-Creation-Date: 2025-07-22 17:18+0000\n"
-"PO-Revision-Date: 2025-08-22 14:52+0100\n"
+"PO-Revision-Date: 2025-08-26 15:46+0100\n"
 "Last-Translator: Aindriú Mac Giolla Eoin <aindriu80@gmail.com>\n"
 "Language-Team: Irish <gaeilge-gnulinux@lists.sourceforge.net>\n"
 "Language: ga\n"
@@ -209,7 +209,7 @@ msgstr "Ceadaigh"
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-read.blp:81
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-write.blp:77
 msgid "Remember choice for this split"
-msgstr "Cuimhnigh ar an rogha don scoilt seo"
+msgstr "Sábháil an rogha don scoilt seo"
 
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-read.blp:82
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-write.blp:78
@@ -280,7 +280,7 @@ msgstr "Cóipeáilte chuig an ghearrthaisce"
 
 #: src/apprt/gtk/Surface.zig:1268
 msgid "Cleared clipboard"
-msgstr "Glanadh an ghearrthóg"
+msgstr "Gearrthaisce glanta"
 
 #: src/apprt/gtk/Surface.zig:2525
 msgid "Command succeeded"
