@@ -1212,6 +1212,11 @@ pub const Parser = struct {
 
         self.temp_state = .{ .str = &self.command.show_desktop_notification.body };
         self.state = .string;
+        // Set as complete as we've already seen one character that should be
+        // part of the notification. If we wait for another character to set
+        // `complete` when the state is `.string` we won't be able to send any
+        // single character notifications.
+        self.complete = true;
     }
 
     fn prepAllocableString(self: *Parser) void {
@@ -2836,8 +2841,22 @@ test "OSC: show desktop notification" {
 
     const cmd = p.end('\x1b').?;
     try testing.expect(cmd == .show_desktop_notification);
-    try testing.expectEqualStrings(cmd.show_desktop_notification.title, "");
-    try testing.expectEqualStrings(cmd.show_desktop_notification.body, "Hello world");
+    try testing.expectEqualStrings("", cmd.show_desktop_notification.title);
+    try testing.expectEqualStrings("Hello world", cmd.show_desktop_notification.body);
+}
+
+test "OSC: show single character desktop notification" {
+    const testing = std.testing;
+
+    var p: Parser = .init();
+
+    const input = "9;H";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .show_desktop_notification);
+    try testing.expectEqualStrings("", cmd.show_desktop_notification.title);
+    try testing.expectEqualStrings("H", cmd.show_desktop_notification.body);
 }
 
 test "OSC: show desktop notification with title" {
