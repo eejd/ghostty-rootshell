@@ -558,8 +558,6 @@ pub const Action = union(enum) {
     ///
     /// If the mode is not specified, defaults to closing the current tab.
     ///
-    /// close-tab:other is only available on macOS.
-    ///
     /// This might trigger a close confirmation popup, depending on the value
     /// of the `confirm-close-surface` configuration setting.
     close_tab: CloseTabMode,
