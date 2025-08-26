@@ -393,27 +393,18 @@ fn actionCommands(action: Action.Key) []const Command {
             .description = "Close the current terminal.",
         }},
 
-        .close_tab => comptime if (builtin.target.os.tag.isDarwin())
-            &.{
-                .{
-                    .action = .{ .close_tab = .this },
-                    .title = "Close Tab",
-                    .description = "Close the current tab.",
-                },
-                .{
-                    .action = .{ .close_tab = .other },
-                    .title = "Close Other Tabs",
-                    .description = "Close all tabs in this window except the current one.",
-                },
-            }
-        else
-            &.{
-                .{
-                    .action = .{ .close_tab = .this },
-                    .title = "Close Tab",
-                    .description = "Close the current tab.",
-                },
+        .close_tab => comptime &.{
+            .{
+                .action = .{ .close_tab = .this },
+                .title = "Close Tab",
+                .description = "Close the current tab.",
             },
+            .{
+                .action = .{ .close_tab = .other },
+                .title = "Close Other Tabs",
+                .description = "Close all tabs in this window except the current one.",
+            },
+        },
 
         .close_window => comptime &.{.{
             .action = .close_window,
