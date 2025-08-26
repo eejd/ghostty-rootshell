@@ -1605,7 +1605,12 @@ pub fn Stream(comptime Handler: type) type {
                     } else log.warn("unimplemented OSC callback: {}", .{cmd});
                 },
 
-                .sleep, .show_message_box, .change_conemu_tab_title, .wait_input => {
+                .sleep,
+                .show_message_box,
+                .change_conemu_tab_title,
+                .wait_input,
+                .conemu_guimacro,
+                => {
                     log.warn("unimplemented OSC callback: {}", .{cmd});
                 },
 

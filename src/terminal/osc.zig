@@ -167,6 +167,9 @@ pub const Command = union(enum) {
     /// Wait input (OSC 9;5)
     wait_input: void,
 
+    /// ConEmu GUI macro (OSC 9;6)
+    conemu_guimacro: []const u8,
+
     pub const ColorOperation = union(enum) {
         pub const Source = enum(u16) {
             // these numbers are based on the OSC operation code
@@ -431,6 +434,7 @@ pub const Parser = struct {
         conemu_progress_state,
         conemu_progress_prevalue,
         conemu_progress_value,
+        conemu_guimacro,
     };
 
     pub fn init() Parser {
@@ -972,6 +976,13 @@ pub const Parser = struct {
                     self.command = .{ .wait_input = {} };
                     self.complete = true;
                 },
+                '6' => {
+                    self.state = .conemu_guimacro;
+                    // This will end up being either a ConEmu GUI macro OSC 9;6,
+                    // or a desktop notification OSC 9 that begins with '6', so
+                    // mark as complete.
+                    self.complete = true;
+                },
 
                 // Todo: parse out other ConEmu operating system commands.
                 // Even if we don't support them we probably don't want
@@ -1102,6 +1113,19 @@ pub const Parser = struct {
                     self.state = .swallow;
                     self.complete = true;
                 },
+            },
+
+            .conemu_guimacro => switch (c) {
+                ';' => {
+                    self.command = .{ .conemu_guimacro = undefined };
+                    self.temp_state = .{ .str = &self.command.conemu_guimacro };
+                    self.buf_start = self.buf_idx;
+                    self.state = .string;
+                    self.complete = true;
+                },
+                // OSC 9;6 <something other than semicolon> is a desktop
+                // notification.
+                else => self.showDesktopNotification(),
             },
 
             .semantic_prompt => switch (c) {
@@ -1600,6 +1624,12 @@ pub const Parser = struct {
             .hyperlink_uri => self.endHyperlink(),
             .string => self.endString(),
             .conemu_sleep_value => self.endConEmuSleepValue(),
+            .conemu_guimacro => {
+                // We received OSC 9;6 ST, but nothing else, finish off as a
+                // desktop notification with "6" as the body.
+                self.showDesktopNotification();
+                self.endString();
+            },
             .allocable_string => self.endAllocableString(),
             .kitty_color_protocol_key => self.endKittyColorProtocolOption(.key_only, true),
             .kitty_color_protocol_value => self.endKittyColorProtocolOption(.key_and_value, true),
@@ -3433,4 +3463,46 @@ test "OSC: kitty color protocol no key" {
     const cmd = p.end('\x1b').?;
     try testing.expect(cmd == .kitty_color_protocol);
     try testing.expectEqual(0, cmd.kitty_color_protocol.list.items.len);
+}
+
+test "OSC: 9;6: ConEmu guimacro 1" {
+    const testing = std.testing;
+
+    var p: Parser = .initAlloc(testing.allocator);
+    defer p.deinit();
+
+    const input = "9;6;a";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .conemu_guimacro);
+    try testing.expectEqualStrings("a", cmd.conemu_guimacro);
+}
+
+test "OSC: 9;6: ConEmu guimacro 2" {
+    const testing = std.testing;
+
+    var p: Parser = .initAlloc(testing.allocator);
+    defer p.deinit();
+
+    const input = "9;6;ab";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .conemu_guimacro);
+    try testing.expectEqualStrings("ab", cmd.conemu_guimacro);
+}
+
+test "OSC: 9;6: ConEmu guimacro 3 incomplete -> desktop notification" {
+    const testing = std.testing;
+
+    var p: Parser = .initAlloc(testing.allocator);
+    defer p.deinit();
+
+    const input = "9;6";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?;
+    try testing.expect(cmd == .show_desktop_notification);
+    try testing.expectEqualStrings("6", cmd.show_desktop_notification.body);
 }
