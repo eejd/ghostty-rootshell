@@ -249,7 +249,7 @@ pub fn Stream(comptime Handler: type) type {
                     // the parser state to ground.
                     0x18, 0x1A => self.parser.state = .ground,
                     // A parameter digit:
-                    '0'...'9' => if (self.parser.params_idx < 16) {
+                    '0'...'9' => if (self.parser.params_idx < Parser.MAX_PARAMS) {
                         self.parser.param_acc *|= 10;
                         self.parser.param_acc +|= c - '0';
                         // The parser's CSI param action uses param_acc_idx
@@ -259,7 +259,7 @@ pub fn Stream(comptime Handler: type) type {
                         self.parser.param_acc_idx |= 1;
                     },
                     // A parameter separator:
-                    ':', ';' => if (self.parser.params_idx < 16) {
+                    ':', ';' => if (self.parser.params_idx < Parser.MAX_PARAMS) {
                         self.parser.params[self.parser.params_idx] = self.parser.param_acc;
                         if (c == ':') self.parser.params_sep.set(self.parser.params_idx);
                         self.parser.params_idx += 1;

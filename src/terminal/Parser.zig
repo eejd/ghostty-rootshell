@@ -206,7 +206,7 @@ const MAX_INTERMEDIATE = 4;
 /// number. I implore TUI authors to not use more than this number of CSI
 /// params, but I suspect we'll introduce a slow path with heap allocation
 /// one day.
-const MAX_PARAMS = 24;
+pub const MAX_PARAMS = 24;
 
 /// Current state of the state machine
 state: State,
