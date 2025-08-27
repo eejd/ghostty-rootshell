@@ -13,7 +13,7 @@ enum QuickTerminalPosition : String {
         guard let screen = window.screen ?? NSScreen.main else { return }
         window.setFrame(.init(
             origin: window.frame.origin,
-            size: size.calculate(position: self, screenDimensions: screen.frame.size)
+            size: size.calculate(position: self, screenDimensions: screen.visibleFrame.size)
         ), display: false)
     }
 
@@ -58,7 +58,7 @@ enum QuickTerminalPosition : String {
 
     /// Get the configured frame size for initial positioning and animations.
     func configuredFrameSize(on screen: NSScreen, terminalSize: QuickTerminalSize) -> NSSize {
-        let dimensions = terminalSize.calculate(position: self, screenDimensions: screen.frame.size)
+        let dimensions = terminalSize.calculate(position: self, screenDimensions: screen.visibleFrame.size)
         return NSSize(width: dimensions.width, height: dimensions.height)
     }
 
@@ -66,16 +66,24 @@ enum QuickTerminalPosition : String {
     func initialOrigin(for window: NSWindow, on screen: NSScreen) -> CGPoint {
         switch (self) {
         case .top:
-            return .init(x: round(screen.frame.origin.x + (screen.frame.width - window.frame.width) / 2), y: screen.frame.maxY)
+            return .init(
+                x: round(screen.visibleFrame.origin.x + (screen.visibleFrame.width - window.frame.width) / 2),
+                y: screen.visibleFrame.maxY)
 
         case .bottom:
-            return .init(x: round(screen.frame.origin.x + (screen.frame.width - window.frame.width) / 2), y: -window.frame.height)
+            return .init(
+                x: round(screen.visibleFrame.origin.x + (screen.visibleFrame.width - window.frame.width) / 2),
+                y: -window.frame.height)
 
         case .left:
-            return .init(x: screen.frame.minX-window.frame.width, y: round(screen.frame.origin.y + (screen.frame.height - window.frame.height) / 2))
+            return .init(
+                x: screen.visibleFrame.minX-window.frame.width,
+                y: round(screen.visibleFrame.origin.y + (screen.visibleFrame.height - window.frame.height) / 2))
 
         case .right:
-            return .init(x: screen.frame.maxX, y: round(screen.frame.origin.y + (screen.frame.height - window.frame.height) / 2))
+            return .init(
+                x: screen.visibleFrame.maxX,
+                y: round(screen.visibleFrame.origin.y + (screen.visibleFrame.height - window.frame.height) / 2))
 
         case .center:
             return .init(x: round(screen.visibleFrame.origin.x + (screen.visibleFrame.width - window.frame.width) / 2), y:  screen.visibleFrame.height - window.frame.width)
@@ -86,16 +94,24 @@ enum QuickTerminalPosition : String {
     func finalOrigin(for window: NSWindow, on screen: NSScreen) -> CGPoint {
         switch (self) {
         case .top:
-            return .init(x: round(screen.frame.origin.x + (screen.frame.width - window.frame.width) / 2), y: screen.visibleFrame.maxY - window.frame.height)
+            return .init(
+                x: round(screen.visibleFrame.origin.x + (screen.visibleFrame.width - window.frame.width) / 2),
+                y: screen.visibleFrame.maxY - window.frame.height)
 
         case .bottom:
-            return .init(x: round(screen.frame.origin.x + (screen.frame.width - window.frame.width) / 2), y: screen.frame.minY)
+            return .init(
+                x: round(screen.visibleFrame.origin.x + (screen.visibleFrame.width - window.frame.width) / 2),
+                y: screen.visibleFrame.minY)
 
         case .left:
-            return .init(x: screen.frame.minX, y: round(screen.frame.origin.y + (screen.frame.height - window.frame.height) / 2))
+            return .init(
+                x: screen.visibleFrame.minX,
+                y: round(screen.visibleFrame.origin.y + (screen.visibleFrame.height - window.frame.height) / 2))
 
         case .right:
-            return .init(x: screen.visibleFrame.maxX - window.frame.width, y: round(screen.frame.origin.y + (screen.frame.height - window.frame.height) / 2))
+            return .init(
+                x: screen.visibleFrame.maxX - window.frame.width,
+                y: round(screen.visibleFrame.origin.y + (screen.visibleFrame.height - window.frame.height) / 2))
 
         case .center:
             return .init(x: round(screen.visibleFrame.origin.x + (screen.visibleFrame.width - window.frame.width) / 2), y: round(screen.visibleFrame.origin.y + (screen.visibleFrame.height - window.frame.height) / 2))
@@ -125,13 +141,13 @@ enum QuickTerminalPosition : String {
         switch self {
         case .top:
             return CGPoint(
-                x: round(screen.frame.origin.x + (screen.frame.width - window.frame.width) / 2),
+                x: round(screen.visibleFrame.origin.x + (screen.visibleFrame.width - window.frame.width) / 2),
                 y: window.frame.origin.y // Keep the same Y position
             )
             
         case .bottom:
             return CGPoint(
-                x: round(screen.frame.origin.x + (screen.frame.width - window.frame.width) / 2),
+                x: round(screen.visibleFrame.origin.x + (screen.visibleFrame.width - window.frame.width) / 2),
                 y: window.frame.origin.y // Keep the same Y position
             )
             
@@ -153,13 +169,13 @@ enum QuickTerminalPosition : String {
         case .left:
             return CGPoint(
                 x: window.frame.origin.x, // Keep the same X position
-                y: round(screen.frame.origin.y + (screen.frame.height - window.frame.height) / 2)
+                y: round(screen.visibleFrame.origin.y + (screen.visibleFrame.height - window.frame.height) / 2)
             )
             
         case .right:
             return CGPoint(
                 x: window.frame.origin.x, // Keep the same X position
-                y: round(screen.frame.origin.y + (screen.frame.height - window.frame.height) / 2)
+                y: round(screen.visibleFrame.origin.y + (screen.visibleFrame.height - window.frame.height) / 2)
             )
             
         case .top, .bottom, .center:
