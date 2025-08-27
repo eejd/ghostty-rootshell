@@ -272,6 +272,7 @@ const DerivedConfig = struct {
     title_report: bool,
     links: []Link,
     link_previews: configpkg.LinkPreviews,
+    scroll_to_bottom: configpkg.Config.ScrollToBottom,
 
     const Link = struct {
         regex: oni.Regex,
@@ -340,6 +341,7 @@ const DerivedConfig = struct {
             .title_report = config.@"title-report",
             .links = links,
             .link_previews = config.@"link-previews",
+            .scroll_to_bottom = config.@"scroll-to-bottom",
 
             // Assignments happen sequentially so we have to do this last
             // so that the memory is captured from allocs above.
@@ -2280,7 +2282,8 @@ pub fn keyCallback(
             try self.setSelection(null);
         }
 
-        try self.io.terminal.scrollViewport(.{ .bottom = {} });
+        if (self.config.scroll_to_bottom.keystroke) try self.io.terminal.scrollViewport(.bottom);
+
         try self.queueRender();
     }
 
