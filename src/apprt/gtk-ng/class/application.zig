@@ -499,7 +499,15 @@ pub const Application = extern struct {
         const parent: ?*gtk.Widget = parent: {
             const list = gtk.Window.listToplevels();
             defer list.free();
-            const focused = list.findCustom(null, findActiveWindow);
+            const focused = @as(?*glib.List, list.findCustom(
+                null,
+                findActiveWindow,
+            )) orelse {
+                // If we have an active surface then we should have
+                // a window available but in the rare case we don't we
+                // should exit so we don't crash.
+                break :parent null;
+            };
             break :parent @ptrCast(@alignCast(focused.f_data));
         };
 
