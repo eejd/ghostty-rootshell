@@ -949,6 +949,31 @@ test "csi: too many params" {
     }
 }
 
+test "csi: 17 parameters" {
+    // Test with exactly 17 parameters (the Kakoune case)
+    var p = init();
+    _ = p.next(0x1B);
+    _ = p.next('[');
+    // Build 17 parameters separated by semicolons
+    for (0..16) |_| {
+        _ = p.next('1');
+        _ = p.next(';');
+    }
+    _ = p.next('2'); // 17th parameter
+
+    {
+        const a = p.next('H');
+        try testing.expect(p.state == .ground);
+        try testing.expect(a[0] == null);
+        try testing.expect(a[1].? == .csi_dispatch);
+        try testing.expect(a[2] == null);
+
+        const csi = a[1].?.csi_dispatch;
+        try testing.expectEqual(@as(usize, 17), csi.params.len);
+        try testing.expectEqual(@as(u16, 2), csi.params[16]);
+    }
+}
+
 test "dcs: XTGETTCAP" {
     var p = init();
     _ = p.next(0x1B);

@@ -2601,3 +2601,22 @@ test "stream CSI ? W reset tab stops" {
     try s.nextSlice("\x1b[?1;2;3W");
     try testing.expect(s.handler.reset);
 }
+
+test "stream: SGR with 17+ parameters for underline color" {
+    const H = struct {
+        attrs: ?sgr.Attribute = null,
+        called: bool = false,
+
+        pub fn setAttribute(self: *@This(), attr: sgr.Attribute) !void {
+            self.attrs = attr;
+            self.called = true;
+        }
+    };
+
+    var s: Stream(H) = .init(.{});
+
+    // Kakoune-style SGR with underline color as 17th parameter
+    // This tests the fix where param 17 was being dropped
+    try s.nextSlice("\x1b[4:3;38;2;51;51;51;48;2;170;170;170;58;2;255;97;136;0m");
+    try testing.expect(s.handler.called);
+}
