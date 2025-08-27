@@ -193,7 +193,7 @@ pub const Action = union(enum) {
 /// Maximum number of intermediate characters during parsing. This is
 /// 4 because we also use the intermediates array for UTF8 decoding which
 /// can be at most 4 bytes.
-const MAX_INTERMEDIATE = 4;
+pub const MAX_INTERMEDIATE = 4;
 
 /// Maximum number of CSI parameters. This is arbitrary. Practically, the
 /// only CSI command that uses more than 3 parameters is the SGR command
@@ -206,7 +206,7 @@ const MAX_INTERMEDIATE = 4;
 /// number. I implore TUI authors to not use more than this number of CSI
 /// params, but I suspect we'll introduce a slow path with heap allocation
 /// one day.
-const MAX_PARAMS = 24;
+pub const MAX_PARAMS = 24;
 
 /// Current state of the state machine
 state: State,
@@ -942,6 +942,55 @@ test "csi: too many params" {
 
     {
         const a = p.next('C');
+        try testing.expect(p.state == .ground);
+        try testing.expect(a[0] == null);
+        try testing.expect(a[1] == null);
+        try testing.expect(a[2] == null);
+    }
+}
+
+test "csi: sgr with up to our max parameters" {
+    for (1..MAX_PARAMS + 1) |max| {
+        var p = init();
+        _ = p.next(0x1B);
+        _ = p.next('[');
+
+        for (0..max - 1) |_| {
+            _ = p.next('1');
+            _ = p.next(';');
+        }
+        _ = p.next('2');
+
+        {
+            const a = p.next('H');
+            try testing.expect(p.state == .ground);
+            try testing.expect(a[0] == null);
+            try testing.expect(a[1].? == .csi_dispatch);
+            try testing.expect(a[2] == null);
+
+            const csi = a[1].?.csi_dispatch;
+            try testing.expectEqual(@as(usize, max), csi.params.len);
+            try testing.expectEqual(@as(u16, 2), csi.params[max - 1]);
+        }
+    }
+}
+
+test "csi: sgr beyond our max drops it" {
+    // Has to be +2 for the loops below
+    const max = MAX_PARAMS + 2;
+
+    var p = init();
+    _ = p.next(0x1B);
+    _ = p.next('[');
+
+    for (0..max - 1) |_| {
+        _ = p.next('1');
+        _ = p.next(';');
+    }
+    _ = p.next('2');
+
+    {
+        const a = p.next('H');
         try testing.expect(p.state == .ground);
         try testing.expect(a[0] == null);
         try testing.expect(a[1] == null);
