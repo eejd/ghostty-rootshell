@@ -13,6 +13,8 @@
     ·
     <a href="https://ghostty.org/docs">Documentation</a>
     ·
+    <a href="CONTRIBUTING.md">Contributing</a>
+    ·
     <a href="HACKING.md">Developing</a>
   </p>
 </p>
@@ -48,6 +50,14 @@ See the [download page](https://ghostty.org/download) on the Ghostty website.
 ## Documentation
 
 See the [documentation](https://ghostty.org/docs) on the Ghostty website.
+
+## Contributing and Developing
+
+If you have any ideas, issues, etc. regarding Ghostty, or would like to
+contribute to Ghostty through pull requests, please check out our
+["Contributing to Ghostty"](CONTRIBUTING.md) document. Those who would like
+to get involved with Ghostty's development as well should also read the
+["Developing Ghostty"](HACKING.md) document for more technical details.
 
 ## Roadmap and Status
 
@@ -184,7 +194,3 @@ SENTRY_DSN=https://e914ee84fd895c4fe324afa3e53dac76@o4507352570920960.ingest.us.
 > stack memory of each thread at the time of the crash. This information
 > is used to rebuild the stack trace but can also contain sensitive data
 > depending when the crash occurred.
-
-## Developing Ghostty
-
-Please check out our [HACKING.md](HACKING.md) for more details.
