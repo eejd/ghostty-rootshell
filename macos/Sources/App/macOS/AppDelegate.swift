@@ -412,6 +412,11 @@ class AppDelegate: NSObject,
             // due to things like Homebrew. Instead, we set the command to
             // `<filename>; exit` which is what Terminal and iTerm2 do.
             config.initialInput = "\(filename); exit\n"
+            
+            // For commands executed directly, we want to ensure we wait after exit
+            // because in most cases scripts don't block on exit and we don't want
+            // the window to just flash closed once complete.
+            config.waitAfterCommand = true
 
             // Set the parent directory to our working directory so that relative
             // paths in scripts work.

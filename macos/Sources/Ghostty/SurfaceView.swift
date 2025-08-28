@@ -424,6 +424,9 @@ extension Ghostty {
 
         /// Extra input to send as stdin
         var initialInput: String? = nil
+        
+        /// Wait after the command
+        var waitAfterCommand: Bool = false
 
         init() {}
 
@@ -475,6 +478,9 @@ extension Ghostty {
 
             // Zero is our default value that means to inherit the font size.
             config.font_size = fontSize ?? 0
+            
+            // Set wait after command
+            config.wait_after_command = waitAfterCommand
 
             // Use withCString to ensure strings remain valid for the duration of the closure
             return try workingDirectory.withCString { cWorkingDir in
