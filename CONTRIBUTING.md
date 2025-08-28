@@ -1,9 +1,9 @@
-# Ghostty Development Process
+# Contributing to Ghostty
 
-This document describes the development process for Ghostty. It is intended for
-anyone considering opening an **issue** or **pull request**. If in doubt,
-please open a [discussion](https://github.com/ghostty-org/ghostty/discussions);
-we can always convert that to an issue later.
+This document describes the process of contributing to Ghostty. It is intended
+for anyone considering opening an **issue**, **discussion** or **pull request**.
+For people who are interested in developing Ghostty and technical details behind
+it, please check out our ["Developing Ghostty"](HACKING.md) document as well.
 
 > [!NOTE]
 >
@@ -49,13 +49,16 @@ Please be respectful to maintainers and disclose AI assistance.
 
 ## Quick Guide
 
-**I'd like to contribute!**
+### I'd like to contribute!
 
-All issues are actionable. Pick one and start working on it. Thank you.
-If you need help or guidance, comment on the issue. Issues that are extra
-friendly to new contributors are tagged with "contributor friendly".
+[All issues are actionable](#issues-are-actionable). Pick one and start
+working on it. Thank you. If you need help or guidance, comment on the issue.
+Issues that are extra friendly to new contributors are tagged with
+["contributor friendly"].
 
-**I'd like to translate Ghostty to my language!**
+["contributor friendly"]: https://github.com/ghostty-org/ghostty/issues?q=is%3Aissue%20is%3Aopen%20label%3A%22contributor%20friendly%22
+
+### I'd like to translate Ghostty to my language!
 
 We have written a [Translator's Guide](po/README_TRANSLATORS.md) for
 everyone interested in contributing translations to Ghostty.
@@ -64,25 +67,39 @@ and you can submit pull requests directly, although please make sure that
 our [Style Guide](po/README_TRANSLATORS.md#style-guide) is followed before
 submission.
 
-**I have a bug!**
+### I have a bug! / Something isn't working!
 
-1. Search the issue tracker and discussions for similar issues.
-2. If you don't have steps to reproduce, open a discussion.
-3. If you have steps to reproduce, open an issue.
+1. Search the issue tracker and discussions for similar issues. Tip: also
+   search for [closed issues] and [discussions] — your issue might have already
+   been fixed!
+2. If your issue hasn't been reported already, open an ["Issue Triage" discussion]
+   and make sure to fill in the template **completely**. They are vital for
+   maintainers to figure out important details about your setup. Because of
+   this, please make sure that you _only_ use the "Issue Triage" category for
+   reporting bugs — thank you!
 
-**I have an idea for a feature!**
+[closed issues]: https://github.com/ghostty-org/ghostty/issues?q=is%3Aissue%20state%3Aclosed
+[discussions]: https://github.com/ghostty-org/ghostty/discussions?discussions_q=is%3Aclosed
+["Issue Triage" discussion]: https://github.com/ghostty-org/ghostty/discussions/new?category=issue-triage
 
-1. Open a discussion.
+### I have an idea for a feature!
 
-**I've implemented a feature!**
+Open a discussion in the ["Feature Requests, Ideas" category](https://github.com/ghostty-org/ghostty/discussions/new?category=feature-requests-ideas).
 
-1. If there is an issue for the feature, open a pull request.
+### I've implemented a feature!
+
+1. If there is an issue for the feature, open a pull request straight away.
 2. If there is no issue, open a discussion and link to your branch.
-3. If you want to live dangerously, open a pull request and hope for the best.
+3. If you want to live dangerously, open a pull request and
+   [hope for the best](#pull-requests-implement-an-issue).
 
-**I have a question!**
+### I have a question!
 
-1. Open a discussion or use Discord.
+Open an [Q&A discussion], or join our [Discord Server] and ask away in the
+`#help` channel.
+
+[Q&A discussion]: https://github.com/ghostty-org/ghostty/discussions/new?category=q-a
+[Discord Server]: https://discord.gg/ghostty
 
 ## General Patterns
 
@@ -120,209 +137,3 @@ pull request will be accepted with a high degree of certainty.
 > **Pull requests are NOT a place to discuss feature design.** Please do
 > not open a WIP pull request to discuss a feature. Instead, use a discussion
 > and link to your branch.
-
-# Developer Guide
-
-> [!NOTE]
->
-> **The remainder of this file is dedicated to developers actively
-> working on Ghostty.** If you're a user reporting an issue, you can
-> ignore the rest of this document.
-
-## Including and Updating Translations
-
-See the [Contributor's Guide](po/README_CONTRIBUTORS.md) for more details.
-
-## Checking for Memory Leaks
-
-While Zig does an amazing job of finding and preventing memory leaks,
-Ghostty uses many third-party libraries that are written in C. Improper usage
-of those libraries or bugs in those libraries can cause memory leaks that
-Zig cannot detect by itself.
-
-### On Linux
-
-On Linux the recommended tool to check for memory leaks is Valgrind. The
-recommended way to run Valgrind is via `zig build`:
-
-```sh
-zig build run-valgrind
-```
-
-This builds a Ghostty executable with Valgrind support and runs Valgrind
-with the proper flags to ensure we're suppressing known false positives.
-
-You can combine the same build args with `run-valgrind` that you can with
-`run`, such as specifying additional configurations after a trailing `--`.
-
-## Input Stack Testing
-
-The input stack is the part of the codebase that starts with a
-key event and ends with text encoding being sent to the pty (it
-does not include _rendering_ the text, which is part of the
-font or rendering stack).
-
-If you modify any part of the input stack, you must manually verify
-all the following input cases work properly. We unfortunately do
-not automate this in any way, but if we can do that one day that'd
-save a LOT of grief and time.
-
-Note: this list may not be exhaustive, I'm still working on it.
-
-### Linux IME
-
-IME (Input Method Editors) are a common source of bugs in the input stack,
-especially on Linux since there are multiple different IME systems
-interacting with different windowing systems and application frameworks
-all written by different organizations.
-
-The following matrix should be tested to ensure that all IME input works
-properly:
-
-1. Wayland, X11
-2. ibus, fcitx, none
-3. Dead key input (e.g. Spanish), CJK (e.g. Japanese), Emoji, Unicode Hex
-4. ibus versions: 1.5.29, 1.5.30, 1.5.31 (each exhibit slightly different behaviors)
-
-> [!NOTE]
->
-> This is a **work in progress**. I'm still working on this list and it
-> is not complete. As I find more test cases, I will add them here.
-
-#### Dead Key Input
-
-Set your keyboard layout to "Spanish" (or another layout that uses dead keys).
-
-1. Launch Ghostty
-2. Press `'`
-3. Press `a`
-4. Verify that `á` is displayed
-
-Note that the dead key may or may not show a preedit state visually.
-For ibus and fcitx it does but for the "none" case it does not. Importantly,
-the text should be correct when it is sent to the pty.
-
-We should also test canceling dead key input:
-
-1. Launch Ghostty
-2. Press `'`
-3. Press escape
-4. Press `a`
-5. Verify that `a` is displayed (no diacritic)
-
-#### CJK Input
-
-Configure fcitx or ibus with a keyboard layout like Japanese or Mozc. The
-exact layout doesn't matter.
-
-1. Launch Ghostty
-2. Press `Ctrl+Shift` to switch to "Hiragana"
-3. On a US physical layout, type: `konn`, you should see `こん` in preedit.
-4. Press `Enter`
-5. Verify that `こん` is displayed in the terminal.
-
-We should also test switching input methods while preedit is active, which
-should commit the text:
-
-1. Launch Ghostty
-2. Press `Ctrl+Shift` to switch to "Hiragana"
-3. On a US physical layout, type: `konn`, you should see `こん` in preedit.
-4. Press `Ctrl+Shift` to switch to another layout (any)
-5. Verify that `こん` is displayed in the terminal as committed text.
-
-## Nix Virtual Machines
-
-Several Nix virtual machine definitions are provided by the project for testing
-and developing Ghostty against multiple different Linux desktop environments.
-
-Running these requires a working Nix installation, either Nix on your
-favorite Linux distribution, NixOS, or macOS with nix-darwin installed. Further
-requirements for macOS are detailed below.
-
-VMs should only be run on your local desktop and then powered off when not in
-use, which will discard any changes to the VM.
-
-The VM definitions provide minimal software "out of the box" but additional
-software can be installed by using standard Nix mechanisms like `nix run nixpkgs#<package>`.
-
-### Linux
-
-1. Check out the Ghostty source and change to the directory.
-2. Run `nix run .#<vmtype>`. `<vmtype>` can be any of the VMs defined in the
-   `nix/vm` directory (without the `.nix` suffix) excluding any file prefixed
-   with `common` or `create`.
-3. The VM will build and then launch. Depending on the speed of your system, this
-   can take a while, but eventually you should get a new VM window.
-4. The Ghostty source directory should be mounted to `/tmp/shared` in the VM. Depending
-   on what UID and GID of the user that you launched the VM as, `/tmp/shared` _may_ be
-   writable by the VM user, so be careful!
-
-### macOS
-
-1. To run the VMs on macOS you will need to enable the Linux builder in your `nix-darwin`
-   config. This _should_ be as simple as adding `nix.linux-builder.enable=true` to your
-   configuration and then rebuilding. See [this](https://nixcademy.com/posts/macos-linux-builder/)
-   blog post for more information about the Linux builder and how to tune the performance.
-2. Once the Linux builder has been enabled, you should be able to follow the Linux instructions
-   above to launch a VM.
-
-### Custom VMs
-
-To easily create a custom VM without modifying the Ghostty source, create a new
-directory, then create a file called `flake.nix` with the following text in the
-new directory.
-
-```
-{
-  inputs = {
-    nixpkgs.url = "nixpkgs/nixpkgs-unstable";
-    ghostty.url = "github:ghostty-org/ghostty";
-  };
-  outputs = {
-    nixpkgs,
-    ghostty,
-    ...
-  }: {
-   nixosConfigurations.custom-vm = ghostty.create-gnome-vm {
-     nixpkgs = nixpkgs;
-     system = "x86_64-linux";
-     overlay = ghostty.overlays.releasefast;
-     # module = ./configuration.nix # also works
-     module = {pkgs, ...}: {
-       environment.systemPackages = [
-         pkgs.btop
-       ];
-     };
-    };
-  };
-}
-```
-
-The custom VM can then be run with a command like this:
-
-```
-nix run .#nixosConfigurations.custom-vm.config.system.build.vm
-```
-
-A file named `ghostty.qcow2` will be created that is used to persist any changes
-made in the VM. To "reset" the VM to default delete the file and it will be
-recreated the next time you run the VM.
-
-### Contributing new VM definitions
-
-#### VM Acceptance Criteria
-
-We welcome the contribution of new VM definitions, as long as they meet the following criteria:
-
-1. They should be different enough from existing VM definitions that they represent a distinct
-   user (and developer) experience.
-2. There's a significant Ghostty user population that uses a similar environment.
-3. The VMs can be built using only packages from the current stable NixOS release.
-
-#### VM Definition Criteria
-
-1. VMs should be as minimal as possible so that they build and launch quickly.
-   Additional software can be added at runtime with a command like `nix run nixpkgs#<package name>`.
-2. VMs should not expose any services to the network, or run any remote access
-   software like SSH daemons, VNC or RDP.
-3. VMs should auto-login using the "ghostty" user.
