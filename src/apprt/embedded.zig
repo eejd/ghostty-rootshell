@@ -448,7 +448,7 @@ pub const Surface = struct {
         /// Input to send to the command after it is started.
         initial_input: ?[*:0]const u8 = null,
 
-        // Wait after the command exits
+        /// Wait after the command exits
         wait_after_command: bool = false,
     };
 
