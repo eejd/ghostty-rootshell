@@ -12,7 +12,7 @@ window.ssd.no-border-radius {
   border-radius: 0 0;
 }
 
-/* 
+/*
  * GhosttySurface URL overlay
  */
 label.url-overlay {
@@ -83,13 +83,13 @@ label.resize-overlay {
  */
 .child-exited.normal revealer widget {
   background-color: rgba(38, 162, 105, 0.5);
-  /* after GTK 4.16 is a requirement, switch to the following:
+  /* after GTK 4.16 is a requirement, switch to the following: */
   /* background-color: color-mix(in srgb, var(--success-bg-color), transparent 50%); */
 }
 
 .child-exited.abnormal revealer widget {
   background-color: rgba(192, 28, 40, 0.5);
-  /* after GTK 4.16 is a requirement, switch to the following:
+  /* after GTK 4.16 is a requirement, switch to the following: */
   /* background-color: color-mix(in srgb, var(--error-bg-color), transparent 50%); */
 }
 
@@ -97,13 +97,15 @@ label.resize-overlay {
  * Surface
  */
 .surface progressbar.error trough progress {
-  background-color: rgb(192, 28, 40);
+  background-color: rgba(192, 28, 40, 0.5);
   /* after GTK 4.16 is a requirement, switch to the following: */
-  /* background-color: color-mix(in srgb, var(--error-bg-color), transparent); */
+  /* background-color: color-mix(in srgb, var(--error-bg-color), transparent 50%); */
 }
 
 .surface .bell-overlay {
-  border-color: color-mix(in srgb, var(--accent-color), transparent 50%);
+  border-color: rgba(58, 148, 74, 0.5);
+  /* after GTK 4.16 is a requirement, switch to the following: */
+  /* background-color: color-mix(in srgb, var(--accent-color), transparent 50%); */
   border-width: 3px;
   border-style: solid;
 }
@@ -127,6 +129,8 @@ label.resize-overlay {
 
 .window .split paned > separator {
   background-color: rgba(250, 250, 250, 1);
+  /* after GTK 4.16 is a requirement, switch to the following: */
+  /* background-color: color-mix(in srgb, var(--window-bg-color), transparent 0%); */
   background-clip: content-box;
 
   /* This works around the oversized drag area for the right side of GtkPaned.
