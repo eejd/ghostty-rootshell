@@ -70,13 +70,15 @@ pub const Runtime = enum {
     gtk,
 
     pub fn default(target: std.Target) Runtime {
-        // The Linux default is GTK because it is a full featured application.
-        if (target.os.tag == .linux) return .@"gtk-ng";
-
-        // Otherwise, we do NONE so we don't create an exe and we
-        // create libghostty. On macOS, Xcode is used to build the app
-        // that links to libghostty.
-        return .none;
+        return switch (target.os.tag) {
+            // The Linux and FreeBSD default is GTK because it is a full
+            // featured application.
+            .linux, .freebsd => .@"gtk-ng",
+            // Otherwise, we do NONE so we don't create an exe and we create
+            // libghostty. On macOS, Xcode is used to build the app that links
+            // to libghostty.
+            else => .none,
+        };
     }
 };
 
