@@ -109,15 +109,10 @@
     "url": "https://deps.files.ghostty.org/utfcpp-1220d4d18426ca72fc2b7e56ce47273149815501d0d2395c2a98c726b31ba931e641.tar.gz",
     "hash": "sha256-/8ZooxDndgfTk/PBizJxXyI9oerExNbgV5oR345rWc8="
   },
-  "uucode-0.0.0-ZZjBPjWBPACBbQFG11xoSRCP8NztUnPCieiCtBx0t57i": {
+  "uucode-0.0.0-ZZjBPiqdPwB-rG3ieaq3c6tMpnksWYs4_rGj2IvFGjjB": {
     "name": "uucode",
-    "url": "https://github.com/jacobsandlund/uucode/archive/658743f845f25f8f8d30f535329829660c808eaf.tar.gz",
-    "hash": "sha256-1q5n3eqopVi1qrsg3XOth3ZkVo2ah2WgcyHkZrV7260="
-  },
-  "uucode_x-0.0.0-5_D0j04hAADjn00a4Jfsjqz-gO6oF8FTLWUXmmvO1_MQ": {
-    "name": "uucode_x",
-    "url": "https://github.com/jacobsandlund/uucode.x/archive/ca9a9a4560307a30319d206b1ac68a7fc2f2fce9.tar.gz",
-    "hash": "sha256-nr3tujSgGr5qE++ctjXGyS+9PrVdItovVHHgbo9ntWM="
+    "url": "https://github.com/jacobsandlund/uucode/archive/38b82297e69a3b2dc55dc8df25f3851be37f9327.tar.gz",
+    "hash": "sha256-MkWxYZHONRxGyUvGI5cAKi/ckGiXIBxkktCz5r+zWrk="
   },
   "vaxis-0.1.0-BWNV_FUICQAFZnTCL11TUvnUr1Y0_ZdqtXHhd51d76Rn": {
     "name": "vaxis",
