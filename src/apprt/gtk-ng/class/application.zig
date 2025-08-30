@@ -732,27 +732,24 @@ pub const Application = extern struct {
         }
     }
 
-    fn loadRuntimeCss(
-        self: *Self,
-    ) Allocator.Error!void {
+    fn loadRuntimeCss(self: *Self) Allocator.Error!void {
         const alloc = self.allocator();
 
-        var buf: std.ArrayListUnmanaged(u8) = .empty;
+        const config = self.private().config.get();
+
+        var buf: std.ArrayListUnmanaged(u8) = try .initCapacity(alloc, 2048);
         defer buf.deinit(alloc);
 
         const writer = buf.writer(alloc);
 
-        const config = self.private().config.get();
-        const window_theme = config.@"window-theme";
         const unfocused_fill: CoreConfig.Color = config.@"unfocused-split-fill" orelse config.background;
-        const headerbar_background = config.@"window-titlebar-background" orelse config.background;
-        const headerbar_foreground = config.@"window-titlebar-foreground" orelse config.foreground;
 
         try writer.print(
             \\widget.unfocused-split {{
             \\ opacity: {d:.2};
             \\ background-color: rgb({d},{d},{d});
             \\}}
+            \\
         , .{
             1.0 - config.@"unfocused-split-opacity",
             unfocused_fill.r,
@@ -766,6 +763,7 @@ pub const Application = extern struct {
                 \\  color: rgb({[r]d},{[g]d},{[b]d});
                 \\  background: rgb({[r]d},{[g]d},{[b]d});
                 \\}}
+                \\
             , .{
                 .r = color.r,
                 .g = color.g,
@@ -778,8 +776,128 @@ pub const Application = extern struct {
                 \\.window headerbar {{
                 \\  font-family: "{[font_family]s}";
                 \\}}
+                \\
             , .{ .font_family = font_family });
         }
+
+        try loadRuntimeCss414(config, &writer);
+        try loadRuntimeCss416(config, &writer);
+
+        // ensure that we have a sentinel
+        try writer.writeByte(0);
+
+        const data = buf.items[0 .. buf.items.len - 1 :0];
+
+        log.debug("runtime CSS is {d} bytes", .{data.len + 1});
+
+        // Clears any previously loaded CSS from this provider
+        loadCssProviderFromData(
+            self.private().css_provider,
+            data,
+        );
+    }
+
+    /// Load runtime CSS for older than GTK 4.16
+    fn loadRuntimeCss414(
+        config: *const CoreConfig,
+        writer: *const std.ArrayListUnmanaged(u8).Writer,
+    ) Allocator.Error!void {
+        if (gtk_version.runtimeAtLeast(4, 16, 0)) return;
+
+        const window_theme = config.@"window-theme";
+        const headerbar_background = config.@"window-titlebar-background" orelse config.background;
+        const headerbar_foreground = config.@"window-titlebar-foreground" orelse config.foreground;
+
+        switch (window_theme) {
+            .ghostty => try writer.print(
+                \\windowhandle {{
+                \\  background-color: rgb({d},{d},{d});
+                \\  color: rgb({d},{d},{d});
+                \\}}
+                \\windowhandle:backdrop {{
+                \\ background-color: oklab(from rgb({d},{d},{d}) calc(l * 0.9) a b / alpha);
+                \\}}
+                \\
+            , .{
+                headerbar_background.r,
+                headerbar_background.g,
+                headerbar_background.b,
+                headerbar_foreground.r,
+                headerbar_foreground.g,
+                headerbar_foreground.b,
+                headerbar_background.r,
+                headerbar_background.g,
+                headerbar_background.b,
+            }),
+            else => {},
+        }
+    }
+
+    /// Load runtime for GTK 4.16 and newer
+    fn loadRuntimeCss416(
+        config: *const CoreConfig,
+        writer: *const std.ArrayListUnmanaged(u8).Writer,
+    ) Allocator.Error!void {
+        if (gtk_version.runtimeUntil(4, 16, 0)) return;
+
+        const window_theme = config.@"window-theme";
+        const headerbar_background = config.@"window-titlebar-background" orelse config.background;
+        const headerbar_foreground = config.@"window-titlebar-foreground" orelse config.foreground;
+
+        try writer.writeAll(
+            \\/*
+            \\ * Child Exited Overlay
+            \\ */
+            \\
+            \\.child-exited.normal revealer widget {
+            \\  background-color: color-mix(
+            \\    in srgb,
+            \\    var(--success-bg-color),
+            \\    transparent 50%
+            \\  );
+            \\}
+            \\
+            \\.child-exited.abnormal revealer widget {
+            \\  background-color: color-mix(
+            \\    in srgb,
+            \\    var(--error-bg-color),
+            \\    transparent 50%
+            \\  );
+            \\}
+            \\
+            \\/*
+            \\ * Surface
+            \\ */
+            \\
+            \\.surface progressbar.error trough progress {
+            \\  background-color: color-mix(
+            \\    in srgb,
+            \\    var(--error-bg-color),
+            \\    transparent 50%
+            \\  );
+            \\}
+            \\
+            \\.surface .bell-overlay {
+            \\  border-color: color-mix(
+            \\    in srgb,
+            \\    var(--accent-color),
+            \\    transparent 50%
+            \\  );
+            \\}
+            \\
+            \\/*
+            \\ * Splits
+            \\ */
+            \\
+            \\.window .split paned > separator {
+            \\  background-color: color-mix(
+            \\    in srgb,
+            \\    var(--window-bg-color),
+            \\    transparent 0%
+            \\  );
+            \\}
+            \\
+        );
 
         switch (window_theme) {
             .ghostty => try writer.print(
@@ -813,15 +931,6 @@ pub const Application = extern struct {
             }),
             else => {},
         }
-
-        const data = try alloc.dupeZ(u8, buf.items);
-        defer alloc.free(data);
-
-        // Clears any previously loaded CSS from this provider
-        loadCssProviderFromData(
-            self.private().css_provider,
-            data,
-        );
     }
 
     fn loadCustomCss(self: *Self) !void {
