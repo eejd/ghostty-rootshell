@@ -3040,7 +3040,7 @@ else
 /// or greater than 1 will be clamped to the nearest valid value.
 ///
 /// Available since Ghostty 1.2.0.
-@"faint-opacity": f64 = 0.6,
+@"faint-opacity": f64 = 0.5,
 
 /// This will be used to set the `TERM` environment variable.
 /// HACK: We set this with an `xterm` prefix because vim uses that to enable key
