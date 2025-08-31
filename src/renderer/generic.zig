@@ -585,7 +585,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     .background = config.background.toTerminalRGB(),
                     .foreground = config.foreground.toTerminalRGB(),
                     .bold_color = config.@"bold-color",
-                    .faint_opacity = @intFromFloat(@ceil(std.math.clamp(config.@"faint-opacity", 0.0, 1.0) * 255)),
+                    .faint_opacity = @intFromFloat(@ceil(config.@"faint-opacity" * 255)),
 
                     .min_contrast = @floatCast(config.@"minimum-contrast"),
                     .padding_color = config.@"window-padding-color",

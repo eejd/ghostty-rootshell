@@ -4024,6 +4024,8 @@ pub fn finalize(self: *Config) !void {
     if (self.@"auto-update-channel" == null) {
         self.@"auto-update-channel" = build_config.release_channel;
     }
+
+    self.@"faint-opacity" = std.math.clamp(self.@"faint-opacity", 0.0, 1.0);
 }
 
 /// Callback for src/cli/args.zig to allow us to handle special cases
