@@ -522,6 +522,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             selection_background: ?configpkg.Config.TerminalColor,
             selection_foreground: ?configpkg.Config.TerminalColor,
             bold_color: ?configpkg.BoldColor,
+            faint_opacity: u8,
             min_contrast: f32,
             padding_color: configpkg.WindowPaddingColor,
             custom_shaders: configpkg.RepeatablePath,
@@ -584,6 +585,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     .background = config.background.toTerminalRGB(),
                     .foreground = config.foreground.toTerminalRGB(),
                     .bold_color = config.@"bold-color",
+                    .faint_opacity = @intFromFloat(@ceil(config.@"faint-opacity" * 255)),
 
                     .min_contrast = @floatCast(config.@"minimum-contrast"),
                     .padding_color = config.@"window-padding-color",
@@ -2633,7 +2635,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     };
 
                     // Foreground alpha for this cell.
-                    const alpha: u8 = if (style.flags.faint) 175 else 255;
+                    const alpha: u8 = if (style.flags.faint) self.config.faint_opacity else 255;
 
                     // Set the cell's background color.
                     {

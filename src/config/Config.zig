@@ -3035,6 +3035,13 @@ else
 /// Available since Ghostty 1.2.0.
 @"bold-color": ?BoldColor = null,
 
+/// The opacity level (opposite of transparency) of the faint text. A value of
+/// 1 is fully opaque and a value of 0 is fully transparent. A value less than 0
+/// or greater than 1 will be clamped to the nearest valid value.
+///
+/// Available since Ghostty 1.2.0.
+@"faint-opacity": f64 = 0.5,
+
 /// This will be used to set the `TERM` environment variable.
 /// HACK: We set this with an `xterm` prefix because vim uses that to enable key
 /// protocols (specifically this will enable `modifyOtherKeys`), among other
@@ -4017,6 +4024,8 @@ pub fn finalize(self: *Config) !void {
     if (self.@"auto-update-channel" == null) {
         self.@"auto-update-channel" = build_config.release_channel;
     }
+
+    self.@"faint-opacity" = std.math.clamp(self.@"faint-opacity", 0.0, 1.0);
 }
 
 /// Callback for src/cli/args.zig to allow us to handle special cases
