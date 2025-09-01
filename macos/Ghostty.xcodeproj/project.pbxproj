@@ -127,6 +127,7 @@
 		A5CF66D72D29DDB500139794 /* Ghostty.Event.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CF66D62D29DDB100139794 /* Ghostty.Event.swift */; };
 		A5D0AF3B2B36A1DE00D21823 /* TerminalRestorable.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5D0AF3A2B36A1DE00D21823 /* TerminalRestorable.swift */; };
 		A5D0AF3D2B37804400D21823 /* CodableBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5D0AF3C2B37804400D21823 /* CodableBridge.swift */; };
+		A5D689BE2E654D98002E2346 /* Ghostty.Action.swift in Sources */ = {isa = PBXBuildFile; fileRef = A53A6C022CCC1B7D00943E98 /* Ghostty.Action.swift */; };
 		A5E112932AF73E6E00C6E0C2 /* ClipboardConfirmation.xib in Resources */ = {isa = PBXBuildFile; fileRef = A5E112922AF73E6E00C6E0C2 /* ClipboardConfirmation.xib */; };
 		A5E112952AF73E8A00C6E0C2 /* ClipboardConfirmationController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5E112942AF73E8A00C6E0C2 /* ClipboardConfirmationController.swift */; };
 		A5E112972AF7401B00C6E0C2 /* ClipboardConfirmationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5E112962AF7401B00C6E0C2 /* ClipboardConfirmationView.swift */; };
@@ -987,6 +988,7 @@
 				A5333E232B5A219A008AEFF7 /* SurfaceView.swift in Sources */,
 				A5333E202B5A2111008AEFF7 /* SurfaceView_UIKit.swift in Sources */,
 				A5333E1D2B5A1CE3008AEFF7 /* CrossKit.swift in Sources */,
+				A5D689BE2E654D98002E2346 /* Ghostty.Action.swift in Sources */,
 				A53D0C9C2B543F7B00305CE6 /* Package.swift in Sources */,
 				A53D0C9B2B543F3B00305CE6 /* Ghostty.App.swift in Sources */,
 				A5333E242B5A22D9008AEFF7 /* Ghostty.Shell.swift in Sources */,
