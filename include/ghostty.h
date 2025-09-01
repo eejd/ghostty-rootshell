@@ -722,15 +722,15 @@ typedef enum {
   GHOSTTY_PROGRESS_STATE_ERROR,
   GHOSTTY_PROGRESS_STATE_INDETERMINATE,
   GHOSTTY_PROGRESS_STATE_PAUSE,
-} ghostty_terminal_osc_command_progressreport_state_e;
+} ghostty_action_progress_report_state_e;
 
 // terminal.osc.Command.ProgressReport.C
 typedef struct {
-  ghostty_terminal_osc_command_progressreport_state_e state;
+  ghostty_action_progress_report_state_e state;
   // -1 if no progress was reported, otherwise 0-100 indicating percent
   // completeness.
   int8_t progress;
-} ghostty_terminal_osc_command_progressreport_s;
+} ghostty_action_progress_report_s;
 
 // apprt.Action.Key
 typedef enum {
@@ -817,7 +817,7 @@ typedef union {
   ghostty_action_open_url_s open_url;
   ghostty_action_close_tab_mode_e close_tab_mode;
   ghostty_surface_message_childexited_s child_exited;
-  ghostty_terminal_osc_command_progressreport_s progress_report;
+  ghostty_action_progress_report_s progress_report;
 } ghostty_action_u;
 
 typedef struct {

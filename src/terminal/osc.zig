@@ -211,7 +211,6 @@ pub const Command = union(enum) {
     };
 
     pub const ProgressReport = struct {
-        // sync with ghostty_terminal_osc_command_progressreport_state_e in include/ghostty.h
         pub const State = enum(c_int) {
             remove,
             set,
@@ -223,7 +222,7 @@ pub const Command = union(enum) {
         state: State,
         progress: ?u8 = null,
 
-        // sync with ghostty_terminal_osc_command_progressreport_s in include/ghostty.h
+        // sync with ghostty_action_progress_report_s
         pub const C = extern struct {
             state: c_int,
             progress: i8,
@@ -232,7 +231,11 @@ pub const Command = union(enum) {
         pub fn cval(self: ProgressReport) C {
             return .{
                 .state = @intFromEnum(self.state),
-                .progress = if (self.progress) |progress| @intCast(std.math.clamp(progress, 0, 100)) else -1,
+                .progress = if (self.progress) |progress| @intCast(std.math.clamp(
+                    progress,
+                    0,
+                    100,
+                )) else -1,
             };
         }
     };
