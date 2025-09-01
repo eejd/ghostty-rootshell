@@ -249,7 +249,7 @@ pub fn Stream(comptime Handler: type) type {
                     // the parser state to ground.
                     0x18, 0x1A => self.parser.state = .ground,
                     // A parameter digit:
-                    '0'...'9' => if (self.parser.params_idx < 16) {
+                    '0'...'9' => if (self.parser.params_idx < Parser.MAX_PARAMS) {
                         self.parser.param_acc *|= 10;
                         self.parser.param_acc +|= c - '0';
                         // The parser's CSI param action uses param_acc_idx
@@ -259,7 +259,7 @@ pub fn Stream(comptime Handler: type) type {
                         self.parser.param_acc_idx |= 1;
                     },
                     // A parameter separator:
-                    ':', ';' => if (self.parser.params_idx < 16) {
+                    ':', ';' => if (self.parser.params_idx < Parser.MAX_PARAMS) {
                         self.parser.params[self.parser.params_idx] = self.parser.param_acc;
                         if (c == ':') self.parser.params_sep.set(self.parser.params_idx);
                         self.parser.params_idx += 1;
@@ -1598,14 +1598,19 @@ pub fn Stream(comptime Handler: type) type {
                     } else log.warn("unimplemented OSC callback: {}", .{cmd});
                 },
 
-                .progress_report => |v| {
+                .conemu_progress_report => |v| {
                     if (@hasDecl(T, "handleProgressReport")) {
                         try self.handler.handleProgressReport(v);
                         return;
                     } else log.warn("unimplemented OSC callback: {}", .{cmd});
                 },
 
-                .sleep, .show_message_box, .change_conemu_tab_title, .wait_input => {
+                .conemu_sleep,
+                .conemu_show_message_box,
+                .conemu_change_tab_title,
+                .conemu_wait_input,
+                .conemu_guimacro,
+                => {
                     log.warn("unimplemented OSC callback: {}", .{cmd});
                 },
 
@@ -2595,4 +2600,23 @@ test "stream CSI ? W reset tab stops" {
     // Invalid and ignored by the handler
     try s.nextSlice("\x1b[?1;2;3W");
     try testing.expect(s.handler.reset);
+}
+
+test "stream: SGR with 17+ parameters for underline color" {
+    const H = struct {
+        attrs: ?sgr.Attribute = null,
+        called: bool = false,
+
+        pub fn setAttribute(self: *@This(), attr: sgr.Attribute) !void {
+            self.attrs = attr;
+            self.called = true;
+        }
+    };
+
+    var s: Stream(H) = .init(.{});
+
+    // Kakoune-style SGR with underline color as 17th parameter
+    // This tests the fix where param 17 was being dropped
+    try s.nextSlice("\x1b[4:3;38;2;51;51;51;48;2;170;170;170;58;2;255;97;136;0m");
+    try testing.expect(s.handler.called);
 }

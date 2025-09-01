@@ -552,11 +552,15 @@ pub const Action = union(enum) {
     /// of the `confirm-close-surface` configuration setting.
     close_surface,
 
-    /// Close the current tab and all splits therein.
+    /// Close the current tab and all splits therein _or_ close all tabs and
+    /// splits thein of tabs _other_ than the current tab, depending on the
+    /// mode.
+    ///
+    /// If the mode is not specified, defaults to closing the current tab.
     ///
     /// This might trigger a close confirmation popup, depending on the value
     /// of the `confirm-close-surface` configuration setting.
-    close_tab,
+    close_tab: CloseTabMode,
 
     /// Close the current window and all tabs and splits therein.
     ///
@@ -856,6 +860,13 @@ pub const Action = union(enum) {
         toggle,
         show,
         hide,
+    };
+
+    pub const CloseTabMode = enum {
+        this,
+        other,
+
+        pub const default: CloseTabMode = .this;
     };
 
     fn parseEnum(comptime T: type, value: []const u8) !T {

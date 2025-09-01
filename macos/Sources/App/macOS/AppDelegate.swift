@@ -394,35 +394,69 @@ class AppDelegate: NSObject,
         // Ghostty will validate as well but we can avoid creating an entirely new
         // surface by doing our own validation here. We can also show a useful error
         // this way.
-
+        
         var isDirectory = ObjCBool(true)
         guard FileManager.default.fileExists(atPath: filename, isDirectory: &isDirectory) else { return false }
-
+        
+        // Set to true if confirmation is required before starting up the
+        // new terminal.
+        var requiresConfirm: Bool = false
+        
         // Initialize the surface config which will be used to create the tab or window for the opened file.
         var config = Ghostty.SurfaceConfiguration()
-
+        
         if (isDirectory.boolValue) {
             // When opening a directory, check the configuration to decide
             // whether to open in a new tab or new window.
             config.workingDirectory = filename
         } else {
+            // Unconditionally require confirmation in the file execution case.
+            // In the future I have ideas about making this more fine-grained if
+            // we can not inherit of unsandboxed state. For now, we need to confirm
+            // because there is a sandbox escape possible if a sandboxed application
+            // somehow is tricked into `open`-ing a non-sandboxed application.
+            requiresConfirm = true
+            
             // When opening a file, we want to execute the file. To do this, we
             // don't override the command directly, because it won't load the
             // profile/rc files for the shell, which is super important on macOS
             // due to things like Homebrew. Instead, we set the command to
             // `<filename>; exit` which is what Terminal and iTerm2 do.
             config.initialInput = "\(filename); exit\n"
-
+            
+            // For commands executed directly, we want to ensure we wait after exit
+            // because in most cases scripts don't block on exit and we don't want
+            // the window to just flash closed once complete.
+            config.waitAfterCommand = true
+            
             // Set the parent directory to our working directory so that relative
             // paths in scripts work.
             config.workingDirectory = (filename as NSString).deletingLastPathComponent
+        }
+        
+        if requiresConfirm {
+            // Confirmation required. We use an app-wide NSAlert for now. In the future we
+            // may want to show this as a sheet on the focused window (especially if we're
+            // opening a tab). I'm not sure.
+            let alert = NSAlert()
+            alert.messageText = "Allow Ghostty to execute \"\(filename)\"?"
+            alert.addButton(withTitle: "Allow")
+            alert.addButton(withTitle: "Cancel")
+            alert.alertStyle = .warning
+            switch (alert.runModal()) {
+            case .alertFirstButtonReturn:
+                break
+                
+            default:
+                return false
+            }
         }
         
         switch ghostty.config.macosDockDropBehavior {
         case .new_tab: _ = TerminalController.newTab(ghostty, withBaseConfig: config)
         case .new_window: _ = TerminalController.newWindow(ghostty, withBaseConfig: config)
         }
-
+        
         return true
     }
 

@@ -49,6 +49,7 @@
       inherit name rev hash;
       url = url_without_query;
       deepClone = false;
+      fetchSubmodules = false;
     };
 
   fetchZigArtifact = {
@@ -162,11 +163,11 @@ in
       };
     }
     {
-      name = "N-V-__8AAAlgXwSghpDmXBXZM4Rpd80WKOXVWTrcL0ucVmls";
+      name = "N-V-__8AAAtjXwSdhZq_xYbCXo0SZMqoNoQuHFkC07sijQME";
       path = fetchZigArtifact {
         name = "iterm2_themes";
-        url = "https://github.com/mbadolato/iTerm2-Color-Schemes/archive/8b639f0c2605557bd23ba1b940842c67bbfd4ed0.tar.gz";
-        hash = "sha256-PySWF/9IAK4DZCkd5FRpiaIl6et2Qm6t8IKCTzh/Xa0=";
+        url = "https://github.com/mbadolato/iTerm2-Color-Schemes/archive/6cdbc8501d48601302e32d6b53e9e7934bf354b4.tar.gz";
+        hash = "sha256-NlUXcBOmaA8W+7RXuXcn9TIhm964dXO2Op4QCQxhDyc=";
       };
     }
     {

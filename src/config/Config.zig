@@ -767,6 +767,22 @@ palette: Palette = .{},
 /// the mouse is shown again when a new window, tab, or split is created.
 @"mouse-hide-while-typing": bool = false,
 
+/// When to scroll the surface to the bottom. The format of this is a list of
+/// options to enable separated by commas. If you prefix an option with `no-`
+/// then it is disabled. If you omit an option, its default value is used.
+///
+/// Available options:
+///
+/// - `keystroke` If set, scroll the surface to the bottom when the user
+///   presses a key that results in data being sent to the PTY (basically
+///   anything but modifiers or keybinds that are processed by Ghostty).
+///
+/// - `output` If set, scroll the surface to the bottom if there is new data
+///   to display. (Currently unimplemented.)
+///
+/// The default is `keystroke, no-output`.
+@"scroll-to-bottom": ScrollToBottom = .default,
+
 /// Determines whether running programs can detect the shift key pressed with a
 /// mouse click. Typically, the shift key is used to extend mouse selection.
 ///
@@ -2499,6 +2515,8 @@ keybind: Keybinds = .{},
 ///
 ///   - `clipboard-copy` (default: true) - Show a notification when text is copied
 ///     to the clipboard.
+///   - `config-reload` (default: true) - Show a notification when
+///     the configuration is reloaded.
 ///
 /// To specify a notification to enable, specify the name of the notification.
 /// To specify a notification to disable, prefix the name with `no-`. For
@@ -3016,6 +3034,13 @@ else
 ///
 /// Available since Ghostty 1.2.0.
 @"bold-color": ?BoldColor = null,
+
+/// The opacity level (opposite of transparency) of the faint text. A value of
+/// 1 is fully opaque and a value of 0 is fully transparent. A value less than 0
+/// or greater than 1 will be clamped to the nearest valid value.
+///
+/// Available since Ghostty 1.2.0.
+@"faint-opacity": f64 = 0.5,
 
 /// This will be used to set the `TERM` environment variable.
 /// HACK: We set this with an `xterm` prefix because vim uses that to enable key
@@ -3999,6 +4024,8 @@ pub fn finalize(self: *Config) !void {
     if (self.@"auto-update-channel" == null) {
         self.@"auto-update-channel" = build_config.release_channel;
     }
+
+    self.@"faint-opacity" = std.math.clamp(self.@"faint-opacity", 0.0, 1.0);
 }
 
 /// Callback for src/cli/args.zig to allow us to handle special cases
@@ -5596,7 +5623,7 @@ pub const Keybinds = struct {
             try self.set.put(
                 alloc,
                 .{ .key = .{ .unicode = 'w' }, .mods = .{ .ctrl = true, .shift = true } },
-                .{ .close_tab = {} },
+                .{ .close_tab = .this },
             );
             try self.set.putFlags(
                 alloc,
@@ -5902,7 +5929,7 @@ pub const Keybinds = struct {
             try self.set.put(
                 alloc,
                 .{ .key = .{ .unicode = 'w' }, .mods = .{ .super = true, .alt = true } },
-                .{ .close_tab = {} },
+                .{ .close_tab = .this },
             );
             try self.set.put(
                 alloc,
@@ -7058,6 +7085,7 @@ pub const GtkTitlebarStyle = enum(c_int) {
 /// See app-notifications
 pub const AppNotifications = packed struct {
     @"clipboard-copy": bool = true,
+    @"config-reload": bool = true,
 };
 
 /// See bell-features
@@ -7195,6 +7223,53 @@ pub const QuickTerminalSize = struct {
         height: u32,
     };
 
+    /// C API structure for QuickTerminalSize
+    pub const C = extern struct {
+        primary: C.Size,
+        secondary: C.Size,
+
+        pub const Size = extern struct {
+            tag: Tag,
+            value: Value,
+
+            pub const Tag = enum(u8) { none, percentage, pixels };
+
+            pub const Value = extern union {
+                percentage: f32,
+                pixels: u32,
+            };
+
+            pub const none: C.Size = .{ .tag = .none, .value = undefined };
+
+            pub fn percentage(v: f32) C.Size {
+                return .{
+                    .tag = .percentage,
+                    .value = .{ .percentage = v },
+                };
+            }
+
+            pub fn pixels(v: u32) C.Size {
+                return .{
+                    .tag = .pixels,
+                    .value = .{ .pixels = v },
+                };
+            }
+        };
+    };
+
+    pub fn cval(self: QuickTerminalSize) C {
+        return .{
+            .primary = if (self.primary) |p| switch (p) {
+                .percentage => |v| .percentage(v),
+                .pixels => |v| .pixels(v),
+            } else .none,
+            .secondary = if (self.secondary) |s| switch (s) {
+                .percentage => |v| .percentage(v),
+                .pixels => |v| .pixels(v),
+            } else .none,
+        };
+    }
+
     pub fn calculate(
         self: QuickTerminalSize,
         position: QuickTerminalPosition,
@@ -7268,6 +7343,7 @@ pub const QuickTerminalSize = struct {
 
         try formatter.formatEntry([]const u8, fbs.getWritten());
     }
+
     test "parse QuickTerminalSize" {
         const testing = std.testing;
         var v: QuickTerminalSize = undefined;
@@ -7978,6 +8054,14 @@ pub const WindowPadding = struct {
         try testing.expectError(error.InvalidValue, WindowPadding.parseCLI(""));
         try testing.expectError(error.InvalidValue, WindowPadding.parseCLI("a"));
     }
+};
+
+/// See scroll-to-bottom
+pub const ScrollToBottom = packed struct {
+    keystroke: bool = true,
+    output: bool = false,
+
+    pub const default: ScrollToBottom = .{};
 };
 
 test "parse duration" {

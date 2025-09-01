@@ -447,6 +447,9 @@ pub const Surface = struct {
 
         /// Input to send to the command after it is started.
         initial_input: ?[*:0]const u8 = null,
+
+        /// Wait after the command exits
+        wait_after_command: bool = false,
     };
 
     pub fn init(self: *Surface, app: *App, opts: Options) !void {
@@ -538,6 +541,11 @@ pub const Surface = struct {
                     0,
                 )) },
             );
+        }
+
+        // Wait after command
+        if (opts.wait_after_command) {
+            config.@"wait-after-command" = true;
         }
 
         // Initialize our surface right away. We're given a view that is

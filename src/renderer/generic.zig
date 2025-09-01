@@ -522,6 +522,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             selection_background: ?configpkg.Config.TerminalColor,
             selection_foreground: ?configpkg.Config.TerminalColor,
             bold_color: ?configpkg.BoldColor,
+            faint_opacity: u8,
             min_contrast: f32,
             padding_color: configpkg.WindowPaddingColor,
             custom_shaders: configpkg.RepeatablePath,
@@ -584,6 +585,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     .background = config.background.toTerminalRGB(),
                     .foreground = config.foreground.toTerminalRGB(),
                     .bold_color = config.@"bold-color",
+                    .faint_opacity = @intFromFloat(@ceil(config.@"faint-opacity" * 255)),
 
                     .min_contrast = @floatCast(config.@"minimum-contrast"),
                     .padding_color = config.@"window-padding-color",
@@ -2225,23 +2227,44 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 const cursor_width: f32 = @floatFromInt(cursor.glyph_size[0]);
                 const cursor_height: f32 = @floatFromInt(cursor.glyph_size[1]);
 
+                // Left edge of the cell the cursor is in.
                 var pixel_x: f32 = @floatFromInt(
                     cursor.grid_pos[0] * cell.width + padding.left,
                 );
+                // Top edge, relative to the top of the
+                // screen, of the cell the cursor is in.
                 var pixel_y: f32 = @floatFromInt(
                     cursor.grid_pos[1] * cell.height + padding.top,
                 );
 
-                pixel_x += @floatFromInt(cursor.bearings[0]);
-                pixel_y += @floatFromInt(cursor.bearings[1]);
-
-                // If +Y is up in our shaders, we need to flip the coordinate.
+                // If +Y is up in our shaders, we need to flip the coordinate
+                // so that it's instead the top edge of the cell relative to
+                // the *bottom* of the screen.
                 if (!GraphicsAPI.custom_shader_y_is_down) {
                     pixel_y = @as(f32, @floatFromInt(screen.height)) - pixel_y;
-                    // We need to add the cursor height because we need the +Y
-                    // edge for the Y coordinate, and flipping means that it's
-                    // the -Y edge now.
-                    pixel_y += cursor_height;
+                }
+
+                // Add the X bearing to get the -X (left) edge of the cursor.
+                pixel_x += @floatFromInt(cursor.bearings[0]);
+
+                // How we deal with the Y bearing depends on which direction
+                // is "up", since we want our final `pixel_y` value to be the
+                // +Y edge of the cursor.
+                if (GraphicsAPI.custom_shader_y_is_down) {
+                    // As a reminder, the Y bearing is the distance from the
+                    // bottom of the cell to the top of the glyph, so to get
+                    // the +Y edge we need to add the cell height, subtract
+                    // the Y bearing, and add the glyph height to get the +Y
+                    // (bottom) edge of the cursor.
+                    pixel_y += @floatFromInt(cell.height);
+                    pixel_y -= @floatFromInt(cursor.bearings[1]);
+                    pixel_y += @floatFromInt(cursor.glyph_size[1]);
+                } else {
+                    // If the Y direction is reversed though, we instead want
+                    // the *top* edge of the cursor, which means we just need
+                    // to subtract the cell height and add the Y bearing.
+                    pixel_y -= @floatFromInt(cell.height);
+                    pixel_y += @floatFromInt(cursor.bearings[1]);
                 }
 
                 const new_cursor: [4]f32 = .{
@@ -2612,7 +2635,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     };
 
                     // Foreground alpha for this cell.
-                    const alpha: u8 = if (style.flags.faint) 175 else 255;
+                    const alpha: u8 = if (style.flags.faint) self.config.faint_opacity else 255;
 
                     // Set the cell's background color.
                     {

@@ -419,6 +419,7 @@ typedef struct {
   ghostty_env_var_s* env_vars;
   size_t env_var_count;
   const char* initial_input;
+  bool wait_after_command;
 } ghostty_surface_config_s;
 
 typedef struct {
@@ -449,6 +450,28 @@ typedef struct {
 typedef struct {
   ghostty_config_color_s colors[256];
 } ghostty_config_palette_s;
+
+// config.QuickTerminalSize
+typedef enum {
+  GHOSTTY_QUICK_TERMINAL_SIZE_NONE,
+  GHOSTTY_QUICK_TERMINAL_SIZE_PERCENTAGE,
+  GHOSTTY_QUICK_TERMINAL_SIZE_PIXELS,
+} ghostty_quick_terminal_size_tag_e;
+
+typedef union {
+  float percentage;
+  uint32_t pixels;
+} ghostty_quick_terminal_size_value_u;
+
+typedef struct {
+  ghostty_quick_terminal_size_tag_e tag;
+  ghostty_quick_terminal_size_value_u value;
+} ghostty_quick_terminal_size_s;
+
+typedef struct {
+  ghostty_quick_terminal_size_s primary;
+  ghostty_quick_terminal_size_s secondary;
+} ghostty_config_quick_terminal_size_s;
 
 // apprt.Target.Key
 typedef enum {
@@ -680,6 +703,12 @@ typedef struct {
   uintptr_t len;
 } ghostty_action_open_url_s;
 
+// apprt.action.CloseTabMode
+typedef enum {
+  GHOSTTY_ACTION_CLOSE_TAB_MODE_THIS,
+  GHOSTTY_ACTION_CLOSE_TAB_MODE_OTHER,
+} ghostty_action_close_tab_mode_e;
+
 // apprt.surface.Message.ChildExited
 typedef struct {
   uint32_t exit_code;
@@ -693,15 +722,15 @@ typedef enum {
   GHOSTTY_PROGRESS_STATE_ERROR,
   GHOSTTY_PROGRESS_STATE_INDETERMINATE,
   GHOSTTY_PROGRESS_STATE_PAUSE,
-} ghostty_terminal_osc_command_progressreport_state_e;
+} ghostty_action_progress_report_state_e;
 
 // terminal.osc.Command.ProgressReport.C
 typedef struct {
-  ghostty_terminal_osc_command_progressreport_state_e state;
+  ghostty_action_progress_report_state_e state;
   // -1 if no progress was reported, otherwise 0-100 indicating percent
   // completeness.
   int8_t progress;
-} ghostty_terminal_osc_command_progressreport_s;
+} ghostty_action_progress_report_s;
 
 // apprt.Action.Key
 typedef enum {
@@ -786,8 +815,9 @@ typedef union {
   ghostty_action_reload_config_s reload_config;
   ghostty_action_config_change_s config_change;
   ghostty_action_open_url_s open_url;
+  ghostty_action_close_tab_mode_e close_tab_mode;
   ghostty_surface_message_childexited_s child_exited;
-  ghostty_terminal_osc_command_progressreport_s progress_report;
+  ghostty_action_progress_report_s progress_report;
 } ghostty_action_u;
 
 typedef struct {

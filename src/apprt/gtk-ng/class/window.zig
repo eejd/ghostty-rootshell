@@ -320,10 +320,13 @@ pub const Window = extern struct {
 
     /// Setup our action map.
     fn initActionMap(self: *Self) void {
+        const s_variant_type = glib.ext.VariantType.newFor([:0]const u8);
+        defer s_variant_type.free();
+
         const actions = [_]ext.actions.Action(Self){
             .init("about", actionAbout, null),
             .init("close", actionClose, null),
-            .init("close-tab", actionCloseTab, null),
+            .init("close-tab", actionCloseTab, s_variant_type),
             .init("new-tab", actionNewTab, null),
             .init("new-window", actionNewWindow, null),
             .init("ring-bell", actionRingBell, null),
@@ -961,7 +964,14 @@ pub const Window = extern struct {
         _: *gobject.ParamSpec,
         self: *Self,
     ) callconv(.c) void {
-        self.addToast(i18n._("Reloaded the configuration"));
+        const priv = self.private();
+        if (priv.config) |config_obj| {
+            const config = config_obj.get();
+            if (config.@"app-notifications".@"config-reload") {
+                self.addToast(i18n._("Reloaded the configuration"));
+            }
+        }
+
         self.syncAppearance();
     }
 
@@ -975,6 +985,22 @@ pub const Window = extern struct {
         self.private().winproto.resizeEvent() catch |err| {
             log.warn(
                 "winproto resize event failed error={}",
+                .{err},
+            );
+        };
+    }
+
+    fn propIsActive(
+        _: *gtk.Window,
+        _: *gobject.ParamSpec,
+        self: *Self,
+    ) callconv(.c) void {
+        // Don't change urgency if we're not the active window.
+        if (self.as(gtk.Window).isActive() == 0) return;
+
+        self.winproto().setUrgent(false) catch |err| {
+            log.warn(
+                "winproto failed to reset urgency={}",
                 .{err},
             );
         };
@@ -1656,10 +1682,31 @@ pub const Window = extern struct {
 
     fn actionCloseTab(
         _: *gio.SimpleAction,
-        _: ?*glib.Variant,
+        param_: ?*glib.Variant,
         self: *Window,
     ) callconv(.c) void {
-        self.performBindingAction(.close_tab);
+        const param = param_ orelse {
+            log.warn("win.close-tab called without a parameter", .{});
+            return;
+        };
+
+        var str: ?[*:0]const u8 = null;
+        param.get("&s", &str);
+
+        const mode = std.meta.stringToEnum(
+            input.Binding.Action.CloseTabMode,
+            std.mem.span(
+                str orelse {
+                    log.warn("invalid mode provided to win.close-tab", .{});
+                    return;
+                },
+            ),
+        ) orelse {
+            log.warn("invalid mode provided to win.close-tab: {s}", .{str.?});
+            return;
+        };
+
+        self.performBindingAction(.{ .close_tab = mode });
     }
 
     fn actionNewWindow(
@@ -1758,10 +1805,13 @@ pub const Window = extern struct {
             native.beep();
         }
 
-        if (config.@"bell-features".attention) {
+        if (config.@"bell-features".attention) attention: {
+            // Dont set urgency if the window is already active.
+            if (self.as(gtk.Window).isActive() != 0) break :attention;
+
             // Request user attention
             self.winproto().setUrgent(true) catch |err| {
-                log.warn("failed to request user attention={}", .{err});
+                log.warn("winproto failed to set urgency={}", .{err});
             };
         }
     }
@@ -1905,6 +1955,7 @@ pub const Window = extern struct {
             class.bindTemplateCallback("notify_selected_page", &tabViewSelectedPage);
             class.bindTemplateCallback("notify_config", &propConfig);
             class.bindTemplateCallback("notify_fullscreened", &propFullscreened);
+            class.bindTemplateCallback("notify_is_active", &propIsActive);
             class.bindTemplateCallback("notify_maximized", &propMaximized);
             class.bindTemplateCallback("notify_menu_active", &propMenuActive);
             class.bindTemplateCallback("notify_quick_terminal", &propQuickTerminal);

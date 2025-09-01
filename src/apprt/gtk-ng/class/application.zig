@@ -116,6 +116,11 @@ pub const Application = extern struct {
         /// and initialization was successful.
         transient_cgroup_base: ?[]const u8 = null,
 
+        /// This is set to true so long as we request a window exactly
+        /// once. This prevents quitting the app before we've shown one
+        /// window.
+        requested_window: bool = false,
+
         /// This is set to false internally when the event loop
         /// should exit and the application should quit. This must
         /// only be set by the main loop thread.
@@ -461,7 +466,13 @@ pub const Application = extern struct {
                 // If the quit timer has expired, quit.
                 if (priv.quit_timer == .expired) break :q true;
 
-                // There's no quit timer running, or it hasn't expired, don't quit.
+                // If we have no windows attached to our app, also quit.
+                if (priv.requested_window and @as(
+                    ?*glib.List,
+                    self.as(gtk.Application).getWindows(),
+                ) == null) break :q true;
+
+                // No quit conditions met
                 break :q false;
             };
 
@@ -488,7 +499,15 @@ pub const Application = extern struct {
         const parent: ?*gtk.Widget = parent: {
             const list = gtk.Window.listToplevels();
             defer list.free();
-            const focused = list.findCustom(null, findActiveWindow);
+            const focused = @as(?*glib.List, list.findCustom(
+                null,
+                findActiveWindow,
+            )) orelse {
+                // If we have an active surface then we should have
+                // a window available but in the rare case we don't we
+                // should exit so we don't crash.
+                break :parent null;
+            };
             break :parent @ptrCast(@alignCast(focused.f_data));
         };
 
@@ -542,7 +561,7 @@ pub const Application = extern struct {
         value: apprt.Action.Value(action),
     ) !bool {
         switch (action) {
-            .close_tab => return Action.closeTab(target),
+            .close_tab => return Action.closeTab(target, value),
             .close_window => return Action.closeWindow(target),
 
             .config_change => try Action.configChange(
@@ -713,27 +732,24 @@ pub const Application = extern struct {
         }
     }
 
-    fn loadRuntimeCss(
-        self: *Self,
-    ) Allocator.Error!void {
+    fn loadRuntimeCss(self: *Self) Allocator.Error!void {
         const alloc = self.allocator();
 
-        var buf: std.ArrayListUnmanaged(u8) = .empty;
+        const config = self.private().config.get();
+
+        var buf: std.ArrayListUnmanaged(u8) = try .initCapacity(alloc, 2048);
         defer buf.deinit(alloc);
 
         const writer = buf.writer(alloc);
 
-        const config = self.private().config.get();
-        const window_theme = config.@"window-theme";
         const unfocused_fill: CoreConfig.Color = config.@"unfocused-split-fill" orelse config.background;
-        const headerbar_background = config.@"window-titlebar-background" orelse config.background;
-        const headerbar_foreground = config.@"window-titlebar-foreground" orelse config.foreground;
 
         try writer.print(
             \\widget.unfocused-split {{
             \\ opacity: {d:.2};
             \\ background-color: rgb({d},{d},{d});
             \\}}
+            \\
         , .{
             1.0 - config.@"unfocused-split-opacity",
             unfocused_fill.r,
@@ -747,6 +763,7 @@ pub const Application = extern struct {
                 \\  color: rgb({[r]d},{[g]d},{[b]d});
                 \\  background: rgb({[r]d},{[g]d},{[b]d});
                 \\}}
+                \\
             , .{
                 .r = color.r,
                 .g = color.g,
@@ -759,8 +776,128 @@ pub const Application = extern struct {
                 \\.window headerbar {{
                 \\  font-family: "{[font_family]s}";
                 \\}}
+                \\
             , .{ .font_family = font_family });
         }
+
+        try loadRuntimeCss414(config, &writer);
+        try loadRuntimeCss416(config, &writer);
+
+        // ensure that we have a sentinel
+        try writer.writeByte(0);
+
+        const data = buf.items[0 .. buf.items.len - 1 :0];
+
+        log.debug("runtime CSS is {d} bytes", .{data.len + 1});
+
+        // Clears any previously loaded CSS from this provider
+        loadCssProviderFromData(
+            self.private().css_provider,
+            data,
+        );
+    }
+
+    /// Load runtime CSS for older than GTK 4.16
+    fn loadRuntimeCss414(
+        config: *const CoreConfig,
+        writer: *const std.ArrayListUnmanaged(u8).Writer,
+    ) Allocator.Error!void {
+        if (gtk_version.runtimeAtLeast(4, 16, 0)) return;
+
+        const window_theme = config.@"window-theme";
+        const headerbar_background = config.@"window-titlebar-background" orelse config.background;
+        const headerbar_foreground = config.@"window-titlebar-foreground" orelse config.foreground;
+
+        switch (window_theme) {
+            .ghostty => try writer.print(
+                \\windowhandle {{
+                \\  background-color: rgb({d},{d},{d});
+                \\  color: rgb({d},{d},{d});
+                \\}}
+                \\windowhandle:backdrop {{
+                \\ background-color: oklab(from rgb({d},{d},{d}) calc(l * 0.9) a b / alpha);
+                \\}}
+                \\
+            , .{
+                headerbar_background.r,
+                headerbar_background.g,
+                headerbar_background.b,
+                headerbar_foreground.r,
+                headerbar_foreground.g,
+                headerbar_foreground.b,
+                headerbar_background.r,
+                headerbar_background.g,
+                headerbar_background.b,
+            }),
+            else => {},
+        }
+    }
+
+    /// Load runtime for GTK 4.16 and newer
+    fn loadRuntimeCss416(
+        config: *const CoreConfig,
+        writer: *const std.ArrayListUnmanaged(u8).Writer,
+    ) Allocator.Error!void {
+        if (gtk_version.runtimeUntil(4, 16, 0)) return;
+
+        const window_theme = config.@"window-theme";
+        const headerbar_background = config.@"window-titlebar-background" orelse config.background;
+        const headerbar_foreground = config.@"window-titlebar-foreground" orelse config.foreground;
+
+        try writer.writeAll(
+            \\/*
+            \\ * Child Exited Overlay
+            \\ */
+            \\
+            \\.child-exited.normal revealer widget {
+            \\  background-color: color-mix(
+            \\    in srgb,
+            \\    var(--success-bg-color),
+            \\    transparent 50%
+            \\  );
+            \\}
+            \\
+            \\.child-exited.abnormal revealer widget {
+            \\  background-color: color-mix(
+            \\    in srgb,
+            \\    var(--error-bg-color),
+            \\    transparent 50%
+            \\  );
+            \\}
+            \\
+            \\/*
+            \\ * Surface
+            \\ */
+            \\
+            \\.surface progressbar.error trough progress {
+            \\  background-color: color-mix(
+            \\    in srgb,
+            \\    var(--error-bg-color),
+            \\    transparent 50%
+            \\  );
+            \\}
+            \\
+            \\.surface .bell-overlay {
+            \\  border-color: color-mix(
+            \\    in srgb,
+            \\    var(--accent-color),
+            \\    transparent 50%
+            \\  );
+            \\}
+            \\
+            \\/*
+            \\ * Splits
+            \\ */
+            \\
+            \\.window .split paned > separator {
+            \\  background-color: color-mix(
+            \\    in srgb,
+            \\    var(--window-bg-color),
+            \\    transparent 0%
+            \\  );
+            \\}
+            \\
+        );
 
         switch (window_theme) {
             .ghostty => try writer.print(
@@ -794,15 +931,6 @@ pub const Application = extern struct {
             }),
             else => {},
         }
-
-        const data = try alloc.dupeZ(u8, buf.items);
-        defer alloc.free(data);
-
-        // Clears any previously loaded CSS from this provider
-        loadCssProviderFromData(
-            self.private().css_provider,
-            data,
-        );
     }
 
     fn loadCustomCss(self: *Self) !void {
@@ -872,7 +1000,8 @@ pub const Application = extern struct {
         self.syncActionAccelerator("win.close", .{ .close_window = {} });
         self.syncActionAccelerator("win.new-window", .{ .new_window = {} });
         self.syncActionAccelerator("win.new-tab", .{ .new_tab = {} });
-        self.syncActionAccelerator("win.close-tab", .{ .close_tab = {} });
+        self.syncActionAccelerator("win.close-tab::this", .{ .close_tab = .this });
+        self.syncActionAccelerator("tab.close::this", .{ .close_tab = .this });
         self.syncActionAccelerator("win.split-right", .{ .new_split = .right });
         self.syncActionAccelerator("win.split-down", .{ .new_split = .down });
         self.syncActionAccelerator("win.split-left", .{ .new_split = .left });
@@ -1576,12 +1705,16 @@ pub const Application = extern struct {
 
 /// All apprt action handlers
 const Action = struct {
-    pub fn closeTab(target: apprt.Target) bool {
+    pub fn closeTab(target: apprt.Target, value: apprt.Action.Value(.close_tab)) bool {
         switch (target) {
             .app => return false,
             .surface => |core| {
                 const surface = core.rt_surface.surface;
-                return surface.as(gtk.Widget).activateAction("tab.close", null) != 0;
+                return surface.as(gtk.Widget).activateAction(
+                    "tab.close",
+                    glib.ext.VariantType.stringFor([:0]const u8),
+                    @as([*:0]const u8, @tagName(value)),
+                ) != 0;
             },
         }
     }
@@ -1853,6 +1986,13 @@ const Action = struct {
         self: *Application,
         parent: ?*CoreSurface,
     ) !void {
+        // Note that we've requested a window at least once. This is used
+        // to trigger quit on no windows. Note I'm not sure if this is REALLY
+        // necessary, but I don't want to risk a bug where on a slow machine
+        // or something we quit immediately after starting up because there
+        // was a delay in the event loop before we created a Window.
+        self.private().requested_window = true;
+
         const win = Window.new(self);
         initAndShowWindow(self, win, parent);
     }

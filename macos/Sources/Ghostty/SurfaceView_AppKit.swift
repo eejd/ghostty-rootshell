@@ -41,6 +41,23 @@ extension Ghostty {
 
         // The hovered URL string
         @Published var hoverUrl: String? = nil
+        
+        // The progress report (if any)
+        @Published var progressReport: Action.ProgressReport? = nil {
+            didSet {
+                // Cancel any existing timer
+                progressReportTimer?.invalidate()
+                progressReportTimer = nil
+                
+                // If we have a new progress report, start a timer to remove it after 15 seconds
+                if progressReport != nil {
+                    progressReportTimer = Timer.scheduledTimer(withTimeInterval: 15.0, repeats: false) { [weak self] _ in
+                        self?.progressReport = nil
+                        self?.progressReportTimer = nil
+                    }
+                }
+            }
+        }
 
         // The currently active key sequence. The sequence is not active if this is empty.
         @Published var keySequence: [KeyboardShortcut] = []
@@ -142,6 +159,9 @@ extension Ghostty {
 
         // A timer to fallback to ghost emoji if no title is set within the grace period
         private var titleFallbackTimer: Timer?
+        
+        // Timer to remove progress report after 15 seconds
+        private var progressReportTimer: Timer?
 
         // This is the title from the terminal. This is nil if we're currently using
         // the terminal title as the main title property. If the title is set manually
@@ -348,6 +368,9 @@ extension Ghostty {
             // Remove any notifications associated with this surface
             let identifiers = Array(self.notificationIdentifiers)
             UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: identifiers)
+            
+            // Cancel progress report timer
+            progressReportTimer?.invalidate()
         }
 
         func focusDidChange(_ focused: Bool) {

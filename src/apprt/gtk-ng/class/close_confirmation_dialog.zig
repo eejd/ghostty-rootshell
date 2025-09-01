@@ -10,7 +10,7 @@ const Common = @import("../class.zig").Common;
 const Config = @import("config.zig").Config;
 const Dialog = @import("dialog.zig").Dialog;
 
-const log = std.log.scoped(.gtk_ghostty_config_errors_dialog);
+const log = std.log.scoped(.gtk_ghostty_close_confirmation_dialog);
 
 pub const CloseConfirmationDialog = extern struct {
     const Self = @This();

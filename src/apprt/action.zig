@@ -83,8 +83,9 @@ pub const Action = union(Key) {
     /// the tab should be opened in a new window.
     new_tab,
 
-    /// Closes the tab belonging to the currently focused split.
-    close_tab,
+    /// Closes the tab belonging to the currently focused split, or all other
+    /// tabs, depending on the mode.
+    close_tab: CloseTabMode,
 
     /// Create a new split. The value determines the location of the split
     /// relative to the target.
@@ -700,4 +701,12 @@ pub const OpenUrl = struct {
             .len = self.url.len,
         };
     }
+};
+
+/// sync with ghostty_action_close_tab_mode_e in ghostty.h
+pub const CloseTabMode = enum(c_int) {
+    /// Close the current tab.
+    this,
+    /// Close all other tabs.
+    other,
 };
