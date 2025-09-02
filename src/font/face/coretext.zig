@@ -827,6 +827,16 @@ pub const Face = struct {
             // patched with the nerd fonts patcher and it butchers the advance
             // values so the advance ends up half the width of the actual glyph.
             if (bounds.size.width > advance) {
+                var buf: [1024]u8 = undefined;
+                const font_name = self.name(&buf) catch "<Error getting font name>";
+                log.warn(
+                    "(getMetrics) Width of glyph '水' for font \"{s}\" is greater than its advance ({d} > {d}), discarding ic_width metric.",
+                    .{
+                        font_name,
+                        bounds.size.width,
+                        advance,
+                    },
+                );
                 break :ic_width null;
             }
 
