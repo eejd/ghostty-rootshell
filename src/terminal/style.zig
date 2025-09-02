@@ -86,9 +86,9 @@ pub const Style = struct {
     /// True if the style is equal to another style.
     pub fn eql(self: Style, other: Style) bool {
         return @as(u16, @bitCast(self.flags)) == @as(u16, @bitCast(other.flags)) and
-               std.meta.eql(self.fg_color, other.fg_color) and
-               std.meta.eql(self.bg_color, other.bg_color) and
-               std.meta.eql(self.underline_color, other.underline_color);
+            std.meta.eql(self.fg_color, other.fg_color) and
+            std.meta.eql(self.bg_color, other.bg_color) and
+            std.meta.eql(self.underline_color, other.underline_color);
     }
 
     /// Returns the bg color for a cell with this style given the cell
