@@ -1551,15 +1551,17 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 // Look up the image
                 const image = self.images.get(p.image_id) orelse {
                     log.warn("image not found for placement image_id={}", .{p.image_id});
-                    return;
+                    continue;
                 };
 
                 // Get the texture
                 const texture = switch (image.image) {
-                    .ready => |t| t,
+                    .ready,
+                    .unload_ready,
+                    => |t| t,
                     else => {
                         log.warn("image not ready for placement image_id={}", .{p.image_id});
-                        return;
+                        continue;
                     },
                 };
 
@@ -1909,7 +1911,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 if (img.isUnloading()) {
                     img.deinit(self.alloc);
                     self.images.removeByPtr(kv.key_ptr);
-                    return;
+                    continue;
                 }
                 if (img.isPending()) try img.upload(self.alloc, &self.api);
             }
