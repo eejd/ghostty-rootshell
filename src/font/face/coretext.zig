@@ -806,14 +806,31 @@ pub const Face = struct {
         const ic_width: ?f64 = ic_width: {
             const glyph = self.glyphIndex('水') orelse break :ic_width null;
 
-            var advances: [1]macos.graphics.Size = undefined;
-            _ = ct_font.getAdvancesForGlyphs(
+            const advance = ct_font.getAdvancesForGlyphs(
                 .horizontal,
                 &.{@intCast(glyph)},
-                &advances,
+                null,
             );
 
-            break :ic_width advances[0].width;
+            const bounds = ct_font.getBoundingRectsForGlyphs(
+                .horizontal,
+                &.{@intCast(glyph)},
+                null,
+            );
+
+            // If the advance of the glyph is less than the width of the actual
+            // glyph then we just treat it as invalid since it's probably wrong
+            // and using it for size normalization will instead make the font
+            // way too big.
+            //
+            // This can sometimes happen if there's a CJK font that has been
+            // patched with the nerd fonts patcher and it butchers the advance
+            // values so the advance ends up half the width of the actual glyph.
+            if (bounds.size.width > advance) {
+                break :ic_width null;
+            }
+
+            break :ic_width advance;
         };
 
         return .{

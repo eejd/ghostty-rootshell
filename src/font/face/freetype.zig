@@ -1007,7 +1007,21 @@ pub const Face = struct {
                 .no_svg = true,
             }) catch break :ic_width null;
 
-            break :ic_width f26dot6ToF64(face.handle.*.glyph.*.advance.x);
+            const ft_glyph = face.handle.*.glyph;
+
+            // If the advance of the glyph is less than the width of the actual
+            // glyph then we just treat it as invalid since it's probably wrong
+            // and using it for size normalization will instead make the font
+            // way too big.
+            //
+            // This can sometimes happen if there's a CJK font that has been
+            // patched with the nerd fonts patcher and it butchers the advance
+            // values so the advance ends up half the width of the actual glyph.
+            if (ft_glyph.*.metrics.width > ft_glyph.*.advance.x) {
+                break :ic_width null;
+            }
+
+            break :ic_width f26dot6ToF64(ft_glyph.*.advance.x);
         };
 
         return .{
