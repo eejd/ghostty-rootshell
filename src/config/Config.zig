@@ -5785,15 +5785,24 @@ pub const Keybinds = struct {
             else
                 .{ .alt = true };
 
-            // Cmd+N for goto tab N
+            // Cmd/Alt+N for goto tab N
             const start: u21 = '1';
             const end: u21 = '8';
-            var i: u21 = start;
-            while (i <= end) : (i += 1) {
+            comptime var i: u21 = start;
+            inline while (i <= end) : (i += 1) {
+                // We register BOTH the physical `digit_N` key and the unicode
+                // `N` key. This allows most keyboard layouts to work with
+                // this shortcut. Namely, AZERTY doesn't produce unicode `N`
+                // for their digit keys (they're on shifted keys on the same
+                // physical keys).
+
                 try self.set.putFlags(
                     alloc,
                     .{
-                        .key = .{ .unicode = i },
+                        .key = .{ .physical = @field(
+                            inputpkg.Key,
+                            std.fmt.comptimePrint("digit_{u}", .{i}),
+                        ) },
                         .mods = mods,
                     },
                     .{ .goto_tab = (i - start) + 1 },
@@ -5803,6 +5812,22 @@ pub const Keybinds = struct {
                         // correct fix is to fix the reverse mapping lookup
                         // to allow us to lookup performable keybinds
                         // conditionally.
+                        .performable = !builtin.target.os.tag.isDarwin(),
+                    },
+                );
+
+                // Important: this must be the LAST binding set so that the
+                // libghostty trigger API returns this one for the action,
+                // so that things like the macOS tab bar key equivalent label
+                // work properly.
+                try self.set.putFlags(
+                    alloc,
+                    .{
+                        .key = .{ .unicode = i },
+                        .mods = mods,
+                    },
+                    .{ .goto_tab = (i - start) + 1 },
+                    .{
                         .performable = !builtin.target.os.tag.isDarwin(),
                     },
                 );
