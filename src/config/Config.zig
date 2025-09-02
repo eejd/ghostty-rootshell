@@ -654,6 +654,18 @@ foreground: Color = .{ .r = 0xFF, .g = 0xFF, .b = 0xFF },
 /// Available since: 1.2.0
 @"selection-clear-on-typing": bool = true,
 
+/// Whether to clear selected text after copying. This defaults to `false`.
+///
+/// When set to `true`, the selection will be automatically cleared after
+/// any copy operation that invokes the `copy_to_clipboard` keyboard binding.
+/// Importantly, this will not clear the selection if the copy operation
+/// was invoked via `copy-on-select`.
+///
+/// When set to `false`, the selection remains visible after copying, allowing
+/// to see what was copied and potentially perform additional operations
+/// on the same selection.
+@"selection-clear-on-copy": bool = false,
+
 /// The minimum contrast ratio between the foreground and background colors.
 /// The contrast ratio is a value between 1 and 21. A value of 1 allows for no
 /// contrast (e.g. black on black). This value is the contrast ratio as defined
