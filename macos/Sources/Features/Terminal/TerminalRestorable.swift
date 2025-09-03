@@ -10,7 +10,7 @@ class TerminalRestorableState: Codable {
     let surfaceTree: SplitTree<Ghostty.SurfaceView>
 
     init(from controller: TerminalController) {
-        self.focusedSurface = controller.focusedSurface?.uuid.uuidString
+        self.focusedSurface = controller.focusedSurface?.id.uuidString
         self.surfaceTree = controller.surfaceTree
     }
 
@@ -96,7 +96,7 @@ class TerminalWindowRestoration: NSObject, NSWindowRestoration {
         if let focusedStr = state.focusedSurface {
             var foundView: Ghostty.SurfaceView?
             for view in c.surfaceTree {
-                if view.uuid.uuidString == focusedStr {
+                if view.id.uuidString == focusedStr {
                     foundView = view
                     break
                 }

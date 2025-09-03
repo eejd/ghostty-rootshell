@@ -6,9 +6,11 @@ import GhosttyKit
 
 extension Ghostty {
     /// The NSView implementation for a terminal surface.
-    class SurfaceView: OSView, ObservableObject, Codable {
+    class SurfaceView: OSView, ObservableObject, Codable, Identifiable {
+        typealias ID = UUID
+        
         /// Unique ID per surface
-        let uuid: UUID
+        let id: UUID
 
         // The current title of the surface as defined by the pty. This can be
         // changed with escape codes. This is public because the callbacks go
@@ -180,7 +182,7 @@ extension Ghostty {
 
         init(_ app: ghostty_app_t, baseConfig: SurfaceConfiguration? = nil, uuid: UUID? = nil) {
             self.markedText = NSMutableAttributedString()
-            self.uuid = uuid ?? .init()
+            self.id = uuid ?? .init()
 
             // Our initial config always is our application wide config.
             if let appDelegate = NSApplication.shared.delegate as? AppDelegate {
@@ -1468,7 +1470,7 @@ extension Ghostty {
             content.body = body
             content.sound = UNNotificationSound.default
             content.categoryIdentifier = Ghostty.userNotificationCategory
-            content.userInfo = ["surface": self.uuid.uuidString]
+            content.userInfo = ["surface": self.id.uuidString]
 
             let uuid = UUID().uuidString
             let request = UNNotificationRequest(
@@ -1576,7 +1578,7 @@ extension Ghostty {
         func encode(to encoder: Encoder) throws {
             var container = encoder.container(keyedBy: CodingKeys.self)
             try container.encode(pwd, forKey: .pwd)
-            try container.encode(uuid.uuidString, forKey: .uuid)
+            try container.encode(id.uuidString, forKey: .uuid)
             try container.encode(title, forKey: .title)
             try container.encode(titleFromTerminal != nil, forKey: .isUserSetTitle)
         }
