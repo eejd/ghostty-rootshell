@@ -476,7 +476,14 @@ pub const Application = extern struct {
                 break :q false;
             };
 
-            if (must_quit) self.quit();
+            if (must_quit) {
+                // All must quit scenarios do not need confirmation.
+                // Furthermore, must quit scenarios may result in a situation
+                // where its unsafe to even access the app/surface memory
+                // since its in the process of being freed. We must simply
+                // begin our exit immediately.
+                self.quitNow();
+            }
         }
     }
 
