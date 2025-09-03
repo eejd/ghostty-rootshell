@@ -2144,6 +2144,44 @@ keybind: Keybinds = .{},
 /// terminal would be half a screen tall, and 500 pixels wide.
 @"quick-terminal-size": QuickTerminalSize = .{},
 
+/// The layer of the quick terminal window. The higher the layer,
+/// the more windows the quick terminal may conceal.
+///
+/// Valid values are:
+///
+///  * `overlay`
+///
+///    The quick terminal appears in front of all windows.
+///
+///  * `top` (default)
+///
+///    The quick terminal appears in front of normal windows but behind
+///    fullscreen overlays like lock screens.
+///
+///  * `bottom`
+///
+///    The quick terminal appears behind normal windows but in front of
+///    wallpapers and other windows in the background layer.
+///
+///  * `background`
+///
+///    The quick terminal appears behind all windows.
+///
+/// GTK Wayland only.
+///
+/// Available since: 1.2.0
+@"gtk-quick-terminal-layer": QuickTerminalLayer = .top,
+/// The namespace for the quick terminal window.
+///
+/// This is an identifier that is used by the Wayland compositor and/or
+/// scripts to determine the type of layer surfaces and to possibly apply
+/// unique effects.
+///
+/// GTK Wayland only.
+///
+/// Available since: 1.2.0
+@"gtk-quick-terminal-namespace": [:0]const u8 = "ghostty-quick-terminal",
+
 /// The screen where the quick terminal should show up.
 ///
 /// Valid values are:
@@ -7200,6 +7238,14 @@ pub const QuickTerminalPosition = enum {
     left,
     right,
     center,
+};
+
+/// See quick-terminal-layer
+pub const QuickTerminalLayer = enum {
+    overlay,
+    top,
+    bottom,
+    background,
 };
 
 /// See quick-terminal-size

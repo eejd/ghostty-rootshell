@@ -114,11 +114,13 @@ pub const App = struct {
             return false;
         }
 
-        if (self.context.xdg_wm_dialog_present and layer_shell.getLibraryVersion().order(.{
-            .major = 1,
-            .minor = 0,
-            .patch = 4,
-        }) == .lt) {
+        if (self.context.xdg_wm_dialog_present and
+            layer_shell.getLibraryVersion().order(.{
+                .major = 1,
+                .minor = 0,
+                .patch = 4,
+            }) == .lt)
+        {
             log.warn("the version of gtk4-layer-shell installed on your system is too old (must be 1.0.4 or newer); disabling quick terminal", .{});
             return false;
         }
@@ -128,10 +130,7 @@ pub const App = struct {
 
     pub fn initQuickTerminal(_: *App, apprt_window: *ApprtWindow) !void {
         const window = apprt_window.as(gtk.Window);
-
         layer_shell.initForWindow(window);
-        layer_shell.setLayer(window, .top);
-        layer_shell.setNamespace(window, "ghostty-quick-terminal");
     }
 
     fn getInterfaceType(comptime field: std.builtin.Type.StructField) ?type {
@@ -410,6 +409,14 @@ pub const Window = struct {
             v.get()
         else
             return;
+
+        layer_shell.setLayer(window, switch (config.@"gtk-quick-terminal-layer") {
+            .overlay => .overlay,
+            .top => .top,
+            .bottom => .bottom,
+            .background => .background,
+        });
+        layer_shell.setNamespace(window, config.@"gtk-quick-terminal-namespace");
 
         layer_shell.setKeyboardMode(
             window,
