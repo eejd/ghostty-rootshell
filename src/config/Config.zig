@@ -5525,10 +5525,11 @@ pub const Keybinds = struct {
             else
                 .{ .ctrl = true, .shift = true };
 
-            try self.set.put(
+            try self.set.putFlags(
                 alloc,
                 .{ .key = .{ .unicode = 'c' }, .mods = mods },
                 .{ .copy_to_clipboard = {} },
+                .{ .performable = true },
             );
             try self.set.put(
                 alloc,
