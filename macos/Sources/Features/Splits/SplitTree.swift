@@ -1,7 +1,7 @@
 import AppKit
 
 /// SplitTree represents a tree of views that can be divided.
-struct SplitTree<ViewType: NSView & Codable> {
+struct SplitTree<ViewType: NSView & Codable & Identifiable> {
     /// The root of the tree. This can be nil to indicate the tree is empty.
     let root: Node?
 
@@ -126,6 +126,13 @@ extension SplitTree {
         return .init(
             root: try root.insert(view: view, at: at, direction: direction),
             zoomed: nil)
+    }
+    /// Find a node containing a view with the specified ID.
+    /// - Parameter id: The ID of the view to find
+    /// - Returns: The node containing the view if found, nil otherwise
+    func find(id: ViewType.ID) -> Node? {
+        guard let root else { return nil }
+        return root.find(id: id)
     }
 
     /// Remove a node from the tree. If the node being removed is part of a split,
@@ -395,6 +402,23 @@ extension SplitTree.Node {
     typealias NewDirection = SplitTree.NewDirection
     typealias SplitError = SplitTree.SplitError
     typealias Path = SplitTree.Path
+
+    /// Find a node containing a view with the specified ID.
+    /// - Parameter id: The ID of the view to find
+    /// - Returns: The node containing the view if found, nil otherwise
+    func find(id: ViewType.ID) -> Node? {
+        switch self {
+        case .leaf(let view):
+            return view.id == id ? self : nil
+
+        case .split(let split):
+            if let found = split.left.find(id: id) {
+                return found
+            }
+
+            return split.right.find(id: id)
+        }
+    }
 
     /// Returns the node in the tree that contains the given view.
     func node(view: ViewType) -> Node? {
