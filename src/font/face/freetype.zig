@@ -836,63 +836,58 @@ pub const Face = struct {
         const px_per_unit = px_per_em / @as(f64, @floatFromInt(units_per_em));
 
         const ascent: f64, const descent: f64, const line_gap: f64 = vertical_metrics: {
-            if (hhea_) |hhea| {
-                const hhea_ascent: f64 = @floatFromInt(hhea.Ascender);
-                const hhea_descent: f64 = @floatFromInt(hhea.Descender);
-                const hhea_line_gap: f64 = @floatFromInt(hhea.Line_Gap);
-
-                if (os2_) |os2| {
-                    const os2_ascent: f64 = @floatFromInt(os2.sTypoAscender);
-                    const os2_descent: f64 = @floatFromInt(os2.sTypoDescender);
-                    const os2_line_gap: f64 = @floatFromInt(os2.sTypoLineGap);
-
-                    // If the font says to use typo metrics, trust it.
-                    // (The USE_TYPO_METRICS bit is bit 7)
-                    if (os2.fsSelection & (1 << 7) != 0) {
-                        break :vertical_metrics .{
-                            os2_ascent * px_per_unit,
-                            os2_descent * px_per_unit,
-                            os2_line_gap * px_per_unit,
-                        };
-                    }
-
-                    // Otherwise we prefer the height metrics from 'hhea' if they
-                    // are available, or else OS/2 sTypo* metrics, and if all else
-                    // fails then we use OS/2 usWin* metrics.
+            const hhea = hhea_ orelse {
+                // If we couldn't get the hhea table, rely on metrics from FreeType.
+                const ascender = f26dot6ToF64(size_metrics.ascender);
+                const descender = f26dot6ToF64(size_metrics.descender);
+                const height = f26dot6ToF64(size_metrics.height);
+                break :vertical_metrics .{
+                    ascender,
+                    descender,
+                    // We compute the line gap by adding the (negative) descender
+                    // and subtracting the (positive) ascender from the line height
+                    // to get the remaining gap size.
                     //
-                    // This is not "standard" behavior, but it's our best bet to
-                    // account for fonts being... just weird. It's pretty much what
-                    // FreeType does to get its generic ascent and descent metrics.
+                    // NOTE: This might always be 0... but it doesn't hurt to do.
+                    height + descender - ascender,
+                };
+            };
 
-                    if (hhea.Ascender != 0 or hhea.Descender != 0) {
-                        break :vertical_metrics .{
-                            hhea_ascent * px_per_unit,
-                            hhea_descent * px_per_unit,
-                            hhea_line_gap * px_per_unit,
-                        };
-                    }
+            const hhea_ascent: f64 = @floatFromInt(hhea.Ascender);
+            const hhea_descent: f64 = @floatFromInt(hhea.Descender);
+            const hhea_line_gap: f64 = @floatFromInt(hhea.Line_Gap);
 
-                    if (os2_ascent != 0 or os2_descent != 0) {
-                        break :vertical_metrics .{
-                            os2_ascent * px_per_unit,
-                            os2_descent * px_per_unit,
-                            os2_line_gap * px_per_unit,
-                        };
-                    }
+            // If our font has no OS/2 table, then we just
+            // blindly use the metrics from the hhea table.
+            const os2 = os2_ orelse break :vertical_metrics .{
+                hhea_ascent * px_per_unit,
+                hhea_descent * px_per_unit,
+                hhea_line_gap * px_per_unit,
+            };
 
-                    const win_ascent: f64 = @floatFromInt(os2.usWinAscent);
-                    const win_descent: f64 = @floatFromInt(os2.usWinDescent);
-                    break :vertical_metrics .{
-                        win_ascent * px_per_unit,
-                        // usWinDescent is *positive* -> down unlike sTypoDescender
-                        // and hhea.Descender, so we flip its sign to fix this.
-                        -win_descent * px_per_unit,
-                        0.0,
-                    };
-                }
+            const os2_ascent: f64 = @floatFromInt(os2.sTypoAscender);
+            const os2_descent: f64 = @floatFromInt(os2.sTypoDescender);
+            const os2_line_gap: f64 = @floatFromInt(os2.sTypoLineGap);
 
-                // If our font has no OS/2 table, then we just
-                // blindly use the metrics from the hhea table.
+            // If the font says to use typo metrics, trust it.
+            // (The USE_TYPO_METRICS bit is bit 7)
+            if (os2.fsSelection & (1 << 7) != 0) {
+                break :vertical_metrics .{
+                    os2_ascent * px_per_unit,
+                    os2_descent * px_per_unit,
+                    os2_line_gap * px_per_unit,
+                };
+            }
+
+            // Otherwise we prefer the height metrics from 'hhea' if they
+            // are available, or else OS/2 sTypo* metrics, and if all else
+            // fails then we use OS/2 usWin* metrics.
+            //
+            // This is not "standard" behavior, but it's our best bet to
+            // account for fonts being... just weird. It's pretty much what
+            // FreeType does to get its generic ascent and descent metrics.
+
+            if (hhea.Ascender != 0 or hhea.Descender != 0) {
                 break :vertical_metrics .{
                     hhea_ascent * px_per_unit,
                     hhea_descent * px_per_unit,
@@ -900,19 +895,22 @@ pub const Face = struct {
                 };
             }
 
-            // If we couldn't get the hhea table, rely on metrics from FreeType.
-            const ascender = f26dot6ToF64(size_metrics.ascender);
-            const descender = f26dot6ToF64(size_metrics.descender);
-            const height = f26dot6ToF64(size_metrics.height);
+            if (os2_ascent != 0 or os2_descent != 0) {
+                break :vertical_metrics .{
+                    os2_ascent * px_per_unit,
+                    os2_descent * px_per_unit,
+                    os2_line_gap * px_per_unit,
+                };
+            }
+
+            const win_ascent: f64 = @floatFromInt(os2.usWinAscent);
+            const win_descent: f64 = @floatFromInt(os2.usWinDescent);
             break :vertical_metrics .{
-                ascender,
-                descender,
-                // We compute the line gap by adding the (negative) descender
-                // and subtracting the (positive) ascender from the line height
-                // to get the remaining gap size.
-                //
-                // NOTE: This might always be 0... but it doesn't hurt to do.
-                height + descender - ascender,
+                win_ascent * px_per_unit,
+                // usWinDescent is *positive* -> down unlike sTypoDescender
+                // and hhea.Descender, so we flip its sign to fix this.
+                -win_descent * px_per_unit,
+                0.0,
             };
         };
 
