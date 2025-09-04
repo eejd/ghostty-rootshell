@@ -3066,7 +3066,14 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     .thicken = self.config.font_thicken,
                     .thicken_strength = self.config.font_thicken_strength,
                     .cell_width = cell.gridWidth(),
-                    .constraint = getConstraint(cp),
+                    // If there's no Nerd Font constraint for this codepoint
+                    // then, if it's a symbol, we constrain it to fit inside
+                    // its cell(s), we don't modify the alignment at all.
+                    .constraint = getConstraint(cp) orelse
+                        if (cellpkg.isSymbol(cp)) .{
+                            .size_horizontal = .fit,
+                            .size_vertical = .fit,
+                        } else .none,
                     .constraint_width = constraintWidth(cell_pin),
                 },
             );
