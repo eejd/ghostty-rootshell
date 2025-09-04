@@ -594,6 +594,12 @@ pub const Face = struct {
                     freetype.c.FT_PIXEL_MODE_GRAY,
                     => {},
                     else => {
+                        // Make sure the slot owns its bitmap,
+                        // since we'll be modifying it here.
+                        if (freetype.c.FT_GlyphSlot_Own_Bitmap(glyph) != 0) {
+                            return error.BitmapHandlingError;
+                        }
+
                         var converted: freetype.c.FT_Bitmap = undefined;
                         freetype.c.FT_Bitmap_Init(&converted);
                         if (freetype.c.FT_Bitmap_Convert(
