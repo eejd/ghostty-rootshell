@@ -24,10 +24,10 @@
     "url": "https://deps.files.ghostty.org/glslang-12201278a1a05c0ce0b6eb6026c65cd3e9247aa041b1c260324bf29cee559dd23ba1.tar.gz",
     "hash": "sha256-FKLtu1Ccs+UamlPj9eQ12/WXFgS0uDPmPmB26MCpl7U="
   },
-  "gobject-0.3.0-Skun7HlFnQBaCs-ZxA9JLd_QV9wbvrnfoJDzPx96IDLc": {
+  "gobject-0.3.0-Skun7ET3nQAc0LzvO0NAvTiGGnmkF36cnmbeCAF6MB7Z": {
     "name": "gobject",
-    "url": "https://github.com/jcollie/ghostty-gobject/releases/download/0.14.1-2025-08-30-39-1/ghostty-gobject-0.14.1-2025-08-30-39-1.tar.zst",
-    "hash": "sha256-e/HM6V8s0flOVMelia453vAs4jH4jy7QArPiIsS/k74="
+    "url": "https://github.com/jcollie/ghostty-gobject/releases/download/0.15.1-2025-09-04-48-1/ghostty-gobject-0.15.1-2025-09-04-48-1.tar.zst",
+    "hash": "sha256-h6aKUerGlX2ATVEeoN03eWaqDqvUmKdedgpxrSoHvrY="
   },
   "N-V-__8AALiNBAA-_0gprYr92CjrMj1I5bqNu0TSJOnjFNSr": {
     "name": "gtk4_layer_shell",
