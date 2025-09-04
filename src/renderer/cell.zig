@@ -237,13 +237,27 @@ pub fn isCovering(cp: u21) bool {
 
 /// Returns true of the codepoint is a "symbol-like" character, which
 /// for now we define as anything in a private use area and anything
-/// in the "dingbats" unicode block.
+/// in several unicode blocks:
+/// - Dingbats
+/// - Emoticons
+/// - Miscellaneous Symbols
+/// - Enclosed Alphanumerics
+/// - Enclosed Alphanumeric Supplement
+/// - Miscellaneous Symbols and Pictographs
+/// - Transport and Map Symbols
 ///
 /// In the future it may be prudent to expand this to encompass more
 /// symbol-like characters, and/or exclude some PUA sections.
 pub fn isSymbol(cp: u21) bool {
+    // TODO: This should probably become a codegen'd LUT
     return ziglyph.general_category.isPrivateUse(cp) or
-        ziglyph.blocks.isDingbats(cp);
+        ziglyph.blocks.isDingbats(cp) or
+        ziglyph.blocks.isEmoticons(cp) or
+        ziglyph.blocks.isMiscellaneousSymbols(cp) or
+        ziglyph.blocks.isEnclosedAlphanumerics(cp) or
+        ziglyph.blocks.isEnclosedAlphanumericSupplement(cp) or
+        ziglyph.blocks.isMiscellaneousSymbolsAndPictographs(cp) or
+        ziglyph.blocks.isTransportAndMapSymbols(cp);
 }
 
 /// Returns the appropriate `constraint_width` for
