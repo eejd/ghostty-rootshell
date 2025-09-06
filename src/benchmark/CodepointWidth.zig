@@ -10,6 +10,7 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const Benchmark = @import("Benchmark.zig");
 const options = @import("options.zig");
+const uucode = @import("uucode");
 const UTF8Decoder = @import("../terminal/UTF8Decoder.zig");
 const simd = @import("../simd/main.zig");
 const table = @import("../unicode/main.zig").table;
@@ -47,6 +48,9 @@ pub const Mode = enum {
 
     /// Test our lookup table implementation.
     table,
+
+    /// Using uucode, with custom `width` extension based on `wcwidth`.
+    uucode,
 };
 
 /// Create a new terminal stream handler for the given arguments.
@@ -71,6 +75,7 @@ pub fn benchmark(self: *CodepointWidth) Benchmark {
             .wcwidth => stepWcwidth,
             .table => stepTable,
             .simd => stepSimd,
+            .uucode => stepUucode,
         },
         .setupFn = setup,
         .teardownFn = teardown,
@@ -183,6 +188,41 @@ fn stepSimd(ptr: *anyopaque) Benchmark.Error!void {
             assert(consumed);
             if (cp_) |cp| {
                 const width = simd.codepointWidth(cp);
+
+                // Write the width to the buffer to avoid it being compiled
+                // away
+                buf[0] = @intCast(width);
+            }
+        }
+    }
+}
+
+fn stepUucode(ptr: *anyopaque) Benchmark.Error!void {
+    const self: *CodepointWidth = @ptrCast(@alignCast(ptr));
+
+    const f = self.data_f orelse return;
+    var r = std.io.bufferedReader(f.reader());
+    var d: UTF8Decoder = .{};
+    var buf: [4096]u8 = undefined;
+    while (true) {
+        const n = r.read(&buf) catch |err| {
+            log.warn("error reading data file err={}", .{err});
+            return error.BenchmarkFailed;
+        };
+        if (n == 0) break; // EOF reached
+
+        for (buf[0..n]) |c| {
+            const cp_, const consumed = d.next(c);
+            assert(consumed);
+            if (cp_) |cp| {
+                // This is the same trick we do in terminal.zig so we
+                // keep it here.
+                const width = if (cp <= 0xFF)
+                    1
+                else
+                    //uucode.getX(.width, @intCast(cp));
+                    //uucode.getWidth(@intCast(cp));
+                    uucode.getSpecial(@intCast(cp)).width;
 
                 // Write the width to the buffer to avoid it being compiled
                 // away

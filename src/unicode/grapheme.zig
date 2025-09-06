@@ -2,6 +2,7 @@ const std = @import("std");
 const props = @import("props.zig");
 const GraphemeBoundaryClass = props.GraphemeBoundaryClass;
 const table = props.table;
+const isExtendedPictographic = props.isExtendedPictographic;
 
 /// Determines if there is a grapheme break between two codepoints. This
 /// must be called sequentially maintaining the state between calls.
@@ -80,7 +81,7 @@ fn graphemeBreakClass(
     state: *BreakState,
 ) bool {
     // GB11: Emoji Extend* ZWJ x Emoji
-    if (!state.extended_pictographic and gbc1.isExtendedPictographic()) {
+    if (!state.extended_pictographic and isExtendedPictographic(gbc1)) {
         state.extended_pictographic = true;
     }
 
@@ -131,7 +132,7 @@ fn graphemeBreakClass(
     // GB11: Emoji Extend* ZWJ x Emoji
     if (state.extended_pictographic and
         gbc1 == .zwj and
-        gbc2.isExtendedPictographic())
+        isExtendedPictographic(gbc2))
     {
         state.extended_pictographic = false;
         return false;

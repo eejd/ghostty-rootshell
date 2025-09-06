@@ -29,7 +29,8 @@ test "codepointWidth basic" {
 //     const uucode = @import("uucode");
 //
 //     const min = 0xFF + 1; // start outside ascii
-//     for (min..uucode.code_point_range_end) |cp| {
+//     const max = std.math.maxInt(u21) + 1;
+//     for (min..max) |cp| {
 //         const simd = codepointWidth(@intCast(cp));
 //         const uu = @min(2, @max(0, uucode.get(.wcwidth, @intCast(cp))));
 //         if (simd != uu) mismatch: {

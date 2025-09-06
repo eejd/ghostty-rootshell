@@ -24,14 +24,16 @@ pub fn init(b: *std.Build, uucode_tables_zig: std.Build.LazyPath) !UnicodeTables
     if (b.lazyDependency("uucode", .{
         .target = b.graph.host,
         .@"tables.zig" = uucode_tables_zig,
+        .build_config_path = b.path("src/build/uucode_config.zig"),
     })) |dep| {
         exe.root_module.addImport("uucode", dep.module("uucode"));
     }
 
     const run = b.addRunArtifact(exe);
+    const output = run.addOutputFileArg("tables.zig");
     return .{
         .exe = exe,
-        .output = run.captureStdOut(),
+        .output = output,
     };
 }
 

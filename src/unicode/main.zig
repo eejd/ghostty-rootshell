@@ -7,6 +7,7 @@ pub const Properties = props.Properties;
 pub const getProperties = props.get;
 pub const graphemeBreak = grapheme.graphemeBreak;
 pub const GraphemeBreakState = grapheme.BreakState;
+pub const isExtendedPictographic = props.isExtendedPictographic;
 
 test {
     @import("std").testing.refAllDecls(@This());
