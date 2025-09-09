@@ -214,7 +214,7 @@ msgstr "この分割ウィンドウに対して設定を記憶する"
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-read.blp:82
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-write.blp:78
 msgid "Reload configuration to show this prompt again"
-msgstr "設定を再読み込みしてプロンプトを再び表示"
+msgstr "このプロンプトを再び表示するには設定を再読み込みしてください"
 
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-write.blp:7
 #: src/apprt/gtk/ui/1.2/ccw-osc-52-write.blp:7
