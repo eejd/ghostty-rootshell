@@ -1,36 +1,36 @@
-# Japanese translations for com.mitchellh.ghostty package
-# com.mitchellh.ghostty パッケージに対する和訳.
-# Copyright (C) 2025 Mitchell Hashimoto, Ghostty contributors
+# Italian translations for com.mitchellh.ghostty package
+# Traduzioni italiane per il pacchetto com.mitchellh.ghostty.
+# Copyright (C) 2025 "Mitchell Hashimoto, Ghostty contributors"
 # This file is distributed under the same license as the com.mitchellh.ghostty package.
-# Lon Sagisawa <lon@sagisawa.me>, 2025.
+# Giacomo Bettini <giaco.bettini@gmail.com>, 2025.
 #
 msgid ""
 msgstr ""
 "Project-Id-Version: com.mitchellh.ghostty\n"
 "Report-Msgid-Bugs-To: m@mitchellh.com\n"
 "POT-Creation-Date: 2025-07-22 17:18+0000\n"
-"PO-Revision-Date: 2025-09-01 14:43+0900\n"
-"Last-Translator: Lon Sagisawa <lon@sagisawa.me>\n"
-"Language-Team: Japanese\n"
-"Language: ja\n"
+"PO-Revision-Date: 2025-09-06 19:40+0200\n"
+"Last-Translator: Giacomo Bettini <giaco.bettini@gmail.com>\n"
+"Language-Team: Italian <tp@lists.linux.it>\n"
+"Language: it\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"Plural-Forms: nplurals=1; plural=0;\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
 
 #: src/apprt/gtk/ui/1.5/prompt-title-dialog.blp:5
 msgid "Change Terminal Title"
-msgstr "ターミナルのタイトルを変更する"
+msgstr "Cambia il titolo del terminale"
 
 #: src/apprt/gtk/ui/1.5/prompt-title-dialog.blp:6
 msgid "Leave blank to restore the default title."
-msgstr "空白にした場合、デフォルトのタイトルを使用します。"
+msgstr "Lasciare vuoto per ripristinare il titolo predefinito."
 
 #: src/apprt/gtk/ui/1.5/prompt-title-dialog.blp:9
 #: src/apprt/gtk/ui/1.5/ccw-paste.blp:10 src/apprt/gtk/ui/1.2/ccw-paste.blp:10
 #: src/apprt/gtk/CloseDialog.zig:44
 msgid "Cancel"
-msgstr "キャンセル"
+msgstr "Annulla"
 
 #: src/apprt/gtk/ui/1.5/prompt-title-dialog.blp:10
 msgid "OK"
@@ -39,7 +39,7 @@ msgstr "OK"
 #: src/apprt/gtk/ui/1.5/config-errors-dialog.blp:5
 #: src/apprt/gtk/ui/1.2/config-errors-dialog.blp:5
 msgid "Configuration Errors"
-msgstr "設定ファイルにエラーがあります"
+msgstr "Errori di configurazione"
 
 #: src/apprt/gtk/ui/1.5/config-errors-dialog.blp:6
 #: src/apprt/gtk/ui/1.2/config-errors-dialog.blp:6
@@ -47,141 +47,141 @@ msgid ""
 "One or more configuration errors were found. Please review the errors below, "
 "and either reload your configuration or ignore these errors."
 msgstr ""
-"設定ファイルにエラーがあります。以下のエラーを確認し、設定ファイルの再読み込"
-"みをするか、無視してください。"
+"Sono stati trovati uno o più errori di configurazione. Controlla gli errori seguenti, "
+"poi ricarica la tua configurazione o ignora quegli errori."
 
 #: src/apprt/gtk/ui/1.5/config-errors-dialog.blp:9
 #: src/apprt/gtk/ui/1.2/config-errors-dialog.blp:9
 msgid "Ignore"
-msgstr "無視"
+msgstr "Ignora"
 
 #: src/apprt/gtk/ui/1.5/config-errors-dialog.blp:10
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:97
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:100
 #: src/apprt/gtk/ui/1.2/config-errors-dialog.blp:10
 msgid "Reload Configuration"
-msgstr "設定ファイルの再読み込み"
+msgstr "Ricarica configurazione"
 
 #: src/apprt/gtk/ui/1.0/menu-headerbar-split_menu.blp:6
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:38
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:50
 msgid "Split Up"
-msgstr "上に分割"
+msgstr "Dividi in alto"
 
 #: src/apprt/gtk/ui/1.0/menu-headerbar-split_menu.blp:11
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:43
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:55
 msgid "Split Down"
-msgstr "下に分割"
+msgstr "Dividi in basso"
 
 #: src/apprt/gtk/ui/1.0/menu-headerbar-split_menu.blp:16
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:48
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:60
 msgid "Split Left"
-msgstr "左に分割"
+msgstr "Dividi a sinistra"
 
 #: src/apprt/gtk/ui/1.0/menu-headerbar-split_menu.blp:21
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:53
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:65
 msgid "Split Right"
-msgstr "右に分割"
+msgstr "Dividi a destra"
 
 #: src/apprt/gtk/ui/1.5/command-palette.blp:16
 msgid "Execute a command…"
-msgstr "コマンドを実行…"
+msgstr "Esegui un comando…"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:6
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:6
 msgid "Copy"
-msgstr "コピー"
+msgstr "Copia"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:11
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:11
 #: src/apprt/gtk/ui/1.5/ccw-paste.blp:11 src/apprt/gtk/ui/1.2/ccw-paste.blp:11
 msgid "Paste"
-msgstr "貼り付け"
+msgstr "Incolla"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:18
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:73
 msgid "Clear"
-msgstr "クリア"
+msgstr "Pulisci"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:23
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:78
 msgid "Reset"
-msgstr "リセット"
+msgstr "Reimposta"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:30
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:42
 msgid "Split"
-msgstr "分割"
+msgstr "Divisione"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:33
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:45
 msgid "Change Title…"
-msgstr "タイトルを変更…"
+msgstr "Cambia titolo…"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:59
 msgid "Tab"
-msgstr "タブ"
+msgstr "Scheda"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:62
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:30
 #: src/apprt/gtk/Window.zig:265
 msgid "New Tab"
-msgstr "新しいタブ"
+msgstr "Nuova scheda"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:67
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:35
 msgid "Close Tab"
-msgstr "タブを閉じる"
+msgstr "Chiudi scheda"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:73
 msgid "Window"
-msgstr "ウィンドウ"
+msgstr "Finestra"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:76
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:18
 msgid "New Window"
-msgstr "新しいウィンドウ"
+msgstr "Nuova finestra"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:81
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:23
 msgid "Close Window"
-msgstr "ウィンドウを閉じる"
+msgstr "Chiudi finestra"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:89
 msgid "Config"
-msgstr "設定"
+msgstr "Configurazione"
 
 #: src/apprt/gtk/ui/1.0/menu-surface-context_menu.blp:92
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:95
 msgid "Open Configuration"
-msgstr "設定ファイルを開く"
+msgstr "Apri configurazione"
 
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:85
 msgid "Command Palette"
-msgstr "コマンドパレット"
+msgstr "Riquadro comandi"
 
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:90
 msgid "Terminal Inspector"
-msgstr "端末インスペクター"
+msgstr "Ispettore del terminale"
 
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:107
 #: src/apprt/gtk/Window.zig:1038
 msgid "About Ghostty"
-msgstr "Ghostty について"
+msgstr "Informazioni su Ghostty"
 
 #: src/apprt/gtk/ui/1.0/menu-window-titlebar_menu.blp:112
 msgid "Quit"
-msgstr "終了"
+msgstr "Chiudi"
 
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-read.blp:6
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-write.blp:6
 #: src/apprt/gtk/ui/1.2/ccw-osc-52-read.blp:6
 #: src/apprt/gtk/ui/1.2/ccw-osc-52-write.blp:6
 msgid "Authorize Clipboard Access"
-msgstr "クリップボードへのアクセスを承認"
+msgstr "Consenti accesso agli Appunti"
 
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-read.blp:7
 #: src/apprt/gtk/ui/1.2/ccw-osc-52-read.blp:7
@@ -189,32 +189,32 @@ msgid ""
 "An application is attempting to read from the clipboard. The current "
 "clipboard contents are shown below."
 msgstr ""
-"アプリケーションがクリップボードを読み取ろうとしています。現在のクリップボー"
-"ドの内容は以下の通りです。"
+"Un'applicazione sta cercando di leggere dagli Appunti. Il contenuto "
+"attuale degli Appunti è mostrato di seguito."
 
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-read.blp:10
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-write.blp:10
 #: src/apprt/gtk/ui/1.2/ccw-osc-52-read.blp:10
 #: src/apprt/gtk/ui/1.2/ccw-osc-52-write.blp:10
 msgid "Deny"
-msgstr "拒否"
+msgstr "Non consentire"
 
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-read.blp:11
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-write.blp:11
 #: src/apprt/gtk/ui/1.2/ccw-osc-52-read.blp:11
 #: src/apprt/gtk/ui/1.2/ccw-osc-52-write.blp:11
 msgid "Allow"
-msgstr "許可"
+msgstr "Consenti"
 
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-read.blp:81
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-write.blp:77
 msgid "Remember choice for this split"
-msgstr "この分割ウィンドウに対して設定を記憶する"
+msgstr "Ricorda scelta per questa divisione"
 
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-read.blp:82
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-write.blp:78
 msgid "Reload configuration to show this prompt again"
-msgstr "このプロンプトを再び表示するには設定を再読み込みしてください"
+msgstr "Ricarica la configurazione per visualizzare nuovamente questo messaggio"
 
 #: src/apprt/gtk/ui/1.5/ccw-osc-52-write.blp:7
 #: src/apprt/gtk/ui/1.2/ccw-osc-52-write.blp:7
@@ -222,99 +222,99 @@ msgid ""
 "An application is attempting to write to the clipboard. The current "
 "clipboard contents are shown below."
 msgstr ""
-"アプリケーションがクリップボードに書き込もうとしています。現在のクリップボー"
-"ドの内容は以下の通りです。"
+"Un'applicazione sta cercando di scrivere negli Appunti. Il contenuto "
+"attuale degli Appunti è mostrato di seguito."
 
 #: src/apprt/gtk/ui/1.5/ccw-paste.blp:6 src/apprt/gtk/ui/1.2/ccw-paste.blp:6
 msgid "Warning: Potentially Unsafe Paste"
-msgstr "警告: 危険な可能性のある貼り付け"
+msgstr "Attenzione: Incolla potenzialmente pericoloso"
 
 #: src/apprt/gtk/ui/1.5/ccw-paste.blp:7 src/apprt/gtk/ui/1.2/ccw-paste.blp:7
 msgid ""
 "Pasting this text into the terminal may be dangerous as it looks like some "
 "commands may be executed."
 msgstr ""
-"このテキストには実行可能なコマンドが含まれており、ターミナルに貼り付けるのは"
-"危険な可能性があります。"
+"Incollare questo testo nel terminale potrebbe essere pericoloso poiché "
+"sembra contenere comandi che potrebbero venire eseguiti."
 
 #: src/apprt/gtk/CloseDialog.zig:47 src/apprt/gtk/Surface.zig:2531
 msgid "Close"
-msgstr "閉じる"
+msgstr "Chiudi"
 
 #: src/apprt/gtk/CloseDialog.zig:87
 msgid "Quit Ghostty?"
-msgstr "Ghostty を終了しますか?"
+msgstr "Chiudere Ghostty?"
 
 #: src/apprt/gtk/CloseDialog.zig:88
 msgid "Close Window?"
-msgstr "ウィンドウを閉じますか?"
+msgstr "Chiudere la finestra?"
 
 #: src/apprt/gtk/CloseDialog.zig:89
 msgid "Close Tab?"
-msgstr "タブを閉じますか?"
+msgstr "Chiudere la scheda?"
 
 #: src/apprt/gtk/CloseDialog.zig:90
 msgid "Close Split?"
-msgstr "分割ウィンドウを閉じますか?"
+msgstr "Chiudere la divisione?"
 
 #: src/apprt/gtk/CloseDialog.zig:96
 msgid "All terminal sessions will be terminated."
-msgstr "すべてのターミナルセッションが終了します。"
+msgstr "Tutte le sessioni del terminale saranno terminate."
 
 #: src/apprt/gtk/CloseDialog.zig:97
 msgid "All terminal sessions in this window will be terminated."
-msgstr "ウィンドウ内のすべてのターミナルセッションが終了します。"
+msgstr "Tutte le sessioni del terminale in questa finestra saranno terminate."
 
 #: src/apprt/gtk/CloseDialog.zig:98
 msgid "All terminal sessions in this tab will be terminated."
-msgstr "タブ内のすべてのターミナルセッションが終了します。"
+msgstr "Tutte le sessioni del terminale in questa scheda saranno terminate."
 
 #: src/apprt/gtk/CloseDialog.zig:99
 msgid "The currently running process in this split will be terminated."
-msgstr "分割ウィンドウ内のすべてのプロセスが終了します。"
+msgstr "Il processo attualmente in esecuzione in questa divisione sarà terminato."
 
 #: src/apprt/gtk/Surface.zig:1266
 msgid "Copied to clipboard"
-msgstr "クリップボードにコピーしました"
+msgstr "Copiato negli Appunti"
 
 #: src/apprt/gtk/Surface.zig:1268
 msgid "Cleared clipboard"
-msgstr "クリップボードを空にしました"
+msgstr "Appunti svuotati"
 
 #: src/apprt/gtk/Surface.zig:2525
 msgid "Command succeeded"
-msgstr "コマンド実行成功"
+msgstr "Comando riuscito"
 
 #: src/apprt/gtk/Surface.zig:2527
 msgid "Command failed"
-msgstr "コマンド実行失敗"
+msgstr "Comando fallito"
 
 #: src/apprt/gtk/Window.zig:216
 msgid "Main Menu"
-msgstr "メインメニュー"
+msgstr "Menù principale"
 
 #: src/apprt/gtk/Window.zig:239
 msgid "View Open Tabs"
-msgstr "開いているすべてのタブを表示"
+msgstr "Vedi schede aperte"
 
 #: src/apprt/gtk/Window.zig:266
 msgid "New Split"
-msgstr "新しい分割"
+msgstr "Nuova divisione"
 
 #: src/apprt/gtk/Window.zig:329
 msgid ""
 "⚠️ You're running a debug build of Ghostty! Performance will be degraded."
 msgstr ""
-"⚠️ Ghostty のデバッグビルドを実行しています! パフォーマンスが低下しています。"
+"⚠️ Stai usando una build di debug di Ghostty! Le prestazioni saranno ridotte."
 
 #: src/apprt/gtk/Window.zig:775
 msgid "Reloaded the configuration"
-msgstr "設定を再読み込みしました"
+msgstr "Configurazione ricaricata"
 
 #: src/apprt/gtk/Window.zig:1019
 msgid "Ghostty Developers"
-msgstr "Ghostty 開発者"
+msgstr "Sviluppatori di Ghostty"
 
 #: src/apprt/gtk/inspector.zig:144
 msgid "Ghostty: Terminal Inspector"
-msgstr "Ghostty: 端末インスペクター"
+msgstr "Ghostty: Ispettore del terminale"
