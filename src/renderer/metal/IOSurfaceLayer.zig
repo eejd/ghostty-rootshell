@@ -52,9 +52,12 @@ pub inline fn setSurface(self: *IOSurfaceLayer, surface: *IOSurface) !void {
     //
     // We release in the callback after setting the contents.
     surface.retain();
-    // NOTE: Since `self.layer` is passed as an `objc.c.id`, it's
-    //       automatically retained when the block is copied, so we
-    //       don't need to retain it ourselves like with the surface.
+
+    // Retain the layer to ensure it survives until the callback runs.
+    // This is necessary because the block may be dispatched asynchronously,
+    // and the IOSurfaceLayer could be deallocated before the callback executes.
+    // We release in the callback after we're done with it.
+    _ = self.layer.retain();
 
     var block = SetSurfaceBlock.init(.{
         .layer = self.layer.value,
@@ -93,6 +96,7 @@ fn setSurfaceCallback(
     block: *const SetSurfaceBlock.Context,
 ) callconv(.c) void {
     const layer = objc.Object.fromId(block.layer);
+    defer layer.release();
     const surface: *IOSurface = block.surface;
 
     // See explanation of why we retain and release in `setSurface`.

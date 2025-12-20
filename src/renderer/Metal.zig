@@ -58,12 +58,15 @@ default_storage_mode: mtl.MTLResourceOptions.StorageMode,
 /// The maximum 2D texture width and height supported by the device.
 max_texture_size: u32,
 
+/// Runtime surface reference for texture callbacks.
+rt_surface: *apprt.Surface,
+
 /// We start an AutoreleasePool before `drawFrame` and end it afterwards.
 autorelease_pool: ?*objc.AutoreleasePool = null,
 
 pub fn init(alloc: Allocator, opts: rendererpkg.Options) !Metal {
     comptime switch (builtin.os.tag) {
-        .macos, .ios => {},
+        .macos, .ios, .visionos => {},
         else => @compileError("unsupported platform for Metal"),
     };
 
@@ -75,9 +78,14 @@ pub fn init(alloc: Allocator, opts: rendererpkg.Options) !Metal {
     const queue = device.msgSend(objc.Object, objc.sel("newCommandQueue"), .{});
     errdefer queue.release();
 
-    // Grab metadata about the device.
-    const default_storage_mode: mtl.MTLResourceOptions.StorageMode =
-        if (device.getProperty(bool, "hasUnifiedMemory")) .shared else .managed;
+    // iOS and visionOS (including simulator) only support .shared and .private storage modes.
+    // .managed is not available on iOS/visionOS. Since we're doing dynamic allocations,
+    // we use .shared on iOS/visionOS and check unified memory on macOS.
+    const default_storage_mode: mtl.MTLResourceOptions.StorageMode = switch (builtin.os.tag) {
+        .ios, .visionos => .shared,
+        .macos => if (device.getProperty(bool, "hasUnifiedMemory")) .shared else .managed,
+        else => .shared,
+    };
     const max_texture_size = queryMaxTextureSize(device);
     log.debug(
         "device properties default_storage_mode={} max_texture_size={}",
@@ -122,8 +130,13 @@ pub fn init(alloc: Allocator, opts: rendererpkg.Options) !Metal {
             info.view.setProperty("wantsLayer", true);
         },
 
-        .ios => {
-            info.view.msgSend(void, objc.sel("addSublayer"), .{layer.layer.value});
+        .ios, .visionos => {
+            const viewLayer = info.view.getProperty(objc.Object, "layer");
+            // Retain viewLayer to prevent cf_release_thread from cleaning it up prematurely
+            // getProperty may return an autoreleased object on iOS/visionOS
+            _ = viewLayer.retain();
+            defer viewLayer.release();
+            viewLayer.msgSend(void, objc.sel("addSublayer:"), .{layer.layer.value});
         },
 
         else => @compileError("unsupported target for Metal"),
@@ -148,6 +161,7 @@ pub fn init(alloc: Allocator, opts: rendererpkg.Options) !Metal {
         .blending = opts.config.blending,
         .default_storage_mode = default_storage_mode,
         .max_texture_size = max_texture_size,
+        .rt_surface = opts.rt_surface,
     };
 }
 
@@ -163,6 +177,15 @@ pub fn loopEnter(self: *Metal) void {
         @ptrCast(&displayCallback),
         @ptrCast(renderer),
     );
+}
+
+pub fn loopExit(self: *Metal) void {
+    // Clear the display callback before the Renderer is freed.
+    // The layer may still be in the view hierarchy (added as sublayer),
+    // so Core Animation could call display() at any time. Without clearing
+    // this, the callback would access the freed Renderer, causing a
+    // use-after-free crash (manifests as lock corruption in drawFrame).
+    self.layer.setDisplayCallback(null, null);
 }
 
 fn displayCallback(renderer: *Renderer) align(8) void {
@@ -423,7 +446,7 @@ fn chooseDevice() error{NoMetalDevice}!objc.Object {
                     device.getProperty(bool, "isLowPower")) break;
             }
         },
-        .ios => {
+        .ios, .visionos => {
             chosen_device = objc.Object.fromId(mtl.MTLCreateSystemDefaultDevice());
         },
         else => @compileError("unsupported target for Metal"),

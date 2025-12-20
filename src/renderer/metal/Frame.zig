@@ -79,6 +79,17 @@ fn bufferCompleted(
 
     // If the frame is healthy, present it.
     if (health == .healthy) {
+        // Call texture callback if registered (for visionOS curved display)
+        // This allows Swift to access the IOSurface before it's presented
+        if (block.renderer.api.rt_surface.texture_callback) |callback| {
+            callback(
+                block.renderer.api.rt_surface.texture_callback_userdata,
+                @ptrCast(block.target.surface),
+                @intCast(block.target.width),
+                @intCast(block.target.height),
+            );
+        }
+
         block.renderer.api.present(
             block.target.*,
             block.sync,

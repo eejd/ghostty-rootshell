@@ -17,7 +17,7 @@ pub const winsize = extern struct {
 
 pub const Pty = switch (builtin.os.tag) {
     .windows => WindowsPty,
-    .ios => NullPty,
+    .ios => PosixPty, // iOS uses Pipe backend but PTY types still needed
     else => PosixPty,
 };
 
@@ -90,12 +90,12 @@ const PosixPty = struct {
 
     // https://github.com/ziglang/zig/issues/13277
     // Once above is fixed, use `c.TIOCSCTTY`
-    const TIOCSCTTY = if (builtin.os.tag == .macos) 536900705 else c.TIOCSCTTY;
-    const TIOCSWINSZ = if (builtin.os.tag == .macos) 2148037735 else c.TIOCSWINSZ;
-    const TIOCGWINSZ = if (builtin.os.tag == .macos) 1074295912 else c.TIOCGWINSZ;
+    const TIOCSCTTY = if (builtin.os.tag == .macos or builtin.os.tag == .ios or builtin.os.tag == .visionos) 536900705 else c.TIOCSCTTY;
+    const TIOCSWINSZ = if (builtin.os.tag == .macos or builtin.os.tag == .ios or builtin.os.tag == .visionos) 2148037735 else c.TIOCSWINSZ;
+    const TIOCGWINSZ = if (builtin.os.tag == .macos or builtin.os.tag == .ios or builtin.os.tag == .visionos) 1074295912 else c.TIOCGWINSZ;
     extern "c" fn setsid() std.c.pid_t;
     const c = switch (builtin.os.tag) {
-        .macos => @cImport({
+        .macos, .ios, .visionos => @cImport({
             @cInclude("sys/ioctl.h"); // ioctl and constants
             @cInclude("util.h"); // openpty()
         }),

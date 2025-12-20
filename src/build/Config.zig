@@ -34,6 +34,7 @@ sentry: bool = true,
 simd: bool = true,
 i18n: bool = true,
 wasm_shared: bool = true,
+appstore: bool = false,
 
 /// Ghostty exe properties
 exe_entrypoint: ExeEntrypoint = .ghostty,
@@ -161,7 +162,7 @@ pub fn init(b: *std.Build, appVersion: []const u8) !Config {
         "Build with Sentry crash reporting. Default for macOS is true, false for any other system.",
     ) orelse sentry: {
         switch (target.result.os.tag) {
-            .macos, .ios => break :sentry true,
+            .macos, .ios, .visionos => break :sentry true,
 
             // Note its false for linux because the crash reports on Linux
             // don't have much useful information.
@@ -198,10 +199,16 @@ pub fn init(b: *std.Build, appVersion: []const u8) !Config {
         "i18n",
         "Enables gettext-based internationalization. Enabled by default only for macOS, and other Unix-like systems like Linux and FreeBSD when using glibc.",
     ) orelse switch (target.result.os.tag) {
-        .macos, .ios => true,
+        .macos, .ios, .visionos => true,
         .linux, .freebsd => target.result.isGnuLibC(),
         else => false,
     };
+
+    config.appstore = b.option(
+        bool,
+        "appstore",
+        "Build for App Store submission. Disables private APIs like CGS blur functions.",
+    ) orelse false;
 
     //---------------------------------------------------------------
     // Ghostty Exe Properties
@@ -486,6 +493,7 @@ pub fn addOptions(self: *const Config, step: *std.Build.Step.Options) !void {
     step.addOption(ExeEntrypoint, "exe_entrypoint", self.exe_entrypoint);
     step.addOption(WasmTarget, "wasm_target", self.wasm_target);
     step.addOption(bool, "wasm_shared", self.wasm_shared);
+    step.addOption(bool, "appstore", self.appstore);
 
     // Our version. We also add the string version so we don't need
     // to do any allocations at runtime. This has to be long enough to
@@ -581,6 +589,13 @@ pub fn osVersionMin(tag: std.Target.Os.Tag) ?std.Target.Query.OsVersion {
         // iOS 17 picked arbitrarily
         .ios => .{ .semver = .{
             .major = 17,
+            .minor = 0,
+            .patch = 0,
+        } },
+
+        // visionOS 2.0 for current release
+        .visionos => .{ .semver = .{
+            .major = 2,
             .minor = 0,
             .patch = 0,
         } },

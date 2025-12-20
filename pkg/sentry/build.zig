@@ -100,7 +100,7 @@ pub fn build(b: *std.Build) !void {
                 .flags = flags.items,
             }),
 
-            .macos, .ios => lib.addCSourceFiles(.{
+            .macos, .ios, .visionos => lib.addCSourceFiles(.{
                 .root = upstream.path(""),
                 .files = &.{
                     "src/modulefinder/sentry_modulefinder_apple.c",

@@ -428,6 +428,7 @@ typedef struct {
   size_t env_var_count;
   const char* initial_input;
   bool wait_after_command;
+  bool use_external_io;
 } ghostty_surface_config_s;
 
 typedef struct {
@@ -1065,6 +1066,18 @@ void ghostty_surface_free_text(ghostty_surface_t, ghostty_text_s*);
 void ghostty_surface_set_display_id(ghostty_surface_t, uint32_t);
 void* ghostty_surface_quicklook_font(ghostty_surface_t);
 bool ghostty_surface_quicklook_word(ghostty_surface_t, ghostty_text_s*);
+
+// Texture callback for visionOS curved display support.
+// Called after each frame is rendered with the IOSurface pointer, width, and height.
+// This allows external code to capture rendered frames for display on curved surfaces.
+typedef void (*ghostty_texture_callback)(void* userdata,
+                                         void* iosurface,
+                                         unsigned long width,
+                                         unsigned long height);
+void ghostty_surface_set_texture_callback(ghostty_surface_t,
+                                          ghostty_texture_callback,
+                                          void* userdata);
+int ghostty_surface_get_slave_fd(ghostty_surface_t);
 #endif
 
 ghostty_inspector_t ghostty_surface_inspector(ghostty_surface_t);

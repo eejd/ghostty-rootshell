@@ -4,6 +4,7 @@ const std = @import("std");
 const Config = @import("Config.zig");
 const SharedDeps = @import("SharedDeps.zig");
 const GhosttyLib = @import("GhosttyLib.zig");
+const LipoStep = @import("LipoStep.zig");
 const XCFrameworkStep = @import("XCFrameworkStep.zig");
 const Target = @import("xcframework.zig").Target;
 
@@ -53,6 +54,69 @@ pub fn init(
         }),
     ));
 
+    // visionOS
+    const visionos = try GhosttyLib.initStatic(b, &try deps.retarget(
+        b,
+        b.resolveTargetQuery(.{
+            .cpu_arch = .aarch64,
+            .os_tag = .visionos,
+            .os_version_min = Config.osVersionMin(.visionos),
+            .abi = null,
+        }),
+    ));
+
+    // visionOS Simulator
+    const visionos_sim = try GhosttyLib.initStatic(b, &try deps.retarget(
+        b,
+        b.resolveTargetQuery(.{
+            .cpu_arch = .aarch64,
+            .os_tag = .visionos,
+            .os_version_min = Config.osVersionMin(.visionos),
+            .abi = .simulator,
+            .cpu_model = .{ .explicit = &std.Target.aarch64.cpu.apple_a17 },
+        }),
+    ));
+
+    // Mac Catalyst Universal (arm64 + x86_64)
+    const catalyst_universal = universal: {
+        const catalyst_arm64 = try GhosttyLib.initStatic(b, &try deps.retarget(
+            b,
+            b.resolveTargetQuery(.{
+                .cpu_arch = .aarch64,
+                .os_tag = .ios,
+                .os_version_min = Config.osVersionMin(.ios),
+                .abi = .macabi,
+
+                // We force the Apple CPU model to avoid compilation issues
+                // with NEON intrinsics in dependencies like simdutf
+                .cpu_model = .{ .explicit = &std.Target.aarch64.cpu.apple_a17 },
+            }),
+        ));
+
+        const catalyst_x86_64 = try GhosttyLib.initStatic(b, &try deps.retarget(
+            b,
+            b.resolveTargetQuery(.{
+                .cpu_arch = .x86_64,
+                .os_tag = .ios,
+                .os_version_min = Config.osVersionMin(.ios),
+                .abi = .macabi,
+            }),
+        ));
+
+        const universal = LipoStep.create(b, .{
+            .name = "ghostty-catalyst",
+            .out_name = "libghostty-catalyst.a",
+            .input_a = catalyst_arm64.output,
+            .input_b = catalyst_x86_64.output,
+        });
+
+        break :universal GhosttyLib{
+            .step = universal.step,
+            .output = universal.output,
+            .dsym = null, // Universal binaries can't have dSYMs
+        };
+    };
+
     // The xcframework wraps our ghostty library so that we can link
     // it to the final app built with Swift.
     const xcframework = XCFrameworkStep.create(b, .{
@@ -74,6 +138,21 @@ pub fn init(
                     .library = ios_sim.output,
                     .headers = b.path("include"),
                     .dsym = ios_sim.dsym,
+                },
+                .{
+                    .library = visionos.output,
+                    .headers = b.path("include"),
+                    .dsym = visionos.dsym,
+                },
+                .{
+                    .library = visionos_sim.output,
+                    .headers = b.path("include"),
+                    .dsym = visionos_sim.dsym,
+                },
+                .{
+                    .library = catalyst_universal.output,
+                    .headers = b.path("include"),
+                    .dsym = catalyst_universal.dsym,
                 },
             },
 

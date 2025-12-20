@@ -20,6 +20,7 @@ const CoreInspector = @import("../inspector/main.zig").Inspector;
 const CoreSurface = @import("../Surface.zig");
 const configpkg = @import("../config.zig");
 const Config = configpkg.Config;
+const build_config = @import("../build_config.zig");
 
 const log = std.log.scoped(.embedded_window);
 
@@ -418,6 +419,15 @@ pub const Surface = struct {
     /// that getTitle works without the implementer needing to save it.
     title: ?[:0]const u8 = null,
 
+    /// Whether to use external I/O (pipe-based) instead of PTY.
+    use_external_io: bool = false,
+
+    /// Callback for texture frame updates. Called after each frame is rendered
+    /// with the IOSurface pointer, width, and height. Used for visionOS curved display.
+    /// Signature: fn(userdata, iosurface_ptr, width, height)
+    texture_callback: ?*const fn (?*anyopaque, ?*anyopaque, c_ulong, c_ulong) callconv(.c) void = null,
+    texture_callback_userdata: ?*anyopaque = null,
+
     /// Surface initialization options.
     pub const Options = extern struct {
         /// The platform that this surface is being initialized for and
@@ -456,6 +466,11 @@ pub const Surface = struct {
 
         /// Wait after the command exits
         wait_after_command: bool = false,
+
+        /// Use external I/O (pipe-based) instead of PTY. Defaults to false
+        /// (prefer PTY). When true, forces pipe-based I/O which is useful for
+        /// scenarios like SSH sessions where the I/O is managed externally.
+        use_external_io: bool = false,
     };
 
     pub fn init(self: *Surface, app: *App, opts: Options) !void {
@@ -470,6 +485,7 @@ pub const Surface = struct {
             },
             .size = .{ .width = 800, .height = 600 },
             .cursor_pos = .{ .x = -1, .y = -1 },
+            .use_external_io = opts.use_external_io,
         };
 
         // Add ourselves to the list of surfaces on the app.
@@ -1681,6 +1697,56 @@ pub const CAPI = struct {
         surface.occlusionCallback(visible);
     }
 
+    /// Set a callback that will be called after each frame is rendered.
+    /// The callback receives the IOSurface pointer, width, and height.
+    /// Used for visionOS curved display to capture rendered frames.
+    export fn ghostty_surface_set_texture_callback(
+        surface: *Surface,
+        callback: ?*const fn (?*anyopaque, ?*anyopaque, c_ulong, c_ulong) callconv(.c) void,
+        userdata: ?*anyopaque,
+    ) void {
+        surface.texture_callback = callback;
+        surface.texture_callback_userdata = userdata;
+    }
+
+    /// Get the PTY master file descriptor for iOS external backend.
+    /// Returns -1 if not using iOS external backend or if FD is unavailable.
+    /// Only available on iOS platform.
+    export fn ghostty_surface_pty_master_fd(surface: *Surface) c_int {
+        if (comptime builtin.os.tag != .ios) return -1;
+
+        // Access the backend through the termio
+        switch (surface.core_surface.io.backend) {
+            .pipe => |*p| return p.master_fd,
+            else => return -1,
+        }
+    }
+
+    /// Get the response pipe read FD for pipe backend.
+    /// Swift should read from this FD to get terminal responses (e.g., cursor position).
+    /// Returns -1 if not using pipe backend or if FD is unavailable.
+    /// Only available on iOS platform.
+    export fn ghostty_surface_response_read_fd(surface: *Surface) c_int {
+        if (comptime builtin.os.tag != .ios) return -1;
+
+        // Access the backend through the termio
+        switch (surface.core_surface.io.backend) {
+            .pipe => |*p| return p.response_read_fd,
+            else => return -1,
+        }
+    }
+
+    /// Get the slave FD for writing shell output (pipe backend only).
+    /// Returns -1 if not using pipe backend or if pipes not set up.
+    /// External layer should write shell output to this FD using standard write() syscall.
+    export fn ghostty_surface_get_slave_fd(surface: *Surface) c_int {
+        const termio_impl = &surface.core_surface.io;
+        return switch (termio_impl.backend) {
+            .pipe => |*backend| @intCast(backend.slave_fd),
+            else => -1,
+        };
+    }
+
     /// Filter the mods if necessary. This handles settings such as
     /// `macos-option-as-alt`. The filtered mods should be used for
     /// key translation but should NOT be sent back via the `_key`
@@ -2042,12 +2108,17 @@ pub const CAPI = struct {
     ///
     /// This uses an undocumented, non-public API because this is what
     /// every terminal appears to use, including Terminal.app.
+    /// Note: This is disabled for App Store builds (-Dappstore=true) as
+    /// CGS functions are private APIs that Apple rejects.
     export fn ghostty_set_window_background_blur(
         app: *App,
         window: *anyopaque,
     ) void {
-        // This is only supported on macOS
-        if (comptime builtin.target.os.tag != .macos) return;
+        // This is only supported on macOS and Mac Catalyst
+        if (comptime builtin.target.os.tag != .macos and builtin.target.abi != .macabi) return;
+
+        // Disabled for App Store builds - CGS functions are private APIs
+        if (comptime build_config.appstore) return;
 
         const config = &app.config;
 

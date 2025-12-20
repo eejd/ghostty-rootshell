@@ -334,9 +334,11 @@ pub const BgImage = extern struct {
 fn initLibrary(device: objc.Object) !objc.Object {
     const start = try std.time.Instant.now();
 
+    // Use dispatch.Data with null queue to avoid autorelease issues on iOS
+    // DISPATCH_DATA_DESTRUCTOR_DEFAULT means the data will be managed by dispatch
     const data = try macos.dispatch.Data.create(
         @embedFile("ghostty_metallib"),
-        macos.dispatch.queue.getMain(),
+        null, // null queue avoids autorelease on main queue
         macos.dispatch.Data.DESTRUCTOR_DEFAULT,
     );
     defer data.release();

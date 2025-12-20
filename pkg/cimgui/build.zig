@@ -80,10 +80,16 @@ pub fn build(b: *std.Build) !void {
         lib.addCSourceFile(.{ .file = imgui.path("imgui_widgets.cpp"), .flags = flags.items });
         lib.addCSourceFile(.{ .file = imgui.path("imgui_tables.cpp"), .flags = flags.items });
         lib.addCSourceFile(.{ .file = imgui.path("misc/freetype/imgui_freetype.cpp"), .flags = flags.items });
-        lib.addCSourceFile(.{
-            .file = imgui.path("backends/imgui_impl_opengl3.cpp"),
-            .flags = flags.items,
-        });
+
+        // Skip OpenGL3 backend for Mac Catalyst (uses Metal instead)
+        const is_mac_catalyst = target.result.os.tag == .ios and
+            target.result.abi == .macabi;
+        if (!is_mac_catalyst) {
+            lib.addCSourceFile(.{
+                .file = imgui.path("backends/imgui_impl_opengl3.cpp"),
+                .flags = flags.items,
+            });
+        }
 
         if (target.result.os.tag.isDarwin()) {
             if (!target.query.isNative()) {

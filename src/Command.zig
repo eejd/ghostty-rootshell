@@ -126,8 +126,115 @@ pub fn start(self: *Command, alloc: Allocator) !void {
 
     switch (builtin.os.tag) {
         .windows => try self.startWindows(arena),
-        else => try self.startPosix(arena),
+        else => {
+            // On Catalyst, use posix_spawn with special PTY handling
+            if (builtin.target.os.tag.isDarwin() and builtin.abi == .macabi) {
+                try self.startPosixSpawnPty(arena);
+            } else {
+                try self.startPosix(arena);
+            }
+        },
     }
+}
+
+fn startPosixSpawnPty(self: *Command, arena: Allocator) !void {
+    const c = @cImport({
+        @cInclude("unistd.h");
+        @cInclude("stdlib.h");
+        @cInclude("spawn.h");
+        @cInclude("signal.h");
+    });
+
+    // Null-terminate all our arguments
+    const argsZ = try arena.allocSentinel(?[*:0]const u8, self.args.len, null);
+    for (self.args, 0..) |arg, i| argsZ[i] = arg.ptr;
+
+    // Determine our env vars
+    const envp = if (self.env) |env_map|
+        (try createNullDelimitedEnvMap(arena, env_map)).ptr
+    else if (builtin.link_libc)
+        std.c.environ
+    else
+        @compileError("missing env vars");
+
+    // Get the slave PTY path from the slave FD using ttyname()
+    const slave_fd = if (self.stdin) |f| f.handle else return error.NoStdinFd;
+    const slave_name_ptr = c.ttyname(slave_fd) orelse return error.PtsNameFailed;
+    const slave_path = std.mem.span(slave_name_ptr);
+    std.log.info("Catalyst: Using PTY slave path: {s}", .{slave_path});
+
+    // Setup spawn attributes
+    var attr: c.posix_spawnattr_t = undefined;
+    if (c.posix_spawnattr_init(&attr) != 0) return error.SystemError;
+    defer _ = c.posix_spawnattr_destroy(&attr);
+
+    // POSIX_SPAWN_SETSID makes the child a session leader
+    const POSIX_SPAWN_SETSID: c_short = 0x0004;
+    var flags: c_short = POSIX_SPAWN_SETSID;
+
+    // Reset all signals to default
+    var sigset: c.sigset_t = undefined;
+    _ = c.sigemptyset(&sigset);
+    if (c.posix_spawnattr_setsigmask(&attr, &sigset) != 0) return error.SystemError;
+    if (c.posix_spawnattr_setsigdefault(&attr, &sigset) != 0) return error.SystemError;
+    const POSIX_SPAWN_SETSIGMASK: c_short = 0x0010;
+    const POSIX_SPAWN_SETSIGDEF: c_short = 0x0020;
+    flags |= POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_SETSIGDEF;
+
+    if (c.posix_spawnattr_setflags(&attr, flags) != 0) return error.SystemError;
+
+    // Setup file actions
+    var actions: c.posix_spawn_file_actions_t = undefined;
+    if (c.posix_spawn_file_actions_init(&actions) != 0) return error.SystemError;
+    defer _ = c.posix_spawn_file_actions_destroy(&actions);
+
+    // CRITICAL: Use addopen (not adddup2) for stdin to trigger controlling terminal acquisition
+    // When the child opens the slave PTY as a session leader, it becomes the controlling terminal
+    const O_RDWR = 0x0002; // Standard O_RDWR value on macOS/Darwin
+    if (c.posix_spawn_file_actions_addopen(&actions, posix.STDIN_FILENO, slave_name_ptr, O_RDWR, 0) != 0)
+        return error.SystemError;
+
+    // Duplicate stdin to stdout and stderr
+    if (c.posix_spawn_file_actions_adddup2(&actions, posix.STDIN_FILENO, posix.STDOUT_FILENO) != 0)
+        return error.SystemError;
+    if (c.posix_spawn_file_actions_adddup2(&actions, posix.STDIN_FILENO, posix.STDERR_FILENO) != 0)
+        return error.SystemError;
+
+    // Close the slave FD that was passed in (child will open it fresh)
+    if (c.posix_spawn_file_actions_addclose(&actions, slave_fd) != 0)
+        return error.SystemError;
+
+    // Set working directory if specified
+    if (self.cwd) |cwd| {
+        const cwd_z = try arena.dupeZ(u8, cwd);
+        // Use libc's chdir via a helper (addchdir_np is macOS-specific)
+        const chdir_c = @cImport({
+            @cDefine("_DARWIN_C_SOURCE", "1");
+            @cInclude("spawn.h");
+        });
+        if (chdir_c.posix_spawn_file_actions_addchdir_np(@ptrCast(&actions), cwd_z) != 0) {
+            std.log.warn("failed to set working directory, continuing", .{});
+        }
+    }
+
+    // Spawn the process
+    var pid: c.pid_t = undefined;
+    const spawn_result = c.posix_spawnp(
+        &pid,
+        self.path,
+        &actions,
+        &attr,
+        @ptrCast(argsZ),
+        @ptrCast(envp),
+    );
+
+    if (spawn_result != 0) {
+        std.log.err("posix_spawn failed with errno={}", .{spawn_result});
+        return error.SpawnFailed;
+    }
+
+    std.log.info("Catalyst: spawned process PID={}", .{pid});
+    self.pid = pid;
 }
 
 fn startPosix(self: *Command, arena: Allocator) !void {
@@ -143,7 +250,7 @@ fn startPosix(self: *Command, arena: Allocator) !void {
     else
         @compileError("missing env vars");
 
-    // Fork. If we have a cgroup specified on Linxu then we use clone
+    // Fork. If we have a cgroup specified on Linux then we use clone
     const pid: posix.pid_t = switch (builtin.os.tag) {
         .linux => if (self.linux_cgroup) |cgroup|
             try internal_os.cgroup.cloneInto(cgroup)
@@ -155,7 +262,7 @@ fn startPosix(self: *Command, arena: Allocator) !void {
 
     if (pid != 0) {
         // Parent, return immediately.
-        self.pid = @intCast(pid);
+        self.pid = pid;
         return;
     }
 
@@ -347,7 +454,7 @@ fn setupFd(src: File.Handle, target: i32) !void {
                 }
             }
         },
-        .freebsd, .ios, .macos => {
+        .freebsd, .ios, .macos, .visionos => {
             // Mac doesn't support dup3 so we use dup2. We purposely clear
             // CLO_ON_EXEC for this fd.
             const flags = try posix.fcntl(src, posix.F.GETFD, 0);

@@ -304,29 +304,51 @@ pub fn add(
 
     // Sentry
     if (self.config.sentry) {
-        if (b.lazyDependency("sentry", .{
-            .target = target,
-            .optimize = optimize,
-            .backend = .breakpad,
-        })) |sentry_dep| {
-            step.root_module.addImport(
-                "sentry",
-                sentry_dep.module("sentry"),
-            );
-            step.linkLibrary(sentry_dep.artifact("sentry"));
-            try static_libs.append(
-                b.allocator,
-                sentry_dep.artifact("sentry").getEmittedBin(),
-            );
+        // visionOS doesn't support Breakpad (missing implementation), use inproc backend instead
+        const use_breakpad = target.result.os.tag != .visionos;
 
-            // We also need to include breakpad in the static libs.
-            if (sentry_dep.builder.lazyDependency("breakpad", .{
+        if (use_breakpad) {
+            if (b.lazyDependency("sentry", .{
                 .target = target,
                 .optimize = optimize,
-            })) |breakpad_dep| {
+                .backend = .breakpad,
+            })) |sentry_dep| {
+                step.root_module.addImport(
+                    "sentry",
+                    sentry_dep.module("sentry"),
+                );
+                step.linkLibrary(sentry_dep.artifact("sentry"));
                 try static_libs.append(
                     b.allocator,
-                    breakpad_dep.artifact("breakpad").getEmittedBin(),
+                    sentry_dep.artifact("sentry").getEmittedBin(),
+                );
+
+                // We also need to include breakpad in the static libs.
+                if (sentry_dep.builder.lazyDependency("breakpad", .{
+                    .target = target,
+                    .optimize = optimize,
+                })) |breakpad_dep| {
+                    try static_libs.append(
+                        b.allocator,
+                        breakpad_dep.artifact("breakpad").getEmittedBin(),
+                    );
+                }
+            }
+        } else {
+            // Use inproc backend for visionOS
+            if (b.lazyDependency("sentry", .{
+                .target = target,
+                .optimize = optimize,
+                .backend = .inproc,
+            })) |sentry_dep| {
+                step.root_module.addImport(
+                    "sentry",
+                    sentry_dep.module("sentry"),
+                );
+                step.linkLibrary(sentry_dep.artifact("sentry"));
+                try static_libs.append(
+                    b.allocator,
+                    sentry_dep.artifact("sentry").getEmittedBin(),
                 );
             }
         }

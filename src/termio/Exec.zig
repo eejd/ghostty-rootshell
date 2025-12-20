@@ -298,7 +298,11 @@ fn processExit(
     _: *xev.Completion,
     r: xev.Process.WaitError!u32,
 ) xev.CallbackAction {
-    const exit_code = r catch unreachable;
+    const exit_code = r catch |err| {
+        log.warn("process wait failed err={}", .{err});
+        processExitCommon(td_.?, 1);
+        return .disarm;
+    };
     processExitCommon(td_.?, exit_code);
     return .disarm;
 }
@@ -1143,6 +1147,9 @@ const Subprocess = struct {
     }
 
     fn killPid(pid: c.pid_t) !void {
+        // Safety check: never try to kill pid <= 1 (init or self/invalid)
+        if (pid <= 1) return;
+
         const pgid = getpgid(pid) orelse return;
 
         // It is possible to send a killpg between the time that
@@ -1172,10 +1179,27 @@ const Subprocess = struct {
             // The gist is that it lets us detect when children
             // are still alive without blocking so that we can
             // kill them again.
-            const res = posix.waitpid(pid, std.c.W.NOHANG);
-            log.debug("waitpid result={}", .{res.pid});
-            if (res.pid != 0) break;
-            std.Thread.sleep(10 * std.time.ns_per_ms);
+            //
+            // We use the C API directly here because std.posix.waitpid panics
+            // on unexpected errors (like EACCES which can happen with pid=1 on
+            // Catalyst).
+            const rc = std.c.waitpid(pid, null, std.c.W.NOHANG);
+            if (rc == pid) break; // Process exited
+            if (rc == 0) {
+                // Process still alive
+                std.Thread.sleep(10 * std.time.ns_per_ms);
+                continue;
+            }
+
+            // Error
+            switch (posix.errno(rc)) {
+                .INTR => continue,
+                .CHILD => break, // Process does not exist
+                else => |err| {
+                    log.warn("waitpid error pid={} err={}", .{ pid, err });
+                    break;
+                },
+            }
         }
     }
 

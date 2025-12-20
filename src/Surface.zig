@@ -289,6 +289,7 @@ const DerivedConfig = struct {
     clipboard_trim_trailing_spaces: bool,
     clipboard_paste_protection: bool,
     clipboard_paste_bracketed_safe: bool,
+    clipboard_paste_bracketed_safe_newline: bool,
     clipboard_codepoint_map: configpkg.Config.RepeatableClipboardCodepointMap,
     copy_on_select: configpkg.CopyOnSelect,
     right_click_action: configpkg.RightClickAction,
@@ -364,6 +365,7 @@ const DerivedConfig = struct {
             .clipboard_trim_trailing_spaces = config.@"clipboard-trim-trailing-spaces",
             .clipboard_paste_protection = config.@"clipboard-paste-protection",
             .clipboard_paste_bracketed_safe = config.@"clipboard-paste-bracketed-safe",
+            .clipboard_paste_bracketed_safe_newline = config.@"clipboard-paste-bracketed-safe-newline",
             .clipboard_codepoint_map = try config.@"clipboard-codepoint-map".clone(alloc),
             .copy_on_select = config.@"copy-on-select",
             .right_click_action = config.@"right-click-action",
@@ -610,38 +612,66 @@ pub fn init(
         // don't leak GHOSTTY_LOG to any subprocesses
         env.remove("GHOSTTY_LOG");
 
-        // Initialize our IO backend
-        var io_exec = try termio.Exec.init(alloc, .{
-            .command = command,
-            .env = env,
-            .env_override = config.env,
-            .shell_integration = config.@"shell-integration",
-            .shell_integration_features = config.@"shell-integration-features",
-            .working_directory = config.@"working-directory",
-            .resources_dir = global_state.resources_dir.host(),
-            .term = config.term,
-
-            // Get the cgroup if we're on linux and have the decl. I'd love
-            // to change this from a decl to a surface options struct because
-            // then we can do memory management better (don't need to retain
-            // the string around).
-            .linux_cgroup = if (comptime builtin.os.tag == .linux and
-                @hasDecl(apprt.runtime.Surface, "cgroup"))
-                rt_surface.cgroup()
-            else
-                Command.linux_cgroup_default,
-        });
-        errdefer io_exec.deinit();
-
         // Initialize our IO mailbox
         var io_mailbox = try termio.Mailbox.initSPSC(alloc);
         errdefer io_mailbox.deinit(alloc);
+
+        // Initialize our IO backend based on platform capabilities and configuration.
+        // - If use_external_io is true: always use pipe-based I/O
+        // - If use_external_io is false (default):
+        //   - On iOS (non-Catalyst) and visionOS: use pipe-based I/O (no PTY support)
+        //   - On other platforms (macOS, Linux, Catalyst): use PTY-based I/O (exec)
+        const use_external_io = if (@hasField(apprt.runtime.Surface, "use_external_io"))
+            rt_surface.use_external_io
+        else
+            false;
+
+        const backend: termio.backend.Backend = if (use_external_io) blk: {
+            // Explicitly requested pipe-based I/O
+            var io_pipe = try termio.Pipe.init(alloc, .{
+                .cwd = config.@"working-directory",
+            });
+            errdefer io_pipe.deinit();
+            break :blk .{ .pipe = io_pipe };
+        } else if (comptime (builtin.os.tag == .ios and builtin.abi != .macabi) or
+            builtin.os.tag == .visionos) blk: {
+            // iOS (non-Catalyst) and visionOS: auto-fallback to pipes (no PTY support)
+            var io_pipe = try termio.Pipe.init(alloc, .{
+                .cwd = config.@"working-directory",
+            });
+            errdefer io_pipe.deinit();
+            break :blk .{ .pipe = io_pipe };
+        } else blk: {
+            // PTY-capable platforms: macOS, Linux, Catalyst
+            var io_exec = try termio.Exec.init(alloc, .{
+                .command = command,
+                .env = env,
+                .env_override = config.env,
+                .shell_integration = config.@"shell-integration",
+                .shell_integration_features = config.@"shell-integration-features",
+                .working_directory = config.@"working-directory",
+                .resources_dir = global_state.resources_dir.host(),
+                .term = config.term,
+
+                // Get the cgroup if we're on linux and have the decl. I'd love
+                // to change this from a decl to a surface options struct because
+                // then we can do memory management better (don't need to retain
+                // the string around).
+                .linux_cgroup = if (comptime builtin.os.tag == .linux and
+                    @hasDecl(apprt.runtime.Surface, "cgroup"))
+                    rt_surface.cgroup()
+                else
+                    Command.linux_cgroup_default,
+            });
+            errdefer io_exec.deinit();
+            break :blk .{ .exec = io_exec };
+        };
 
         try termio.Termio.init(&self.io, alloc, .{
             .size = size,
             .full_config = config,
             .config = try termio.Termio.DerivedConfig.init(alloc, config),
-            .backend = .{ .exec = io_exec },
+            .backend = backend,
             .mailbox = io_mailbox,
             .renderer_state = &self.renderer_state,
             .renderer_wakeup = render_thread.wakeup,
@@ -1276,6 +1306,7 @@ fn childExitedAbnormally(
     // Build up our command for the error message
     const command = try std.mem.join(alloc, " ", switch (self.io.backend) {
         .exec => |*exec| exec.subprocess.args,
+        .pipe => &[_][]const u8{"pipe-shell"},
     });
     const runtime_str = try std.fmt.allocPrint(alloc, "{d} ms", .{info.runtime_ms});
 
@@ -5853,7 +5884,8 @@ fn completeClipboardPaste(
     const encode_opts: input.paste.Options = encode_opts: {
         self.renderer_state.mutex.lock();
         defer self.renderer_state.mutex.unlock();
-        const opts: input.paste.Options = .fromTerminal(&self.io.terminal);
+        var opts: input.paste.Options = .fromTerminal(&self.io.terminal);
+        opts.bracketed_safe_newline = self.config.clipboard_paste_bracketed_safe_newline;
 
         // If we have paste protection enabled, we detect unsafe pastes and return
         // an error. The error approach allows apprt to attempt to complete the paste
