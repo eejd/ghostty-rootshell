@@ -1355,11 +1355,13 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
             // Conditions under which we need to draw the frame, otherwise we
             // don't need to since the previous frame should be identical.
+            // Note: sync is NOT included here - it only affects presentation timing,
+            // not whether content has changed. This prevents redundant redraws on
+            // Mac Catalyst where display() may be called frequently by Core Animation.
             const needs_redraw =
                 size_changed or
                 self.cells_rebuilt or
-                self.hasAnimations() or
-                sync;
+                self.hasAnimations();
 
             if (!needs_redraw) {
                 // We still need to present the last target again, because the
