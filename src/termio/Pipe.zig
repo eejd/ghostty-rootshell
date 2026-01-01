@@ -165,37 +165,73 @@ pub fn threadEnter(
 }
 
 /// Callback when data is read from the pipe (shell output from Swift)
+/// Uses a tight read loop to drain all available data before re-arming,
+/// matching the Exec backend pattern for optimal latency.
 fn readCallback(
     td_: ?*termio.Termio.ThreadData,
     _: *xev.Loop,
     c: *xev.Completion,
-    _: xev.Stream,
+    stream: xev.Stream,
     _: xev.ReadBuffer,
     r: xev.ReadError!usize,
 ) xev.CallbackAction {
     const td = td_.?;
 
-    // Get the data that was read
-    const n = r catch |err| {
+    // Get the data that was read by xev
+    const initial_n = r catch |err| {
         log.warn("pipe read error: {}", .{err});
         // On error, stop reading
         return .disarm;
     };
 
-    if (n == 0) {
+    if (initial_n == 0) {
         // EOF - pipe closed (Swift side closed slave_fd)
         log.info("pipe EOF, shell session ended", .{});
         return .disarm;
     }
 
-    // Process the data through the terminal emulator
-    const data = td.backend.pipe.read_buf[0..n];
-    log.debug("pipe read: {} bytes", .{n});
+    // Process the initial data through the terminal emulator
+    @call(.always_inline, termio.Termio.processOutput, .{
+        td.backend.pipe.io,
+        td.backend.pipe.read_buf[0..initial_n],
+    });
 
-    // Write to terminal (this will parse VT sequences and update the screen)
-    td.backend.pipe.io.processOutput(data);
+    // Drain all available data in a tight loop (like Exec backend)
+    // This avoids event loop round-trips for each chunk, reducing latency
+    // for cursor-heavy applications like Joe editor.
+    const fd = stream.fd;
+    while (true) {
+        const n = posix.read(fd, &td.backend.pipe.read_buf) catch |err| {
+            switch (err) {
+                // No more data available - exit loop and re-arm
+                error.WouldBlock => break,
 
-    // Continue reading
+                // Pipe closed or I/O error
+                error.NotOpenForReading, error.InputOutput => {
+                    log.info("pipe closed during drain loop", .{});
+                    return .disarm;
+                },
+
+                else => {
+                    log.warn("pipe read error in drain loop: {}", .{err});
+                    break;
+                },
+            }
+        };
+
+        // EOF check
+        if (n == 0) {
+            log.info("pipe EOF during drain loop", .{});
+            return .disarm;
+        }
+
+        @call(.always_inline, termio.Termio.processOutput, .{
+            td.backend.pipe.io,
+            td.backend.pipe.read_buf[0..n],
+        });
+    }
+
+    // Re-arm AFTER draining all available data
     td.backend.pipe.read_stream.?.read(
         td.loop,
         c,
