@@ -763,8 +763,6 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     .current_cursor_color = @splat(0),
                     .previous_cursor_color = @splat(0),
                     .cursor_change_time = 0,
-                    .cursor_trail_bounds = @splat(0),
-                    .cursor_trail_needs_full_redraw = 1, // Start with full redraw
                 },
                 .bg_image_buffer = undefined,
 
@@ -1628,8 +1626,10 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 for (self.shaders.post_pipelines, 0..) |pipeline, i| {
                     defer state.swap();
 
+                    const is_last = i == self.shaders.post_pipelines.len - 1;
+
                     var pass = frame_ctx.renderPass(&.{.{
-                        .target = if (i < self.shaders.post_pipelines.len - 1)
+                        .target = if (!is_last)
                             .{ .texture = state.front_texture }
                         else
                             .{ .target = frame.target },
@@ -2425,38 +2425,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
                     // Cursor changed - animation is now active
                     self.cursor_animation_active = true;
-
-                    // Compute cursor trail bounding box for optimized partial redraws
-                    // This encompasses both previous and current cursor positions plus margin
-                    const trail_margin: f32 = 50.0; // Extra margin for blur/glow effects
-
-                    const min_x = @min(uniforms.current_cursor[0], uniforms.previous_cursor[0]) - trail_margin;
-                    const min_y = @min(uniforms.current_cursor[1], uniforms.previous_cursor[1]) - trail_margin;
-                    const max_x = @max(
-                        uniforms.current_cursor[0] + uniforms.current_cursor[2],
-                        uniforms.previous_cursor[0] + uniforms.previous_cursor[2],
-                    ) + trail_margin;
-                    const max_y = @max(
-                        uniforms.current_cursor[1] + uniforms.current_cursor[3],
-                        uniforms.previous_cursor[1] + uniforms.previous_cursor[3],
-                    ) + trail_margin;
-
-                    // Clamp to screen bounds
-                    const screen_w: f32 = @floatFromInt(screen.width);
-                    const screen_h: f32 = @floatFromInt(screen.height);
-                    uniforms.cursor_trail_bounds = .{
-                        @max(0.0, min_x),
-                        @max(0.0, min_y),
-                        @min(screen_w, max_x),
-                        @min(screen_h, max_y),
-                    };
-                    uniforms.cursor_trail_needs_full_redraw = 0;
                 }
-            }
-
-            // If content was rebuilt, mark for full redraw
-            if (self.cells_rebuilt) {
-                self.custom_shader_uniforms.cursor_trail_needs_full_redraw = 1;
             }
 
             // Update cursor animation active state based on time since cursor change

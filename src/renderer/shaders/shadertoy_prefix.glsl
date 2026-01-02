@@ -16,8 +16,6 @@ layout(binding = 1, std140) uniform Globals {
     uniform vec4  iCurrentCursorColor;
     uniform vec4  iPreviousCursorColor;
     uniform float iTimeCursorChange;
-    uniform vec4  iCursorTrailBounds;           // (min_x, min_y, max_x, max_y) in pixels
-    uniform int   iCursorTrailNeedsFullRedraw;  // Non-zero if full redraw needed
 };
 
 layout(binding = 0) uniform sampler2D iChannel0;

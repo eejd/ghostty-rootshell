@@ -136,13 +136,6 @@ pub const Uniforms = extern struct {
     current_cursor_color: [4]f32 align(16),
     previous_cursor_color: [4]f32 align(16),
     cursor_change_time: f32 align(4),
-    /// Bounding box of cursor trail: (min_x, min_y, max_x, max_y) in pixels.
-    /// Used for optimized partial redraws during cursor animation.
-    cursor_trail_bounds: [4]f32 align(16),
-    /// Non-zero if a full redraw is needed (content changed, resize, etc.)
-    cursor_trail_needs_full_redraw: i32 align(4),
-    /// Padding to maintain alignment
-    _padding: [3]i32 align(4) = .{ 0, 0, 0 },
 };
 
 /// The target to load shaders for.
