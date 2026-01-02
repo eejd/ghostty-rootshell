@@ -16,7 +16,7 @@ const App = @import("../App.zig");
 const Allocator = std.mem.Allocator;
 const log = std.log.scoped(.renderer_thread);
 
-const DRAW_INTERVAL = 8; // 120 FPS
+const DRAW_INTERVAL = 8; // 120 FPS target (skipped when display link provides vsync)
 const CURSOR_BLINK_INTERVAL = 600;
 
 /// Whether calls to `drawFrame` must be done from the app thread.

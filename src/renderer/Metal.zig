@@ -189,17 +189,11 @@ pub fn loopExit(self: *Metal) void {
 }
 
 fn displayCallback(renderer: *Renderer) align(8) void {
-    // On iOS/visionOS, when custom shaders are active, the Swift app uses
-    // CADisplayLink to drive animation at vsync rate. In this case, we skip
-    // rendering in the display callback to avoid double-rendering which pegs
-    // the GPU. The CADisplayLink path calls ghostty_surface_draw() directly.
-    // On macOS, CVDisplayLink coordinates with Core Animation properly, so
-    // we always render here via the display callback.
+    // On iOS/visionOS (including Mac Catalyst), the IOSDisplayLink handles
+    // vsync-synchronized rendering via the draw_now callback in the renderer
+    // thread. Skip the layer's display callback to avoid double-rendering.
     if (comptime builtin.os.tag != .macos) {
-        if (renderer.hasAnimations()) {
-            // Let CADisplayLink handle animation rendering
-            return;
-        }
+        return;
     }
 
     renderer.drawFrame(true) catch |err| {

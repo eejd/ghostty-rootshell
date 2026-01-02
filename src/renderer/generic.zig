@@ -37,8 +37,11 @@ const macos = switch (builtin.os.tag) {
     else => void,
 };
 
+const IOSDisplayLink = @import("metal/IOSDisplayLink.zig").IOSDisplayLink;
+
 const DisplayLink = switch (builtin.os.tag) {
     .macos => *macos.video.DisplayLink,
+    .ios, .visionos => *IOSDisplayLink,
     else => void,
 };
 
@@ -685,6 +688,10 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     try macos.video.DisplayLink.createWithActiveCGDisplays()
                 else
                     null,
+                .ios, .visionos => if (options.config.vsync)
+                    try IOSDisplayLink.init()
+                else
+                    null,
                 else => null,
             };
             errdefer if (display_link) |v| v.release();
@@ -965,7 +972,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         }
 
         fn displayLinkCallback(
-            _: *macos.video.DisplayLink,
+            _: DisplayLink,
             ud: ?*xev.Async,
         ) void {
             const draw_now = ud orelse return;
@@ -980,7 +987,11 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         }
 
         /// Called when we get an updated display ID for our display link.
+        /// This is only relevant on macOS where CVDisplayLink can be tied to
+        /// a specific display. On iOS, CADisplayLink auto-tracks the display.
         pub fn setMacOSDisplayID(self: *Self, id: u32) !void {
+            // This is only relevant on macOS with CVDisplayLink
+            if (comptime builtin.os.tag != .macos) return;
             if (comptime DisplayLink == void) return;
             const display_link = self.display_link orelse return;
             log.info("updating display link display id={}", .{id});
