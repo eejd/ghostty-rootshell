@@ -8,6 +8,117 @@ const configpkg = @import("../config.zig");
 
 const log = std.log.scoped(.shadertoy);
 
+/// Metadata extracted from shader source during loading.
+/// Used to determine animation behavior and optimization strategies.
+pub const ShaderMetadata = struct {
+    /// Duration of cursor animation in seconds. null = continuous animation required.
+    cursor_animation_duration: ?f32,
+    /// True if shader uses iTime for continuous full-screen effects (not just cursor).
+    is_continuous: bool,
+};
+
+/// A loaded shader with its compiled source and metadata.
+pub const LoadedShader = struct {
+    source: [:0]const u8,
+    metadata: ShaderMetadata,
+};
+
+/// Analyze shader source to extract animation metadata.
+/// This is called on the raw shader source before GLSL conversion.
+pub fn analyzeShader(src: []const u8) ShaderMetadata {
+    var metadata: ShaderMetadata = .{
+        .cursor_animation_duration = null,
+        .is_continuous = false,
+    };
+
+    // Parse DURATION constant: look for "const float DURATION = X.X;"
+    metadata.cursor_animation_duration = findDurationConstant(src);
+
+    // Check if shader uses cursor uniforms (indicates cursor-based animation)
+    const uses_cursor = std.mem.indexOf(u8, src, "iCurrentCursor") != null or
+        std.mem.indexOf(u8, src, "iPreviousCursor") != null or
+        std.mem.indexOf(u8, src, "iTimeCursorChange") != null;
+
+    // Check if shader uses iTime (indicates time-based animation)
+    const uses_time = std.mem.indexOf(u8, src, "iTime") != null;
+
+    // A shader is continuous if:
+    // - It uses iTime but NOT cursor uniforms (full-screen time effect)
+    // - It uses iTime AND cursor uniforms but has no DURATION (or DURATION >= 10s)
+    if (uses_time) {
+        if (!uses_cursor) {
+            // Uses time but not cursor = continuous full-screen effect
+            metadata.is_continuous = true;
+        } else if (metadata.cursor_animation_duration == null) {
+            // Uses both time and cursor but no duration = continuous
+            metadata.is_continuous = true;
+        } else if (metadata.cursor_animation_duration.? >= 10.0) {
+            // Very long duration = treat as continuous
+            metadata.is_continuous = true;
+        }
+    }
+
+    return metadata;
+}
+
+/// Parse "const float DURATION = X.X;" from shader source.
+/// Returns the duration value in seconds, or null if not found.
+fn findDurationConstant(src: []const u8) ?f32 {
+    // Search for the DURATION constant pattern
+    // Handle variations: "const float DURATION = 0.5;", "const float DURATION=.5;"
+    const pattern = "DURATION";
+    var pos: usize = 0;
+
+    while (std.mem.indexOfPos(u8, src, pos, pattern)) |idx| {
+        pos = idx + pattern.len;
+
+        // Skip whitespace
+        while (pos < src.len and (src[pos] == ' ' or src[pos] == '\t')) {
+            pos += 1;
+        }
+
+        // Expect '='
+        if (pos >= src.len or src[pos] != '=') continue;
+        pos += 1;
+
+        // Skip whitespace
+        while (pos < src.len and (src[pos] == ' ' or src[pos] == '\t')) {
+            pos += 1;
+        }
+
+        // Parse the float value
+        const start = pos;
+        var has_digit = false;
+        var has_dot = false;
+
+        while (pos < src.len) {
+            const c = src[pos];
+            if (c >= '0' and c <= '9') {
+                has_digit = true;
+                pos += 1;
+            } else if (c == '.' and !has_dot) {
+                has_dot = true;
+                pos += 1;
+            } else {
+                break;
+            }
+        }
+
+        if (!has_digit) continue;
+
+        // Parse the number
+        const num_str = src[start..pos];
+        const value = std.fmt.parseFloat(f32, num_str) catch continue;
+
+        // Validate: duration should be positive and reasonable (< 60s)
+        if (value > 0.0 and value < 60.0) {
+            return value;
+        }
+    }
+
+    return null;
+}
+
 /// The uniform struct used for shadertoy shaders.
 pub const Uniforms = extern struct {
     resolution: [3]f32 align(16),
@@ -25,10 +136,122 @@ pub const Uniforms = extern struct {
     current_cursor_color: [4]f32 align(16),
     previous_cursor_color: [4]f32 align(16),
     cursor_change_time: f32 align(4),
+    /// Bounding box of cursor trail: (min_x, min_y, max_x, max_y) in pixels.
+    /// Used for optimized partial redraws during cursor animation.
+    cursor_trail_bounds: [4]f32 align(16),
+    /// Non-zero if a full redraw is needed (content changed, resize, etc.)
+    cursor_trail_needs_full_redraw: i32 align(4),
+    /// Padding to maintain alignment
+    _padding: [3]i32 align(4) = .{ 0, 0, 0 },
 };
 
 /// The target to load shaders for.
 pub const Target = enum { glsl, msl };
+
+/// Load a set of shaders from files with metadata and convert them to the target
+/// format. The shader order is preserved. Returns both compiled shaders and their metadata.
+pub fn loadFromFilesWithMetadata(
+    alloc_gpa: Allocator,
+    paths: configpkg.RepeatablePath,
+    target: Target,
+) ![]const LoadedShader {
+    var list: std.ArrayList(LoadedShader) = .empty;
+    defer list.deinit(alloc_gpa);
+    errdefer for (list.items) |shader| alloc_gpa.free(shader.source);
+
+    for (paths.value.items) |item| {
+        const path, const optional = switch (item) {
+            .optional => |path| .{ path, true },
+            .required => |path| .{ path, false },
+        };
+
+        const loaded = loadFromFileWithMetadata(alloc_gpa, path, target) catch |err| {
+            if (err == error.FileNotFound and optional) {
+                continue;
+            }
+
+            return err;
+        };
+        log.info("loaded custom shader path={s} duration={?} continuous={}", .{
+            path,
+            loaded.metadata.cursor_animation_duration,
+            loaded.metadata.is_continuous,
+        });
+        try list.append(alloc_gpa, loaded);
+    }
+
+    return try list.toOwnedSlice(alloc_gpa);
+}
+
+/// Load a single shader from a file with metadata and convert it to the target language.
+pub fn loadFromFileWithMetadata(
+    alloc_gpa: Allocator,
+    path: []const u8,
+    target: Target,
+) !LoadedShader {
+    var arena = ArenaAllocator.init(alloc_gpa);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // Read it all into memory -- we don't expect shaders to be large.
+    const src = src: {
+        // Load the shader file
+        const cwd = std.fs.cwd();
+        const file = try cwd.openFile(path, .{});
+        defer file.close();
+
+        break :src try file.readToEndAlloc(
+            alloc,
+            4 * 1024 * 1024, // 4MB
+        );
+    };
+
+    // Analyze shader source BEFORE conversion to extract metadata
+    const metadata = analyzeShader(src);
+
+    // Convert to full GLSL
+    const glsl: [:0]const u8 = glsl: {
+        var stream: std.Io.Writer.Allocating = .init(alloc);
+        try glslFromShader(&stream.writer, src);
+        try stream.writer.writeByte(0);
+        break :glsl stream.written()[0 .. stream.written().len - 1 :0];
+    };
+
+    // Convert to SPIR-V
+    const spirv: []const u8 = spirv: {
+        var stream: std.Io.Writer.Allocating = .init(alloc);
+        var errlog: SpirvLog = .{ .alloc = alloc };
+        defer errlog.deinit();
+        spirvFromGlsl(&stream.writer, &errlog, glsl) catch |err| {
+            if (errlog.info.len > 0 or errlog.debug.len > 0) {
+                log.warn("spirv error path={s} info={s} debug={s}", .{
+                    path,
+                    errlog.info,
+                    errlog.debug,
+                });
+            }
+
+            return err;
+        };
+
+        // SpirV pointer must be aligned to 4 bytes since we expect
+        // a slice of words.
+        var list: std.ArrayListAligned(u8, .of(u32)) = .empty;
+        try list.appendSlice(alloc, stream.written());
+        break :spirv list.items;
+    };
+
+    // Convert to target format
+    const compiled = switch (target) {
+        .glsl => try glslFromSpv(alloc_gpa, spirv),
+        .msl => try mslFromSpv(alloc_gpa, spirv),
+    };
+
+    return .{
+        .source = compiled,
+        .metadata = metadata,
+    };
+}
 
 /// Load a set of shaders from files and convert them to the target
 /// format. The shader order is preserved.
@@ -412,3 +635,91 @@ test "shadertoy to glsl" {
 
 const test_crt = @embedFile("shaders/test_shadertoy_crt.glsl");
 const test_invalid = @embedFile("shaders/test_shadertoy_invalid.glsl");
+
+test "analyzeShader cursor with duration" {
+    const testing = std.testing;
+
+    // Shader with DURATION constant and cursor uniforms
+    const src =
+        \\const float DURATION = 0.5;
+        \\void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+        \\    vec4 cursor = iCurrentCursor;
+        \\    vec4 prev = iPreviousCursor;
+        \\    fragColor = vec4(1.0);
+        \\}
+    ;
+
+    const metadata = analyzeShader(src);
+    try testing.expectEqual(@as(?f32, 0.5), metadata.cursor_animation_duration);
+    try testing.expectEqual(false, metadata.is_continuous);
+}
+
+test "analyzeShader continuous time-based" {
+    const testing = std.testing;
+
+    // Shader with iTime but no cursor uniforms (continuous)
+    const src =
+        \\void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+        \\    float t = iTime;
+        \\    fragColor = vec4(sin(t), 0.0, 0.0, 1.0);
+        \\}
+    ;
+
+    const metadata = analyzeShader(src);
+    try testing.expectEqual(@as(?f32, null), metadata.cursor_animation_duration);
+    try testing.expectEqual(true, metadata.is_continuous);
+}
+
+test "analyzeShader cursor without duration" {
+    const testing = std.testing;
+
+    // Shader with cursor uniforms and iTime but no DURATION (continuous)
+    const src =
+        \\void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+        \\    vec4 cursor = iCurrentCursor;
+        \\    float t = iTime;
+        \\    fragColor = vec4(1.0);
+        \\}
+    ;
+
+    const metadata = analyzeShader(src);
+    try testing.expectEqual(@as(?f32, null), metadata.cursor_animation_duration);
+    try testing.expectEqual(true, metadata.is_continuous);
+}
+
+test "analyzeShader no animation" {
+    const testing = std.testing;
+
+    // Simple shader with no time or cursor uniforms
+    const src =
+        \\void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+        \\    fragColor = vec4(1.0, 0.0, 0.0, 1.0);
+        \\}
+    ;
+
+    const metadata = analyzeShader(src);
+    try testing.expectEqual(@as(?f32, null), metadata.cursor_animation_duration);
+    try testing.expectEqual(false, metadata.is_continuous);
+}
+
+test "findDurationConstant variations" {
+    const testing = std.testing;
+
+    // Standard format
+    try testing.expectEqual(@as(?f32, 0.5), findDurationConstant("const float DURATION = 0.5;"));
+
+    // No spaces around equals
+    try testing.expectEqual(@as(?f32, 1.0), findDurationConstant("const float DURATION=1.0;"));
+
+    // Integer value
+    try testing.expectEqual(@as(?f32, 2.0), findDurationConstant("DURATION = 2;"));
+
+    // Leading dot
+    try testing.expectEqual(@as(?f32, 0.3), findDurationConstant("DURATION = .3;"));
+
+    // Not found
+    try testing.expectEqual(@as(?f32, null), findDurationConstant("const float TIME = 1.0;"));
+
+    // Too large (>= 60s)
+    try testing.expectEqual(@as(?f32, null), findDurationConstant("DURATION = 100.0;"));
+}

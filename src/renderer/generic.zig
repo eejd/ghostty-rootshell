@@ -214,6 +214,16 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         /// Whether or not we have custom shaders.
         has_custom_shaders: bool = false,
 
+        /// Maximum cursor animation duration across all loaded shaders (seconds).
+        /// null means continuous animation is required (no finite duration).
+        cursor_animation_duration: ?f32 = null,
+
+        /// True if any shader requires continuous animation (uses iTime for effects).
+        has_continuous_shader: bool = false,
+
+        /// True when cursor animation is currently active (within duration of last cursor change).
+        cursor_animation_active: bool = false,
+
         /// Our shader pipelines.
         shaders: Shaders,
 
@@ -753,6 +763,8 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     .current_cursor_color = @splat(0),
                     .previous_cursor_color = @splat(0),
                     .cursor_change_time = 0,
+                    .cursor_trail_bounds = @splat(0),
+                    .cursor_trail_needs_full_redraw = 1, // Start with full redraw
                 },
                 .bg_image_buffer = undefined,
 
@@ -826,8 +838,8 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             defer arena.deinit();
             const arena_alloc = arena.allocator();
 
-            // Load our custom shaders
-            const custom_shaders: []const [:0]const u8 = shadertoy.loadFromFiles(
+            // Load our custom shaders with metadata
+            const loaded_shaders: []const shadertoy.LoadedShader = shadertoy.loadFromFilesWithMetadata(
                 arena_alloc,
                 self.config.custom_shaders,
                 GraphicsAPI.custom_shader_target,
@@ -836,16 +848,49 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 break :err &.{};
             };
 
-            const has_custom_shaders = custom_shaders.len > 0;
+            const has_custom_shaders = loaded_shaders.len > 0;
+
+            // Compute aggregate animation properties from shader metadata
+            var max_duration: ?f32 = null;
+            var has_continuous = false;
+
+            for (loaded_shaders) |shader| {
+                if (shader.metadata.is_continuous) {
+                    has_continuous = true;
+                }
+                if (shader.metadata.cursor_animation_duration) |dur| {
+                    if (max_duration) |existing| {
+                        max_duration = @max(existing, dur);
+                    } else {
+                        max_duration = dur;
+                    }
+                }
+            }
+
+            // Extract just the shader sources for pipeline initialization
+            var shader_sources = try arena_alloc.alloc([:0]const u8, loaded_shaders.len);
+            for (loaded_shaders, 0..) |shader, i| {
+                shader_sources[i] = shader.source;
+            }
 
             var shaders = try self.api.initShaders(
                 self.alloc,
-                custom_shaders,
+                shader_sources,
             );
             errdefer shaders.deinit(self.alloc);
 
             self.shaders = shaders;
             self.has_custom_shaders = has_custom_shaders;
+            self.cursor_animation_duration = max_duration;
+            self.has_continuous_shader = has_continuous;
+
+            // Log animation configuration
+            if (has_custom_shaders) {
+                log.info("custom shaders loaded: continuous={} max_duration={?}", .{
+                    has_continuous,
+                    max_duration,
+                });
+            }
         }
 
         /// This is called early right after surface creation.
@@ -1001,9 +1046,16 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         }
 
         /// True if our renderer has animations so that a higher frequency
-        /// timer is used.
+        /// timer is used. This is now dynamic based on cursor animation state.
         pub fn hasAnimations(self: *const Self) bool {
-            return self.has_custom_shaders;
+            // No custom shaders means no animations
+            if (!self.has_custom_shaders) return false;
+
+            // Continuous shaders always need animation (CRT effects, etc.)
+            if (self.has_continuous_shader) return true;
+
+            // Cursor-only shaders: only animate while cursor animation is active
+            return self.cursor_animation_active;
         }
 
         /// True if our renderer is using vsync. If true, the renderer or apprt
@@ -2370,7 +2422,55 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     uniforms.current_cursor = new_cursor;
                     uniforms.current_cursor_color = cursor_color;
                     uniforms.cursor_change_time = uniforms.time;
+
+                    // Cursor changed - animation is now active
+                    self.cursor_animation_active = true;
+
+                    // Compute cursor trail bounding box for optimized partial redraws
+                    // This encompasses both previous and current cursor positions plus margin
+                    const trail_margin: f32 = 50.0; // Extra margin for blur/glow effects
+
+                    const min_x = @min(uniforms.current_cursor[0], uniforms.previous_cursor[0]) - trail_margin;
+                    const min_y = @min(uniforms.current_cursor[1], uniforms.previous_cursor[1]) - trail_margin;
+                    const max_x = @max(
+                        uniforms.current_cursor[0] + uniforms.current_cursor[2],
+                        uniforms.previous_cursor[0] + uniforms.previous_cursor[2],
+                    ) + trail_margin;
+                    const max_y = @max(
+                        uniforms.current_cursor[1] + uniforms.current_cursor[3],
+                        uniforms.previous_cursor[1] + uniforms.previous_cursor[3],
+                    ) + trail_margin;
+
+                    // Clamp to screen bounds
+                    const screen_w: f32 = @floatFromInt(screen.width);
+                    const screen_h: f32 = @floatFromInt(screen.height);
+                    uniforms.cursor_trail_bounds = .{
+                        @max(0.0, min_x),
+                        @max(0.0, min_y),
+                        @min(screen_w, max_x),
+                        @min(screen_h, max_y),
+                    };
+                    uniforms.cursor_trail_needs_full_redraw = 0;
                 }
+            }
+
+            // If content was rebuilt, mark for full redraw
+            if (self.cells_rebuilt) {
+                self.custom_shader_uniforms.cursor_trail_needs_full_redraw = 1;
+            }
+
+            // Update cursor animation active state based on time since cursor change
+            if (self.cursor_animation_duration) |duration| {
+                const time_since_cursor_change = self.custom_shader_uniforms.time -
+                    self.custom_shader_uniforms.cursor_change_time;
+
+                // Add small buffer (0.1s) to ensure animation completes smoothly
+                const active_threshold = duration + 0.1;
+                self.cursor_animation_active = time_since_cursor_change < active_threshold;
+            } else if (!self.has_continuous_shader) {
+                // No duration and not continuous - keep animation active indefinitely
+                // This handles shaders that use cursor uniforms but don't declare duration
+                self.cursor_animation_active = true;
             }
         }
 
