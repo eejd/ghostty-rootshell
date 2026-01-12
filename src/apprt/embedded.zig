@@ -156,7 +156,7 @@ pub const App = struct {
         while (it.next()) |entry| {
             switch (entry.value_ptr.*) {
                 .leader => {},
-                .leaf => |leaf| if (leaf.flags.global) return true,
+                inline .leaf, .leaf_chained => |leaf| if (leaf.flags.global) return true,
             }
         }
 
@@ -471,6 +471,9 @@ pub const Surface = struct {
         /// (prefer PTY). When true, forces pipe-based I/O which is useful for
         /// scenarios like SSH sessions where the I/O is managed externally.
         use_external_io: bool = false,
+
+        /// Context for the new surface
+        context: apprt.surface.NewSurfaceContext = .window,
     };
 
     pub fn init(self: *Surface, app: *App, opts: Options) !void {
@@ -493,7 +496,7 @@ pub const Surface = struct {
         errdefer app.core_app.deleteSurface(self);
 
         // Shallow copy the config so that we can modify it.
-        var config = try apprt.surface.newConfig(app.core_app, &app.config);
+        var config = try apprt.surface.newConfig(app.core_app, &app.config, opts.context);
         defer config.deinit();
 
         // If we have a working directory from the options then we set it.
@@ -555,13 +558,20 @@ pub const Surface = struct {
         // If we have an initial input then we set it.
         if (opts.initial_input) |c_input| {
             const alloc = config.arenaAlloc();
+
+            // We need to escape the string because the "raw" field
+            // expects a Zig string.
+            var buf: std.Io.Writer.Allocating = .init(alloc);
+            defer buf.deinit();
+            try std.zig.stringEscape(
+                std.mem.sliceTo(c_input, 0),
+                &buf.writer,
+            );
+
             config.input.list.clearRetainingCapacity();
             try config.input.list.append(
                 alloc,
-                .{ .raw = try alloc.dupeZ(u8, std.mem.sliceTo(
-                    c_input,
-                    0,
-                )) },
+                .{ .raw = try buf.toOwnedSliceSentinel(0) },
             );
         }
 
@@ -668,7 +678,7 @@ pub const Surface = struct {
         self: *Surface,
         clipboard_type: apprt.Clipboard,
         state: apprt.ClipboardRequest,
-    ) !void {
+    ) !bool {
         // We need to allocate to get a pointer to store our clipboard request
         // so that it is stable until the read_clipboard callback and call
         // complete_clipboard_request. This sucks but clipboard requests aren't
@@ -683,6 +693,10 @@ pub const Surface = struct {
             @intCast(@intFromEnum(clipboard_type)),
             state_ptr,
         );
+
+        // Embedded apprt can't synchronously check clipboard content types,
+        // so we always return true to indicate the request was started.
+        return true;
     }
 
     fn completeClipboardRequest(
@@ -906,14 +920,23 @@ pub const Surface = struct {
         };
     }
 
-    pub fn newSurfaceOptions(self: *const Surface) apprt.Surface.Options {
+    pub fn newSurfaceOptions(self: *const Surface, context: apprt.surface.NewSurfaceContext) apprt.Surface.Options {
         const font_size: f32 = font_size: {
             if (!self.app.config.@"window-inherit-font-size") break :font_size 0;
             break :font_size self.core_surface.font_size.points;
         };
 
+        const working_directory: ?[*:0]const u8 = wd: {
+            if (!apprt.surface.shouldInheritWorkingDirectory(context, &self.app.config)) break :wd null;
+            const cwd = self.core_surface.pwd(self.app.core_app.alloc) catch null orelse break :wd null;
+            defer self.app.core_app.alloc.free(cwd);
+            break :wd self.app.core_app.alloc.dupeZ(u8, cwd) catch null;
+        };
+
         return .{
             .font_size = font_size,
+            .working_directory = working_directory,
+            .context = context,
         };
     }
 
@@ -959,7 +982,7 @@ pub const Surface = struct {
 /// Inspector is the state required for the terminal inspector. A terminal
 /// inspector is 1:1 with a Surface.
 pub const Inspector = struct {
-    const cimgui = @import("cimgui");
+    const cimgui = @import("dcimgui");
 
     surface: *Surface,
     ig_ctx: *cimgui.c.ImGuiContext,
@@ -980,10 +1003,10 @@ pub const Inspector = struct {
     };
 
     pub fn init(surface: *Surface) !Inspector {
-        const ig_ctx = cimgui.c.igCreateContext(null) orelse return error.OutOfMemory;
-        errdefer cimgui.c.igDestroyContext(ig_ctx);
-        cimgui.c.igSetCurrentContext(ig_ctx);
-        const io: *cimgui.c.ImGuiIO = cimgui.c.igGetIO();
+        const ig_ctx = cimgui.c.ImGui_CreateContext(null) orelse return error.OutOfMemory;
+        errdefer cimgui.c.ImGui_DestroyContext(ig_ctx);
+        cimgui.c.ImGui_SetCurrentContext(ig_ctx);
+        const io: *cimgui.c.ImGuiIO = cimgui.c.ImGui_GetIO();
         io.BackendPlatformName = "ghostty_embedded";
 
         // Setup our core inspector
@@ -1000,9 +1023,9 @@ pub const Inspector = struct {
 
     pub fn deinit(self: *Inspector) void {
         self.surface.core_surface.deactivateInspector();
-        cimgui.c.igSetCurrentContext(self.ig_ctx);
+        cimgui.c.ImGui_SetCurrentContext(self.ig_ctx);
         if (self.backend) |v| v.deinit();
-        cimgui.c.igDestroyContext(self.ig_ctx);
+        cimgui.c.ImGui_DestroyContext(self.ig_ctx);
     }
 
     /// Queue a render for the next frame.
@@ -1013,7 +1036,7 @@ pub const Inspector = struct {
     /// Initialize the inspector for a metal backend.
     pub fn initMetal(self: *Inspector, device: objc.Object) bool {
         defer device.msgSend(void, objc.sel("release"), .{});
-        cimgui.c.igSetCurrentContext(self.ig_ctx);
+        cimgui.c.ImGui_SetCurrentContext(self.ig_ctx);
 
         if (self.backend) |v| {
             v.deinit();
@@ -1048,7 +1071,7 @@ pub const Inspector = struct {
         for (0..2) |_| {
             cimgui.ImGui_ImplMetal_NewFrame(desc.value);
             try self.newFrame();
-            cimgui.c.igNewFrame();
+            cimgui.c.ImGui_NewFrame();
 
             // Build our UI
             render: {
@@ -1058,7 +1081,7 @@ pub const Inspector = struct {
             }
 
             // Render
-            cimgui.c.igRender();
+            cimgui.c.ImGui_Render();
         }
 
         // MTLRenderCommandEncoder
@@ -1069,7 +1092,7 @@ pub const Inspector = struct {
         );
         defer encoder.msgSend(void, objc.sel("endEncoding"), .{});
         cimgui.ImGui_ImplMetal_RenderDrawData(
-            cimgui.c.igGetDrawData(),
+            cimgui.c.ImGui_GetDrawData(),
             command_buffer.value,
             encoder.value,
         );
@@ -1077,22 +1100,24 @@ pub const Inspector = struct {
 
     pub fn updateContentScale(self: *Inspector, x: f64, y: f64) void {
         _ = y;
-        cimgui.c.igSetCurrentContext(self.ig_ctx);
+        cimgui.c.ImGui_SetCurrentContext(self.ig_ctx);
 
         // Cache our scale because we use it for cursor position calculations.
         self.content_scale = x;
 
-        // Setup a new style and scale it appropriately.
-        const style = cimgui.c.ImGuiStyle_ImGuiStyle();
-        defer cimgui.c.ImGuiStyle_destroy(style);
-        cimgui.c.ImGuiStyle_ScaleAllSizes(style, @floatCast(x));
-        const active_style = cimgui.c.igGetStyle();
-        active_style.* = style.*;
+        // Setup a new style and scale it appropriately. We must use the
+        // ImGuiStyle constructor to get proper default values (e.g.,
+        // CurveTessellationTol) rather than zero-initialized values.
+        var style: cimgui.c.ImGuiStyle = undefined;
+        cimgui.ext.ImGuiStyle_ImGuiStyle(&style);
+        cimgui.c.ImGuiStyle_ScaleAllSizes(&style, @floatCast(x));
+        const active_style = cimgui.c.ImGui_GetStyle();
+        active_style.* = style;
     }
 
     pub fn updateSize(self: *Inspector, width: u32, height: u32) void {
-        cimgui.c.igSetCurrentContext(self.ig_ctx);
-        const io: *cimgui.c.ImGuiIO = cimgui.c.igGetIO();
+        cimgui.c.ImGui_SetCurrentContext(self.ig_ctx);
+        const io: *cimgui.c.ImGuiIO = cimgui.c.ImGui_GetIO();
         io.DisplaySize = .{ .x = @floatFromInt(width), .y = @floatFromInt(height) };
     }
 
@@ -1105,8 +1130,8 @@ pub const Inspector = struct {
         _ = mods;
 
         self.queueRender();
-        cimgui.c.igSetCurrentContext(self.ig_ctx);
-        const io: *cimgui.c.ImGuiIO = cimgui.c.igGetIO();
+        cimgui.c.ImGui_SetCurrentContext(self.ig_ctx);
+        const io: *cimgui.c.ImGuiIO = cimgui.c.ImGui_GetIO();
 
         const imgui_button = switch (button) {
             .left => cimgui.c.ImGuiMouseButton_Left,
@@ -1127,8 +1152,8 @@ pub const Inspector = struct {
         _ = mods;
 
         self.queueRender();
-        cimgui.c.igSetCurrentContext(self.ig_ctx);
-        const io: *cimgui.c.ImGuiIO = cimgui.c.igGetIO();
+        cimgui.c.ImGui_SetCurrentContext(self.ig_ctx);
+        const io: *cimgui.c.ImGuiIO = cimgui.c.ImGui_GetIO();
         cimgui.c.ImGuiIO_AddMouseWheelEvent(
             io,
             @floatCast(xoff),
@@ -1138,8 +1163,8 @@ pub const Inspector = struct {
 
     pub fn cursorPosCallback(self: *Inspector, x: f64, y: f64) void {
         self.queueRender();
-        cimgui.c.igSetCurrentContext(self.ig_ctx);
-        const io: *cimgui.c.ImGuiIO = cimgui.c.igGetIO();
+        cimgui.c.ImGui_SetCurrentContext(self.ig_ctx);
+        const io: *cimgui.c.ImGuiIO = cimgui.c.ImGui_GetIO();
         cimgui.c.ImGuiIO_AddMousePosEvent(
             io,
             @floatCast(x * self.content_scale),
@@ -1149,15 +1174,15 @@ pub const Inspector = struct {
 
     pub fn focusCallback(self: *Inspector, focused: bool) void {
         self.queueRender();
-        cimgui.c.igSetCurrentContext(self.ig_ctx);
-        const io: *cimgui.c.ImGuiIO = cimgui.c.igGetIO();
+        cimgui.c.ImGui_SetCurrentContext(self.ig_ctx);
+        const io: *cimgui.c.ImGuiIO = cimgui.c.ImGui_GetIO();
         cimgui.c.ImGuiIO_AddFocusEvent(io, focused);
     }
 
     pub fn textCallback(self: *Inspector, text: [:0]const u8) void {
         self.queueRender();
-        cimgui.c.igSetCurrentContext(self.ig_ctx);
-        const io: *cimgui.c.ImGuiIO = cimgui.c.igGetIO();
+        cimgui.c.ImGui_SetCurrentContext(self.ig_ctx);
+        const io: *cimgui.c.ImGuiIO = cimgui.c.ImGui_GetIO();
         cimgui.c.ImGuiIO_AddInputCharactersUTF8(io, text.ptr);
     }
 
@@ -1168,8 +1193,8 @@ pub const Inspector = struct {
         mods: input.Mods,
     ) !void {
         self.queueRender();
-        cimgui.c.igSetCurrentContext(self.ig_ctx);
-        const io: *cimgui.c.ImGuiIO = cimgui.c.igGetIO();
+        cimgui.c.ImGui_SetCurrentContext(self.ig_ctx);
+        const io: *cimgui.c.ImGuiIO = cimgui.c.ImGui_GetIO();
 
         // Update all our modifiers
         cimgui.c.ImGuiIO_AddKeyEvent(io, cimgui.c.ImGuiKey_LeftShift, mods.shift);
@@ -1188,7 +1213,7 @@ pub const Inspector = struct {
     }
 
     fn newFrame(self: *Inspector) !void {
-        const io: *cimgui.c.ImGuiIO = cimgui.c.igGetIO();
+        const io: *cimgui.c.ImGuiIO = cimgui.c.ImGui_GetIO();
 
         // Determine our delta time
         const now = try std.time.Instant.now();
@@ -1533,8 +1558,11 @@ pub const CAPI = struct {
     }
 
     /// Returns the config to use for surfaces that inherit from this one.
-    export fn ghostty_surface_inherited_config(surface: *Surface) Surface.Options {
-        return surface.newSurfaceOptions();
+    export fn ghostty_surface_inherited_config(
+        surface: *Surface,
+        source: apprt.surface.NewSurfaceContext,
+    ) Surface.Options {
+        return surface.newSurfaceOptions(source);
     }
 
     /// Update the configuration to the provided config for only this surface.
@@ -1766,23 +1794,6 @@ pub const CAPI = struct {
         return @intCast(@as(input.Mods.Backing, @bitCast(result)));
     }
 
-    /// Returns the current possible commands for a surface
-    /// in the output parameter. The memory is owned by libghostty
-    /// and doesn't need to be freed.
-    export fn ghostty_surface_commands(
-        surface: *Surface,
-        out: *[*]const input.Command.C,
-        len: *usize,
-    ) void {
-        // In the future we may use this information to filter
-        // some commands.
-        _ = surface;
-
-        const commands = input.command.defaultsC;
-        out.* = commands.ptr;
-        len.* = commands.len;
-    }
-
     /// Send this for raw keypresses (i.e. the keyDown event on macOS).
     /// This will handle the keymap translation and send the appropriate
     /// key and char events.
@@ -1806,13 +1817,18 @@ pub const CAPI = struct {
     export fn ghostty_surface_key_is_binding(
         surface: *Surface,
         event: KeyEvent,
+        c_flags: ?*input.Binding.Flags.C,
     ) bool {
         const core_event = event.keyEvent().core() orelse {
             log.warn("error processing key event", .{});
             return false;
         };
 
-        return surface.core_surface.keyEventIsBinding(core_event);
+        const flags = surface.core_surface.keyEventIsBinding(
+            core_event,
+        ) orelse return false;
+        if (c_flags) |ptr| ptr.* = flags.cval();
+        return true;
     }
 
     /// Send raw text to the terminal. This is treated like a paste

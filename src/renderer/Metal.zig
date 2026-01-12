@@ -81,7 +81,7 @@ pub fn init(alloc: Allocator, opts: rendererpkg.Options) !Metal {
     // iOS and visionOS (including simulator) only support .shared and .private storage modes.
     // .managed is not available on iOS/visionOS. Since we're doing dynamic allocations,
     // we use .shared on iOS/visionOS and check unified memory on macOS.
-    const default_storage_mode: mtl.MTLResourceOptions.StorageMode = switch (builtin.os.tag) {
+    const default_storage_mode: mtl.MTLResourceOptions.StorageMode = switch (comptime builtin.os.tag) {
         .ios, .visionos => .shared,
         .macos => if (device.getProperty(bool, "hasUnifiedMemory")) .shared else .managed,
         else => .shared,
@@ -131,12 +131,12 @@ pub fn init(alloc: Allocator, opts: rendererpkg.Options) !Metal {
         },
 
         .ios, .visionos => {
-            const viewLayer = info.view.getProperty(objc.Object, "layer");
-            // Retain viewLayer to prevent cf_release_thread from cleaning it up prematurely
+            const view_layer = objc.Object.fromId(info.view.getProperty(?*anyopaque, "layer"));
+            // Retain view_layer to prevent cf_release_thread from cleaning it up prematurely
             // getProperty may return an autoreleased object on iOS/visionOS
-            _ = viewLayer.retain();
-            defer viewLayer.release();
-            viewLayer.msgSend(void, objc.sel("addSublayer:"), .{layer.layer.value});
+            _ = view_layer.retain();
+            defer view_layer.release();
+            view_layer.msgSend(void, objc.sel("addSublayer:"), .{layer.layer.value});
         },
 
         else => @compileError("unsupported target for Metal"),
