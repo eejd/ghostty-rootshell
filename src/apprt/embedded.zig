@@ -1858,6 +1858,16 @@ pub const CAPI = struct {
         return surface.core_surface.mouseCaptured();
     }
 
+    /// Returns whether cursor key application mode (DECCKM) is active.
+    /// When true, arrow keys should send SS3 sequences (\x1bOA, etc.)
+    /// When false, arrow keys should send CSI sequences (\x1b[A, etc.)
+    export fn ghostty_surface_cursor_key_mode(surface: *Surface) bool {
+        const core_surface = &surface.core_surface;
+        core_surface.renderer_state.mutex.lock();
+        defer core_surface.renderer_state.mutex.unlock();
+        return core_surface.renderer_state.terminal.modes.get(.cursor_keys);
+    }
+
     /// Tell the surface that it needs to schedule a render
     export fn ghostty_surface_mouse_button(
         surface: *Surface,
