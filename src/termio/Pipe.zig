@@ -2,8 +2,8 @@ const std = @import("std");
 const posix = std.posix;
 const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
-const xev = @import("../global.zig").xev;
 const termio = @import("../termio.zig");
+const internal_os = @import("../os/main.zig");
 const pty_pkg = @import("../pty.zig");
 const renderer = @import("../renderer.zig");
 const terminal = @import("../terminal/main.zig");
@@ -29,6 +29,13 @@ response_write_fd: posix.fd_t,
 
 /// Current window size (tracked for resize operations)
 current_size: pty_pkg.winsize,
+
+/// Atomic quit flag — set by threadExit, checked by the read thread's tight loop.
+/// Unlike Exec which kills the subprocess to stop data flow, the Pipe backend's
+/// producer (Swift/SSH) isn't stopped during exit. Without this flag, a continuously
+/// noisy writer could prevent the read thread from ever reaching poll() to see
+/// the quit pipe signal.
+quit: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
 
 pub const Config = struct {
     /// Working directory (optional)
@@ -111,22 +118,15 @@ pub const ThreadData = struct {
     /// Reference to the Termio instance (needed for processOutput callback)
     io: *termio.Termio,
 
-    /// Buffer for reading from pipe
-    read_buf: [4096]u8 = undefined,
+    /// Read thread handle
+    read_thread: std.Thread,
 
-    /// Stream for reading from master_fd (pipe read end)
-    read_stream: ?xev.Stream = null,
-
-    /// Completion for stream read operations
-    read_c: xev.Completion = undefined,
+    /// Write end of the quit pipe — write to this to signal the read thread to exit
+    read_thread_pipe: posix.fd_t,
 
     pub fn deinit(self: *ThreadData, alloc: Allocator) void {
         _ = alloc;
-
-        // Clean up stream if initialized
-        if (self.read_stream) |*stream| {
-            stream.deinit();
-        }
+        posix.close(self.read_thread_pipe);
     }
 
     pub fn changeConfig(self: *ThreadData, config: *termio.DerivedConfig) void {
@@ -144,110 +144,52 @@ pub fn threadEnter(
 ) !void {
     _ = alloc;
 
-    // Initialize the stream for reading from master_fd (pipe read end)
-    var read_stream = xev.Stream.initFd(self.master_fd);
-    errdefer read_stream.deinit();
+    // Create a pipe for signaling the read thread to exit.
+    // pipe[0] is the read end (for the thread), pipe[1] is the write end (for us).
+    const quit_pipe = try internal_os.pipe();
+    errdefer posix.close(quit_pipe[0]);
+    errdefer posix.close(quit_pipe[1]);
 
-    // Initialize the thread data backend to pipe variant
-    td.backend = .{ .pipe = .{ .io = io, .read_stream = read_stream } };
+    // Reset quit flag (in case of reuse after a previous session).
+    self.quit.store(false, .release);
 
-    // Start reading from the pipe
-    td.backend.pipe.read_stream.?.read(
-        td.loop,
-        &td.backend.pipe.read_c,
-        .{ .slice = &td.backend.pipe.read_buf },
-        termio.Termio.ThreadData,
-        td,
-        readCallback,
+    // Spawn the read thread — it will read from master_fd on its own thread,
+    // freeing the IO event loop thread to drain the termio mailbox concurrently.
+    const read_thread = try std.Thread.spawn(
+        .{},
+        ReadThread.threadMainPosix,
+        .{ self.master_fd, io, quit_pipe[0], &self.quit },
     );
+    read_thread.setName("io-reader") catch {};
 
-    log.info("termio thread started with pipe stream (master_fd={})", .{self.master_fd});
-}
+    // Store thread handle and quit pipe write end in ThreadData
+    td.backend = .{ .pipe = .{
+        .io = io,
+        .read_thread = read_thread,
+        .read_thread_pipe = quit_pipe[1],
+    } };
 
-/// Callback when data is read from the pipe (shell output from Swift)
-/// Uses a tight read loop to drain all available data before re-arming,
-/// matching the Exec backend pattern for optimal latency.
-fn readCallback(
-    td_: ?*termio.Termio.ThreadData,
-    _: *xev.Loop,
-    c: *xev.Completion,
-    stream: xev.Stream,
-    _: xev.ReadBuffer,
-    r: xev.ReadError!usize,
-) xev.CallbackAction {
-    const td = td_.?;
-
-    // Get the data that was read by xev
-    const initial_n = r catch |err| {
-        log.warn("pipe read error: {}", .{err});
-        // On error, stop reading
-        return .disarm;
-    };
-
-    if (initial_n == 0) {
-        // EOF - pipe closed (Swift side closed slave_fd)
-        log.info("pipe EOF, shell session ended", .{});
-        return .disarm;
-    }
-
-    // Process the initial data through the terminal emulator
-    @call(.always_inline, termio.Termio.processOutput, .{
-        td.backend.pipe.io,
-        td.backend.pipe.read_buf[0..initial_n],
-    });
-
-    // Drain all available data in a tight loop (like Exec backend)
-    // This avoids event loop round-trips for each chunk, reducing latency
-    // for cursor-heavy applications like Joe editor.
-    const fd = stream.fd;
-    while (true) {
-        const n = posix.read(fd, &td.backend.pipe.read_buf) catch |err| {
-            switch (err) {
-                // No more data available - exit loop and re-arm
-                error.WouldBlock => break,
-
-                // Pipe closed or I/O error
-                error.NotOpenForReading, error.InputOutput => {
-                    log.info("pipe closed during drain loop", .{});
-                    return .disarm;
-                },
-
-                else => {
-                    log.warn("pipe read error in drain loop: {}", .{err});
-                    break;
-                },
-            }
-        };
-
-        // EOF check
-        if (n == 0) {
-            log.info("pipe EOF during drain loop", .{});
-            return .disarm;
-        }
-
-        @call(.always_inline, termio.Termio.processOutput, .{
-            td.backend.pipe.io,
-            td.backend.pipe.read_buf[0..n],
-        });
-    }
-
-    // Re-arm AFTER draining all available data
-    td.backend.pipe.read_stream.?.read(
-        td.loop,
-        c,
-        .{ .slice = &td.backend.pipe.read_buf },
-        termio.Termio.ThreadData,
-        td,
-        readCallback,
-    );
-
-    return .disarm;
+    log.info("termio thread started with read thread (master_fd={})", .{self.master_fd});
 }
 
 /// Called when thread exits
 pub fn threadExit(self: *Pipe, td: *termio.Termio.ThreadData) void {
-    _ = self;
-    _ = td;
+    const pipe_data = &td.backend.pipe;
+
+    // Set the atomic quit flag so the tight read loop exits promptly
+    // even if data is still flowing (unlike Exec, we can't kill the producer).
+    self.quit.store(true, .release);
+
+    // Also signal via quit pipe to wake the thread if it's blocked in poll().
+    _ = posix.write(pipe_data.read_thread_pipe, "x") catch |err| switch (err) {
+        // BrokenPipe means the read thread already exited, which is fine.
+        error.BrokenPipe => {},
+        else => log.warn("error writing to read thread quit pipe err={}", .{err}),
+    };
+
+    // Wait for the read thread to finish
+    pipe_data.read_thread.join();
+
     log.info("termio thread exited", .{});
 }
 
@@ -339,3 +281,105 @@ pub fn childExitedAbnormally(
     _ = runtime_ms;
     // External layer (Swift) manages the shell, so we don't handle exits here
 }
+
+/// Dedicated read thread for the Pipe backend.
+///
+/// This runs on a separate OS thread from the IO event loop, reading data from
+/// the master_fd (pipe read end) and calling processOutput. This architecture
+/// prevents deadlocks that occur when the read callback runs on the same thread
+/// as the mailbox consumer — heavy output (e.g., Zellij) can fill the 64-slot
+/// mailbox faster than it drains because draining requires the event loop, which
+/// is blocked in the read callback.
+///
+/// Modeled directly on Exec.zig's ReadThread.
+pub const ReadThread = struct {
+    fn threadMainPosix(fd: posix.fd_t, io: *termio.Termio, quit: posix.fd_t, quit_flag: *std.atomic.Value(bool)) void {
+        // Always close our end of the quit pipe when we exit.
+        defer posix.close(quit);
+
+        // Set thread name on Darwin (std.Thread.setName can only name the
+        // current thread on Darwin, and we have no way to get it from within).
+        if (builtin.os.tag.isDarwin()) {
+            internal_os.macos.pthread_setname_np(&"io-reader".*);
+        }
+
+        // Set the fd to non-blocking so we can do a tight read loop and
+        // only fall back to poll when data runs out.
+        if (posix.fcntl(fd, posix.F.GETFL, 0)) |flags| {
+            _ = posix.fcntl(
+                fd,
+                posix.F.SETFL,
+                flags | @as(u32, @bitCast(posix.O{ .NONBLOCK = true })),
+            ) catch |err| {
+                log.warn("read thread failed to set flags err={}", .{err});
+                log.warn("this isn't a fatal error, but may cause performance issues", .{});
+            };
+        } else |err| {
+            log.warn("read thread failed to get flags err={}", .{err});
+            log.warn("this isn't a fatal error, but may cause performance issues", .{});
+        }
+
+        // Poll both the data fd and the quit pipe.
+        var pollfds: [2]posix.pollfd = .{
+            .{ .fd = fd, .events = posix.POLL.IN, .revents = undefined },
+            .{ .fd = quit, .events = posix.POLL.IN, .revents = undefined },
+        };
+
+        var buf: [1024]u8 = undefined;
+        while (true) {
+            // Tight read loop — drain all available data before polling.
+            while (true) {
+                const n = posix.read(fd, &buf) catch |err| {
+                    switch (err) {
+                        // Pipe closed or I/O error — graceful exit.
+                        error.NotOpenForReading,
+                        error.InputOutput,
+                        => {
+                            log.info("io reader exiting", .{});
+                            return;
+                        },
+
+                        // No more data available, fall through to poll.
+                        error.WouldBlock => break,
+
+                        else => {
+                            log.err("io reader error err={}", .{err});
+                            return;
+                        },
+                    }
+                };
+
+                // EOF — pipe closed (Swift side closed slave_fd).
+                if (n == 0) break;
+
+                @call(.always_inline, termio.Termio.processOutput, .{ io, buf[0..n] });
+
+                // Check the quit flag so we exit promptly even with continuous
+                // data flowing. Without this, a noisy writer could keep us in
+                // the tight loop indefinitely, never reaching poll().
+                if (quit_flag.load(.monotonic)) {
+                    log.info("read thread saw quit flag in tight loop", .{});
+                    return;
+                }
+            }
+
+            // Block until more data is available or we get a quit signal.
+            _ = posix.poll(&pollfds, -1) catch |err| {
+                log.warn("poll failed on read thread, exiting early err={}", .{err});
+                return;
+            };
+
+            // Check quit signal first.
+            if (pollfds[1].revents & posix.POLL.IN != 0) {
+                log.info("read thread got quit signal", .{});
+                return;
+            }
+
+            // Check if the pipe fd was closed (HUP).
+            if (pollfds[0].revents & posix.POLL.HUP != 0) {
+                log.info("pipe fd closed, read thread exiting", .{});
+                return;
+            }
+        }
+    }
+};
