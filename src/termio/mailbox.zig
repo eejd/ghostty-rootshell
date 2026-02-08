@@ -13,6 +13,12 @@ const log = std.log.scoped(.io_writer);
 /// but I'm open to changing it with good arguments.
 const Queue = BlockingQueue(termio.Message, 64);
 
+/// Max time we'll keep retrying a full queue before dropping a message.
+/// This bounds how long callers can block and prevents deadlocks where the
+/// app thread can't make forward progress to drain mailboxes.
+const send_retry_ns = 2 * std.time.ns_per_ms;
+const send_retry_attempts: usize = 50;
+
 /// The location to where write-related messages are sent.
 pub const Mailbox = union(enum) {
     // /// Write messages to an unbounded list backed by an allocator.
@@ -89,7 +95,26 @@ pub const Mailbox = union(enum) {
                 // here.
                 if (mutex) |m| m.unlock();
                 defer if (mutex) |m| m.lock();
-                _ = mb.queue.push(msg, .{ .forever = {} });
+
+                var attempts: usize = 0;
+                while (attempts < send_retry_attempts) : (attempts += 1) {
+                    if (mb.queue.push(msg, .{ .ns = send_retry_ns }) > 0) break :send;
+
+                    mb.wakeup.notify() catch |err| {
+                        log.warn(
+                            "failed to wake up writer while queue full, dropping message tag={s} err={}",
+                            .{ @tagName(msg), err },
+                        );
+                        msg.deinitDropped();
+                        return;
+                    };
+                }
+
+                log.warn(
+                    "dropping termio mailbox message after sustained backpressure tag={s} attempts={}",
+                    .{ @tagName(msg), attempts },
+                );
+                msg.deinitDropped();
             },
         }
     }

@@ -87,6 +87,19 @@ pub const Message = union(enum) {
         };
     }
 
+    /// Frees any owned allocations in this message when it could not be
+    /// enqueued and therefore will never be processed by the IO thread.
+    pub fn deinitDropped(self: Message) void {
+        switch (self) {
+            .change_config => |config| {
+                config.ptr.deinit();
+                config.alloc.destroy(config.ptr);
+            },
+            .write_alloc => |req| req.alloc.free(req.data),
+            else => {},
+        }
+    }
+
     /// The types of size reports that we support
     pub const SizeReport = enum {
         mode_2048,
