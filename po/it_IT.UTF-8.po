@@ -309,15 +309,15 @@ msgstr ""
 
 #: src/apprt/gtk/class/surface.zig:1108
 msgid "Command Finished"
-msgstr "Il comando è terminato"
+msgstr "Comando terminato"
 
 #: src/apprt/gtk/class/surface.zig:1109
 msgid "Command Succeeded"
-msgstr "Il comando è riuscito"
+msgstr "Comando riuscito"
 
 #: src/apprt/gtk/class/surface.zig:1110
 msgid "Command Failed"
-msgstr "Il comando è fallito"
+msgstr "Comando fallito"
 
 #: src/apprt/gtk/class/surface_child_exited.zig:109
 msgid "Command succeeded"
