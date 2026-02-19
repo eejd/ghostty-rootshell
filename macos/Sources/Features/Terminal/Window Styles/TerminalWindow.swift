@@ -347,7 +347,7 @@ class TerminalWindow: NSWindow {
         button.toolTip = "Reset Zoom"
         button.contentTintColor = isMainWindow ? .controlAccentColor : .secondaryLabelColor
         button.state = .on
-        button.image = NSImage(named:"ResetZoom")
+        button.image = NSImage(named: "ResetZoom")
         button.frame = NSRect(x: 0, y: 0, width: 20, height: 20)
         button.translatesAutoresizingMaskIntoConstraints = false
         button.widthAnchor.constraint(equalToConstant: 20).isActive = true

@@ -309,7 +309,7 @@ enum KeyEventMods: String, AppEnum, CaseIterable {
     
     static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Modifier Key")
     
-    static var caseDisplayRepresentations: [KeyEventMods : DisplayRepresentation] = [
+    static var caseDisplayRepresentations: [KeyEventMods: DisplayRepresentation] = [
         .shift: "Shift",
         .control: "Control",
         .option: "Option",

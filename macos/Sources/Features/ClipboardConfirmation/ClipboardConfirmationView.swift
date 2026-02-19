@@ -7,7 +7,7 @@ protocol ClipboardConfirmationViewDelegate: AnyObject {
 
 /// The SwiftUI view for showing a clipboard confirmation dialog.
 struct ClipboardConfirmationView: View {
-    enum Action : String {
+    enum Action: String {
         case cancel
         case confirm
 

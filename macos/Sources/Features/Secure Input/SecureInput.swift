@@ -12,7 +12,7 @@ import OSLog
 // it. You have to yield secure input on application deactivation (because
 // it'll affect other apps) and reacquire on reactivation, and every enable
 // needs to be balanced with a disable.
-class SecureInput : ObservableObject {
+class SecureInput: ObservableObject {
     static let shared = SecureInput()
 
     private static let logger = Logger(

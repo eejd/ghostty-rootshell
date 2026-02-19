@@ -81,7 +81,7 @@ extension Ghostty {
     /// A map from the Ghostty key enum to the keyEquivalent string for shortcuts. Note that
     /// not all ghostty key enum values are represented here because not all of them can be
     /// mapped to a KeyEquivalent.
-    static let keyToEquivalent: [ghostty_input_key_e : KeyEquivalent] = [
+    static let keyToEquivalent: [ghostty_input_key_e: KeyEquivalent] = [
         // Function keys
         GHOSTTY_KEY_ARROW_UP: .upArrow,
         GHOSTTY_KEY_ARROW_DOWN: .downArrow,
@@ -243,7 +243,7 @@ extension Ghostty.Input {
 extension Ghostty.Input.Action: AppEnum {
     static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Key Action")
 
-    static var caseDisplayRepresentations: [Ghostty.Input.Action : DisplayRepresentation] = [
+    static var caseDisplayRepresentations: [Ghostty.Input.Action: DisplayRepresentation] = [
         .release: "Release",
         .press: "Press",
         .repeat: "Repeat"
@@ -355,7 +355,7 @@ extension Ghostty.Input {
 extension Ghostty.Input.MouseState: AppEnum {
     static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Mouse State")
 
-    static var caseDisplayRepresentations: [Ghostty.Input.MouseState : DisplayRepresentation] = [
+    static var caseDisplayRepresentations: [Ghostty.Input.MouseState: DisplayRepresentation] = [
         .release: "Release",
         .press: "Press"
     ]
@@ -420,7 +420,7 @@ extension Ghostty.Input {
 extension Ghostty.Input.MouseButton: AppEnum {
     static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Mouse Button")
 
-    static var caseDisplayRepresentations: [Ghostty.Input.MouseButton : DisplayRepresentation] = [
+    static var caseDisplayRepresentations: [Ghostty.Input.MouseButton: DisplayRepresentation] = [
         .unknown: "Unknown",
         .left: "Left",
         .right: "Right",
@@ -504,7 +504,7 @@ extension Ghostty.Input {
 extension Ghostty.Input.Momentum: AppEnum {
     static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Scroll Momentum")
 
-    static var caseDisplayRepresentations: [Ghostty.Input.Momentum : DisplayRepresentation] = [
+    static var caseDisplayRepresentations: [Ghostty.Input.Momentum: DisplayRepresentation] = [
         .none: "None",
         .began: "Began",
         .stationary: "Stationary",
@@ -1223,7 +1223,7 @@ extension Ghostty.Input.Key: AppEnum {
         ]
     }
 
-    static var caseDisplayRepresentations: [Ghostty.Input.Key : DisplayRepresentation] = [
+    static var caseDisplayRepresentations: [Ghostty.Input.Key: DisplayRepresentation] = [
         // Letters (A-Z)
         .a: "A", .b: "B", .c: "C", .d: "D", .e: "E", .f: "F", .g: "G", .h: "H", .i: "I", .j: "J",
         .k: "K", .l: "L", .m: "M", .n: "N", .o: "O", .p: "P", .q: "Q", .r: "R", .s: "S", .t: "T",

@@ -416,7 +416,7 @@ extension Ghostty {
             return MacHidden(rawValue: str) ?? .never
         }
 
-        var focusFollowsMouse : Bool {
+        var focusFollowsMouse: Bool {
             guard let config = self.config else { return false }
             var v = false;
             let key = "focus-follows-mouse"
@@ -680,7 +680,7 @@ extension Ghostty {
 // MARK: Configuration Enums
 
 extension Ghostty.Config {
-    enum AutoUpdate : String {
+    enum AutoUpdate: String {
         case off
         case check
         case download
@@ -769,7 +769,7 @@ extension Ghostty.Config {
         case new_window = "new-window"
     }
 
-    enum MacHidden : String {
+    enum MacHidden: String {
         case never
         case always
     }
@@ -785,13 +785,13 @@ extension Ghostty.Config {
         case never
     }
 
-    enum ResizeOverlay : String {
+    enum ResizeOverlay: String {
         case always
         case never
         case after_first = "after-first"
     }
 
-    enum ResizeOverlayPosition : String {
+    enum ResizeOverlayPosition: String {
         case center
         case top_left = "top-left"
         case top_center = "top-center"

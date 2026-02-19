@@ -1389,7 +1389,7 @@ extension Ghostty {
             // since we always have a primary font. The only scenario this doesn't
             // work is if someone is using a non-CoreText build which would be
             // unofficial.
-            var attributes: [ NSAttributedString.Key : Any ] = [:];
+            var attributes: [ NSAttributedString.Key: Any ] = [:];
             if let fontRaw = ghostty_surface_quicklook_font(surface) {
                 // Memory management here is wonky: ghostty_surface_quicklook_font
                 // will create a copy of a CTFont, Swift will auto-retain the
@@ -1831,7 +1831,7 @@ extension Ghostty.SurfaceView: NSTextInputClient {
         // since we always have a primary font. The only scenario this doesn't
         // work is if someone is using a non-CoreText build which would be
         // unofficial.
-        var attributes: [ NSAttributedString.Key : Any ] = [:];
+        var attributes: [ NSAttributedString.Key: Any ] = [:];
         if let fontRaw = ghostty_surface_quicklook_font(surface) {
             // Memory management here is wonky: ghostty_surface_quicklook_font
             // will create a copy of a CTFont, Swift will auto-retain the
