@@ -24,7 +24,6 @@ disabled_rules:
   - orphaned_doc_comment
   - shorthand_operator
   - switch_case_alignment
-  - syntactic_sugar
   - trailing_semicolon
   - trailing_whitespace
   - unneeded_synthesized_initializer

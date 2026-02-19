@@ -736,7 +736,7 @@ extension Ghostty {
                         return try keys.withCStrings { keyCStrings in
                             return try values.withCStrings { valueCStrings in
                                 // Create array of ghostty_env_var_s
-                                var envVars = Array<ghostty_env_var_s>()
+                                var envVars = [ghostty_env_var_s]()
                                 envVars.reserveCapacity(environmentVariables.count)
                                 for i in 0..<environmentVariables.count {
                                     envVars.append(ghostty_env_var_s(
