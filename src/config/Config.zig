@@ -808,9 +808,21 @@ palette: Palette = .{},
 /// Available since: 1.3.0
 @"palette-generate": bool = true,
 
-/// Whether to invert generated light themes colors (see `palette-generate`).
-/// This helps give the 256-color palette more semantic meaning.
-/// 
+/// Invert the palette colors generated when `palette-generate` is enabled,
+/// so that the colors go in reverse order. This allows palette-based
+/// applications to work well in both light and dark mode since the
+/// palettes are always relatively good colors.
+///
+/// This defaults to off because some legacy terminal applications
+/// hardcode the assumption that palette indices 16–231 are ordered from
+/// darkest to lightest, so enabling this would make them unreadable.
+/// This is not a generally good assumption and we encourage modern
+/// terminal applications to use the indices in a more semantic way.
+///
+/// This has no effect if `palette-generate` is disabled.
+///
+/// For more information see `palette-generate`.
+///
 /// Available since: 1.3.0
 @"palette-harmonious": bool = false,
 
