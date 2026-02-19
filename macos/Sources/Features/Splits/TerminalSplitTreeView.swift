@@ -44,7 +44,7 @@ struct TerminalSplitTreeView: View {
     }
 }
 
-fileprivate struct TerminalSplitSubtreeView: View {
+private struct TerminalSplitSubtreeView: View {
     @EnvironmentObject var ghostty: Ghostty.App
 
     let node: SplitTree<Ghostty.SurfaceView>.Node
@@ -86,7 +86,7 @@ fileprivate struct TerminalSplitSubtreeView: View {
     }
 }
 
-fileprivate struct TerminalSplitLeaf: View {
+private struct TerminalSplitLeaf: View {
     let surfaceView: Ghostty.SurfaceView
     let isSplit: Bool
     let action: (TerminalSplitOperation) -> Void

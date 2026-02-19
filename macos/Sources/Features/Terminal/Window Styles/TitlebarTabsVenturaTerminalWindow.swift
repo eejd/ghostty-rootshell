@@ -506,7 +506,7 @@ class TitlebarTabsVenturaTerminalWindow: TerminalWindow {
 }
 
 // Passes mouseDown events from this view to window.performDrag so that you can drag the window by it.
-fileprivate class WindowDragView: NSView {
+private class WindowDragView: NSView {
     override public func mouseDown(with event: NSEvent) {
         // Drag the window for single left clicks, double clicks should bypass the drag handle.
         if event.type == .leftMouseDown && event.clickCount == 1 {
@@ -535,7 +535,7 @@ fileprivate class WindowDragView: NSView {
 }
 
 // A view that matches the color of selected and unselected tabs in the adjacent tab bar.
-fileprivate class WindowButtonsBackdropView: NSView {
+private class WindowButtonsBackdropView: NSView {
     // This must be weak because the window has this view. Otherwise
     // a retain cycle occurs.
 	private weak var terminalWindow: TitlebarTabsVenturaTerminalWindow?
@@ -588,7 +588,7 @@ fileprivate class WindowButtonsBackdropView: NSView {
 
 // Custom NSToolbar subclass that displays a centered window title,
 // in order to accommodate the titlebar tabs feature.
-fileprivate class TerminalToolbar: NSToolbar, NSToolbarDelegate {
+private class TerminalToolbar: NSToolbar, NSToolbarDelegate {
     private let titleTextField = CenteredDynamicLabel(labelWithString: "👻 Ghostty")
 
     var titleText: String {
@@ -674,7 +674,7 @@ fileprivate class TerminalToolbar: NSToolbar, NSToolbarDelegate {
 }
 
 /// A label that expands to fit whatever text you put in it and horizontally centers itself in the current window.
-fileprivate class CenteredDynamicLabel: NSTextField {
+private class CenteredDynamicLabel: NSTextField {
     override func viewDidMoveToSuperview() {
         // Configure the text field
         isEditable = false

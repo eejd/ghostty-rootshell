@@ -61,7 +61,7 @@ struct UpdateBadge: View {
 /// A circular progress indicator with a stroke-based ring design.
 ///
 /// Displays a partially filled circle that represents progress from 0.0 to 1.0.
-fileprivate struct ProgressRingView: View {
+private struct ProgressRingView: View {
     /// The current progress value, ranging from 0.0 (empty) to 1.0 (complete)
     let progress: Double
     

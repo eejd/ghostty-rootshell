@@ -1359,6 +1359,6 @@ private enum QuickTerminalState {
 }
 
 @globalActor
-fileprivate actor AppIconActor: GlobalActor {
+private actor AppIconActor: GlobalActor {
     static let shared = AppIconActor()
 }

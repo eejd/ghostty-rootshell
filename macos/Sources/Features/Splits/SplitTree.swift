@@ -343,7 +343,7 @@ extension SplitTree {
 
 // MARK: SplitTree Codable
 
-fileprivate enum CodingKeys: String, CodingKey {
+private enum CodingKeys: String, CodingKey {
     case version
     case root
     case zoomed

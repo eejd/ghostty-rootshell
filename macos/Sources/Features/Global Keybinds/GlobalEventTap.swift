@@ -117,7 +117,7 @@ class GlobalEventTap {
     }
 }
 
-fileprivate func cgEventFlagsChangedHandler(
+private func cgEventFlagsChangedHandler(
     proxy: CGEventTapProxy,
     type: CGEventType,
     cgEvent: CGEvent,

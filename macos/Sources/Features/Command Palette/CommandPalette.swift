@@ -229,7 +229,7 @@ struct CommandPaletteView: View {
 }
 
 /// The text field for building the query for the command palette.
-fileprivate struct CommandPaletteQuery: View {
+private struct CommandPaletteQuery: View {
     @Binding var query: String
     var onEvent: ((KeyboardEvent) -> Void)?
     @FocusState private var isTextFieldFocused: Bool
@@ -284,7 +284,7 @@ fileprivate struct CommandPaletteQuery: View {
     }
 }
 
-fileprivate struct CommandTable: View {
+private struct CommandTable: View {
     var options: [CommandOption]
     @Binding var selectedIndex: UInt?
     @Binding var hoveredOptionID: UUID?
@@ -332,7 +332,7 @@ fileprivate struct CommandTable: View {
 }
 
 /// A single row in the command palette.
-fileprivate struct CommandRow: View {
+private struct CommandRow: View {
     let option: CommandOption
     var isSelected: Bool
     @Binding var hoveredID: UUID?
@@ -406,7 +406,7 @@ fileprivate struct CommandRow: View {
 }
 
 /// A row of Text representing a shortcut.
-fileprivate struct ShortcutSymbolsView: View {
+private struct ShortcutSymbolsView: View {
     let symbols: [String]
 
     var body: some View {

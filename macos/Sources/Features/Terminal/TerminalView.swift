@@ -127,7 +127,7 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
     }
 }
 
-fileprivate struct UpdateOverlay: View {
+private struct UpdateOverlay: View {
     var body: some View {
         if let appDelegate = NSApp.delegate as? AppDelegate {
             VStack {

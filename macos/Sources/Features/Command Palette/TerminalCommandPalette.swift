@@ -171,7 +171,7 @@ struct TerminalCommandPaletteView: View {
 }
 
 /// This is done to ensure that the given view is in the responder chain.
-fileprivate struct ResponderChainInjector: NSViewRepresentable {
+private struct ResponderChainInjector: NSViewRepresentable {
     let responder: NSResponder
 
     func makeNSView(context: Context) -> NSView {

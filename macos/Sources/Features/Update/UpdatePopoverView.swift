@@ -52,7 +52,7 @@ struct UpdatePopoverView: View {
     }
 }
 
-fileprivate struct PermissionRequestView: View {
+private struct PermissionRequestView: View {
     let request: UpdateState.PermissionRequest
     let dismiss: DismissAction
     
@@ -93,7 +93,7 @@ fileprivate struct PermissionRequestView: View {
     }
 }
 
-fileprivate struct CheckingView: View {
+private struct CheckingView: View {
     let checking: UpdateState.Checking
     let dismiss: DismissAction
     
@@ -120,7 +120,7 @@ fileprivate struct CheckingView: View {
     }
 }
 
-fileprivate struct UpdateAvailableView: View {
+private struct UpdateAvailableView: View {
     let update: UpdateState.UpdateAvailable
     let dismiss: DismissAction
     
@@ -217,7 +217,7 @@ fileprivate struct UpdateAvailableView: View {
     }
 }
 
-fileprivate struct DownloadingView: View {
+private struct DownloadingView: View {
     let download: UpdateState.Downloading
     let dismiss: DismissAction
     
@@ -255,7 +255,7 @@ fileprivate struct DownloadingView: View {
     }
 }
 
-fileprivate struct ExtractingView: View {
+private struct ExtractingView: View {
     let extracting: UpdateState.Extracting
     
     var body: some View {
@@ -274,7 +274,7 @@ fileprivate struct ExtractingView: View {
     }
 }
 
-fileprivate struct InstallingView: View {
+private struct InstallingView: View {
     let installing: UpdateState.Installing
     let dismiss: DismissAction
     
@@ -313,7 +313,7 @@ fileprivate struct InstallingView: View {
     }
 }
 
-fileprivate struct NotFoundView: View {
+private struct NotFoundView: View {
     let notFound: UpdateState.NotFound
     let dismiss: DismissAction
     
@@ -343,7 +343,7 @@ fileprivate struct NotFoundView: View {
     }
 }
 
-fileprivate struct UpdateErrorView: View {
+private struct UpdateErrorView: View {
     let error: UpdateState.Error
     let dismiss: DismissAction
     
