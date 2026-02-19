@@ -808,6 +808,12 @@ palette: Palette = .{},
 /// Available since: 1.3.0
 @"palette-generate": bool = true,
 
+/// Whether to invert generated light themes colors (see `palette-generate`).
+/// This helps give the 256-color palette more semantic meaning.
+/// 
+/// Available since: 1.3.0
+@"palette-harmonious": bool = false,
+
 /// The color of the cursor. If this is not set, a default will be chosen.
 ///
 /// Direct colors can be specified as either hex (`#RRGGBB` or `RRGGBB`)

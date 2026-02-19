@@ -1,8 +1,9 @@
-const colorpkg = @This();
-
 const std = @import("std");
+
 const assert = @import("../quirks.zig").inlineAssert;
 const x11_color = @import("x11_color.zig");
+
+const colorpkg = @This();
 
 /// The default palette.
 pub const default: Palette = default: {
@@ -90,15 +91,25 @@ pub fn generate256Color(
     skip: PaletteMask,
     bg: RGB,
     fg: RGB,
+    harmonious: bool
 ) Palette {
     // Convert the background, foreground, and 8 base theme colors into
     // CIELAB space so that all interpolation is perceptually uniform.
     const bg_lab: LAB = .fromRgb(bg);
     const fg_lab: LAB = .fromRgb(fg);
-    const base8_lab: [8]LAB = base8: {
-        var base8: [8]LAB = undefined;
-        for (0..8) |i| base8[i] = .fromRgb(base[i]);
-        break :base8 base8;
+
+    const is_light_theme = bg_lab.l > 50;
+    const invert = is_light_theme and !harmonious;
+
+    const base8_lab: [8]LAB = .{
+        if (invert) fg_lab else bg_lab,
+        LAB.fromRgb(base[1]),
+        LAB.fromRgb(base[2]),
+        LAB.fromRgb(base[3]),
+        LAB.fromRgb(base[4]),
+        LAB.fromRgb(base[5]),
+        LAB.fromRgb(base[6]),
+        if (invert) bg_lab else fg_lab,
     };
 
     // Start from the base palette so indices 0–15 are preserved as-is.
@@ -115,10 +126,10 @@ pub fn generate256Color(
     for (0..6) |ri| {
         // R-axis corners: blend base colors along the red dimension.
         const tr = @as(f32, @floatFromInt(ri)) / 5.0;
-        const c0: LAB = .lerp(tr, bg_lab, base8_lab[1]);
+        const c0: LAB = .lerp(tr, base8_lab[0], base8_lab[1]);
         const c1: LAB = .lerp(tr, base8_lab[2], base8_lab[3]);
         const c2: LAB = .lerp(tr, base8_lab[4], base8_lab[5]);
-        const c3: LAB = .lerp(tr, base8_lab[6], fg_lab);
+        const c3: LAB = .lerp(tr, base8_lab[6], base8_lab[7]);
         for (0..6) |gi| {
             // G-axis edges: blend the R-interpolated corners along green.
             const tg = @as(f32, @floatFromInt(gi)) / 5.0;
@@ -147,7 +158,7 @@ pub fn generate256Color(
     for (0..24) |i| {
         const t = @as(f32, @floatFromInt(i + 1)) / 25.0;
         if (!skip.isSet(idx)) {
-            const c: LAB = .lerp(t, bg_lab, fg_lab);
+            const c: LAB = .lerp(t, base8_lab[0], base8_lab[7]);
             result[idx] = c.toRgb();
         }
         idx += 1;

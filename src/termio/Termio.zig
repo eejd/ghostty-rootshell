@@ -189,6 +189,7 @@ pub const DerivedConfig = struct {
                     config.palette.mask,
                     config.background.toTerminalRGB(),
                     config.foreground.toTerminalRGB(),
+                    config.@"palette-harmonious"
                 );
             }
 
