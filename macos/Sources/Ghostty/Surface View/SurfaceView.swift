@@ -865,7 +865,7 @@ extension Ghostty {
                 // Key sequence indicator
                 if !keySequence.isEmpty {
                     HStack(alignment: .center, spacing: 4) {
-                        ForEach(Array(keySequence.enumerated()), id: \.offset) { index, key in
+                        ForEach(Array(keySequence.enumerated()), id: \.offset) { _, key in
                             KeyCap(key.description)
                         }
 
