@@ -28,7 +28,7 @@ class ClipboardConfirmationController: NSWindowController {
         fatalError("init(coder:) is not supported for this view")
     }
 
-    //MARK: - NSWindowController
+    // MARK: - NSWindowController
 
     override func windowDidLoad() {
         guard let window = window else { return }

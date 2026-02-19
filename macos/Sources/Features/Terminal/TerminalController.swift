@@ -482,7 +482,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         return controller
     }
     
-    //MARK: - Methods
+    // MARK: - Methods
 
     @objc private func ghosttyConfigDidChange(_ notification: Notification) {
         // Get our managed configuration object out
@@ -994,7 +994,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             tabColor: (window as? TerminalWindow)?.tabColor ?? .none)
     }
 
-    //MARK: - NSWindowController
+    // MARK: - NSWindowController
 
     override func windowWillLoad() {
         // We do NOT want to cascade because we handle this manually from the manager.
@@ -1315,7 +1315,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         ghostty.toggleTerminalInspector(surface: surface)
     }
 
-    //MARK: - TerminalViewDelegate
+    // MARK: - TerminalViewDelegate
 
     override func focusedSurfaceDidChange(to: Ghostty.SurfaceView?) {
         super.focusedSurfaceDidChange(to: to)
@@ -1347,7 +1347,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         }
     }
 
-    //MARK: - Notifications
+    // MARK: - Notifications
 
     @objc private func onMoveTab(notification: SwiftUI.Notification) {
         guard let target = notification.object as? Ghostty.SurfaceView else { return }
