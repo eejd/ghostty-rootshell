@@ -221,7 +221,7 @@ extension Ghostty {
                 // because we want to keep our focused surface dark even if we don't have window
                 // focus.
                 if isSplit && !surfaceFocus {
-                    let overlayOpacity = ghostty.config.unfocusedSplitOpacity;
+                    let overlayOpacity = ghostty.config.unfocusedSplitOpacity
                     if overlayOpacity > 0 {
                         Rectangle()
                             .fill(ghostty.config.unfocusedSplitFill)
@@ -328,15 +328,15 @@ extension Ghostty {
                         lastSize = geoSize
                     }
 
-                    return true;
+                    return true
                 }
             }
 
             // Hidden depending on overlay config
             switch overlay {
-            case .never: return true;
-            case .always: return false;
-            case .after_first: return lastSize == nil;
+            case .never: return true
+            case .always: return false
+            case .after_first: return lastSize == nil
             }
         }
 

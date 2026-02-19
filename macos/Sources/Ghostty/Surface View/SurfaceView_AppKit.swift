@@ -991,8 +991,8 @@ extension Ghostty {
 
             if precision {
                 // We do a 2x speed multiplier. This is subjective, it "feels" better to me.
-                x *= 2;
-                y *= 2;
+                x *= 2
+                y *= 2
 
                 // TODO(mitchellh): do we have to scale the x/y here by window scale factor?
             }
@@ -1303,7 +1303,7 @@ extension Ghostty {
         }
 
         override func flagsChanged(with event: NSEvent) {
-            let mod: UInt32;
+            let mod: UInt32
             switch event.keyCode {
             case 0x39: mod = GHOSTTY_MODS_CAPS.rawValue
             case 0x38, 0x3C: mod = GHOSTTY_MODS_SHIFT.rawValue
@@ -1330,13 +1330,13 @@ extension Ghostty {
                 let sidePressed: Bool
                 switch event.keyCode {
                 case 0x3C:
-                    sidePressed = event.modifierFlags.rawValue & UInt(NX_DEVICERSHIFTKEYMASK) != 0;
+                    sidePressed = event.modifierFlags.rawValue & UInt(NX_DEVICERSHIFTKEYMASK) != 0
                 case 0x3E:
-                    sidePressed = event.modifierFlags.rawValue & UInt(NX_DEVICERCTLKEYMASK) != 0;
+                    sidePressed = event.modifierFlags.rawValue & UInt(NX_DEVICERCTLKEYMASK) != 0
                 case 0x3D:
-                    sidePressed = event.modifierFlags.rawValue & UInt(NX_DEVICERALTKEYMASK) != 0;
+                    sidePressed = event.modifierFlags.rawValue & UInt(NX_DEVICERALTKEYMASK) != 0
                 case 0x36:
-                    sidePressed = event.modifierFlags.rawValue & UInt(NX_DEVICERCMDKEYMASK) != 0;
+                    sidePressed = event.modifierFlags.rawValue & UInt(NX_DEVICERCMDKEYMASK) != 0
                 default:
                     sidePressed = true
                 }
@@ -1388,7 +1388,7 @@ extension Ghostty {
             // since we always have a primary font. The only scenario this doesn't
             // work is if someone is using a non-CoreText build which would be
             // unofficial.
-            var attributes: [ NSAttributedString.Key: Any ] = [:];
+            var attributes: [ NSAttributedString.Key: Any ] = [:]
             if let fontRaw = ghostty_surface_quicklook_font(surface) {
                 // Memory management here is wonky: ghostty_surface_quicklook_font
                 // will create a copy of a CTFont, Swift will auto-retain the
@@ -1401,7 +1401,7 @@ extension Ghostty {
             // Ghostty coordinate system is top-left, convert to bottom-left for AppKit
             let pt = NSPoint(x: text.tl_px_x, y: frame.size.height - text.tl_px_y)
             let str = NSAttributedString.init(string: String(cString: text.text), attributes: attributes)
-            self.showDefinition(for: str, at: pt);
+            self.showDefinition(for: str, at: pt)
         }
 
         override func menu(for event: NSEvent) -> NSMenu? {
@@ -1830,7 +1830,7 @@ extension Ghostty.SurfaceView: NSTextInputClient {
         // since we always have a primary font. The only scenario this doesn't
         // work is if someone is using a non-CoreText build which would be
         // unofficial.
-        var attributes: [ NSAttributedString.Key: Any ] = [:];
+        var attributes: [ NSAttributedString.Key: Any ] = [:]
         if let fontRaw = ghostty_surface_quicklook_font(surface) {
             // Memory management here is wonky: ghostty_surface_quicklook_font
             // will create a copy of a CTFont, Swift will auto-retain the
@@ -1868,8 +1868,8 @@ extension Ghostty.SurfaceView: NSTextInputClient {
             if ghostty_surface_read_selection(surface, &text) {
                 // The -2/+2 here is subjective. QuickLook seems to offset the rectangle
                 // a bit and I think these small adjustments make it look more natural.
-                x = text.tl_px_x - 2;
-                y = text.tl_px_y + 2;
+                x = text.tl_px_x - 2
+                y = text.tl_px_y + 2
 
                 // Free our text
                 ghostty_surface_free_text(surface, &text)

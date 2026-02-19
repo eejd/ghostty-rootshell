@@ -198,13 +198,13 @@ extension Ghostty {
         static func from(direction: ghostty_action_resize_split_direction_e) -> Self? {
             switch direction {
             case GHOSTTY_RESIZE_SPLIT_UP:
-                return .up;
+                return .up
             case GHOSTTY_RESIZE_SPLIT_DOWN:
-                return .down;
+                return .down
             case GHOSTTY_RESIZE_SPLIT_LEFT:
-                return .left;
+                return .left
             case GHOSTTY_RESIZE_SPLIT_RIGHT:
-                return .right;
+                return .right
             default:
                 return nil
             }
@@ -213,13 +213,13 @@ extension Ghostty {
         func toNative() -> ghostty_action_resize_split_direction_e {
             switch self {
             case .up:
-                return GHOSTTY_RESIZE_SPLIT_UP;
+                return GHOSTTY_RESIZE_SPLIT_UP
             case .down:
-                return GHOSTTY_RESIZE_SPLIT_DOWN;
+                return GHOSTTY_RESIZE_SPLIT_DOWN
             case .left:
-                return GHOSTTY_RESIZE_SPLIT_LEFT;
+                return GHOSTTY_RESIZE_SPLIT_LEFT
             case .right:
-                return GHOSTTY_RESIZE_SPLIT_RIGHT;
+                return GHOSTTY_RESIZE_SPLIT_RIGHT
             }
         }
     }

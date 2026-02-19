@@ -22,7 +22,7 @@ extension Ghostty {
         var errors: [String] {
             guard let cfg = self.config else { return [] }
 
-            var diags: [String] = [];
+            var diags: [String] = []
             let diagsCount = ghostty_config_diagnostics_count(cfg)
             for i in 0..<diagsCount {
                 let diag = ghostty_config_get_diagnostic(cfg, UInt32(i))
@@ -73,10 +73,10 @@ extension Ghostty {
             // We only load CLI args when not running in Xcode because in Xcode we
             // pass some special parameters to control the debugger.
             if !isRunningInXcode() {
-                ghostty_config_load_cli_args(cfg);
+                ghostty_config_load_cli_args(cfg)
             }
 
-            ghostty_config_load_recursive_files(cfg);
+            ghostty_config_load_recursive_files(cfg)
 #endif
 
             // TODO: we'd probably do some config loading here... for now we'd
@@ -92,7 +92,7 @@ extension Ghostty {
             let diagsCount = ghostty_config_diagnostics_count(cfg)
             if diagsCount > 0 {
                 logger.warning("config error: \(diagsCount) configuration errors on reload")
-                var diags: [String] = [];
+                var diags: [String] = []
                 for i in 0..<diagsCount {
                     let diag = ghostty_config_get_diagnostic(cfg, UInt32(i))
                     let message = String(cString: diag.message)
@@ -144,7 +144,7 @@ extension Ghostty {
 
         var initialWindow: Bool {
             guard let config = self.config else { return true }
-            var v = true;
+            var v = true
             let key = "initial-window"
             _ = ghostty_config_get(config, &v, key, UInt(key.lengthOfBytes(using: .utf8)))
             return v
@@ -152,7 +152,7 @@ extension Ghostty {
 
         var shouldQuitAfterLastWindowClosed: Bool {
             guard let config = self.config else { return true }
-            var v = false;
+            var v = false
             let key = "quit-after-last-window-closed"
             _ = ghostty_config_get(config, &v, key, UInt(key.lengthOfBytes(using: .utf8)))
             return v
@@ -345,7 +345,7 @@ extension Ghostty {
 
         var macosWindowShadow: Bool {
             guard let config = self.config else { return false }
-            var v = false;
+            var v = false
             let key = "macos-window-shadow"
             _ = ghostty_config_get(config, &v, key, UInt(key.lengthOfBytes(using: .utf8)))
             return v
@@ -418,14 +418,14 @@ extension Ghostty {
 
         var focusFollowsMouse: Bool {
             guard let config = self.config else { return false }
-            var v = false;
+            var v = false
             let key = "focus-follows-mouse"
             _ = ghostty_config_get(config, &v, key, UInt(key.lengthOfBytes(using: .utf8)))
             return v
         }
 
         var backgroundColor: Color {
-            var color: ghostty_config_color_s = .init();
+            var color: ghostty_config_color_s = .init()
             let bg_key = "background"
             if !ghostty_config_get(config, &color, bg_key, UInt(bg_key.lengthOfBytes(using: .utf8))) {
 #if os(macOS)
@@ -449,7 +449,7 @@ extension Ghostty {
             var v: Double = 1
             let key = "background-opacity"
             _ = ghostty_config_get(config, &v, key, UInt(key.lengthOfBytes(using: .utf8)))
-            return v;
+            return v
         }
 
         var backgroundBlur: BackgroundBlur {
@@ -471,11 +471,11 @@ extension Ghostty {
         var unfocusedSplitFill: Color {
             guard let config = self.config else { return .white }
 
-            var color: ghostty_config_color_s = .init();
+            var color: ghostty_config_color_s = .init()
             let key = "unfocused-split-fill"
             if !ghostty_config_get(config, &color, key, UInt(key.lengthOfBytes(using: .utf8))) {
                 let bg_key = "background"
-                _ = ghostty_config_get(config, &color, bg_key, UInt(bg_key.lengthOfBytes(using: .utf8)));
+                _ = ghostty_config_get(config, &color, bg_key, UInt(bg_key.lengthOfBytes(using: .utf8)))
             }
 
             return .init(
@@ -492,7 +492,7 @@ extension Ghostty {
 
             guard let config = self.config else { return Color(newColor) }
 
-            var color: ghostty_config_color_s = .init();
+            var color: ghostty_config_color_s = .init()
             let key = "split-divider-color"
             if !ghostty_config_get(config, &color, key, UInt(key.lengthOfBytes(using: .utf8))) {
                 return Color(newColor)
@@ -587,7 +587,7 @@ extension Ghostty {
             var v: UInt = 0
             let key = "resize-overlay-duration"
             _ = ghostty_config_get(config, &v, key, UInt(key.lengthOfBytes(using: .utf8)))
-            return v;
+            return v
         }
 
         var undoTimeout: Duration {
@@ -621,7 +621,7 @@ extension Ghostty {
 
         var autoSecureInput: Bool {
             guard let config = self.config else { return true }
-            var v = false;
+            var v = false
             let key = "macos-auto-secure-input"
             _ = ghostty_config_get(config, &v, key, UInt(key.lengthOfBytes(using: .utf8)))
             return v
@@ -629,7 +629,7 @@ extension Ghostty {
 
         var secureInputIndication: Bool {
             guard let config = self.config else { return true }
-            var v = false;
+            var v = false
             let key = "macos-secure-input-indication"
             _ = ghostty_config_get(config, &v, key, UInt(key.lengthOfBytes(using: .utf8)))
             return v
@@ -637,7 +637,7 @@ extension Ghostty {
 
         var maximize: Bool {
             guard let config = self.config else { return true }
-            var v = false;
+            var v = false
             let key = "maximize"
             _ = ghostty_config_get(config, &v, key, UInt(key.lengthOfBytes(using: .utf8)))
             return v
@@ -802,29 +802,29 @@ extension Ghostty.Config {
 
         func top() -> Bool {
             switch self {
-            case .top_left, .top_center, .top_right: return true;
-            default: return false;
+            case .top_left, .top_center, .top_right: return true
+            default: return false
             }
         }
 
         func bottom() -> Bool {
             switch self {
-            case .bottom_left, .bottom_center, .bottom_right: return true;
-            default: return false;
+            case .bottom_left, .bottom_center, .bottom_right: return true
+            default: return false
             }
         }
 
         func left() -> Bool {
             switch self {
-            case .top_left, .bottom_left: return true;
-            default: return false;
+            case .top_left, .bottom_left: return true
+            default: return false
             }
         }
 
         func right() -> Bool {
             switch self {
-            case .top_right, .bottom_right: return true;
-            default: return false;
+            case .top_right, .bottom_right: return true
+            default: return false
             }
         }
     }

@@ -81,7 +81,7 @@ extension Ghostty {
                 // TODO
                 return
             }
-            self.surface = surface;
+            self.surface = surface
         }
 
         required init?(coder: NSCoder) {

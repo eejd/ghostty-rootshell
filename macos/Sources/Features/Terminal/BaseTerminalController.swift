@@ -530,14 +530,14 @@ class BaseTerminalController: NSWindowController,
         // then we let it stay that way.
         x: if newFrame.origin.x < visibleFrame.origin.x {
             if let savedFrame, savedFrame.window.origin.x < savedFrame.screen.origin.x {
-                break x;
+                break x
             }
 
             newFrame.origin.x = visibleFrame.origin.x
         }
         y: if newFrame.origin.y < visibleFrame.origin.y {
             if let savedFrame, savedFrame.window.origin.y < savedFrame.screen.origin.y {
-                break y;
+                break y
             }
 
             newFrame.origin.y = visibleFrame.origin.y

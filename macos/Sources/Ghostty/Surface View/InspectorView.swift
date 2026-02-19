@@ -309,7 +309,7 @@ extension Ghostty {
         }
 
         override func flagsChanged(with event: NSEvent) {
-            let mod: UInt32;
+            let mod: UInt32
             switch event.keyCode {
             case 0x39: mod = GHOSTTY_MODS_CAPS.rawValue
             case 0x38, 0x3C: mod = GHOSTTY_MODS_SHIFT.rawValue
