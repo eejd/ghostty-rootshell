@@ -259,7 +259,7 @@ extension Ghostty {
             // Initialize with some default frame size. The important thing is that this
             // is non-zero so that our layer bounds are non-zero so that our renderer
             // can do SOMETHING.
-            super.init(frame: NSMakeRect(0, 0, 800, 600))
+            super.init(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
 
             // Our cache of screen data
             cachedScreenContents = .init(duration: .milliseconds(500)) { [weak self] in
@@ -1400,7 +1400,7 @@ extension Ghostty {
             }
 
             // Ghostty coordinate system is top-left, convert to bottom-left for AppKit
-            let pt = NSMakePoint(text.tl_px_x, frame.size.height - text.tl_px_y)
+            let pt = NSPoint(x: text.tl_px_x, y: frame.size.height - text.tl_px_y)
             let str = NSAttributedString.init(string: String(cString: text.text), attributes: attributes)
             self.showDefinition(for: str, at: pt);
         }
@@ -1850,7 +1850,7 @@ extension Ghostty.SurfaceView: NSTextInputClient {
 
     func firstRect(forCharacterRange range: NSRange, actualRange: NSRangePointer?) -> NSRect {
         guard let surface = self.surface else {
-            return NSMakeRect(frame.origin.x, frame.origin.y, 0, 0)
+            return NSRect(x: frame.origin.x, y: frame.origin.y, width: 0, height: 0)
         }
 
         // Ghostty will tell us where it thinks an IME keyboard should render.
@@ -1892,11 +1892,11 @@ extension Ghostty.SurfaceView: NSTextInputClient {
         // when there's is no characters selected,
         // width should be 0 so that dictation indicator
         // can start in the right place
-        let viewRect = NSMakeRect(
-            x,
-            frame.size.height - y,
-            width,
-            max(height, cellSize.height))
+        let viewRect = NSRect(
+            x: x,
+            y: frame.size.height - y,
+            width: width,
+            height: max(height, cellSize.height))
 
         // Convert the point to the window coordinates
         let winRect = self.convert(viewRect, to: nil)
@@ -2134,7 +2134,7 @@ extension Ghostty.SurfaceView {
             DispatchQueue.main.async {
                 self.insertText(
                     content,
-                    replacementRange: NSMakeRange(0, 0)
+                    replacementRange: NSRange(location: 0, length: 0)
                 )
             }
             return true

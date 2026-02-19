@@ -1682,7 +1682,7 @@ extension Ghostty {
             case GHOSTTY_TARGET_SURFACE:
                 guard let surface = target.target.surface else { return }
                 guard let surfaceView = self.surfaceView(from: surface) else { return }
-                surfaceView.initialSize = NSMakeSize(Double(v.width), Double(v.height))
+                surfaceView.initialSize = NSSize(width: Double(v.width), height: Double(v.height))
 
 
             default:
