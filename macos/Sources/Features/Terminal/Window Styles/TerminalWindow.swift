@@ -459,7 +459,7 @@ class TerminalWindow: NSWindow {
             backgroundColor = .white.withAlphaComponent(0.001)
 
             // We don't need to set blur when using glass
-            if !surfaceConfig.backgroundBlur.isGlassStyle,  let appDelegate = NSApp.delegate as? AppDelegate {
+            if !surfaceConfig.backgroundBlur.isGlassStyle, let appDelegate = NSApp.delegate as? AppDelegate {
                 ghostty_set_window_background_blur(
                     appDelegate.ghostty.app,
                     Unmanaged.passUnretained(self).toOpaque())
