@@ -1184,7 +1184,7 @@ extension Ghostty {
             // We only care about key down events. It might not even be possible
             // to receive any other event type here.
             guard event.type == .keyDown else { return false }
-            
+
             // Only process events if we're focused. Some key events like C-/ macOS
             // appears to send to the first view in the hierarchy rather than the
             // the first responder (I don't know why). This prevents us from handling it.
@@ -1194,7 +1194,7 @@ extension Ghostty {
             if !focused {
                 return false
             }
-            
+
             // Get information about if this is a binding.
             let bindingFlags = surfaceModel.flatMap { surface in
                 var ghosttyEvent = event.ghosttyKeyEvent(GHOSTTY_ACTION_PRESS)
@@ -1203,7 +1203,7 @@ extension Ghostty {
                     return surface.keyIsBinding(ghosttyEvent)
                 }
             }
-            
+
             // If this is a binding then we want to perform it.
             if let bindingFlags {
                 // Attempt to trigger a menu item for this key binding. We only do this if:
@@ -1220,7 +1220,7 @@ extension Ghostty {
                         return true
                     }
                 }
-                
+
                 self.keyDown(with: event)
                 return true
             }

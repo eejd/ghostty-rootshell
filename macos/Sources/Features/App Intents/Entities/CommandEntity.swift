@@ -79,7 +79,7 @@ extension CommandEntity.ID: EntityIdentifierConvertible {
     static func entityIdentifier(for entityIdentifierString: String) -> CommandEntity.ID? {
         .init(rawValue: entityIdentifierString)
     }
-    
+
     var entityIdentifierString: String {
         rawValue
     }

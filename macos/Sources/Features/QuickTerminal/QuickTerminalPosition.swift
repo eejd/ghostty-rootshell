@@ -144,25 +144,25 @@ enum QuickTerminalPosition: String {
                 x: round(screen.visibleFrame.origin.x + (screen.visibleFrame.width - window.frame.width) / 2),
                 y: window.frame.origin.y // Keep the same Y position
             )
-            
+
         case .bottom:
             return CGPoint(
                 x: round(screen.visibleFrame.origin.x + (screen.visibleFrame.width - window.frame.width) / 2),
                 y: window.frame.origin.y // Keep the same Y position
             )
-            
+
         case .center:
             return CGPoint(
                 x: round(screen.visibleFrame.origin.x + (screen.visibleFrame.width - window.frame.width) / 2),
                 y: round(screen.visibleFrame.origin.y + (screen.visibleFrame.height - window.frame.height) / 2)
             )
-            
+
         case .left, .right:
             // For left/right positions, only adjust horizontal centering if needed
             return window.frame.origin
         }
     }
-    
+
     /// Calculate the vertically centered origin for side-positioned windows
     func verticallyCenteredOrigin(for window: NSWindow, on screen: NSScreen) -> CGPoint {
         switch self {
@@ -171,13 +171,13 @@ enum QuickTerminalPosition: String {
                 x: window.frame.origin.x, // Keep the same X position
                 y: round(screen.visibleFrame.origin.y + (screen.visibleFrame.height - window.frame.height) / 2)
             )
-            
+
         case .right:
             return CGPoint(
                 x: window.frame.origin.x, // Keep the same X position
                 y: round(screen.visibleFrame.origin.y + (screen.visibleFrame.height - window.frame.height) / 2)
             )
-            
+
         case .top, .bottom, .center:
             // These positions don't need vertical recentering during resize
             return window.frame.origin

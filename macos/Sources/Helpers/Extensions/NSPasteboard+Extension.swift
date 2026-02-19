@@ -13,14 +13,14 @@ extension NSPasteboard.PasteboardType {
         default:
             break
         }
-        
+
         // Try to get UTType from MIME type
         guard let utType = UTType(mimeType: mimeType) else {
             // Fallback: use the MIME type directly as identifier
             self.init(mimeType)
             return
         }
-        
+
         // Use the UTType's identifier
         self.init(utType.identifier)
     }

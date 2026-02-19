@@ -45,16 +45,16 @@ struct ClipboardConfirmationView: View {
                     .font(.system(size: 42))
                     .padding()
                     .frame(alignment: .center)
-                
+
                 Text(request.text())
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
             }
-            
+
             TextEditor(text: .constant(contents))
                 .focusable(false)
                 .font(.system(.body, design: .monospaced))
-            
+
             HStack {
                 Spacer()
                 Button(Action.text(.cancel, request)) { onCancel() }

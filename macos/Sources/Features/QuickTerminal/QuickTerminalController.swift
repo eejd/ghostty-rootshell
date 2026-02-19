@@ -29,7 +29,7 @@ class QuickTerminalController: BaseTerminalController {
 
     /// The configuration derived from the Ghostty config so we don't need to rely on references.
     private var derivedConfig: DerivedConfig
-    
+
     /// Tracks if we're currently handling a manual resize to prevent recursion
     private var isHandlingResize: Bool = false
 
@@ -135,14 +135,14 @@ class QuickTerminalController: BaseTerminalController {
         if let qtWindow = window as? QuickTerminalWindow {
             qtWindow.initialFrame = window.frame
         }
-        
+
         // Setup our content
         window.contentView = TerminalViewContainer(
             ghostty: self.ghostty,
             viewModel: self,
             delegate: self
         )
-        
+
         // Clear out our frame at this point, the fixup from above is complete.
         if let qtWindow = window as? QuickTerminalWindow {
             qtWindow.initialFrame = nil
@@ -234,7 +234,7 @@ class QuickTerminalController: BaseTerminalController {
         // Prevent recursive loops
         isHandlingResize = true
         defer { isHandlingResize = false }
-        
+
         switch position {
         case .top, .bottom, .center:
             // For centered positions (top, bottom, center), we need to recenter the window
@@ -369,7 +369,7 @@ class QuickTerminalController: BaseTerminalController {
             } else {
                 var config = Ghostty.SurfaceConfiguration()
                 config.environmentVariables["GHOSTTY_QUICK_TERMINAL"] = "1"
-                
+
                 let view = Ghostty.SurfaceView(ghostty_app, baseConfig: config)
                 surfaceTree = SplitTree(view: view)
                 focusedSurface = view
@@ -416,7 +416,7 @@ class QuickTerminalController: BaseTerminalController {
 
     private func animateWindowIn(window: NSWindow, from position: QuickTerminalPosition) {
         guard let screen = derivedConfig.quickTerminalScreen.screen else { return }
-        
+
         // Grab our last closed frame to use from the cache.
         let closedFrame = screenStateCache.frame(for: screen)
 

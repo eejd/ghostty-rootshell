@@ -763,7 +763,7 @@ extension Ghostty.Config {
 
         static let navigation = SplitPreserveZoom(rawValue: 1 << 0)
     }
-    
+
     enum MacDockDropBehavior: String {
         case new_tab = "new-tab"
         case new_window = "new-window"

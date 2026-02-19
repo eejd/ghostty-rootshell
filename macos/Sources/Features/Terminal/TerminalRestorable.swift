@@ -137,7 +137,7 @@ class TerminalWindowRestoration: NSObject, NSWindowRestoration {
                     break
                 }
             }
-            
+
             if let view = foundView {
                 c.focusedSurface = view
                 restoreFocus(to: view, inWindow: window)

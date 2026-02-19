@@ -32,7 +32,7 @@ extension Ghostty {
 
         // The hovered URL
         @Published var hoverUrl: String?
-        
+
         // The progress report (if any)
         @Published var progressReport: Action.ProgressReport?
 
@@ -42,7 +42,7 @@ extension Ghostty {
 
         /// True when the bell is active. This is set inactive on focus or event.
         @Published var bell: Bool = false
-        
+
         // The current search state. When non-nil, the search overlay should be shown.
         @Published var searchState: SearchState?
 
@@ -51,7 +51,7 @@ extension Ghostty {
 
         /// True when the surface is in readonly mode.
         @Published private(set) var readonly: Bool = false
-        
+
         /// True when the surface should show a highlight effect (e.g., when presented via goto_split).
         @Published private(set) var highlighted: Bool = false
 

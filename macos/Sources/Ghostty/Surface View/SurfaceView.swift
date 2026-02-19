@@ -49,7 +49,7 @@ extension Ghostty {
 
         // True if we're hovering over the left URL view, so we can show it on the right.
         @State private var isHoveringURLLeft: Bool = false
-        
+
         #if canImport(AppKit)
         // Observe SecureInput to detect when its enabled
         @ObservedObject private var secureInput = SecureInput.shared
@@ -103,7 +103,7 @@ extension Ghostty {
                     }
                 }
                 .ghosttySurfaceView(surfaceView)
-                
+
                 // Progress report
                 if let progressReport = surfaceView.progressReport, progressReport.state != .remove {
                     VStack(spacing: 0) {
@@ -114,7 +114,7 @@ extension Ghostty {
                     .allowsHitTesting(false)
                     .transition(.opacity)
                 }
-                
+
 #if canImport(AppKit)
                 // Readonly indicator badge
                 if surfaceView.readonly {
@@ -122,7 +122,7 @@ extension Ghostty {
                         surfaceView.toggleReadonly(nil)
                     }
                 }
-                
+
                 // Show key state indicator for active key tables and/or pending key sequences
                 KeyStateIndicator(
                     keyTables: surfaceView.keyTables,
@@ -404,9 +404,9 @@ extension Ghostty {
         @State private var dragOffset: CGSize = .zero
         @State private var barSize: CGSize = .zero
         @FocusState private var isSearchFieldFocused: Bool
-        
+
         private let padding: CGFloat = 8
-        
+
         var body: some View {
             GeometryReader { geo in
                 HStack(spacing: 4) {
@@ -460,7 +460,7 @@ extension Ghostty {
                         Image(systemName: "chevron.up")
                     }
                     .buttonStyle(SearchButtonStyle())
-                    
+
                     Button(action: {
                         guard let surface = surfaceView.surface else { return }
                         let action = "navigate_search:previous"
@@ -469,7 +469,7 @@ extension Ghostty {
                         Image(systemName: "chevron.down")
                     }
                     .buttonStyle(SearchButtonStyle())
-                    
+
                     Button(action: onClose) {
                         Image(systemName: "xmark")
                     }
@@ -529,7 +529,7 @@ extension Ghostty {
 
         enum Corner {
             case topLeft, topRight, bottomLeft, bottomRight
-            
+
             var alignment: Alignment {
                 switch self {
                 case .topLeft: return .topLeading
@@ -539,11 +539,11 @@ extension Ghostty {
                 }
             }
         }
-        
+
         private func centerPosition(for corner: Corner, in containerSize: CGSize, barSize: CGSize) -> CGPoint {
             let halfWidth = barSize.width / 2 + padding
             let halfHeight = barSize.height / 2 + padding
-            
+
             switch corner {
             case .topLeft:
                 return CGPoint(x: halfWidth, y: halfHeight)
@@ -555,21 +555,21 @@ extension Ghostty {
                 return CGPoint(x: containerSize.width - halfWidth, y: containerSize.height - halfHeight)
             }
         }
-        
+
         private func closestCorner(to point: CGPoint, in containerSize: CGSize) -> Corner {
             let midX = containerSize.width / 2
             let midY = containerSize.height / 2
-            
+
             if point.x < midX {
                 return point.y < midY ? .topLeft : .bottomLeft
             } else {
                 return point.y < midY ? .topRight : .bottomRight
             }
         }
-        
+
         struct SearchButtonStyle: ButtonStyle {
             @State private var isHovered = false
-            
+
             func makeBody(configuration: Configuration) -> some View {
                 configuration.label
                     .foregroundStyle(isHovered || configuration.isPressed ? .primary : .secondary)
@@ -584,7 +584,7 @@ extension Ghostty {
                     }
                     .backport.pointerStyle(.link)
             }
-            
+
             private func backgroundColor(isPressed: Bool) -> Color {
                 if isPressed {
                     return Color.primary.opacity(0.2)
@@ -647,13 +647,13 @@ extension Ghostty {
 
         /// Explicit command to set
         var command: String?
-        
+
         /// Environment variables to set for the terminal
         var environmentVariables: [String: String] = [:]
 
         /// Extra input to send as stdin
         var initialInput: String?
-        
+
         /// Wait after the command
         var waitAfterCommand: Bool = false
 
@@ -711,7 +711,7 @@ extension Ghostty {
 
             // Zero is our default value that means to inherit the font size.
             config.font_size = fontSize ?? 0
-            
+
             // Set wait after command
             config.wait_after_command = waitAfterCommand
 
@@ -764,24 +764,24 @@ extension Ghostty {
     struct KeyStateIndicator: View {
         let keyTables: [String]
         let keySequence: [KeyboardShortcut]
-        
+
         @State private var isShowingPopover = false
         @State private var position: Position = .bottom
         @State private var dragOffset: CGSize = .zero
         @State private var isDragging = false
-        
+
         private let padding: CGFloat = 8
-        
+
         enum Position {
             case top, bottom
-            
+
             var alignment: Alignment {
                 switch self {
                 case .top: return .top
                 case .bottom: return .bottom
                 }
             }
-            
+
             var popoverEdge: Edge {
                 switch self {
                 case .top: return .top
@@ -861,14 +861,14 @@ extension Ghostty {
                     Divider()
                         .frame(height: 14)
                 }
-                
+
                 // Key sequence indicator
                 if !keySequence.isEmpty {
                     HStack(alignment: .center, spacing: 4) {
                         ForEach(Array(keySequence.enumerated()), id: \.offset) { index, key in
                             KeyCap(key.description)
                         }
-                        
+
                         // Animated ellipsis to indicate waiting for next key
                         PendingIndicator(paused: isDragging)
                     }
@@ -898,11 +898,11 @@ extension Ghostty {
                                 .foregroundStyle(.secondary)
                         }
                     }
-                    
+
                     if !keyTables.isEmpty && !keySequence.isEmpty {
                         Divider()
                     }
-                    
+
                     if !keySequence.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
                             Label("Key Sequence", systemImage: "character.cursor.ibeam")
@@ -921,15 +921,15 @@ extension Ghostty {
                 isShowingPopover.toggle()
             }
         }
-        
+
         /// A small keycap-style view for displaying keyboard shortcuts
         struct KeyCap: View {
             let text: String
-            
+
             init(_ text: String) {
                 self.text = text
             }
-            
+
             var body: some View {
                 Text(verbatim: text)
                     .font(.system(size: 12, weight: .medium, design: .rounded))
@@ -946,7 +946,7 @@ extension Ghostty {
                     )
             }
         }
-        
+
         /// Animated dots to indicate waiting for the next key
         struct PendingIndicator: View {
             @State private var animationPhase: Double = 0
@@ -967,7 +967,7 @@ extension Ghostty {
                     }
                 }
             }
-            
+
             private func dotOpacity(for index: Int) -> Double {
                 let phase = animationPhase
                 let offset = Double(index) / 3.0
@@ -981,7 +981,7 @@ extension Ghostty {
     /// Visual overlay that shows a border around the edges when the bell rings with border feature enabled.
     struct BellBorderOverlay: View {
         let bell: Bool
-        
+
         var body: some View {
             Rectangle()
                 .strokeBorder(
@@ -998,7 +998,7 @@ extension Ghostty {
     /// Uses a soft, soothing highlight with a pulsing border effect.
     struct HighlightOverlay: View {
         let highlighted: Bool
-        
+
         @State private var borderPulse: Bool = false
 
         var body: some View {
@@ -1051,21 +1051,21 @@ extension Ghostty {
     }
 
     // MARK: Readonly Badge
-    
+
     /// A badge overlay that indicates a surface is in readonly mode.
     /// Positioned in the top-right corner and styled to be noticeable but unobtrusive.
     struct ReadonlyBadge: View {
         let onDisable: () -> Void
-        
+
         @State private var showingPopover = false
-        
+
         private let badgeColor = Color(hue: 0.08, saturation: 0.5, brightness: 0.8)
-        
+
         var body: some View {
             VStack {
                 HStack {
                     Spacer()
-                    
+
                     HStack(spacing: 5) {
                         Image(systemName: "eye.fill")
                             .font(.system(size: 12))
@@ -1085,13 +1085,13 @@ extension Ghostty {
                     }
                 }
                 .padding(8)
-                
+
                 Spacer()
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Read-only terminal")
         }
-        
+
         private var badgeBackground: some View {
             RoundedRectangle(cornerRadius: 6)
                 .fill(.regularMaterial)
@@ -1101,11 +1101,11 @@ extension Ghostty {
                 )
         }
     }
-    
+
     struct ReadonlyPopoverView: View {
         let onDisable: () -> Void
         @Binding var isPresented: Bool
-        
+
         var body: some View {
             VStack(alignment: .leading, spacing: 16) {
                 VStack(alignment: .leading, spacing: 8) {
@@ -1116,16 +1116,16 @@ extension Ghostty {
                         Text("Read-Only Mode")
                             .font(.system(size: 13, weight: .semibold))
                     }
-                    
+
                     Text("This terminal is in read-only mode. You can still view, select, and scroll through the content, but no input events will be sent to the running application.")
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                
+
                 HStack {
                     Spacer()
-                    
+
                     Button("Disable") {
                         onDisable()
                         isPresented = false

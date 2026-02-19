@@ -152,9 +152,9 @@ struct SplitView<L: View, R: View>: View {
             return CGPoint(x: size.width / 2, y: leftRect.size.height)
         }
     }
-    
+
     // MARK: Accessibility
-    
+
     private var splitViewLabel: String {
         switch direction {
         case .horizontal:
@@ -163,7 +163,7 @@ struct SplitView<L: View, R: View>: View {
             return "Vertical split view"
         }
     }
-    
+
     private var leftPaneLabel: String {
         switch direction {
         case .horizontal:
@@ -172,7 +172,7 @@ struct SplitView<L: View, R: View>: View {
             return "Top pane"
         }
     }
-    
+
     private var rightPaneLabel: String {
         switch direction {
         case .horizontal:

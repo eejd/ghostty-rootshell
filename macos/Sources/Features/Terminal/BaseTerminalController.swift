@@ -47,7 +47,7 @@ class BaseTerminalController: NSWindowController,
 
     /// This can be set to show/hide the command palette.
     @Published var commandPaletteIsShowing: Bool = false
-    
+
     /// Set if the terminal view should show the update overlay.
     @Published var updateOverlayIsVisible: Bool = false
 
@@ -423,7 +423,7 @@ class BaseTerminalController: NSWindowController,
     /// Goes to previous split unless we're the leftmost leaf, then goes to next.
     private func findNextFocusTargetAfterClosing(node: SplitTree<Ghostty.SurfaceView>.Node) -> Ghostty.SurfaceView? {
         guard let root = surfaceTree.root else { return nil }
-        
+
         // If we're the leftmost, then we move to the next surface after closing.
         // Otherwise, we move to the previous.
         if root.leftmostLeaf() == node.leftmostLeaf() {
@@ -432,7 +432,7 @@ class BaseTerminalController: NSWindowController,
             return surfaceTree.focusTarget(for: .previous, from: node)
         }
     }
-    
+
     /// Remove a node from the surface tree and move focus appropriately.
     ///
     /// This also updates the undo manager to support restoring this node.
@@ -470,13 +470,13 @@ class BaseTerminalController: NSWindowController,
                 Ghostty.moveFocus(to: newView, from: oldView)
             }
         }
-        
+
         // Setup our undo
         guard let undoManager else { return }
         if let undoAction {
             undoManager.setActionName(undoAction)
         }
-        
+
         undoManager.registerUndo(
             withTarget: self,
             expiresAfter: undoExpiration
@@ -487,7 +487,7 @@ class BaseTerminalController: NSWindowController,
                     Ghostty.moveFocus(to: oldView, from: target.focusedSurface)
                 }
             }
-            
+
             undoManager.registerUndo(
                 withTarget: target,
                 expiresAfter: target.undoExpiration
@@ -608,14 +608,14 @@ class BaseTerminalController: NSWindowController,
 
     @objc private func ghosttyDidEqualizeSplits(_ notification: Notification) {
         guard let target = notification.object as? Ghostty.SurfaceView else { return }
-        
+
         // Check if target surface is in current controller's tree
         guard surfaceTree.contains(target) else { return }
-        
+
         // Equalize the splits
         surfaceTree = surfaceTree.equalized()
     }
-    
+
     @objc private func ghosttyDidFocusSplit(_ notification: Notification) {
         // The target must be within our tree
         guard let target = notification.object as? Ghostty.SurfaceView else { return }
@@ -627,7 +627,7 @@ class BaseTerminalController: NSWindowController,
 
         // Find the node for the target surface
         guard let targetNode = surfaceTree.root?.node(view: target) else { return }
-        
+
         // Find the next surface to focus
         guard let nextSurface = surfaceTree.focusTarget(for: direction.toSplitTreeFocusDirection(), from: targetNode) else {
             return
@@ -648,7 +648,7 @@ class BaseTerminalController: NSWindowController,
             Ghostty.moveFocus(to: nextSurface, from: target)
         }
     }
-    
+
     @objc private func ghosttyDidToggleSplitZoom(_ notification: Notification) {
         // The target must be within our tree
         guard let target = notification.object as? Ghostty.SurfaceView else { return }
@@ -676,19 +676,19 @@ class BaseTerminalController: NSWindowController,
             Ghostty.moveFocus(to: target)
         }
     }
-    
+
     @objc private func ghosttyDidResizeSplit(_ notification: Notification) {
         // The target must be within our tree
         guard let target = notification.object as? Ghostty.SurfaceView else { return }
         guard let targetNode = surfaceTree.root?.node(view: target) else { return }
-        
+
         // Extract direction and amount from notification
         guard let directionAny = notification.userInfo?[Ghostty.Notification.ResizeSplitDirectionKey] else { return }
         guard let direction = directionAny as? Ghostty.SplitResizeDirection else { return }
-        
+
         guard let amountAny = notification.userInfo?[Ghostty.Notification.ResizeSplitAmountKey] else { return }
         guard let amount = amountAny as? UInt16 else { return }
-        
+
         // Convert Ghostty.SplitResizeDirection to SplitTree.Spatial.Direction
         let spatialDirection: SplitTree<Ghostty.SurfaceView>.Spatial.Direction
         switch direction {
@@ -697,10 +697,10 @@ class BaseTerminalController: NSWindowController,
         case .left: spatialDirection = .left
         case .right: spatialDirection = .right
         }
-        
+
         // Use viewBounds for the spatial calculation bounds
         let bounds = CGRect(origin: .zero, size: surfaceTree.viewBounds())
-        
+
         // Perform the resize using the new SplitTree resize method
         do {
             surfaceTree = try surfaceTree.resizing(node: targetNode, by: amount, in: spatialDirection, with: bounds)
@@ -715,7 +715,7 @@ class BaseTerminalController: NSWindowController,
 
         // Bring the window to front and focus the surface.
         window?.makeKeyAndOrderFront(nil)
-        
+
         // We use a small delay to ensure this runs after any UI cleanup
         // (e.g., command palette restoring focus to its original surface).
         Ghostty.moveFocus(to: target)
@@ -728,11 +728,11 @@ class BaseTerminalController: NSWindowController,
     @objc private func ghosttySurfaceDragEndedNoTarget(_ notification: Notification) {
         guard let target = notification.object as? Ghostty.SurfaceView else { return }
         guard let targetNode = surfaceTree.root?.node(view: target) else { return }
-        
+
         // If our tree isn't split, then we never create a new window, because
         // it is already a single split.
         guard surfaceTree.isSplit else { return }
-        
+
         // If we are removing our focused surface then we move it. We need to
         // keep track of our old one so undo sends focus back to the right place.
         let oldFocusedSurface = focusedSurface
@@ -745,14 +745,14 @@ class BaseTerminalController: NSWindowController,
 
         // Create a new tree with the dragged surface and open a new window
         let newTree = SplitTree<Ghostty.SurfaceView>(view: target)
-        
+
         // Treat our undo below as a full group.
         undoManager?.beginUndoGrouping()
         undoManager?.setActionName("Move Split")
         defer {
             undoManager?.endUndoGrouping()
         }
-        
+
         replaceSurfaceTree(removedTree, moveFocusFrom: oldFocusedSurface)
         _ = TerminalController.newWindow(
             ghostty,
@@ -782,7 +782,7 @@ class BaseTerminalController: NSWindowController,
         if NSApp.mainWindow == window {
             surfaces = surfaces.filter { $0 != focusedSurface }
         }
-        
+
         for surface in surfaces {
             surface.flagsChanged(with: event)
         }
@@ -816,7 +816,7 @@ class BaseTerminalController: NSWindowController,
             titleDidChange(to: "👻")
         }
     }
-    
+
     private func computeTitle(title: String, bell: Bool) -> String {
         var result = title
         if bell && ghostty.config.bellFeatures.contains(.title) {
@@ -833,17 +833,17 @@ class BaseTerminalController: NSWindowController,
 
     private func applyTitleToWindow() {
         guard let window else { return }
-        
+
         if let titleOverride {
             window.title = computeTitle(
                 title: titleOverride,
                 bell: focusedSurface?.bell ?? false)
             return
         }
-        
+
         window.title = lastComputedTitle
     }
-    
+
     func pwdDidChange(to: URL?) {
         guard let window else { return }
 
@@ -895,7 +895,7 @@ class BaseTerminalController: NSWindowController,
         case .left: .left
         case .right: .right
         }
-        
+
         // Check if source is in our tree
         if let sourceNode = surfaceTree.root?.node(view: source) {
             // Source is in our tree - same window move
@@ -907,7 +907,7 @@ class BaseTerminalController: NSWindowController,
                 Ghostty.logger.warning("failed to insert surface during drop: \(error)")
                 return
             }
-            
+
             replaceSurfaceTree(
                 newTree,
                 moveFocusTo: source,
@@ -915,7 +915,7 @@ class BaseTerminalController: NSWindowController,
                 undoAction: "Move Split")
             return
         }
-        
+
         // Source is not in our tree - search other windows
         var sourceController: BaseTerminalController?
         var sourceNode: SplitTree<Ghostty.SurfaceView>.Node?
@@ -928,12 +928,12 @@ class BaseTerminalController: NSWindowController,
                 break
             }
         }
-        
+
         guard let sourceController, let sourceNode else {
             Ghostty.logger.warning("source surface not found in any window during drop")
             return
         }
-        
+
         // Remove from source controller's tree and add it to our tree.
         // We do this first because if there is an error then we can
         // abort.
@@ -944,17 +944,17 @@ class BaseTerminalController: NSWindowController,
             Ghostty.logger.warning("failed to insert surface during cross-window drop: \(error)")
             return
         }
-        
+
         // Treat our undo below as a full group.
         undoManager?.beginUndoGrouping()
         undoManager?.setActionName("Move Split")
         defer {
             undoManager?.endUndoGrouping()
         }
-        
+
         // Remove the node from the source.
         sourceController.removeSurfaceNode(sourceNode)
-        
+
         // Add in the surface to our tree
         replaceSurfaceTree(
             newTree,
@@ -979,17 +979,17 @@ class BaseTerminalController: NSWindowController,
     func toggleBackgroundOpacity() {
         // Do nothing if config is already fully opaque
         guard ghostty.config.backgroundOpacity < 1 else { return }
-        
+
         // Do nothing if in fullscreen (transparency doesn't apply in fullscreen)
         guard let window, !window.styleMask.contains(.fullScreen) else { return }
 
         // Toggle between transparent and opaque
         isBackgroundOpaque.toggle()
-        
+
         // Update our appearance
         syncAppearance()
     }
-    
+
     /// Override this to resync any appearance related properties. This will be called automatically
     /// when certain window properties change that affect appearance. The list below should be updated
     /// as we add new things:
@@ -1051,7 +1051,7 @@ class BaseTerminalController: NSWindowController,
 
     func fullscreenDidChange() {
         guard let fullscreenStyle else { return }
-        
+
         // When we enter fullscreen, we want to show the update overlay so that it
         // is easily visible. For native fullscreen this is visible by showing the
         // menubar but we don't want to rely on that.
@@ -1060,7 +1060,7 @@ class BaseTerminalController: NSWindowController,
         } else {
             updateOverlayIsVisible = defaultUpdateOverlayVisibility()
         }
-        
+
         // Always resync our appearance
         syncAppearance()
     }
@@ -1145,26 +1145,26 @@ class BaseTerminalController: NSWindowController,
             fullscreenStyle = NativeFullscreen(window)
             fullscreenStyle?.delegate = self
         }
-        
+
         // Set our update overlay state
         updateOverlayIsVisible = defaultUpdateOverlayVisibility()
     }
-    
+
     func defaultUpdateOverlayVisibility() -> Bool {
         guard let window else { return true }
-        
+
         // No titlebar we always show the update overlay because it can't support
         // updates in the titlebar
         guard window.styleMask.contains(.titled) else {
             return true
         }
-        
+
         // If it's a non terminal window we can't trust it has an update accessory,
         // so we always want to show the overlay.
         guard let window = window as? TerminalWindow else {
             return true
         }
-        
+
         // Show the overlay if the window isn't.
         return !window.supportsUpdateAccessory
     }
@@ -1367,7 +1367,7 @@ class BaseTerminalController: NSWindowController,
     @IBAction func toggleCommandPalette(_ sender: Any?) {
         commandPaletteIsShowing.toggle()
     }
-    
+
     @IBAction func find(_ sender: Any) {
         focusedSurface?.find(sender)
     }
@@ -1383,11 +1383,11 @@ class BaseTerminalController: NSWindowController,
     @IBAction func findNext(_ sender: Any) {
         focusedSurface?.findNext(sender)
     }
-    
+
     @IBAction func findPrevious(_ sender: Any) {
         focusedSurface?.findNext(sender)
     }
-    
+
     @IBAction func findHide(_ sender: Any) {
         focusedSurface?.findHide(sender)
     }
@@ -1429,7 +1429,7 @@ extension BaseTerminalController: NSMenuItemValidation {
             return true
         }
     }
-	
+
     // MARK: - Surface Color Scheme
 
     /// Update the surface tree's color scheme only when it actually changes.

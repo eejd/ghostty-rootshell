@@ -33,7 +33,7 @@ class TerminalWindow: NSWindow {
 
     /// The configuration derived from the Ghostty config so we don't need to rely on references.
     private(set) var derivedConfig: DerivedConfig = .init()
-    
+
     /// Sets up our tab context menu
     private var tabMenuObserver: NSObjectProtocol?
 
@@ -543,7 +543,7 @@ class TerminalWindow: NSWindow {
             NotificationCenter.default.removeObserver(observer)
         }
     }
-    
+
     // MARK: Config
 
     struct DerivedConfig {
