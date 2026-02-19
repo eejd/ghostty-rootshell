@@ -64,7 +64,7 @@ enum QuickTerminalPosition: String {
 
     /// The initial point origin for this position.
     func initialOrigin(for window: NSWindow, on screen: NSScreen) -> CGPoint {
-        switch (self) {
+        switch self {
         case .top:
             return .init(
                 x: round(screen.visibleFrame.origin.x + (screen.visibleFrame.width - window.frame.width) / 2),
@@ -92,7 +92,7 @@ enum QuickTerminalPosition: String {
 
     /// The final point origin for this position.
     func finalOrigin(for window: NSWindow, on screen: NSScreen) -> CGPoint {
-        switch (self) {
+        switch self {
         case .top:
             return .init(
                 x: round(screen.visibleFrame.origin.x + (screen.visibleFrame.width - window.frame.width) / 2),
@@ -128,7 +128,7 @@ enum QuickTerminalPosition: String {
         // Depending on the orientation of the dock, we conflict if our quick terminal
         // would potentially "hit" the dock. In the future we should probably consider
         // the frame of the quick terminal.
-        return switch (orientation) {
+        return switch orientation {
         case .top: self == .top || self == .left || self == .right
         case .bottom: self == .bottom || self == .left || self == .right
         case .left: self == .top || self == .bottom

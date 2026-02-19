@@ -106,7 +106,7 @@ struct CommandPaletteView: View {
 
         VStack(alignment: .leading, spacing: 0) {
             CommandPaletteQuery(query: $query, isTextFieldFocused: _isTextFieldFocused) { event in
-                switch (event) {
+                switch event {
                 case .exit:
                     isPresented = false
 

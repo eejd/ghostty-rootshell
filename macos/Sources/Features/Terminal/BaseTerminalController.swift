@@ -281,7 +281,7 @@ class BaseTerminalController: NSWindowController,
     /// Subclasses should call super first.
     func surfaceTreeDidChange(from: SplitTree<Ghostty.SurfaceView>, to: SplitTree<Ghostty.SurfaceView>) {
         // If our surface tree becomes empty then we have no focused surface.
-        if (to.isEmpty) {
+        if to.isEmpty {
             focusedSurface = nil
         }
     }
@@ -596,7 +596,7 @@ class BaseTerminalController: NSWindowController,
         guard let directionAny = notification.userInfo?["direction"] else { return }
         guard let direction = directionAny as? ghostty_action_split_direction_e else { return }
         let splitDirection: SplitTree<Ghostty.SurfaceView>.NewDirection
-        switch (direction) {
+        switch direction {
         case GHOSTTY_SPLIT_DIRECTION_RIGHT: splitDirection = .right
         case GHOSTTY_SPLIT_DIRECTION_LEFT: splitDirection = .left
         case GHOSTTY_SPLIT_DIRECTION_DOWN: splitDirection = .down
@@ -820,7 +820,7 @@ class BaseTerminalController: NSWindowController,
     
     private func computeTitle(title: String, bell: Bool) -> String {
         var result = title
-        if (bell && ghostty.config.bellFeatures.contains(.title)) {
+        if bell && ghostty.config.bellFeatures.contains(.title) {
             result = "🔔 \(result)"
         }
 
@@ -966,7 +966,7 @@ class BaseTerminalController: NSWindowController,
     func performAction(_ action: String, on surfaceView: Ghostty.SurfaceView) {
         guard let surface = surfaceView.surface else { return }
         let len = action.utf8CString.count
-        if (len == 0) { return }
+        if len == 0 { return }
         _ = action.withCString { cString in
             ghostty_surface_binding_action(surface, cString, UInt(len - 1))
         }
@@ -1109,7 +1109,7 @@ class BaseTerminalController: NSWindowController,
             window?.endSheet(ccWindow)
         }
 
-        switch (request) {
+        switch request {
         case let .osc_52_write(pasteboard):
             guard case .confirm = action else { break }
             let pb = pasteboard ?? NSPasteboard.general
@@ -1117,7 +1117,7 @@ class BaseTerminalController: NSWindowController,
             pb.setString(cc.contents, forType: .string)
         case .osc_52_read, .paste:
             let str: String
-            switch (action) {
+            switch action {
             case .cancel:
                 str = ""
 

@@ -19,7 +19,7 @@ extension NSScreen {
     var hasDock: Bool {
         // If the dock autohides then we don't have a dock ever.
         if let dockAutohide = UserDefaults.standard.persistentDomain(forName: "com.apple.dock")?["autohide"] as? Bool {
-            if (dockAutohide) { return false }
+            if dockAutohide { return false }
         }
 
         // There is no public API to directly ask about dock visibility, so we have to figure it out
@@ -29,7 +29,7 @@ extension NSScreen {
         // which triggers showing the dock.
 
         // If our visible width is less than the frame we assume its the dock.
-        if (visibleFrame.width < frame.width) {
+        if visibleFrame.width < frame.width {
             return true
         }
 

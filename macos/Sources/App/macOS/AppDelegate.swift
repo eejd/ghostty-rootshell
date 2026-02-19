@@ -197,7 +197,7 @@ class AppDelegate: NSObject,
         applicationLaunchTime = ProcessInfo.processInfo.systemUptime
 
         // Check if secure input was enabled when we last quit.
-        if (UserDefaults.standard.bool(forKey: "SecureInput") != SecureInput.shared.enabled) {
+        if UserDefaults.standard.bool(forKey: "SecureInput") != SecureInput.shared.enabled {
             toggleSecureInput(self)
         }
 
@@ -280,7 +280,7 @@ class AppDelegate: NSObject,
             guard let appearance = change.newValue else { return }
             guard let app = self.ghostty.app else { return }
             let scheme: ghostty_color_scheme_e
-            if (appearance.isDark) {
+            if appearance.isDark {
                 scheme = GHOSTTY_COLOR_SCHEME_DARK
             } else {
                 scheme = GHOSTTY_COLOR_SCHEME_LIGHT
@@ -332,7 +332,7 @@ class AppDelegate: NSObject,
         self.setDockBadge(nil)
 
         // First launch stuff
-        if (!applicationHasBecomeActive) {
+        if !applicationHasBecomeActive {
             applicationHasBecomeActive = true
 
             // Let's launch our first window. We only do this if we have no other windows. It
@@ -353,7 +353,7 @@ class AppDelegate: NSObject,
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         let windows = NSApplication.shared.windows
-        if (windows.isEmpty) { return .terminateNow }
+        if windows.isEmpty { return .terminateNow }
         
         // If we've already accepted to install an update, then we don't need to
         // confirm quit. The user is already expecting the update to happen.
@@ -380,7 +380,7 @@ class AppDelegate: NSObject,
             guard let keyword = AEKeyword("why?") else { break why }
 
             if let why = event.attributeDescriptor(forKeyword: keyword) {
-                switch (why.typeCodeValue) {
+                switch why.typeCodeValue {
                 case kAEShutDown:
                     fallthrough
 
@@ -397,7 +397,7 @@ class AppDelegate: NSObject,
         }
 
         // If our app says we don't need to confirm, we can exit now.
-        if (!ghostty.needsConfirmQuit) { return .terminateNow }
+        if !ghostty.needsConfirmQuit { return .terminateNow }
 
         // We have some visible window. Show an app-wide modal to confirm quitting.
         let alert = NSAlert()
@@ -406,7 +406,7 @@ class AppDelegate: NSObject,
         alert.addButton(withTitle: "Close Ghostty")
         alert.addButton(withTitle: "Cancel")
         alert.alertStyle = .warning
-        switch (alert.runModal()) {
+        switch alert.runModal() {
         case .alertFirstButtonReturn:
             return .terminateNow
 
@@ -460,7 +460,7 @@ class AppDelegate: NSObject,
         // Initialize the surface config which will be used to create the tab or window for the opened file.
         var config = Ghostty.SurfaceConfiguration()
         
-        if (isDirectory.boolValue) {
+        if isDirectory.boolValue {
             // When opening a directory, check the configuration to decide
             // whether to open in a new tab or new window.
             config.workingDirectory = filename
@@ -498,7 +498,7 @@ class AppDelegate: NSObject,
             alert.addButton(withTitle: "Allow")
             alert.addButton(withTitle: "Cancel")
             alert.alertStyle = .warning
-            switch (alert.runModal()) {
+            switch alert.runModal() {
             case .alertFirstButtonReturn:
                 break
                 
@@ -746,7 +746,7 @@ class AppDelegate: NSObject,
         guard let ghostty = self.ghostty.app else { return event }
 
         // Build our event input and call ghostty
-        if (ghostty_app_key(ghostty, event.ghosttyKeyEvent(GHOSTTY_ACTION_PRESS))) {
+        if ghostty_app_key(ghostty, event.ghosttyKeyEvent(GHOSTTY_ACTION_PRESS)) {
             // The key was used so we want to stop it from going to our Mac app
             Ghostty.logger.debug("local key event handled event=\(event)")
             return nil
@@ -761,7 +761,7 @@ class AppDelegate: NSObject,
 
     @objc private func quickTerminalDidChangeVisibility(_ notification: Notification) {
         guard let quickController = notification.object as? QuickTerminalController else { return }
-        self.menuQuickTerminal?.state = if (quickController.visible) { .on } else { .off }
+        self.menuQuickTerminal?.state = if quickController.visible { .on } else { .off }
     }
 
     @objc private func ghosttyConfigDidChange(_ notification: Notification) {
@@ -777,11 +777,11 @@ class AppDelegate: NSObject,
     }
 
     @objc private func ghosttyBellDidRing(_ notification: Notification) {
-        if (ghostty.config.bellFeatures.contains(.system)) {
+        if ghostty.config.bellFeatures.contains(.system) {
             NSSound.beep()
         }
 
-        if (ghostty.config.bellFeatures.contains(.attention)) {
+        if ghostty.config.bellFeatures.contains(.attention) {
             // Bounce the dock icon if we're not focused.
             NSApp.requestUserAttention(.informationalRequest)
 
@@ -861,7 +861,7 @@ class AppDelegate: NSObject,
         // Depending on the "window-save-state" setting we have to set the NSQuitAlwaysKeepsWindows
         // configuration. This is the only way to carefully control whether macOS invokes the
         // state restoration system.
-        switch (config.windowSaveState) {
+        switch config.windowSaveState {
         case "never": UserDefaults.standard.setValue(false, forKey: "NSQuitAlwaysKeepsWindows")
         case "always": UserDefaults.standard.setValue(true, forKey: "NSQuitAlwaysKeepsWindows")
         case "default": fallthrough
@@ -900,7 +900,7 @@ class AppDelegate: NSObject,
         DispatchQueue.main.async { self.syncAppearance(config: config) }
 
         // Decide whether to hide/unhide app from dock and app switcher
-        switch (config.macosHidden) {
+        switch config.macosHidden {
         case .never:
             NSApp.setActivationPolicy(.regular)
 
@@ -911,16 +911,16 @@ class AppDelegate: NSObject,
         // If we have configuration errors, we need to show them.
         let c = ConfigurationErrorsController.sharedInstance
         c.errors = config.errors
-        if (c.errors.count > 0) {
-            if (c.window == nil || !c.window!.isVisible) {
+        if c.errors.count > 0 {
+            if c.window == nil || !c.window!.isVisible {
                 c.showWindow(self)
             }
         }
 
         // We need to handle our global event tap depending on if there are global
         // events that we care about in Ghostty.
-        if (ghostty_app_has_global_keybinds(ghostty.app!)) {
-            if (timeSinceLaunch > 5) {
+        if ghostty_app_has_global_keybinds(ghostty.app!) {
+            if timeSinceLaunch > 5 {
                 // If the process has been running for awhile we enable right away
                 // because no windows are likely to pop up.
                 GlobalEventTap.shared.enable()
@@ -952,7 +952,7 @@ class AppDelegate: NSObject,
         var appIcon: NSImage?
         var appIconName: String? = config.macosIcon.rawValue
 
-        switch (config.macosIcon) {
+        switch config.macosIcon {
         case let icon where icon.assetName != nil:
             appIcon = NSImage(named: icon.assetName!)!
 
@@ -1108,7 +1108,7 @@ class AppDelegate: NSObject,
 
     func setSecureInput(_ mode: Ghostty.SetSecureInput) {
         let input = SecureInput.shared
-        switch (mode) {
+        switch mode {
         case .on:
             input.global = true
 
@@ -1118,7 +1118,7 @@ class AppDelegate: NSObject,
         case .toggle:
             input.global.toggle()
         }
-        self.menuSecureInput?.state = if (input.global) { .on } else { .off }
+        self.menuSecureInput?.state = if input.global { .on } else { .off }
         UserDefaults.standard.set(input.global, forKey: "SecureInput")
     }
 
@@ -1288,7 +1288,7 @@ extension AppDelegate {
     @IBAction func useAsDefault(_ sender: NSMenuItem) {
         let ud = UserDefaults.standard
         let key = TerminalWindow.defaultLevelKey
-        if (menuFloatOnTop?.state == .on) {
+        if menuFloatOnTop?.state == .on {
             ud.set(NSWindow.Level.floating, forKey: key)
         } else {
             ud.removeObject(forKey: key)

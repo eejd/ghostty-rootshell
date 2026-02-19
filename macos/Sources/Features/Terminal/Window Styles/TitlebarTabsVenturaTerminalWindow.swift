@@ -159,7 +159,7 @@ class TitlebarTabsVenturaTerminalWindow: TerminalWindow {
             titlebarColor = derivedConfig.backgroundColor.withAlphaComponent(derivedConfig.backgroundOpacity)
         }
 
-        if (isOpaque || themeChanged) {
+        if isOpaque || themeChanged {
             // If there is transparency, calling this will make the titlebar opaque
             // so we only call this if we are opaque.
             updateTabBar()
@@ -359,7 +359,7 @@ class TitlebarTabsVenturaTerminalWindow: TerminalWindow {
     override func addTitlebarAccessoryViewController(_ childViewController: NSTitlebarAccessoryViewController) {
         let isTabBar = self.titlebarTabs && isTabBar(childViewController)
 
-        if (isTabBar) {
+        if isTabBar {
             // Ensure it has the right layoutAttribute to force it next to our titlebar
             childViewController.layoutAttribute = .right
 
@@ -374,7 +374,7 @@ class TitlebarTabsVenturaTerminalWindow: TerminalWindow {
 
         super.addTitlebarAccessoryViewController(childViewController)
 
-        if (isTabBar) {
+        if isTabBar {
             pushTabsToTitlebar(childViewController)
         }
     }
@@ -382,7 +382,7 @@ class TitlebarTabsVenturaTerminalWindow: TerminalWindow {
     override func removeTitlebarAccessoryViewController(at index: Int) {
         let isTabBar = titlebarAccessoryViewControllers[index].identifier == Self.tabBarIdentifier
         super.removeTitlebarAccessoryViewController(at: index)
-        if (isTabBar) {
+        if isTabBar {
             resetCustomTabBarViews()
         }
     }
@@ -403,7 +403,7 @@ class TitlebarTabsVenturaTerminalWindow: TerminalWindow {
 
     private func pushTabsToTitlebar(_ tabBarController: NSTitlebarAccessoryViewController) {
         // We need a toolbar as a target for our titlebar tabs.
-        if (toolbar == nil) {
+        if toolbar == nil {
             generateToolbar()
         }
 
@@ -509,7 +509,7 @@ class TitlebarTabsVenturaTerminalWindow: TerminalWindow {
 fileprivate class WindowDragView: NSView {
     override public func mouseDown(with event: NSEvent) {
         // Drag the window for single left clicks, double clicks should bypass the drag handle.
-        if (event.type == .leftMouseDown && event.clickCount == 1) {
+        if event.type == .leftMouseDown && event.clickCount == 1 {
             window?.performDrag(with: event)
             NSCursor.closedHand.set()
         } else {

@@ -90,7 +90,7 @@ struct SplitView<L: View, R: View>: View {
     private func dragGesture(_ size: CGSize, splitterPoint: CGPoint) -> some Gesture {
         return DragGesture()
             .onChanged { gesture in
-                switch (direction) {
+                switch direction {
                 case .horizontal:
                     let new = min(max(minSize, gesture.location.x), size.width - minSize)
                     split = new / size.width
@@ -106,7 +106,7 @@ struct SplitView<L: View, R: View>: View {
     private func leftRect(for size: CGSize) -> CGRect {
         // Initially the rect is the full size
         var result = CGRect(x: 0, y: 0, width: size.width, height: size.height)
-        switch (direction) {
+        switch direction {
         case .horizontal:
             result.size.width = result.size.width * split
             result.size.width -= splitterVisibleSize / 2
@@ -125,7 +125,7 @@ struct SplitView<L: View, R: View>: View {
     private func rightRect(for size: CGSize, leftRect: CGRect) -> CGRect {
         // Initially the rect is the full size
         var result = CGRect(x: 0, y: 0, width: size.width, height: size.height)
-        switch (direction) {
+        switch direction {
         case .horizontal:
             // For horizontal layouts we offset the starting X by the left rect
             // and make the width fit the remaining space.
@@ -144,7 +144,7 @@ struct SplitView<L: View, R: View>: View {
 
     /// Calculates the point at which the splitter should be rendered.
     private func splitterPoint(for size: CGSize, leftRect: CGRect) -> CGPoint {
-        switch (direction) {
+        switch direction {
         case .horizontal:
             return CGPoint(x: leftRect.size.width, y: size.height / 2)
 

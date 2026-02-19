@@ -33,7 +33,7 @@ class GlobalEventTap {
     // If enabling fails due to permissions, this will start a timer to retry since
     // accessibility permissions take affect immediately.
     func enable() {
-        if (eventTap != nil) {
+        if eventTap != nil {
             // Already enabled
             return
         }
@@ -44,7 +44,7 @@ class GlobalEventTap {
         }
 
         // Try to enable the event tap immediately. If this succeeds then we're done!
-        if (tryEnable()) {
+        if tryEnable() {
             return
         }
 
@@ -142,7 +142,7 @@ fileprivate func cgEventFlagsChangedHandler(
 
     // Build our event input and call ghostty
     let key_ev = event.ghosttyKeyEvent(GHOSTTY_ACTION_PRESS)
-    if (ghostty_app_key(ghostty, key_ev)) {
+    if ghostty_app_key(ghostty, key_ev) {
         GlobalEventTap.logger.info("global key event handled event=\(event)")
         return nil
     }

@@ -12,7 +12,7 @@ class ConfigurationErrorsController: NSWindowController, NSWindowDelegate, Confi
     /// The data model for this view. Update this directly and the associated view will be updated, too.
     @Published var errors: [String] = [] {
         didSet {
-            if (errors.count == 0) {
+            if errors.count == 0 {
                 self.window?.performClose(nil)
             }
         }

@@ -6,7 +6,7 @@ enum QuickTerminalScreen {
     case menuBar
 
     init?(fromGhosttyConfig string: String) {
-        switch (string) {
+        switch string {
         case "main":
             self = .main
 
@@ -22,7 +22,7 @@ enum QuickTerminalScreen {
     }
 
     var screen: NSScreen? {
-        switch (self) {
+        switch self {
         case .main:
             return NSScreen.main
 

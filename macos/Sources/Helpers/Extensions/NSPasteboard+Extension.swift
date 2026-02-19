@@ -50,7 +50,7 @@ extension NSPasteboard {
 
     /// The pasteboard for the Ghostty enum type.
     static func ghostty(_ clipboard: ghostty_clipboard_e) -> NSPasteboard? {
-        switch (clipboard) {
+        switch clipboard {
         case GHOSTTY_CLIPBOARD_STANDARD:
             return Self.general
 

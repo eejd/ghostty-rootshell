@@ -52,12 +52,12 @@ fileprivate struct TerminalSplitSubtreeView: View {
     let action: (TerminalSplitOperation) -> Void
 
     var body: some View {
-        switch (node) {
+        switch node {
         case .leaf(let leafView):
             TerminalSplitLeaf(surfaceView: leafView, isSplit: !isRoot, action: action)
 
         case .split(let split):
-            let splitViewDirection: SplitViewDirection = switch (split.direction) {
+            let splitViewDirection: SplitViewDirection = switch split.direction {
             case .horizontal: .horizontal
             case .vertical: .vertical
             }

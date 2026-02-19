@@ -33,7 +33,7 @@ class ClipboardConfirmationController: NSWindowController {
     override func windowDidLoad() {
         guard let window = window else { return }
 
-        switch (request) {
+        switch request {
         case .paste:
             window.title = "Warning: Potentially Unsafe Paste"
         case .osc_52_read, .osc_52_write:

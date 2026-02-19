@@ -316,7 +316,7 @@ class QuickTerminalController: BaseTerminalController {
     // MARK: Methods
 
     func toggle() {
-        if (visible) {
+        if visible {
             animateOut()
         } else {
             animateIn()
@@ -441,7 +441,7 @@ class QuickTerminalController: BaseTerminalController {
         // If our dock position would conflict with our target location then
         // we autohide the dock.
         if position.conflictsWithDock(on: screen) {
-            if (hiddenDock == nil) {
+            if hiddenDock == nil {
                 hiddenDock = .init()
             }
 
@@ -675,10 +675,10 @@ class QuickTerminalController: BaseTerminalController {
         // We ignore the configured fullscreen style and always use non-native
         // because the way the quick terminal works doesn't support native.
         let mode: FullscreenMode
-        if (NSApp.isFrontmost) {
+        if NSApp.isFrontmost {
             // If we're frontmost and we have a notch then we keep padding
             // so all lines of the terminal are visible.
-            if (window?.screen?.hasNotch ?? false) {
+            if window?.screen?.hasNotch ?? false {
                 mode = .nonNativePaddedNotch
             } else {
                 mode = .nonNative

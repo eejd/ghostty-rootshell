@@ -112,7 +112,7 @@ class TerminalWindow: NSWindow {
         }
 
         // If window decorations are disabled, remove our title
-        if (!config.windowDecorations) { styleMask.remove(.titled) }
+        if !config.windowDecorations { styleMask.remove(.titled) }
 
         // Set our window positioning to coordinates if config value exists, otherwise
         // fallback to original centering behavior
@@ -510,7 +510,7 @@ class TerminalWindow: NSWindow {
     private func setInitialWindowPosition(x: Int16?, y: Int16?) {
         // If we don't have an X/Y then we try to use the previously saved window pos.
         guard x != nil, y != nil else {
-            if (!LastWindowPosition.shared.restore(self)) {
+            if !LastWindowPosition.shared.restore(self) {
                 center()
             }
 

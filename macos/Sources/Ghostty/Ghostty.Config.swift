@@ -427,7 +427,7 @@ extension Ghostty {
         var backgroundColor: Color {
             var color: ghostty_config_color_s = .init();
             let bg_key = "background"
-            if (!ghostty_config_get(config, &color, bg_key, UInt(bg_key.lengthOfBytes(using: .utf8)))) {
+            if !ghostty_config_get(config, &color, bg_key, UInt(bg_key.lengthOfBytes(using: .utf8))) {
 #if os(macOS)
                 return Color(NSColor.windowBackgroundColor)
 #elseif os(iOS)
@@ -473,7 +473,7 @@ extension Ghostty {
 
             var color: ghostty_config_color_s = .init();
             let key = "unfocused-split-fill"
-            if (!ghostty_config_get(config, &color, key, UInt(key.lengthOfBytes(using: .utf8)))) {
+            if !ghostty_config_get(config, &color, key, UInt(key.lengthOfBytes(using: .utf8))) {
                 let bg_key = "background"
                 _ = ghostty_config_get(config, &color, bg_key, UInt(bg_key.lengthOfBytes(using: .utf8)));
             }
@@ -494,7 +494,7 @@ extension Ghostty {
 
             var color: ghostty_config_color_s = .init();
             let key = "split-divider-color"
-            if (!ghostty_config_get(config, &color, key, UInt(key.lengthOfBytes(using: .utf8)))) {
+            if !ghostty_config_get(config, &color, key, UInt(key.lengthOfBytes(using: .utf8))) {
                 return Color(newColor)
             }
 
@@ -801,28 +801,28 @@ extension Ghostty.Config {
         case bottom_right = "bottom-right"
 
         func top() -> Bool {
-            switch (self) {
+            switch self {
             case .top_left, .top_center, .top_right: return true;
             default: return false;
             }
         }
 
         func bottom() -> Bool {
-            switch (self) {
+            switch self {
             case .bottom_left, .bottom_center, .bottom_right: return true;
             default: return false;
             }
         }
 
         func left() -> Bool {
-            switch (self) {
+            switch self {
             case .top_left, .bottom_left: return true;
             default: return false;
             }
         }
 
         func right() -> Bool {
-            switch (self) {
+            switch self {
             case .top_right, .bottom_right: return true;
             default: return false;
             }

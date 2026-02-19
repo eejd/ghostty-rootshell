@@ -98,7 +98,7 @@ extension Ghostty {
             ghostty_surface_set_focus(surface, focused)
 
             // On macOS 13+ we can store our continuous clock...
-            if (focused) {
+            if focused {
                 focusInstant = ContinuousClock.now
             }
         }

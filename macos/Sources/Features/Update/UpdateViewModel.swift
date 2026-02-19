@@ -192,7 +192,7 @@ enum UpdateState: Equatable {
     
     /// This is true if we're in a state that can be force installed. 
     var isInstallable: Bool {
-        switch (self) {
+        switch self {
         case .checking,
                 .updateAvailable,
                 .downloading,
@@ -339,7 +339,7 @@ enum UpdateState: Equatable {
         }
         
         var label: String {
-            switch (self) {
+            switch self {
             case .commit: return "View GitHub Commit"
             case .compareTip: return "Changes Since This Tip Release"
             case .tagged: return "View Release Notes"

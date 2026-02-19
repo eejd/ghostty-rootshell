@@ -160,7 +160,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         }
         
         // If our surface tree is now nil then we close our window.
-        if (to.isEmpty) {
+        if to.isEmpty {
             self.window?.close()
         }
     }
@@ -253,7 +253,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         DispatchQueue.main.async {
             // Only cascade if we aren't fullscreen.
             if let window = c.window {
-                if (!window.styleMask.contains(.fullScreen)) {
+                if !window.styleMask.contains(.fullScreen) {
                     Self.lastCascadePoint = window.cascadeTopLeft(from: Self.lastCascadePoint)
                 }
             }
@@ -390,7 +390,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
 
         // If the parent is miniaturized, then macOS exhibits really strange behaviors
         // so we have to bring it back out.
-        if (parent.isMiniaturized) { parent.deminiaturize(self) }
+        if parent.isMiniaturized { parent.deminiaturize(self) }
 
         // If our parent tab group already has this window, macOS added it and
         // we need to remove it so we can set the correct order in the next line.
@@ -405,7 +405,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         }
 
         // If we don't allow tabs then we create a new window instead.
-        if (window.tabbingMode != .disallowed) {
+        if window.tabbingMode != .disallowed {
             // Add the window to the tab group and show it.
             switch ghostty.config.windowNewTabPosition {
             case "end":
@@ -491,7 +491,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         ] as? Ghostty.Config else { return }
 
         // If this is an app-level config update then we update some things.
-        if (notification.object == nil) {
+        if notification.object == nil {
             // Update our derived config
             self.derivedConfig = DerivedConfig(config)
 
@@ -907,7 +907,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         alert.addButton(withTitle: "Cancel")
         alert.alertStyle = .warning
         alert.beginSheetModal(for: confirmWindow, completionHandler: { response in
-            if (response == .alertFirstButtonReturn) {
+            if response == .alertFirstButtonReturn {
                 // This is important so that we avoid losing focus when Stage
                 // Manager is used (#8336)
                 alert.window.orderOut(nil)
@@ -1013,7 +1013,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
 
         // Setting all three of these is required for restoration to work.
         window.isRestorable = restorable
-        if (restorable) {
+        if restorable {
             window.restorationClass = TerminalWindowRestoration.self
             window.identifier = .init(String(describing: TerminalWindowRestoration.self))
         }
@@ -1035,7 +1035,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
 
         // If we have a default size, we want to apply it.
         if let defaultSize {
-            switch (defaultSize) {
+            switch defaultSize {
             case .frame:
                 // Frames can be applied immediately
                 defaultSize.apply(to: window)
@@ -1071,7 +1071,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         // We don't run this logic in fullscreen because in fullscreen this will end up
         // removing the window and putting it into its own dedicated fullscreen, which is not
         // the expected or desired behavior of anyone I've found.
-        if (!window.styleMask.contains(.fullScreen)) {
+        if !window.styleMask.contains(.fullScreen) {
             // If we have more than 1 window in our tab group we know we're a new window.
             // Since Ghostty manages tabbing manually this will never be more than one
             // at this point in the AppKit lifecycle (we add to the group after this).
@@ -1101,7 +1101,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
     override func windowShouldClose(_ sender: NSWindow) -> Bool {
         tabGroupCloseCoordinator.windowShouldClose(sender) { [weak self] scope in
             guard let self else { return }
-            switch (scope) {
+            switch scope {
             case .tab: closeTab(nil)
             case .window:
                 guard self.window?.isFirstWindowInTabGroup ?? false else { return }
@@ -1430,23 +1430,23 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         let finalIndex: Int
 
         // An index that is invalid is used to signal some special values.
-        if (tabIndex <= 0) {
+        if tabIndex <= 0 {
             guard let selectedWindow = tabGroup.selectedWindow else { return }
             guard let selectedIndex = tabbedWindows.firstIndex(where: { $0 == selectedWindow }) else { return }
 
-            if (tabIndex == GHOSTTY_GOTO_TAB_PREVIOUS.rawValue) {
-                if (selectedIndex == 0) {
+            if tabIndex == GHOSTTY_GOTO_TAB_PREVIOUS.rawValue {
+                if selectedIndex == 0 {
                     finalIndex = tabbedWindows.count - 1
                 } else {
                     finalIndex = selectedIndex - 1
                 }
-            } else if (tabIndex == GHOSTTY_GOTO_TAB_NEXT.rawValue) {
-                if (selectedIndex == tabbedWindows.count - 1) {
+            } else if tabIndex == GHOSTTY_GOTO_TAB_NEXT.rawValue {
+                if selectedIndex == tabbedWindows.count - 1 {
                     finalIndex = 0
                 } else {
                     finalIndex = selectedIndex + 1
                 }
-            } else if (tabIndex == GHOSTTY_GOTO_TAB_LAST.rawValue) {
+            } else if tabIndex == GHOSTTY_GOTO_TAB_LAST.rawValue {
                 finalIndex = tabbedWindows.count - 1
             } else {
                 return

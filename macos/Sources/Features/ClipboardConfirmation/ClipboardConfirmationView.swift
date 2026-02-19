@@ -74,7 +74,7 @@ struct ClipboardConfirmationView: View {
             // If we didn't unhide anything, we just send an unhide to be safe.
             // I don't think the count can go negative on NSCursor so this handles
             // scenarios cursor is hidden outside of our own NSCursor usage.
-            if (cursorHiddenCount == 0) {
+            if cursorHiddenCount == 0 {
                 _ = Cursor.unhide()
             }
         }

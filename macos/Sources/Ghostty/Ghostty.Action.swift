@@ -18,7 +18,7 @@ extension Ghostty.Action {
         }
 
         init(c: ghostty_action_color_change_s) {
-            switch (c.kind) {
+            switch c.kind {
             case GHOSTTY_ACTION_COLOR_KIND_FOREGROUND:
                 self.kind = .foreground
             case GHOSTTY_ACTION_COLOR_KIND_BACKGROUND:

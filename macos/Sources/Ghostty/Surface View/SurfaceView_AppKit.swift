@@ -151,7 +151,7 @@ extension Ghostty {
                 // We need to update our state within the SecureInput manager.
                 let input = SecureInput.shared
                 let id = ObjectIdentifier(self)
-                if (passwordInput) {
+                if passwordInput {
                     input.setScoped(id, focused: focused)
                 } else {
                     input.removeScoped(id)
@@ -183,7 +183,7 @@ extension Ghostty {
         // True if the inspector should be visible
         @Published var inspectorVisible: Bool = false {
             didSet {
-                if (oldValue && !inspectorVisible) {
+                if oldValue && !inspectorVisible {
                     guard let surface = self.surface else { return }
                     ghostty_inspector_free(surface)
                 }
@@ -431,11 +431,11 @@ extension Ghostty {
             ghostty_surface_set_focus(surface, focused)
 
             // Update our secure input state if we are a password input
-            if (passwordInput) {
+            if passwordInput {
                 SecureInput.shared.setScoped(ObjectIdentifier(self), focused: focused)
             }
 
-            if (focused) {
+            if focused {
                 // On macOS 13+ we can store our continuous clock...
                 focusInstant = ContinuousClock.now
 
@@ -480,7 +480,7 @@ extension Ghostty {
         }
 
         func setCursorShape(_ shape: ghostty_action_mouse_shape_e) {
-            switch (shape) {
+            switch shape {
             case GHOSTTY_MOUSE_SHAPE_DEFAULT:
                 pointerStyle = .default
 
@@ -656,7 +656,7 @@ extension Ghostty {
         private func localEventKeyUp(_ event: NSEvent) -> NSEvent? {
             // We only care about events with "command" because all others will
             // trigger the normal responder chain.
-            if (!event.modifierFlags.contains(.command)) { return event }
+            if !event.modifierFlags.contains(.command) { return event }
 
             // Command keyUp events are never sent to the normal responder chain
             // so we send them here.
@@ -722,7 +722,7 @@ extension Ghostty {
                 SwiftUI.Notification.Name.GhosttyColorChangeKey
             ] as? Ghostty.Action.ColorChange else { return }
 
-            switch (change.kind) {
+            switch change.kind {
             case .background:
                 DispatchQueue.main.async { [weak self] in
                     self?.backgroundColor = change.color
@@ -767,7 +767,7 @@ extension Ghostty {
 
         override func becomeFirstResponder() -> Bool {
             let result = super.becomeFirstResponder()
-            if (result) { focusDidChange(true) }
+            if result { focusDidChange(true) }
             return result
         }
 
@@ -776,7 +776,7 @@ extension Ghostty {
 
             // We sometimes call this manually (see SplitView) as a way to force us to
             // yield our focus state.
-            if (result) { focusDidChange(false) }
+            if result { focusDidChange(false) }
 
             return result
         }
@@ -878,12 +878,12 @@ extension Ghostty {
             guard let surface = self.surface else { return super.rightMouseDown(with: event) }
 
             let mods = Ghostty.ghosttyMods(event.modifierFlags)
-            if (ghostty_surface_mouse_button(
+            if ghostty_surface_mouse_button(
                 surface,
                 GHOSTTY_MOUSE_PRESS,
                 GHOSTTY_MOUSE_RIGHT,
                 mods
-            )) {
+            ) {
                 // Consumed
                 return
             }
@@ -896,12 +896,12 @@ extension Ghostty {
             guard let surface = self.surface else { return super.rightMouseUp(with: event) }
 
             let mods = Ghostty.ghosttyMods(event.modifierFlags)
-            if (ghostty_surface_mouse_button(
+            if ghostty_surface_mouse_button(
                 surface,
                 GHOSTTY_MOUSE_RELEASE,
                 GHOSTTY_MOUSE_RIGHT,
                 mods
-            )) {
+            ) {
                 // Handled
                 return
             }
@@ -963,9 +963,9 @@ extension Ghostty {
             if let window,
                let controller = window.windowController as? BaseTerminalController,
                !controller.commandPaletteIsShowing,
-               (window.isKeyWindow &&
+               window.isKeyWindow &&
                     !self.focused &&
-                    controller.focusFollowsMouse)
+                    controller.focusFollowsMouse
             {
                 Ghostty.moveFocus(to: self)
             }
@@ -1048,7 +1048,7 @@ extension Ghostty {
             // for exact states and set them.
             var translationMods = event.modifierFlags
             for flag in [NSEvent.ModifierFlags.shift, .control, .option, .command] {
-                if (translationModsGhostty.contains(flag)) {
+                if translationModsGhostty.contains(flag) {
                     translationMods.insert(flag)
                 } else {
                     translationMods.remove(flag)
@@ -1061,7 +1061,7 @@ extension Ghostty {
             // this keeps things like Korean input working. There must be some object
             // equality happening in AppKit somewhere because this is required.
             let translationEvent: NSEvent
-            if (translationMods == event.modifierFlags) {
+            if translationMods == event.modifierFlags {
                 translationEvent = event
             } else {
                 translationEvent = NSEvent.keyEvent(
@@ -1093,7 +1093,7 @@ extension Ghostty {
             // We need to know the keyboard layout before below because some keyboard
             // input events will change our keyboard layout and we don't want those
             // going to the terminal.
-            let keyboardIdBefore: String? = if (!markedTextBefore) {
+            let keyboardIdBefore: String? = if !markedTextBefore {
                 KeyboardLayout.id
             } else {
                 nil
@@ -1108,7 +1108,7 @@ extension Ghostty {
 
             // If our keyboard changed from this we just assume an input method
             // grabbed it and do nothing.
-            if (!markedTextBefore && keyboardIdBefore != KeyboardLayout.id) {
+            if !markedTextBefore && keyboardIdBefore != KeyboardLayout.id {
                 return
             }
 
@@ -1192,7 +1192,7 @@ extension Ghostty {
             // Besides C-/, its important we don't process key equivalents if unfocused
             // because there are other event listeners for that (i.e. AppDelegate's
             // local event handler).
-            if (!focused) {
+            if !focused {
                 return false
             }
             
@@ -1227,11 +1227,11 @@ extension Ghostty {
             }
 
             let equivalent: String
-            switch (event.charactersIgnoringModifiers) {
+            switch event.charactersIgnoringModifiers {
             case "\r":
                 // Pass C-<return> through verbatim
                 // (prevent the default context menu equivalent)
-                if (!event.modifierFlags.contains(.control)) {
+                if !event.modifierFlags.contains(.control) {
                     return false
                 }
 
@@ -1240,8 +1240,8 @@ extension Ghostty {
             case "/":
                 // Treat C-/ as C-_. We do this because C-/ makes macOS make a beep
                 // sound and we don't like the beep sound.
-                if (!event.modifierFlags.contains(.control) ||
-                    !event.modifierFlags.isDisjoint(with: [.shift, .command, .option])) {
+                if !event.modifierFlags.contains(.control) ||
+                    !event.modifierFlags.isDisjoint(with: [.shift, .command, .option]) {
                     return false
                 }
 
@@ -1265,8 +1265,8 @@ extension Ghostty {
 
                 // Ignore all other non-command events. This lets the event continue
                 // through the AppKit event systems.
-                if (!event.modifierFlags.contains(.command) &&
-                    !event.modifierFlags.contains(.control)) {
+                if !event.modifierFlags.contains(.command) &&
+                    !event.modifierFlags.contains(.control) {
                     // Reset since we got a non-command event.
                     lastPerformKeyEvent = nil
                     return false
@@ -1305,7 +1305,7 @@ extension Ghostty {
 
         override func flagsChanged(with event: NSEvent) {
             let mod: UInt32;
-            switch (event.keyCode) {
+            switch event.keyCode {
             case 0x39: mod = GHOSTTY_MODS_CAPS.rawValue
             case 0x38, 0x3C: mod = GHOSTTY_MODS_SHIFT.rawValue
             case 0x3B, 0x3E: mod = GHOSTTY_MODS_CTRL.rawValue
@@ -1323,13 +1323,13 @@ extension Ghostty {
 
             // If the key that pressed this is active, its a press, else release.
             var action = GHOSTTY_ACTION_RELEASE
-            if (mods.rawValue & mod != 0) {
+            if mods.rawValue & mod != 0 {
                 // If the key is pressed, its slightly more complicated, because we
                 // want to check if the pressed modifier is the correct side. If the
                 // correct side is pressed then its a press event otherwise its a release
                 // event with the opposite modifier still held.
                 let sidePressed: Bool
-                switch (event.keyCode) {
+                switch event.keyCode {
                 case 0x3C:
                     sidePressed = event.modifierFlags.rawValue & UInt(NX_DEVICERSHIFTKEYMASK) != 0;
                 case 0x3E:
@@ -1342,7 +1342,7 @@ extension Ghostty {
                     sidePressed = true
                 }
 
-                if (sidePressed) {
+                if sidePressed {
                     action = GHOSTTY_ACTION_PRESS
                 }
             }
@@ -1483,7 +1483,7 @@ extension Ghostty {
         @IBAction func copy(_ sender: Any?) {
             guard let surface = self.surface else { return }
             let action = "copy_to_clipboard"
-            if (!ghostty_surface_binding_action(surface, action, UInt(action.lengthOfBytes(using: .utf8)))) {
+            if !ghostty_surface_binding_action(surface, action, UInt(action.lengthOfBytes(using: .utf8))) {
                 AppDelegate.logger.warning("action failed action=\(action)")
             }
         }
@@ -1491,7 +1491,7 @@ extension Ghostty {
         @IBAction func paste(_ sender: Any?) {
             guard let surface = self.surface else { return }
             let action = "paste_from_clipboard"
-            if (!ghostty_surface_binding_action(surface, action, UInt(action.lengthOfBytes(using: .utf8)))) {
+            if !ghostty_surface_binding_action(surface, action, UInt(action.lengthOfBytes(using: .utf8))) {
                 AppDelegate.logger.warning("action failed action=\(action)")
             }
         }
@@ -1500,7 +1500,7 @@ extension Ghostty {
         @IBAction func pasteAsPlainText(_ sender: Any?) {
             guard let surface = self.surface else { return }
             let action = "paste_from_clipboard"
-            if (!ghostty_surface_binding_action(surface, action, UInt(action.lengthOfBytes(using: .utf8)))) {
+            if !ghostty_surface_binding_action(surface, action, UInt(action.lengthOfBytes(using: .utf8))) {
                 AppDelegate.logger.warning("action failed action=\(action)")
             }
         }
@@ -1508,7 +1508,7 @@ extension Ghostty {
         @IBAction func pasteSelection(_ sender: Any?) {
             guard let surface = self.surface else { return }
             let action = "paste_from_selection"
-            if (!ghostty_surface_binding_action(surface, action, UInt(action.lengthOfBytes(using: .utf8)))) {
+            if !ghostty_surface_binding_action(surface, action, UInt(action.lengthOfBytes(using: .utf8))) {
                 AppDelegate.logger.warning("action failed action=\(action)")
             }
         }
@@ -1516,7 +1516,7 @@ extension Ghostty {
         @IBAction override func selectAll(_ sender: Any?) {
             guard let surface = self.surface else { return }
             let action = "select_all"
-            if (!ghostty_surface_binding_action(surface, action, UInt(action.lengthOfBytes(using: .utf8)))) {
+            if !ghostty_surface_binding_action(surface, action, UInt(action.lengthOfBytes(using: .utf8))) {
                 AppDelegate.logger.warning("action failed action=\(action)")
             }
         }
@@ -1524,7 +1524,7 @@ extension Ghostty {
         @IBAction func find(_ sender: Any?) {
             guard let surface = self.surface else { return }
             let action = "start_search"
-            if (!ghostty_surface_binding_action(surface, action, UInt(action.lengthOfBytes(using: .utf8)))) {
+            if !ghostty_surface_binding_action(surface, action, UInt(action.lengthOfBytes(using: .utf8))) {
                 AppDelegate.logger.warning("action failed action=\(action)")
             }
         }
@@ -1532,7 +1532,7 @@ extension Ghostty {
         @IBAction func selectionForFind(_ sender: Any?) {
             guard let surface = self.surface else { return }
             let action = "search_selection"
-            if (!ghostty_surface_binding_action(surface, action, UInt(action.lengthOfBytes(using: .utf8)))) {
+            if !ghostty_surface_binding_action(surface, action, UInt(action.lengthOfBytes(using: .utf8))) {
                 AppDelegate.logger.warning("action failed action=\(action)")
             }
         }
@@ -1540,7 +1540,7 @@ extension Ghostty {
         @IBAction func scrollToSelection(_ sender: Any?) {
             guard let surface = self.surface else { return }
             let action = "scroll_to_selection"
-            if (!ghostty_surface_binding_action(surface, action, UInt(action.lengthOfBytes(using: .utf8)))) {
+            if !ghostty_surface_binding_action(surface, action, UInt(action.lengthOfBytes(using: .utf8))) {
                 AppDelegate.logger.warning("action failed action=\(action)")
             }
         }
@@ -1548,7 +1548,7 @@ extension Ghostty {
         @IBAction func findNext(_ sender: Any?) {
             guard let surface = self.surface else { return }
             let action = "search:next"
-            if (!ghostty_surface_binding_action(surface, action, UInt(action.lengthOfBytes(using: .utf8)))) {
+            if !ghostty_surface_binding_action(surface, action, UInt(action.lengthOfBytes(using: .utf8))) {
                 AppDelegate.logger.warning("action failed action=\(action)")
             }
         }
@@ -1556,7 +1556,7 @@ extension Ghostty {
         @IBAction func findPrevious(_ sender: Any?) {
             guard let surface = self.surface else { return }
             let action = "search:previous"
-            if (!ghostty_surface_binding_action(surface, action, UInt(action.lengthOfBytes(using: .utf8)))) {
+            if !ghostty_surface_binding_action(surface, action, UInt(action.lengthOfBytes(using: .utf8))) {
                 AppDelegate.logger.warning("action failed action=\(action)")
             }
         }
@@ -1564,7 +1564,7 @@ extension Ghostty {
         @IBAction func findHide(_ sender: Any?) {
             guard let surface = self.surface else { return }
             let action = "end_search"
-            if (!ghostty_surface_binding_action(surface, action, UInt(action.lengthOfBytes(using: .utf8)))) {
+            if !ghostty_surface_binding_action(surface, action, UInt(action.lengthOfBytes(using: .utf8))) {
                 AppDelegate.logger.warning("action failed action=\(action)")
             }
         }
@@ -1572,7 +1572,7 @@ extension Ghostty {
         @IBAction func toggleReadonly(_ sender: Any?) {
             guard let surface = self.surface else { return }
             let action = "toggle_readonly"
-            if (!ghostty_surface_binding_action(surface, action, UInt(action.lengthOfBytes(using: .utf8)))) {
+            if !ghostty_surface_binding_action(surface, action, UInt(action.lengthOfBytes(using: .utf8))) {
                 AppDelegate.logger.warning("action failed action=\(action)")
             }
         }
@@ -1608,7 +1608,7 @@ extension Ghostty {
         @objc func resetTerminal(_ sender: Any) {
             guard let surface = self.surface else { return }
             let action = "reset"
-            if (!ghostty_surface_binding_action(surface, action, UInt(action.lengthOfBytes(using: .utf8)))) {
+            if !ghostty_surface_binding_action(surface, action, UInt(action.lengthOfBytes(using: .utf8))) {
                 AppDelegate.logger.warning("action failed action=\(action)")
             }
         }
@@ -1616,7 +1616,7 @@ extension Ghostty {
         @objc func toggleTerminalInspector(_ sender: Any) {
             guard let surface = self.surface else { return }
             let action = "inspector:toggle"
-            if (!ghostty_surface_binding_action(surface, action, UInt(action.lengthOfBytes(using: .utf8)))) {
+            if !ghostty_surface_binding_action(surface, action, UInt(action.lengthOfBytes(using: .utf8))) {
                 AppDelegate.logger.warning("action failed action=\(action)")
             }
         }
@@ -1657,7 +1657,7 @@ extension Ghostty {
                 // If we're focused then we schedule to remove the notification
                 // after a few seconds. If we gain focus we automatically remove it
                 // in focusDidChange.
-                if (self.focused) {
+                if self.focused {
                     Task { @MainActor [weak self] in
                         try await Task.sleep(for: .seconds(3))
                         self?.notificationIdentifiers.remove(uuid)
@@ -1913,7 +1913,7 @@ extension Ghostty.SurfaceView: NSTextInputClient {
 
         // We want the string view of the any value
         var chars = ""
-        switch (string) {
+        switch string {
         case let v as NSAttributedString:
             chars = v.string
         case let v as String:
@@ -2052,7 +2052,7 @@ extension Ghostty.SurfaceView: NSServicesMenuRequestor {
         guard let str = pboard.getOpinionatedStringContents() else { return false }
 
         let len = str.utf8CString.count
-        if (len == 0) { return true }
+        if len == 0 { return true }
         str.withCString { ptr in
             // len includes the null terminator so we do len - 1
             ghostty_surface_text(surface, ptr, UInt(len - 1))
