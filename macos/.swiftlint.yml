@@ -14,7 +14,6 @@ disabled_rules:
 
   # TODO
   - deployment_target
-  - empty_parentheses_with_trailing_closure
   - for_where
   - force_cast
   - implicit_getter

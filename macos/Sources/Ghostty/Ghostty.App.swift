@@ -1377,7 +1377,7 @@ extension Ghostty {
                     }
                 }
 
-                center.getNotificationSettings() { settings in
+                center.getNotificationSettings { settings in
                     guard settings.authorizationStatus == .authorized else { return }
                     surfaceView.showUserNotification(title: title, body: body)
                 }
