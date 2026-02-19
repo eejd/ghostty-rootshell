@@ -35,7 +35,7 @@ class TerminalWindow: NSWindow {
     private(set) var derivedConfig: DerivedConfig = .init()
     
     /// Sets up our tab context menu
-    private var tabMenuObserver: NSObjectProtocol? = nil
+    private var tabMenuObserver: NSObjectProtocol?
 
     /// Whether this window supports the update accessory. If this is false, then views within this
     /// window should determine how to show update notifications.
@@ -295,7 +295,7 @@ class TerminalWindow: NSWindow {
 
     // MARK: Tab Key Equivalents
 
-    var keyEquivalent: String? = nil {
+    var keyEquivalent: String? {
         didSet {
             // When our key equivalent is set, we must update the tab label.
             guard let keyEquivalent else {

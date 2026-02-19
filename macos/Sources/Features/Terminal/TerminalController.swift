@@ -59,7 +59,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
     private var surfaceAppearanceCancellables: Set<AnyCancellable> = []
     
     /// This will be set to the initial frame of the window from the xib on load.
-    private var initialFrame: NSRect? = nil
+    private var initialFrame: NSRect?
     
     init(_ ghostty: Ghostty.App,
          withBaseConfig base: Ghostty.SurfaceConfiguration? = nil,
@@ -210,7 +210,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
     // to find the preferred window to attach new tabs, perform actions, etc. We
     // always prefer the main window but if there isn't any (because we're triggered
     // by something like an App Intent) then we prefer the most previous main.
-    static private(set) weak var lastMain: TerminalController? = nil
+    static private(set) weak var lastMain: TerminalController?
 
     /// The "new window" action.
     static func newWindow(

@@ -94,7 +94,7 @@ extension Ghostty {
     class InspectorView: MTKView, NSTextInputClient {
         let commandQueue: MTLCommandQueue
 
-        var surfaceView: SurfaceView? = nil {
+        var surfaceView: SurfaceView? {
             didSet { surfaceViewDidChange() }
         }
 

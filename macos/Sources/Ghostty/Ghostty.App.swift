@@ -33,7 +33,7 @@ extension Ghostty {
         private var configPath: String?
         /// The ghostty app instance. We only have one of these for the entire app, although I guess
         /// in theory you can have multiple... I don't know why you would...
-        @Published var app: ghostty_app_t? = nil {
+        @Published var app: ghostty_app_t? {
             didSet {
                 guard let old = oldValue else { return }
                 ghostty_app_free(old)

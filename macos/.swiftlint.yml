@@ -17,7 +17,6 @@ disabled_rules:
   - for_where
   - force_cast
   - implicit_getter
-  - implicit_optional_initialization
   - legacy_constant
   - legacy_constructor
   - line_length

@@ -144,16 +144,16 @@ class AppDelegate: NSObject,
     }
 
     /// Tracks the windows that we hid for toggleVisibility.
-    private(set) var hiddenState: ToggleVisibilityState? = nil
+    private(set) var hiddenState: ToggleVisibilityState?
 
     /// The observer for the app appearance.
-    private var appearanceObserver: NSKeyValueObservation? = nil
+    private var appearanceObserver: NSKeyValueObservation?
 
     /// Signals
     private var signals: [DispatchSourceSignal] = []
 
     /// The custom app icon image that is currently in use.
-    @Published private(set) var appIcon: NSImage? = nil
+    @Published private(set) var appIcon: NSImage?
 
     override init() {
 #if DEBUG

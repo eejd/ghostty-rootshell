@@ -231,7 +231,7 @@ struct CommandPaletteView: View {
 /// The text field for building the query for the command palette.
 fileprivate struct CommandPaletteQuery: View {
     @Binding var query: String
-    var onEvent: ((KeyboardEvent) -> Void)? = nil
+    var onEvent: ((KeyboardEvent) -> Void)?
     @FocusState private var isTextFieldFocused: Bool
 
     init(query: Binding<String>, isTextFieldFocused: FocusState<Bool>, onEvent: ((KeyboardEvent) -> Void)? = nil) {

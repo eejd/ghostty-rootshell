@@ -13,7 +13,7 @@ class ClipboardConfirmationController: NSWindowController {
     let contents: String
     let request: Ghostty.ClipboardRequest
     let state: UnsafeMutableRawPointer?
-    weak private var delegate: ClipboardConfirmationViewDelegate? = nil
+    weak private var delegate: ClipboardConfirmationViewDelegate?
 
     init(surface: ghostty_surface_t, contents: String, request: Ghostty.ClipboardRequest, state: UnsafeMutableRawPointer?, delegate: ClipboardConfirmationViewDelegate) {
         self.surface = surface

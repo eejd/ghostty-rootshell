@@ -300,7 +300,7 @@ extension Ghostty {
 
         // This is the last size that we processed. This is how we handle our
         // timer state.
-        @State var lastSize: CGSize? = nil
+        @State var lastSize: CGSize?
 
         // Ready is set to true after a short delay. This avoids some of the
         // challenges of initial view sizing from SwiftUI.
@@ -640,19 +640,19 @@ extension Ghostty {
     /// libghostty, usually from the Ghostty configuration.
     struct SurfaceConfiguration {
         /// Explicit font size to use in points
-        var fontSize: Float32? = nil
+        var fontSize: Float32?
 
         /// Explicit working directory to set
-        var workingDirectory: String? = nil
+        var workingDirectory: String?
 
         /// Explicit command to set
-        var command: String? = nil
+        var command: String?
         
         /// Environment variables to set for the terminal
         var environmentVariables: [String: String] = [:]
 
         /// Extra input to send as stdin
-        var initialInput: String? = nil
+        var initialInput: String?
         
         /// Wait after the command
         var waitAfterCommand: Bool = false
@@ -1252,8 +1252,8 @@ extension FocusedValues {
 extension Ghostty.SurfaceView {
     class SearchState: ObservableObject {
         @Published var needle: String = ""
-        @Published var selected: UInt? = nil
-        @Published var total: UInt? = nil
+        @Published var selected: UInt?
+        @Published var total: UInt?
 
         init(from startSearch: Ghostty.Action.StartSearch) {
             self.needle = startSearch.needle ?? ""
