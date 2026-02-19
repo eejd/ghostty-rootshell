@@ -1993,8 +1993,7 @@ extension Ghostty {
         private static func configReload(
             _ app: ghostty_app_t,
             target: ghostty_target_s,
-            v: ghostty_action_reload_config_s)
-        {
+            v: ghostty_action_reload_config_s) {
             logger.info("config reload notification")
 
             guard let app_ud = ghostty_app_userdata(app) else { return }

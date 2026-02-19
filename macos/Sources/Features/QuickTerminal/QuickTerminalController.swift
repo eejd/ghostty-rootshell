@@ -340,8 +340,7 @@ class QuickTerminalController: BaseTerminalController {
         // we want to store it so we can restore state later.
         if !NSApp.isActive {
             if let previousApp = NSWorkspace.shared.frontmostApplication,
-               previousApp.bundleIdentifier != Bundle.main.bundleIdentifier
-            {
+               previousApp.bundleIdentifier != Bundle.main.bundleIdentifier {
                 self.previousApp = previousApp
             }
         }

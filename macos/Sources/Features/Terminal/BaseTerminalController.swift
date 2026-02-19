@@ -31,8 +31,7 @@ class BaseTerminalController: NSWindowController,
                               TerminalViewDelegate,
                               TerminalViewModel,
                               ClipboardConfirmationViewDelegate,
-                              FullscreenDelegate
-{
+                              FullscreenDelegate {
     /// The app instance that this terminal view will represent.
     let ghostty: Ghostty.App
 

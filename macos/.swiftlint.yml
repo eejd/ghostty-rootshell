@@ -21,7 +21,6 @@ disabled_rules:
   - mark
   - multiple_closures_with_trailing_closure
   - no_fallthrough_only
-  - opening_brace
   - orphaned_doc_comment
   - private_over_fileprivate
   - shorthand_operator

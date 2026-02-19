@@ -449,8 +449,7 @@ class TerminalWindow: NSWindow {
         let forceOpaque = terminalController?.isBackgroundOpaque ?? false
         if !styleMask.contains(.fullScreen) &&
             !forceOpaque &&
-            (surfaceConfig.backgroundOpacity < 1 || surfaceConfig.backgroundBlur.isGlassStyle)
-        {
+            (surfaceConfig.backgroundOpacity < 1 || surfaceConfig.backgroundBlur.isGlassStyle) {
             isOpaque = false
 
             // This is weird, but we don't use ".clear" because this creates a look that

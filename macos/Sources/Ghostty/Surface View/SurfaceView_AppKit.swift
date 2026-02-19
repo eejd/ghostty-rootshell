@@ -965,8 +965,7 @@ extension Ghostty {
                !controller.commandPaletteIsShowing,
                window.isKeyWindow &&
                     !self.focused &&
-                    controller.focusFollowsMouse
-            {
+                    controller.focusFollowsMouse {
                 Ghostty.moveFocus(to: self)
             }
         }
@@ -1944,8 +1943,7 @@ extension Ghostty.SurfaceView: NSTextInputClient {
         // we send it back through the event system so it can be encoded.
         if let lastPerformKeyEvent,
            let current = NSApp.currentEvent,
-           lastPerformKeyEvent == current.timestamp
-        {
+           lastPerformKeyEvent == current.timestamp {
             NSApp.sendEvent(current)
             return
         }

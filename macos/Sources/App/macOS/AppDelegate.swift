@@ -9,8 +9,7 @@ class AppDelegate: NSObject,
                     ObservableObject,
                     NSApplicationDelegate,
                     UNUserNotificationCenterDelegate,
-                    GhosttyAppDelegate
-{
+                    GhosttyAppDelegate {
     // The application logger. We should probably move this at some point to a dedicated
     // class/struct but for now it lives here! 🤷‍♂️
     static let logger = Logger(
@@ -948,7 +947,7 @@ class AppDelegate: NSObject,
     // Using AppIconActor to ensure this work
     // happens synchronously in the background
     @AppIconActor
-    private func updateAppIcon(from config: Ghostty.Config) async  {
+    private func updateAppIcon(from config: Ghostty.Config) async {
         var appIcon: NSImage?
         var appIconName: String? = config.macosIcon.rawValue
 
