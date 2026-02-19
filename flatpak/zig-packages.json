@@ -145,9 +145,9 @@
   },
   {
     "type": "archive",
-    "url": "https://deps.files.ghostty.org/uucode-31655fba3c638229989cc524363ef5e3c7b580c1.tar.gz",
-    "dest": "vendor/p/uucode-0.1.0-ZZjBPicPTQDlG6OClzn2bPu7ICkkkyWrTB6aRsBr-A1E",
-    "sha256": "4b3a581a1806e01e8bb9ff1e4f7e6c28ba1b0b18e6c04ba8d53c24d237aef60e"
+    "url": "https://github.com/jacobsandlund/uucode/archive/refs/tags/v0.2.0.tar.gz",
+    "dest": "vendor/p/uucode-0.2.0-ZZjBPqZVVABQepOqZHR7vV_NcaN-wats0IB6o-Exj6m9",
+    "sha256": "d0abee0f4f8bd6eae3c051777e16e7c42d8964aaaa015591c4e565703f465f95"
   },
   {
     "type": "archive",
