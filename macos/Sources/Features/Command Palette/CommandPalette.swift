@@ -128,7 +128,7 @@ struct CommandPaletteView: View {
                         ? 0
                         : current + 1
 
-                case .move(_):
+                case .move:
                     // Unknown, ignore
                     break
                 }
