@@ -728,7 +728,6 @@ extension SplitTree.Node {
         }
     }
 
-
     /// Calculate the bounds of all views in this subtree based on split ratios
     func calculateViewBounds(in bounds: CGRect) -> [(view: ViewType, bounds: CGRect)] {
         switch self {

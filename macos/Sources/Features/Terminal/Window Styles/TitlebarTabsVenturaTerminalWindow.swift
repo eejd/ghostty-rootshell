@@ -340,7 +340,6 @@ class TitlebarTabsVenturaTerminalWindow: TerminalWindow {
         }
     }
 
-
     // HACK: hide the "collapsed items" marker from the toolbar if it's present.
     // idk why it appears in macOS 15.0+ but it does... so... make it go away. (sigh)
     private func hideToolbarOverflowButton() {

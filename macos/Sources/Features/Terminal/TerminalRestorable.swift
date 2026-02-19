@@ -192,4 +192,3 @@ class TerminalWindowRestoration: NSObject, NSWindowRestoration {
     }
 }
 
-

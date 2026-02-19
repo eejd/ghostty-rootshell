@@ -286,8 +286,6 @@ extension Ghostty {
         }
     }
 
-
-
     // This is the resize overlay that shows on top of a surface to show the current
     // size during a resize operation.
     struct SurfaceResizeOverlay: View {

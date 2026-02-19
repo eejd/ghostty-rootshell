@@ -110,4 +110,3 @@ private struct BouncingProgressBar: View {
     }
 }
 
-

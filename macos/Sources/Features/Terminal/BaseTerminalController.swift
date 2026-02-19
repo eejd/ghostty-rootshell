@@ -855,7 +855,6 @@ class BaseTerminalController: NSWindowController,
         }
     }
 
-
     func cellSizeDidChange(to: NSSize) {
         guard derivedConfig.windowStepResize else { return }
         // Stage manager can sometimes present windows in such a way that the
@@ -1293,7 +1292,6 @@ class BaseTerminalController: NSWindowController,
         guard let surface = focusedSurface?.surface else { return }
         ghostty.splitToggleZoom(surface: surface)
     }
-
 
     @IBAction func splitMoveFocusPrevious(_ sender: Any) {
         splitMoveFocus(direction: .previous)

@@ -312,7 +312,6 @@ extension Ghostty {
             ghostty_app_set_focus(app, false)
         }
 
-
         // MARK: Ghostty Callbacks (macOS)
 
         static func closeSurface(_ userdata: UnsafeMutableRawPointer?, processAlive: Bool) {
@@ -782,7 +781,6 @@ extension Ghostty {
                     ]
                 )
 
-
             default:
                 assertionFailure()
             }
@@ -819,7 +817,6 @@ extension Ghostty {
                     ]
                 )
 
-
             default:
                 assertionFailure()
             }
@@ -847,7 +844,6 @@ extension Ghostty {
                         Notification.NewSurfaceConfigKey: SurfaceConfiguration(from: ghostty_surface_inherited_config(surface, GHOSTTY_SURFACE_CONTEXT_SPLIT)),
                     ]
                 )
-
 
             default:
                 assertionFailure()
@@ -914,7 +910,6 @@ extension Ghostty {
                     assertionFailure()
                 }
 
-
             default:
                 assertionFailure()
             }
@@ -969,7 +964,6 @@ extension Ghostty {
                     ]
                 )
 
-
             default:
                 assertionFailure()
             }
@@ -990,7 +984,6 @@ extension Ghostty {
                     name: .ghosttyCommandPaletteDidToggle,
                     object: surfaceView
                 )
-
 
             default:
                 assertionFailure()
@@ -1013,7 +1006,6 @@ extension Ghostty {
                     name: .ghosttyMaximizeDidToggle,
                     object: surfaceView
                 )
-
 
             default:
                 assertionFailure()
@@ -1296,7 +1288,6 @@ extension Ghostty {
                     object: surfaceView
                 )
 
-
             default:
                 assertionFailure()
             }
@@ -1324,7 +1315,6 @@ extension Ghostty {
                 )
                 return true
 
-
             default:
                 assertionFailure()
                 return false
@@ -1348,7 +1338,6 @@ extension Ghostty {
                     object: surfaceView,
                     userInfo: ["mode": mode]
                 )
-
 
             default:
                 assertionFailure()
@@ -1381,7 +1370,6 @@ extension Ghostty {
                     guard settings.authorizationStatus == .authorized else { return }
                     surfaceView.showUserNotification(title: title, body: body)
                 }
-
 
             default:
                 assertionFailure()
@@ -1609,7 +1597,6 @@ extension Ghostty {
                 guard let surfaceView = self.surfaceView(from: surface) else { return }
                 surfaceView.setCursorShape(shape)
 
-
             default:
                 assertionFailure()
             }
@@ -1638,7 +1625,6 @@ extension Ghostty {
                     return
                 }
 
-
             default:
                 assertionFailure()
             }
@@ -1664,7 +1650,6 @@ extension Ghostty {
                 let buffer = Data(bytes: v.url!, count: v.len)
                 surfaceView.hoverUrl = String(data: buffer, encoding: .utf8)
 
-
             default:
                 assertionFailure()
             }
@@ -1683,7 +1668,6 @@ extension Ghostty {
                 guard let surface = target.target.surface else { return }
                 guard let surfaceView = self.surfaceView(from: surface) else { return }
                 surfaceView.initialSize = NSSize(width: Double(v.width), height: Double(v.height))
-
 
             default:
                 assertionFailure()
@@ -1705,7 +1689,6 @@ extension Ghostty {
                     name: .ghosttyResetWindowSize,
                     object: surfaceView
                 )
-
 
             default:
                 assertionFailure()
@@ -2085,7 +2068,6 @@ extension Ghostty {
                     assertionFailure()
                 }
         }
-
 
         // MARK: User Notifications
 
