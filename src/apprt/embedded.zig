@@ -1868,6 +1868,71 @@ pub const CAPI = struct {
         return core_surface.renderer_state.terminal.modes.get(.cursor_keys);
     }
 
+    /// Returns the total number of rows in the primary screen (including scrollback).
+    /// This is a cheap check (single field read) useful for change detection.
+    export fn ghostty_surface_total_rows(surface: *Surface) usize {
+        const core_surface = &surface.core_surface;
+        core_surface.renderer_state.mutex.lock();
+        defer core_surface.renderer_state.mutex.unlock();
+        const screen = core_surface.io.terminal.screens.get(.primary) orelse return 0;
+        return screen.pages.total_rows;
+    }
+
+    /// Dump the entire primary screen (including scrollback) as ANSI-styled text.
+    /// Always reads from the primary screen (not alternate), so scrollback is captured
+    /// even when an alternate-screen app like vim is active. Uses unwrap mode so
+    /// soft-wrapped lines are joined and re-wrap naturally at any terminal width.
+    /// Palette colors are emitted as indices (38;5;N) so they adapt to theme changes.
+    /// Returns null if the screen is empty. Caller must free with ghostty_surface_free_dump.
+    export fn ghostty_surface_dump_primary_screen(
+        surface: *Surface,
+        out_len: *usize,
+    ) ?[*]const u8 {
+        const core_surface = &surface.core_surface;
+        core_surface.renderer_state.mutex.lock();
+        defer core_surface.renderer_state.mutex.unlock();
+
+        const screen = core_surface.io.terminal.screens.get(.primary) orelse return null;
+        const tl = screen.pages.getTopLeft(.screen);
+        const br = screen.pages.getBottomRight(.screen) orelse return null;
+
+        var aw: std.Io.Writer.Allocating = .init(global.alloc);
+
+        var formatter: terminal.formatter.ScreenFormatter = .init(screen, .{
+            .emit = .vt,
+            .unwrap = true,
+            .trim = false,
+        });
+        formatter.content = .{
+            .selection = terminal.Selection.init(tl, br, false),
+        };
+        formatter.format(&aw.writer) catch {
+            aw.deinit();
+            return null;
+        };
+
+        const text = aw.toOwnedSliceSentinel(0) catch {
+            aw.deinit();
+            return null;
+        };
+
+        if (text.len == 0) {
+            global.alloc.free(text);
+            return null;
+        }
+
+        out_len.* = text.len;
+        return text.ptr;
+    }
+
+    /// Free text returned by ghostty_surface_dump_primary_screen.
+    export fn ghostty_surface_free_dump(
+        ptr: [*]const u8,
+        len: usize,
+    ) void {
+        global.alloc.free(ptr[0..len :0]);
+    }
+
     /// Tell the surface that it needs to schedule a render
     export fn ghostty_surface_mouse_button(
         surface: *Surface,

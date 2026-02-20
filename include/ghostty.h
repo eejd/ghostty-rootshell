@@ -1105,6 +1105,9 @@ bool ghostty_surface_read_text(ghostty_surface_t,
                                ghostty_selection_s,
                                ghostty_text_s*);
 void ghostty_surface_free_text(ghostty_surface_t, ghostty_text_s*);
+uintptr_t ghostty_surface_total_rows(ghostty_surface_t);
+const char* ghostty_surface_dump_primary_screen(ghostty_surface_t, uintptr_t*);
+void ghostty_surface_free_dump(const char*, uintptr_t);
 
 #ifdef __APPLE__
 void ghostty_surface_set_display_id(ghostty_surface_t, uint32_t);
