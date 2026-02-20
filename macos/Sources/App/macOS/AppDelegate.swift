@@ -879,7 +879,7 @@ class AppDelegate: NSObject,
                 autoUpdate == .check || autoUpdate == .download
             updateController.updater.automaticallyDownloadsUpdates =
                 autoUpdate == .download
-            /**
+            /*
              To test `auto-update` easily, uncomment the line below and
              delete `SUEnableAutomaticChecks` in Ghostty-Info.plist.
 
