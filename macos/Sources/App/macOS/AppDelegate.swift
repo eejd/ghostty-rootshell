@@ -380,13 +380,7 @@ class AppDelegate: NSObject,
 
             if let why = event.attributeDescriptor(forKeyword: keyword) {
                 switch why.typeCodeValue {
-                case kAEShutDown:
-                    fallthrough
-
-                case kAERestart:
-                    fallthrough
-
-                case kAEReallyLogOut:
+                case kAEShutDown, kAERestart, kAEReallyLogOut:
                     return .terminateNow
 
                 default:
