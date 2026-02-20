@@ -16,7 +16,6 @@ disabled_rules:
   - deployment_target
   - for_where
   - force_cast
-  - implicit_getter
   - line_length
   - mark
   - multiple_closures_with_trailing_closure

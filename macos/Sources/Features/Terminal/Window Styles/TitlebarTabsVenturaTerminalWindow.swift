@@ -20,13 +20,11 @@ class TitlebarTabsVenturaTerminalWindow: TerminalWindow {
 
     // false if all three traffic lights are missing/hidden, otherwise true
     private var hasWindowButtons: Bool {
-        get {
-            // if standardWindowButton(.theButton) == nil, the button isn't there, so coalesce to true
-            let closeIsHidden = standardWindowButton(.closeButton)?.isHiddenOrHasHiddenAncestor ?? true
-            let miniaturizeIsHidden = standardWindowButton(.miniaturizeButton)?.isHiddenOrHasHiddenAncestor ?? true
-            let zoomIsHidden = standardWindowButton(.zoomButton)?.isHiddenOrHasHiddenAncestor ?? true
-            return !(closeIsHidden && miniaturizeIsHidden && zoomIsHidden)
-        }
+        // if standardWindowButton(.theButton) == nil, the button isn't there, so coalesce to true
+        let closeIsHidden = standardWindowButton(.closeButton)?.isHiddenOrHasHiddenAncestor ?? true
+        let miniaturizeIsHidden = standardWindowButton(.miniaturizeButton)?.isHiddenOrHasHiddenAncestor ?? true
+        let zoomIsHidden = standardWindowButton(.zoomButton)?.isHiddenOrHasHiddenAncestor ?? true
+        return !(closeIsHidden && miniaturizeIsHidden && zoomIsHidden)
     }
 
     // MARK: NSWindow

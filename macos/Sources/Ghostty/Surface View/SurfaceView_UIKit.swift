@@ -122,9 +122,7 @@ extension Ghostty {
         // MARK: UIView
 
         override class var layerClass: AnyClass {
-            get {
-                return CAMetalLayer.self
-            }
+            return CAMetalLayer.self
         }
 
         override func didMoveToWindow() {
