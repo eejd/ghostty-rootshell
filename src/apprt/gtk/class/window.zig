@@ -383,6 +383,10 @@ pub const Window = extern struct {
             .config = priv.config,
         });
         if (parent_) |p| {
+            // For a new window's first tab, inherit the parent's initial size hints.
+            if (context == .window) {
+                surfaceInit(p.rt_surface.gobj(), self);
+            }
             tab.setParentWithContext(p, context);
         }
 
