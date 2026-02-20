@@ -935,9 +935,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         let tabColor: TerminalTabColor
     }
 
-    convenience init(_ ghostty: Ghostty.App,
-         with undoState: UndoState
-    ) {
+    convenience init(_ ghostty: Ghostty.App, with undoState: UndoState) {
         self.init(ghostty, withSurfaceTree: undoState.surfaceTree)
 
         // Show the window and restore its frame
