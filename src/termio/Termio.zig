@@ -184,12 +184,7 @@ pub const DerivedConfig = struct {
                     break :generate;
                 }
 
-                break :palette terminalpkg.color.generate256Color(
-                    config.palette.value,
-                    config.palette.mask,
-                    config.background.toTerminalRGB(),
-                    config.foreground.toTerminalRGB(),
-                );
+                break :palette terminalpkg.color.generate256Color(config.palette.value, config.palette.mask, config.background.toTerminalRGB(), config.foreground.toTerminalRGB(), config.@"palette-harmonious");
             }
 
             break :palette config.palette.value;
