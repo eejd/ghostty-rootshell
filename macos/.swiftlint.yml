@@ -22,7 +22,6 @@ disabled_rules:
   - multiple_closures_with_trailing_closure
   - no_fallthrough_only
   - switch_case_alignment
-  - unused_enumerated
 
 identifier_name:
   min_length: 1
