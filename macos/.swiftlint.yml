@@ -2,6 +2,9 @@
 #
 check_for_updates: false
 
+excluded:
+  - build
+
 disabled_rules:
   - cyclomatic_complexity
   - file_length
@@ -13,7 +16,6 @@ disabled_rules:
   - type_body_length
 
   # TODO
-  - deployment_target
   - for_where
   - force_cast
   - line_length
