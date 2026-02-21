@@ -65,7 +65,7 @@ extension NSView {
             return true
         }
 
-        for subview in subviews where contains(className: name) {
+        for subview in subviews where subview.contains(className: name) {
             return true
         }
 
