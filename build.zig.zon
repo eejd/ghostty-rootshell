@@ -115,6 +115,7 @@
 
         // Other
         .apple_sdk = .{ .path = "./pkg/apple-sdk" },
+        .android_ndk = .{ .path = "./pkg/android-ndk" },
         .iterm2_themes = .{
             .url = "https://deps.files.ghostty.org/ghostty-themes-release-20260202-151632-49169e9.tgz",
             .hash = "N-V-__8AAKlTAwClvdUfsAoiLgM6sb2NPZNnS6wzCiIs252Z",
