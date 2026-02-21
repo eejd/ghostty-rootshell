@@ -39,6 +39,7 @@ pub const Path = @import("path.zig").Path;
 pub const RepeatablePath = @import("path.zig").RepeatablePath;
 const ClipboardCodepointMap = @import("ClipboardCodepointMap.zig");
 const KeyRemapSet = @import("../input/key_mods.zig").RemapSet;
+const string = @import("string.zig");
 
 // We do this instead of importing all of terminal/main.zig to
 // limit the dependency graph. This is important because some things
@@ -5965,22 +5966,15 @@ pub const SelectionWordChars = struct {
     pub fn parseCLI(self: *Self, alloc: Allocator, input: ?[]const u8) !void {
         const value = input orelse return error.ValueRequired;
 
-        // Parse UTF-8 string into codepoints
+        // Parse string with Zig escape sequence support into codepoints
         var list: std.ArrayList(u21) = .empty;
         defer list.deinit(alloc);
 
         // Always include null as first boundary
         try list.append(alloc, 0);
 
-        // Parse the UTF-8 string
-        const utf8_view = std.unicode.Utf8View.init(value) catch {
-            // Invalid UTF-8, just use null boundary
-            self.codepoints = try list.toOwnedSlice(alloc);
-            return;
-        };
-
-        var utf8_it = utf8_view.iterator();
-        while (utf8_it.nextCodepoint()) |codepoint| {
+        var it = string.codepointIterator(value);
+        while (it.next() catch return error.InvalidValue) |codepoint| {
             try list.append(alloc, codepoint);
         }
 
@@ -6032,6 +6026,56 @@ pub const SelectionWordChars = struct {
         try testing.expectEqual(@as(u21, '\t'), chars.codepoints[2]);
         try testing.expectEqual(@as(u21, ';'), chars.codepoints[3]);
         try testing.expectEqual(@as(u21, ','), chars.codepoints[4]);
+    }
+
+    test "parseCLI escape sequences" {
+        const testing = std.testing;
+        var arena = ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        // \t escape should be parsed as tab
+        var chars: Self = .{};
+        try chars.parseCLI(alloc, " \\t;,");
+
+        try testing.expectEqual(@as(usize, 5), chars.codepoints.len);
+        try testing.expectEqual(@as(u21, 0), chars.codepoints[0]);
+        try testing.expectEqual(@as(u21, ' '), chars.codepoints[1]);
+        try testing.expectEqual(@as(u21, '\t'), chars.codepoints[2]);
+        try testing.expectEqual(@as(u21, ';'), chars.codepoints[3]);
+        try testing.expectEqual(@as(u21, ','), chars.codepoints[4]);
+    }
+
+    test "parseCLI backslash escape" {
+        const testing = std.testing;
+        var arena = ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        // \\ should be parsed as a single backslash
+        var chars: Self = .{};
+        try chars.parseCLI(alloc, "\\\\;");
+
+        try testing.expectEqual(@as(usize, 3), chars.codepoints.len);
+        try testing.expectEqual(@as(u21, 0), chars.codepoints[0]);
+        try testing.expectEqual(@as(u21, '\\'), chars.codepoints[1]);
+        try testing.expectEqual(@as(u21, ';'), chars.codepoints[2]);
+    }
+
+    test "parseCLI unicode escape" {
+        const testing = std.testing;
+        var arena = ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        // \u{2502} should be parsed as │
+        var chars: Self = .{};
+        try chars.parseCLI(alloc, "\\u{2502};");
+
+        try testing.expectEqual(@as(usize, 3), chars.codepoints.len);
+        try testing.expectEqual(@as(u21, 0), chars.codepoints[0]);
+        try testing.expectEqual(@as(u21, '│'), chars.codepoints[1]);
+        try testing.expectEqual(@as(u21, ';'), chars.codepoints[2]);
     }
 };
 
