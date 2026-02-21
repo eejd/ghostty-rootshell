@@ -1226,6 +1226,10 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 // kitty state on every frame because any cell change can move
                 // an image.
                 if (self.images.kittyRequiresUpdate(state.terminal)) {
+                    // We need to grab the draw mutex since this updates
+                    // our image state that drawFrame uses.
+                    self.draw_mutex.lock();
+                    defer self.draw_mutex.unlock();
                     self.images.kittyUpdate(
                         self.alloc,
                         state.terminal,
