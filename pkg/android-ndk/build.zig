@@ -9,9 +9,9 @@ pub fn build(_: *std.Build) !void {}
 // in the default location.
 //
 // The environment variables can be set as follows:
-// - `ANDROID_NDK_HOME`: Directly points to the NDK path.
+// - `ANDROID_NDK_HOME`: Directly points to the NDK path, including the version.
 // - `ANDROID_HOME` or `ANDROID_SDK_ROOT`: Points to the Android SDK path;
-//   latest NDK will be automatically selected.
+//   latest available NDK will be automatically selected.
 //
 // NB: This is a workaround until zig natively supports bionic
 // cross-compilation (ziglang/zig#23906).
