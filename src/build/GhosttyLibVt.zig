@@ -63,6 +63,9 @@ pub fn initShared(
     );
 
     if (lib.rootModuleTarget().abi.isAndroid()) {
+        // Support 16kb page sizes, required for Android 15+.
+        lib.link_z_max_page_size = 16384; // 16kb
+
         try @import("android_ndk").addPaths(b, lib);
     }
 
