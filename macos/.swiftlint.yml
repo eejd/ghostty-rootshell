@@ -21,7 +21,6 @@ disabled_rules:
   - for_where
   - force_cast
   - multiple_closures_with_trailing_closure
-  - switch_case_alignment
 
 identifier_name:
   min_length: 1
