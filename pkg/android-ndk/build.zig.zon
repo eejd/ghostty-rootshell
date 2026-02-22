@@ -1,0 +1,7 @@
+.{
+    .name = .android_ndk,
+    .version = "0.0.1",
+    .dependencies = .{},
+    .fingerprint = 0xee68d62c5a97b68b,
+    .paths = .{""},
+}
