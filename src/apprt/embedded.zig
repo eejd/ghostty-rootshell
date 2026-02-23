@@ -1902,6 +1902,7 @@ pub const CAPI = struct {
             .emit = .vt,
             .unwrap = true,
             .trim = false,
+            .palette = &core_surface.io.terminal.colors.palette.current,
         });
         formatter.content = .{
             .selection = terminal.Selection.init(tl, br, false),
