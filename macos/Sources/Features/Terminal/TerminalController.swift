@@ -198,6 +198,16 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
     // of each other.
     private static var lastCascadePoint = NSPoint(x: 0, y: 0)
 
+    private static func applyCascade(to window: NSWindow, hasFixedPos: Bool) {
+        if hasFixedPos { return }
+
+        if all.count > 1 {
+            lastCascadePoint = window.cascadeTopLeft(from: lastCascadePoint)
+        } else {
+            lastCascadePoint = NSPoint(x: window.frame.minX, y: window.frame.maxY)
+        }
+    }
+
     // The preferred parent terminal controller.
     static var preferredParent: TerminalController? {
         all.first {
@@ -254,13 +264,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             if let window = c.window {
                 if !window.styleMask.contains(.fullScreen) {
                     let hasFixedPos = c.derivedConfig.windowPositionX != nil && c.derivedConfig.windowPositionY != nil
-                    let shouldCascade = !hasFixedPos && TerminalController.all.count > 1
-
-                    if shouldCascade {
-                        Self.lastCascadePoint = window.cascadeTopLeft(from: Self.lastCascadePoint)
-                    } else if !hasFixedPos {
-                        Self.lastCascadePoint = NSPoint(x: window.frame.minX, y: window.frame.maxY)
-                    }
+                    Self.applyCascade(to: window, hasFixedPos: hasFixedPos)
                 }
             }
 
@@ -331,13 +335,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
                         window.constrainToScreen()
                     } else {
                         let hasFixedPos = c.derivedConfig.windowPositionX != nil && c.derivedConfig.windowPositionY != nil
-                        let shouldCascade = !hasFixedPos && TerminalController.all.count > 1
-
-                        if shouldCascade {
-                            Self.lastCascadePoint = window.cascadeTopLeft(from: Self.lastCascadePoint)
-                        } else if !hasFixedPos {
-                            Self.lastCascadePoint = NSPoint(x: window.frame.minX, y: window.frame.maxY)
-                        }
+                        Self.applyCascade(to: window, hasFixedPos: hasFixedPos)
                     }
                 }
             }
@@ -444,13 +442,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             if !window.styleMask.contains(.fullScreen) &&
                 window.tabGroup?.windows.count ?? 1 == 1 {
                 let hasFixedPos = controller.derivedConfig.windowPositionX != nil && controller.derivedConfig.windowPositionY != nil
-                let shouldCascade = !hasFixedPos && TerminalController.all.count > 1
-
-                if shouldCascade {
-                    Self.lastCascadePoint = window.cascadeTopLeft(from: Self.lastCascadePoint)
-                } else if !hasFixedPos {
-                    Self.lastCascadePoint = NSPoint(x: window.frame.minX, y: window.frame.maxY)
-                }
+                Self.applyCascade(to: window, hasFixedPos: hasFixedPos)
             }
 
             controller.showWindow(self)
