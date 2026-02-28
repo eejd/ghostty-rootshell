@@ -1926,6 +1926,17 @@ pub const CAPI = struct {
         return text.ptr;
     }
 
+    /// Returns true if the terminal's alternate screen is currently active
+    /// (e.g., a TUI app like vim/helix is running). Used by the iOS app to
+    /// detect which screen was active before app eviction so it can switch
+    /// to alternate before reconnect output arrives, protecting primary scrollback.
+    export fn ghostty_surface_is_alternate_active(surface: *Surface) bool {
+        const core_surface = &surface.core_surface;
+        core_surface.renderer_state.mutex.lock();
+        defer core_surface.renderer_state.mutex.unlock();
+        return core_surface.io.terminal.screens.active_key == .alternate;
+    }
+
     /// Free text returned by ghostty_surface_dump_primary_screen.
     export fn ghostty_surface_free_dump(
         ptr: [*]const u8,
