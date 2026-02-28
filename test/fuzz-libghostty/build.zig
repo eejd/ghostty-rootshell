@@ -1,0 +1,62 @@
+const std = @import("std");
+
+pub fn build(b: *std.Build) void {
+    const target = b.standardTargetOptions(.{});
+    const optimize = b.standardOptimizeOption(.{});
+
+    // Create the C ABI library from Zig source that exports the
+    // API that the `afl-cc` main.c entrypoint can call into. This
+    // lets us just use standard `afl-cc` to fuzz test our library without
+    // needing to write any Zig-specific fuzzing harnesses.
+    const lib = lib: {
+        // Zig module
+        const lib_mod = b.createModule(.{
+            .root_source_file = b.path("src/lib.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+        if (b.lazyDependency("ghostty", .{
+            .simd = false,
+        })) |dep| {
+            lib_mod.addImport(
+                "ghostty-vt",
+                dep.module("ghostty-vt"),
+            );
+        }
+
+        // C lib
+        const lib = b.addLibrary(.{
+            .name = "ghostty-fuzz",
+            .root_module = lib_mod,
+        });
+
+        // Required to build properly with afl-cc
+        lib.bundle_compiler_rt = true;
+        lib.bundle_ubsan_rt = true;
+        lib.root_module.stack_check = false;
+
+        break :lib lib;
+    };
+
+    // Build a C entrypoint with afl-cc that links against the generated
+    // static Zig library. afl-cc is expecte to be on the PATH.
+    const exe = exe: {
+        const cc = b.addSystemCommand(&.{"afl-cc"});
+        cc.addArgs(&.{
+            "-std=c11",
+            "-O2",
+            "-g",
+            "-o",
+        });
+        const output = cc.addOutputFileArg("ghostty-fuzz");
+        cc.addFileArg(b.path("src/main.c"));
+        cc.addFileArg(lib.getEmittedBin());
+
+        break :exe output;
+    };
+
+    // Install
+    b.installArtifact(lib);
+    const exe_install = b.addInstallBinFile(exe, "ghostty-fuzz");
+    b.getInstallStep().dependOn(&exe_install.step);
+}
