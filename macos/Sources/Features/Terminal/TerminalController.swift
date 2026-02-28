@@ -204,7 +204,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         if all.count > 1 {
             lastCascadePoint = window.cascadeTopLeft(from: lastCascadePoint)
         } else {
-            lastCascadePoint = NSPoint(x: window.frame.minX, y: window.frame.maxY)
+            lastCascadePoint = window.cascadeTopLeft(from: NSPoint(x: window.frame.minX, y: window.frame.maxY))
         }
     }
 
