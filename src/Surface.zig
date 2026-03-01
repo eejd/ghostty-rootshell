@@ -2729,7 +2729,8 @@ pub fn keyCallback(
         // OR
         // 2. mouse reporting is on and we are not reporting shift to the terminal
         if (self.io.terminal.flags.mouse_event == .none or
-            (self.mouse.mods.shift and !self.mouseShiftCapture(false)))
+            (self.mouse.mods.shift and !self.mouseShiftCapture(false)) or
+            self.mouseLinkModBypass()) // rootshell: bypass mouse capture for link detection with Cmd/Ctrl
         {
             // Refresh our link state
             const pos = self.rt_surface.getCursorPos() catch break :mouse_mods;
@@ -2743,7 +2744,9 @@ pub fn keyCallback(
                 log.warn("failed to refresh links err={}", .{err});
                 break :mouse_mods;
             };
-        } else if (self.io.terminal.flags.mouse_event != .none and !self.mouse.mods.shift) {
+        } else if (self.io.terminal.flags.mouse_event != .none and !self.mouse.mods.shift and
+            !self.mouseLinkModBypass()) // rootshell: don't clear link state when Cmd/Ctrl held
+        {
             // If we have mouse reports on and we don't have shift pressed, we reset state
             _ = try self.rt_app.performAction(
                 .{ .surface = self },
@@ -4509,6 +4512,17 @@ fn mouseModsWithCapture(self: *Surface, mods: input.Mods) input.Mods {
     return final;
 }
 
+/// Returns true if the current mouse modifiers include the link hover
+/// modifier (Cmd on macOS, Ctrl on Linux). When true, link detection
+/// should proceed even when mouse reporting is active, since:
+/// - On macOS: Super is not encoded in the xterm mouse protocol
+/// - On Linux: Link detection and mouse reporting are independent
+///
+// rootshell: allow link detection when Cmd/Ctrl held inside mouse-tracking apps (e.g. tmux)
+fn mouseLinkModBypass(self: *const Surface) bool {
+    return self.mouse.mods.ctrlOrSuper();
+}
+
 /// Attempt to invoke the action of any link that is under the
 /// given position.
 ///
@@ -4729,7 +4743,8 @@ pub fn cursorPosCallback(
         self.mouse.link_point == null or
         (self.mouse.link_point != null and !self.mouse.link_point.?.eql(pos_vp))) and
         (self.io.terminal.flags.mouse_event == .none or
-            (self.mouse.mods.shift and !self.mouseShiftCapture(false))))
+            (self.mouse.mods.shift and !self.mouseShiftCapture(false)) or
+            self.mouseLinkModBypass())) // rootshell: bypass mouse capture for link detection with Cmd/Ctrl
     {
         // If we were previously over a link, we always update. We do this so that if the text
         // changed underneath us, even if the mouse didn't move, we update the URL hints and state
