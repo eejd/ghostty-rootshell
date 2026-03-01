@@ -66,9 +66,62 @@ issue. The filename encodes metadata about how it was found (e.g.
 
 ## Reproducing a Crash
 
-Replay any crashing input by passing it directly to the harness:
+Replay any crashing input by piping it into the harness:
 
 ```sh
-# Via command-line argument
-zig-out/bin/ghostty-fuzz afl-out/default/crashes/<filename>
+cat afl-out/default/crashes/<filename> | zig-out/bin/ghostty-fuzz
 ```
+
+## Corpus Management
+
+After a fuzzing run, the queue in `afl-out/default/queue/` typically
+contains many redundant inputs. Use `afl-cmin` to find the smallest
+subset that preserves full edge coverage, and `afl-tmin` to shrink
+individual test cases.
+
+> **Important:** The instrumented binary reads input from **stdin**, not
+> from file arguments. Do **not** use `@@` with `afl-cmin`, `afl-tmin`,
+> or `afl-showmap` — it will cause them to see only the C harness
+> coverage (~4 tuples) instead of the Zig VT parser coverage.
+
+### Corpus minimization (`afl-cmin`)
+
+Reduce the evolved queue to a minimal set covering all discovered edges:
+
+```sh
+AFL_NO_FORKSRV=1 afl-cmin.bash \
+  -i afl-out/default/queue \
+  -o corpus/vt-parser-cmin \
+  -- zig-out/bin/ghostty-fuzz
+```
+
+`AFL_NO_FORKSRV=1` is required because the Python `afl-cmin` wrapper has
+a bug in AFL++ 4.35c. Use the `afl-cmin.bash` script instead (typically
+found in AFL++'s `libexec` directory).
+
+### Test case minimization (`afl-tmin`)
+
+Shrink each file in the minimized corpus to the smallest input that
+preserves its unique coverage:
+
+```sh
+mkdir -p corpus/vt-parser-min
+for f in corpus/vt-parser-cmin/*; do
+  AFL_NO_FORKSRV=1 afl-tmin \
+    -i "$f" \
+    -o "corpus/vt-parser-min/$(basename "$f")" \
+    -- zig-out/bin/ghostty-fuzz
+done
+```
+
+This is slow (hundreds of executions per file) but produces the most
+compact corpus. It can be skipped if you only need edge-level
+deduplication from `afl-cmin`.
+
+### Corpus directories
+
+| Directory              | Contents                                         |
+|------------------------|--------------------------------------------------|
+| `corpus/initial/`      | Hand-written seed inputs for `afl-fuzz -i`       |
+| `corpus/vt-parser-cmin/` | Output of `afl-cmin` (edge-deduplicated corpus) |
+| `corpus/vt-parser-min/`  | Output of `afl-tmin` (individually minimized)   |
