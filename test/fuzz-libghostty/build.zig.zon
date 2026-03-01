@@ -5,6 +5,7 @@
     .minimum_zig_version = "0.15.1",
     .dependencies = .{
         .ghostty = .{ .path = "../../" },
+        .afl = .{ .path = "../../pkg/afl++" },
     },
     .paths = .{
         "build.zig",

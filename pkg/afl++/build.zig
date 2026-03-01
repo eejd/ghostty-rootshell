@@ -3,7 +3,7 @@ const std = @import("std");
 pub fn addInstrumentedExe(
     b: *std.Build,
     obj: *std.Build.Step.Compile,
-) ?std.Build.LazyPath {
+) std.Build.LazyPath {
     const pkg = b.dependencyFromBuildZig(@This(), .{});
 
     const run_afl_cc = b.addSystemCommand(&.{

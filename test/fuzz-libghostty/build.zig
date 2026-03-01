@@ -1,4 +1,5 @@
 const std = @import("std");
+const afl = @import("afl");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
@@ -31,29 +32,15 @@ pub fn build(b: *std.Build) void {
         });
 
         // Required to build properly with afl-cc
-        lib.bundle_compiler_rt = true;
-        lib.bundle_ubsan_rt = true;
         lib.root_module.stack_check = false;
+        lib.root_module.fuzz = true;
 
         break :lib lib;
     };
 
     // Build a C entrypoint with afl-cc that links against the generated
     // static Zig library. afl-cc is expecte to be on the PATH.
-    const exe = exe: {
-        const cc = b.addSystemCommand(&.{"afl-cc"});
-        cc.addArgs(&.{
-            "-std=c11",
-            "-O2",
-            "-g",
-            "-o",
-        });
-        const output = cc.addOutputFileArg("ghostty-fuzz");
-        cc.addFileArg(b.path("src/main.c"));
-        cc.addFileArg(lib.getEmittedBin());
-
-        break :exe output;
-    };
+    const exe = afl.addInstrumentedExe(b, lib);
 
     // Install
     b.installArtifact(lib);

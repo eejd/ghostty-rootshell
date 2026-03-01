@@ -22,8 +22,15 @@ void zig_fuzz_test(unsigned char *, ssize_t);
 // Linker-provided symbols marking the boundaries of the __sancov_guards section.
 // These must be declared extern so the linker provides the actual section boundaries
 // from the instrumented code, rather than creating new variables that shadow them.
+// On macOS (Mach-O), the linker uses a different naming convention for section
+// boundaries than Linux (ELF), so we use asm labels to reference them.
+#ifdef __APPLE__
+extern uint32_t __start___sancov_guards __asm("section$start$__DATA$__sancov_guards");
+extern uint32_t __stop___sancov_guards __asm("section$end$__DATA$__sancov_guards");
+#else
 extern uint32_t __start___sancov_guards;
 extern uint32_t __stop___sancov_guards;
+#endif
 void __sanitizer_cov_trace_pc_guard_init(uint32_t*, uint32_t*);
 
 
