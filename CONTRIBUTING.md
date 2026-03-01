@@ -47,6 +47,13 @@ on a system of trust, and AI has unfortunately made it so we can no
 longer trust-by-default because it makes it too trivial to generate
 plausible-looking but actually low-quality contributions.
 
+## Pre-Vouching Contributors
+
+If you have already contributed to Ghostty prior to the introduction 
+of the vouching system and wish to continue contributing, you will not
+automatically be vouched. You will be required to follow the same
+vouching process as a first-time contributor.
+
 ## Denouncement System
 
 If you repeatedly break the rules of this document or repeatedly
