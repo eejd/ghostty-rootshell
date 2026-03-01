@@ -2,6 +2,9 @@
 
 - `ghostty-fuzz` is a binary built with `afl-cc`
 - Build `ghostty-fuzz` with `zig build`
+- After running `afl-cmin`/`afl-tmin`, run `corpus/sanitize-filenames.sh`
+  before committing to replace colons with underscores (colons are invalid
+  on Windows NTFS).
 
 ## Important: stdin-based input
 

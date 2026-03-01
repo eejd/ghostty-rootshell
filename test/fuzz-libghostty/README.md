@@ -118,6 +118,16 @@ This is slow (hundreds of executions per file) but produces the most
 compact corpus. It can be skipped if you only need edge-level
 deduplication from `afl-cmin`.
 
+### Windows compatibility
+
+AFL++ output filenames contain colons (e.g., `id:000024,time:0,...`), which
+are invalid on Windows (NTFS). After running `afl-cmin` or `afl-tmin`,
+rename the output files to replace colons with underscores before committing:
+
+```sh
+./corpus/sanitize-filenames.sh
+```
+
 ### Corpus directories
 
 | Directory                | Contents                                        |
