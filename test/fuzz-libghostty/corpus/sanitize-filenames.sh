@@ -7,9 +7,13 @@
 
 cd "$(dirname "$0")" || exit 1
 
-dirs="${@:-vt-parser-cmin vt-parser-min}"
+if [ $# -gt 0 ]; then
+  set -- "$@"
+else
+  set -- vt-parser-cmin vt-parser-min
+fi
 
-for dir in $dirs; do
+for dir in "$@"; do
   [ -d "$dir" ] || continue
   for f in "$dir"/*; do
     [ -f "$f" ] || continue
