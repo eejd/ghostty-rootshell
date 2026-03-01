@@ -26,6 +26,8 @@ extend-exclude = [
   "*.icns",
   # Valgrind nonsense
   "valgrind.supp",
+  # Fuzz corpus (binary test inputs)
+  "test/fuzz-libghostty/corpus/*",
   # Other
   "*.pdf",
   "*.data",
