@@ -44,20 +44,7 @@ pub fn build(b: *std.Build) void {
     const exe = afl.addInstrumentedExe(b, lib);
 
     // Runner to simplify running afl-fuzz
-    const run = run: {
-        const run = b.addSystemCommand(&.{
-            b.findProgram(&.{"afl-fuzz"}, &.{}) catch
-                @panic("Could not find 'afl-fuzz', which is required to run"),
-            "-i",
-        });
-        run.addDirectoryArg(b.path("corpus/initial"));
-        run.addArgs(&.{"-o"});
-        run.addDirectoryArg(b.path("afl-out"));
-        run.addArgs(&.{"--"});
-        run.addFileArg(exe);
-        run.addArgs(&.{"@@"});
-        break :run run;
-    };
+    const run = afl.addFuzzerRun(b, exe, b.path("corpus/initial"), b.path("afl-out"));
 
     // Install
     b.installArtifact(lib);
