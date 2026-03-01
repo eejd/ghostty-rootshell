@@ -104,29 +104,10 @@ AFL_NO_FORKSRV=1 afl-cmin.bash \
 a bug in AFL++ 4.35c. Use the `afl-cmin.bash` script instead (typically
 found in AFL++'s `libexec` directory).
 
-### Test case minimization (`afl-tmin`)
-
-Shrink each file in the minimized corpus to the smallest input that
-preserves its unique coverage:
-
-```sh
-mkdir -p corpus/stream-min
-for f in corpus/stream-cmin/*; do
-  AFL_NO_FORKSRV=1 afl-tmin \
-    -i "$f" \
-    -o "corpus/stream-min/$(basename "$f")" \
-    -- zig-out/bin/fuzz-stream
-done
-```
-
-This is slow (hundreds of executions per file) but produces the most
-compact corpus. It can be skipped if you only need edge-level
-deduplication from `afl-cmin`.
-
 ### Windows compatibility
 
 AFL++ output filenames contain colons (e.g., `id:000024,time:0,...`), which
-are invalid on Windows (NTFS). After running `afl-cmin` or `afl-tmin`,
+are invalid on Windows (NTFS). After running `afl-cmin`,
 rename the output files to replace colons with underscores before committing:
 
 ```sh
@@ -140,3 +121,4 @@ rename the output files to replace colons with underscores before committing:
 | `corpus/parser-initial/` | Hand-written seed inputs for vt-parser          |
 | `corpus/parser-cmin/`    | Output of `afl-cmin` (edge-deduplicated corpus) |
 | `corpus/stream-initial/` | Hand-written seed inputs for vt-stream          |
+| `corpus/stream-cmin/`    | Output of `afl-cmin` (edge-deduplicated corpus) |

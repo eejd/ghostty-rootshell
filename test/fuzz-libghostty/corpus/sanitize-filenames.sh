@@ -10,7 +10,7 @@ cd "$(dirname "$0")" || exit 1
 if [ $# -gt 0 ]; then
   set -- "$@"
 else
-  set -- parser-cmin parser-min
+  set -- parser-cmin stream-cmin
 fi
 
 for dir in "$@"; do

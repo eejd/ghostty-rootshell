@@ -12,7 +12,7 @@ const Fuzzer = struct {
 
     pub fn corpus(comptime self: Fuzzer) []const u8 {
         // Change this suffix to use cmin vs initial corpus
-        return "corpus/" ++ self.name ++ "-initial";
+        return "corpus/" ++ self.name ++ "-cmin";
     }
 };
 

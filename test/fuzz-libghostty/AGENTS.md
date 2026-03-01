@@ -5,7 +5,8 @@
 - Run a specific fuzzer with `zig build run-<name>` (e.g. `zig build run-parser`)
 - Corpus directories follow the naming convention `corpus/<fuzzer>-<variant>`
   (e.g. `corpus/parser-initial`, `corpus/stream-cmin`).
-- After running `afl-cmin`/`afl-tmin`, run `corpus/sanitize-filenames.sh`
+- Do NOT run `afl-tmin` unless explicitly requested — it is very slow.
+- After running `afl-cmin`, run `corpus/sanitize-filenames.sh`
   before committing to replace colons with underscores (colons are invalid
   on Windows NTFS).
 
@@ -31,11 +32,5 @@ not from a file argument. This affects how you invoke AFL++ tools:
     -- zig-out/bin/fuzz-stream
   ```
 
-- **`afl-tmin`**: Also requires `AFL_NO_FORKSRV=1`, no `@@`:
-
-  ```sh
-  AFL_NO_FORKSRV=1 afl-tmin -i <input> -o <output> -- zig-out/bin/fuzz-stream
-  ```
-
-If you pass `@@` or a filename argument, `afl-showmap`/`afl-cmin`/`afl-tmin`
+If you pass `@@` or a filename argument, `afl-showmap`/`afl-cmin`
 will see only ~4 tuples (the C main paths) and produce useless results.
