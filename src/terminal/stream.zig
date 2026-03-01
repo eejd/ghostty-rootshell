@@ -1338,7 +1338,10 @@ pub fn Stream(comptime Handler: type) type {
                 'g' => switch (input.intermediates.len) {
                     0 => {
                         const mode: csi.TabClear = switch (input.params.len) {
-                            1 => @enumFromInt(input.params[0]),
+                            1 => std.meta.intToEnum(csi.TabClear, input.params[0]) catch {
+                                log.warn("invalid tab clear mode: {}", .{input.params[0]});
+                                return;
+                            },
                             else => {
                                 log.warn("invalid tab clear command: {f}", .{input});
                                 return;
@@ -3413,4 +3416,30 @@ test "stream: SGR with 17+ parameters for underline color" {
     // This tests the fix where param 17 was being dropped
     try s.nextSlice("\x1b[4:3;38;2;51;51;51;48;2;170;170;170;58;2;255;97;136;0m");
     try testing.expect(s.handler.called);
+}
+
+test "stream: tab clear with overflowing param" {
+    // Regression test for a fuzz crash: CSI with a parameter value that
+    // saturates to 65535 (u16 max) causes @enumFromInt to panic when
+    // converting to TabClear (enum(u8)).
+    const H = struct {
+        called: bool = false,
+
+        pub fn vt(
+            self: *@This(),
+            comptime action: Action.Tag,
+            value: Action.Value(action),
+        ) !void {
+            _ = value;
+            switch (action) {
+                .tab_clear_current, .tab_clear_all => self.called = true,
+                else => {},
+            }
+        }
+    };
+
+    var s: Stream(H) = .init(.{});
+    // This is the exact input from the fuzz crash (minus the mode byte):
+    // CSI with a huge numeric param that saturates to 65535, followed by 'g'.
+    try s.nextSlice("\x1b[388888888888888888888888888888888888g\x1b[0m");
 }
