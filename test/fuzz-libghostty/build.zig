@@ -43,8 +43,11 @@ pub fn build(b: *std.Build) void {
     // static Zig library. afl-cc is expected to be on the PATH.
     const exe = afl.addInstrumentedExe(b, lib);
 
-    // Runner to simplify running afl-fuzz
-    const run = afl.addFuzzerRun(b, exe, b.path("corpus/initial"), b.path("afl-out"));
+    // Runner to simplify running afl-fuzz.
+    // Use the cmin corpus (edge-deduplicated from prior runs) so that each
+    // fuzzing session starts from full coverage. Switch to "corpus/initial"
+    // if you don't have a cmin corpus yet.
+    const run = afl.addFuzzerRun(b, exe, b.path("corpus/vt-parser-cmin"), b.path("afl-out"));
 
     // Install
     b.installArtifact(lib);
