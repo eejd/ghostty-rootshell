@@ -1894,7 +1894,7 @@ pub fn Stream(comptime Handler: type) type {
                 '@' => switch (input.intermediates.len) {
                     0 => try self.handler.vt(.insert_blanks, switch (input.params.len) {
                         0 => 1,
-                        1 => input.params[0],
+                        1 => @max(1, input.params[0]),
                         else => {
                             @branchHint(.unlikely);
                             log.warn("invalid ICH command: {f}", .{input});
@@ -2964,6 +2964,28 @@ test "stream: insert characters" {
     s.handler.called = false;
     for ("\x1B[?42@") |c| try s.next(c);
     try testing.expect(!s.handler.called);
+}
+
+test "stream: insert characters explicit zero clamps to 1" {
+    const H = struct {
+        const Self = @This();
+        value: ?usize = null,
+
+        pub fn vt(
+            self: *Self,
+            comptime action: anytype,
+            value: anytype,
+        ) !void {
+            switch (action) {
+                .insert_blanks => self.value = value,
+                else => {},
+            }
+        }
+    };
+
+    var s: Stream(H) = .init(.{});
+    for ("\x1B[0@") |c| try s.next(c);
+    try testing.expectEqual(@as(usize, 1), s.handler.value.?);
 }
 
 test "stream: SCOSC" {
