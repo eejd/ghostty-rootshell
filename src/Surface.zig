@@ -2973,6 +2973,9 @@ fn maybeHandleBinding(
         // If our action was "ignore" then we return the special input
         // effect of "ignored".
         for (actions) |action| if (action == .ignore) {
+            // If we're in a sequence, clear it.
+            self.endKeySequence(.drop, .retain);
+
             return .ignored;
         };
     }
