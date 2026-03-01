@@ -40,7 +40,7 @@ pub fn build(b: *std.Build) void {
     };
 
     // Build a C entrypoint with afl-cc that links against the generated
-    // static Zig library. afl-cc is expecte to be on the PATH.
+    // static Zig library. afl-cc is expected to be on the PATH.
     const exe = afl.addInstrumentedExe(b, lib);
 
     // Runner to simplify running afl-fuzz

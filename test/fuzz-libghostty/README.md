@@ -120,8 +120,8 @@ deduplication from `afl-cmin`.
 
 ### Corpus directories
 
-| Directory              | Contents                                         |
-|------------------------|--------------------------------------------------|
-| `corpus/initial/`      | Hand-written seed inputs for `afl-fuzz -i`       |
+| Directory                | Contents                                        |
+| ------------------------ | ----------------------------------------------- |
+| `corpus/initial/`        | Hand-written seed inputs for `afl-fuzz -i`      |
 | `corpus/vt-parser-cmin/` | Output of `afl-cmin` (edge-deduplicated corpus) |
 | `corpus/vt-parser-min/`  | Output of `afl-tmin` (individually minimized)   |
