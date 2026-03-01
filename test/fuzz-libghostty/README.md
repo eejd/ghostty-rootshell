@@ -5,10 +5,10 @@ libghostty-vt (Zig module).
 
 ## Fuzz Targets
 
-| Target     | Binary         | Description                                             |
-| ---------- | -------------- | ------------------------------------------------------- |
-| `parser`   | `fuzz-parser`  | VT parser only (`Parser.next` byte-at-a-time)           |
-| `stream`   | `fuzz-stream`  | Full terminal stream (`nextSlice` + `next` via handler)  |
+| Target   | Binary        | Description                                             |
+| -------- | ------------- | ------------------------------------------------------- |
+| `parser` | `fuzz-parser` | VT parser only (`Parser.next` byte-at-a-time)           |
+| `stream` | `fuzz-stream` | Full terminal stream (`nextSlice` + `next` via handler) |
 
 The stream target creates a small `Terminal` and exercises the readonly
 `Stream` handler, covering printing, CSI dispatch, OSC, DCS, SGR, cursor
@@ -135,8 +135,8 @@ rename the output files to replace colons with underscores before committing:
 
 ### Corpus directories
 
-| Directory                  | Contents                                        |
-| -------------------------- | ----------------------------------------------- |
-| `corpus/parser-initial/`   | Hand-written seed inputs for vt-parser           |
-| `corpus/parser-cmin/`      | Output of `afl-cmin` (edge-deduplicated corpus) |
-| `corpus/stream-initial/`   | Hand-written seed inputs for vt-stream           |
+| Directory                | Contents                                        |
+| ------------------------ | ----------------------------------------------- |
+| `corpus/parser-initial/` | Hand-written seed inputs for vt-parser          |
+| `corpus/parser-cmin/`    | Output of `afl-cmin` (edge-deduplicated corpus) |
+| `corpus/stream-initial/` | Hand-written seed inputs for vt-stream          |
