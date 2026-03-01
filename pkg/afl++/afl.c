@@ -23,7 +23,7 @@
 // zig_fuzz_test() runs one fuzz iteration on the given input buffer.
 // The Zig object should export these.
 void zig_fuzz_init();
-void zig_fuzz_test(unsigned char*, ssize_t);
+void zig_fuzz_test(unsigned char*, size_t);
 
 // Linker-provided symbols marking the boundaries of the __sancov_guards
 // section. These must be declared extern so the linker provides the actual
@@ -132,7 +132,9 @@ int main(int argc, char** argv) {
             ? 0
             : *__afl_fuzz_len;
 
-    zig_fuzz_test(buf, len);
+    if (len >= 0) {
+      zig_fuzz_test(buf, len);
+    }
   }
 
   return 0;
