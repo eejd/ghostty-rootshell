@@ -49,11 +49,15 @@ pub fn build(b: *std.Build) !void {
     var flags: std.ArrayList([]const u8) = .empty;
     defer flags.deinit(b.allocator);
     try flags.appendSlice(b.allocator, &.{
+        "-DIMGUI_HAS_DOCK=1",
         "-DIMGUI_USE_WCHAR32=1",
         "-DIMGUI_DISABLE_OBSOLETE_FUNCTIONS=1",
     });
     if (freetype) try flags.appendSlice(b.allocator, &.{
         "-DIMGUI_ENABLE_FREETYPE=1",
+    });
+    if (backend_opengl3) try flags.appendSlice(b.allocator, &.{
+        "-DZIGPKG_IMGUI_ENABLE_OPENGL3=1",
     });
     if (target.result.os.tag == .windows) {
         try flags.appendSlice(b.allocator, &.{

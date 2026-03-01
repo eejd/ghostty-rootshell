@@ -14,7 +14,11 @@ const Allocator = mem.Allocator;
 const LibEnum = @import("../lib/enum.zig").Enum;
 const kitty_color = @import("kitty/color.zig");
 const parsers = @import("osc/parsers.zig");
+const encoding = @import("osc/encoding.zig");
+const lib = @import("../lib/main.zig");
+
 pub const color = parsers.color;
+pub const semantic_prompt = parsers.semantic_prompt;
 
 const log = std.log.scoped(.osc);
 
@@ -39,74 +43,8 @@ pub const Command = union(Key) {
     /// in the log.
     change_window_icon: [:0]const u8,
 
-    /// First do a fresh-line. Then start a new command, and enter prompt mode:
-    /// Subsequent text (until a OSC "133;B" or OSC "133;I" command) is a
-    /// prompt string (as if followed by OSC 133;P;k=i\007). Note: I've noticed
-    /// not all shells will send the prompt end code.
-    prompt_start: struct {
-        /// "aid" is an optional "application identifier" that helps disambiguate
-        /// nested shell sessions. It can be anything but is usually a process ID.
-        aid: ?[:0]const u8 = null,
-        /// "kind" tells us which kind of semantic prompt sequence this is:
-        /// - primary: normal, left-aligned first-line prompt (initial, default)
-        /// - continuation: an editable continuation line
-        /// - secondary: a non-editable continuation line
-        /// - right: a right-aligned prompt that may need adjustment during reflow
-        kind: enum { primary, continuation, secondary, right } = .primary,
-        /// If true, the shell will not redraw the prompt on resize so don't erase it.
-        /// See: https://sw.kovidgoyal.net/kitty/shell-integration/#notes-for-shell-developers
-        redraw: bool = true,
-        /// Use a special key instead of arrow keys to move the cursor on
-        /// mouse click. Useful if arrow keys have side-effets like triggering
-        /// auto-complete. The shell integration script should bind the special
-        /// key as needed.
-        /// See: https://sw.kovidgoyal.net/kitty/shell-integration/#notes-for-shell-developers
-        special_key: bool = false,
-        /// If true, the shell is capable of handling mouse click events.
-        /// Ghostty will then send a click event to the shell when the user
-        /// clicks somewhere in the prompt. The shell can then move the cursor
-        /// to that position or perform some other appropriate action. If false,
-        /// Ghostty may generate a number of fake key events to move the cursor
-        /// which is not very robust.
-        /// See: https://sw.kovidgoyal.net/kitty/shell-integration/#notes-for-shell-developers
-        click_events: bool = false,
-    },
-
-    /// End of prompt and start of user input, terminated by a OSC "133;C"
-    /// or another prompt (OSC "133;P").
-    prompt_end: void,
-
-    /// The OSC "133;C" command can be used to explicitly end
-    /// the input area and begin the output area.  However, some applications
-    /// don't provide a convenient way to emit that command.
-    /// That is why we also specify an implicit way to end the input area
-    /// at the end of the line. In the case of  multiple input lines: If the
-    /// cursor is on a fresh (empty) line and we see either OSC "133;P" or
-    /// OSC "133;I" then this is the start of a continuation input line.
-    /// If we see anything else, it is the start of the output area (or end
-    /// of command).
-    end_of_input: struct {
-        /// The command line that the user entered.
-        /// See: https://sw.kovidgoyal.net/kitty/shell-integration/#notes-for-shell-developers
-        cmdline: ?[:0]const u8 = null,
-    },
-
-    /// End of current command.
-    ///
-    /// The exit-code need not be specified if there are no options,
-    /// or if the command was cancelled (no OSC "133;C"), such as by typing
-    /// an interrupt/cancel character (typically ctrl-C) during line-editing.
-    /// Otherwise, it must be an integer code, where 0 means the command
-    /// succeeded, and other values indicate failure. In additing to the
-    /// exit-code there may be an err= option, which non-legacy terminals
-    /// should give precedence to. The err=_value_ option is more general:
-    /// an empty string is success, and any non-empty value (which need not
-    /// be an integer) is an error code. So to indicate success both ways you
-    /// could send OSC "133;D;0;err=\007", though `OSC "133;D;0\007" is shorter.
-    end_of_command: struct {
-        exit_code: ?u8 = null,
-        // TODO: err option
-    },
+    /// Semantic prompt command: https://gitlab.freedesktop.org/Per_Bothner/specifications/blob/master/proposals/semantic-prompts.md
+    semantic_prompt: SemanticPrompt,
 
     /// Set or get clipboard contents. If data is null, then the current
     /// clipboard contents are sent to the pty. If data is set, this
@@ -191,6 +129,41 @@ pub const Command = union(Key) {
     /// ConEmu GUI macro (OSC 9;6)
     conemu_guimacro: [:0]const u8,
 
+    /// ConEmu run process (OSC 9;7)
+    conemu_run_process: [:0]const u8,
+
+    /// ConEmu output environment variable (OSC 9;8)
+    conemu_output_environment_variable: [:0]const u8,
+
+    /// ConEmu XTerm keyboard and output emulation (OSC 9;10)
+    /// https://conemu.github.io/en/TerminalModes.html
+    conemu_xterm_emulation: struct {
+        /// null => do not change
+        /// false => turn off
+        /// true => turn on
+        keyboard: ?bool,
+        /// null => do not change
+        /// false => turn off
+        /// true => turn on
+        output: ?bool,
+    },
+
+    /// ConEmu comment (OSC 9;11)
+    conemu_comment: [:0]const u8,
+
+    /// Kitty text sizing protocol (OSC 66)
+    kitty_text_sizing: parsers.kitty_text_sizing.OSC,
+
+    kitty_clipboard_protocol: KittyClipboardProtocol,
+
+    /// OSC 3008. Hierarchical context signalling (UAPI spec).
+    /// https://uapi-group.org/specifications/specs/osc_context/
+    context_signal: parsers.context_signal.Command,
+
+    pub const SemanticPrompt = parsers.semantic_prompt.Command;
+
+    pub const KittyClipboardProtocol = parsers.kitty_clipboard_protocol.OSC;
+
     pub const Key = LibEnum(
         if (build_options.c_abi) .c else .zig,
         // NOTE: Order matters, see LibEnum documentation.
@@ -198,10 +171,7 @@ pub const Command = union(Key) {
             "invalid",
             "change_window_title",
             "change_window_icon",
-            "prompt_start",
-            "prompt_end",
-            "end_of_input",
-            "end_of_command",
+            "semantic_prompt",
             "clipboard_contents",
             "report_pwd",
             "mouse_shape",
@@ -216,6 +186,13 @@ pub const Command = union(Key) {
             "conemu_progress_report",
             "conemu_wait_input",
             "conemu_guimacro",
+            "conemu_run_process",
+            "conemu_output_environment_variable",
+            "conemu_xterm_emulation",
+            "conemu_comment",
+            "kitty_text_sizing",
+            "kitty_clipboard_protocol",
+            "context_signal",
         },
     );
 
@@ -226,6 +203,10 @@ pub const Command = union(Key) {
             @"error",
             indeterminate,
             pause,
+
+            test "ghostty.h Command.ProgressReport.State" {
+                try lib.checkGhosttyHEnum(State, "GHOSTTY_PROGRESS_STATE_");
+            }
         };
 
         state: State,
@@ -255,7 +236,6 @@ pub const Command = union(Key) {
             8 => 64,
             else => unreachable,
         });
-        // @compileLog(@sizeOf(Command));
     }
 };
 
@@ -340,11 +320,16 @@ pub const Parser = struct {
         @"0",
         @"1",
         @"2",
+        @"3",
         @"4",
         @"5",
+        @"6",
         @"7",
         @"8",
         @"9",
+        @"30",
+        @"300",
+        @"3008",
         @"10",
         @"11",
         @"12",
@@ -358,6 +343,8 @@ pub const Parser = struct {
         @"21",
         @"22",
         @"52",
+        @"55",
+        @"66",
         @"77",
         @"104",
         @"110",
@@ -371,7 +358,10 @@ pub const Parser = struct {
         @"118",
         @"119",
         @"133",
+        @"552",
         @"777",
+        @"1337",
+        @"5522",
     };
 
     pub fn init(alloc: ?Allocator) Parser {
@@ -416,21 +406,25 @@ pub const Parser = struct {
             .clipboard_contents,
             .color_operation,
             .conemu_change_tab_title,
+            .conemu_comment,
             .conemu_guimacro,
+            .conemu_output_environment_variable,
             .conemu_progress_report,
+            .conemu_run_process,
             .conemu_show_message_box,
             .conemu_sleep,
             .conemu_wait_input,
-            .end_of_command,
-            .end_of_input,
+            .conemu_xterm_emulation,
             .hyperlink_end,
             .hyperlink_start,
             .invalid,
             .mouse_shape,
-            .prompt_end,
-            .prompt_start,
             .report_pwd,
+            .semantic_prompt,
             .show_desktop_notification,
+            .kitty_text_sizing,
+            .kitty_clipboard_protocol,
+            .context_signal,
             => {},
         }
 
@@ -508,11 +502,33 @@ pub const Parser = struct {
                 '0' => self.state = .@"0",
                 '1' => self.state = .@"1",
                 '2' => self.state = .@"2",
+                '3' => self.state = .@"3",
                 '4' => self.state = .@"4",
                 '5' => self.state = .@"5",
+                '6' => self.state = .@"6",
                 '7' => self.state = .@"7",
                 '8' => self.state = .@"8",
                 '9' => self.state = .@"9",
+                else => self.state = .invalid,
+            },
+
+            .@"3" => switch (c) {
+                '0' => self.state = .@"30",
+                else => self.state = .invalid,
+            },
+
+            .@"30" => switch (c) {
+                '0' => self.state = .@"300",
+                else => self.state = .invalid,
+            },
+
+            .@"300" => switch (c) {
+                '8' => self.state = .@"3008",
+                else => self.state = .invalid,
+            },
+
+            .@"3008" => switch (c) {
+                ';' => self.writeToFixed(),
                 else => self.state = .invalid,
             },
 
@@ -597,11 +613,24 @@ pub const Parser = struct {
             .@"5" => switch (c) {
                 ';' => if (self.ensureAllocator()) self.writeToFixed(),
                 '2' => self.state = .@"52",
+                '5' => self.state = .@"55",
                 else => self.state = .invalid,
             },
 
-            .@"52" => switch (c) {
+            .@"6" => switch (c) {
+                '6' => self.state = .@"66",
+                else => self.state = .invalid,
+            },
+
+            .@"52",
+            .@"66",
+            => switch (c) {
                 ';' => self.writeToAllocating(),
+                else => self.state = .invalid,
+            },
+
+            .@"55" => switch (c) {
+                '2' => self.state = .@"552",
                 else => self.state = .invalid,
             },
 
@@ -616,8 +645,31 @@ pub const Parser = struct {
                 else => self.state = .invalid,
             },
 
-            .@"0",
             .@"133",
+            => switch (c) {
+                ';' => self.writeToFixed(),
+                '7' => self.state = .@"1337",
+                else => self.state = .invalid,
+            },
+
+            .@"552" => switch (c) {
+                '2' => self.state = .@"5522",
+                else => self.state = .invalid,
+            },
+
+            .@"1337",
+            => switch (c) {
+                ';' => self.writeToFixed(),
+                else => self.state = .invalid,
+            },
+
+            .@"5522",
+            => switch (c) {
+                ';' => self.writeToAllocating(),
+                else => self.state = .invalid,
+            },
+
+            .@"0",
             .@"22",
             .@"777",
             .@"8",
@@ -685,15 +737,35 @@ pub const Parser = struct {
 
             .@"52" => parsers.clipboard_operation.parse(self, terminator_ch),
 
+            .@"55" => null,
+
+            .@"3",
+            .@"30",
+            .@"300",
+            => null,
+
+            .@"3008" => parsers.context_signal.parse(self, terminator_ch),
+
+            .@"6" => null,
+
+            .@"66" => parsers.kitty_text_sizing.parse(self, terminator_ch),
+
             .@"77" => null,
 
             .@"133" => parsers.semantic_prompt.parse(self, terminator_ch),
 
+            .@"552" => null,
+
             .@"777" => parsers.rxvt_extension.parse(self, terminator_ch),
+
+            .@"1337" => parsers.iterm2.parse(self, terminator_ch),
+
+            .@"5522" => parsers.kitty_clipboard_protocol.parse(self, terminator_ch),
         };
     }
 };
 
 test {
     _ = parsers;
+    _ = encoding;
 }
