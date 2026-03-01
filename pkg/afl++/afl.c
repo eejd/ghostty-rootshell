@@ -94,29 +94,6 @@ int main(int argc, char** argv) {
 
   zig_fuzz_init();
 
-  // If a file argument is provided, read it and execute exactly once.
-  if (argc > 1) {
-    FILE* f = fopen(argv[1], "rb");
-    if (!f) {
-      perror(argv[1]);
-      return 1;
-    }
-    fseek(f, 0, SEEK_END);
-    long fsize = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    unsigned char* fbuf = malloc(fsize);
-    if (!fbuf) {
-      perror("malloc");
-      fclose(f);
-      return 1;
-    }
-    size_t nread = fread(fbuf, 1, fsize, f);
-    fclose(f);
-    zig_fuzz_test(fbuf, nread);
-    free(fbuf);
-    return 0;
-  }
-
   // Manual expansion of __AFL_FUZZ_TESTCASE_BUF.
   // Use shared memory buffer if available, otherwise fall back to the
   // static buffer (for standalone/non-AFL execution).
