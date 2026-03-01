@@ -5,10 +5,10 @@ libghostty-vt (Zig module).
 
 ## Fuzz Targets
 
-| Target             | Binary             | Description                                             |
-| ------------------ | ------------------ | ------------------------------------------------------- |
-| `fuzz-vt-parser`   | `fuzz-vt-parser`   | VT parser only (`Parser.next` byte-at-a-time)           |
-| `fuzz-vt-stream`   | `fuzz-vt-stream`   | Full terminal stream (`nextSlice` + `next` via handler)  |
+| Target     | Binary         | Description                                             |
+| ---------- | -------------- | ------------------------------------------------------- |
+| `parser`   | `fuzz-parser`  | VT parser only (`Parser.next` byte-at-a-time)           |
+| `stream`   | `fuzz-stream`  | Full terminal stream (`nextSlice` + `next` via handler)  |
 
 The stream target creates a small `Terminal` and exercises the readonly
 `Stream` handler, covering printing, CSI dispatch, OSC, DCS, SGR, cursor
@@ -33,22 +33,21 @@ zig build
 
 This compiles Zig static libraries for each fuzz target, emits LLVM bitcode,
 then links each with `afl.c` using `afl-cc` to produce instrumented binaries
-at `zig-out/bin/fuzz-vt-parser` and `zig-out/bin/fuzz-vt-stream`.
+at `zig-out/bin/fuzz-parser` and `zig-out/bin/fuzz-stream`.
 
 ## Running the Fuzzer
 
 Each target has its own run step:
 
 ```sh
-zig build run-fuzz-vt-parser    # Run the VT parser fuzzer
-zig build run-fuzz-vt-stream    # Run the VT stream fuzzer
-zig build run                   # Alias for run-fuzz-vt-parser
+zig build run-parser    # Run the VT parser fuzzer
+zig build run-stream    # Run the VT stream fuzzer
 ```
 
 Or invoke `afl-fuzz` directly:
 
 ```sh
-afl-fuzz -i corpus/vt-stream-initial -o afl-out/fuzz-vt-stream -- zig-out/bin/fuzz-vt-stream @@
+afl-fuzz -i corpus/stream-initial -o afl-out/stream -- zig-out/bin/fuzz-stream @@
 ```
 
 The fuzzer runs indefinitely. Let it run for as long as you like; meaningful
@@ -60,7 +59,7 @@ deeper bugs. Press `ctrl+c` to stop the fuzzer when you're done.
 After (or during) a run, results are written to `afl-out/<target>/default/`:
 
 ```
-afl-out/fuzz-vt-stream/default/
+afl-out/stream/default/
 ├── crashes/ # Inputs that triggered crashes
 ├── hangs/   # Inputs that triggered hangs/timeouts
 └── queue/   # All interesting inputs (the evolved corpus)
@@ -75,7 +74,7 @@ issue. The filename encodes metadata about how it was found (e.g.
 Replay any crashing input by piping it into the harness:
 
 ```sh
-cat afl-out/fuzz-vt-stream/default/crashes/<filename> | zig-out/bin/fuzz-vt-stream
+cat afl-out/stream/default/crashes/<filename> | zig-out/bin/fuzz-stream
 ```
 
 ## Corpus Management
@@ -96,9 +95,9 @@ Reduce the evolved queue to a minimal set covering all discovered edges:
 
 ```sh
 AFL_NO_FORKSRV=1 afl-cmin.bash \
-  -i afl-out/fuzz-vt-stream/default/queue \
-  -o corpus/vt-stream-cmin \
-  -- zig-out/bin/fuzz-vt-stream
+  -i afl-out/stream/default/queue \
+  -o corpus/stream-cmin \
+  -- zig-out/bin/fuzz-stream
 ```
 
 `AFL_NO_FORKSRV=1` is required because the Python `afl-cmin` wrapper has
@@ -111,12 +110,12 @@ Shrink each file in the minimized corpus to the smallest input that
 preserves its unique coverage:
 
 ```sh
-mkdir -p corpus/vt-stream-min
-for f in corpus/vt-stream-cmin/*; do
+mkdir -p corpus/stream-min
+for f in corpus/stream-cmin/*; do
   AFL_NO_FORKSRV=1 afl-tmin \
     -i "$f" \
-    -o "corpus/vt-stream-min/$(basename "$f")" \
-    -- zig-out/bin/fuzz-vt-stream
+    -o "corpus/stream-min/$(basename "$f")" \
+    -- zig-out/bin/fuzz-stream
 done
 ```
 
@@ -138,6 +137,6 @@ rename the output files to replace colons with underscores before committing:
 
 | Directory                  | Contents                                        |
 | -------------------------- | ----------------------------------------------- |
-| `corpus/initial/`          | Hand-written seed inputs for vt-parser           |
-| `corpus/vt-parser-cmin/`   | Output of `afl-cmin` (edge-deduplicated corpus) |
-| `corpus/vt-stream-initial/`| Hand-written seed inputs for vt-stream           |
+| `corpus/parser-initial/`   | Hand-written seed inputs for vt-parser           |
+| `corpus/parser-cmin/`      | Output of `afl-cmin` (edge-deduplicated corpus) |
+| `corpus/stream-initial/`   | Hand-written seed inputs for vt-stream           |
