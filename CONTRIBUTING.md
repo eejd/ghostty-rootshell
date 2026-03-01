@@ -49,7 +49,7 @@ plausible-looking but actually low-quality contributions.
 
 ## Contributors Prior to the Vouch System
 
-If you have already contributed to Ghostty prior to the introduction
+If you contributed to Ghostty prior to the introduction
 of the vouching system and wish to continue contributing, you are not
 automatically vouched. You are required to follow the same
 vouching process as a first-time contributor.
