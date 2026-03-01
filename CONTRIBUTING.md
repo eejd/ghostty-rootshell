@@ -52,7 +52,7 @@ plausible-looking but actually low-quality contributions.
 If you contributed to Ghostty prior to the introduction
 of the vouch system and wish to continue contributing, you were not
 automatically added to the [list of vouched users](.github/VOUCHED.td). You will need to follow the same
-vouching process as a first-time contributor.
+process as a first-time contributor to be vouched.
 
 ## Denouncement System
 
