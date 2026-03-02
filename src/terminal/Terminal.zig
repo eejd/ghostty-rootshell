@@ -1965,6 +1965,7 @@ pub fn insertLines(self: *Terminal, count: usize) void {
             }
         } else {
             // Clear the cells for this row, it has been shifted.
+            self.rowWillBeShifted(&cur_p.node.data, cur_row);
             const page = &cur_p.node.data;
             const cells = page.getCells(cur_row);
             self.screens.active.clearCells(
@@ -2152,6 +2153,7 @@ pub fn deleteLines(self: *Terminal, count: usize) void {
             }
         } else {
             // Clear the cells for this row, it's from out of bounds.
+            self.rowWillBeShifted(&cur_p.node.data, cur_row);
             const page = &cur_p.node.data;
             const cells = page.getCells(cur_row);
             self.screens.active.clearCells(
@@ -12933,4 +12935,33 @@ test "Terminal: mode 1049 alt screen plain" {
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("", str);
     }
+}
+
+// Reproduces a crash found by AFL++ fuzzer (afl-out/stream/default/crashes/
+// id:000007,sig:06,src:004522). The crash is a page integrity violation
+// "spacer tail not following wide" triggered during scrollUp -> deleteLines
+// -> clearCells. When deleteLines count >= scroll region height, all rows
+// are cleared (no shifting), so rowWillBeShifted is never called and wide
+// characters straddling the right margin boundary leave orphaned spacer_tails.
+test "Terminal: deleteLines wide char at right margin with full clear" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, .{ .cols = 80, .rows = 24 });
+    defer t.deinit(alloc);
+
+    // Place a wide character at col 39 (1-indexed) on several rows.
+    // The wide cell lands at col 38 (0-indexed) with spacer_tail at col 39.
+    t.setCursorPos(10, 39);
+    try t.print(0x4E2D); // '中'
+
+    // Set left/right scroll margins so scrolling_region.right = 38.
+    // clearCells will clear cells[4..39], which includes the wide cell
+    // at col 38 but NOT the spacer_tail at col 39.
+    t.modes.set(.enable_left_and_right_margin, true);
+    t.setLeftAndRightMargin(5, 39);
+
+    // scrollUp with count >= region height causes deleteLines to clear
+    // ALL rows without any shifting, so rowWillBeShifted is never called
+    // and the orphaned spacer_tail at col 39 triggers a page integrity
+    // violation in clearCells.
+    try t.scrollUp(t.rows);
 }
