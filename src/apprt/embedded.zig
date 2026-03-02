@@ -1924,6 +1924,7 @@ pub const CAPI = struct {
         formatter.content = .{
             .selection = terminal.Selection.init(tl, br, false),
         };
+        formatter.extra.cursor = true;
         formatter.format(&aw.writer) catch {
             aw.deinit();
             return null;
