@@ -2235,6 +2235,18 @@ pub fn insertBlanks(self: *Terminal, count: usize) void {
             );
         }
 
+        // If the cell at the right margin is wide, its spacer tail
+        // is outside the scroll region and won't be shifted. Clear
+        // both to avoid orphaning the spacer tail.
+        const dst_end: [*]Cell = left + (rem - 1);
+        if (dst_end[0].wide == .wide) {
+            self.screens.active.clearCells(
+                page,
+                self.screens.active.cursor.page_row,
+                dst_end[0..2],
+            );
+        }
+
         // We work backwards so we don't overwrite data.
         while (@intFromPtr(x) >= @intFromPtr(left)) : (x -= 1) {
             const src: *Cell = @ptrCast(x);
@@ -9875,6 +9887,40 @@ test "Terminal: insertBlanks pushes hyperlink off end completely" {
         try testing.expect(!cell.hyperlink);
         const id = list_cell.node.data.lookupHyperlink(cell);
         try testing.expect(id == null);
+    }
+}
+
+test "Terminal: insertBlanks wide char straddling right margin" {
+    // Crash found by AFL++ fuzzer.
+    //
+    // When a wide character straddles the right scroll margin (head at the
+    // margin, spacer_tail just beyond it), insertBlanks shifts the wide head
+    // away via swapCells but leaves the orphaned spacer_tail in place,
+    // causing a page integrity violation.
+    const alloc = testing.allocator;
+    var t = try init(alloc, .{ .cols = 10, .rows = 5 });
+    defer t.deinit(alloc);
+
+    // Fill row: A B C D 橋 _ _ _ _ _
+    // Positions: 0 1 2 3 4W 5T 6 7 8 9
+    t.setCursorPos(1, 1);
+    for ("ABCD") |c| try t.print(c);
+    try t.print('橋'); // wide char: head at 4, spacer_tail at 5
+
+    // Set right margin so the wide head is AT the boundary and the
+    // spacer_tail is just outside it.
+    t.scrolling_region.right = 4;
+
+    // Position cursor at x=2 (1-indexed col 3) and insert one blank.
+    // This triggers the swap loop which displaces the wide head at
+    // position 4 without clearing the spacer_tail at position 5.
+    t.setCursorPos(1, 3);
+    t.insertBlanks(1);
+
+    {
+        const str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("AB CD", str);
     }
 }
 
