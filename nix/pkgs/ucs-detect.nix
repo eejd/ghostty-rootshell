@@ -11,9 +11,9 @@
   prettytable,
   requests,
 }:
-buildPythonPackage {
+buildPythonPackage (finalAttrs: {
   pname = "ucs-detect";
-  version = "unstable-2.0.2";
+  version = "2.0.2";
   pyproject = true;
 
   disabled = pythonOlder "3.8";
@@ -21,7 +21,7 @@ buildPythonPackage {
   src = fetchFromGitHub {
     owner = "jquast";
     repo = "ucs-detect";
-    rev = "44884c9581b57ed17d514b54adca07986576c2bf"; # tag 2.0.2
+    tag = finalAttrs.version;
     hash = "sha256-pCJNrJN+SO0pGveNJuISJbzOJYyxP9Tbljp8PwqbgYU=";
   };
 
@@ -44,4 +44,4 @@ buildPythonPackage {
     license = licenses.mit;
     maintainers = [];
   };
-}
+})

@@ -7,9 +7,9 @@
   six,
   wcwidth,
 }:
-buildPythonPackage {
+buildPythonPackage (finalAttrs: {
   pname = "blessed";
-  version = "unstable-1.31";
+  version = "1.31";
   pyproject = true;
 
   disabled = pythonOlder "3.8";
@@ -17,7 +17,7 @@ buildPythonPackage {
   src = fetchFromGitHub {
     owner = "jquast";
     repo = "blessed";
-    rev = "9d2580b5f800a26a19cebe7119163be5e9ae58e9"; # tag 1.31
+    tag = finalAttrs.version;
     hash = "sha256-Nn+aiDk0Qwk9xAvAqtzds/WlrLAozjPL1eSVNU75tJA=";
   };
 
@@ -37,4 +37,4 @@ buildPythonPackage {
     maintainers = [];
     license = licenses.mit;
   };
-}
+})
