@@ -2220,6 +2220,18 @@ pub fn insertBlanks(self: *Terminal, count: usize) void {
     // Remaining cols from our cursor to the right margin.
     const rem = self.scrolling_region.right - self.screens.active.cursor.x + 1;
 
+    // If the cell at the right margin is wide, its spacer tail is
+    // outside the scroll region and would be orphaned by either the
+    // shift or the clear. Clean up both halves up front.
+    {
+        const right_cell: *Cell = @ptrCast(left + (rem - 1));
+        if (right_cell.wide == .wide) self.screens.active.clearCells(
+            page,
+            self.screens.active.cursor.page_row,
+            @as([*]Cell, @ptrCast(right_cell))[0..2],
+        );
+    }
+
     // We can only insert blanks up to our remaining cols
     const adjusted_count = @min(count, rem);
 
@@ -2243,18 +2255,6 @@ pub fn insertBlanks(self: *Terminal, count: usize) void {
                 page,
                 self.screens.active.cursor.page_row,
                 end_multi[0..2],
-            );
-        }
-
-        // If the cell at the right margin is wide, its spacer tail
-        // is outside the scroll region and won't be shifted. Clear
-        // both to avoid orphaning the spacer tail.
-        const dst_end: [*]Cell = left + (rem - 1);
-        if (dst_end[0].wide == .wide) {
-            self.screens.active.clearCells(
-                page,
-                self.screens.active.cursor.page_row,
-                dst_end[0..2],
             );
         }
 
@@ -9970,6 +9970,43 @@ test "Terminal: insertBlanks wide char straddling right margin" {
         const str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expectEqualStrings("AB CD", str);
+    }
+}
+
+test "Terminal: insertBlanks wide char spacer_tail orphaned beyond right margin" {
+    // Regression test for AFL++ crash.
+    //
+    // When insertBlanks clears the entire region from cursor to the right
+    // margin (scroll_amount == 0), a wide character whose head is AT the
+    // right margin gets cleared but its spacer_tail just beyond the margin
+    // is left behind, causing a page integrity violation:
+    //   "spacer tail not following wide"
+    const alloc = testing.allocator;
+    var t = try init(alloc, .{ .cols = 10, .rows = 5 });
+    defer t.deinit(alloc);
+
+    // Fill cols 0–9 with wide chars: 中中中中中
+    // Positions: 0W 1T 2W 3T 4W 5T 6W 7T 8W 9T
+    for (0..5) |_| try t.print(0x4E2D);
+
+    // Set left/right margins so that the last wide char (cols 8–9)
+    // straddles the boundary: head at col 8 (inside), tail at col 9 (outside).
+    t.modes.set(.enable_left_and_right_margin, true);
+    t.setLeftAndRightMargin(1, 9); // 1-indexed: left=0, right=8
+
+    // Cursor is now at (0, 0) after DECSLRM.  Print a narrow char to
+    // advance cursor to col 1.
+    try t.print('a');
+
+    // ICH 8: insert 8 blanks at cursor x=1.
+    // rem = right(8) - x(1) + 1 = 8, adjusted_count = 8, scroll_amount = 0.
+    // The code clears cols 1–8 without noticing the spacer_tail at col 9.
+    t.insertBlanks(8);
+
+    {
+        const str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("a", str);
     }
 }
 
