@@ -13,7 +13,7 @@
 }:
 buildPythonPackage {
   pname = "ucs-detect";
-  version = "unstable-2026-02-23";
+  version = "unstable-2.0.2";
   pyproject = true;
 
   disabled = pythonOlder "3.8";
@@ -21,8 +21,8 @@ buildPythonPackage {
   src = fetchFromGitHub {
     owner = "jquast";
     repo = "ucs-detect";
-    rev = "master";
-    hash = "sha256-x7BD14n1/mP9bzjM6DPqc5R1Fk/HLLycl4o41KV+xAE=";
+    rev = "44884c9581b57ed17d514b54adca07986576c2bf"; # tag 2.0.2
+    hash = "sha256-pCJNrJN+SO0pGveNJuISJbzOJYyxP9Tbljp8PwqbgYU=";
   };
 
   dependencies = [

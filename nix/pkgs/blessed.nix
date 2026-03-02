@@ -9,7 +9,7 @@
 }:
 buildPythonPackage {
   pname = "blessed";
-  version = "unstable-2026-02-23";
+  version = "unstable-1.31";
   pyproject = true;
 
   disabled = pythonOlder "3.8";
@@ -17,8 +17,8 @@ buildPythonPackage {
   src = fetchFromGitHub {
     owner = "jquast";
     repo = "blessed";
-    rev = "master";
-    hash = "sha256-ROd/O9pfqnF5DHXqoz+tkl1jQJSZad3Ta1h+oC3+gvY=";
+    rev = "9d2580b5f800a26a19cebe7119163be5e9ae58e9"; # tag 1.31
+    hash = "sha256-Nn+aiDk0Qwk9xAvAqtzds/WlrLAozjPL1eSVNU75tJA=";
   };
 
   build-system = [flit-core];
