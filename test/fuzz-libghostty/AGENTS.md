@@ -34,3 +34,15 @@ not from a file argument. This affects how you invoke AFL++ tools:
 
 If you pass `@@` or a filename argument, `afl-showmap`/`afl-cmin`
 will see only ~4 tuples (the C main paths) and produce useless results.
+
+## Replaying crashes
+
+Use `replay-crashes.nu` (Nushell) to list or replay AFL++ crash files.
+
+- **List all crash files:** `nu replay-crashes.nu --list`
+- **JSON output (for structured processing):** `nu replay-crashes.nu --json`
+  Returns an array of objects with `fuzzer`, `file`, `binary`, and `replay_cmd`.
+- **Filter by fuzzer:** `nu replay-crashes.nu --list --fuzzer stream`
+- **Replay all crashes:** `nu replay-crashes.nu`
+  Pipes each crash file into its fuzzer binary via stdin and exits non-zero
+  if any crashes still reproduce.
