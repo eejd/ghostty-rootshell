@@ -92,6 +92,18 @@ final class TabTitleEditor: NSObject, NSTextFieldDelegate {
         return true
     }
 
+    /// Handles rightMouseDown events from the host window.
+    ///
+    /// If this returns true then the event was handled by the coordinator.
+    func handleRightMouseDown(_ event: NSEvent) -> Bool {
+        if isMouseEventWithinEditor(event) {
+            inlineTitleEditor?.rightMouseDown(with: event)
+            return true
+        } else {
+            return false
+        }
+    }
+
     /// Begins editing the given target tab window title. Returns true if we're able to start the
     /// inline edit.
     @discardableResult

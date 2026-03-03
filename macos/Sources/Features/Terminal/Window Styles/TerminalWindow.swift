@@ -38,7 +38,7 @@ class TerminalWindow: NSWindow {
     private var tabMenuObserver: NSObjectProtocol?
 
     /// Handles inline tab title editing for this host window.
-    private lazy var tabTitleEditor = TabTitleEditor(
+    private(set) lazy var tabTitleEditor = TabTitleEditor(
         hostWindow: self,
         delegate: self
     )
