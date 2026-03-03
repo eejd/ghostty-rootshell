@@ -39,12 +39,8 @@ final class TabTitleEditor: NSObject, NSTextFieldDelegate {
     private weak var inlineTitleEditor: NSTextField?
     /// Tab window currently being edited.
     private weak var inlineTitleTargetWindow: NSWindow?
-    /// Original hidden state for title labels that are temporarily hidden while editing.
-    private var hiddenLabels: [(label: NSTextField, wasHidden: Bool)] = []
-    /// Original hidden state for buttons that are temporarily hidden while editing.
-    private var hiddenButtons: [(button: NSButton, wasHidden: Bool)] = []
-    /// Original button title state restored once editing finishes.
-    private var buttonState: (button: NSButton, title: String, attributedTitle: NSAttributedString?)?
+    /// Original state of the tab bar.
+    private var previousTabState: TabUIState?
     /// Deferred begin-editing work used to avoid visual flicker on double-click.
     private var pendingEditWorkItem: DispatchWorkItem?
 
@@ -125,12 +121,11 @@ final class TabTitleEditor: NSObject, NSTextFieldDelegate {
         pendingEditWorkItem = nil
         finishEditing(commit: true)
 
+        let tabState = TabUIState(tabButton: tabButton)
+
         // Build the editor using title text and style derived from the tab's existing label.
-        let titleLabels = tabButton
-            .descendants(withClassName: "NSTextField")
-            .compactMap { $0 as? NSTextField }
         let editedTitle = delegate?.tabTitleEditor(self, titleFor: targetWindow) ?? targetWindow.title
-        let sourceLabel = sourceTabTitleLabel(from: titleLabels, matching: editedTitle)
+        let sourceLabel = sourceTabTitleLabel(from: tabState.labels.map(\.label), matching: editedTitle)
         let editorFrame = tabTitleEditorFrame(for: tabButton, sourceLabel: sourceLabel)
         guard editorFrame.width >= 20, editorFrame.height >= 14 else { return false }
 
@@ -157,30 +152,11 @@ final class TabTitleEditor: NSObject, NSTextFieldDelegate {
 
         inlineTitleEditor = editor
         inlineTitleTargetWindow = targetWindow
-
+        previousTabState = tabState
         // Temporarily hide native title label views while editing so only the text field is visible.
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        hiddenLabels = titleLabels.map { ($0, $0.isHidden) }
-        for label in titleLabels {
-            label.isHidden = true
-        }
-        if let tabButton = tabButton as? NSButton {
-            buttonState = (tabButton, tabButton.title, tabButton.attributedTitle)
-            tabButton.title = ""
-            tabButton.attributedTitle = NSAttributedString(string: "")
-        } else {
-            buttonState = nil
-        }
-
-        hiddenButtons = tabButton
-            .descendants(withClassName: "NSButton")
-            .compactMap { $0 as? NSButton }
-            .map { ($0, $0.isHidden) }
-
-        for (btn, _) in hiddenButtons {
-            btn.isHidden = true
-        }
+        tabState.hide()
 
         tabButton.layoutSubtreeIfNeeded()
         tabButton.displayIfNeeded()
@@ -232,22 +208,8 @@ final class TabTitleEditor: NSObject, NSTextFieldDelegate {
 
         editor.removeFromSuperview()
 
-        // Restore original tab title presentation.
-        for (label, wasHidden) in hiddenLabels {
-            label.isHidden = wasHidden
-        }
-        hiddenLabels.removeAll()
-
-        if let buttonState {
-            buttonState.button.title = buttonState.title
-            buttonState.button.attributedTitle = buttonState.attributedTitle ?? NSAttributedString(string: buttonState.title)
-        }
-        self.buttonState = nil
-
-        for (btn, wasHidden) in hiddenButtons {
-            btn.isHidden = wasHidden
-        }
-        hiddenButtons.removeAll()
+        previousTabState?.restore()
+        previousTabState = nil
 
         // Delegate owns title persistence semantics (including empty-title handling).
         guard commit, let targetWindow else { return }
@@ -379,5 +341,58 @@ private extension TabTitleEditor {
             return false
         }
         return editor.convert(editor.bounds, to: nil).contains(event.locationInWindow)
+    }
+}
+
+private extension TabTitleEditor {
+    struct TabUIState {
+        /// Original hidden state for title labels that are temporarily hidden while editing.
+        let labels: [(label: NSTextField, wasHidden: Bool)]
+        /// Original hidden state for buttons that are temporarily hidden while editing.
+        let buttons: [(button: NSButton, wasHidden: Bool)]
+        /// Original button title state restored once editing finishes.
+        let titleButton: (button: NSButton, title: String, attributedTitle: NSAttributedString?)?
+
+        init(tabButton: NSView) {
+            labels = tabButton
+                .descendants(withClassName: "NSTextField")
+                .compactMap { $0 as? NSTextField }
+                .map { ($0, $0.isHidden) }
+            buttons = tabButton
+                .descendants(withClassName: "NSButton")
+                .compactMap { $0 as? NSButton }
+                .map { ($0, $0.isHidden) }
+            if let button = tabButton as? NSButton {
+                titleButton = (button, button.title, button.attributedTitle)
+            } else {
+                titleButton = nil
+            }
+        }
+
+        func hide() {
+            for (label, _) in labels {
+                label.isHidden = true
+            }
+            for (btn, _) in buttons {
+                btn.isHidden = true
+            }
+            titleButton?.button.title = ""
+            titleButton?.button.attributedTitle = NSAttributedString(string: "")
+        }
+
+        func restore() {
+            for (label, wasHidden) in labels {
+                label.isHidden = wasHidden
+            }
+            for (btn, wasHidden) in buttons {
+                btn.isHidden = wasHidden
+            }
+            if let titleButton {
+                titleButton.button.title = titleButton.title
+                if let attributedTitle = titleButton.attributedTitle {
+                    titleButton.button.attributedTitle = attributedTitle
+                }
+            }
+        }
     }
 }
