@@ -777,6 +777,14 @@ class AppDelegate: NSObject,
             NSSound.beep()
         }
 
+        if ghostty.config.bellFeatures.contains(.audio) {
+            if let path = ghostty.config.bellAudioPath,
+               let sound = NSSound(contentsOfFile: path, byReference: false) {
+                sound.volume = ghostty.config.bellAudioVolume
+                sound.play()
+            }
+        }
+
         if ghostty.config.bellFeatures.contains(.attention) {
             // Bounce the dock icon if we're not focused.
             NSApp.requestUserAttention(.informationalRequest)

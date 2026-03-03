@@ -32,6 +32,14 @@ pub const Path = union(enum) {
         return std.meta.eql(self, other);
     }
 
+    /// Returns the path as a C-compatible null-terminated string pointer.
+    pub fn cval(self: Path) [*:0]const u8 {
+        return switch (self) {
+            .optional => |path| path.ptr,
+            .required => |path| path.ptr,
+        };
+    }
+
     /// Parse the input and return a Path. A leading `?` indicates that the path
     /// is _optional_ and an error should not be logged or displayed to the user
     /// if that path does not exist. Otherwise the path is required and an error
