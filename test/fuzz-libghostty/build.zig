@@ -17,6 +17,7 @@ const Fuzzer = struct {
 };
 
 const fuzzers: []const Fuzzer = &.{
+    .{ .name = "osc" },
     .{ .name = "parser" },
     .{ .name = "stream" },
 };

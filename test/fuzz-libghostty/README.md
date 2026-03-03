@@ -7,8 +7,14 @@ libghostty-vt (Zig module).
 
 | Target   | Binary        | Description                                             |
 | -------- | ------------- | ------------------------------------------------------- |
+| `osc`    | `fuzz-osc`    | OSC parser with allocator (`osc.Parser.next` + `end`)   |
 | `parser` | `fuzz-parser` | VT parser only (`Parser.next` byte-at-a-time)           |
 | `stream` | `fuzz-stream` | Full terminal stream (`nextSlice` + `next` via handler) |
+
+The osc target directly fuzzes the `osc.Parser` with an allocator enabled,
+exercising the allocating writer code paths for large payloads. The first
+byte selects the terminator variant (BEL, ST, or missing). Seeds cover OSC
+52, 66, 133, 3008, 1337, and 5522.
 
 The stream target creates a small `Terminal` and exercises the readonly
 `Stream` handler, covering printing, CSI dispatch, OSC, DCS, SGR, cursor
@@ -33,13 +39,14 @@ zig build
 
 This compiles Zig static libraries for each fuzz target, emits LLVM bitcode,
 then links each with `afl.c` using `afl-cc` to produce instrumented binaries
-at `zig-out/bin/fuzz-parser` and `zig-out/bin/fuzz-stream`.
+at `zig-out/bin/fuzz-osc`, `zig-out/bin/fuzz-parser`, and `zig-out/bin/fuzz-stream`.
 
 ## Running the Fuzzer
 
 Each target has its own run step:
 
 ```sh
+zig build run-osc       # Run the OSC parser fuzzer
 zig build run-parser    # Run the VT parser fuzzer
 zig build run-stream    # Run the VT stream fuzzer
 ```
@@ -118,6 +125,8 @@ rename the output files to replace colons with underscores before committing:
 
 | Directory                | Contents                                        |
 | ------------------------ | ----------------------------------------------- |
+| `corpus/osc-initial/`    | Hand-written seed inputs for osc-parser         |
+| `corpus/osc-cmin/`       | Output of `afl-cmin` (edge-deduplicated corpus) |
 | `corpus/parser-initial/` | Hand-written seed inputs for vt-parser          |
 | `corpus/parser-cmin/`    | Output of `afl-cmin` (edge-deduplicated corpus) |
 | `corpus/stream-initial/` | Hand-written seed inputs for vt-stream          |
