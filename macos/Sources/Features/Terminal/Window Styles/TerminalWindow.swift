@@ -202,6 +202,7 @@ class TerminalWindow: NSWindow {
     override func resignKey() {
         super.resignKey()
         resetZoomTabButton.contentTintColor = .secondaryLabelColor
+        tabTitleEditor.finishEditing(commit: true)
     }
 
     override func becomeMain() {
