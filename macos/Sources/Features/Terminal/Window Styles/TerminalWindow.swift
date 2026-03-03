@@ -181,7 +181,7 @@ class TerminalWindow: NSWindow {
     override var canBecomeMain: Bool { return true }
 
     override func sendEvent(_ event: NSEvent) {
-        if tabTitleEditor.handleDoubleClick(event) {
+        if tabTitleEditor.handleMouseDown(event) {
             return
         }
 

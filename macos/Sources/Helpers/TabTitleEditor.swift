@@ -52,11 +52,10 @@ final class TabTitleEditor: NSObject, NSTextFieldDelegate {
         self.delegate = delegate
     }
 
-    /// Handles double-click events from the host window and begins inline edit if possible. If this
-    /// returns true then the double click was handled by the coordinator.
-    func handleDoubleClick(_ event: NSEvent) -> Bool {
-        // We only want double-clicks
-        guard event.type == .leftMouseDown, event.clickCount == 2 else { return false }
+    /// Handles leftMouseDown events from the host window and begins inline edit if possible. If this
+    /// returns true then the event was handled by the coordinator.
+    func handleMouseDown(_ event: NSEvent) -> Bool {
+        guard event.type == .leftMouseDown else { return false }
 
         // If we don't have a host window to look up the click, we do nothing.
         guard let hostWindow else { return false }
@@ -68,6 +67,14 @@ final class TabTitleEditor: NSObject, NSTextFieldDelegate {
               delegate?.tabTitleEditor(self, canRenameTabFor: targetWindow) == true
         else { return false }
 
+        guard !isMouseEventWithinEditor(event) else {
+            // If the click lies within the editor,
+            // we should forward the event to the editor
+            inlineTitleEditor?.mouseDown(with: event)
+            return true
+        }
+        // We only want double-clicks to enable editing
+        guard event.clickCount == 2 else { return false }
         // We need to start editing in a separate event loop tick, so set that up.
         pendingEditWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self, weak targetWindow] in
@@ -334,5 +341,14 @@ final class TabTitleEditor: NSObject, NSTextFieldDelegate {
 
         // Blur/end-edit commits, matching standard NSTextField behavior.
         finishEditing(commit: true)
+    }
+}
+
+private extension TabTitleEditor {
+    func isMouseEventWithinEditor(_ event: NSEvent) -> Bool {
+        guard let editor = inlineTitleEditor?.currentEditor() else {
+            return false
+        }
+        return editor.convert(editor.bounds, to: nil).contains(event.locationInWindow)
     }
 }
