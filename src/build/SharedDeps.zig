@@ -200,6 +200,13 @@ pub fn add(
             if (b.systemIntegrationOption("fontconfig", .{})) {
                 step.linkSystemLibrary2("fontconfig", dynamic_link_opts);
             } else {
+                if (self.config.app_runtime == .gtk)
+                    std.debug.print(
+                        \\WARNING: Statically linking FontConfig when using the GTK app runtime is known
+                        \\to cause crashes! It is HIGHLY recommended that Ghostty be dynamically linked
+                        \\to the system FontConfig library.
+                        \\
+                    , .{});
                 step.linkLibrary(fontconfig_dep.artifact("fontconfig"));
                 try static_libs.append(
                     b.allocator,
