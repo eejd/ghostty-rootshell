@@ -41,6 +41,8 @@ final class TabTitleEditor: NSObject, NSTextFieldDelegate {
     private weak var inlineTitleTargetWindow: NSWindow?
     /// Original hidden state for title labels that are temporarily hidden while editing.
     private var hiddenLabels: [(label: NSTextField, wasHidden: Bool)] = []
+    /// Original hidden state for buttons that are temporarily hidden while editing.
+    private var hiddenButtons: [(button: NSButton, wasHidden: Bool)] = []
     /// Original button title state restored once editing finishes.
     private var buttonState: (button: NSButton, title: String, attributedTitle: NSAttributedString?)?
     /// Deferred begin-editing work used to avoid visual flicker on double-click.
@@ -170,6 +172,16 @@ final class TabTitleEditor: NSObject, NSTextFieldDelegate {
         } else {
             buttonState = nil
         }
+
+        hiddenButtons = tabButton
+            .descendants(withClassName: "NSButton")
+            .compactMap { $0 as? NSButton }
+            .map { ($0, $0.isHidden) }
+
+        for (btn, _) in hiddenButtons {
+            btn.isHidden = true
+        }
+
         tabButton.layoutSubtreeIfNeeded()
         tabButton.displayIfNeeded()
         tabButton.addSubview(editor)
@@ -231,6 +243,11 @@ final class TabTitleEditor: NSObject, NSTextFieldDelegate {
             buttonState.button.attributedTitle = buttonState.attributedTitle ?? NSAttributedString(string: buttonState.title)
         }
         self.buttonState = nil
+
+        for (btn, wasHidden) in hiddenButtons {
+            btn.isHidden = wasHidden
+        }
+        hiddenButtons.removeAll()
 
         // Delegate owns title persistence semantics (including empty-title handling).
         guard commit, let targetWindow else { return }
