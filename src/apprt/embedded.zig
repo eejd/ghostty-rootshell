@@ -1915,6 +1915,23 @@ pub const CAPI = struct {
         const tl_active = screen.pages.getTopLeft(.active);
         const br_active = screen.pages.getBottomRight(.active) orelse return null;
 
+        // Adjust the scrollback/active boundary so it doesn't split a
+        // soft-wrapped line. If the last scrollback row has wrap=true,
+        // the first active row is a continuation. Walk the boundary
+        // forward (into the active area) until we find a row that is
+        // NOT a wrap continuation, keeping the full wrapped line in the
+        // scrollback pass to preserve unwrap continuity.
+        var adjusted_tl_active = tl_active;
+        var boundary_offset: usize = 0;
+        while (true) {
+            const above = adjusted_tl_active.up(1) orelse break;
+            if (!above.rowAndCell().row.wrap) break;
+            // Row above has wrap=true, so adjusted_tl_active is a
+            // continuation. Move it forward past this row.
+            adjusted_tl_active = adjusted_tl_active.down(1) orelse break;
+            boundary_offset += 1;
+        }
+
         var aw: std.Io.Writer.Allocating = .init(global.alloc);
 
         const fmt_opts: terminal.formatter.Options = .{
@@ -1924,12 +1941,13 @@ pub const CAPI = struct {
             .palette = &core_surface.io.terminal.colors.palette.current,
         };
 
-        // Phase 1: Dump scrollback (everything above the active area).
-        // We check if there's a row above the active area's top-left;
-        // if so, scrollback exists and we dump it separately.
-        if (tl_active.up(1)) |last_scrollback_pin| {
+        // Phase 1: Dump scrollback (everything above the adjusted active
+        // boundary). We check if there's a row above the boundary; if so,
+        // scrollback exists and we dump it separately.
+        const has_scrollback = adjusted_tl_active.up(1) != null;
+        if (has_scrollback) {
             const tl_screen = screen.pages.getTopLeft(.screen);
-            var br_scrollback = last_scrollback_pin;
+            var br_scrollback = adjusted_tl_active.up(1).?;
             br_scrollback.x = screen.pages.cols - 1;
 
             var scrollback_fmt: terminal.formatter.ScreenFormatter = .init(screen, fmt_opts);
@@ -1941,13 +1959,18 @@ pub const CAPI = struct {
                 return null;
             };
 
-            // Scroll Up (SU) pushes viewport content into the scrollback
-            // buffer. The terminal clamps 999 to the actual row count, so
-            // this reliably clears the viewport regardless of size.
-            aw.writer.writeAll("\x1b[999S") catch {
-                aw.deinit();
-                return null;
-            };
+            // Emit LF × rows to push scrollback content into the
+            // scrollback buffer. Unlike SU (which scrolls regardless of
+            // cursor position and can inject blank rows into history),
+            // LF first moves the cursor down through existing blank rows
+            // without scrolling, then only scrolls when it reaches the
+            // bottom margin — so only actual content enters scrollback.
+            for (0..screen.pages.rows) |_| {
+                aw.writer.writeByte('\n') catch {
+                    aw.deinit();
+                    return null;
+                };
+            }
         }
 
         // Phase 2: Emit active area on a clean viewport.
@@ -1959,7 +1982,7 @@ pub const CAPI = struct {
 
         var active_fmt: terminal.formatter.ScreenFormatter = .init(screen, fmt_opts);
         active_fmt.content = .{
-            .selection = terminal.Selection.init(tl_active, br_active, false),
+            .selection = terminal.Selection.init(adjusted_tl_active, br_active, false),
         };
         active_fmt.format(&aw.writer) catch {
             aw.deinit();
@@ -1975,9 +1998,16 @@ pub const CAPI = struct {
             return null;
         };
 
-        // Position cursor within the active area.
+        // Position cursor within the active area. Adjust for any rows
+        // that were moved from the active area into the scrollback pass
+        // due to wrap continuation boundary adjustment.
         const cursor = screen.cursor;
-        aw.writer.print("\x1b[{d};{d}H", .{ cursor.y + 1, cursor.x + 1 }) catch {
+        const cursor_y: usize = cursor.y;
+        const adjusted_y = if (cursor_y >= boundary_offset)
+            cursor_y - boundary_offset
+        else
+            0;
+        aw.writer.print("\x1b[{d};{d}H", .{ adjusted_y + 1, @as(usize, cursor.x) + 1 }) catch {
             aw.deinit();
             return null;
         };
