@@ -249,7 +249,7 @@ _ghostty_deferred_init() {
     # Sudo
     if [[ "$GHOSTTY_SHELL_FEATURES" == *"sudo"* ]] && [[ -n "$TERMINFO" ]]; then
       # Wrap `sudo` command to ensure Ghostty terminfo is preserved
-      sudo() {
+      function sudo() {
         builtin local sudo_has_sudoedit_flags="no"
         for arg in "$@"; do
           # Check if argument is '-e' or '--edit' (sudoedit flags)
@@ -272,7 +272,7 @@ _ghostty_deferred_init() {
 
     # SSH Integration
     if [[ "$GHOSTTY_SHELL_FEATURES" == *ssh-* ]]; then
-      ssh() {
+      function ssh() {
         emulate -L zsh
         setopt local_options no_glob_subst
 
