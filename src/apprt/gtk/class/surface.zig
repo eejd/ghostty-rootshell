@@ -3343,7 +3343,7 @@ pub const Surface = extern struct {
     };
 
     fn initSurface(self: *Self) InitError!void {
-        const priv = self.private();
+        const priv: *Private = self.private();
         assert(priv.core_surface == null);
         const gl_area = priv.gl_area;
 
@@ -3376,6 +3376,13 @@ pub const Surface = extern struct {
         );
         defer config.deinit();
 
+        if (priv.overrides.command) |c| {
+            config.command = try c.clone(config._arena.?.allocator());
+        }
+        if (priv.overrides.working_directory) |wd| {
+            config.@"working-directory" = try config._arena.?.allocator().dupeZ(u8, wd);
+        }
+
         // Properties that can impact surface init
         if (priv.font_size_request) |size| config.@"font-size" = size.points;
         if (priv.pwd) |pwd| config.@"working-directory" = pwd;
@@ -3387,10 +3394,6 @@ pub const Surface = extern struct {
             app.core(),
             app.rt(),
             &priv.rt_surface,
-            .{
-                .command = priv.overrides.command,
-                .working_directory = priv.overrides.working_directory,
-            },
         ) catch |err| {
             log.warn("failed to initialize surface err={}", .{err});
             return error.SurfaceError;
