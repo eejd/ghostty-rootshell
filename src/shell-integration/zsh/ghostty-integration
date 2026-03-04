@@ -141,10 +141,16 @@ _ghostty_deferred_init() {
                 # - False negative (with prompt_subst):   PS1='$mark1'
                 [[ $PS1 == *$mark1* ]] || PS1=${mark1}${PS1}
                 [[ $PS1 == *$markB* ]] || PS1=${PS1}${markB}
-                # Handle multiline prompts by marking continuation lines as 
-                # secondary by replacing newlines with being prefixed
-                # with k=s
-                if [[ $PS1 == *$'\n'* ]]; then
+                # Handle multiline prompts by marking newline-separated
+                # continuation lines with k=s (mark2). We skip the newline
+                # immediately after mark1 to avoid introducing a double
+                # newline due to OSC 133;A's fresh-line behavior.
+                if [[ $PS1 == ${mark1}$'\n'* ]]; then
+                    builtin local rest=${PS1#${mark1}$'\n'}
+                    if [[ $rest == *$'\n'* ]]; then
+                        PS1=${mark1}$'\n'${rest//$'\n'/$'\n'${mark2}}
+                    fi
+                elif [[ $PS1 == *$'\n'* ]]; then
                     PS1=${PS1//$'\n'/$'\n'${mark2}}
                 fi
 
