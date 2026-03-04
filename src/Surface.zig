@@ -30,7 +30,6 @@ const font = @import("font/main.zig");
 const Command = @import("Command.zig");
 const terminal = @import("terminal/main.zig");
 const configpkg = @import("config.zig");
-const ConfigOverrides = configpkg.ConfigOverrides;
 const Duration = configpkg.Config.Duration;
 const input = @import("input.zig");
 const App = @import("App.zig");
@@ -464,6 +463,12 @@ pub fn init(
     app: *App,
     rt_app: *apprt.runtime.App,
     rt_surface: *apprt.runtime.Surface,
+    overrides: struct {
+        command: ?configpkg.Command = null,
+        working_directory: ?[:0]const u8 = null,
+
+        pub const none: @This() = .{};
+    },
 ) !void {
     // Apply our conditional state. If we fail to apply the conditional state
     // then we log and attempt to move forward with the old config.
@@ -609,9 +614,8 @@ pub fn init(
 
     // The command we're going to execute
     const command: ?configpkg.Command = command: {
-        if (self.getConfigOverrides()) |config_overrides| {
-            if (config_overrides.isSet(.command))
-                break :command config_overrides.get(.command);
+        if (overrides.command) |command| {
+            break :command command;
         }
         if (app.first) {
             if (config.@"initial-command") |command| {
@@ -623,9 +627,8 @@ pub fn init(
 
     // The working directory to execute the command in.
     const working_directory: ?[]const u8 = wd: {
-        if (self.getConfigOverrides()) |config_overrides| {
-            if (config_overrides.isSet(.@"working-directory"))
-                break :wd config_overrides.get(.@"working-directory");
+        if (overrides.working_directory) |working_directory| {
+            break :wd working_directory;
         }
         break :wd config.@"working-directory";
     };
@@ -1805,13 +1808,6 @@ pub fn updateConfig(
         .config_change,
         .{ .config = config },
     );
-}
-
-fn getConfigOverrides(self: *Surface) ?*const ConfigOverrides {
-    if (@hasDecl(apprt.runtime.Surface, "getConfigOverrides")) {
-        return self.rt_surface.getConfigOverrides();
-    }
-    return null;
 }
 
 const InitialSizeError = error{

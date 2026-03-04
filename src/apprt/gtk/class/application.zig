@@ -22,6 +22,7 @@ const xev = @import("../../../global.zig").xev;
 const Binding = @import("../../../input.zig").Binding;
 const CoreConfig = configpkg.Config;
 const CoreSurface = @import("../../../Surface.zig");
+const lib = @import("../../../lib/main.zig");
 
 const ext = @import("../ext.zig");
 const key = @import("../key.zig");
@@ -32,7 +33,6 @@ const ApprtApp = @import("../App.zig");
 const Common = @import("../class.zig").Common;
 const WeakRef = @import("../weak_ref.zig").WeakRef;
 const Config = @import("config.zig").Config;
-const ConfigOverrides = @import("config_overrides.zig").ConfigOverrides;
 const Surface = @import("surface.zig").Surface;
 const SplitTree = @import("split_tree.zig").SplitTree;
 const Window = @import("window.zig").Window;
@@ -710,7 +710,7 @@ pub const Application = extern struct {
                     .app => null,
                     .surface => |v| v,
                 },
-                null,
+                .none,
             ),
 
             .open_config => return Action.openConfig(self),
@@ -1671,18 +1671,26 @@ pub const Application = extern struct {
     ) callconv(.c) void {
         log.debug("received new window action", .{});
 
-        const config_overrides: ?*ConfigOverrides = config_overrides: {
+        const alloc = Application.default().allocator();
+
+        var working_directory: ?[:0]const u8 = null;
+        defer if (working_directory) |wd| alloc.free(wd);
+
+        var title: ?[:0]const u8 = null;
+        defer if (title) |t| alloc.free(t);
+
+        var command: ?configpkg.Command = null;
+        defer if (command) |c| c.deinit(alloc);
+
+        var args: std.ArrayList([:0]const u8) = .empty;
+        defer {
+            for (args.items) |arg| alloc.free(arg);
+            args.deinit(alloc);
+        }
+
+        overrides: {
             // were we given a parameter?
-            const parameter = parameter_ orelse break :config_overrides null;
-
-            const alloc = Application.default().allocator();
-            const config_overrides = ConfigOverrides.new(alloc) catch |err| {
-                log.warn("unable to create new config overrides: {t}", .{err});
-                break :config_overrides null;
-            };
-            errdefer config_overrides.unref();
-
-            const co = config_overrides.get();
+            const parameter = parameter_ orelse break :overrides;
 
             const as_variant_type = glib.VariantType.new("as");
             defer as_variant_type.free();
@@ -1693,7 +1701,7 @@ pub const Application = extern struct {
                     parameter.getTypeString(),
                     as_variant_type.peekString()[0..as_variant_type.getStringLength()],
                 });
-                break :config_overrides null;
+                break :overrides;
             }
 
             const s_variant_type = glib.VariantType.new("s");
@@ -1701,12 +1709,6 @@ pub const Application = extern struct {
 
             var it: glib.VariantIter = undefined;
             _ = it.init(parameter);
-
-            var args: std.ArrayList([:0]const u8) = .empty;
-            defer {
-                for (args.items) |arg| alloc.free(arg);
-                args.deinit(alloc);
-            }
 
             var e_seen: bool = false;
             var i: usize = 0;
@@ -1721,15 +1723,17 @@ pub const Application = extern struct {
                 const buf = value.getString(&len);
                 const str = buf[0..len];
 
+                log.debug("new-window argument: {d} {s}", .{ i, str });
+
                 if (e_seen) {
                     const cpy = alloc.dupeZ(u8, str) catch |err| {
                         log.warn("unable to duplicate argument {d} {s}: {t}", .{ i, str, err });
-                        break :config_overrides null;
+                        break :overrides;
                     };
                     errdefer alloc.free(cpy);
                     args.append(alloc, cpy) catch |err| {
                         log.warn("unable to append argument {d} {s}: {t}", .{ i, str, err });
-                        break :config_overrides null;
+                        break :overrides;
                     };
                     continue;
                 }
@@ -1739,27 +1743,52 @@ pub const Application = extern struct {
                     continue;
                 }
 
-                co.parseCLI(str) catch |err| {
-                    log.warn("unable to parse argument {d} {s}: {t}", .{ i, str, err });
+                if (lib.cutPrefix(u8, str, "--command=")) |v| {
+                    if (command) |c| c.deinit(alloc);
+                    var cmd: configpkg.Command = undefined;
+                    cmd.parseCLI(alloc, v) catch |err| {
+                        log.warn("unable to parse command: {t}", .{err});
+                        continue;
+                    };
+                    command = cmd;
                     continue;
-                };
-
-                log.debug("new-window argument: {d} {s}", .{ i, str });
+                }
+                if (lib.cutPrefix(u8, str, "--working-directory=")) |v| {
+                    if (working_directory) |wd| alloc.free(wd);
+                    working_directory = alloc.dupeZ(u8, std.mem.trim(u8, v, &std.ascii.whitespace)) catch |err| wd: {
+                        log.warn("unable to duplicate working directory: {t}", .{err});
+                        break :wd null;
+                    };
+                    continue;
+                }
+                if (lib.cutPrefix(u8, str, "--title=")) |v| {
+                    if (title) |t| alloc.free(t);
+                    title = alloc.dupeZ(u8, std.mem.trim(u8, v, &std.ascii.whitespace)) catch |err| t: {
+                        log.warn("unable to duplicate title: {t}", .{err});
+                        break :t null;
+                    };
+                    continue;
+                }
             }
+        }
 
-            if (args.items.len > 0) {
-                co.set(.command, .{ .direct = args.items }) catch |err| {
-                    log.warn("unable to set command on config overrides: {t}", .{err});
-                    break :config_overrides null;
-                };
-            }
+        if (args.items.len > 0) direct: {
+            if (command) |c| c.deinit(alloc);
+            command = .{
+                .direct = args.toOwnedSlice(alloc) catch |err| {
+                    log.warn("unable to convert list of arguments to owned slice: {t}", .{err});
+                    break :direct;
+                },
+            };
+        }
 
-            break :config_overrides config_overrides;
+        Action.newWindow(self, null, .{
+            .command = command,
+            .working_directory = working_directory,
+            .title = title,
+        }) catch |err| {
+            log.warn("unable to create new window: {t}", .{err});
         };
-
-        defer if (config_overrides) |v| v.unref();
-
-        Action.newWindow(self, null, config_overrides) catch {};
     }
 
     pub fn actionOpenConfig(
@@ -2206,7 +2235,13 @@ const Action = struct {
     pub fn newWindow(
         self: *Application,
         parent: ?*CoreSurface,
-        config_overrides: ?*ConfigOverrides,
+        overrides: struct {
+            command: ?configpkg.Command = null,
+            working_directory: ?[:0]const u8 = null,
+            title: ?[:0]const u8 = null,
+
+            pub const none: @This() = .{};
+        },
     ) !void {
         // Note that we've requested a window at least once. This is used
         // to trigger quit on no windows. Note I'm not sure if this is REALLY
@@ -2215,15 +2250,32 @@ const Action = struct {
         // was a delay in the event loop before we created a Window.
         self.private().requested_window = true;
 
-        const win = Window.new(self, config_overrides);
-        initAndShowWindow(self, win, parent, config_overrides);
+        const win = Window.new(self, .{
+            .title = overrides.title,
+        });
+        initAndShowWindow(
+            self,
+            win,
+            parent,
+            .{
+                .command = overrides.command,
+                .working_directory = overrides.working_directory,
+                .title = overrides.title,
+            },
+        );
     }
 
     fn initAndShowWindow(
         self: *Application,
         win: *Window,
         parent: ?*CoreSurface,
-        config_overrides: ?*ConfigOverrides,
+        overrides: struct {
+            command: ?configpkg.Command = null,
+            working_directory: ?[:0]const u8 = null,
+            title: ?[:0]const u8 = null,
+
+            pub const none: @This() = .{};
+        },
     ) void {
         // Setup a binding so that whenever our config changes so does the
         // window. There's never a time when the window config should be out
@@ -2237,7 +2289,11 @@ const Action = struct {
         );
 
         // Create a new tab with window context (first tab in new window)
-        win.newTabForWindow(parent, config_overrides);
+        win.newTabForWindow(parent, .{
+            .command = overrides.command,
+            .working_directory = overrides.working_directory,
+            .title = overrides.title,
+        });
 
         // Estimate the initial window size before presenting so the window
         // manager can position it correctly.
@@ -2563,7 +2619,7 @@ const Action = struct {
             .@"quick-terminal" = true,
         });
         assert(win.isQuickTerminal());
-        initAndShowWindow(self, win, null, null);
+        initAndShowWindow(self, win, null, .none);
         return true;
     }
 

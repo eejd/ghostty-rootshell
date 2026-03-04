@@ -21,7 +21,6 @@ const gresource = @import("../build/gresource.zig");
 const winprotopkg = @import("../winproto.zig");
 const Common = @import("../class.zig").Common;
 const Config = @import("config.zig").Config;
-const ConfigOverrides = @import("config_overrides.zig").ConfigOverrides;
 const Application = @import("application.zig").Application;
 const CloseConfirmationDialog = @import("close_confirmation_dialog.zig").CloseConfirmationDialog;
 const SplitTree = @import("split_tree.zig").SplitTree;
@@ -76,18 +75,6 @@ pub const Window = extern struct {
                 ?*Config,
                 .{
                     .accessor = C.privateObjFieldAccessor("config"),
-                },
-            );
-        };
-
-        pub const @"config-overrides" = struct {
-            pub const name = "config-overrides";
-            const impl = gobject.ext.defineProperty(
-                name,
-                Self,
-                ?*ConfigOverrides,
-                .{
-                    .accessor = C.privateObjFieldAccessor("config_overrides"),
                 },
             );
         };
@@ -244,9 +231,6 @@ pub const Window = extern struct {
         /// The configuration that this surface is using.
         config: ?*Config = null,
 
-        /// Configuration overrides.
-        config_overrides: ?*ConfigOverrides = null,
-
         /// State and logic for windowing protocol for a window.
         winproto: winprotopkg.Window,
 
@@ -282,27 +266,24 @@ pub const Window = extern struct {
         pub var offset: c_int = 0;
     };
 
-    pub fn new(app: *Application, config_overrides_: ?*ConfigOverrides) *Self {
+    pub fn new(
+        app: *Application,
+        overrides: struct {
+            title: ?[:0]const u8 = null,
+
+            pub const none: @This() = .{};
+        },
+    ) *Self {
         const win = gobject.ext.newInstance(Self, .{
             .application = app,
         });
 
-        const priv: *Private = win.private();
-
-        if (config_overrides_) |v| {
-            priv.config_overrides = v.ref();
-            const config_overrides = v.get();
-            // If the config overrides have a title set, we set that immediately
+        if (overrides.title) |title| {
+            // If the overrides have a title set, we set that immediately
             // so that any applications inspecting the window states see an
             // immediate title set when the window appears, rather than waiting
             // possibly a few event loop ticks for it to sync from the surface.
-            if (config_overrides.isSet(.title)) {
-                const title_ = config_overrides.get(.title);
-                if (title_) |title| {
-                    win.as(gtk.Window).setTitle(title);
-                }
-            }
-            win.as(gobject.Object).notifyByPspec(properties.@"config-overrides".impl.param_spec);
+            win.as(gtk.Window).setTitle(title);
         }
 
         return win;
@@ -353,16 +334,7 @@ pub const Window = extern struct {
         // an immediate title set when the window appears, rather than
         // waiting possibly a few event loop ticks for it to sync from
         // the surface.
-        const title_ = title: {
-            if (priv.config_overrides) |co| {
-                const config_overrides = co.get();
-                if (config_overrides.isSet(.title)) {
-                    break :title config_overrides.get(.title);
-                }
-            }
-            break :title config.title;
-        };
-        if (title_) |title| {
+        if (config.title) |title| {
             self.as(gtk.Window).setTitle(title);
         }
 
@@ -416,19 +388,55 @@ pub const Window = extern struct {
     /// at the position dictated by the `window-new-tab-position` config.
     /// The new tab will be selected.
     pub fn newTab(self: *Self, parent_: ?*CoreSurface) void {
-        _ = self.newTabPage(parent_, .tab, null);
+        _ = self.newTabPage(parent_, .tab, .none);
     }
 
-    pub fn newTabForWindow(self: *Self, parent_: ?*CoreSurface, config_overrides: ?*ConfigOverrides) void {
-        _ = self.newTabPage(parent_, .window, config_overrides);
+    pub fn newTabForWindow(
+        self: *Self,
+        parent_: ?*CoreSurface,
+        overrides: struct {
+            command: ?configpkg.Command = null,
+            working_directory: ?[:0]const u8 = null,
+            title: ?[:0]const u8 = null,
+
+            pub const none: @This() = .{};
+        },
+    ) void {
+        _ = self.newTabPage(
+            parent_,
+            .window,
+            .{
+                .command = overrides.command,
+                .working_directory = overrides.working_directory,
+                .title = overrides.title,
+            },
+        );
     }
 
-    fn newTabPage(self: *Self, parent_: ?*CoreSurface, context: apprt.surface.NewSurfaceContext, config_overrides: ?*ConfigOverrides) *adw.TabPage {
+    fn newTabPage(
+        self: *Self,
+        parent_: ?*CoreSurface,
+        context: apprt.surface.NewSurfaceContext,
+        overrides: struct {
+            command: ?configpkg.Command = null,
+            working_directory: ?[:0]const u8 = null,
+            title: ?[:0]const u8 = null,
+
+            pub const none: @This() = .{};
+        },
+    ) *adw.TabPage {
         const priv: *Private = self.private();
         const tab_view = priv.tab_view;
 
         // Create our new tab object
-        const tab = Tab.new(priv.config, config_overrides);
+        const tab = Tab.new(
+            priv.config,
+            .{
+                .command = overrides.command,
+                .working_directory = overrides.working_directory,
+                .title = overrides.title,
+            },
+        );
 
         if (parent_) |p| {
             // For a new window's first tab, inherit the parent's initial size hints.
@@ -1198,37 +1206,6 @@ pub const Window = extern struct {
         });
     }
 
-    fn closureTitle(
-        _: *Self,
-        config_: ?*Config,
-        config_overrides_: ?*ConfigOverrides,
-        title_: ?[*:0]const u8,
-    ) callconv(.c) ?[*:0]const u8 {
-        config: {
-            if (config_overrides_) |v| {
-                const config_overrides = v.get();
-                if (config_overrides.isSet(.title)) {
-                    if (config_overrides.get(.title)) |title| {
-                        return glib.ext.dupeZ(u8, title);
-                    }
-                    // The `title` has explicitly been set to `null`, skip
-                    // checking the normal config for it's title setting.
-                    break :config;
-                }
-            }
-            if (config_) |v| {
-                const config = v.get();
-                if (config.title) |title| {
-                    return glib.ext.dupeZ(u8, title);
-                }
-            }
-        }
-        if (title_) |title| {
-            return glib.ext.dupeZ(u8, std.mem.span(title));
-        }
-        return null;
-    }
-
     fn closureSubtitle(
         _: *Self,
         config_: ?*Config,
@@ -1255,11 +1232,6 @@ pub const Window = extern struct {
         if (priv.config) |v| {
             v.unref();
             priv.config = null;
-        }
-
-        if (priv.config_overrides) |v| {
-            v.unref();
-            priv.config_overrides = null;
         }
 
         priv.tab_bindings.setSource(null);
@@ -1336,7 +1308,7 @@ pub const Window = extern struct {
         _: *adw.TabOverview,
         self: *Self,
     ) callconv(.c) *adw.TabPage {
-        return self.newTabPage(if (self.getActiveSurface()) |v| v.core() else null, .tab, null);
+        return self.newTabPage(if (self.getActiveSurface()) |v| v.core() else null, .tab, .none);
     }
 
     fn tabOverviewOpen(
@@ -2102,7 +2074,6 @@ pub const Window = extern struct {
             gobject.ext.registerProperties(class, &.{
                 properties.@"active-surface".impl,
                 properties.config.impl,
-                properties.@"config-overrides".impl,
                 properties.debug.impl,
                 properties.@"headerbar-visible".impl,
                 properties.@"quick-terminal".impl,
@@ -2141,7 +2112,6 @@ pub const Window = extern struct {
             class.bindTemplateCallback("notify_quick_terminal", &propQuickTerminal);
             class.bindTemplateCallback("notify_scale_factor", &propScaleFactor);
             class.bindTemplateCallback("titlebar_style_is_tabs", &closureTitlebarStyleIsTab);
-            class.bindTemplateCallback("computed_title", &closureTitle);
             class.bindTemplateCallback("computed_subtitle", &closureSubtitle);
 
             // Virtual methods

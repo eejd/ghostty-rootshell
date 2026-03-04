@@ -7,6 +7,7 @@ const glib = @import("glib");
 const gobject = @import("gobject");
 const gtk = @import("gtk");
 
+const configpkg = @import("../../../config.zig");
 const apprt = @import("../../../apprt.zig");
 const ext = @import("../ext.zig");
 const gresource = @import("../build/gresource.zig");
@@ -16,7 +17,6 @@ const Application = @import("application.zig").Application;
 const CloseConfirmationDialog = @import("close_confirmation_dialog.zig").CloseConfirmationDialog;
 const Surface = @import("surface.zig").Surface;
 const SurfaceScrolledWindow = @import("surface_scrolled_window.zig").SurfaceScrolledWindow;
-const ConfigOverrides = @import("config_overrides.zig").ConfigOverrides;
 
 const log = std.log.scoped(.gtk_ghostty_split_tree);
 
@@ -209,12 +209,22 @@ pub const SplitTree = extern struct {
         self: *Self,
         direction: Surface.Tree.Split.Direction,
         parent_: ?*Surface,
-        config_overrides: ?*ConfigOverrides,
+        overrides: struct {
+            command: ?configpkg.Command = null,
+            working_directory: ?[:0]const u8 = null,
+            title: ?[:0]const u8 = null,
+
+            pub const none: @This() = .{};
+        },
     ) Allocator.Error!void {
         const alloc = Application.default().allocator();
 
         // Create our new surface.
-        const surface: *Surface = .new(config_overrides);
+        const surface: *Surface = .new(.{
+            .command = overrides.command,
+            .working_directory = overrides.working_directory,
+            .title = overrides.title,
+        });
         defer surface.unref();
         _ = surface.refSink();
 
@@ -640,7 +650,7 @@ pub const SplitTree = extern struct {
         self.newSplit(
             direction,
             self.getActiveSurface(),
-            null,
+            .none,
         ) catch |err| {
             log.warn("new split failed error={}", .{err});
         };

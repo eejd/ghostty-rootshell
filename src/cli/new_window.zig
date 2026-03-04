@@ -15,9 +15,12 @@ pub const Options = struct {
     /// If set, open up a new window in a custom instance of Ghostty.
     class: ?[:0]const u8 = null,
 
+    /// Did the user specify a `--working-directory` argument on the command line?
+    _working_directory_seen: bool = false,
+
     /// All of the arguments after `+new-window`. They will be sent to Ghosttty
     /// for processing.
-    _arguments: ?[][:0]const u8 = null,
+    _arguments: std.ArrayList([:0]const u8) = .empty,
 
     /// Enable arg parsing diagnostics so that we don't get an error if
     /// there is a "normal" config setting on the cli.
@@ -25,31 +28,24 @@ pub const Options = struct {
 
     /// Manual parse hook, collect all of the arguments after `+new-window`.
     pub fn parseManuallyHook(self: *Options, alloc: Allocator, arg: []const u8, iter: anytype) (error{InvalidValue} || homedir.ExpandError || std.fs.Dir.RealPathAllocError || Allocator.Error)!bool {
-        var arguments: std.ArrayList([:0]const u8) = .empty;
-        errdefer {
-            for (arguments.items) |argument| alloc.free(argument);
-            arguments.deinit(alloc);
-        }
-
         var e_seen: bool = std.mem.eql(u8, arg, "-e");
+
         // Include the argument that triggered the manual parse hook.
-        if (try self.checkArg(alloc, arg)) |a| try arguments.append(alloc, a);
+        if (try self.checkArg(alloc, arg)) |a| try self._arguments.append(alloc, a);
 
         // Gather up the rest of the arguments to use as the command.
         while (iter.next()) |param| {
             if (e_seen) {
-                try arguments.append(alloc, try alloc.dupeZ(u8, param));
+                try self._arguments.append(alloc, try alloc.dupeZ(u8, param));
                 continue;
             }
             if (std.mem.eql(u8, param, "-e")) {
                 e_seen = true;
-                try arguments.append(alloc, try alloc.dupeZ(u8, param));
+                try self._arguments.append(alloc, try alloc.dupeZ(u8, param));
                 continue;
             }
-            if (try self.checkArg(alloc, param)) |a| try arguments.append(alloc, a);
+            if (try self.checkArg(alloc, param)) |a| try self._arguments.append(alloc, a);
         }
-
-        self._arguments = try arguments.toOwnedSlice(alloc);
 
         return false;
     }
@@ -62,13 +58,14 @@ pub const Options = struct {
 
         if (lib.cutPrefix(u8, arg, "--working-directory=")) |rest| {
             const stripped = std.mem.trim(u8, rest, &std.ascii.whitespace);
-            if (std.mem.eql(u8, stripped, "home")) return error.InvalidValue;
-            if (std.mem.eql(u8, stripped, "inherit")) return error.InvalidValue;
+            if (std.mem.eql(u8, stripped, "home")) return try alloc.dupeZ(u8, arg);
+            if (std.mem.eql(u8, stripped, "inherit")) return try alloc.dupeZ(u8, arg);
             const cwd: std.fs.Dir = std.fs.cwd();
             var expandhome_buf: [std.fs.max_path_bytes]u8 = undefined;
             const expanded = try homedir.expandHome(stripped, &expandhome_buf);
             var realpath_buf: [std.fs.max_path_bytes]u8 = undefined;
             const realpath = try cwd.realpath(expanded, &realpath_buf);
+            self._working_directory_seen = true;
             return try std.fmt.allocPrintSentinel(alloc, "--working-directory={s}", .{realpath}, 0);
         }
 
@@ -108,9 +105,11 @@ pub const Options = struct {
 /// If `--working-directory` is found on the command line and is a relative
 /// path (i.e. doesn't start with `/`) it will be resolved to an absolute path
 /// relative to the current working directory that the `ghostty +new-window`
-/// command is run from. The special values `home` and `inherit` that are
-/// available as "normal" CLI flags or configuration entries do not work when
-/// used from the `+new-window` CLI action.
+/// command is run from. `~/` prefixes will also be expanded to the user's home
+/// directory.
+///
+/// If `--working-directory` is _not_ found on the command line, the working
+/// directory that `ghostty +new-window` is run from will be passed to Ghostty.
 ///
 /// GTK uses an application ID to identify instances of applications. If Ghostty
 /// is compiled with release optimizations, the default application ID will be
@@ -135,8 +134,16 @@ pub const Options = struct {
 ///   * `--class=<class>`: If set, open up a new window in a custom instance of
 ///     Ghostty. The class must be a valid GTK application ID.
 ///
+///   * `--command`: The command to be executed in the first surface of the new window.
+///
+///   * `--working-directory=<directory>`: The working directory to pass to Ghostty.
+///
+///   * `--title`: A title that will override the title of the first surface in
+///     the new window. The title override may be edited or removed later.
+///
 ///   * `-e`: Any arguments after this will be interpreted as a command to
-///     execute inside the new window instead of the default command.
+///     execute inside the first surface of the new window instead of the
+///     default command.
 ///
 /// Available since: 1.2.0
 pub fn run(alloc: Allocator) !u8 {
@@ -186,11 +193,12 @@ fn runArgs(
         if (exit) return 1;
     }
 
-    if (opts._arguments) |arguments| {
-        if (arguments.len == 0) {
-            try stderr.print("The -e flag was specified on the command line, but no other arguments were found.\n", .{});
-            return 1;
-        }
+    if (!opts._working_directory_seen) {
+        const alloc = opts._arena.?.allocator();
+        const cwd: std.fs.Dir = std.fs.cwd();
+        var buf: [std.fs.max_path_bytes]u8 = undefined;
+        const wd = try cwd.realpath(".", &buf);
+        try opts._arguments.append(alloc, try std.fmt.allocPrintSentinel(alloc, "--working-directory={s}", .{wd}, 0));
     }
 
     var arena = ArenaAllocator.init(alloc_gpa);
@@ -202,7 +210,7 @@ fn runArgs(
         if (opts.class) |class| .{ .class = class } else .detect,
         .new_window,
         .{
-            .arguments = opts._arguments,
+            .arguments = if (opts._arguments.items.len == 0) null else opts._arguments.items,
         },
     ) catch |err| switch (err) {
         error.IPCFailed => {

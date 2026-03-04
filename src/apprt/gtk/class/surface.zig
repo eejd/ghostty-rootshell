@@ -26,7 +26,6 @@ const ApprtSurface = @import("../Surface.zig");
 const Common = @import("../class.zig").Common;
 const Application = @import("application.zig").Application;
 const Config = @import("config.zig").Config;
-const ConfigOverrides = @import("config_overrides.zig").ConfigOverrides;
 const ResizeOverlay = @import("resize_overlay.zig").ResizeOverlay;
 const SearchOverlay = @import("search_overlay.zig").SearchOverlay;
 const KeyStateOverlay = @import("key_state_overlay.zig").KeyStateOverlay;
@@ -87,18 +86,6 @@ pub const Surface = extern struct {
                 ?*Config,
                 .{
                     .accessor = C.privateObjFieldAccessor("config"),
-                },
-            );
-        };
-
-        pub const @"config-overrides" = struct {
-            pub const name = "config-overrides";
-            const impl = gobject.ext.defineProperty(
-                name,
-                Self,
-                ?*ConfigOverrides,
-                .{
-                    .accessor = C.privateObjFieldAccessor("config_overrides"),
                 },
             );
         };
@@ -565,9 +552,6 @@ pub const Surface = extern struct {
         /// The configuration that this surface is using.
         config: ?*Config = null,
 
-        /// Any configuration overrides that might apply to this surface.
-        config_overrides: ?*ConfigOverrides = null,
-
         /// The default size for a window that embeds this surface.
         default_size: ?*Size = null,
 
@@ -721,13 +705,33 @@ pub const Surface = extern struct {
         /// stops scrolling.
         pending_horizontal_scroll_reset: ?c_uint = null,
 
+        overrides: struct {
+            command: ?configpkg.Command = null,
+            working_directory: ?[:0]const u8 = null,
+
+            pub const none: @This() = .{};
+        } = .none,
+
         pub var offset: c_int = 0;
     };
 
-    pub fn new(config_overrides: ?*ConfigOverrides) *Self {
-        return gobject.ext.newInstance(Self, .{
-            .@"config-overrides" = config_overrides,
+    pub fn new(overrides: struct {
+        command: ?configpkg.Command = null,
+        working_directory: ?[:0]const u8 = null,
+        title: ?[:0]const u8 = null,
+
+        pub const none: @This() = .{};
+    }) *Self {
+        const self = gobject.ext.newInstance(Self, .{
+            .@"title-override" = overrides.title,
         });
+        const alloc = Application.default().allocator();
+        const priv: *Private = self.private();
+        priv.overrides = .{
+            .command = if (overrides.command) |c| c.clone(alloc) catch null else null,
+            .working_directory = if (overrides.working_directory) |wd| alloc.dupeZ(u8, wd) catch null else null,
+        };
+        return self;
     }
 
     pub fn core(self: *Self) ?*CoreSurface {
@@ -1817,11 +1821,6 @@ pub const Surface = extern struct {
             priv.config = null;
         }
 
-        if (priv.config_overrides) |v| {
-            v.unref();
-            priv.config_overrides = null;
-        }
-
         if (priv.vadj_signal_group) |group| {
             group.setTarget(null);
             group.as(gobject.Object).unref();
@@ -1877,6 +1876,7 @@ pub const Surface = extern struct {
     }
 
     fn finalize(self: *Self) callconv(.c) void {
+        const alloc = Application.default().allocator();
         const priv = self.private();
         if (priv.core_surface) |v| {
             // Remove ourselves from the list of known surfaces in the app.
@@ -1890,7 +1890,6 @@ pub const Surface = extern struct {
 
             // Deinit the surface
             v.deinit();
-            const alloc = Application.default().allocator();
             alloc.destroy(v);
 
             priv.core_surface = null;
@@ -1923,9 +1922,16 @@ pub const Surface = extern struct {
             glib.free(@ptrCast(@constCast(v)));
             priv.title_override = null;
         }
+        if (priv.overrides.command) |c| {
+            c.deinit(alloc);
+            priv.overrides.command = null;
+        }
+        if (priv.overrides.working_directory) |wd| {
+            alloc.free(wd);
+            priv.overrides.working_directory = null;
+        }
 
         // Clean up key sequence and key table state
-        const alloc = Application.default().allocator();
         for (priv.key_sequence.items) |s| alloc.free(s);
         priv.key_sequence.deinit(alloc);
         for (priv.key_tables.items) |s| alloc.free(s);
@@ -2198,12 +2204,6 @@ pub const Surface = extern struct {
 
     pub fn setSearchSelected(self: *Self, selected: ?usize) void {
         self.private().search_overlay.setSearchSelected(selected);
-    }
-
-    pub fn getConfigOverrides(self: *Self) ?*const configpkg.ConfigOverrides {
-        const priv: *Private = self.private();
-        const config_overrides = priv.config_overrides orelse return null;
-        return config_overrides.get();
     }
 
     fn propConfig(
@@ -3387,6 +3387,10 @@ pub const Surface = extern struct {
             app.core(),
             app.rt(),
             &priv.rt_surface,
+            .{
+                .command = priv.overrides.command,
+                .working_directory = priv.overrides.working_directory,
+            },
         ) catch |err| {
             log.warn("failed to initialize surface err={}", .{err});
             return error.SurfaceError;
@@ -3608,7 +3612,6 @@ pub const Surface = extern struct {
             gobject.ext.registerProperties(class, &.{
                 properties.@"bell-ringing".impl,
                 properties.config.impl,
-                properties.@"config-overrides".impl,
                 properties.@"child-exited".impl,
                 properties.@"default-size".impl,
                 properties.@"error".impl,

@@ -102,7 +102,3 @@ pub fn defaultTermioEnv(self: *Self) !std.process.EnvMap {
 pub fn redrawInspector(self: *Self) void {
     self.surface.redrawInspector();
 }
-
-pub fn getConfigOverrides(self: *Self) ?*const configpkg.ConfigOverrides {
-    return self.gobj().getConfigOverrides();
-}

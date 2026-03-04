@@ -5,13 +5,13 @@ const glib = @import("glib");
 const gobject = @import("gobject");
 const gtk = @import("gtk");
 
+const configpkg = @import("../../../config.zig");
 const apprt = @import("../../../apprt.zig");
 const CoreSurface = @import("../../../Surface.zig");
 const ext = @import("../ext.zig");
 const gresource = @import("../build/gresource.zig");
 const Common = @import("../class.zig").Common;
 const Config = @import("config.zig").Config;
-const ConfigOverrides = @import("config_overrides.zig").ConfigOverrides;
 const Application = @import("application.zig").Application;
 const SplitTree = @import("split_tree.zig").SplitTree;
 const Surface = @import("surface.zig").Surface;
@@ -187,7 +187,13 @@ pub const Tab = extern struct {
         }
     }
 
-    pub fn new(config: ?*Config, config_overrides: ?*ConfigOverrides) *Self {
+    pub fn new(config: ?*Config, overrides: struct {
+        command: ?configpkg.Command = null,
+        working_directory: ?[:0]const u8 = null,
+        title: ?[:0]const u8 = null,
+
+        pub const none: @This() = .{};
+    }) *Self {
         const tab = gobject.ext.newInstance(Tab, .{});
 
         const priv: *Private = tab.private();
@@ -204,7 +210,11 @@ pub const Tab = extern struct {
         tab.as(gobject.Object).notifyByPspec(properties.config.impl.param_spec);
 
         // Create our initial surface in the split tree.
-        priv.split_tree.newSplit(.right, null, config_overrides) catch |err| switch (err) {
+        priv.split_tree.newSplit(.right, null, .{
+            .command = overrides.command,
+            .working_directory = overrides.working_directory,
+            .title = overrides.title,
+        }) catch |err| switch (err) {
             error.OutOfMemory => {
                 // TODO: We should make our "no surfaces" state more aesthetically
                 // pleasing and show something like an "Oops, something went wrong"
