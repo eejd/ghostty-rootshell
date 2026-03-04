@@ -1910,22 +1910,74 @@ pub const CAPI = struct {
         defer core_surface.renderer_state.mutex.unlock();
 
         const screen = core_surface.io.terminal.screens.get(.primary) orelse return null;
-        const tl = screen.pages.getTopLeft(.screen);
-        const br = screen.pages.getBottomRight(.screen) orelse return null;
+        _ = screen.pages.getBottomRight(.screen) orelse return null;
+
+        const tl_active = screen.pages.getTopLeft(.active);
+        const br_active = screen.pages.getBottomRight(.active) orelse return null;
 
         var aw: std.Io.Writer.Allocating = .init(global.alloc);
 
-        var formatter: terminal.formatter.ScreenFormatter = .init(screen, .{
+        const fmt_opts: terminal.formatter.Options = .{
             .emit = .vt,
             .unwrap = true,
             .trim = false,
             .palette = &core_surface.io.terminal.colors.palette.current,
-        });
-        formatter.content = .{
-            .selection = terminal.Selection.init(tl, br, false),
         };
-        formatter.extra.cursor = true;
-        formatter.format(&aw.writer) catch {
+
+        // Phase 1: Dump scrollback (everything above the active area).
+        // We check if there's a row above the active area's top-left;
+        // if so, scrollback exists and we dump it separately.
+        if (tl_active.up(1)) |last_scrollback_pin| {
+            const tl_screen = screen.pages.getTopLeft(.screen);
+            var br_scrollback = last_scrollback_pin;
+            br_scrollback.x = screen.pages.cols - 1;
+
+            var scrollback_fmt: terminal.formatter.ScreenFormatter = .init(screen, fmt_opts);
+            scrollback_fmt.content = .{
+                .selection = terminal.Selection.init(tl_screen, br_scrollback, false),
+            };
+            scrollback_fmt.format(&aw.writer) catch {
+                aw.deinit();
+                return null;
+            };
+
+            // Scroll Up (SU) pushes viewport content into the scrollback
+            // buffer. The terminal clamps 999 to the actual row count, so
+            // this reliably clears the viewport regardless of size.
+            aw.writer.writeAll("\x1b[999S") catch {
+                aw.deinit();
+                return null;
+            };
+        }
+
+        // Phase 2: Emit active area on a clean viewport.
+        // Reset SGR state and home cursor before writing active content.
+        aw.writer.writeAll("\x1b[0m\x1b[H") catch {
+            aw.deinit();
+            return null;
+        };
+
+        var active_fmt: terminal.formatter.ScreenFormatter = .init(screen, fmt_opts);
+        active_fmt.content = .{
+            .selection = terminal.Selection.init(tl_active, br_active, false),
+        };
+        active_fmt.format(&aw.writer) catch {
+            aw.deinit();
+            return null;
+        };
+
+        // Erase from cursor to end of display (ED 0). This clears any
+        // remaining viewport rows below the active content, adapting
+        // correctly to any terminal size on restore.
+        // Reset SGR first so the erase uses default background color.
+        aw.writer.writeAll("\x1b[0m\x1b[J") catch {
+            aw.deinit();
+            return null;
+        };
+
+        // Position cursor within the active area.
+        const cursor = screen.cursor;
+        aw.writer.print("\x1b[{d};{d}H", .{ cursor.y + 1, cursor.x + 1 }) catch {
             aw.deinit();
             return null;
         };
