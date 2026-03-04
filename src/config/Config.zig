@@ -3087,7 +3087,7 @@ keybind: Keybinds = .{},
 /// the path is not absolute, it is considered relative to the directory of the
 /// configuration file that it is referenced from, or from the current working
 /// directory if this is used as a CLI flag. The path may be prefixed with `~/`
-/// to reference the user's home directory. (GTK only)
+/// to reference the user's home directory.
 ///
 /// Available since: 1.2.0
 @"bell-audio-path": ?Path = null,
@@ -3095,7 +3095,6 @@ keybind: Keybinds = .{},
 /// If `audio` is an enabled bell feature, this is the volume to play the audio
 /// file at (relative to the system volume). This is a floating point number
 /// ranging from 0.0 (silence) to 1.0 (as loud as possible). The default is 0.5.
-/// (GTK only)
 ///
 /// Available since: 1.2.0
 @"bell-audio-volume": f64 = 0.5,
