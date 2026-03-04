@@ -693,6 +693,10 @@ pub const Surface = extern struct {
         /// Whether primary paste (middle-click paste) is enabled.
         gtk_enable_primary_paste: bool = true,
 
+        /// True when a left mouse down was consumed purely for a focus change,
+        /// and the matching left mouse release should also be suppressed.
+        suppress_left_mouse_release: bool = false,
+
         /// How much pending horizontal scroll do we have?
         pending_horizontal_scroll: f64 = 0.0,
 
@@ -2733,12 +2737,20 @@ pub const Surface = extern struct {
 
         // If we don't have focus, grab it.
         const gl_area_widget = priv.gl_area.as(gtk.Widget);
-        if (gl_area_widget.hasFocus() == 0) {
+        const had_focus = gl_area_widget.hasFocus() != 0;
+        if (!had_focus) {
             _ = gl_area_widget.grabFocus();
         }
 
         // Report the event
         const button = translateMouseButton(gesture.as(gtk.GestureSingle).getCurrentButton());
+
+        // If this click is only transitioning split focus, suppress it so
+        // it doesn't get forwarded to the terminal as a mouse event.
+        if (!had_focus and button == .left) {
+            priv.suppress_left_mouse_release = true;
+            return;
+        }
 
         if (button == .middle and !priv.gtk_enable_primary_paste) {
             return;
@@ -2794,6 +2806,11 @@ pub const Surface = extern struct {
         const surface = priv.core_surface orelse return;
         const gtk_mods = event.getModifierState();
         const button = translateMouseButton(gesture.as(gtk.GestureSingle).getCurrentButton());
+
+        if (button == .left and priv.suppress_left_mouse_release) {
+            priv.suppress_left_mouse_release = false;
+            return;
+        }
 
         if (button == .middle and !priv.gtk_enable_primary_paste) {
             return;
