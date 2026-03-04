@@ -607,10 +607,14 @@ pub fn init(
     };
 
     // The command we're going to execute
-    const command: ?configpkg.Command = if (app.first)
-        config.@"initial-command" orelse config.command
-    else
-        config.command;
+    const command: ?configpkg.Command = command: {
+        if (app.first) {
+            if (config.@"initial-command") |command| {
+                break :command command;
+            }
+        }
+        break :command config.command;
+    };
 
     // Start our IO implementation
     // This separate block ({}) is important because our errdefers must

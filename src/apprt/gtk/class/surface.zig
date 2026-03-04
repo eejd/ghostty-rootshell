@@ -10,6 +10,7 @@ const gtk = @import("gtk");
 
 const apprt = @import("../../../apprt.zig");
 const build_config = @import("../../../build_config.zig");
+const configpkg = @import("../../../config.zig");
 const datastruct = @import("../../../datastruct/main.zig");
 const font = @import("../../../font/main.zig");
 const input = @import("../../../input.zig");
@@ -704,11 +705,33 @@ pub const Surface = extern struct {
         /// stops scrolling.
         pending_horizontal_scroll_reset: ?c_uint = null,
 
+        overrides: struct {
+            command: ?configpkg.Command = null,
+            working_directory: ?[:0]const u8 = null,
+
+            pub const none: @This() = .{};
+        } = .none,
+
         pub var offset: c_int = 0;
     };
 
-    pub fn new() *Self {
-        return gobject.ext.newInstance(Self, .{});
+    pub fn new(overrides: struct {
+        command: ?configpkg.Command = null,
+        working_directory: ?[:0]const u8 = null,
+        title: ?[:0]const u8 = null,
+
+        pub const none: @This() = .{};
+    }) *Self {
+        const self = gobject.ext.newInstance(Self, .{
+            .@"title-override" = overrides.title,
+        });
+        const alloc = Application.default().allocator();
+        const priv: *Private = self.private();
+        priv.overrides = .{
+            .command = if (overrides.command) |c| c.clone(alloc) catch null else null,
+            .working_directory = if (overrides.working_directory) |wd| alloc.dupeZ(u8, wd) catch null else null,
+        };
+        return self;
     }
 
     pub fn core(self: *Self) ?*CoreSurface {
@@ -1853,6 +1876,7 @@ pub const Surface = extern struct {
     }
 
     fn finalize(self: *Self) callconv(.c) void {
+        const alloc = Application.default().allocator();
         const priv = self.private();
         if (priv.core_surface) |v| {
             // Remove ourselves from the list of known surfaces in the app.
@@ -1866,7 +1890,6 @@ pub const Surface = extern struct {
 
             // Deinit the surface
             v.deinit();
-            const alloc = Application.default().allocator();
             alloc.destroy(v);
 
             priv.core_surface = null;
@@ -1899,9 +1922,16 @@ pub const Surface = extern struct {
             glib.free(@ptrCast(@constCast(v)));
             priv.title_override = null;
         }
+        if (priv.overrides.command) |c| {
+            c.deinit(alloc);
+            priv.overrides.command = null;
+        }
+        if (priv.overrides.working_directory) |wd| {
+            alloc.free(wd);
+            priv.overrides.working_directory = null;
+        }
 
         // Clean up key sequence and key table state
-        const alloc = Application.default().allocator();
         for (priv.key_sequence.items) |s| alloc.free(s);
         priv.key_sequence.deinit(alloc);
         for (priv.key_tables.items) |s| alloc.free(s);
@@ -3313,7 +3343,7 @@ pub const Surface = extern struct {
     };
 
     fn initSurface(self: *Self) InitError!void {
-        const priv = self.private();
+        const priv: *Private = self.private();
         assert(priv.core_surface == null);
         const gl_area = priv.gl_area;
 
@@ -3345,6 +3375,13 @@ pub const Surface = extern struct {
             priv.context,
         );
         defer config.deinit();
+
+        if (priv.overrides.command) |c| {
+            config.command = try c.clone(config._arena.?.allocator());
+        }
+        if (priv.overrides.working_directory) |wd| {
+            config.@"working-directory" = try config._arena.?.allocator().dupeZ(u8, wd);
+        }
 
         // Properties that can impact surface init
         if (priv.font_size_request) |size| config.@"font-size" = size.points;

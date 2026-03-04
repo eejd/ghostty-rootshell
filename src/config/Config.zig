@@ -29,7 +29,7 @@ const file_load = @import("file_load.zig");
 const formatterpkg = @import("formatter.zig");
 const themepkg = @import("theme.zig");
 const url = @import("url.zig");
-const Key = @import("key.zig").Key;
+pub const Key = @import("key.zig").Key;
 const MetricModifier = fontpkg.Metrics.Modifier;
 const help_strings = @import("help_strings");
 pub const Command = @import("command.zig").Command;
@@ -4793,8 +4793,8 @@ fn compatBoldIsBright(
     _ = alloc;
     assert(std.mem.eql(u8, key, "bold-is-bright"));
 
-    const set = cli.args.parseBool(value_ orelse "t") catch return false;
-    if (set) {
+    const isset = cli.args.parseBool(value_ orelse "t") catch return false;
+    if (isset) {
         self.@"bold-color" = .bright;
     }
 
