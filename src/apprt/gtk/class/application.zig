@@ -1671,22 +1671,15 @@ pub const Application = extern struct {
     ) callconv(.c) void {
         log.debug("received new window action", .{});
 
-        const alloc = Application.default().allocator();
+        var arena: std.heap.ArenaAllocator = .init(Application.default().allocator());
+        defer arena.deinit();
+
+        const alloc = arena.allocator();
 
         var working_directory: ?[:0]const u8 = null;
-        defer if (working_directory) |wd| alloc.free(wd);
-
         var title: ?[:0]const u8 = null;
-        defer if (title) |t| alloc.free(t);
-
         var command: ?configpkg.Command = null;
-        defer if (command) |c| c.deinit(alloc);
-
         var args: std.ArrayList([:0]const u8) = .empty;
-        defer {
-            for (args.items) |arg| alloc.free(arg);
-            args.deinit(alloc);
-        }
 
         overrides: {
             // were we given a parameter?
@@ -1730,7 +1723,6 @@ pub const Application = extern struct {
                         log.warn("unable to duplicate argument {d} {s}: {t}", .{ i, str, err });
                         break :overrides;
                     };
-                    errdefer alloc.free(cpy);
                     args.append(alloc, cpy) catch |err| {
                         log.warn("unable to append argument {d} {s}: {t}", .{ i, str, err });
                         break :overrides;
@@ -1744,7 +1736,6 @@ pub const Application = extern struct {
                 }
 
                 if (lib.cutPrefix(u8, str, "--command=")) |v| {
-                    if (command) |c| c.deinit(alloc);
                     var cmd: configpkg.Command = undefined;
                     cmd.parseCLI(alloc, v) catch |err| {
                         log.warn("unable to parse command: {t}", .{err});
@@ -1754,7 +1745,6 @@ pub const Application = extern struct {
                     continue;
                 }
                 if (lib.cutPrefix(u8, str, "--working-directory=")) |v| {
-                    if (working_directory) |wd| alloc.free(wd);
                     working_directory = alloc.dupeZ(u8, std.mem.trim(u8, v, &std.ascii.whitespace)) catch |err| wd: {
                         log.warn("unable to duplicate working directory: {t}", .{err});
                         break :wd null;
@@ -1762,7 +1752,6 @@ pub const Application = extern struct {
                     continue;
                 }
                 if (lib.cutPrefix(u8, str, "--title=")) |v| {
-                    if (title) |t| alloc.free(t);
                     title = alloc.dupeZ(u8, std.mem.trim(u8, v, &std.ascii.whitespace)) catch |err| t: {
                         log.warn("unable to duplicate title: {t}", .{err});
                         break :t null;
@@ -1772,13 +1761,9 @@ pub const Application = extern struct {
             }
         }
 
-        if (args.items.len > 0) direct: {
-            if (command) |c| c.deinit(alloc);
+        if (args.items.len > 0) {
             command = .{
-                .direct = args.toOwnedSlice(alloc) catch |err| {
-                    log.warn("unable to convert list of arguments to owned slice: {t}", .{err});
-                    break :direct;
-                },
+                .direct = args.items,
             };
         }
 
