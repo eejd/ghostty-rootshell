@@ -134,14 +134,13 @@ extension Ghostty {
             return .init(rawValue: v)
         }
 
-        var bellAudioPath: String? {
+        var bellAudioPath: ConfigPath? {
             guard let config = self.config else { return nil }
-            var v: UnsafePointer<Int8>?
+            var v = ghostty_config_path_s()
             let key = "bell-audio-path"
             guard ghostty_config_get(config, &v, key, UInt(key.lengthOfBytes(using: .utf8))) else { return nil }
-            guard let ptr = v else { return nil }
-            let path = String(cString: ptr)
-            return path.isEmpty ? nil : path
+            let path = String(cString: v.path)
+            return path.isEmpty ? nil : ConfigPath(path: path, optional: v.optional)
         }
 
         var bellAudioVolume: Float {

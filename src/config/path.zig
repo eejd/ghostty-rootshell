@@ -32,11 +32,17 @@ pub const Path = union(enum) {
         return std.meta.eql(self, other);
     }
 
-    /// Returns the path as a C-compatible null-terminated string pointer.
-    pub fn cval(self: Path) [*:0]const u8 {
+    /// ghostty_config_path_s
+    pub const C = extern struct {
+        path: [*:0]const u8,
+        optional: bool,
+    };
+
+    /// Returns the path as a C-compatible struct.
+    pub fn cval(self: Path) C {
         return switch (self) {
-            .optional => |path| path.ptr,
-            .required => |path| path.ptr,
+            .optional => |path| .{ .path = path.ptr, .optional = true },
+            .required => |path| .{ .path = path.ptr, .optional = false },
         };
     }
 

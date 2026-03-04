@@ -778,8 +778,8 @@ class AppDelegate: NSObject,
         }
 
         if ghostty.config.bellFeatures.contains(.audio) {
-            if let path = ghostty.config.bellAudioPath,
-               let sound = NSSound(contentsOfFile: path, byReference: false) {
+            if let configPath = ghostty.config.bellAudioPath,
+               let sound = NSSound(contentsOfFile: configPath.path, byReference: false) {
                 sound.volume = ghostty.config.bellAudioVolume
                 sound.play()
             }
