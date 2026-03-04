@@ -239,6 +239,19 @@ _ghostty_deferred_init() {
 	  builtin print -rnu $_ghostty_fd \$'\\e[0 q'"
     fi
 
+    # Emit semantic prompt markers at line-init if PS1 doesn't contain our
+    # marks. This ensures the terminal sees prompt markers even if another
+    # plugin (like zinit or oh-my-posh) regenerated PS1 after our precmd ran.
+    # We use 133;P instead of 133;A to avoid fresh-line behavior which would
+    # disrupt the display since the prompt has already been drawn. We also
+    # emit 133;B to mark the input area, which is needed for click-to-move.
+    (( $+functions[_ghostty_zle_line_init] )) || _ghostty_zle_line_init() { builtin true; }
+    functions[_ghostty_zle_line_init]="
+        if [[ \$PS1 != *$'%{\\e]133;A'* ]]; then
+            builtin print -nu \$_ghostty_fd '\\e]133;P;k=i\\a\\e]133;B\\a'
+        fi
+    "${functions[_ghostty_zle_line_init]}
+
     # Add Ghostty binary to PATH if the path feature is enabled
     if [[ "$GHOSTTY_SHELL_FEATURES" == *"path"* ]] && [[ -n "$GHOSTTY_BIN_DIR" ]]; then
       if [[ ":$PATH:" != *":$GHOSTTY_BIN_DIR:"* ]]; then
