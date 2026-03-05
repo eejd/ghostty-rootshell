@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE dictionary SYSTEM "file://localhost/System/Library/DTDs/sdef.dtd">
+
+<dictionary title="Ghostty Scripting Dictionary">
+  <suite name="Ghostty Suite" code="Ghst" description="Ghostty scripting support.">
+    <class name="application" code="capp" description="The Ghostty application.">
+      <element type="terminal" access="r"/>
+    </class>
+
+    <class name="terminal" code="Gtrm" plural="terminals" description="An individual terminal surface.">
+      <property name="id" code="Gtid" type="text" access="r" description="Stable ID for this terminal surface."/>
+      <property name="title" code="Gttl" type="text" access="r" description="Current terminal title."/>
+      <property name="working directory" code="Gwdr" type="text" access="r" description="Current working directory for the terminal process."/>
+    </class>
+
+    <command name="perform action" code="GhstPfAc" description="Perform a Ghostty action string on a terminal.">
+      <direct-parameter type="text" description="The Ghostty action string."/>
+      <parameter name="on" code="GonT" type="terminal" description="Target terminal."/>
+      <result type="boolean" description="True when the action was performed."/>
+    </command>
+  </suite>
+</dictionary>
