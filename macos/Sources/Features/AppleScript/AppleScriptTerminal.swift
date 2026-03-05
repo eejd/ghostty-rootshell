@@ -1,0 +1,73 @@
+import AppKit
+
+/// AppleScript-facing wrapper around a live Ghostty terminal surface.
+///
+/// This class is intentionally ObjC-visible because Cocoa scripting resolves
+/// AppleScript objects through Objective-C runtime names/selectors, not Swift
+/// protocol conformance.
+///
+/// Mapping from `Ghostty.sdef`:
+/// - `class terminal` -> this class (`@objc(GhosttyAppleScriptTerminal)`).
+/// - `property id` -> `@objc(id)` getter below.
+/// - `property title` -> `@objc(title)` getter below.
+/// - `property working directory` -> `@objc(workingDirectory)` getter below.
+///
+/// We keep only a weak reference to the underlying `SurfaceView` so this
+/// wrapper never extends the terminal's lifetime.
+@MainActor
+@objc(GhosttyScriptTerminal)
+final class ScriptTerminal: NSObject {
+    private weak var surfaceView: Ghostty.SurfaceView?
+
+    init(surfaceView: Ghostty.SurfaceView) {
+        self.surfaceView = surfaceView
+    }
+
+    /// Exposed as the AppleScript `id` property.
+    ///
+    /// This is a stable UUID string for the life of a surface and is also used
+    /// by `NSUniqueIDSpecifier` to re-identify a terminal object in scripts.
+    @objc(id)
+    var stableID: String {
+        surfaceView?.id.uuidString ?? ""
+    }
+
+    /// Exposed as the AppleScript `title` property.
+    @objc(title)
+    var title: String {
+        surfaceView?.title ?? ""
+    }
+
+    /// Exposed as the AppleScript `working directory` property.
+    ///
+    /// The `sdef` uses a spaced name, but Cocoa scripting maps that to the
+    /// camel-cased selector name `workingDirectory`.
+    @objc(workingDirectory)
+    var workingDirectory: String {
+        surfaceView?.pwd ?? ""
+    }
+
+    /// Used by command handling (`perform action ... on <terminal>`).
+    func perform(action: String) -> Bool {
+        guard let surfaceModel = surfaceView?.surfaceModel else { return false }
+        return surfaceModel.perform(action: action)
+    }
+
+    /// Provides Cocoa scripting with a canonical "path" back to this object.
+    ///
+    /// Without an object specifier, returned terminal objects can't be reliably
+    /// referenced in follow-up script statements because AppleScript cannot
+    /// express where the object came from (`application.terminals[id]`).
+    override var objectSpecifier: NSScriptObjectSpecifier? {
+        guard let appClassDescription = NSApplication.shared.classDescription as? NSScriptClassDescription else {
+            return nil
+        }
+
+        return NSUniqueIDSpecifier(
+            containerClassDescription: appClassDescription,
+            containerSpecifier: nil,
+            key: "terminals",
+            uniqueID: stableID
+        )
+    }
+}

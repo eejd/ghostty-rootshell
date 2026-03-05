@@ -4,11 +4,15 @@
 <dictionary title="Ghostty Scripting Dictionary">
   <suite name="Ghostty Suite" code="Ghst" description="Ghostty scripting support.">
     <class name="application" code="capp" description="The Ghostty application.">
-      <element type="terminal" access="r"/>
+      <cocoa class="NSApplication"/>
+      <element type="terminal" access="r">
+        <cocoa key="terminals"/>
+      </element>
     </class>
 
     <class name="terminal" code="Gtrm" plural="terminals" description="An individual terminal surface.">
-      <property name="id" code="Gtid" type="text" access="r" description="Stable ID for this terminal surface."/>
+      <cocoa class="GhosttyScriptTerminal"/>
+      <property name="id" code="ID  " type="text" access="r" description="Stable ID for this terminal surface."/>
       <property name="title" code="Gttl" type="text" access="r" description="Current terminal title."/>
       <property name="working directory" code="Gwdr" type="text" access="r" description="Current working directory for the terminal process."/>
     </class>
@@ -17,6 +21,23 @@
       <direct-parameter type="text" description="The Ghostty action string."/>
       <parameter name="on" code="GonT" type="terminal" description="Target terminal."/>
       <result type="boolean" description="True when the action was performed."/>
+    </command>
+  </suite>
+
+  <!--
+    The Standard Suite definition below is copied from Apple's
+    /System/Library/ScriptingDefinitions/CocoaStandard.sdef, trimmed to only
+    include what we need.
+  -->
+  <suite name="Standard Suite" code="????" description="Common classes and commands for all applications.">
+    <command name="count" code="corecnte" description="Return the number of elements of a particular class within an object.">
+      <cocoa class="NSCountCommand"/>
+      <access-group identifier="*"/>
+      <direct-parameter type="specifier" requires-access="r" description="The objects to be counted."/>
+      <parameter name="each" code="kocl" type="type" optional="yes" description="The class of objects to be counted." hidden="yes">
+        <cocoa key="ObjectClass"/>
+      </parameter>
+      <result type="integer" description="The count."/>
     </command>
   </suite>
 </dictionary>
