@@ -54,5 +54,6 @@ pub const locales = [_][:0]const u8{
     "hr",
     "lt",
     "lv",
+    "vi",
     "kk",
 };
