@@ -99,6 +99,11 @@ pub const exp = struct {
             lpStartupInfo: *windows.STARTUPINFOW,
             lpProcessInformation: *windows.PROCESS_INFORMATION,
         ) callconv(.winapi) windows.BOOL;
+        /// https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-getcomputernamea
+        pub extern "kernel32" fn GetComputerNameA(
+            lpBuffer: windows.LPSTR,
+            nSize: *windows.DWORD,
+        ) callconv(.winapi) windows.BOOL;
     };
 
     pub const PROC_THREAD_ATTRIBUTE_NUMBER = 0x0000FFFF;
