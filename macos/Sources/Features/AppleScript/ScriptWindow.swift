@@ -42,6 +42,14 @@ final class ScriptWindow: NSObject {
         stableID
     }
 
+    /// Exposed as the AppleScript `title` property.
+    ///
+    /// Returns the title of the window (from the selected/primary controller's NSWindow).
+    @objc(title)
+    var title: String {
+        selectedController?.window?.title ?? ""
+    }
+
     /// Exposed as the AppleScript `tabs` element.
     ///
     /// Cocoa asks for this collection when a script evaluates `tabs of window ...`

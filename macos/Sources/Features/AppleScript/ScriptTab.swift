@@ -37,6 +37,14 @@ final class ScriptTab: NSObject {
         stableID
     }
 
+    /// Exposed as the AppleScript `title` property.
+    ///
+    /// Returns the title of the tab's window.
+    @objc(title)
+    var title: String {
+        controller?.window?.title ?? ""
+    }
+
     /// Exposed as the AppleScript `index` property.
     ///
     /// Cocoa scripting expects this to be 1-based for user-facing collections.
