@@ -3636,6 +3636,11 @@ else
 /// notifications using certain escape sequences such as OSC 9 or OSC 777.
 @"desktop-notifications": bool = true,
 
+/// If `true` (default), applications running in the terminal can show
+/// graphical progress bars using the ConEmu OSC 9;4 escape sequence.
+/// If `false`, progress bar sequences are silently ignored.
+@"progress-style": bool = true,
+
 /// Modifies the color used for bold text in the terminal.
 ///
 /// This can be set to a specific color, using the same format as

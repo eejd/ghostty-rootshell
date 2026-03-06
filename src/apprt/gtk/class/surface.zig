@@ -1012,6 +1012,14 @@ pub const Surface = extern struct {
             priv.progress_bar_timer = null;
         }
 
+        if (priv.config) |config| {
+            if (!config.get().@"progress-style") {
+                log.debug("progress_report action blocked by config", .{});
+                priv.progress_bar_overlay.as(gtk.Widget).setVisible(@intFromBool(false));
+                return;
+            }
+        }
+
         const progress_bar = priv.progress_bar_overlay;
         switch (value.state) {
             // Remove the progress bar

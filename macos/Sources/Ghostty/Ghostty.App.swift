@@ -1934,6 +1934,15 @@ extension Ghostty {
             case GHOSTTY_TARGET_SURFACE:
                 guard let surface = target.target.surface else { return }
                 guard let surfaceView = self.surfaceView(from: surface) else { return }
+                guard let config = (NSApplication.shared.delegate as? AppDelegate)?.ghostty.config else { return }
+
+                guard config.progressStyle else {
+                    Ghostty.logger.debug("progress_report action blocked by config")
+                    DispatchQueue.main.async {
+                        surfaceView.progressReport = nil
+                    }
+                    return
+                }
 
                 let progressReport = Ghostty.Action.ProgressReport(c: v)
                 DispatchQueue.main.async {
