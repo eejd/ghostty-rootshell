@@ -3347,6 +3347,16 @@ keybind: Keybinds = .{},
 /// you may want to disable it.
 @"macos-secure-input-indication": bool = true,
 
+/// If true, Ghostty exposes and handles the built-in AppleScript dictionary
+/// on macOS.
+///
+/// If false, all AppleScript interactions are disabled. This includes
+/// AppleScript commands and AppleScript object lookup for windows, tabs,
+/// and terminals.
+///
+/// The default is true.
+@"macos-applescript": bool = true,
+
 /// Customize the macOS app icon.
 ///
 /// This only affects the icon that appears in the dock, application

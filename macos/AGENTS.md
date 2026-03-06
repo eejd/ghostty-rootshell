@@ -13,6 +13,9 @@
 ## AppleScript
 
 - The AppleScript scripting definition is in `macos/Ghostty.sdef`.
+- Guard AppleScript entry points and object accessors with the
+  `macos-applescript` configuration (use `NSApp.isAppleScriptEnabled`
+  and `NSApp.validateScript(command:)` where applicable).
 - In `macos/Ghostty.sdef`, keep top-level definitions in this order:
   1. Classes
   2. Records

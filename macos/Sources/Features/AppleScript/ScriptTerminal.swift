@@ -32,13 +32,15 @@ final class ScriptTerminal: NSObject {
     /// by `NSUniqueIDSpecifier` to re-identify a terminal object in scripts.
     @objc(id)
     var stableID: String {
-        surfaceView?.id.uuidString ?? ""
+        guard NSApp.isAppleScriptEnabled else { return "" }
+        return surfaceView?.id.uuidString ?? ""
     }
 
     /// Exposed as the AppleScript `title` property.
     @objc(title)
     var title: String {
-        surfaceView?.title ?? ""
+        guard NSApp.isAppleScriptEnabled else { return "" }
+        return surfaceView?.title ?? ""
     }
 
     /// Exposed as the AppleScript `working directory` property.
@@ -47,11 +49,13 @@ final class ScriptTerminal: NSObject {
     /// camel-cased selector name `workingDirectory`.
     @objc(workingDirectory)
     var workingDirectory: String {
-        surfaceView?.pwd ?? ""
+        guard NSApp.isAppleScriptEnabled else { return "" }
+        return surfaceView?.pwd ?? ""
     }
 
     /// Used by command handling (`perform action ... on <terminal>`).
     func perform(action: String) -> Bool {
+        guard NSApp.isAppleScriptEnabled else { return false }
         guard let surfaceModel = surfaceView?.surfaceModel else { return false }
         return surfaceModel.perform(action: action)
     }
@@ -62,6 +66,7 @@ final class ScriptTerminal: NSObject {
     /// referenced in follow-up script statements because AppleScript cannot
     /// express where the object came from (`application.terminals[id]`).
     override var objectSpecifier: NSScriptObjectSpecifier? {
+        guard NSApp.isAppleScriptEnabled else { return nil }
         guard let appClassDescription = NSApplication.shared.classDescription as? NSScriptClassDescription else {
             return nil
         }

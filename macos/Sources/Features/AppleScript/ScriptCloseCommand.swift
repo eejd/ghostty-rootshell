@@ -9,6 +9,8 @@ import AppKit
 @objc(GhosttyScriptCloseCommand)
 final class ScriptCloseCommand: NSScriptCommand {
     override func performDefaultImplementation() -> Any? {
+        guard NSApp.validateScript(command: self) else { return nil }
+
         guard let terminal = evaluatedArguments?["terminal"] as? ScriptTerminal else {
             scriptErrorNumber = errAEParamMissed
             scriptErrorString = "Missing terminal target."
@@ -37,6 +39,8 @@ final class ScriptCloseCommand: NSScriptCommand {
 @objc(GhosttyScriptCloseTabCommand)
 final class ScriptCloseTabCommand: NSScriptCommand {
     override func performDefaultImplementation() -> Any? {
+        guard NSApp.validateScript(command: self) else { return nil }
+
         guard let tab = evaluatedArguments?["tab"] as? ScriptTab else {
             scriptErrorNumber = errAEParamMissed
             scriptErrorString = "Missing tab target."
@@ -70,6 +74,8 @@ final class ScriptCloseTabCommand: NSScriptCommand {
 @objc(GhosttyScriptCloseWindowCommand)
 final class ScriptCloseWindowCommand: NSScriptCommand {
     override func performDefaultImplementation() -> Any? {
+        guard NSApp.validateScript(command: self) else { return nil }
+
         guard let window = evaluatedArguments?["window"] as? ScriptWindow else {
             scriptErrorNumber = errAEParamMissed
             scriptErrorString = "Missing window target."

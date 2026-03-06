@@ -9,6 +9,8 @@ import AppKit
 @objc(GhosttyScriptKeyEventCommand)
 final class ScriptKeyEventCommand: NSScriptCommand {
     override func performDefaultImplementation() -> Any? {
+        guard NSApp.validateScript(command: self) else { return nil }
+
         guard let keyName = directParameter as? String else {
             scriptErrorNumber = errAEParamMissed
             scriptErrorString = "Missing key name."

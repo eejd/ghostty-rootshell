@@ -9,6 +9,8 @@ import AppKit
 @objc(GhosttyScriptInputTextCommand)
 final class ScriptInputTextCommand: NSScriptCommand {
     override func performDefaultImplementation() -> Any? {
+        guard NSApp.validateScript(command: self) else { return nil }
+
         guard let text = directParameter as? String else {
             scriptErrorNumber = errAEParamMissed
             scriptErrorString = "Missing text to input."

@@ -29,6 +29,8 @@ extension NSApplication {
     /// such as `windows`, `window 1`, or `every window whose ...`.
     @objc(scriptWindows)
     var scriptWindows: [ScriptWindow] {
+        guard isAppleScriptEnabled else { return [] }
+
         // AppKit exposes one NSWindow per tab. AppleScript users expect one
         // top-level window object containing multiple tabs, so we dedupe tab
         // siblings into a single ScriptWindow.
@@ -64,7 +66,8 @@ extension NSApplication {
     /// Returning `nil` makes the object specifier fail naturally.
     @objc(valueInScriptWindowsWithUniqueID:)
     func valueInScriptWindows(uniqueID: String) -> ScriptWindow? {
-        scriptWindows.first(where: { $0.stableID == uniqueID })
+        guard isAppleScriptEnabled else { return nil }
+        return scriptWindows.first(where: { $0.stableID == uniqueID })
     }
 }
 
@@ -77,7 +80,8 @@ extension NSApplication {
     /// Required selector name: `terminals`.
     @objc(terminals)
     var terminals: [ScriptTerminal] {
-        allSurfaceViews.map(ScriptTerminal.init)
+        guard isAppleScriptEnabled else { return [] }
+        return allSurfaceViews.map(ScriptTerminal.init)
     }
 
     /// Enables AppleScript unique-ID lookup for terminal references.
@@ -89,7 +93,8 @@ extension NSApplication {
     /// `terminal id "..."` even as windows/tabs change.
     @objc(valueInTerminalsWithUniqueID:)
     func valueInTerminals(uniqueID: String) -> ScriptTerminal? {
-        allSurfaceViews
+        guard isAppleScriptEnabled else { return nil }
+        return allSurfaceViews
             .first(where: { $0.id.uuidString == uniqueID })
             .map(ScriptTerminal.init)
     }
@@ -111,6 +116,8 @@ extension NSApplication {
     /// We return a Bool to match the command's declared result type.
     @objc(handlePerformActionScriptCommand:)
     func handlePerformActionScriptCommand(_ command: NSScriptCommand) -> Any? {
+        guard validateScript(command: command) else { return nil }
+
         guard let action = command.directParameter as? String else {
             command.scriptErrorNumber = errAEParamMissed
             command.scriptErrorString = "Missing action string."
@@ -129,6 +136,8 @@ extension NSApplication {
     /// Handler for creating a reusable AppleScript surface configuration object.
     @objc(handleNewSurfaceConfigurationScriptCommand:)
     func handleNewSurfaceConfigurationScriptCommand(_ command: NSScriptCommand) -> Any? {
+        guard validateScript(command: command) else { return nil }
+
         do {
             let configuration = try Ghostty.SurfaceConfiguration(
                 scriptRecord: command.evaluatedArguments?["configuration"] as? NSDictionary
@@ -151,6 +160,8 @@ extension NSApplication {
     /// Returns the newly created scripting window object.
     @objc(handleNewWindowScriptCommand:)
     func handleNewWindowScriptCommand(_ command: NSScriptCommand) -> Any? {
+        guard validateScript(command: command) else { return nil }
+
         guard let appDelegate = delegate as? AppDelegate else {
             command.scriptErrorNumber = errAEEventFailed
             command.scriptErrorString = "Ghostty app delegate is unavailable."
@@ -195,6 +206,8 @@ extension NSApplication {
     /// Returns the newly created scripting tab object.
     @objc(handleNewTabScriptCommand:)
     func handleNewTabScriptCommand(_ command: NSScriptCommand) -> Any? {
+        guard validateScript(command: command) else { return nil }
+
         guard let appDelegate = delegate as? AppDelegate else {
             command.scriptErrorNumber = errAEEventFailed
             command.scriptErrorString = "Ghostty app delegate is unavailable."
@@ -262,6 +275,24 @@ extension NSApplication {
 
 @MainActor
 extension NSApplication {
+    /// Whether Ghostty should currently accept AppleScript interactions.
+    var isAppleScriptEnabled: Bool {
+        guard let appDelegate = delegate as? AppDelegate else { return true }
+        return appDelegate.ghostty.config.macosAppleScript
+    }
+
+    /// Applies a consistent error when scripting is disabled by configuration.
+    @discardableResult
+    func validateScript(command: NSScriptCommand) -> Bool {
+        guard isAppleScriptEnabled else {
+            command.scriptErrorNumber = errAEEventFailed
+            command.scriptErrorString = "AppleScript is disabled by the macos-applescript configuration."
+            return false
+        }
+
+        return true
+    }
+
     /// Discovers all currently alive terminal surfaces across normal and quick
     /// terminal windows. This powers both terminal enumeration and ID lookup.
     fileprivate var allSurfaceViews: [Ghostty.SurfaceView] {

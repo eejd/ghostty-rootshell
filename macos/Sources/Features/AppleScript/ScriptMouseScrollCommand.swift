@@ -9,6 +9,8 @@ import AppKit
 @objc(GhosttyScriptMouseScrollCommand)
 final class ScriptMouseScrollCommand: NSScriptCommand {
     override func performDefaultImplementation() -> Any? {
+        guard NSApp.validateScript(command: self) else { return nil }
+
         guard let x = evaluatedArguments?["x"] as? Double else {
             scriptErrorNumber = errAEParamMissed
             scriptErrorString = "Missing x scroll delta."

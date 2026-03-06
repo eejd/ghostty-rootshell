@@ -9,6 +9,8 @@ import AppKit
 @objc(GhosttyScriptMouseButtonCommand)
 final class ScriptMouseButtonCommand: NSScriptCommand {
     override func performDefaultImplementation() -> Any? {
+        guard NSApp.validateScript(command: self) else { return nil }
+
         guard let buttonCode = directParameter as? UInt32,
               let button = ScriptMouseButtonValue(code: buttonCode) else {
             scriptErrorNumber = errAEParamMissed

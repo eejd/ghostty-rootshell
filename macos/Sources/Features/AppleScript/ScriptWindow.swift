@@ -39,7 +39,8 @@ final class ScriptWindow: NSObject {
     /// This is what scripts read with `id of window ...`.
     @objc(id)
     var idValue: String {
-        stableID
+        guard NSApp.isAppleScriptEnabled else { return "" }
+        return stableID
     }
 
     /// Exposed as the AppleScript `title` property.
@@ -47,7 +48,8 @@ final class ScriptWindow: NSObject {
     /// Returns the title of the window (from the selected/primary controller's NSWindow).
     @objc(title)
     var title: String {
-        selectedController?.window?.title ?? ""
+        guard NSApp.isAppleScriptEnabled else { return "" }
+        return selectedController?.window?.title ?? ""
     }
 
     /// Exposed as the AppleScript `tabs` element.
@@ -57,7 +59,8 @@ final class ScriptWindow: NSObject {
     /// so tab additions/removals are reflected immediately.
     @objc(tabs)
     var tabs: [ScriptTab] {
-        controllers.map { ScriptTab(window: self, controller: $0) }
+        guard NSApp.isAppleScriptEnabled else { return [] }
+        return controllers.map { ScriptTab(window: self, controller: $0) }
     }
 
     /// Exposed as the AppleScript `selected tab` property.
@@ -65,6 +68,7 @@ final class ScriptWindow: NSObject {
     /// This powers expressions like `selected tab of window 1`.
     @objc(selectedTab)
     var selectedTab: ScriptTab? {
+        guard NSApp.isAppleScriptEnabled else { return nil }
         guard let selectedController else { return nil }
         return ScriptTab(window: self, controller: selectedController)
     }
@@ -77,6 +81,7 @@ final class ScriptWindow: NSObject {
     /// Cocoa uses this when a script resolves `tab id "..." of window ...`.
     @objc(valueInTabsWithUniqueID:)
     func valueInTabs(uniqueID: String) -> ScriptTab? {
+        guard NSApp.isAppleScriptEnabled else { return nil }
         guard let controller = controller(tabID: uniqueID) else { return nil }
         return ScriptTab(window: self, controller: controller)
     }
@@ -86,7 +91,8 @@ final class ScriptWindow: NSObject {
     /// Returns all terminal surfaces across every tab in this window.
     @objc(terminals)
     var terminals: [ScriptTerminal] {
-        controllers
+        guard NSApp.isAppleScriptEnabled else { return [] }
+        return controllers
             .flatMap { $0.surfaceTree.root?.leaves() ?? [] }
             .map(ScriptTerminal.init)
     }
@@ -94,7 +100,8 @@ final class ScriptWindow: NSObject {
     /// Enables unique-ID lookup for `terminals` references on a window.
     @objc(valueInTerminalsWithUniqueID:)
     func valueInTerminals(uniqueID: String) -> ScriptTerminal? {
-        controllers
+        guard NSApp.isAppleScriptEnabled else { return nil }
+        return controllers
             .flatMap { $0.surfaceTree.root?.leaves() ?? [] }
             .first(where: { $0.id.uuidString == uniqueID })
             .map(ScriptTerminal.init)
@@ -103,22 +110,26 @@ final class ScriptWindow: NSObject {
     /// AppleScript tab indexes are 1-based, so we add one to Swift's 0-based
     /// array index.
     func tabIndex(for controller: BaseTerminalController) -> Int? {
-        controllers.firstIndex(where: { $0 === controller }).map { $0 + 1 }
+        guard NSApp.isAppleScriptEnabled else { return nil }
+        return controllers.firstIndex(where: { $0 === controller }).map { $0 + 1 }
     }
 
     /// Reports whether a given controller maps to this window's selected tab.
     func tabIsSelected(_ controller: BaseTerminalController) -> Bool {
-        selectedController === controller
+        guard NSApp.isAppleScriptEnabled else { return false }
+        return selectedController === controller
     }
 
     /// Best-effort native window to use as a tab parent for AppleScript commands.
     var preferredParentWindow: NSWindow? {
-        selectedController?.window ?? controllers.first?.window
+        guard NSApp.isAppleScriptEnabled else { return nil }
+        return selectedController?.window ?? controllers.first?.window
     }
 
     /// Best-effort controller to use for window-scoped AppleScript commands.
     var preferredController: BaseTerminalController? {
-        selectedController ?? controllers.first
+        guard NSApp.isAppleScriptEnabled else { return nil }
+        return selectedController ?? controllers.first
     }
 
     /// Resolves a previously generated tab ID back to a live controller.
@@ -131,6 +142,7 @@ final class ScriptWindow: NSObject {
     /// We recalculate on every access so AppleScript immediately sees tab-group
     /// changes (new tabs, closed tabs, tab moves) without rebuilding all objects.
     private var controllers: [BaseTerminalController] {
+        guard NSApp.isAppleScriptEnabled else { return [] }
         guard let primaryController else { return [] }
         guard let window = primaryController.window else { return [primaryController] }
 
@@ -168,6 +180,7 @@ final class ScriptWindow: NSObject {
     /// references for later script statements. This specifier encodes:
     /// `application -> scriptWindows[id]`.
     override var objectSpecifier: NSScriptObjectSpecifier? {
+        guard NSApp.isAppleScriptEnabled else { return nil }
         guard let appClassDescription = NSApplication.shared.classDescription as? NSScriptClassDescription else {
             return nil
         }
