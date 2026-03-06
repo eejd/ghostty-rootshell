@@ -73,6 +73,25 @@ final class ScriptWindow: NSObject {
         return ScriptTab(window: self, controller: controller)
     }
 
+    /// Exposed as the AppleScript `terminals` element on a window.
+    ///
+    /// Returns all terminal surfaces across every tab in this window.
+    @objc(terminals)
+    var terminals: [ScriptTerminal] {
+        controllers
+            .flatMap { $0.surfaceTree.root?.leaves() ?? [] }
+            .map(ScriptTerminal.init)
+    }
+
+    /// Enables unique-ID lookup for `terminals` references on a window.
+    @objc(valueInTerminalsWithUniqueID:)
+    func valueInTerminals(uniqueID: String) -> ScriptTerminal? {
+        controllers
+            .flatMap { $0.surfaceTree.root?.leaves() ?? [] }
+            .first(where: { $0.id.uuidString == uniqueID })
+            .map(ScriptTerminal.init)
+    }
+
     /// AppleScript tab indexes are 1-based, so we add one to Swift's 0-based
     /// array index.
     func tabIndex(for controller: BaseTerminalController) -> Int? {

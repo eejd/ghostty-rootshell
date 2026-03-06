@@ -55,6 +55,25 @@ final class ScriptTab: NSObject {
         return window?.tabIsSelected(controller) ?? false
     }
 
+    /// Exposed as the AppleScript `terminals` element on a tab.
+    ///
+    /// Returns all terminal surfaces (split panes) within this tab.
+    @objc(terminals)
+    var terminals: [ScriptTerminal] {
+        guard let controller else { return [] }
+        return (controller.surfaceTree.root?.leaves() ?? [])
+            .map(ScriptTerminal.init)
+    }
+
+    /// Enables unique-ID lookup for `terminals` references on a tab.
+    @objc(valueInTerminalsWithUniqueID:)
+    func valueInTerminals(uniqueID: String) -> ScriptTerminal? {
+        guard let controller else { return nil }
+        return (controller.surfaceTree.root?.leaves() ?? [])
+            .first(where: { $0.id.uuidString == uniqueID })
+            .map(ScriptTerminal.init)
+    }
+
     /// Provides Cocoa scripting with a canonical "path" back to this object.
     override var objectSpecifier: NSScriptObjectSpecifier? {
         guard let window else { return nil }
