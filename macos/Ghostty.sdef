@@ -78,7 +78,7 @@
       <property name="font size" code="GScF" type="real" description="Font size in points.">
         <cocoa key="fontSize"/>
       </property>
-      <property name="working directory" code="GScD" type="text" description="Working directory for the terminal process.">
+      <property name="initial working directory" code="GScD" type="text" description="Initial working directory for the terminal process.">
         <cocoa key="workingDirectory"/>
       </property>
       <property name="command" code="GScC" type="text" description="Command to execute instead of the configured shell.">

@@ -38,7 +38,7 @@ extension Ghostty.SurfaceConfiguration: ScriptRecord {
 
         if let rawWorkingDirectory = raw["workingDirectory"] {
             guard let workingDirectory = rawWorkingDirectory as? String else {
-                throw RecordParseError.invalidType(parameter: "working directory", expected: "text")
+                throw RecordParseError.invalidType(parameter: "initial working directory", expected: "text")
             }
 
             if !workingDirectory.isEmpty {
