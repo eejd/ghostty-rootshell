@@ -125,6 +125,32 @@ extension NSApplication {
 
         return NSNumber(value: terminal.perform(action: action))
     }
+
+    /// Handler for the `new window` AppleScript command.
+    ///
+    /// Required selector name from the command in `sdef`:
+    /// `handleNewWindowScriptCommand:`.
+    ///
+    /// Returns the newly created scripting window object.
+    @objc(handleNewWindowScriptCommand:)
+    func handleNewWindowScriptCommand(_ command: NSScriptCommand) -> Any? {
+        guard let appDelegate = delegate as? AppDelegate else {
+            command.scriptErrorNumber = errAEEventFailed
+            command.scriptErrorString = "Ghostty app delegate is unavailable."
+            return nil
+        }
+
+        let controller = TerminalController.newWindow(appDelegate.ghostty)
+        let createdWindowID = ScriptWindow.stableID(primaryController: controller)
+
+        if let scriptWindow = scriptWindows.first(where: { $0.stableID == createdWindowID }) {
+            return scriptWindow
+        }
+
+        // Fall back to wrapping the created controller if AppKit window ordering
+        // has not refreshed yet in the current run loop.
+        return ScriptWindow(primaryController: controller)
+    }
 }
 
 // MARK: - Private Helpers
