@@ -5,6 +5,11 @@
   <suite name="Ghostty Suite" code="Ghst" description="Ghostty scripting support.">
     <class name="application" code="capp" description="The Ghostty application.">
       <cocoa class="NSApplication"/>
+      <property name="name" code="pnam" type="text" access="r" description="The name of the application."/>
+      <property name="frontmost" code="pisf" type="boolean" access="r" description="Is this the active application?">
+        <cocoa key="isActive"/>
+      </property>
+      <property name="version" code="vers" type="text" access="r" description="The version number of the application."/>
       <responds-to command="perform action">
         <cocoa method="handlePerformActionScriptCommand:"/>
       </responds-to>
@@ -166,6 +171,17 @@
         <cocoa key="ObjectClass"/>
       </parameter>
       <result type="integer" description="The count."/>
+    </command>
+
+    <command name="exists" code="coredoex" description="Verify that an object exists.">
+      <cocoa class="NSExistsCommand"/>
+      <access-group identifier="*"/>
+      <direct-parameter type="any" requires-access="r" description="The object(s) to check."/>
+      <result type="boolean" description="Did the object(s) exist?"/>
+    </command>
+
+    <command name="quit" code="aevtquit" description="Quit the application.">
+      <cocoa class="NSQuitCommand"/>
     </command>
   </suite>
 </dictionary>
