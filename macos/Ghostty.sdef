@@ -16,6 +16,9 @@
       <responds-to command="new window">
         <cocoa method="handleNewWindowScriptCommand:"/>
       </responds-to>
+      <responds-to command="new surface configuration">
+        <cocoa method="handleNewSurfaceConfigurationScriptCommand:"/>
+      </responds-to>
       <responds-to command="quit">
         <cocoa method="handleQuitScriptCommand:"/>
       </responds-to>
@@ -28,6 +31,28 @@
         <cocoa key="terminals"/>
       </element>
     </class>
+
+    <record-type name="surface configuration" code="GScf" description="Reusable settings applied when creating a terminal surface.">
+      <property name="font size" code="GScF" type="real" description="Font size in points.">
+        <cocoa key="fontSize"/>
+      </property>
+      <property name="working directory" code="GScD" type="text" description="Working directory for the terminal process.">
+        <cocoa key="workingDirectory"/>
+      </property>
+      <property name="command" code="GScC" type="text" description="Command to execute instead of the configured shell.">
+        <cocoa key="command"/>
+      </property>
+      <property name="initial input" code="GScI" type="text" description="Input sent to the terminal after launch.">
+        <cocoa key="initialInput"/>
+      </property>
+      <property name="wait after command" code="GScW" type="boolean" description="Keep the terminal open after command exit.">
+        <cocoa key="waitAfterCommand"/>
+      </property>
+      <property name="environment variables" code="GScE" description="Environment variables in KEY=VALUE format.">
+        <type type="text" list="yes"/>
+        <cocoa key="environmentVariables"/>
+      </property>
+    </record-type>
 
     <class name="window" code="Gwnd" plural="windows" description="A Ghostty window containing one or more tabs.">
       <cocoa class="GhosttyScriptWindow"/>
@@ -74,7 +99,17 @@
       <result type="boolean" description="True when the action was performed."/>
     </command>
 
+    <command name="new surface configuration" code="GhstNSCf" description="Create a reusable surface configuration object.">
+      <parameter name="from" code="GScS" type="surface configuration" optional="yes" description="Surface configuration to copy.">
+        <cocoa key="configuration"/>
+      </parameter>
+      <result type="surface configuration" description="The newly created surface configuration."/>
+    </command>
+
     <command name="new window" code="GhstNWin" description="Create a new Ghostty window.">
+      <parameter name="with configuration" code="GNwS" type="surface configuration" optional="yes" description="Base surface configuration for the initial terminal.">
+        <cocoa key="configuration"/>
+      </parameter>
       <result type="window" description="The newly created window."/>
     </command>
 

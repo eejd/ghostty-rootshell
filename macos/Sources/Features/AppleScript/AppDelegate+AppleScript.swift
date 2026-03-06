@@ -126,10 +126,27 @@ extension NSApplication {
         return NSNumber(value: terminal.perform(action: action))
     }
 
+    /// Handler for creating a reusable AppleScript surface configuration object.
+    @objc(handleNewSurfaceConfigurationScriptCommand:)
+    func handleNewSurfaceConfigurationScriptCommand(_ command: NSScriptCommand) -> Any? {
+        do {
+            let configuration = try Ghostty.SurfaceConfiguration(
+                scriptRecord: command.evaluatedArguments?["configuration"] as? NSDictionary
+            )
+            return configuration.dictionaryRepresentation
+        } catch {
+            command.scriptErrorNumber = errAECoercionFail
+            command.scriptErrorString = error.localizedDescription
+            return nil
+        }
+    }
+
     /// Handler for the `new window` AppleScript command.
     ///
     /// Required selector name from the command in `sdef`:
     /// `handleNewWindowScriptCommand:`.
+    ///
+    /// Accepts an optional reusable surface configuration object.
     ///
     /// Returns the newly created scripting window object.
     @objc(handleNewWindowScriptCommand:)
@@ -140,7 +157,21 @@ extension NSApplication {
             return nil
         }
 
-        let controller = TerminalController.newWindow(appDelegate.ghostty)
+        let baseConfig: Ghostty.SurfaceConfiguration
+        do {
+            baseConfig = try Ghostty.SurfaceConfiguration(
+                scriptRecord: command.evaluatedArguments?["configuration"] as? NSDictionary
+            )
+        } catch {
+            command.scriptErrorNumber = errAECoercionFail
+            command.scriptErrorString = error.localizedDescription
+            return nil
+        }
+
+        let controller = TerminalController.newWindow(
+            appDelegate.ghostty,
+            withBaseConfig: baseConfig
+        )
         let createdWindowID = ScriptWindow.stableID(primaryController: controller)
 
         if let scriptWindow = scriptWindows.first(where: { $0.stableID == createdWindowID }) {
