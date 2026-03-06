@@ -1,18 +1,18 @@
 import AppKit
 
-/// Application-level Cocoa scripting hooks for the Ghostty AppleScript dictionary.
-///
-/// Cocoa scripting is mostly convention-based: we do not register handlers in
-/// code, we expose Objective-C selectors with names Cocoa derives from
-/// `Ghostty.sdef`.
-///
-/// In practical terms:
-/// - An `<element>` in `sdef` maps to an ObjC collection accessor.
-/// - Unique-ID element lookup maps to `valueIn...WithUniqueID:`.
-/// - Some `<command>` declarations map to `handle...ScriptCommand:`.
-///
-/// This file implements the selectors Cocoa expects on `NSApplication`, which is
-/// the runtime object behind the `application` class in `Ghostty.sdef`.
+// Application-level Cocoa scripting hooks for the Ghostty AppleScript dictionary.
+//
+// Cocoa scripting is mostly convention-based: we do not register handlers in
+// code, we expose Objective-C selectors with names Cocoa derives from
+// `Ghostty.sdef`.
+//
+// In practical terms:
+// - An `<element>` in `sdef` maps to an ObjC collection accessor.
+// - Unique-ID element lookup maps to `valueIn...WithUniqueID:`.
+// - Some `<command>` declarations map to `handle...ScriptCommand:`.
+//
+// This file implements the selectors Cocoa expects on `NSApplication`, which is
+// the runtime object behind the `application` class in `Ghostty.sdef`.
 
 // MARK: - Windows
 
