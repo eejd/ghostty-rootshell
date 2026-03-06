@@ -13,6 +13,11 @@
 ## AppleScript
 
 - The AppleScript scripting definition is in `macos/Ghostty.sdef`.
+- In `macos/Ghostty.sdef`, keep top-level definitions in this order:
+  1. Classes
+  2. Records
+  3. Enums
+  4. Commands
 - Test AppleScript support:
   (1) Build with `macos/build.nu`
   (2) Launch and activate the app via osascript using the absolute path
