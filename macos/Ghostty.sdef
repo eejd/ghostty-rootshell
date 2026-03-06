@@ -13,6 +13,9 @@
       <responds-to command="perform action">
         <cocoa method="handlePerformActionScriptCommand:"/>
       </responds-to>
+      <responds-to command="quit">
+        <cocoa method="handleQuitScriptCommand:"/>
+      </responds-to>
 
       <element type="window" access="r">
         <cocoa key="scriptWindows"/>
