@@ -2,10 +2,74 @@ import AppKit
 
 /// Application-level Cocoa scripting hooks for the Ghostty AppleScript dictionary.
 ///
-/// Cocoa scripting looks for specifically named Objective-C selectors derived
-/// from the `sdef` file. This extension implements those required entry points
-/// on `NSApplication`, which is the object behind the `application` class in
+/// Cocoa scripting is mostly convention-based: we do not register handlers in
+/// code, we expose Objective-C selectors with names Cocoa derives from
 /// `Ghostty.sdef`.
+///
+/// In practical terms:
+/// - An `<element>` in `sdef` maps to an ObjC collection accessor.
+/// - Unique-ID element lookup maps to `valueIn...WithUniqueID:`.
+/// - Some `<command>` declarations map to `handle...ScriptCommand:`.
+///
+/// This file implements the selectors Cocoa expects on `NSApplication`, which is
+/// the runtime object behind the `application` class in `Ghostty.sdef`.
+
+// MARK: - Windows
+
+@MainActor
+extension NSApplication {
+    /// Backing collection for `application.windows`.
+    ///
+    /// We expose one scripting window per native tab group so scripts see the
+    /// expected window/tab hierarchy instead of one AppKit window per tab.
+    ///
+    /// Required selector name from the `sdef` element key: `scriptWindows`.
+    ///
+    /// Cocoa scripting calls this whenever AppleScript evaluates a window list,
+    /// such as `windows`, `window 1`, or `every window whose ...`.
+    @objc(scriptWindows)
+    var scriptWindows: [ScriptWindow] {
+        // AppKit exposes one NSWindow per tab. AppleScript users expect one
+        // top-level window object containing multiple tabs, so we dedupe tab
+        // siblings into a single ScriptWindow.
+        var seen: Set<ObjectIdentifier> = []
+        var result: [ScriptWindow] = []
+
+        for controller in orderedTerminalControllers {
+            // Collapse each controller to one canonical representative for the
+            // whole tab group. Standalone windows map to themselves.
+            guard let primary = primaryTerminalController(for: controller) else {
+                continue
+            }
+
+            let primaryControllerID = ObjectIdentifier(primary)
+            guard seen.insert(primaryControllerID).inserted else {
+                // Another tab from this group already created the scripting
+                // window object.
+                continue
+            }
+
+            result.append(ScriptWindow(primaryController: primary))
+        }
+
+        return result
+    }
+
+    /// Enables AppleScript unique-ID lookup for window references.
+    ///
+    /// Required selector name pattern for element key `scriptWindows`:
+    /// `valueInScriptWindowsWithUniqueID:`.
+    ///
+    /// Cocoa calls this when a script resolves `window id "..."`.
+    /// Returning `nil` makes the object specifier fail naturally.
+    @objc(valueInScriptWindowsWithUniqueID:)
+    func valueInScriptWindows(uniqueID: String) -> ScriptWindow? {
+        scriptWindows.first(where: { $0.stableID == uniqueID })
+    }
+}
+
+// MARK: - Terminals
+
 @MainActor
 extension NSApplication {
     /// Backing collection for `application.terminals`.
@@ -29,7 +93,12 @@ extension NSApplication {
             .first(where: { $0.id.uuidString == uniqueID })
             .map(ScriptTerminal.init)
     }
+}
 
+// MARK: - Commands
+
+@MainActor
+extension NSApplication {
     /// Handler for the `perform action` AppleScript command.
     ///
     /// Required selector name from the command in `sdef`:
@@ -56,12 +125,43 @@ extension NSApplication {
 
         return NSNumber(value: terminal.perform(action: action))
     }
+}
 
+// MARK: - Private Helpers
+
+@MainActor
+extension NSApplication {
     /// Discovers all currently alive terminal surfaces across normal and quick
     /// terminal windows. This powers both terminal enumeration and ID lookup.
-    private var allSurfaceViews: [Ghostty.SurfaceView] {
-        NSApp.windows
-            .compactMap { $0.windowController as? BaseTerminalController }
+    fileprivate var allSurfaceViews: [Ghostty.SurfaceView] {
+        allTerminalControllers
             .flatMap { $0.surfaceTree.root?.leaves() ?? [] }
+    }
+
+    /// All terminal controllers in undefined order.
+    fileprivate var allTerminalControllers: [BaseTerminalController] {
+        NSApp.windows.compactMap { $0.windowController as? BaseTerminalController }
+    }
+
+    /// All terminal controllers in front-to-back order.
+    fileprivate var orderedTerminalControllers: [BaseTerminalController] {
+        NSApp.orderedWindows.compactMap { $0.windowController as? BaseTerminalController }
+    }
+
+    /// Identifies the primary tab controller for a window's tab group.
+    ///
+    /// This gives us one stable representative for all tabs in the same native
+    /// AppKit tab group.
+    ///
+    /// For standalone windows this returns the window's controller directly.
+    /// For tabbed windows, "primary" is currently the first controller in the
+    /// tab group's ordered windows list.
+    fileprivate func primaryTerminalController(for controller: BaseTerminalController) -> BaseTerminalController? {
+        guard let window = controller.window else { return nil }
+        guard let tabGroup = window.tabGroup else { return controller }
+
+        return tabGroup.windows
+            .compactMap { $0.windowController as? BaseTerminalController }
+            .first
     }
 }
