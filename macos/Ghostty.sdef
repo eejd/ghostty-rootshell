@@ -149,6 +149,9 @@
       <parameter name="direction" code="GSpd" type="split direction" description="The direction to split.">
         <cocoa key="direction"/>
       </parameter>
+      <parameter name="with configuration" code="GSpS" type="surface configuration" optional="yes" description="Base surface configuration for the new split terminal.">
+        <cocoa key="configuration"/>
+      </parameter>
       <result type="terminal" description="The newly created terminal."/>
     </command>
 

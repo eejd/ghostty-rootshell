@@ -28,6 +28,19 @@ final class ScriptSplitCommand: NSScriptCommand {
             return nil
         }
 
+        let baseConfig: Ghostty.SurfaceConfiguration
+        do {
+            if let scriptRecord = evaluatedArguments?["configuration"] as? NSDictionary {
+                baseConfig = try Ghostty.SurfaceConfiguration(scriptRecord: scriptRecord)
+            } else {
+                baseConfig = Ghostty.SurfaceConfiguration()
+            }
+        } catch {
+            scriptErrorNumber = errAECoercionFail
+            scriptErrorString = error.localizedDescription
+            return nil
+        }
+
         // Find the window controller that owns this surface.
         guard let controller = surfaceView.window?.windowController as? BaseTerminalController else {
             scriptErrorNumber = errAEEventFailed
@@ -35,7 +48,11 @@ final class ScriptSplitCommand: NSScriptCommand {
             return nil
         }
 
-        guard let newView = controller.newSplit(at: surfaceView, direction: direction.splitDirection) else {
+        guard let newView = controller.newSplit(
+            at: surfaceView,
+            direction: direction.splitDirection,
+            baseConfig: baseConfig
+        ) else {
             scriptErrorNumber = errAEEventFailed
             scriptErrorString = "Failed to create split."
             return nil
@@ -71,4 +88,3 @@ private enum ScriptSplitDirection {
         }
     }
 }
-
