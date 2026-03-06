@@ -54,7 +54,7 @@ extension NSApplication {
             return nil
         }
 
-        return terminal.perform(action: action)
+        return NSNumber(value: terminal.perform(action: action))
     }
 
     /// Discovers all currently alive terminal surfaces across normal and quick

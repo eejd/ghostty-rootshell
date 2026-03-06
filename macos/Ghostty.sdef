@@ -5,6 +5,7 @@
   <suite name="Ghostty Suite" code="Ghst" description="Ghostty scripting support.">
     <class name="application" code="capp" description="The Ghostty application.">
       <cocoa class="NSApplication"/>
+      <responds-to command="perform action"/>
       <element type="terminal" access="r">
         <cocoa key="terminals"/>
       </element>
