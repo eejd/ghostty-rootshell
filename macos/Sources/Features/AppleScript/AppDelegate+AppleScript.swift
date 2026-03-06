@@ -182,6 +182,80 @@ extension NSApplication {
         // has not refreshed yet in the current run loop.
         return ScriptWindow(primaryController: controller)
     }
+
+    /// Handler for the `new tab` AppleScript command.
+    ///
+    /// Required selector name from the command in `sdef`:
+    /// `handleNewTabScriptCommand:`.
+    ///
+    /// Accepts an optional target window and optional surface configuration.
+    /// If no window is provided, this mirrors App Intents and uses the
+    /// preferred parent window.
+    ///
+    /// Returns the newly created scripting tab object.
+    @objc(handleNewTabScriptCommand:)
+    func handleNewTabScriptCommand(_ command: NSScriptCommand) -> Any? {
+        guard let appDelegate = delegate as? AppDelegate else {
+            command.scriptErrorNumber = errAEEventFailed
+            command.scriptErrorString = "Ghostty app delegate is unavailable."
+            return nil
+        }
+
+        let baseConfig: Ghostty.SurfaceConfiguration
+        do {
+            if let scriptRecord = command.evaluatedArguments?["configuration"] as? NSDictionary {
+                baseConfig = try Ghostty.SurfaceConfiguration(scriptRecord: scriptRecord)
+            } else {
+                baseConfig = Ghostty.SurfaceConfiguration()
+            }
+        } catch {
+            command.scriptErrorNumber = errAECoercionFail
+            command.scriptErrorString = error.localizedDescription
+            return nil
+        }
+
+        let targetWindow = command.evaluatedArguments?["window"] as? ScriptWindow
+        let parentWindow: NSWindow?
+        if let targetWindow {
+            guard let resolvedWindow = targetWindow.preferredParentWindow else {
+                command.scriptErrorNumber = errAEEventFailed
+                command.scriptErrorString = "Target window is no longer available."
+                return nil
+            }
+
+            parentWindow = resolvedWindow
+        } else {
+            parentWindow = TerminalController.preferredParent?.window
+        }
+
+        guard let createdController = TerminalController.newTab(
+            appDelegate.ghostty,
+            from: parentWindow,
+            withBaseConfig: baseConfig
+        ) else {
+            command.scriptErrorNumber = errAEEventFailed
+            command.scriptErrorString = "Failed to create tab."
+            return nil
+        }
+
+        let createdTabID = ScriptTab.stableID(controller: createdController)
+
+        if let targetWindow,
+           let scriptTab = targetWindow.valueInTabs(uniqueID: createdTabID) {
+            return scriptTab
+        }
+
+        for scriptWindow in scriptWindows {
+            if let scriptTab = scriptWindow.valueInTabs(uniqueID: createdTabID) {
+                return scriptTab
+            }
+        }
+
+        // Fall back to wrapping the created controller if AppKit tab-group
+        // bookkeeping has not fully refreshed in the current run loop.
+        let fallbackWindow = ScriptWindow(primaryController: createdController)
+        return ScriptTab(window: fallbackWindow, controller: createdController)
+    }
 }
 
 // MARK: - Private Helpers

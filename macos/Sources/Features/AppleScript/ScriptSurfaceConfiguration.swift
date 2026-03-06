@@ -9,6 +9,10 @@ extension Ghostty.SurfaceConfiguration: ScriptRecord {
     init(scriptRecord source: NSDictionary?) throws {
         self.init()
 
+        guard let source else {
+            return
+        }
+
         guard let raw = source as? [String: Any] else {
             throw RecordParseError.invalidType(parameter: "configuration", expected: "a surface configuration record")
         }

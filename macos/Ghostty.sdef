@@ -16,6 +16,9 @@
       <responds-to command="new window">
         <cocoa method="handleNewWindowScriptCommand:"/>
       </responds-to>
+      <responds-to command="new tab">
+        <cocoa method="handleNewTabScriptCommand:"/>
+      </responds-to>
       <responds-to command="new surface configuration">
         <cocoa method="handleNewSurfaceConfigurationScriptCommand:"/>
       </responds-to>
@@ -139,6 +142,16 @@
         <cocoa key="configuration"/>
       </parameter>
       <result type="window" description="The newly created window."/>
+    </command>
+
+    <command name="new tab" code="GhstNTab" description="Create a new Ghostty tab.">
+      <parameter name="in" code="GNtW" type="window" optional="yes" description="Target window for the new tab.">
+        <cocoa key="window"/>
+      </parameter>
+      <parameter name="with configuration" code="GNtS" type="surface configuration" optional="yes" description="Base surface configuration for the initial terminal.">
+        <cocoa key="configuration"/>
+      </parameter>
+      <result type="tab" description="The newly created tab."/>
     </command>
 
     <command name="split" code="GhstSplt" description="Split a terminal in the given direction.">

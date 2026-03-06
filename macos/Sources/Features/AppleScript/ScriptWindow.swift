@@ -111,6 +111,11 @@ final class ScriptWindow: NSObject {
         selectedController === controller
     }
 
+    /// Best-effort native window to use as a tab parent for AppleScript commands.
+    var preferredParentWindow: NSWindow? {
+        selectedController?.window ?? controllers.first?.window
+    }
+
     /// Resolves a previously generated tab ID back to a live controller.
     private func controller(tabID: String) -> BaseTerminalController? {
         controllers.first(where: { ScriptTab.stableID(controller: $0) == tabID })
