@@ -8,6 +8,7 @@
       <responds-to command="perform action">
         <cocoa method="handlePerformActionScriptCommand:"/>
       </responds-to>
+
       <element type="terminal" access="r">
         <cocoa key="terminals"/>
       </element>
@@ -24,6 +25,24 @@
       <direct-parameter type="text" description="The Ghostty action string."/>
       <parameter name="on" code="GonT" type="terminal" description="Target terminal."/>
       <result type="boolean" description="True when the action was performed."/>
+    </command>
+
+    <enumeration name="split direction" code="GSpD" description="Direction for a new split.">
+      <enumerator name="right" code="GSrt" description="Split to the right."/>
+      <enumerator name="left" code="GSlf" description="Split to the left."/>
+      <enumerator name="down" code="GSdn" description="Split downward."/>
+      <enumerator name="up" code="GSup" description="Split upward."/>
+    </enumeration>
+
+    <command name="split" code="GhstSplt" description="Split a terminal in the given direction.">
+      <cocoa class="GhosttyScriptSplitCommand"/>
+      <parameter name="terminal" code="GSpT" type="terminal" description="The terminal to split.">
+        <cocoa key="terminal"/>
+      </parameter>
+      <parameter name="direction" code="GSpd" type="split direction" description="The direction to split.">
+        <cocoa key="direction"/>
+      </parameter>
+      <result type="terminal" description="The newly created terminal."/>
     </command>
   </suite>
 

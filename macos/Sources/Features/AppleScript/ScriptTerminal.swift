@@ -17,7 +17,10 @@ import AppKit
 @MainActor
 @objc(GhosttyScriptTerminal)
 final class ScriptTerminal: NSObject {
-    private weak var surfaceView: Ghostty.SurfaceView?
+    /// Weak reference to the underlying surface. Package-visible so that
+    /// other AppleScript command handlers (e.g. `ScriptSplitCommand`) can
+    /// access the live surface without exposing it to ObjC/AppleScript.
+    weak var surfaceView: Ghostty.SurfaceView?
 
     init(surfaceView: Ghostty.SurfaceView) {
         self.surfaceView = surfaceView
