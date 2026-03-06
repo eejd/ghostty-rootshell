@@ -182,6 +182,34 @@
       </parameter>
     </command>
 
+    <command name="activate window" code="GhstAcWn" description="Activate a Ghostty window, bringing it to the front.">
+      <cocoa class="GhosttyScriptActivateWindowCommand"/>
+      <parameter name="window" code="GAwW" type="window" description="The window to activate.">
+        <cocoa key="window"/>
+      </parameter>
+    </command>
+
+    <command name="select tab" code="GhstSlTb" description="Select a tab in its window.">
+      <cocoa class="GhosttyScriptSelectTabCommand"/>
+      <parameter name="tab" code="GStT" type="tab" description="The tab to select.">
+        <cocoa key="tab"/>
+      </parameter>
+    </command>
+
+    <command name="close tab" code="GhstClTb" description="Close a tab.">
+      <cocoa class="GhosttyScriptCloseTabCommand"/>
+      <parameter name="tab" code="GCtT" type="tab" description="The tab to close.">
+        <cocoa key="tab"/>
+      </parameter>
+    </command>
+
+    <command name="close window" code="GhstClWn" description="Close a window.">
+      <cocoa class="GhosttyScriptCloseWindowCommand"/>
+      <parameter name="window" code="GCwW" type="window" description="The window to close.">
+        <cocoa key="window"/>
+      </parameter>
+    </command>
+
     <command name="input text" code="GhstInTx" description="Input text to a terminal as if it was pasted.">
       <cocoa class="GhosttyScriptInputTextCommand"/>
       <direct-parameter type="text" description="The text to input."/>

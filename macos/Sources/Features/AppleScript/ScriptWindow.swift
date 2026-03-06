@@ -116,6 +116,11 @@ final class ScriptWindow: NSObject {
         selectedController?.window ?? controllers.first?.window
     }
 
+    /// Best-effort controller to use for window-scoped AppleScript commands.
+    var preferredController: BaseTerminalController? {
+        selectedController ?? controllers.first
+    }
+
     /// Resolves a previously generated tab ID back to a live controller.
     private func controller(tabID: String) -> BaseTerminalController? {
         controllers.first(where: { ScriptTab.stableID(controller: $0) == tabID })

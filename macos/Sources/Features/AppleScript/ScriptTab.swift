@@ -63,6 +63,16 @@ final class ScriptTab: NSObject {
         return window?.tabIsSelected(controller) ?? false
     }
 
+    /// Best-effort native window containing this tab.
+    var parentWindow: NSWindow? {
+        controller?.window
+    }
+
+    /// Live controller backing this tab wrapper.
+    var parentController: BaseTerminalController? {
+        controller
+    }
+
     /// Exposed as the AppleScript `terminals` element on a tab.
     ///
     /// Returns all terminal surfaces (split panes) within this tab.

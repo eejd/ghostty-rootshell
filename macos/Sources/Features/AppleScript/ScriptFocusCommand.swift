@@ -31,3 +31,49 @@ final class ScriptFocusCommand: NSScriptCommand {
         return nil
     }
 }
+
+/// Handler for the `activate window` AppleScript command defined in `Ghostty.sdef`.
+@MainActor
+@objc(GhosttyScriptActivateWindowCommand)
+final class ScriptActivateWindowCommand: NSScriptCommand {
+    override func performDefaultImplementation() -> Any? {
+        guard let window = evaluatedArguments?["window"] as? ScriptWindow else {
+            scriptErrorNumber = errAEParamMissed
+            scriptErrorString = "Missing window target."
+            return nil
+        }
+
+        guard let targetWindow = window.preferredParentWindow else {
+            scriptErrorNumber = errAEEventFailed
+            scriptErrorString = "Window is no longer available."
+            return nil
+        }
+
+        targetWindow.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        return nil
+    }
+}
+
+/// Handler for the `select tab` AppleScript command defined in `Ghostty.sdef`.
+@MainActor
+@objc(GhosttyScriptSelectTabCommand)
+final class ScriptSelectTabCommand: NSScriptCommand {
+    override func performDefaultImplementation() -> Any? {
+        guard let tab = evaluatedArguments?["tab"] as? ScriptTab else {
+            scriptErrorNumber = errAEParamMissed
+            scriptErrorString = "Missing tab target."
+            return nil
+        }
+
+        guard let targetWindow = tab.parentWindow else {
+            scriptErrorNumber = errAEEventFailed
+            scriptErrorString = "Tab is no longer available."
+            return nil
+        }
+
+        targetWindow.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        return nil
+    }
+}
