@@ -44,6 +44,20 @@
       </parameter>
       <result type="terminal" description="The newly created terminal."/>
     </command>
+
+    <command name="focus" code="GhstFcus" description="Focus a terminal, bringing its window to the front.">
+      <cocoa class="GhosttyScriptFocusCommand"/>
+      <parameter name="terminal" code="GFcT" type="terminal" description="The terminal to focus.">
+        <cocoa key="terminal"/>
+      </parameter>
+    </command>
+
+    <command name="close" code="GhstClos" description="Close a terminal.">
+      <cocoa class="GhosttyScriptCloseCommand"/>
+      <parameter name="terminal" code="GClT" type="terminal" description="The terminal to close.">
+        <cocoa key="terminal"/>
+      </parameter>
+    </command>
   </suite>
 
   <!--
