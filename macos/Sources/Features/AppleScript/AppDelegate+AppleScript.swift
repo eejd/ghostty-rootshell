@@ -196,6 +196,16 @@ extension NSApplication {
         return ScriptWindow(primaryController: controller)
     }
 
+    /// Handler for the `quit` AppleScript command.
+    ///
+    /// Required selector name from the command in `sdef`:
+    /// `handleQuitScriptCommand:`.
+    @objc(handleQuitScriptCommand:)
+    func handleQuitScriptCommand(_ command: NSScriptCommand) {
+        guard validateScript(command: command) else { return }
+        terminate(nil)
+    }
+
     /// Handler for the `new tab` AppleScript command.
     ///
     /// Required selector name from the command in `sdef`:
