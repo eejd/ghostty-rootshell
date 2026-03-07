@@ -174,6 +174,42 @@ final class ScriptWindow: NSObject {
         return controllers.first
     }
 
+    /// Handler for `activate window <window>`.
+    @objc(handleActivateWindowCommand:)
+    func handleActivateWindow(_ command: NSScriptCommand) -> Any? {
+        guard NSApp.validateScript(command: command) else { return nil }
+
+        guard let windowContainer = preferredParentWindow else {
+            command.scriptErrorNumber = errAEEventFailed
+            command.scriptErrorString = "Window is no longer available."
+            return nil
+        }
+
+        windowContainer.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        return nil
+    }
+
+    /// Handler for `close window <window>`.
+    @objc(handleCloseWindowCommand:)
+    func handleCloseWindow(_ command: NSScriptCommand) -> Any? {
+        guard NSApp.validateScript(command: command) else { return nil }
+
+        if let managedTerminalController = preferredController as? TerminalController {
+            managedTerminalController.closeWindowImmediately()
+            return nil
+        }
+
+        guard let windowContainer = preferredParentWindow else {
+            command.scriptErrorNumber = errAEEventFailed
+            command.scriptErrorString = "Window is no longer available."
+            return nil
+        }
+
+        windowContainer.close()
+        return nil
+    }
+
     /// Provides Cocoa scripting with a canonical "path" back to this object.
     ///
     /// Without this, Cocoa can return data but cannot reliably build object

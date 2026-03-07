@@ -44,6 +44,12 @@
       <property name="selected tab" code="GWsT" type="tab" access="r" description="The selected tab in this window.">
         <cocoa key="selectedTab"/>
       </property>
+      <responds-to command="activate window">
+        <cocoa method="handleActivateWindowCommand:"/>
+      </responds-to>
+      <responds-to command="close window">
+        <cocoa method="handleCloseWindowCommand:"/>
+      </responds-to>
       <element type="tab" access="r">
         <cocoa key="tabs"/>
       </element>
@@ -60,6 +66,12 @@
       </property>
       <property name="index" code="pidx" type="integer" access="r" description="1-based index of this tab in its window."/>
       <property name="selected" code="GTsl" type="boolean" access="r" description="Whether this tab is selected in its window."/>
+      <responds-to command="select tab">
+        <cocoa method="handleSelectTabCommand:"/>
+      </responds-to>
+      <responds-to command="close tab">
+        <cocoa method="handleCloseTabCommand:"/>
+      </responds-to>
       <element type="terminal" access="r">
         <cocoa key="terminals"/>
       </element>
@@ -72,6 +84,15 @@
         <cocoa key="title"/>
       </property>
       <property name="working directory" code="Gwdr" type="text" access="r" description="Current working directory for the terminal process."/>
+      <responds-to command="split">
+        <cocoa method="handleSplitCommand:"/>
+      </responds-to>
+      <responds-to command="focus">
+        <cocoa method="handleFocusCommand:"/>
+      </responds-to>
+      <responds-to command="close">
+        <cocoa method="handleCloseCommand:"/>
+      </responds-to>
     </class>
 
     <record-type name="surface configuration" code="GScf" description="Reusable settings applied when creating a terminal surface.">
@@ -155,10 +176,7 @@
     </command>
 
     <command name="split" code="GhstSplt" description="Split a terminal in the given direction.">
-      <cocoa class="GhosttyScriptSplitCommand"/>
-      <parameter name="terminal" code="GSpT" type="terminal" description="The terminal to split.">
-        <cocoa key="terminal"/>
-      </parameter>
+      <direct-parameter type="specifier" description="The terminal to split."/>
       <parameter name="direction" code="GSpd" type="split direction" description="The direction to split.">
         <cocoa key="direction"/>
       </parameter>
@@ -169,45 +187,27 @@
     </command>
 
     <command name="focus" code="GhstFcus" description="Focus a terminal, bringing its window to the front.">
-      <cocoa class="GhosttyScriptFocusCommand"/>
-      <parameter name="terminal" code="GFcT" type="terminal" description="The terminal to focus.">
-        <cocoa key="terminal"/>
-      </parameter>
+      <direct-parameter type="specifier" description="The terminal to focus."/>
     </command>
 
     <command name="close" code="GhstClos" description="Close a terminal.">
-      <cocoa class="GhosttyScriptCloseCommand"/>
-      <parameter name="terminal" code="GClT" type="terminal" description="The terminal to close.">
-        <cocoa key="terminal"/>
-      </parameter>
+      <direct-parameter type="specifier" description="The terminal to close."/>
     </command>
 
     <command name="activate window" code="GhstAcWn" description="Activate a Ghostty window, bringing it to the front.">
-      <cocoa class="GhosttyScriptActivateWindowCommand"/>
-      <parameter name="window" code="GAwW" type="window" description="The window to activate.">
-        <cocoa key="window"/>
-      </parameter>
+      <direct-parameter type="specifier" description="The window to activate."/>
     </command>
 
     <command name="select tab" code="GhstSlTb" description="Select a tab in its window.">
-      <cocoa class="GhosttyScriptSelectTabCommand"/>
-      <parameter name="tab" code="GStT" type="tab" description="The tab to select.">
-        <cocoa key="tab"/>
-      </parameter>
+      <direct-parameter type="specifier" description="The tab to select."/>
     </command>
 
     <command name="close tab" code="GhstClTb" description="Close a tab.">
-      <cocoa class="GhosttyScriptCloseTabCommand"/>
-      <parameter name="tab" code="GCtT" type="tab" description="The tab to close.">
-        <cocoa key="tab"/>
-      </parameter>
+      <direct-parameter type="specifier" description="The tab to close."/>
     </command>
 
     <command name="close window" code="GhstClWn" description="Close a window.">
-      <cocoa class="GhosttyScriptCloseWindowCommand"/>
-      <parameter name="window" code="GCwW" type="window" description="The window to close.">
-        <cocoa key="window"/>
-      </parameter>
+      <direct-parameter type="specifier" description="The window to close."/>
     </command>
 
     <command name="input text" code="GhstInTx" description="Input text to a terminal as if it was pasted.">

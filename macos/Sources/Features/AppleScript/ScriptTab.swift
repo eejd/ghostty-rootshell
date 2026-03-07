@@ -100,6 +100,48 @@ final class ScriptTab: NSObject {
             .map(ScriptTerminal.init)
     }
 
+    /// Handler for `select tab <tab>`.
+    @objc(handleSelectTabCommand:)
+    func handleSelectTab(_ command: NSScriptCommand) -> Any? {
+        guard NSApp.validateScript(command: command) else { return nil }
+
+        guard let tabContainerWindow = parentWindow else {
+            command.scriptErrorNumber = errAEEventFailed
+            command.scriptErrorString = "Tab is no longer available."
+            return nil
+        }
+
+        tabContainerWindow.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        return nil
+    }
+
+    /// Handler for `close tab <tab>`.
+    @objc(handleCloseTabCommand:)
+    func handleCloseTab(_ command: NSScriptCommand) -> Any? {
+        guard NSApp.validateScript(command: command) else { return nil }
+
+        guard let tabController = parentController else {
+            command.scriptErrorNumber = errAEEventFailed
+            command.scriptErrorString = "Tab is no longer available."
+            return nil
+        }
+
+        if let managedTerminalController = tabController as? TerminalController {
+            managedTerminalController.closeTabImmediately(registerRedo: false)
+            return nil
+        }
+
+        guard let tabContainerWindow = parentWindow else {
+            command.scriptErrorNumber = errAEEventFailed
+            command.scriptErrorString = "Tab container window is no longer available."
+            return nil
+        }
+
+        tabContainerWindow.close()
+        return nil
+    }
+
     /// Provides Cocoa scripting with a canonical "path" back to this object.
     override var objectSpecifier: NSScriptObjectSpecifier? {
         guard NSApp.isAppleScriptEnabled else { return nil }

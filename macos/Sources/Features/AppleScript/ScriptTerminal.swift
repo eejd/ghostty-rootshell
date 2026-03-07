@@ -60,6 +60,103 @@ final class ScriptTerminal: NSObject {
         return surfaceModel.perform(action: action)
     }
 
+    /// Handler for `split <terminal> direction <dir>`.
+    @objc(handleSplitCommand:)
+    func handleSplit(_ command: NSScriptCommand) -> Any? {
+        guard NSApp.validateScript(command: command) else { return nil }
+
+        guard let surfaceView else {
+            command.scriptErrorNumber = errAEEventFailed
+            command.scriptErrorString = "Terminal surface is no longer available."
+            return nil
+        }
+
+        guard let directionCode = command.evaluatedArguments?["direction"] as? UInt32 else {
+            command.scriptErrorNumber = errAEParamMissed
+            command.scriptErrorString = "Missing or unknown split direction."
+            return nil
+        }
+
+        guard let direction = ScriptSplitDirection(code: directionCode)?.splitDirection else {
+            command.scriptErrorNumber = errAEParamMissed
+            command.scriptErrorString = "Missing or unknown split direction."
+            return nil
+        }
+
+        let baseConfig: Ghostty.SurfaceConfiguration?
+        if let scriptRecord = command.evaluatedArguments?["configuration"] as? NSDictionary {
+            do {
+                baseConfig = try Ghostty.SurfaceConfiguration(scriptRecord: scriptRecord)
+            } catch {
+                command.scriptErrorNumber = errAECoercionFail
+                command.scriptErrorString = error.localizedDescription
+                return nil
+            }
+        } else {
+            baseConfig = nil
+        }
+
+        guard let controller = surfaceView.window?.windowController as? BaseTerminalController else {
+            command.scriptErrorNumber = errAEEventFailed
+            command.scriptErrorString = "Terminal is not in a splittable window."
+            return nil
+        }
+
+        guard let newView = controller.newSplit(
+            at: surfaceView,
+            direction: direction,
+            baseConfig: baseConfig
+        ) else {
+            command.scriptErrorNumber = errAEEventFailed
+            command.scriptErrorString = "Failed to create split."
+            return nil
+        }
+
+        return ScriptTerminal(surfaceView: newView)
+    }
+
+    /// Handler for `focus <terminal>`.
+    @objc(handleFocusCommand:)
+    func handleFocus(_ command: NSScriptCommand) -> Any? {
+        guard NSApp.validateScript(command: command) else { return nil }
+
+        guard let surfaceView else {
+            command.scriptErrorNumber = errAEEventFailed
+            command.scriptErrorString = "Terminal surface is no longer available."
+            return nil
+        }
+
+        guard let controller = surfaceView.window?.windowController as? BaseTerminalController else {
+            command.scriptErrorNumber = errAEEventFailed
+            command.scriptErrorString = "Terminal is not in a window."
+            return nil
+        }
+
+        controller.focusSurface(surfaceView)
+        return nil
+    }
+
+    /// Handler for `close <terminal>`.
+    @objc(handleCloseCommand:)
+    func handleClose(_ command: NSScriptCommand) -> Any? {
+        guard NSApp.validateScript(command: command) else { return nil }
+
+        guard let surfaceView else {
+            command.scriptErrorNumber = errAEEventFailed
+            command.scriptErrorString = "Terminal surface is no longer available."
+            return nil
+        }
+
+        guard let controller = surfaceView.window?.windowController as? BaseTerminalController else {
+            command.scriptErrorNumber = errAEEventFailed
+            command.scriptErrorString = "Terminal is not in a window."
+            return nil
+        }
+
+        controller.closeSurface(surfaceView, withConfirmation: false)
+        return nil
+    }
+
     /// Provides Cocoa scripting with a canonical "path" back to this object.
     ///
     /// Without an object specifier, returned terminal objects can't be reliably
@@ -77,5 +174,33 @@ final class ScriptTerminal: NSObject {
             key: "terminals",
             uniqueID: stableID
         )
+    }
+}
+
+/// Converts four-character codes from the `split direction` enumeration in `Ghostty.sdef`
+/// to `SplitTree.NewDirection` values.
+enum ScriptSplitDirection {
+    case right
+    case left
+    case down
+    case up
+
+    init?(code: UInt32) {
+        switch code {
+        case "GSrt".fourCharCode: self = .right
+        case "GSlf".fourCharCode: self = .left
+        case "GSdn".fourCharCode: self = .down
+        case "GSup".fourCharCode: self = .up
+        default: return nil
+        }
+    }
+
+    var splitDirection: SplitTree<Ghostty.SurfaceView>.NewDirection {
+        switch self {
+        case .right: .right
+        case .left: .left
+        case .down: .down
+        case .up: .up
+        }
     }
 }
