@@ -34,7 +34,8 @@ final class ScriptFocusCommand: NSScriptCommand {
     }
 }
 
-/// Handler for the `activate window` AppleScript command defined in `Ghostty.sdef`.
+/// Handler for the container-level `activate window` AppleScript command
+/// defined in `Ghostty.sdef`.
 @MainActor
 @objc(GhosttyScriptActivateWindowCommand)
 final class ScriptActivateWindowCommand: NSScriptCommand {
@@ -47,19 +48,20 @@ final class ScriptActivateWindowCommand: NSScriptCommand {
             return nil
         }
 
-        guard let targetWindow = window.preferredParentWindow else {
+        guard let windowContainer = window.preferredParentWindow else {
             scriptErrorNumber = errAEEventFailed
             scriptErrorString = "Window is no longer available."
             return nil
         }
 
-        targetWindow.makeKeyAndOrderFront(nil)
+        windowContainer.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         return nil
     }
 }
 
-/// Handler for the `select tab` AppleScript command defined in `Ghostty.sdef`.
+/// Handler for the container-level `select tab` AppleScript command defined in
+/// `Ghostty.sdef`.
 @MainActor
 @objc(GhosttyScriptSelectTabCommand)
 final class ScriptSelectTabCommand: NSScriptCommand {
@@ -72,13 +74,13 @@ final class ScriptSelectTabCommand: NSScriptCommand {
             return nil
         }
 
-        guard let targetWindow = tab.parentWindow else {
+        guard let tabContainerWindow = tab.parentWindow else {
             scriptErrorNumber = errAEEventFailed
             scriptErrorString = "Tab is no longer available."
             return nil
         }
 
-        targetWindow.makeKeyAndOrderFront(nil)
+        tabContainerWindow.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         return nil
     }

@@ -115,7 +115,7 @@ extension NSApplication {
     ///
     /// We return a Bool to match the command's declared result type.
     @objc(handlePerformActionScriptCommand:)
-    func handlePerformActionScriptCommand(_ command: NSScriptCommand) -> Any? {
+    func handlePerformActionScriptCommand(_ command: NSScriptCommand) -> NSNumber? {
         guard validateScript(command: command) else { return nil }
 
         guard let action = command.directParameter as? String else {
@@ -135,7 +135,7 @@ extension NSApplication {
 
     /// Handler for creating a reusable AppleScript surface configuration object.
     @objc(handleNewSurfaceConfigurationScriptCommand:)
-    func handleNewSurfaceConfigurationScriptCommand(_ command: NSScriptCommand) -> Any? {
+    func handleNewSurfaceConfigurationScriptCommand(_ command: NSScriptCommand) -> NSDictionary? {
         guard validateScript(command: command) else { return nil }
 
         do {
@@ -159,7 +159,7 @@ extension NSApplication {
     ///
     /// Returns the newly created scripting window object.
     @objc(handleNewWindowScriptCommand:)
-    func handleNewWindowScriptCommand(_ command: NSScriptCommand) -> Any? {
+    func handleNewWindowScriptCommand(_ command: NSScriptCommand) -> ScriptWindow? {
         guard validateScript(command: command) else { return nil }
 
         guard let appDelegate = delegate as? AppDelegate else {
@@ -168,15 +168,17 @@ extension NSApplication {
             return nil
         }
 
-        let baseConfig: Ghostty.SurfaceConfiguration
-        do {
-            baseConfig = try Ghostty.SurfaceConfiguration(
-                scriptRecord: command.evaluatedArguments?["configuration"] as? NSDictionary
-            )
-        } catch {
-            command.scriptErrorNumber = errAECoercionFail
-            command.scriptErrorString = error.localizedDescription
-            return nil
+        let baseConfig: Ghostty.SurfaceConfiguration?
+        if let scriptRecord = command.evaluatedArguments?["configuration"] as? NSDictionary {
+            do {
+                baseConfig = try Ghostty.SurfaceConfiguration(scriptRecord: scriptRecord)
+            } catch {
+                command.scriptErrorNumber = errAECoercionFail
+                command.scriptErrorString = error.localizedDescription
+                return nil
+            }
+        } else {
+            baseConfig = nil
         }
 
         let controller = TerminalController.newWindow(
@@ -205,7 +207,7 @@ extension NSApplication {
     ///
     /// Returns the newly created scripting tab object.
     @objc(handleNewTabScriptCommand:)
-    func handleNewTabScriptCommand(_ command: NSScriptCommand) -> Any? {
+    func handleNewTabScriptCommand(_ command: NSScriptCommand) -> ScriptTab? {
         guard validateScript(command: command) else { return nil }
 
         guard let appDelegate = delegate as? AppDelegate else {
@@ -214,17 +216,17 @@ extension NSApplication {
             return nil
         }
 
-        let baseConfig: Ghostty.SurfaceConfiguration
-        do {
-            if let scriptRecord = command.evaluatedArguments?["configuration"] as? NSDictionary {
+        let baseConfig: Ghostty.SurfaceConfiguration?
+        if let scriptRecord = command.evaluatedArguments?["configuration"] as? NSDictionary {
+            do {
                 baseConfig = try Ghostty.SurfaceConfiguration(scriptRecord: scriptRecord)
-            } else {
-                baseConfig = Ghostty.SurfaceConfiguration()
+            } catch {
+                command.scriptErrorNumber = errAECoercionFail
+                command.scriptErrorString = error.localizedDescription
+                return nil
             }
-        } catch {
-            command.scriptErrorNumber = errAECoercionFail
-            command.scriptErrorString = error.localizedDescription
-            return nil
+        } else {
+            baseConfig = nil
         }
 
         let targetWindow = command.evaluatedArguments?["window"] as? ScriptWindow
@@ -285,7 +287,7 @@ extension NSApplication {
     @discardableResult
     func validateScript(command: NSScriptCommand) -> Bool {
         guard isAppleScriptEnabled else {
-            command.scriptErrorNumber = errAEEventFailed
+            command.scriptErrorNumber = errAEEventNotPermitted
             command.scriptErrorString = "AppleScript is disabled by the macos-applescript configuration."
             return false
         }

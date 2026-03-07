@@ -34,7 +34,8 @@ final class ScriptCloseCommand: NSScriptCommand {
     }
 }
 
-/// Handler for the `close tab` AppleScript command defined in `Ghostty.sdef`.
+/// Handler for the container-level `close tab` AppleScript command defined in
+/// `Ghostty.sdef`.
 @MainActor
 @objc(GhosttyScriptCloseTabCommand)
 final class ScriptCloseTabCommand: NSScriptCommand {
@@ -47,29 +48,30 @@ final class ScriptCloseTabCommand: NSScriptCommand {
             return nil
         }
 
-        guard let controller = tab.parentController else {
+        guard let tabController = tab.parentController else {
             scriptErrorNumber = errAEEventFailed
             scriptErrorString = "Tab is no longer available."
             return nil
         }
 
-        if let terminalController = controller as? TerminalController {
-            terminalController.closeTabImmediately(registerRedo: false)
+        if let managedTerminalController = tabController as? TerminalController {
+            managedTerminalController.closeTabImmediately(registerRedo: false)
             return nil
         }
 
-        guard let targetWindow = tab.parentWindow else {
+        guard let tabContainerWindow = tab.parentWindow else {
             scriptErrorNumber = errAEEventFailed
-            scriptErrorString = "Tab window is no longer available."
+            scriptErrorString = "Tab container window is no longer available."
             return nil
         }
 
-        targetWindow.close()
+        tabContainerWindow.close()
         return nil
     }
 }
 
-/// Handler for the `close window` AppleScript command defined in `Ghostty.sdef`.
+/// Handler for the container-level `close window` AppleScript command defined in
+/// `Ghostty.sdef`.
 @MainActor
 @objc(GhosttyScriptCloseWindowCommand)
 final class ScriptCloseWindowCommand: NSScriptCommand {
@@ -82,18 +84,18 @@ final class ScriptCloseWindowCommand: NSScriptCommand {
             return nil
         }
 
-        if let terminalController = window.preferredController as? TerminalController {
-            terminalController.closeWindowImmediately()
+        if let managedTerminalController = window.preferredController as? TerminalController {
+            managedTerminalController.closeWindowImmediately()
             return nil
         }
 
-        guard let targetWindow = window.preferredParentWindow else {
+        guard let windowContainer = window.preferredParentWindow else {
             scriptErrorNumber = errAEEventFailed
             scriptErrorString = "Window is no longer available."
             return nil
         }
 
-        targetWindow.close()
+        windowContainer.close()
         return nil
     }
 }

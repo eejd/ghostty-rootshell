@@ -30,17 +30,17 @@ final class ScriptSplitCommand: NSScriptCommand {
             return nil
         }
 
-        let baseConfig: Ghostty.SurfaceConfiguration
-        do {
-            if let scriptRecord = evaluatedArguments?["configuration"] as? NSDictionary {
+        let baseConfig: Ghostty.SurfaceConfiguration?
+        if let scriptRecord = evaluatedArguments?["configuration"] as? NSDictionary {
+            do {
                 baseConfig = try Ghostty.SurfaceConfiguration(scriptRecord: scriptRecord)
-            } else {
-                baseConfig = Ghostty.SurfaceConfiguration()
+            } catch {
+                scriptErrorNumber = errAECoercionFail
+                scriptErrorString = error.localizedDescription
+                return nil
             }
-        } catch {
-            scriptErrorNumber = errAECoercionFail
-            scriptErrorString = error.localizedDescription
-            return nil
+        } else {
+            baseConfig = nil
         }
 
         // Find the window controller that owns this surface.
