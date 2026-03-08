@@ -438,6 +438,15 @@ extension Ghostty {
             guard let surface = self.surface else { return }
             guard self.focused != focused else { return }
             self.focused = focused
+
+            // If we lost our focus then remove the mouse event suppression so
+            // our mouse release event leaving the surface can properly be
+            // sent to stop things like mouse selection.
+            if !focused {
+                suppressNextLeftMouseUp = false
+            }
+
+            // Notify libghostty
             ghostty_surface_set_focus(surface, focused)
 
             // Update our secure input state if we are a password input
@@ -648,9 +657,15 @@ extension Ghostty {
             let location = convert(event.locationInWindow, from: nil)
             guard hitTest(location) == self else { return event }
 
+            // We always assume that we're resetting our mouse suppression
+            // unless we see the specific scenario below to set it.
+            suppressNextLeftMouseUp = false
+
             // If we're already the first responder then no focus transfer is
             // happening, so the click should continue as normal.
-            guard window.firstResponder !== self else { return event }
+            guard window.firstResponder !== self else {
+                return event
+            }
 
             // If our window/app is already focused, then this click is only
             // being used to transfer split focus. Consume it so it does not
