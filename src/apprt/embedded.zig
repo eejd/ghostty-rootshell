@@ -1645,6 +1645,25 @@ pub const CAPI = struct {
         return readTextLocked(surface, core_sel, result);
     }
 
+    /// Replace the active user selection with an explicit selection range.
+    export fn ghostty_surface_set_selection(
+        surface: *Surface,
+        sel: Selection,
+    ) bool {
+        const core_surface = &surface.core_surface;
+        core_surface.renderer_state.mutex.lock();
+        defer core_surface.renderer_state.mutex.unlock();
+
+        const screen = core_surface.renderer_state.terminal.screens.active;
+        const core_sel = sel.core(screen) orelse return false;
+
+        core_surface.setSelection(core_sel) catch return false;
+        screen.dirty.selection = true;
+        core_surface.queueRender() catch return false;
+
+        return true;
+    }
+
     fn readTextLocked(
         surface: *Surface,
         core_sel: terminal.Selection,

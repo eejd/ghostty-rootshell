@@ -2334,7 +2334,7 @@ fn copySelectionToClipboards(
 /// Set the selection contents.
 ///
 /// This must be called with the renderer mutex held.
-fn setSelection(self: *Surface, sel_: ?terminal.Selection) !void {
+pub fn setSelection(self: *Surface, sel_: ?terminal.Selection) !void {
     const prev_ = self.io.terminal.screens.active.selection;
     try self.io.terminal.screens.active.select(sel_);
 
@@ -2442,7 +2442,7 @@ pub fn setFontSize(self: *Surface, size: font.face.DesiredSize) !void {
 /// This queues a render operation with the renderer thread. The render
 /// isn't guaranteed to happen immediately but it will happen as soon as
 /// practical.
-fn queueRender(self: *Surface) !void {
+pub fn queueRender(self: *Surface) !void {
     try self.renderer_thread.wakeup.notify();
 }
 
