@@ -822,19 +822,12 @@ pub const Surface = extern struct {
     /// Callback used to determine whether unfocused-split-fill / unfocused-split-opacity
     /// should be applied to the surface
     fn closureShouldUnfocusedSplitBeShown(
-        self: *Self,
+        _: *Self,
+        search_active: c_int,
         focused: c_int,
         is_split: c_int,
     ) callconv(.c) c_int {
-        const priv = self.private();
-        var val = gobject.ext.Value.new(bool);
-        defer val.unset();
-        gobject.Object.getProperty(
-            priv.search_overlay.as(gobject.Object),
-            SearchOverlay.properties.active.name,
-            &val,
-        );
-        return @intFromBool(val.getBoolean() == 0 and focused == 0 and is_split != 0);
+        return @intFromBool(search_active == 0 and focused == 0 and is_split != 0);
     }
 
     pub fn toggleFullscreen(self: *Self) void {
