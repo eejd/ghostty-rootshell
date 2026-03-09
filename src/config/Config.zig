@@ -3047,7 +3047,7 @@ keybind: Keybinds = .{},
 ///
 ///  * `audio`
 ///
-///    Play a custom sound. (GTK only)
+///    Play a custom sound. (Available since 1.3.0 on macOS)
 ///
 ///  * `attention` *(enabled by default)*
 ///
@@ -3089,14 +3089,14 @@ keybind: Keybinds = .{},
 /// directory if this is used as a CLI flag. The path may be prefixed with `~/`
 /// to reference the user's home directory.
 ///
-/// Available since: 1.2.0
+/// Available since: 1.2.0 on GTK, 1.3.0 on macOS.
 @"bell-audio-path": ?Path = null,
 
 /// If `audio` is an enabled bell feature, this is the volume to play the audio
 /// file at (relative to the system volume). This is a floating point number
 /// ranging from 0.0 (silence) to 1.0 (as loud as possible). The default is 0.5.
 ///
-/// Available since: 1.2.0
+/// Available since: 1.2.0 on GTK, 1.3.0 on macOS.
 @"bell-audio-volume": f64 = 0.5,
 
 /// Control the in-app notifications that Ghostty shows.
