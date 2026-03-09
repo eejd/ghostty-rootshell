@@ -57,6 +57,9 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
     /// The notification cancellable for focused surface property changes.
     private var surfaceAppearanceCancellables: Set<AnyCancellable> = []
 
+    /// The KVO cancellable for `window.contentView.intrinsicContentSize` changes.
+    private var contentIntrinsicContentSizeCancellable: AnyCancellable?
+
     /// This will be set to the initial frame of the window from the xib on load.
     private var initialFrame: NSRect?
 
@@ -1038,9 +1041,10 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         }
 
         // Initialize our content view to the SwiftUI root
-        window.contentView = TerminalViewContainer {
+        let contentView = TerminalViewContainer {
             TerminalView(ghostty: ghostty, viewModel: self, delegate: self)
         }
+        window.contentView = contentView
 
         // If we have a default size, we want to apply it.
         if let defaultSize {
@@ -1049,17 +1053,21 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
                 // Frames can be applied immediately
                 defaultSize.apply(to: window)
 
-            case .contentIntrinsicSize:
-                // Content intrinsic size requires a short delay so that AppKit
-                // can layout our SwiftUI views.
-                DispatchQueue.main.asyncAfter(deadline: .now() + .microseconds(10_000)) { [weak self, weak window] in
-                    guard let self, let window else { return }
-                    defaultSize.apply(to: window)
-                    if let screen = window.screen ?? NSScreen.main {
-                        let frame = self.adjustForWindowPosition(frame: window.frame, on: screen)
-                        window.setFrameOrigin(frame.origin)
+            case let .contentIntrinsicSize(minSize):
+                // We wait for the first proper content intrinsic size,
+                // after AppKit laid out our SwiftUI views.
+                contentIntrinsicContentSizeCancellable = contentView.publisher(for: \.intrinsicContentSize)
+                    .filter { $0.width >= minSize.width && $0.height >= minSize.height }
+                    .first()
+                    .sink { [weak self, weak window] _ in
+                        guard let self, let window else { return }
+                        defaultSize.apply(to: window)
+                        if let screen = window.screen ?? NSScreen.main {
+                            let frame = self.adjustForWindowPosition(frame: window.frame, on: screen)
+                            window.setFrameOrigin(frame.origin)
+                        }
+                        contentIntrinsicContentSizeCancellable = nil
                     }
-                }
             }
         }
 
@@ -1560,6 +1568,21 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             self.windowPositionX = config.windowPositionX
             self.windowPositionY = config.windowPositionY
         }
+
+        /// The minimum size a window can be resized to as of macOS 26.3, it should cover most cases.
+        ///
+        /// We use this to filter incorrect intrinsicContentSize values when positioning a new window.
+        fileprivate var minimumWindowSize: CGSize {
+            switch macosTitlebarStyle {
+            case "native", "transparent":
+                CGSize(width: 105 + 1, height: 33 + 1)
+            case "tabs":
+                CGSize(width: 90 + 1, height: 48 + 1)
+            // hidden or others
+            default:
+                CGSize(width: 27 + 1, height: 40 + 1)
+            }
+        }
     }
 }
 
@@ -1607,7 +1630,7 @@ extension TerminalController {
         case frame(NSRect)
 
         /// A content size, set with `window.setContentSize`
-        case contentIntrinsicSize
+        case contentIntrinsicSize(_ minimum: CGSize)
 
         func isChanged(for window: NSWindow) -> Bool {
             switch self {
@@ -1644,7 +1667,7 @@ extension TerminalController {
         } else if focusedSurface?.initialSize != nil {
             // Initial size as requested by the configuration (e.g. `window-width`)
             // takes next priority.
-            return .contentIntrinsicSize
+            return .contentIntrinsicSize(derivedConfig.minimumWindowSize)
         } else if let initialFrame {
             // The initial frame we had when we started otherwise.
             return .frame(initialFrame)
