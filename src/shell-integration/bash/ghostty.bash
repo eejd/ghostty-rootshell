@@ -285,19 +285,19 @@ if (( BASH_VERSINFO[0] > 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] >= 4) )
   }
 
   # Append our hook to PROMPT_COMMAND, preserving its existing type.
+  # shellcheck disable=SC2128,SC2178,SC2179
   if [[ ";${PROMPT_COMMAND[*]:-};" != *";__ghostty_hook;"* ]]; then
     if [[ -z "${PROMPT_COMMAND[*]}" ]]; then
       if (( BASH_VERSINFO[0] > 5 || (BASH_VERSINFO[0] == 5 && BASH_VERSINFO[1] >= 1) )); then
         PROMPT_COMMAND=(__ghostty_hook)
       else
-        # shellcheck disable=SC2178
         PROMPT_COMMAND="__ghostty_hook"
       fi
     elif [[ $(builtin declare -p PROMPT_COMMAND 2>/dev/null) == "declare -a "* ]]; then
       PROMPT_COMMAND+=(__ghostty_hook)
     else
-      # shellcheck disable=SC2179
-      PROMPT_COMMAND+="; __ghostty_hook"
+      [[ "${PROMPT_COMMAND}" =~ \;[[:space:]]*$ ]] || PROMPT_COMMAND+=";"
+      PROMPT_COMMAND+=" __ghostty_hook"
     fi
   fi
 else
