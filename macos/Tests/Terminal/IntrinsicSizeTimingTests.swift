@@ -12,7 +12,7 @@ import Testing
 private struct OptionalIdealSizeView: View {
     let idealWidth: CGFloat?
     let idealHeight: CGFloat?
-    let titlebarStyle: String
+    let titlebarStyle: Ghostty.Config.MacOSTitlebarStyle
 
     var body: some View {
         VStack(spacing: 0) {
@@ -20,7 +20,7 @@ private struct OptionalIdealSizeView: View {
                 .frame(idealWidth: idealWidth, idealHeight: idealHeight)
         }
         // Matches TerminalView line 108: hidden style extends into titlebar
-        .ignoresSafeArea(.container, edges: titlebarStyle == "hidden" ? .top : [])
+        .ignoresSafeArea(.container, edges: titlebarStyle == .hidden ? .top : [])
     }
 }
 
@@ -28,18 +28,18 @@ private let minReasonableWidth: CGFloat = 100
 private let minReasonableHeight: CGFloat = 50
 
 /// All macos-titlebar-style values that map to different window nibs.
-private let allTitlebarStyles = ["native", "hidden", "transparent", "tabs"]
+private let allTitlebarStyles: [Ghostty.Config.MacOSTitlebarStyle] = [.native, .hidden, .transparent, .tabs]
 
 /// Window style masks that roughly correspond to each titlebar style.
 /// In real Ghostty these come from different nib files; in tests we
 /// approximate with NSWindow style masks.
-private func styleMask(for titlebarStyle: String) -> NSWindow.StyleMask {
+private func styleMask(for titlebarStyle: Ghostty.Config.MacOSTitlebarStyle) -> NSWindow.StyleMask {
     switch titlebarStyle {
-    case "hidden":
+    case .hidden:
         return [.titled, .resizable, .fullSizeContentView]
-    case "transparent", "tabs":
+    case .transparent, .tabs:
         return [.titled, .resizable, .fullSizeContentView]
-    default:
+    case .native:
         return [.titled, .resizable]
     }
 }
@@ -67,7 +67,7 @@ struct IntrinsicSizeTimingTests {
     /// intrinsicContentSize returns a tiny value.
     @Test(.bug("https://github.com/ghostty-org/ghostty/issues/11256", "intrinsicContentSize too small before @FocusedValue propagates"),
           arguments: allTitlebarStyles)
-    func intrinsicSizeTooSmallWithNilIdealSize(titlebarStyle: String) async throws {
+    func intrinsicSizeTooSmallWithNilIdealSize(titlebarStyle: Ghostty.Config.MacOSTitlebarStyle) async throws {
         let expectedSize = NSSize(width: 600, height: 400)
 
         // nil ideal sizes = @FocusedValue hasn't propagated lastFocusedSurface
@@ -106,7 +106,7 @@ struct IntrinsicSizeTimingTests {
     /// too-small window when intrinsicContentSize is based on nil ideal sizes.
     @Test(.bug("https://github.com/ghostty-org/ghostty/issues/11256", "apply() sets wrong window size due to racy intrinsicContentSize"),
           arguments: allTitlebarStyles)
-    func applyProducesWrongSizeWithNilIdealSize(titlebarStyle: String) async throws {
+    func applyProducesWrongSizeWithNilIdealSize(titlebarStyle: Ghostty.Config.MacOSTitlebarStyle) async throws {
         let container = await TerminalViewContainer {
             OptionalIdealSizeView(idealWidth: nil, idealHeight: nil, titlebarStyle: titlebarStyle)
         }
@@ -150,7 +150,7 @@ struct IntrinsicSizeTimingTests {
     /// to propagate, so intrinsicContentSize is still tiny when apply() runs.
     @Test(.bug("https://github.com/ghostty-org/ghostty/issues/11256", "40ms async delay reads intrinsicContentSize before @FocusedValue propagates"),
           arguments: allTitlebarStyles)
-    func asyncAfterDelayProducesWrongSizeWithNilIdealSize(titlebarStyle: String) async throws {
+    func asyncAfterDelayProducesWrongSizeWithNilIdealSize(titlebarStyle: Ghostty.Config.MacOSTitlebarStyle) async throws {
         let container = await TerminalViewContainer {
             OptionalIdealSizeView(idealWidth: nil, idealHeight: nil, titlebarStyle: titlebarStyle)
         }
@@ -195,7 +195,7 @@ struct IntrinsicSizeTimingTests {
     /// fallback value, not just adjust timing.
     @Test(.bug("https://github.com/ghostty-org/ghostty/issues/11256", "Synchronous apply also fails without fallback"),
           arguments: allTitlebarStyles)
-    func synchronousApplyAlsoFailsWithNilIdealSize(titlebarStyle: String) async throws {
+    func synchronousApplyAlsoFailsWithNilIdealSize(titlebarStyle: Ghostty.Config.MacOSTitlebarStyle) async throws {
         let container = await TerminalViewContainer {
             OptionalIdealSizeView(idealWidth: nil, idealHeight: nil, titlebarStyle: titlebarStyle)
         }
@@ -233,7 +233,7 @@ struct IntrinsicSizeTimingTests {
     /// should be correct for every titlebar style. This is the "happy path" that
     /// works today when the 40ms delay is sufficient.
     @Test(arguments: allTitlebarStyles)
-    func intrinsicSizeCorrectWhenIdealSizesAvailable(titlebarStyle: String) async throws {
+    func intrinsicSizeCorrectWhenIdealSizesAvailable(titlebarStyle: Ghostty.Config.MacOSTitlebarStyle) async throws {
         let expectedSize = NSSize(width: 600, height: 400)
 
         let container = await TerminalViewContainer {
@@ -274,7 +274,7 @@ struct IntrinsicSizeTimingTests {
     /// Verifies that apply() sets a correctly sized window when ideal sizes
     /// are available, for each titlebar style.
     @Test(arguments: allTitlebarStyles)
-    func applyProducesCorrectSizeWhenIdealSizesAvailable(titlebarStyle: String) async throws {
+    func applyProducesCorrectSizeWhenIdealSizesAvailable(titlebarStyle: Ghostty.Config.MacOSTitlebarStyle) async throws {
         let expectedSize = NSSize(width: 600, height: 400)
 
         let container = await TerminalViewContainer {
@@ -319,7 +319,7 @@ struct IntrinsicSizeTimingTests {
     /// This should always pass — it validates the delay works when @FocusedValue
     /// has already propagated.
     @Test(arguments: allTitlebarStyles)
-    func asyncAfterDelayProducesCorrectSizeWhenIdealSizesAvailable(titlebarStyle: String) async throws {
+    func asyncAfterDelayProducesCorrectSizeWhenIdealSizesAvailable(titlebarStyle: Ghostty.Config.MacOSTitlebarStyle) async throws {
         let expectedSize = NSSize(width: 600, height: 400)
 
         let container = await TerminalViewContainer {
@@ -364,7 +364,7 @@ struct IntrinsicSizeTimingTests {
     /// (never .contentIntrinsicSize). The window uses its initial frame.
     /// This should work for all titlebar styles regardless of the bug.
     @Test(arguments: allTitlebarStyles)
-    func framePathWorksWithoutWindowSize(titlebarStyle: String) async throws {
+    func framePathWorksWithoutWindowSize(titlebarStyle: Ghostty.Config.MacOSTitlebarStyle) async throws {
         let expectedFrame = NSRect(x: 100, y: 100, width: 800, height: 600)
 
         let container = await TerminalViewContainer {
@@ -399,7 +399,7 @@ struct IntrinsicSizeTimingTests {
     /// Verifies isChanged correctly detects mismatch for contentIntrinsicSize
     /// across titlebar styles when ideal sizes are available.
     @Test(arguments: allTitlebarStyles)
-    func isChangedDetectsMismatch(titlebarStyle: String) async throws {
+    func isChangedDetectsMismatch(titlebarStyle: Ghostty.Config.MacOSTitlebarStyle) async throws {
         let expectedSize = NSSize(width: 600, height: 400)
 
         let container = await TerminalViewContainer {

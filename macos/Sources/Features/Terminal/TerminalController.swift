@@ -19,10 +19,10 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         }
 
         let nib = switch config.macosTitlebarStyle {
-        case "native": "Terminal"
-        case "hidden": "TerminalHiddenTitlebar"
-        case "transparent": "TerminalTransparentTitlebar"
-        case "tabs":
+        case .native: "Terminal"
+        case .hidden: "TerminalHiddenTitlebar"
+        case .transparent: "TerminalTransparentTitlebar"
+        case .tabs:
 #if compiler(>=6.2)
             if #available(macOS 26.0, *) {
                 "TerminalTabsTitlebarTahoe"
@@ -32,7 +32,6 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
 #else
             "TerminalTabsTitlebarVentura"
 #endif
-        default: defaultValue
         }
 
         return nib
@@ -1537,7 +1536,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
     struct DerivedConfig {
         let backgroundColor: Color
         let macosWindowButtons: Ghostty.MacOSWindowButtons
-        let macosTitlebarStyle: String
+        let macosTitlebarStyle: Ghostty.Config.MacOSTitlebarStyle
         let maximize: Bool
         let windowPositionX: Int16?
         let windowPositionY: Int16?
@@ -1545,7 +1544,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         init() {
             self.backgroundColor = Color(NSColor.windowBackgroundColor)
             self.macosWindowButtons = .visible
-            self.macosTitlebarStyle = "system"
+            self.macosTitlebarStyle = .default
             self.maximize = false
             self.windowPositionX = nil
             self.windowPositionY = nil
