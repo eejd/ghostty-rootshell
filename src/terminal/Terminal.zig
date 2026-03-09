@@ -424,13 +424,19 @@ pub fn print(self: *Terminal, c: u21) !void {
                     if (self.screens.active.cursor.x == right_limit - 1) {
                         if (!self.modes.get(.wraparound)) return;
 
-                        const prev_cp = prev.cell.content.codepoint;
+                        // This path can write a spacer_head before printWrap
+                        // which can trigger integrity violations so mark
+                        // the wrap first to keep the intermediary state valid
+                        // if we're wrapping.
+                        const row_wrap = right_limit == self.cols;
+                        if (row_wrap) self.screens.active.cursor.page_row.wrap = true;
 
+                        const prev_cp = prev.cell.content.codepoint;
                         if (prev.cell.hasGrapheme()) {
                             // This is like printCell but without clearing the
                             // grapheme data from the cell, so we can move it
                             // later.
-                            prev.cell.wide = if (right_limit == self.cols) .spacer_head else .narrow;
+                            prev.cell.wide = if (row_wrap) .spacer_head else .narrow;
                             prev.cell.content.codepoint = 0;
 
                             try self.printWrap();
@@ -466,7 +472,7 @@ pub fn print(self: *Terminal, c: u21) !void {
                         } else {
                             self.printCell(
                                 0,
-                                if (right_limit == self.cols) .spacer_head else .narrow,
+                                if (row_wrap) .spacer_head else .narrow,
                             );
                             try self.printWrap();
                             self.printCell(prev_cp, .wide);
@@ -4078,6 +4084,58 @@ test "Terminal: VS16 to make wide character on next line" {
         try testing.expectEqual(@as(u21, 0), cell.content.codepoint);
         try testing.expect(!cell.hasGrapheme());
         try testing.expectEqual(Cell.Wide.spacer_tail, cell.wide);
+    }
+}
+
+test "Terminal: VS16 to make wide character on next line with hyperlink" {
+    // Regression test for the crash fixed in print's grapheme `.wide` path:
+    // writing a spacer_head at the screen edge before row.wrap was set.
+    var t = try init(testing.allocator, .{ .rows = 5, .cols = 3 });
+    defer t.deinit(testing.allocator);
+
+    // Enable grapheme clustering and activate a hyperlink so printCell
+    // calls cursorSetHyperlink (which runs page integrity checks).
+    t.modes.set(.grapheme_cluster, true);
+    try t.screens.active.startHyperlink("http://example.com", null);
+
+    t.cursorRight(2);
+    try t.print('#');
+    try testing.expectEqual(@as(usize, 2), t.screens.active.cursor.x);
+    try testing.expect(t.screens.active.cursor.pending_wrap);
+
+    // Without the fix, this panicked with UnwrappedSpacerHead.
+    try t.print(0xFE0F); // VS16 to make wide
+
+    try testing.expectEqual(@as(usize, 1), t.screens.active.cursor.y);
+    try testing.expectEqual(@as(usize, 2), t.screens.active.cursor.x);
+    try testing.expect(!t.screens.active.cursor.pending_wrap);
+
+    {
+        // Previous cell turns into spacer_head and remains hyperlinked.
+        const list_cell = t.screens.active.pages.getCell(.{ .screen = .{ .x = 2, .y = 0 } }).?;
+        const cell = list_cell.cell;
+        try testing.expectEqual(@as(u21, 0), cell.content.codepoint);
+        try testing.expectEqual(Cell.Wide.spacer_head, cell.wide);
+        try testing.expect(cell.hyperlink);
+        try testing.expect(list_cell.row.wrap);
+    }
+    {
+        // '#' cell is now wide and still hyperlinked.
+        const list_cell = t.screens.active.pages.getCell(.{ .screen = .{ .x = 0, .y = 1 } }).?;
+        const cell = list_cell.cell;
+        try testing.expectEqual(@as(u21, '#'), cell.content.codepoint);
+        try testing.expect(cell.hasGrapheme());
+        try testing.expectEqualSlices(u21, &.{0xFE0F}, list_cell.node.data.lookupGrapheme(cell).?);
+        try testing.expectEqual(Cell.Wide.wide, cell.wide);
+        try testing.expect(cell.hyperlink);
+    }
+    {
+        // spacer_tail inherits hyperlink as part of the same grapheme cell.
+        const list_cell = t.screens.active.pages.getCell(.{ .screen = .{ .x = 1, .y = 1 } }).?;
+        const cell = list_cell.cell;
+        try testing.expectEqual(@as(u21, 0), cell.content.codepoint);
+        try testing.expectEqual(Cell.Wide.spacer_tail, cell.wide);
+        try testing.expect(cell.hyperlink);
     }
 }
 
