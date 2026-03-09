@@ -3884,7 +3884,7 @@ fn mouseShiftCapture(self: *const Surface, lock: bool) bool {
 pub fn mouseCaptured(self: *Surface) bool {
     self.renderer_state.mutex.lock();
     defer self.renderer_state.mutex.unlock();
-    return self.io.terminal.flags.mouse_event != .none;
+    return self.config.mouse_reporting and self.io.terminal.flags.mouse_event != .none;
 }
 
 /// Called for mouse button press/release events. This will return true
