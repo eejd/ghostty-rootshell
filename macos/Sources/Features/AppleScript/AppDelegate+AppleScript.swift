@@ -57,6 +57,16 @@ extension NSApplication {
         return result
     }
 
+    /// Exposed as the AppleScript `front window` property.
+    ///
+    /// `scriptWindows` is already ordered front-to-back, so the first item is
+    /// the frontmost logical Ghostty window.
+    @objc(frontWindow)
+    var frontWindow: ScriptWindow? {
+        guard isAppleScriptEnabled else { return nil }
+        return scriptWindows.first
+    }
+
     /// Enables AppleScript unique-ID lookup for window references.
     ///
     /// Required selector name pattern for element key `scriptWindows`:

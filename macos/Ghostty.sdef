@@ -9,6 +9,9 @@
       <property name="frontmost" code="pisf" type="boolean" access="r" description="Is this the active application?">
         <cocoa key="isActive"/>
       </property>
+      <property name="front window" code="GFWn" type="window" access="r" description="The frontmost Ghostty window.">
+        <cocoa key="frontWindow"/>
+      </property>
       <property name="version" code="vers" type="text" access="r" description="The version number of the application."/>
       <responds-to command="perform action">
         <cocoa method="handlePerformActionScriptCommand:"/>
@@ -66,6 +69,9 @@
       </property>
       <property name="index" code="pidx" type="integer" access="r" description="1-based index of this tab in its window."/>
       <property name="selected" code="GTsl" type="boolean" access="r" description="Whether this tab is selected in its window."/>
+      <property name="focused terminal" code="GTfT" type="terminal" access="r" description="The currently focused terminal surface in this tab.">
+        <cocoa key="focusedTerminal"/>
+      </property>
       <responds-to command="select tab">
         <cocoa method="handleSelectTabCommand:"/>
       </responds-to>

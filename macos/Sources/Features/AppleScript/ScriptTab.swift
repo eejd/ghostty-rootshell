@@ -67,6 +67,20 @@ final class ScriptTab: NSObject {
         return window?.tabIsSelected(controller) ?? false
     }
 
+    /// Exposed as the AppleScript `focused terminal` property.
+    ///
+    /// Uses the currently focused surface for this tab.
+    @objc(focusedTerminal)
+    var focusedTerminal: ScriptTerminal? {
+        guard NSApp.isAppleScriptEnabled else { return nil }
+        guard let controller else { return nil }
+        guard let surface = controller.focusedSurface,
+              controller.surfaceTree.contains(surface)
+        else { return nil }
+
+        return ScriptTerminal(surfaceView: surface)
+    }
+
     /// Best-effort native window containing this tab.
     var parentWindow: NSWindow? {
         guard NSApp.isAppleScriptEnabled else { return nil }
