@@ -268,12 +268,15 @@ if (( BASH_VERSINFO[0] > 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] >= 4) )
 
   # Use function substitution in 5.3+. Otherwise, use command substitution.
   # Any output (including escape sequences) goes to the terminal.
-  if (( BASH_VERSINFO[0] > 5 || (BASH_VERSINFO[0] == 5 && BASH_VERSINFO[1] >= 3) )); then
-    # shellcheck disable=SC2016
-    builtin readonly __ghostty_ps0='${ __ghostty_preexec_hook; }'
-  else
-    # shellcheck disable=SC2016
-    builtin readonly __ghostty_ps0='$(__ghostty_preexec_hook >/dev/tty)'
+  # Only define if not already set (allows re-sourcing).
+  if [[ -z "${__ghostty_ps0+x}" ]]; then
+    if (( BASH_VERSINFO[0] > 5 || (BASH_VERSINFO[0] == 5 && BASH_VERSINFO[1] >= 3) )); then
+      # shellcheck disable=SC2016
+      builtin readonly __ghostty_ps0='${ __ghostty_preexec_hook; }'
+    else
+      # shellcheck disable=SC2016
+      builtin readonly __ghostty_ps0='$(__ghostty_preexec_hook >/dev/tty)'
+    fi
   fi
 
   __ghostty_hook() {
