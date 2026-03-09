@@ -1052,7 +1052,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             case .contentIntrinsicSize:
                 // Content intrinsic size requires a short delay so that AppKit
                 // can layout our SwiftUI views.
-                DispatchQueue.main.asyncAfter(deadline: .now() + .microseconds(10_000)) { [weak self, weak window] in
+                DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(40)) { [weak self, weak window] in
                     guard let self, let window else { return }
                     defaultSize.apply(to: window)
                     if let screen = window.screen ?? NSScreen.main {
