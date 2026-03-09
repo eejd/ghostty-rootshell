@@ -53,7 +53,7 @@ extension Ghostty {
         /// - Parameters:
         ///   - path: An optional preferred config file path. Pass `nil` to load the default configuration files.
         ///   - finalize: Whether to finalize the configuration to populate default values.
-        static private func loadConfig(at path: String?, finalize: Bool) -> ghostty_config_t? {
+        static func loadConfig(at path: String?, finalize: Bool) -> ghostty_config_t? {
             // Initialize the global configuration.
             guard let cfg = ghostty_config_new() else {
                 logger.critical("ghostty_config_new failed")
