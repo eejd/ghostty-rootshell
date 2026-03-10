@@ -835,4 +835,13 @@ extension TerminalWindow: TabTitleEditorDelegate {
         guard let targetController = targetWindow.windowController as? BaseTerminalController else { return }
         targetController.promptTabTitle()
     }
+
+    func tabTitleEditor(_ editor: TabTitleEditor, didFinishEditing targetWindow: NSWindow) {
+        // After inline editing, the first responder is the window itself.
+        // Restore focus to the terminal surface so keyboard input works.
+        guard let controller = windowController as? BaseTerminalController,
+              let focusedSurface = controller.focusedSurface
+        else { return }
+        makeFirstResponder(focusedSurface)
+    }
 }
