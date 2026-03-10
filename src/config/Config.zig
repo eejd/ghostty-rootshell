@@ -1526,13 +1526,14 @@ class: ?[:0]const u8 = null,
 /// `open`, then it defaults to `home`. On Linux with GTK, if Ghostty can detect
 /// it was launched from a desktop launcher, then it defaults to `home`.
 ///
-/// The value of this must be an absolute value or one of the special values
-/// below:
+/// The value of this must be an absolute path, a path prefixed with `~/`
+/// (the tilde will be expanded to the user's home directory), or
+/// one of the special values below:
 ///
 ///   * `home` - The home directory of the executing user.
 ///
 ///   * `inherit` - The working directory of the launching process.
-@"working-directory": ?[]const u8 = null,
+@"working-directory": ?WorkingDirectory = null,
 
 /// Key bindings. The format is `trigger=action`. Duplicate triggers will
 /// overwrite previously set values. The list of actions is available in
@@ -4519,23 +4520,18 @@ pub fn finalize(self: *Config) !void {
     }
 
     // The default for the working directory depends on the system.
-    const wd = self.@"working-directory" orelse if (probable_cli)
-        // From the CLI, we want to inherit where we were launched from.
-        "inherit"
+    var wd: WorkingDirectory = self.@"working-directory" orelse if (probable_cli)
+        .inherit
     else
-        // Otherwise we typically just want the home directory because
-        // our pwd is probably a runtime state dir or root or something
-        // (launchers and desktop environments typically do this).
-        "home";
+        .home;
 
     // If we are missing either a command or home directory, we need
     // to look up defaults which is kind of expensive. We only do this
     // on desktop.
-    const wd_home = std.mem.eql(u8, "home", wd);
     if ((comptime !builtin.target.cpu.arch.isWasm()) and
         (comptime !builtin.is_test))
     {
-        if (self.command == null or wd_home) command: {
+        if (self.command == null or wd == .home) command: {
             // First look up the command using the SHELL env var if needed.
             // We don't do this in flatpak because SHELL in Flatpak is always
             // set to /bin/sh.
@@ -4557,7 +4553,7 @@ pub fn finalize(self: *Config) !void {
                     self.command = .{ .shell = copy };
 
                     // If we don't need the working directory, then we can exit now.
-                    if (!wd_home) break :command;
+                    if (wd != .home) break :command;
                 } else |_| {}
             }
 
@@ -4568,10 +4564,12 @@ pub fn finalize(self: *Config) !void {
                         self.command = .{ .shell = "cmd.exe" };
                     }
 
-                    if (wd_home) {
+                    if (wd == .home) {
                         var buf: [std.fs.max_path_bytes]u8 = undefined;
                         if (try internal_os.home(&buf)) |home| {
-                            self.@"working-directory" = try alloc.dupe(u8, home);
+                            wd = .{ .path = try alloc.dupe(u8, home) };
+                        } else {
+                            wd = .inherit;
                         }
                     }
                 },
@@ -4586,10 +4584,12 @@ pub fn finalize(self: *Config) !void {
                         }
                     }
 
-                    if (wd_home) {
+                    if (wd == .home) {
                         if (pw.home) |home| {
                             log.info("default working directory src=passwd value={s}", .{home});
-                            self.@"working-directory" = home;
+                            wd = .{ .path = home };
+                        } else {
+                            wd = .inherit;
                         }
                     }
 
@@ -4600,6 +4600,8 @@ pub fn finalize(self: *Config) !void {
             }
         }
     }
+    try wd.finalize(alloc);
+    self.@"working-directory" = wd;
 
     // Apprt-specific defaults
     switch (build_config.app_runtime) {
@@ -4617,10 +4619,6 @@ pub fn finalize(self: *Config) !void {
             }
         },
     }
-
-    // If we have the special value "inherit" then set it to null which
-    // does the same. In the future we should change to a tagged union.
-    if (std.mem.eql(u8, wd, "inherit")) self.@"working-directory" = null;
 
     // Default our click interval
     if (self.@"click-repeat-interval" == 0 and
@@ -5243,6 +5241,127 @@ pub const LinkPreviews = enum {
     false,
     true,
     osc8,
+};
+
+/// See working-directory
+pub const WorkingDirectory = union(enum) {
+    const Self = @This();
+
+    /// Resolve to the current user's home directory during config finalize.
+    home,
+
+    /// Inherit the working directory from the launching process.
+    inherit,
+
+    /// Use an explicit working directory path. This may be not be
+    /// expanded until finalize is called.
+    path: []const u8,
+
+    pub fn parseCLI(self: *Self, alloc: Allocator, input_: ?[]const u8) !void {
+        var input = input_ orelse return error.ValueRequired;
+        input = std.mem.trim(u8, input, &std.ascii.whitespace);
+        if (input.len == 0) return error.ValueRequired;
+
+        // Match path.zig behavior for quoted values.
+        if (input.len >= 2 and input[0] == '"' and input[input.len - 1] == '"') {
+            input = input[1 .. input.len - 1];
+        }
+
+        if (std.mem.eql(u8, input, "home")) {
+            self.* = .home;
+            return;
+        }
+
+        if (std.mem.eql(u8, input, "inherit")) {
+            self.* = .inherit;
+            return;
+        }
+
+        self.* = .{ .path = try alloc.dupe(u8, input) };
+    }
+
+    /// Expand tilde paths in .path values.
+    pub fn finalize(self: *Self, alloc: Allocator) Allocator.Error!void {
+        const path = switch (self.*) {
+            .path => |path| path,
+            else => return,
+        };
+
+        if (!std.mem.startsWith(u8, path, "~/")) return;
+
+        var buf: [std.fs.max_path_bytes]u8 = undefined;
+        const expanded = internal_os.expandHome(path, &buf) catch |err| {
+            log.warn(
+                "error expanding home directory for working-directory path={s}: {}",
+                .{ path, err },
+            );
+            return;
+        };
+
+        if (std.mem.eql(u8, expanded, path)) return;
+        self.* = .{ .path = try alloc.dupe(u8, expanded) };
+    }
+
+    pub fn value(self: Self) ?[]const u8 {
+        return switch (self) {
+            .path => |path| path,
+            .home, .inherit => null,
+        };
+    }
+
+    pub fn clone(self: Self, alloc: Allocator) Allocator.Error!Self {
+        return switch (self) {
+            .path => |path| .{ .path = try alloc.dupe(u8, path) },
+            else => self,
+        };
+    }
+
+    pub fn formatEntry(self: Self, formatter: formatterpkg.EntryFormatter) !void {
+        switch (self) {
+            .home, .inherit => try formatter.formatEntry([]const u8, @tagName(self)),
+            .path => |path| try formatter.formatEntry([]const u8, path),
+        }
+    }
+
+    test "WorkingDirectory parseCLI" {
+        const testing = std.testing;
+        var arena = ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        var wd: Self = .inherit;
+
+        try wd.parseCLI(alloc, "inherit");
+        try testing.expectEqual(.inherit, wd);
+
+        try wd.parseCLI(alloc, "home");
+        try testing.expectEqual(.home, wd);
+
+        try wd.parseCLI(alloc, "~/projects/ghostty");
+        try testing.expectEqualStrings("~/projects/ghostty", wd.path);
+
+        try wd.parseCLI(alloc, "\"/tmp path\"");
+        try testing.expectEqualStrings("/tmp path", wd.path);
+    }
+
+    test "WorkingDirectory finalize" {
+        const testing = std.testing;
+        var arena = ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        {
+            var wd: Self = .{ .path = "~/projects/ghostty" };
+            try wd.finalize(alloc);
+
+            var buf: [std.fs.max_path_bytes]u8 = undefined;
+            const expected = internal_os.expandHome(
+                "~/projects/ghostty",
+                &buf,
+            ) catch "~/projects/ghostty";
+            try testing.expectEqualStrings(expected, wd.value().?);
+        }
+    }
 };
 
 /// Color represents a color using RGB.
@@ -10307,6 +10426,26 @@ test "clone preserves conditional set" {
     defer clone1.deinit();
 
     try testing.expect(clone1._conditional_set.contains(.theme));
+}
+
+test "working-directory expands tilde" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var cfg = try Config.default(alloc);
+    defer cfg.deinit();
+    var it: TestIterator = .{ .data = &.{
+        "--working-directory=~/projects/ghostty",
+    } };
+    try cfg.loadIter(alloc, &it);
+    try cfg.finalize();
+
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    const expected = internal_os.expandHome(
+        "~/projects/ghostty",
+        &buf,
+    ) catch "~/projects/ghostty";
+    try testing.expectEqualStrings(expected, cfg.@"working-directory".?.value().?);
 }
 
 test "changed" {
