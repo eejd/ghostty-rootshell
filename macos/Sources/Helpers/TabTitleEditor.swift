@@ -26,6 +26,12 @@ protocol TabTitleEditorDelegate: AnyObject {
         _ editor: TabTitleEditor,
         performFallbackRenameFor targetWindow: NSWindow
     )
+
+    /// Called after inline editing finishes (whether committed or cancelled).
+    /// Use this to restore focus to the appropriate responder.
+    func tabTitleEditor(
+        _ editor: TabTitleEditor,
+        didFinishEditing targetWindow: NSWindow)
 }
 
 /// Handles inline tab title editing for native AppKit window tabs.
@@ -212,8 +218,14 @@ final class TabTitleEditor: NSObject, NSTextFieldDelegate {
         previousTabState = nil
 
         // Delegate owns title persistence semantics (including empty-title handling).
-        guard commit, let targetWindow else { return }
-        delegate?.tabTitleEditor(self, didCommitTitle: editedTitle, for: targetWindow)
+        guard let targetWindow else { return }
+
+        if commit {
+            delegate?.tabTitleEditor(self, didCommitTitle: editedTitle, for: targetWindow)
+        }
+
+        // Notify delegate that editing is done so it can restore focus.
+        delegate?.tabTitleEditor(self, didFinishEditing: targetWindow)
     }
 
     /// Chooses an editor frame that aligns with the tab title within the tab button.
