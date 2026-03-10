@@ -75,11 +75,11 @@ struct IntrinsicSizeTimingTests {
             OptionalIdealSizeView(idealWidth: nil, idealHeight: nil, titlebarStyle: titlebarStyle)
         }
 
-        // TODO: Fix #11256 — set initialContentSize on the container so
-        // intrinsicContentSize returns the correct value immediately.
-        // await MainActor.run {
-        //     container.initialContentSize = expectedSize
-        // }
+        // Set initialContentSize so intrinsicContentSize returns the
+        // correct value immediately, without waiting for @FocusedValue.
+        await MainActor.run {
+            container.initialContentSize = expectedSize
+        }
 
         let window = await NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
@@ -111,10 +111,9 @@ struct IntrinsicSizeTimingTests {
             OptionalIdealSizeView(idealWidth: nil, idealHeight: nil, titlebarStyle: titlebarStyle)
         }
 
-        // TODO: Fix #11256 — set initialContentSize on the container.
-        // await MainActor.run {
-        //     container.initialContentSize = NSSize(width: 600, height: 400)
-        // }
+        await MainActor.run {
+            container.initialContentSize = NSSize(width: 600, height: 400)
+        }
 
         let window = await NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
@@ -156,12 +155,9 @@ struct IntrinsicSizeTimingTests {
             OptionalIdealSizeView(idealWidth: nil, idealHeight: nil, titlebarStyle: titlebarStyle)
         }
 
-        // TODO: Fix #11256 — set initialContentSize on the container so
-        // intrinsicContentSize returns the correct value immediately,
-        // eliminating the need for the async delay.
-        // await MainActor.run {
-        //     container.initialContentSize = NSSize(width: 600, height: 400)
-        // }
+        await MainActor.run {
+            container.initialContentSize = NSSize(width: 600, height: 400)
+        }
 
         let window = await NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
@@ -204,10 +200,9 @@ struct IntrinsicSizeTimingTests {
             OptionalIdealSizeView(idealWidth: nil, idealHeight: nil, titlebarStyle: titlebarStyle)
         }
 
-        // TODO: Fix #11256 — set initialContentSize on the container.
-        // await MainActor.run {
-        //     container.initialContentSize = NSSize(width: 600, height: 400)
-        // }
+        await MainActor.run {
+            container.initialContentSize = NSSize(width: 600, height: 400)
+        }
 
         let window = await NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
