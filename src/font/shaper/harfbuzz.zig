@@ -1078,6 +1078,8 @@ test "shape Devanagari string" {
     try testing.expect(try it.next(alloc) == null);
 }
 
+// This test fails on Linux if you have the "Noto Sans Tai Tham" font installed
+// locally. Disabling this test until it can be fixed.
 test "shape Tai Tham vowels (position differs from advance)" {
     return error.SkipZigTest;
     // // Note that while this test was necessary for CoreText, the old logic was
@@ -1195,6 +1197,8 @@ test "shape Tibetan characters" {
     try testing.expectEqual(@as(usize, 1), count);
 }
 
+// This test fails on Linux if you have the "Noto Sans Tai Tham" font installed
+// locally. Disabling this test until it can be fixed.
 test "shape Tai Tham letters (run_offset.y differs from zero)" {
     return error.SkipZigTest;
     // const testing = std.testing;
@@ -1256,6 +1260,8 @@ test "shape Tai Tham letters (run_offset.y differs from zero)" {
     // try testing.expectEqual(@as(usize, 1), count);
 }
 
+// This test fails on Linux if you have the "Noto Sans Javanese" font installed
+// locally. Disabling this test until it can be fixed.
 test "shape Javanese ligatures" {
     return error.SkipZigTest;
     // const testing = std.testing;
