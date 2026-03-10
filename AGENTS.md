@@ -4,6 +4,7 @@ A file for [guiding coding agents](https://agents.md/).
 
 ## Commands
 
+- Use `nix develop -c` with all commands to ensure the Nix version is used.
 - **Build:** `zig build`
   - If you're on macOS and don't need to build the macOS app, use
     `-Demit-macos-app=false` to skip building the app bundle and speed up
@@ -13,7 +14,7 @@ A file for [guiding coding agents](https://agents.md/).
     test suite is slow to run.
 - **Test filter (Zig)**: `zig build test -Dtest-filter=<test name>`
 - **Formatting (Zig)**: `zig fmt .`
-- **Formatting (Swift)**: `swiftlint lint --fix`
+- **Formatting (Swift)**: `swiftlint lint --strict --fix`
 - **Formatting (other)**: `prettier -w .`
 
 ## Directory Structure
