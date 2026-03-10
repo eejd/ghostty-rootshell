@@ -1398,8 +1398,6 @@ input: RepeatableReadableIO = .{},
 ///   * `never` - Never show a scrollbar. You can still scroll using the mouse,
 ///     keybind actions, etc. but you will not have a visual UI widget showing
 ///     a scrollbar.
-///
-/// This only applies to macOS currently. GTK doesn't yet support scrollbars.
 scrollbar: Scrollbar = .system,
 
 /// Match a regular expression against the terminal text and associate clicking
