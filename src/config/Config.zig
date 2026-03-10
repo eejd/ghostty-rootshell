@@ -6332,10 +6332,11 @@ pub const Keybinds = struct {
                 .{ .copy_to_clipboard = .mixed },
                 .{ .performable = true },
             );
-            try self.set.put(
+            try self.set.putFlags(
                 alloc,
                 .{ .key = .{ .unicode = 'v' }, .mods = mods },
-                .{ .paste_from_clipboard = {} },
+                .paste_from_clipboard,
+                .{ .performable = true },
             );
         }
 

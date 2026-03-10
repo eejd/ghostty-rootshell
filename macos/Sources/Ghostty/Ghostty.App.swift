@@ -269,7 +269,9 @@ extension Ghostty {
             _ userdata: UnsafeMutableRawPointer?,
             location: ghostty_clipboard_e,
             state: UnsafeMutableRawPointer?
-        ) {}
+        ) -> Bool {
+            return false
+        }
 
         static func confirmReadClipboard(
             _ userdata: UnsafeMutableRawPointer?,
@@ -321,20 +323,23 @@ extension Ghostty {
             ])
         }
 
-        static func readClipboard(_ userdata: UnsafeMutableRawPointer?, location: ghostty_clipboard_e, state: UnsafeMutableRawPointer?) {
-            // If we don't even have a surface, something went terrible wrong so we have
-            // to leak "state".
+        static func readClipboard(
+            _ userdata: UnsafeMutableRawPointer?,
+            location: ghostty_clipboard_e,
+            state: UnsafeMutableRawPointer?
+        ) -> Bool {
             let surfaceView = self.surfaceUserdata(from: userdata)
-            guard let surface = surfaceView.surface else { return }
+            guard let surface = surfaceView.surface else { return false }
 
             // Get our pasteboard
-            guard let pasteboard = NSPasteboard.ghostty(location) else {
-                return completeClipboardRequest(surface, data: "", state: state)
-            }
+            guard let pasteboard = NSPasteboard.ghostty(location) else { return false }
 
-            // Get our string
-            let str = pasteboard.getOpinionatedStringContents() ?? ""
+            // Return false if there is no text-like clipboard content so
+            // performable paste bindings can pass through to the terminal.
+            guard let str = pasteboard.getOpinionatedStringContents() else { return false }
+
             completeClipboardRequest(surface, data: str, state: state)
+            return true
         }
 
         static func confirmReadClipboard(
