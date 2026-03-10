@@ -4013,10 +4013,28 @@ pub fn loadDefaultFiles(self: *Config, alloc: Allocator) !void {
         const app_support_path = try file_load.preferredAppSupportPath(alloc);
         defer alloc.free(app_support_path);
         const app_support_loaded: bool = loaded: {
-            const legacy_app_support_action = self.loadOptionalFile(alloc, legacy_app_support_path);
-            const app_support_action = self.loadOptionalFile(alloc, app_support_path);
+            const legacy_app_support_action = self.loadOptionalFile(
+                alloc,
+                legacy_app_support_path,
+            );
+
+            // The app support path and legacy may be the same, since we
+            // use the `preferred` call above. If its the same, avoid
+            // a double-load.
+            const app_support_action: OptionalFileAction = if (!std.mem.eql(
+                u8,
+                legacy_app_support_path,
+                app_support_path,
+            )) self.loadOptionalFile(
+                alloc,
+                app_support_path,
+            ) else .not_found;
+
             if (app_support_action != .not_found and legacy_app_support_action != .not_found) {
-                log.warn("both config files `{s}` and `{s}` exist.", .{ legacy_app_support_path, app_support_path });
+                log.warn(
+                    "both config files `{s}` and `{s}` exist.",
+                    .{ legacy_app_support_path, app_support_path },
+                );
                 log.warn("loading them both in that order", .{});
                 break :loaded true;
             }
