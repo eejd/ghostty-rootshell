@@ -513,7 +513,15 @@ pub const Surface = struct {
                     break :wd;
                 }
 
-                config.@"working-directory" = wd;
+                var wd_val: configpkg.WorkingDirectory = .{ .path = wd };
+                if (wd_val.finalize(config.arenaAlloc())) |_| {
+                    config.@"working-directory" = wd_val;
+                } else |err| {
+                    log.warn(
+                        "error finalizing working directory config dir={s} err={}",
+                        .{ wd_val.path, err },
+                    );
+                }
             }
         }
 

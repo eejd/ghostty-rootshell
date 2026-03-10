@@ -4,7 +4,6 @@ A file for [guiding coding agents](https://agents.md/).
 
 ## Commands
 
-- Use `nix develop -c` with all commands to ensure the Nix version is used.
 - **Build:** `zig build`
   - If you're on macOS and don't need to build the macOS app, use
     `-Demit-macos-app=false` to skip building the app bundle and speed up
