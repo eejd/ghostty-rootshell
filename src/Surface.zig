@@ -5482,6 +5482,26 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             .tab,
         ),
 
+        .set_surface_title => |v| {
+            const title = try self.alloc.dupeZ(u8, v);
+            defer self.alloc.free(title);
+            return try self.rt_app.performAction(
+                .{ .surface = self },
+                .set_title,
+                .{ .title = title },
+            );
+        },
+
+        .set_tab_title => |v| {
+            const title = try self.alloc.dupeZ(u8, v);
+            defer self.alloc.free(title);
+            return try self.rt_app.performAction(
+                .{ .surface = self },
+                .set_tab_title,
+                .{ .title = title },
+            );
+        },
+
         .clear_screen => {
             // This is a duplicate of some of the logic in termio.clearScreen
             // but we need to do this here so we can know the answer before
