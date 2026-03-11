@@ -1071,6 +1071,13 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
                 y: derivedConfig.windowPositionY,
             )
         }
+
+        LastWindowPosition.shared.restore(
+            window,
+            origin: derivedConfig.windowPositionX == nil && derivedConfig.windowPositionY == nil,
+            size: defaultSize == nil,
+        )
+
         // Store our initial frame so we can know our default later. This MUST
         // be after the defaultSize call above so that we don't re-apply our frame.
         // Note: we probably want to set this on the first frame change or something

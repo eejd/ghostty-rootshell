@@ -539,10 +539,7 @@ class TerminalWindow: NSWindow {
     func setInitialWindowPosition(x: Int16?, y: Int16?) {
         // If we don't have an X/Y then we try to use the previously saved window pos.
         guard let x = x, let y = y else {
-            if !LastWindowPosition.shared.restore(self) {
-                center()
-            }
-
+            center()
             return
         }
 
