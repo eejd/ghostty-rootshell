@@ -6,10 +6,17 @@ class LastWindowPosition {
 
     private let positionKey = "NSWindowLastPosition"
 
-    func save(_ window: NSWindow) {
+    @discardableResult
+    func save(_ window: NSWindow?) -> Bool {
+        // We should only save the frame if the window is visible.
+        // This avoids overriding the previously saved one
+        // with the wrong one when window decorations change while creating,
+        // e.g. adding a toolbar affects the window's frame.
+        guard let window, window.isVisible else { return false }
         let frame = window.frame
         let rect = [frame.origin.x, frame.origin.y, frame.size.width, frame.size.height]
         UserDefaults.standard.set(rect, forKey: positionKey)
+        return true
     }
 
     func restore(_ window: NSWindow) -> Bool {

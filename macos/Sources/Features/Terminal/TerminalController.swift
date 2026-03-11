@@ -1171,27 +1171,21 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         self.fixTabBar()
 
         // Whenever we move save our last position for the next start.
-        if let window {
-            LastWindowPosition.shared.save(window)
-        }
+        LastWindowPosition.shared.save(window)
     }
 
     override func windowDidResize(_ notification: Notification) {
         super.windowDidResize(notification)
 
         // Whenever we resize save our last position and size for the next start.
-        if let window {
-            LastWindowPosition.shared.save(window)
-        }
+        LastWindowPosition.shared.save(window)
     }
 
     func windowDidBecomeMain(_ notification: Notification) {
         // Whenever we get focused, use that as our last window position for
         // restart. This differs from Terminal.app but matches iTerm2 behavior
         // and I think its sensible.
-        if let window {
-            LastWindowPosition.shared.save(window)
-        }
+        LastWindowPosition.shared.save(window)
 
         // Remember our last main
         Self.lastMain = self
