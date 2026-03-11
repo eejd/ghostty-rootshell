@@ -1265,7 +1265,8 @@ extension Ghostty {
                    keyTables.isEmpty,
                    bindingFlags.isDisjoint(with: [.all, .performable]),
                    bindingFlags.contains(.consumed) {
-                    if let menu = NSApp.mainMenu, menu.performKeyEquivalent(with: event) {
+                    if let appDelegate = NSApp.delegate as? AppDelegate,
+                       appDelegate.performGhosttyBindingMenuKeyEquivalent(with: event) {
                         return true
                     }
                 }
