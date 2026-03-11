@@ -1061,6 +1061,16 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             }
         }
 
+        // Set the initial window position. This must happen after the window
+        // is fully set up (content view, toolbar, default size) so that
+        // decorations added by subclass awakeFromNib (e.g. toolbar for tabs
+        // style) don't change the frame after the position is restored.
+        if let terminalWindow = window as? TerminalWindow {
+            terminalWindow.setInitialWindowPosition(
+                x: derivedConfig.windowPositionX,
+                y: derivedConfig.windowPositionY,
+            )
+        }
         // Store our initial frame so we can know our default later. This MUST
         // be after the defaultSize call above so that we don't re-apply our frame.
         // Note: we probably want to set this on the first frame change or something
