@@ -3,6 +3,12 @@ import SwiftUI
 extension Ghostty {
     /// A grab handle overlay at the top of the surface for dragging a surface.
     struct SurfaceGrabHandle: View {
+        // Size of the actual drag handle; the hover reveal region is larger.
+        private static let handleSize = CGSize(width: 80, height: 12)
+
+        // Reveal the handle anywhere within the top % of the pane height.
+        private static let hoverHeightFactor: CGFloat = 0.2
+
         @ObservedObject var surfaceView: SurfaceView
 
         @State private var isHovering: Bool = false
@@ -19,7 +25,15 @@ extension Ghostty {
         }
 
         private var ellipsisVisible: Bool {
-            surfaceView.mouseOverSurface && surfaceView.cursorVisible
+            // If the cursor isn't visible, never show the handle
+            guard surfaceView.cursorVisible else { return false }
+            // If we're hovering or actively dragging, always visible
+            if isHovering || isDragging { return true }
+
+            // Require our mouse location to be within the top area of the
+            // surface.
+            guard let mouseLocation = surfaceView.mouseLocationInSurface else { return false }
+            return Self.isInHoverRegion(mouseLocation, in: surfaceView.bounds)
         }
 
         var body: some View {
@@ -30,7 +44,7 @@ extension Ghostty {
                         isDragging: $isDragging,
                         isHovering: $isHovering
                     )
-                    .frame(width: 80, height: 12)
+                    .frame(width: Self.handleSize.width, height: Self.handleSize.height)
                     .contentShape(Rectangle())
 
                     if ellipsisVisible {
@@ -44,6 +58,24 @@ extension Ghostty {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
+        }
+
+        /// The full-width hover band that reveals the drag handle.
+        private static func hoverRect(in bounds: CGRect) -> CGRect {
+            guard !bounds.isEmpty else { return .zero }
+
+            let hoverHeight = min(bounds.height, max(handleSize.height, bounds.height * hoverHeightFactor))
+            return CGRect(
+                x: bounds.minX,
+                y: bounds.maxY - hoverHeight,
+                width: bounds.width,
+                height: hoverHeight
+            )
+        }
+
+        /// Returns true when the pointer is inside the top hover band.
+        private static func isInHoverRegion(_ point: CGPoint, in bounds: CGRect) -> Bool {
+            hoverRect(in: bounds).contains(point)
         }
     }
 }
