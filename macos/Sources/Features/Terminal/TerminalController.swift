@@ -1061,6 +1061,23 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             }
         }
 
+        // Set the initial window position. This must happen after the window
+        // is fully set up (content view, toolbar, default size) so that
+        // decorations added by subclass awakeFromNib (e.g. toolbar for tabs
+        // style) don't change the frame after the position is restored.
+        if let terminalWindow = window as? TerminalWindow {
+            terminalWindow.setInitialWindowPosition(
+                x: derivedConfig.windowPositionX,
+                y: derivedConfig.windowPositionY,
+            )
+        }
+
+        LastWindowPosition.shared.restore(
+            window,
+            origin: derivedConfig.windowPositionX == nil && derivedConfig.windowPositionY == nil,
+            size: defaultSize == nil,
+        )
+
         // Store our initial frame so we can know our default later. This MUST
         // be after the defaultSize call above so that we don't re-apply our frame.
         // Note: we probably want to set this on the first frame change or something
@@ -1171,27 +1188,21 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         self.fixTabBar()
 
         // Whenever we move save our last position for the next start.
-        if let window {
-            LastWindowPosition.shared.save(window)
-        }
+        LastWindowPosition.shared.save(window)
     }
 
     override func windowDidResize(_ notification: Notification) {
         super.windowDidResize(notification)
 
         // Whenever we resize save our last position and size for the next start.
-        if let window {
-            LastWindowPosition.shared.save(window)
-        }
+        LastWindowPosition.shared.save(window)
     }
 
     func windowDidBecomeMain(_ notification: Notification) {
         // Whenever we get focused, use that as our last window position for
         // restart. This differs from Terminal.app but matches iTerm2 behavior
         // and I think its sensible.
-        if let window {
-            LastWindowPosition.shared.save(window)
-        }
+        LastWindowPosition.shared.save(window)
 
         // Remember our last main
         Self.lastMain = self

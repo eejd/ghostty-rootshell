@@ -120,11 +120,10 @@ class TerminalWindow: NSWindow {
         // If window decorations are disabled, remove our title
         if !config.windowDecorations { styleMask.remove(.titled) }
 
-        // Set our window positioning to coordinates if config value exists, otherwise
-        // fallback to original centering behavior
-        setInitialWindowPosition(
-            x: config.windowPositionX,
-            y: config.windowPositionY)
+        // NOTE: setInitialWindowPosition is NOT called here because subclass
+        // awakeFromNib may add decorations (e.g. toolbar for tabs style) that
+        // change the frame. It is called from TerminalController.windowDidLoad
+        // after the window is fully set up.
 
         // If our traffic buttons should be hidden, then hide them
         if config.macosWindowButtons == .hidden {
@@ -537,13 +536,10 @@ class TerminalWindow: NSWindow {
         terminalController?.updateColorSchemeForSurfaceTree()
     }
 
-    private func setInitialWindowPosition(x: Int16?, y: Int16?) {
+    func setInitialWindowPosition(x: Int16?, y: Int16?) {
         // If we don't have an X/Y then we try to use the previously saved window pos.
         guard let x = x, let y = y else {
-            if !LastWindowPosition.shared.restore(self) {
-                center()
-            }
-
+            center()
             return
         }
 
