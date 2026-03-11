@@ -749,7 +749,7 @@ foreground: Color = .{ .r = 0xFF, .g = 0xFF, .b = 0xFF },
 /// The null character (U+0000) is always treated as a boundary and does not
 /// need to be included in this configuration.
 ///
-/// Default: ` \t'"│`|:;,()[]{}<>$`
+/// Default: `` \t'"│`|:;,()[]{}<>$ ``
 ///
 /// To add or remove specific characters, you can set this to a custom value.
 /// For example, to treat semicolons as part of words:
