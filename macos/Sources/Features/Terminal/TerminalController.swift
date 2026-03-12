@@ -318,7 +318,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
 
         // Calculate the target frame based on the tree's view bounds
         let treeSize: CGSize? = tree.root?.viewBounds()
-       
+
         DispatchQueue.main.async {
             c.showWindow(self)
             if let window = c.window {

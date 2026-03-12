@@ -94,7 +94,7 @@ final class GhosttyWindowPositionUITests: GhosttyCustomConfigCase {
         let window = app.windows.firstMatch
         XCTAssertTrue(window.waitForExistence(timeout: 5), "New window should appear")
 
-        // remove fixe size
+        // remove fixed size
         try updateConfig(
             """
             title = "GhosttyWindowPositionUITests"
