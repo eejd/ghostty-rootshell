@@ -15,6 +15,8 @@ final class GhosttyWindowPositionUITests: GhosttyCustomConfigCase {
     @MainActor func testWindowCascading() async throws {
         try updateConfig(
             """
+            window-width = 30
+            window-height = 10
             title = "GhosttyWindowPositionUITests"
             """
         )
@@ -46,6 +48,8 @@ final class GhosttyWindowPositionUITests: GhosttyCustomConfigCase {
 
         XCTAssertEqual(windowFrame2.minX, windowFrame.minX + 30, accuracy: 5, "New window should be on the right")
 
+        XCTAssertEqual(windowFrame2.minY, windowFrame.minY + 30, accuracy: 5, "New window should be on the bottom right")
+
         app.typeKey("n", modifierFlags: [.command])
 
         let window3 = app.windows.firstMatch
@@ -55,6 +59,8 @@ final class GhosttyWindowPositionUITests: GhosttyCustomConfigCase {
 
         XCTAssertEqual(windowFrame3.minX, windowFrame2.minX + 30, accuracy: 5, "New window should be on the right")
 
+        XCTAssertEqual(windowFrame3.minY, windowFrame2.minY + 30, accuracy: 5, "New window should be on the bottom right")
+
         app.typeKey("n", modifierFlags: [.command])
 
         let window4 = app.windows.firstMatch
@@ -63,6 +69,8 @@ final class GhosttyWindowPositionUITests: GhosttyCustomConfigCase {
         XCTAssertNotEqual(windowFrame3, windowFrame4, "New window should have moved")
 
         XCTAssertEqual(windowFrame4.minX, windowFrame3.minX + 30, accuracy: 5, "New window should be on the right")
+
+        XCTAssertEqual(windowFrame4.minY, windowFrame3.minY + 30, accuracy: 5, "New window should be on the bottom right")
     }
 
     // MARK: - Restore round-trip per titlebar style
