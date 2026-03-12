@@ -175,7 +175,15 @@ class AppDelegate: NSObject,
     // MARK: - NSApplicationDelegate
 
     func applicationWillFinishLaunching(_ notification: Notification) {
-        UserDefaults.standard.register(defaults: [
+        #if DEBUG
+        if
+            let suite = UserDefaults.ghosttySuite,
+            let clear = ProcessInfo.processInfo.environment["GHOSTTY_CLEAR_USER_DEFAULTS"],
+            (clear as NSString).boolValue {
+            UserDefaults.ghostty.removePersistentDomain(forName: suite)
+        }
+        #endif
+        UserDefaults.ghostty.register(defaults: [
             // Disable the automatic full screen menu item because we handle
             // it manually.
             "NSFullScreenMenuItemEverywhere": false,
@@ -194,7 +202,7 @@ class AppDelegate: NSObject,
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // System settings overrides
-        UserDefaults.standard.register(defaults: [
+        UserDefaults.ghostty.register(defaults: [
             // Disable this so that repeated key events make it through to our terminal views.
             "ApplePressAndHoldEnabled": false,
         ])
@@ -203,7 +211,7 @@ class AppDelegate: NSObject,
         applicationLaunchTime = ProcessInfo.processInfo.systemUptime
 
         // Check if secure input was enabled when we last quit.
-        if UserDefaults.standard.bool(forKey: "SecureInput") != SecureInput.shared.enabled {
+        if UserDefaults.ghostty.bool(forKey: "SecureInput") != SecureInput.shared.enabled {
             toggleSecureInput(self)
         }
 
@@ -747,10 +755,10 @@ class AppDelegate: NSObject,
         // configuration. This is the only way to carefully control whether macOS invokes the
         // state restoration system.
         switch config.windowSaveState {
-        case "never": UserDefaults.standard.setValue(false, forKey: "NSQuitAlwaysKeepsWindows")
-        case "always": UserDefaults.standard.setValue(true, forKey: "NSQuitAlwaysKeepsWindows")
+        case "never": UserDefaults.ghostty.setValue(false, forKey: "NSQuitAlwaysKeepsWindows")
+        case "always": UserDefaults.ghostty.setValue(true, forKey: "NSQuitAlwaysKeepsWindows")
         case "default": fallthrough
-        default: UserDefaults.standard.removeObject(forKey: "NSQuitAlwaysKeepsWindows")
+        default: UserDefaults.ghostty.removeObject(forKey: "NSQuitAlwaysKeepsWindows")
         }
 
         // Sync our auto-update settings. If SUEnableAutomaticChecks (in our Info.plist) is
@@ -835,9 +843,9 @@ class AppDelegate: NSObject,
     private func updateAppIcon(from config: Ghostty.Config) {
         // Since this is called after `DockTilePlugin` has been running,
         // clean it up here to trigger a correct update of the current config.
-        UserDefaults.standard.removeObject(forKey: "CustomGhosttyIcon")
+        UserDefaults.ghostty.removeObject(forKey: "CustomGhosttyIcon")
         DispatchQueue.global().async {
-            UserDefaults.standard.appIcon = AppIcon(config: config)
+            UserDefaults.ghostty.appIcon = AppIcon(config: config)
             DistributedNotificationCenter.default()
                 .postNotificationName(.ghosttyIconDidChange, object: nil, userInfo: nil, deliverImmediately: true)
         }
@@ -927,7 +935,7 @@ class AppDelegate: NSObject,
             input.global.toggle()
         }
         self.menuSecureInput?.state = if input.global { .on } else { .off }
-        UserDefaults.standard.set(input.global, forKey: "SecureInput")
+        UserDefaults.ghostty.set(input.global, forKey: "SecureInput")
     }
 
     // MARK: - IB Actions
@@ -1321,7 +1329,7 @@ extension AppDelegate {
     }
 
     @IBAction func useAsDefault(_ sender: NSMenuItem) {
-        let ud = UserDefaults.standard
+        let ud = UserDefaults.ghostty
         let key = TerminalWindow.defaultLevelKey
         if menuFloatOnTop?.state == .on {
             ud.set(NSWindow.Level.floating, forKey: key)
