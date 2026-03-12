@@ -536,17 +536,15 @@ class TerminalWindow: NSWindow {
         terminalController?.updateColorSchemeForSurfaceTree()
     }
 
-    func setInitialWindowPosition(x: Int16?, y: Int16?) {
+    func setInitialWindowPosition(x: Int16?, y: Int16?) -> Bool {
         // If we don't have an X/Y then we try to use the previously saved window pos.
         guard let x = x, let y = y else {
-            center()
-            return
+            return false
         }
 
         // Prefer the screen our window is being placed on otherwise our primary screen.
         guard let screen = screen ?? NSScreen.screens.first else {
-            center()
-            return
+            return false
         }
 
         // Convert top-left coordinates to bottom-left origin using our utility extension
@@ -562,6 +560,7 @@ class TerminalWindow: NSWindow {
         safeOrigin.y = min(max(safeOrigin.y, vf.minY), vf.maxY - frame.height)
 
         setFrameOrigin(safeOrigin)
+        return true
     }
 
     private func hideWindowButtons() {

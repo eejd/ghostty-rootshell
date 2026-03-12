@@ -50,7 +50,13 @@ class LastWindowPosition {
             newFrame.size.height = min(values[3], visibleFrame.height)
         }
 
-        if restoreOrigin, !visibleFrame.contains(newFrame.origin) {
+        // If the new frame is not constrained to the visible screen,
+        // we need to shift it a little bit before AppKit does this for us,
+        // so that we can save the correct size beforehand.
+        // This fixes restoration while running UI tests,
+        // where config is modified without switching apps,
+        // which will not trigger `windowDidBecomeMain`.
+        if restoreOrigin, !visibleFrame.contains(newFrame) {
             newFrame.origin.x = max(visibleFrame.minX, min(visibleFrame.maxX - newFrame.width, newFrame.origin.x))
             newFrame.origin.y = max(visibleFrame.minY, min(visibleFrame.maxY - newFrame.height, newFrame.origin.y))
         }
