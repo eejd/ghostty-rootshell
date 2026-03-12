@@ -200,7 +200,9 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         if all.count > 1 {
             lastCascadePoint = window.cascadeTopLeft(from: lastCascadePoint)
         } else {
-            lastCascadePoint = window.cascadeTopLeft(from: NSPoint(x: window.frame.minX, y: window.frame.maxY))
+            // We assume the window frame is already correct at this point,
+            // so we pass .zero to let cascade use the current frame position.
+            lastCascadePoint = window.cascadeTopLeft(from: .zero)
         }
     }
 
@@ -256,6 +258,8 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         // take effect. Our best theory is there is some next-event-loop-tick logic
         // that Cocoa is doing that we need to be after.
         DispatchQueue.main.async {
+            c.showWindow(self)
+
             // Only cascade if we aren't fullscreen.
             if let window = c.window {
                 if !window.styleMask.contains(.fullScreen) {
@@ -263,8 +267,6 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
                     Self.applyCascade(to: window, hasFixedPos: hasFixedPos)
                 }
             }
-
-            c.showWindow(self)
 
             // All new_window actions force our app to be active, so that the new
             // window is focused and visible.

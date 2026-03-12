@@ -10,6 +10,61 @@ import XCTest
 final class GhosttyWindowPositionUITests: GhosttyCustomConfigCase {
     override static var runsForEachTargetApplicationUIConfiguration: Bool { false }
 
+    // MARK: - Cascading
+
+    @MainActor func testWindowCascading() async throws {
+        try updateConfig(
+            """
+            title = "GhosttyWindowPositionUITests"
+            """
+        )
+
+        let app = try ghosttyApplication()
+        // Suppress Restoration
+        app.launchArguments += ["-NSQuitAlwaysKeepsWindows", "NO"]
+        // Clean run
+        app.launchEnvironment["GHOSTTY_CLEAR_USER_DEFAULTS"] = "YES"
+
+        app.launch() // window in the center
+
+//        app.menuBarItems["Window"].firstMatch.click()
+//        app.menuItems["_zoomTopLeft:"].firstMatch.click()
+//
+//        // wait for the animation to finish
+//        try await Task.sleep(for: .seconds(0.5))
+
+        let window = app.windows.firstMatch
+        let windowFrame = window.frame
+//        XCTAssertEqual(windowFrame.minX, 0, "Window should be on the left")
+
+        app.typeKey("n", modifierFlags: [.command])
+
+        let window2 = app.windows.firstMatch
+        XCTAssertTrue(window2.waitForExistence(timeout: 5), "New window should appear")
+        let windowFrame2 = window2.frame
+        XCTAssertNotEqual(windowFrame, windowFrame2, "New window should have moved")
+
+        XCTAssertEqual(windowFrame2.minX, windowFrame.minX + 30, accuracy: 5, "New window should be on the right")
+
+        app.typeKey("n", modifierFlags: [.command])
+
+        let window3 = app.windows.firstMatch
+        XCTAssertTrue(window3.waitForExistence(timeout: 5), "New window should appear")
+        let windowFrame3 = window3.frame
+        XCTAssertNotEqual(windowFrame2, windowFrame3, "New window should have moved")
+
+        XCTAssertEqual(windowFrame3.minX, windowFrame2.minX + 30, accuracy: 5, "New window should be on the right")
+
+        app.typeKey("n", modifierFlags: [.command])
+
+        let window4 = app.windows.firstMatch
+        XCTAssertTrue(window4.waitForExistence(timeout: 5), "New window should appear")
+        let windowFrame4 = window4.frame
+        XCTAssertNotEqual(windowFrame3, windowFrame4, "New window should have moved")
+
+        XCTAssertEqual(windowFrame4.minX, windowFrame3.minX + 30, accuracy: 5, "New window should be on the right")
+    }
+
     // MARK: - Restore round-trip per titlebar style
 
     @MainActor func testRestoredNative() throws { try runRestoreTest(titlebarStyle: "native") }
