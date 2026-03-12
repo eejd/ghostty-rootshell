@@ -128,12 +128,19 @@ final class GhosttyWindowPositionUITests: GhosttyCustomConfigCase {
         )
 
         let app = try ghosttyApplication()
+        // Suppress Restoration
+        app.launchArguments += ["-NSQuitAlwaysKeepsWindows", "NO"]
+        // Clean run
+        app.launchEnvironment["GHOSTTY_CLEAR_USER_DEFAULTS"] = "YES"
         app.launch()
 
         let window = app.windows.firstMatch
         XCTAssertTrue(window.waitForExistence(timeout: 5), "Window should appear")
 
         let firstFrame = window.frame
+        let screenFrame = NSScreen.main?.frame ?? .zero
+
+        XCTAssertEqual(firstFrame.midX, screenFrame.midX, accuracy: 5.0, "First window should be centered horizontally")
 
         // Close the window and open a new one — it should restore the same frame.
         app.typeKey("w", modifierFlags: [.command])

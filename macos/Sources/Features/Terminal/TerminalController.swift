@@ -56,9 +56,6 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
     /// The notification cancellable for focused surface property changes.
     private var surfaceAppearanceCancellables: Set<AnyCancellable> = []
 
-    /// This will be set to the initial frame of the window from the xib on load.
-    private var initialFrame: NSRect?
-
     init(_ ghostty: Ghostty.App,
          withBaseConfig base: Ghostty.SurfaceConfiguration? = nil,
          withSurfaceTree tree: SplitTree<Ghostty.SurfaceView>? = nil,
@@ -1061,29 +1058,6 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             }
         }
 
-        // Set the initial window position. This must happen after the window
-        // is fully set up (content view, toolbar, default size) so that
-        // decorations added by subclass awakeFromNib (e.g. toolbar for tabs
-        // style) don't change the frame after the position is restored.
-        if let terminalWindow = window as? TerminalWindow {
-            terminalWindow.setInitialWindowPosition(
-                x: derivedConfig.windowPositionX,
-                y: derivedConfig.windowPositionY,
-            )
-        }
-
-        LastWindowPosition.shared.restore(
-            window,
-            origin: derivedConfig.windowPositionX == nil && derivedConfig.windowPositionY == nil,
-            size: defaultSize == nil,
-        )
-
-        // Store our initial frame so we can know our default later. This MUST
-        // be after the defaultSize call above so that we don't re-apply our frame.
-        // Note: we probably want to set this on the first frame change or something
-        // so it respects cascade.
-        initialFrame = window.frame
-
         // In various situations, macOS automatically tabs new windows. Ghostty handles
         // its own tabbing so we DONT want this behavior. This detects this scenario and undoes
         // it.
@@ -1108,6 +1082,34 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         // apply this based on the root config but change it later based on surface
         // config (see focused surface change callback).
         syncAppearance(.init(config))
+    }
+
+    /// Setup correct window frame before showing the window
+    override func showWindow(_ sender: Any?) {
+        guard let terminalWindow = window as? TerminalWindow else { return }
+
+        // Set the initial window position. This must happen after the window
+        // is fully set up (content view, toolbar, default size) so that
+        // decorations added by subclass awakeFromNib (e.g. toolbar for tabs
+        // style) don't change the frame after the position is restored.
+        let originChanged = terminalWindow.setInitialWindowPosition(
+            x: derivedConfig.windowPositionX,
+            y: derivedConfig.windowPositionY,
+        )
+        let restored = LastWindowPosition.shared.restore(
+            terminalWindow,
+            origin: !originChanged,
+            size: defaultSize == nil,
+        )
+
+        // If nothing is changed for the frame,
+        // we should center the window
+        if !originChanged, !restored {
+            // This doesn't work in `windowDidLoad` somehow
+            terminalWindow.center()
+        }
+
+        super.showWindow(sender)
     }
 
     // Shows the "+" button in the tab bar, responds to that click.
@@ -1654,9 +1656,6 @@ extension TerminalController {
             // Initial size as requested by the configuration (e.g. `window-width`)
             // takes next priority.
             return .contentIntrinsicSize
-        } else if let initialFrame {
-            // The initial frame we had when we started otherwise.
-            return .frame(initialFrame)
         } else {
             return nil
         }
