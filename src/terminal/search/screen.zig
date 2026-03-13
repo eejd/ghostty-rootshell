@@ -740,13 +740,9 @@ pub const ScreenSearch = struct {
             return true;
         };
 
-        const next_idx = prev.idx + 1;
         const active_len = self.active_results.items.len;
         const history_len = self.history_results.items.len;
-        if (next_idx >= active_len + history_len) {
-            // No more matches. We don't wrap or reset the match currently.
-            return false;
-        }
+        const next_idx = if (prev.idx + 1 >= active_len + history_len) 0 else prev.idx + 1;
         const hl: FlattenedHighlight = if (next_idx < active_len)
             self.active_results.items[active_len - 1 - next_idx]
         else
@@ -800,14 +796,10 @@ pub const ScreenSearch = struct {
             return true;
         };
 
-        // Can't go below zero
-        if (prev.idx == 0) {
-            // No more matches. We don't wrap or reset the match currently.
-            return false;
-        }
-
-        const next_idx = prev.idx - 1;
         const active_len = self.active_results.items.len;
+        const history_len = self.history_results.items.len;
+        const next_idx = if (prev.idx != 0) prev.idx - 1 else active_len - 1 + history_len;
+
         const hl: FlattenedHighlight = if (next_idx < active_len)
             self.active_results.items[active_len - 1 - next_idx]
         else
