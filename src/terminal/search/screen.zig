@@ -740,13 +740,9 @@ pub const ScreenSearch = struct {
             return true;
         };
 
-        const next_idx = prev.idx + 1;
         const active_len = self.active_results.items.len;
         const history_len = self.history_results.items.len;
-        if (next_idx >= active_len + history_len) {
-            // No more matches. We don't wrap or reset the match currently.
-            return false;
-        }
+        const next_idx = if (prev.idx + 1 >= active_len + history_len) 0 else prev.idx + 1;
         const hl: FlattenedHighlight = if (next_idx < active_len)
             self.active_results.items[active_len - 1 - next_idx]
         else
@@ -800,14 +796,10 @@ pub const ScreenSearch = struct {
             return true;
         };
 
-        // Can't go below zero
-        if (prev.idx == 0) {
-            // No more matches. We don't wrap or reset the match currently.
-            return false;
-        }
-
-        const next_idx = prev.idx - 1;
         const active_len = self.active_results.items.len;
+        const history_len = self.history_results.items.len;
+        const next_idx = if (prev.idx != 0) prev.idx - 1 else active_len - 1 + history_len;
+
         const hl: FlattenedHighlight = if (next_idx < active_len)
             self.active_results.items[active_len - 1 - next_idx]
         else
@@ -1083,17 +1075,17 @@ test "select next" {
         } }, t.screens.active.pages.pointFromPin(.screen, sel.end).?);
     }
 
-    // Next match (no wrap)
+    // Next match (wrap)
     _ = try search.select(.next);
     {
         const sel = search.selectedMatch().?.untracked();
         try testing.expectEqual(point.Point{ .screen = .{
             .x = 0,
-            .y = 0,
+            .y = 2,
         } }, t.screens.active.pages.pointFromPin(.screen, sel.start).?);
         try testing.expectEqual(point.Point{ .screen = .{
             .x = 3,
-            .y = 0,
+            .y = 2,
         } }, t.screens.active.pages.pointFromPin(.screen, sel.end).?);
     }
 }
@@ -1278,17 +1270,17 @@ test "select prev" {
         } }, t.screens.active.pages.pointFromPin(.screen, sel.end).?);
     }
 
-    // Prev match (no wrap, stays at newest)
+    // Prev match (wrap)
     _ = try search.select(.prev);
     {
         const sel = search.selectedMatch().?.untracked();
         try testing.expectEqual(point.Point{ .screen = .{
             .x = 0,
-            .y = 2,
+            .y = 0,
         } }, t.screens.active.pages.pointFromPin(.screen, sel.start).?);
         try testing.expectEqual(point.Point{ .screen = .{
             .x = 3,
-            .y = 2,
+            .y = 0,
         } }, t.screens.active.pages.pointFromPin(.screen, sel.end).?);
     }
 }
