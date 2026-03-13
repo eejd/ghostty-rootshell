@@ -1075,17 +1075,17 @@ test "select next" {
         } }, t.screens.active.pages.pointFromPin(.screen, sel.end).?);
     }
 
-    // Next match (no wrap)
+    // Next match (wrap)
     _ = try search.select(.next);
     {
         const sel = search.selectedMatch().?.untracked();
         try testing.expectEqual(point.Point{ .screen = .{
             .x = 0,
-            .y = 0,
+            .y = 2,
         } }, t.screens.active.pages.pointFromPin(.screen, sel.start).?);
         try testing.expectEqual(point.Point{ .screen = .{
             .x = 3,
-            .y = 0,
+            .y = 2,
         } }, t.screens.active.pages.pointFromPin(.screen, sel.end).?);
     }
 }
@@ -1270,17 +1270,17 @@ test "select prev" {
         } }, t.screens.active.pages.pointFromPin(.screen, sel.end).?);
     }
 
-    // Prev match (no wrap, stays at newest)
+    // Prev match (wrap)
     _ = try search.select(.prev);
     {
         const sel = search.selectedMatch().?.untracked();
         try testing.expectEqual(point.Point{ .screen = .{
             .x = 0,
-            .y = 2,
+            .y = 0,
         } }, t.screens.active.pages.pointFromPin(.screen, sel.start).?);
         try testing.expectEqual(point.Point{ .screen = .{
             .x = 3,
-            .y = 2,
+            .y = 0,
         } }, t.screens.active.pages.pointFromPin(.screen, sel.end).?);
     }
 }
