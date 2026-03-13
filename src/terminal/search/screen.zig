@@ -827,7 +827,7 @@ test "simple search" {
 
     var s = t.vtStream();
     defer s.deinit();
-    try s.nextSlice("Fizz\r\nBuzz\r\nFizz\r\nBang");
+    s.nextSlice("Fizz\r\nBuzz\r\nFizz\r\nBang");
 
     var search: ScreenSearch = try .init(alloc, t.screens.active, "Fizz");
     defer search.deinit();
@@ -877,10 +877,10 @@ test "simple search with history" {
     var s = t.vtStream();
     defer s.deinit();
 
-    try s.nextSlice("Fizz\r\n");
-    while (list.totalPages() < 3) try s.nextSlice("\r\n");
-    for (0..list.rows) |_| try s.nextSlice("\r\n");
-    try s.nextSlice("hello.");
+    s.nextSlice("Fizz\r\n");
+    while (list.totalPages() < 3) s.nextSlice("\r\n");
+    for (0..list.rows) |_| s.nextSlice("\r\n");
+    s.nextSlice("hello.");
 
     var search: ScreenSearch = try .init(alloc, t.screens.active, "Fizz");
     defer search.deinit();
@@ -917,7 +917,7 @@ test "reload active with history change" {
 
     var s = t.vtStream();
     defer s.deinit();
-    try s.nextSlice("Fizz\r\n");
+    s.nextSlice("Fizz\r\n");
 
     // Start up our search which will populate our initial active area.
     var search: ScreenSearch = try .init(alloc, t.screens.active, "Fizz");
@@ -930,9 +930,9 @@ test "reload active with history change" {
     }
 
     // Grow into two pages so our history pin will move.
-    while (list.totalPages() < 2) try s.nextSlice("\r\n");
-    for (0..list.rows) |_| try s.nextSlice("\r\n");
-    try s.nextSlice("2Fizz");
+    while (list.totalPages() < 2) s.nextSlice("\r\n");
+    for (0..list.rows) |_| s.nextSlice("\r\n");
+    s.nextSlice("2Fizz");
 
     // Active area changed so reload
     try search.reloadActive();
@@ -969,7 +969,7 @@ test "reload active with history change" {
 
     // Reset the screen which will make our pin garbage.
     t.fullReset();
-    try s.nextSlice("WeFizzing");
+    s.nextSlice("WeFizzing");
     try search.reloadActive();
     try search.searchAll();
 
@@ -998,7 +998,7 @@ test "active change contents" {
 
     var s = t.vtStream();
     defer s.deinit();
-    try s.nextSlice("Fuzz\r\nBuzz\r\nFizz\r\nBang");
+    s.nextSlice("Fuzz\r\nBuzz\r\nFizz\r\nBang");
 
     var search: ScreenSearch = try .init(alloc, t.screens.active, "Fizz");
     defer search.deinit();
@@ -1006,8 +1006,8 @@ test "active change contents" {
     try testing.expectEqual(1, search.active_results.items.len);
 
     // Erase the screen, move our cursor to the top, and change contents.
-    try s.nextSlice("\x1b[2J\x1b[H"); // Clear screen and move home
-    try s.nextSlice("Bang\r\nFizz\r\nHello!");
+    s.nextSlice("\x1b[2J\x1b[H"); // Clear screen and move home
+    s.nextSlice("Bang\r\nFizz\r\nHello!");
 
     try search.reloadActive();
     try search.searchAll();
@@ -1038,7 +1038,7 @@ test "select next" {
 
     var s = t.vtStream();
     defer s.deinit();
-    try s.nextSlice("Fizz\r\nBuzz\r\nFizz\r\nBang");
+    s.nextSlice("Fizz\r\nBuzz\r\nFizz\r\nBang");
 
     var search: ScreenSearch = try .init(alloc, t.screens.active, "Fizz");
     defer search.deinit();
@@ -1097,7 +1097,7 @@ test "select in active changes contents completely" {
 
     var s = t.vtStream();
     defer s.deinit();
-    try s.nextSlice("Fizz\r\nBuzz\r\nFizz\r\nBang");
+    s.nextSlice("Fizz\r\nBuzz\r\nFizz\r\nBang");
 
     var search: ScreenSearch = try .init(alloc, t.screens.active, "Fizz");
     defer search.deinit();
@@ -1118,8 +1118,8 @@ test "select in active changes contents completely" {
     }
 
     // Erase the screen, move our cursor to the top, and change contents.
-    try s.nextSlice("\x1b[2J\x1b[H"); // Clear screen and move home
-    try s.nextSlice("Fuzz\r\nFizz\r\nHello!");
+    s.nextSlice("\x1b[2J\x1b[H"); // Clear screen and move home
+    s.nextSlice("Fuzz\r\nFizz\r\nHello!");
 
     try search.reloadActive();
     {
@@ -1136,8 +1136,8 @@ test "select in active changes contents completely" {
     }
 
     // Erase the screen, redraw with same contents.
-    try s.nextSlice("\x1b[2J\x1b[H"); // Clear screen and move home
-    try s.nextSlice("Fuzz\r\nFizz\r\nFizz");
+    s.nextSlice("\x1b[2J\x1b[H"); // Clear screen and move home
+    s.nextSlice("Fuzz\r\nFizz\r\nFizz");
 
     try search.reloadActive();
     {
@@ -1167,10 +1167,10 @@ test "select into history" {
     var s = t.vtStream();
     defer s.deinit();
 
-    try s.nextSlice("Fizz\r\n");
-    while (list.totalPages() < 3) try s.nextSlice("\r\n");
-    for (0..list.rows) |_| try s.nextSlice("\r\n");
-    try s.nextSlice("hello.");
+    s.nextSlice("Fizz\r\n");
+    while (list.totalPages() < 3) s.nextSlice("\r\n");
+    for (0..list.rows) |_| s.nextSlice("\r\n");
+    s.nextSlice("hello.");
 
     var search: ScreenSearch = try .init(alloc, t.screens.active, "Fizz");
     defer search.deinit();
@@ -1191,8 +1191,8 @@ test "select into history" {
     }
 
     // Erase the screen, redraw with same contents.
-    try s.nextSlice("\x1b[2J\x1b[H"); // Clear screen and move home
-    try s.nextSlice("yo yo");
+    s.nextSlice("\x1b[2J\x1b[H"); // Clear screen and move home
+    s.nextSlice("yo yo");
 
     try search.reloadActive();
     {
@@ -1209,7 +1209,7 @@ test "select into history" {
     }
 
     // Create some new history by adding more lines.
-    try s.nextSlice("\r\nfizz\r\nfizz\r\nfizz"); // Clear screen and move home
+    s.nextSlice("\r\nfizz\r\nfizz\r\nfizz"); // Clear screen and move home
     try search.reloadActive();
     {
         // Our selection should not move since the history is still not
@@ -1233,7 +1233,7 @@ test "select prev" {
 
     var s = t.vtStream();
     defer s.deinit();
-    try s.nextSlice("Fizz\r\nBuzz\r\nFizz\r\nBang");
+    s.nextSlice("Fizz\r\nBuzz\r\nFizz\r\nBang");
 
     var search: ScreenSearch = try .init(alloc, t.screens.active, "Fizz");
     defer search.deinit();
@@ -1292,7 +1292,7 @@ test "select prev then next" {
 
     var s = t.vtStream();
     defer s.deinit();
-    try s.nextSlice("Fizz\r\nBuzz\r\nFizz\r\nBang");
+    s.nextSlice("Fizz\r\nBuzz\r\nFizz\r\nBang");
 
     var search: ScreenSearch = try .init(alloc, t.screens.active, "Fizz");
     defer search.deinit();
@@ -1342,10 +1342,10 @@ test "select prev with history" {
     var s = t.vtStream();
     defer s.deinit();
 
-    try s.nextSlice("Fizz\r\n");
-    while (list.totalPages() < 3) try s.nextSlice("\r\n");
-    for (0..list.rows) |_| try s.nextSlice("\r\n");
-    try s.nextSlice("Fizz.");
+    s.nextSlice("Fizz\r\n");
+    while (list.totalPages() < 3) s.nextSlice("\r\n");
+    for (0..list.rows) |_| s.nextSlice("\r\n");
+    s.nextSlice("Fizz.");
 
     var search: ScreenSearch = try .init(alloc, t.screens.active, "Fizz");
     defer search.deinit();
@@ -1399,9 +1399,9 @@ test "screen search no scrollback has no history" {
     // no way to test it using public APIs, but at the time of writing
     // this test, CSI 22 J (scroll complete) pushes into scrollback
     // with alt screen.
-    try s.nextSlice("Fizz\r\n");
-    try s.nextSlice("\x1b[22J");
-    try s.nextSlice("hello.");
+    s.nextSlice("Fizz\r\n");
+    s.nextSlice("\x1b[22J");
+    s.nextSlice("hello.");
 
     var search: ScreenSearch = try .init(alloc, t.screens.active, "Fizz");
     defer search.deinit();
@@ -1431,10 +1431,10 @@ test "reloadActive partial history cleanup on appendSlice error" {
 
     // Write multiple "Fizz" matches that will end up in history.
     // We need enough content to push "Fizz" entries into scrollback.
-    try s.nextSlice("Fizz\r\nFizz\r\n");
-    while (list.totalPages() < 3) try s.nextSlice("\r\n");
-    for (0..list.rows) |_| try s.nextSlice("\r\n");
-    try s.nextSlice("Fizz.");
+    s.nextSlice("Fizz\r\nFizz\r\n");
+    while (list.totalPages() < 3) s.nextSlice("\r\n");
+    for (0..list.rows) |_| s.nextSlice("\r\n");
+    s.nextSlice("Fizz.");
 
     // Complete initial search
     var search: ScreenSearch = try .init(alloc, t.screens.active, "Fizz");
@@ -1443,9 +1443,9 @@ test "reloadActive partial history cleanup on appendSlice error" {
 
     // Now trigger reloadActive by adding more content that changes the
     // active/history boundary. First add more "Fizz" entries to history.
-    try s.nextSlice("\r\nFizz\r\nFizz\r\n");
-    while (list.totalPages() < 4) try s.nextSlice("\r\n");
-    for (0..list.rows) |_| try s.nextSlice("\r\n");
+    s.nextSlice("\r\nFizz\r\nFizz\r\n");
+    while (list.totalPages() < 4) s.nextSlice("\r\n");
+    for (0..list.rows) |_| s.nextSlice("\r\n");
 
     // Arm the tripwire to fail at appendSlice (after the loop completes).
     // At this point, there are FlattenedHighlight items in the results list
@@ -1478,10 +1478,10 @@ test "reloadActive partial history cleanup on loop append error" {
 
     // Write multiple "Fizz" matches that will end up in history.
     // We need enough content to push "Fizz" entries into scrollback.
-    try s.nextSlice("Fizz\r\nFizz\r\n");
-    while (list.totalPages() < 3) try s.nextSlice("\r\n");
-    for (0..list.rows) |_| try s.nextSlice("\r\n");
-    try s.nextSlice("Fizz.");
+    s.nextSlice("Fizz\r\nFizz\r\n");
+    while (list.totalPages() < 3) s.nextSlice("\r\n");
+    for (0..list.rows) |_| s.nextSlice("\r\n");
+    s.nextSlice("Fizz.");
 
     // Complete initial search
     var search: ScreenSearch = try .init(alloc, t.screens.active, "Fizz");
@@ -1490,9 +1490,9 @@ test "reloadActive partial history cleanup on loop append error" {
 
     // Now trigger reloadActive by adding more content that changes the
     // active/history boundary. First add more "Fizz" entries to history.
-    try s.nextSlice("\r\nFizz\r\nFizz\r\n");
-    while (list.totalPages() < 4) try s.nextSlice("\r\n");
-    for (0..list.rows) |_| try s.nextSlice("\r\n");
+    s.nextSlice("\r\nFizz\r\nFizz\r\n");
+    while (list.totalPages() < 4) s.nextSlice("\r\n");
+    for (0..list.rows) |_| s.nextSlice("\r\n");
 
     // Arm the tripwire to fail after the first loop append succeeds.
     // This leaves at least one FlattenedHighlight in the results list
