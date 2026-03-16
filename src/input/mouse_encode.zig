@@ -1,6 +1,7 @@
 const std = @import("std");
 const testing = std.testing;
-const Terminal = @import("../terminal/Terminal.zig");
+const terminal = @import("../terminal/main.zig");
+const Terminal = terminal.Terminal;
 const renderer_size = @import("../renderer/size.zig");
 const point = @import("../terminal/point.zig");
 const key = @import("key.zig");
@@ -11,10 +12,10 @@ const log = std.log.scoped(.mouse_encode);
 /// Options that affect mouse encoding behavior and provide runtime context.
 pub const Options = struct {
     /// Terminal mouse reporting mode (X10, normal, button, any).
-    event: Terminal.MouseEvent = .none,
+    event: terminal.MouseEvent = .none,
 
     /// Terminal mouse reporting format.
-    format: Terminal.MouseFormat = .x10,
+    format: terminal.MouseFormat = .x10,
 
     /// Full renderer size used to convert surface-space pixel positions
     /// into grid cell coordinates (for most formats) and terminal-space
@@ -68,7 +69,7 @@ pub const Event = struct {
     pos: Pos = .{},
 
     /// Mouse position in surface-space pixels.
-    pub const Pos = struct {
+    pub const Pos = extern struct {
         x: f32 = 0,
         y: f32 = 0,
     };
@@ -92,7 +93,7 @@ pub fn encode(
         // If we don't have a motion-tracking event mode, do nothing,
         // because events outside the viewport are never reported in
         // such cases.
-        if (!opts.event.motion()) return;
+        if (!terminal.mouse.eventSendsMotion(opts.event)) return;
 
         // For motion modes, we only report if a button is currently pressed.
         // This lets a TUI detect a click over the surface + drag out

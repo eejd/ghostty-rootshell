@@ -31,6 +31,7 @@
  * - @ref terminal "Terminal" - Complete terminal emulator state and rendering
  * - @ref formatter "Formatter" - Format terminal content as plain text, VT sequences, or HTML
  * - @ref key "Key Encoding" - Encode key events into terminal sequences
+ * - @ref mouse "Mouse Encoding" - Encode mouse events into terminal sequences
  * - @ref osc "OSC Parser" - Parse OSC (Operating System Command) sequences
  * - @ref sgr "SGR Parser" - Parse SGR (Select Graphic Rendition) sequences
  * - @ref paste "Paste Utilities" - Validate paste data safety
@@ -42,6 +43,7 @@
  * Complete working examples:
  * - @ref c-vt/src/main.c - OSC parser example
  * - @ref c-vt-key-encode/src/main.c - Key encoding example
+ * - @ref c-vt-mouse-encode/src/main.c - Mouse encoding example
  * - @ref c-vt-paste/src/main.c - Paste safety check example
  * - @ref c-vt-sgr/src/main.c - SGR parser example
  * - @ref c-vt-formatter/src/main.c - Terminal formatter example
@@ -56,6 +58,11 @@
 /** @example c-vt-key-encode/src/main.c
  * This example demonstrates how to use the key encoder to convert key events
  * into terminal escape sequences using the Kitty keyboard protocol.
+ */
+
+/** @example c-vt-mouse-encode/src/main.c
+ * This example demonstrates how to use the mouse encoder to convert mouse events
+ * into terminal escape sequences using the SGR mouse format.
  */
 
 /** @example c-vt-paste/src/main.c
@@ -88,6 +95,7 @@ extern "C" {
 #include <ghostty/vt/osc.h>
 #include <ghostty/vt/sgr.h>
 #include <ghostty/vt/key.h>
+#include <ghostty/vt/mouse.h>
 #include <ghostty/vt/paste.h>
 #include <ghostty/vt/wasm.h>
 
