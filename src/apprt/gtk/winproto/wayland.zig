@@ -10,6 +10,7 @@ const layer_shell = @import("gtk4-layer-shell");
 
 const wayland = @import("wayland");
 const wl = wayland.client.wl;
+const ext = wayland.client.ext;
 const kde = wayland.client.kde;
 const org = wayland.client.org;
 const xdg = wayland.client.xdg;
@@ -96,8 +97,8 @@ pub const Window = struct {
     /// The context from the app where we can load our Wayland interfaces.
     globals: *Globals,
 
-    /// A token that, when present, indicates that the window is blurred.
-    blur_token: ?*org.KdeKwinBlur = null,
+    /// Object that controls background effects like background blur.
+    bg_effect: ?*ext.BackgroundEffectSurfaceV1 = null,
 
     /// Object that controls the decoration mode (client/server/auto)
     /// of the window.
@@ -148,6 +149,20 @@ pub const Window = struct {
             break :deco deco;
         };
 
+        const bg_effect: ?*ext.BackgroundEffectSurfaceV1 = bg: {
+            const mgr = app.globals.get(.ext_background_effect) orelse
+                break :bg null;
+
+            const bg_effect: *ext.BackgroundEffectSurfaceV1 = mgr.getBackgroundEffect(
+                wl_surface,
+            ) catch |err| {
+                log.warn("could not create background effect object={}", .{err});
+                break :bg null;
+            };
+
+            break :bg bg_effect;
+        };
+
         if (apprt_window.isQuickTerminal()) {
             _ = gdk.Surface.signals.enter_monitor.connect(
                 gdk_surface,
@@ -163,17 +178,22 @@ pub const Window = struct {
             .surface = wl_surface,
             .globals = app.globals,
             .decoration = deco,
+            .bg_effect = bg_effect,
         };
     }
 
     pub fn deinit(self: Window, alloc: Allocator) void {
         _ = alloc;
-        if (self.blur_token) |blur| blur.release();
+        if (self.bg_effect) |bg| bg.destroy();
         if (self.decoration) |deco| deco.release();
         if (self.slide) |slide| slide.release();
     }
 
-    pub fn resizeEvent(_: *Window) !void {}
+    pub fn resizeEvent(self: *Window) !void {
+        self.syncBlur() catch |err| {
+            log.err("failed to sync blur={}", .{err});
+        };
+    }
 
     pub fn syncAppearance(self: *Window) !void {
         self.syncBlur() catch |err| {
@@ -224,28 +244,53 @@ pub const Window = struct {
 
     /// Update the blur state of the window.
     fn syncBlur(self: *Window) !void {
-        const manager = self.globals.get(.kde_blur_manager) orelse return;
+        const compositor = self.globals.get(.compositor) orelse return;
+        const bg = self.bg_effect orelse return;
+        if (!self.globals.state.bg_effect_capabilities.blur) return;
+
         const config = if (self.apprt_window.getConfig()) |v|
             v.get()
         else
             return;
         const blur = config.@"background-blur";
 
-        if (self.blur_token) |tok| {
-            // Only release token when transitioning from blurred -> not blurred
-            if (!blur.enabled()) {
-                manager.unset(self.surface);
-                tok.release();
-                self.blur_token = null;
-            }
-        } else {
-            // Only acquire token when transitioning from not blurred -> blurred
-            if (blur.enabled()) {
-                const tok = try manager.create(self.surface);
-                tok.commit();
-                self.blur_token = tok;
-            }
-        }
+        const region = region: {
+            if (!blur.enabled()) break :region null;
+
+            // NOTE(pluiedev): CSDs are a f--king mistake.
+            // Please, GNOME, stop this nonsense of making a window ~30% bigger
+            // internally than how they really are just for your shadows and
+            // rounded corners and all that fluff. Please. I beg of you.
+
+            const native = self.apprt_window.as(gtk.Native);
+            const surface = native.getSurface() orelse break :region null;
+            const region = try compositor.createRegion();
+
+            var x: f64 = 0;
+            var y: f64 = 0;
+            native.getSurfaceTransform(&x, &y);
+            // Slightly inset the blur region
+            x += 1;
+            y += 1;
+
+            var width: f64 = @floatFromInt(surface.getWidth());
+            var height: f64 = @floatFromInt(surface.getHeight());
+            width -= x * 2;
+            height -= y * 2;
+            if (width <= 0 or height <= 0) break :region null;
+
+            // FIXME: Add rounded corners
+            region.add(
+                @intFromFloat(x),
+                @intFromFloat(y),
+                @intFromFloat(width),
+                @intFromFloat(height),
+            );
+            break :region region;
+        };
+        errdefer if (region) |r| r.destroy();
+
+        bg.setBlurRegion(region);
     }
 
     fn syncDecoration(self: *Window) !void {
