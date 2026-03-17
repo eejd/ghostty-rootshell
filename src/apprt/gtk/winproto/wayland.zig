@@ -185,8 +185,8 @@ pub const Window = struct {
         };
     }
 
-    pub fn deinit(self: Window, alloc: Allocator) void {
-        _ = alloc;
+    pub fn deinit(self: *Window) void {
+        self.blur_region.deinit(self.globals.alloc);
         if (self.bg_effect) |bg| bg.destroy();
         if (self.decoration) |deco| deco.release();
         if (self.slide) |slide| slide.release();
@@ -203,7 +203,7 @@ pub const Window = struct {
             log.err("failed to sync blur={}", .{err});
         };
         self.syncDecoration() catch |err| {
-            log.err("failed to sync blur={}", .{err});
+            log.err("failed to sync decoration={}", .{err});
         };
 
         if (self.apprt_window.isQuickTerminal()) {

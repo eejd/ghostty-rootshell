@@ -63,9 +63,11 @@ pub fn calcForWindow(
         var x: f64 = 0;
         var y: f64 = 0;
         native.getSurfaceTransform(&x, &y);
-        // Slightly inset the corners
-        x += 1;
-        y += 1;
+        // Slightly inset the corners if we're using CSDs
+        if (csd) {
+            x += 1;
+            y += 1;
+        }
         break :off .{ @intFromFloat(x), @intFromFloat(y) };
     };
 

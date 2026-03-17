@@ -200,24 +200,25 @@ pub const Window = struct {
         };
     }
 
-    pub fn deinit(self: Window, alloc: Allocator) void {
-        _ = self;
-        _ = alloc;
+    pub fn deinit(self: *Window) void {
+        self.blur_region.deinit(self.alloc);
     }
 
     pub fn resizeEvent(self: *Window) !void {
         // The blur region must update with window resizes
-        try self.syncBlur();
+        self.syncBlur() catch |err| {
+            log.err("failed to sync blur={}", .{err});
+        };
     }
 
     pub fn syncAppearance(self: *Window) !void {
         // The user could have toggled between CSDs and SSDs,
         // therefore we need to recalculate the blur region offset.
         self.syncBlur() catch |err| {
-            log.err("failed to synchronize blur={}", .{err});
+            log.err("failed to sync blur={}", .{err});
         };
         self.syncDecorations() catch |err| {
-            log.err("failed to synchronize decorations={}", .{err});
+            log.err("failed to sync decorations={}", .{err});
         };
     }
 
@@ -233,19 +234,16 @@ pub const Window = struct {
 
         // When blur is disabled, remove the property if it was previously set
         const blur = config.@"background-blur";
-        if (!blur.enabled()) {
-            self.blur_region.deinit(self.alloc);
-            self.blur_region = .empty;
-            try self.deleteProperty(self.app.atoms.kde_blur);
-            return;
-        }
 
-        var region: BlurRegion = try .calcForWindow(
-            self.alloc,
-            self.apprt_window,
-            self.clientSideDecorationEnabled(),
-            true,
-        );
+        var region: BlurRegion = if (blur.enabled())
+            try .calcForWindow(
+                self.alloc,
+                self.apprt_window,
+                self.clientSideDecorationEnabled(),
+                true,
+            )
+        else
+            .empty;
         errdefer region.deinit(self.alloc);
 
         // Only update X11 properties when the blur region actually changes
@@ -254,20 +252,26 @@ pub const Window = struct {
             return;
         }
 
-        log.debug("set blur={}, window xid={}, region={}", .{
-            blur,
-            self.x11_surface.getXid(),
-            self.blur_region,
-        });
+        if (region.slices.items.len > 0) {
+            log.debug("set blur={}, window xid={}, region={}", .{
+                blur,
+                self.x11_surface.getXid(),
+                region,
+            });
 
-        try self.changeProperty(
-            BlurRegion.Slice,
-            self.app.atoms.kde_blur,
-            c.XA_CARDINAL,
-            ._32,
-            .{ .mode = .replace },
-            self.blur_region.slices.items,
-        );
+            try self.changeProperty(
+                BlurRegion.Slice,
+                self.app.atoms.kde_blur,
+                c.XA_CARDINAL,
+                ._32,
+                .{ .mode = .replace },
+                region.slices.items,
+            );
+        } else {
+            try self.deleteProperty(self.app.atoms.kde_blur);
+        }
+
+        self.blur_region.deinit(self.alloc);
         self.blur_region = region;
     }
 

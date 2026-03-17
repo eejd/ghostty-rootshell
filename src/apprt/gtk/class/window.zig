@@ -1235,7 +1235,7 @@ pub const Window = extern struct {
     fn finalize(self: *Self) callconv(.c) void {
         const priv = self.private();
         priv.tab_bindings.unref();
-        priv.winproto.deinit(Application.default().allocator());
+        priv.winproto.deinit();
 
         gobject.Object.virtual_methods.finalize.call(
             Class.parent,
