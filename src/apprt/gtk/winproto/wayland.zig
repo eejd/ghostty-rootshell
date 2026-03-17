@@ -19,6 +19,7 @@ const Config = @import("../../../config.zig").Config;
 const Globals = @import("wayland/Globals.zig");
 const input = @import("../../../input.zig");
 const ApprtWindow = @import("../class/window.zig").Window;
+const BlurRegion = @import("BlurRegion.zig");
 
 const log = std.log.scoped(.winproto_wayland);
 
@@ -111,6 +112,8 @@ pub const Window = struct {
     /// Object that, when present, denotes that the window is currently
     /// requesting attention from the user.
     activation_token: ?*xdg.ActivationTokenV1 = null,
+
+    blur_region: BlurRegion = .empty,
 
     pub fn init(
         alloc: Allocator,
@@ -254,43 +257,37 @@ pub const Window = struct {
             return;
         const blur = config.@"background-blur";
 
-        const region = region: {
-            if (!blur.enabled()) break :region null;
+        if (!blur.enabled()) {
+            self.blur_region.deinit(self.globals.alloc);
+            bg.setBlurRegion(null);
+            return;
+        }
 
-            // NOTE(pluiedev): CSDs are a f--king mistake.
-            // Please, GNOME, stop this nonsense of making a window ~30% bigger
-            // internally than how they really are just for your shadows and
-            // rounded corners and all that fluff. Please. I beg of you.
+        var region: BlurRegion = try .calcForWindow(
+            self.globals.alloc,
+            self.apprt_window,
+            self.clientSideDecorationEnabled(),
+            false,
+        );
+        errdefer region.deinit(self.globals.alloc);
 
-            const native = self.apprt_window.as(gtk.Native);
-            const surface = native.getSurface() orelse break :region null;
-            const region = try compositor.createRegion();
+        if (region.eql(self.blur_region)) {
+            // Region didn't change. Don't do anything.
+            region.deinit(self.globals.alloc);
+            return;
+        }
 
-            var x: f64 = 0;
-            var y: f64 = 0;
-            native.getSurfaceTransform(&x, &y);
-            // Slightly inset the blur region
-            x += 1;
-            y += 1;
+        const wl_region = try compositor.createRegion();
+        errdefer if (wl_region) |r| r.destroy();
+        for (region.slices.items) |s| wl_region.add(
+            @intCast(s.x),
+            @intCast(s.y),
+            @intCast(s.width),
+            @intCast(s.height),
+        );
 
-            var width: f64 = @floatFromInt(surface.getWidth());
-            var height: f64 = @floatFromInt(surface.getHeight());
-            width -= x * 2;
-            height -= y * 2;
-            if (width <= 0 or height <= 0) break :region null;
-
-            // FIXME: Add rounded corners
-            region.add(
-                @intFromFloat(x),
-                @intFromFloat(y),
-                @intFromFloat(width),
-                @intFromFloat(height),
-            );
-            break :region region;
-        };
-        errdefer if (region) |r| r.destroy();
-
-        bg.setBlurRegion(region);
+        bg.setBlurRegion(wl_region);
+        self.blur_region = region;
     }
 
     fn syncDecoration(self: *Window) !void {
