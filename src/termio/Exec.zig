@@ -1226,6 +1226,32 @@ const Subprocess = struct {
     fn killCommandFlatpak(command: *FlatpakHostCommand) !void {
         try command.signal(c.SIGHUP, true);
     }
+
+    pub const ProcessInfo = enum {
+        /// The PID of the process that currently controls the PTY.
+        foreground_pid,
+        /// Gets the name of the slave PTY. Returned name points to an internal
+        /// buffer so it should not be modified or freed.
+        tty_name,
+
+        pub fn Type(comptime info: Subprocess.ProcessInfo) type {
+            return switch (info) {
+                .foreground_pid => u64,
+                .tty_name => [:0]const u8,
+            };
+        }
+    };
+
+    /// Get information about the process(es) running within the subprocess.
+    /// Returns `null` if there was an error getting the information or the
+    /// information is not available on a particular platform.
+    pub fn getProcessInfo(self: *Subprocess, comptime info: Subprocess.ProcessInfo) ?Subprocess.ProcessInfo.Type(info) {
+        const pty = &(self.pty orelse return null);
+        return switch (info) {
+            .foreground_pid => pty.getProcessInfo(.foreground_pid),
+            .tty_name => pty.getProcessInfo(.tty_name),
+        };
+    }
 };
 
 /// The read thread sits in a loop doing the following pseudo code:
@@ -1577,6 +1603,31 @@ fn execCommand(
             try args.append(alloc, v);
             break :shell try args.toOwnedSlice(alloc);
         },
+    };
+}
+
+pub const ProcessInfo = enum {
+    /// The PID of the process that currently controls the PTY.
+    foreground_pid,
+    /// Gets the name of the slave PTY. Returned name points to an internal
+    /// buffer so it should not be modified or freed.
+    tty_name,
+
+    pub fn Type(comptime info: ProcessInfo) type {
+        return switch (info) {
+            .foreground_pid => u64,
+            .tty_name => [:0]const u8,
+        };
+    }
+};
+
+/// Get information about the process(es) running within the backend. Returns
+/// `null` if there was an error getting the information or the information is
+/// not available on a particular platform.
+pub fn getProcessInfo(self: *Exec, comptime info: ProcessInfo) ?ProcessInfo.Type(info) {
+    return switch (info) {
+        .foreground_pid => self.subprocess.getProcessInfo(.foreground_pid),
+        .tty_name => self.subprocess.getProcessInfo(.tty_name),
     };
 }
 

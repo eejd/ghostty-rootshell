@@ -6342,6 +6342,31 @@ fn testMouseSelectionIsNull(
     );
 }
 
+pub const ProcessInfo = enum {
+    /// The PID of the process that currently controls the PTY.
+    foreground_pid,
+    /// Gets the name of the slave PTY. Returned name points to an internal
+    /// buffer so it should not be modified or freed.
+    tty_name,
+
+    pub fn Type(comptime info: ProcessInfo) type {
+        return switch (info) {
+            .foreground_pid => u64,
+            .tty_name => [:0]const u8,
+        };
+    }
+};
+
+/// Get information about the process(es) running within the surface. Returns
+/// `null` if there was an error getting the information or the information is
+/// not available on a particular platform.
+pub fn getProcessInfo(self: *Surface, comptime info: ProcessInfo) ?ProcessInfo.Type(info) {
+    return switch (info) {
+        .foreground_pid => self.io.getProcessInfo(.foreground_pid),
+        .tty_name => self.io.getProcessInfo(.tty_name),
+    };
+}
+
 test "Surface: selection logic" {
     // We disable format to make these easier to
     // read by pairing sets of coordinates per line.

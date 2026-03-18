@@ -135,6 +135,35 @@ pub fn add(
     // Every exe needs the terminal options
     self.config.terminalOptions().add(b, step.root_module);
 
+    // C imports needed to manage/create PTYs
+    switch (target.result.os.tag) {
+        .freebsd => {
+            const c = b.addTranslateC(.{
+                .root_source_file = b.path("src/pty/freebsd.c"),
+                .target = target,
+                .optimize = optimize,
+            });
+            step.root_module.addImport("pty-c", c.createModule());
+        },
+        .linux => {
+            const c = b.addTranslateC(.{
+                .root_source_file = b.path("src/pty/linux.c"),
+                .target = target,
+                .optimize = optimize,
+            });
+            step.root_module.addImport("pty-c", c.createModule());
+        },
+        .macos => {
+            const c = b.addTranslateC(.{
+                .root_source_file = b.path("src/pty/macos.c"),
+                .target = target,
+                .optimize = optimize,
+            });
+            step.root_module.addImport("pty-c", c.createModule());
+        },
+        else => {},
+    }
+
     // Freetype. We always include this even if our font backend doesn't
     // use it because Dear Imgui uses Freetype.
     _ = b.systemIntegrationOption("freetype", .{}); // Shows it in help
