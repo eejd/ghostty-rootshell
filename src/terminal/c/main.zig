@@ -98,6 +98,7 @@ pub const terminal_vt_write = terminal.vt_write;
 pub const terminal_scroll_viewport = terminal.scroll_viewport;
 pub const terminal_mode_get = terminal.mode_get;
 pub const terminal_mode_set = terminal.mode_set;
+pub const terminal_get = terminal.get;
 
 test {
     _ = color;
