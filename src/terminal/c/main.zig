@@ -109,6 +109,7 @@ pub const terminal_scroll_viewport = terminal.scroll_viewport;
 pub const terminal_mode_get = terminal.mode_get;
 pub const terminal_mode_set = terminal.mode_set;
 pub const terminal_get = terminal.get;
+pub const terminal_cell = terminal.cell;
 
 test {
     _ = cell;

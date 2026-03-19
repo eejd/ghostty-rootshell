@@ -14,6 +14,7 @@
 #include <ghostty/vt/allocator.h>
 #include <ghostty/vt/modes.h>
 #include <ghostty/vt/screen.h>
+#include <ghostty/vt/point.h>
 #include <ghostty/vt/style.h>
 
 #ifdef __cplusplus
@@ -372,8 +373,39 @@ GhosttyResult ghostty_terminal_mode_set(GhosttyTerminal terminal,
  * @ingroup terminal
  */
 GhosttyResult ghostty_terminal_get(GhosttyTerminal terminal,
-                                   GhosttyTerminalData data,
-                                   void *out);
+                                    GhosttyTerminalData data,
+                                    void *out);
+
+/**
+ * Get the cell and row at a given point in the terminal.
+ *
+ * Looks up the cell at the specified point in the terminal grid. On success,
+ * the output parameters are set to the opaque cell and row values, which can
+ * be queried further with ghostty_cell_get() and ghostty_row_get().
+ *
+ * Lookups using the `active` and `viewport` tags are fast. The `screen`
+ * and `history` tags may require traversing the full scrollback page list
+ * to resolve the y coordinate, so they can be expensive for large
+ * scrollback buffers.
+ *
+ * This function isn't meant to be used as the core of render loop. It
+ * isn't built to sustain the framerates needed for rendering large screens.
+ * Use the render state API for that. This API is instead meant for less
+ * strictly performance-sensitive use cases.
+ *
+ * @param terminal The terminal handle (NULL returns GHOSTTY_INVALID_VALUE)
+ * @param point The point specifying which cell to look up
+ * @param[out] out_cell On success, set to the cell at the given point (may be NULL)
+ * @param[out] out_row On success, set to the row containing the cell (may be NULL)
+ * @return GHOSTTY_SUCCESS on success, GHOSTTY_INVALID_VALUE if the terminal
+ *         is NULL or the point is out of bounds
+ *
+ * @ingroup terminal
+ */
+GhosttyResult ghostty_terminal_cell(GhosttyTerminal terminal,
+                                     GhosttyPoint point,
+                                     GhosttyCell *out_cell,
+                                     GhosttyRow *out_row);
 
 /** @} */
 

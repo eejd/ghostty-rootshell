@@ -7,7 +7,10 @@ const ScreenSet = @import("../ScreenSet.zig");
 const PageList = @import("../PageList.zig");
 const kitty = @import("../kitty/key.zig");
 const modes = @import("../modes.zig");
+const point = @import("../point.zig");
 const size = @import("../size.zig");
+const cell_c = @import("cell.zig");
+const row_c = @import("row.zig");
 const style_c = @import("style.zig");
 const Result = @import("result.zig").Result;
 
@@ -204,6 +207,26 @@ fn getTyped(
         .cursor_style => out.* = .fromStyle(t.screens.active.cursor.style),
     }
 
+    return .success;
+}
+
+pub fn cell(
+    terminal_: Terminal,
+    pt: point.Point.C,
+    out_cell: ?*cell_c.CCell,
+    out_row: ?*row_c.CRow,
+) callconv(.c) Result {
+    const t = terminal_ orelse return .invalid_value;
+    const zig_pt: point.Point = switch (pt.tag) {
+        .active => .{ .active = pt.value.active },
+        .viewport => .{ .viewport = pt.value.viewport },
+        .screen => .{ .screen = pt.value.screen },
+        .history => .{ .history = pt.value.history },
+    };
+    const result = t.screens.active.pages.getCell(zig_pt) orelse
+        return .invalid_value;
+    if (out_cell) |p| p.* = @bitCast(result.cell.*);
+    if (out_row) |p| p.* = @bitCast(result.row.*);
     return .success;
 }
 
@@ -611,4 +634,62 @@ test "get invalid" {
     defer free(t);
 
     try testing.expectEqual(Result.invalid_value, get(t, .invalid, null));
+}
+
+test "cell" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib_alloc.test_allocator,
+        &t,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 0,
+        },
+    ));
+    defer free(t);
+
+    vt_write(t, "Hello", 5);
+
+    var out_cell: cell_c.CCell = undefined;
+    var out_row: row_c.CRow = undefined;
+    try testing.expectEqual(Result.success, cell(t, .{
+        .tag = .active,
+        .value = .{ .active = .{ .x = 0, .y = 0 } },
+    }, &out_cell, &out_row));
+
+    // Verify the cell contains 'H'
+    var cp: u32 = 0;
+    try testing.expectEqual(Result.success, cell_c.get(out_cell, .codepoint, @ptrCast(&cp)));
+    try testing.expectEqual(@as(u32, 'H'), cp);
+}
+
+test "cell null terminal" {
+    var out_cell: cell_c.CCell = undefined;
+    var out_row: row_c.CRow = undefined;
+    try testing.expectEqual(Result.invalid_value, cell(null, .{
+        .tag = .active,
+        .value = .{ .active = .{ .x = 0, .y = 0 } },
+    }, &out_cell, &out_row));
+}
+
+test "cell out of bounds" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib_alloc.test_allocator,
+        &t,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 0,
+        },
+    ));
+    defer free(t);
+
+    var out_cell: cell_c.CCell = undefined;
+    var out_row: row_c.CRow = undefined;
+    try testing.expectEqual(Result.invalid_value, cell(t, .{
+        .tag = .active,
+        .value = .{ .active = .{ .x = 100, .y = 0 } },
+    }, &out_cell, &out_row));
 }
