@@ -169,6 +169,8 @@ comptime {
         @export(&c.mode_report_encode, .{ .name = "ghostty_mode_report_encode" });
         @export(&c.paste_is_safe, .{ .name = "ghostty_paste_is_safe" });
         @export(&c.size_report_encode, .{ .name = "ghostty_size_report_encode" });
+        @export(&c.style_default, .{ .name = "ghostty_style_default" });
+        @export(&c.style_is_default, .{ .name = "ghostty_style_is_default" });
         @export(&c.color_rgb_get, .{ .name = "ghostty_color_rgb_get" });
         @export(&c.sgr_new, .{ .name = "ghostty_sgr_new" });
         @export(&c.sgr_free, .{ .name = "ghostty_sgr_free" });

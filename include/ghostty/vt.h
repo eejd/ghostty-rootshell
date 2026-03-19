@@ -98,6 +98,7 @@ extern "C" {
 #include <ghostty/vt/terminal.h>
 #include <ghostty/vt/osc.h>
 #include <ghostty/vt/sgr.h>
+#include <ghostty/vt/style.h>
 #include <ghostty/vt/key.h>
 #include <ghostty/vt/modes.h>
 #include <ghostty/vt/mouse.h>
