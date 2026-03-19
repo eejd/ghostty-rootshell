@@ -52,7 +52,7 @@ typedef enum {
 typedef union {
   GhosttyColorPaletteIndex palette;
   GhosttyColorRgb rgb;
-  uint32_t _padding;
+  uint64_t _padding;
 } GhosttyStyleColorValue;
 
 /**

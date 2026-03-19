@@ -16,7 +16,7 @@ pub const ColorTag = enum(c_int) {
 pub const ColorValue = extern union {
     palette: u8,
     rgb: color.RGB.C,
-    _padding: u32,
+    _padding: u64,
 };
 
 /// C: GhosttyStyleColor
