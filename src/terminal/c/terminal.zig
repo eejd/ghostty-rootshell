@@ -11,6 +11,7 @@ const point = @import("../point.zig");
 const size = @import("../size.zig");
 const cell_c = @import("cell.zig");
 const row_c = @import("row.zig");
+const grid_ref_c = @import("grid_ref.zig");
 const style_c = @import("style.zig");
 const Result = @import("result.zig").Result;
 
@@ -210,11 +211,10 @@ fn getTyped(
     return .success;
 }
 
-pub fn cell(
+pub fn grid_ref(
     terminal_: Terminal,
     pt: point.Point.C,
-    out_cell: ?*cell_c.CCell,
-    out_row: ?*row_c.CRow,
+    out_ref: ?*grid_ref_c.CGridRef,
 ) callconv(.c) Result {
     const t = terminal_ orelse return .invalid_value;
     const zig_pt: point.Point = switch (pt.tag) {
@@ -223,10 +223,9 @@ pub fn cell(
         .screen => .{ .screen = pt.value.screen },
         .history => .{ .history = pt.value.history },
     };
-    const result = t.screens.active.pages.getCell(zig_pt) orelse
+    const p = t.screens.active.pages.pin(zig_pt) orelse
         return .invalid_value;
-    if (out_cell) |p| p.* = @bitCast(result.cell.*);
-    if (out_row) |p| p.* = @bitCast(result.row.*);
+    if (out_ref) |out| out.* = grid_ref_c.CGridRef.fromPin(p);
     return .success;
 }
 
@@ -636,7 +635,7 @@ test "get invalid" {
     try testing.expectEqual(Result.invalid_value, get(t, .invalid, null));
 }
 
-test "cell" {
+test "grid_ref" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
         &lib_alloc.test_allocator,
@@ -651,29 +650,30 @@ test "cell" {
 
     vt_write(t, "Hello", 5);
 
-    var out_cell: cell_c.CCell = undefined;
-    var out_row: row_c.CRow = undefined;
-    try testing.expectEqual(Result.success, cell(t, .{
+    var out_ref: grid_ref_c.CGridRef = .{};
+    try testing.expectEqual(Result.success, grid_ref(t, .{
         .tag = .active,
         .value = .{ .active = .{ .x = 0, .y = 0 } },
-    }, &out_cell, &out_row));
+    }, &out_ref));
 
-    // Verify the cell contains 'H'
+    // Extract cell from grid ref and verify it contains 'H'
+    var out_cell: cell_c.CCell = undefined;
+    try testing.expectEqual(Result.success, grid_ref_c.grid_ref_cell(&out_ref, &out_cell));
+
     var cp: u32 = 0;
     try testing.expectEqual(Result.success, cell_c.get(out_cell, .codepoint, @ptrCast(&cp)));
     try testing.expectEqual(@as(u32, 'H'), cp);
 }
 
-test "cell null terminal" {
-    var out_cell: cell_c.CCell = undefined;
-    var out_row: row_c.CRow = undefined;
-    try testing.expectEqual(Result.invalid_value, cell(null, .{
+test "grid_ref null terminal" {
+    var out_ref: grid_ref_c.CGridRef = .{};
+    try testing.expectEqual(Result.invalid_value, grid_ref(null, .{
         .tag = .active,
         .value = .{ .active = .{ .x = 0, .y = 0 } },
-    }, &out_cell, &out_row));
+    }, &out_ref));
 }
 
-test "cell out of bounds" {
+test "grid_ref out of bounds" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
         &lib_alloc.test_allocator,
@@ -686,10 +686,9 @@ test "cell out of bounds" {
     ));
     defer free(t);
 
-    var out_cell: cell_c.CCell = undefined;
-    var out_row: row_c.CRow = undefined;
-    try testing.expectEqual(Result.invalid_value, cell(t, .{
+    var out_ref: grid_ref_c.CGridRef = .{};
+    try testing.expectEqual(Result.invalid_value, grid_ref(t, .{
         .tag = .active,
         .value = .{ .active = .{ .x = 100, .y = 0 } },
-    }, &out_cell, &out_row));
+    }, &out_ref));
 }

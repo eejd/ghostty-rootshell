@@ -109,11 +109,16 @@ pub const terminal_scroll_viewport = terminal.scroll_viewport;
 pub const terminal_mode_get = terminal.mode_get;
 pub const terminal_mode_set = terminal.mode_set;
 pub const terminal_get = terminal.get;
-pub const terminal_cell = terminal.cell;
+pub const terminal_grid_ref = terminal.grid_ref;
+
+const grid_ref = @import("grid_ref.zig");
+pub const grid_ref_cell = grid_ref.grid_ref_cell;
+pub const grid_ref_row = grid_ref.grid_ref_row;
 
 test {
     _ = cell;
     _ = color;
+    _ = grid_ref;
     _ = row;
     _ = focus;
     _ = formatter;

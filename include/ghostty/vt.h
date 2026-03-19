@@ -96,6 +96,7 @@ extern "C" {
 #include <ghostty/vt/focus.h>
 #include <ghostty/vt/formatter.h>
 #include <ghostty/vt/terminal.h>
+#include <ghostty/vt/grid_ref.h>
 #include <ghostty/vt/osc.h>
 #include <ghostty/vt/sgr.h>
 #include <ghostty/vt/style.h>

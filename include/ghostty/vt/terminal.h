@@ -13,6 +13,7 @@
 #include <ghostty/vt/types.h>
 #include <ghostty/vt/allocator.h>
 #include <ghostty/vt/modes.h>
+#include <ghostty/vt/grid_ref.h>
 #include <ghostty/vt/screen.h>
 #include <ghostty/vt/point.h>
 #include <ghostty/vt/style.h>
@@ -377,11 +378,12 @@ GhosttyResult ghostty_terminal_get(GhosttyTerminal terminal,
                                     void *out);
 
 /**
- * Get the cell and row at a given point in the terminal.
+ * Resolve a point in the terminal grid to a grid reference.
  *
- * Looks up the cell at the specified point in the terminal grid. On success,
- * the output parameters are set to the opaque cell and row values, which can
- * be queried further with ghostty_cell_get() and ghostty_row_get().
+ * Resolves the given point (which can be in active, viewport, screen,
+ * or history coordinates) to a grid reference for that location. Use
+ * ghostty_grid_ref_cell() and ghostty_grid_ref_row() to extract the cell
+ * and row.
  *
  * Lookups using the `active` and `viewport` tags are fast. The `screen`
  * and `history` tags may require traversing the full scrollback page list
@@ -395,17 +397,15 @@ GhosttyResult ghostty_terminal_get(GhosttyTerminal terminal,
  *
  * @param terminal The terminal handle (NULL returns GHOSTTY_INVALID_VALUE)
  * @param point The point specifying which cell to look up
- * @param[out] out_cell On success, set to the cell at the given point (may be NULL)
- * @param[out] out_row On success, set to the row containing the cell (may be NULL)
+ * @param[out] out_ref On success, set to the grid reference at the given point (may be NULL)
  * @return GHOSTTY_SUCCESS on success, GHOSTTY_INVALID_VALUE if the terminal
  *         is NULL or the point is out of bounds
  *
  * @ingroup terminal
  */
-GhosttyResult ghostty_terminal_cell(GhosttyTerminal terminal,
-                                     GhosttyPoint point,
-                                     GhosttyCell *out_cell,
-                                     GhosttyRow *out_row);
+GhosttyResult ghostty_terminal_grid_ref(GhosttyTerminal terminal,
+                                        GhosttyPoint point,
+                                        GhosttyGridRef *out_ref);
 
 /** @} */
 
