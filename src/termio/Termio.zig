@@ -19,6 +19,7 @@ const apprt = @import("../apprt.zig");
 const internal_os = @import("../os/main.zig");
 const windows = internal_os.windows;
 const configpkg = @import("../config.zig");
+const ProcessInfo = @import("../pty.zig").ProcessInfo;
 
 const log = std.log.scoped(.io_exec);
 
@@ -765,27 +766,9 @@ pub const ThreadData = struct {
     }
 };
 
-pub const ProcessInfo = enum {
-    /// The PID of the process that currently controls the PTY.
-    foreground_pid,
-    /// Gets the name of the slave PTY. Returned name points to an internal
-    /// buffer so it should not be modified or freed.
-    tty_name,
-
-    pub fn Type(comptime info: ProcessInfo) type {
-        return switch (info) {
-            .foreground_pid => u64,
-            .tty_name => [:0]const u8,
-        };
-    }
-};
-
 /// Get information about the process(es) attached to the backend. Returns
 /// `null` if there was an error getting the information or the information is
 /// not available on a particular platform.
 pub fn getProcessInfo(self: *Termio, comptime info: ProcessInfo) ?ProcessInfo.Type(info) {
-    return switch (info) {
-        .foreground_pid => self.backend.getProcessInfo(.foreground_pid),
-        .tty_name => self.backend.getProcessInfo(.tty_name),
-    };
+    return self.backend.getProcessInfo(info);
 }

@@ -36,6 +36,21 @@ pub const Mode = packed struct {
     echo: bool = true,
 };
 
+pub const ProcessInfo = enum {
+    /// The PID of the process that controls the PTY.
+    foreground_pid,
+    /// Gets the name of the slave PTY. Returned name points to an internal buffer
+    /// so it should not be modified or freed.
+    tty_name,
+
+    pub fn Type(comptime info: ProcessInfo) type {
+        return switch (info) {
+            .foreground_pid => u64,
+            .tty_name => [:0]const u8,
+        };
+    }
+};
+
 // A pty implementation that does nothing.
 //
 // TODO: This should be removed. This is only temporary until we have
@@ -79,21 +94,6 @@ const NullPty = struct {
     pub fn childPreExec(self: Pty) ChildPreExecError!void {
         _ = self;
     }
-
-    pub const ProcessInfo = enum {
-        /// The PID of the process that controls the PTY.
-        foreground_pid,
-        /// Gets the name of the slave PTY. Returned name points to an internal buffer
-        /// so it should not be modified or freed.
-        tty_name,
-
-        pub fn Type(comptime info: ProcessInfo) type {
-            return switch (info) {
-                .foreground_pid => u64,
-                .tty_name => [:0]const u8,
-            };
-        }
-    };
 
     /// Get information about the process(es) attached to the PTY. Returns
     /// `null` if there was an error getting the information or the information
@@ -263,21 +263,6 @@ const PosixPty = struct {
         posix.close(self.slave);
         posix.close(self.master);
     }
-
-    pub const ProcessInfo = enum {
-        /// The PID of the process that currently controls the PTY.
-        foreground_pid,
-        /// Gets the name of the slave PTY. Returned name points to an internal buffer
-        /// so it should not be modified or freed.
-        tty_name,
-
-        pub fn Type(comptime info: ProcessInfo) type {
-            return switch (info) {
-                .foreground_pid => u64,
-                .tty_name => [:0]const u8,
-            };
-        }
-    };
 
     /// Get information about the process(es) attached to the PTY. Returns
     /// `null` if there was an error getting the information or the information
@@ -483,21 +468,6 @@ const WindowsPty = struct {
         if (result != windows.S_OK) return error.ResizeFailed;
         self.size = size;
     }
-
-    pub const ProcessInfo = enum {
-        /// The PID of the process that currently controls the PTY.
-        foreground_pid,
-        /// Gets the name of the slave PTY. Returned name points to an internal
-        /// buffer so it should not be modified or freed.
-        tty_name,
-
-        pub fn Type(comptime info: ProcessInfo) type {
-            return switch (info) {
-                .foreground_pid => u64,
-                .tty_name => []const u8,
-            };
-        }
-    };
 
     /// Get information about the process(es) attached to the PTY. Returns
     /// `null` if there was an error getting the information or the information

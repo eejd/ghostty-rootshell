@@ -4,6 +4,7 @@ const posix = std.posix;
 const renderer = @import("../renderer.zig");
 const terminal = @import("../terminal/main.zig");
 const termio = @import("../termio.zig");
+const ProcessInfo = @import("../pty.zig").ProcessInfo;
 
 // The preallocation size for the write request pool. This should be big
 // enough to satisfy most write requests. It must be a power of 2.
@@ -101,30 +102,12 @@ pub const Backend = union(Kind) {
         }
     }
 
-    pub const ProcessInfo = enum {
-        /// The PID of the process that currently controls the PTY.
-        foreground_pid,
-        /// Gets the name of the slave PTY. Returned name points to an internal
-        /// buffer so it should not be modified or freed.
-        tty_name,
-
-        pub fn Type(comptime info: ProcessInfo) type {
-            return switch (info) {
-                .foreground_pid => u64,
-                .tty_name => [:0]const u8,
-            };
-        }
-    };
-
     /// Get information about the process(es) attached to the backend. Returns
     /// `null` if there was an error getting the information or the information
     /// is not available on a particular platform.
     pub fn getProcessInfo(self: *Backend, comptime info: ProcessInfo) ?ProcessInfo.Type(info) {
         return switch (self.*) {
-            .exec => |*exec| switch (info) {
-                .foreground_pid => exec.getProcessInfo(.foreground_pid),
-                .tty_name => exec.getProcessInfo(.tty_name),
-            },
+            .exec => |*exec| exec.getProcessInfo(info),
         };
     }
 };

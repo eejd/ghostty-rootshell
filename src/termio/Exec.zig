@@ -27,6 +27,7 @@ const Pty = ptypkg.Pty;
 const EnvMap = std.process.EnvMap;
 const PasswdEntry = internal_os.passwd.Entry;
 const windows = internal_os.windows;
+const ProcessInfo = @import("../pty.zig").ProcessInfo;
 
 const log = std.log.scoped(.io_exec);
 
@@ -1227,30 +1228,12 @@ const Subprocess = struct {
         try command.signal(c.SIGHUP, true);
     }
 
-    pub const ProcessInfo = enum {
-        /// The PID of the process that currently controls the PTY.
-        foreground_pid,
-        /// Gets the name of the slave PTY. Returned name points to an internal
-        /// buffer so it should not be modified or freed.
-        tty_name,
-
-        pub fn Type(comptime info: Subprocess.ProcessInfo) type {
-            return switch (info) {
-                .foreground_pid => u64,
-                .tty_name => [:0]const u8,
-            };
-        }
-    };
-
     /// Get information about the process(es) running within the subprocess.
     /// Returns `null` if there was an error getting the information or the
     /// information is not available on a particular platform.
-    pub fn getProcessInfo(self: *Subprocess, comptime info: Subprocess.ProcessInfo) ?Subprocess.ProcessInfo.Type(info) {
+    pub fn getProcessInfo(self: *Subprocess, comptime info: ProcessInfo) ?ProcessInfo.Type(info) {
         const pty = &(self.pty orelse return null);
-        return switch (info) {
-            .foreground_pid => pty.getProcessInfo(.foreground_pid),
-            .tty_name => pty.getProcessInfo(.tty_name),
-        };
+        return pty.getProcessInfo(info);
     }
 };
 
@@ -1606,29 +1589,11 @@ fn execCommand(
     };
 }
 
-pub const ProcessInfo = enum {
-    /// The PID of the process that currently controls the PTY.
-    foreground_pid,
-    /// Gets the name of the slave PTY. Returned name points to an internal
-    /// buffer so it should not be modified or freed.
-    tty_name,
-
-    pub fn Type(comptime info: ProcessInfo) type {
-        return switch (info) {
-            .foreground_pid => u64,
-            .tty_name => [:0]const u8,
-        };
-    }
-};
-
 /// Get information about the process(es) running within the backend. Returns
 /// `null` if there was an error getting the information or the information is
 /// not available on a particular platform.
 pub fn getProcessInfo(self: *Exec, comptime info: ProcessInfo) ?ProcessInfo.Type(info) {
-    return switch (info) {
-        .foreground_pid => self.subprocess.getProcessInfo(.foreground_pid),
-        .tty_name => self.subprocess.getProcessInfo(.tty_name),
-    };
+    return self.subprocess.getProcessInfo(info);
 }
 
 test "execCommand darwin: shell command" {
