@@ -1,3 +1,4 @@
+pub const cell = @import("cell.zig");
 pub const color = @import("color.zig");
 pub const focus = @import("focus.zig");
 pub const formatter = @import("formatter.zig");
@@ -8,6 +9,7 @@ pub const key_encode = @import("key_encode.zig");
 pub const mouse_event = @import("mouse_event.zig");
 pub const mouse_encode = @import("mouse_encode.zig");
 pub const paste = @import("paste.zig");
+pub const row = @import("row.zig");
 pub const sgr = @import("sgr.zig");
 pub const size_report = @import("size_report.zig");
 pub const style = @import("style.zig");
@@ -91,6 +93,10 @@ pub const paste_is_safe = paste.is_safe;
 
 pub const size_report_encode = size_report.encode;
 
+pub const cell_get = cell.get;
+
+pub const row_get = row.get;
+
 pub const style_default = style.default_style;
 pub const style_is_default = style.style_is_default;
 
@@ -105,7 +111,9 @@ pub const terminal_mode_set = terminal.mode_set;
 pub const terminal_get = terminal.get;
 
 test {
+    _ = cell;
     _ = color;
+    _ = row;
     _ = focus;
     _ = formatter;
     _ = modes;

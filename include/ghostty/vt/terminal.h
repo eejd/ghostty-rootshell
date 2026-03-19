@@ -13,6 +13,7 @@
 #include <ghostty/vt/types.h>
 #include <ghostty/vt/allocator.h>
 #include <ghostty/vt/modes.h>
+#include <ghostty/vt/screen.h>
 #include <ghostty/vt/style.h>
 
 #ifdef __cplusplus
