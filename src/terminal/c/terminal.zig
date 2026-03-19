@@ -8,6 +8,7 @@ const PageList = @import("../PageList.zig");
 const kitty = @import("../kitty/key.zig");
 const modes = @import("../modes.zig");
 const size = @import("../size.zig");
+const style_c = @import("style.zig");
 const Result = @import("result.zig").Result;
 
 const log = std.log.scoped(.terminal_c);
@@ -146,6 +147,7 @@ pub const TerminalData = enum(c_int) {
     cursor_visible = 7,
     kitty_keyboard_flags = 8,
     scrollbar = 9,
+    cursor_style = 10,
 
     /// Output type expected for querying the data of the given kind.
     pub fn OutType(comptime self: TerminalData) type {
@@ -156,6 +158,7 @@ pub const TerminalData = enum(c_int) {
             .active_screen => TerminalScreen,
             .kitty_keyboard_flags => u8,
             .scrollbar => TerminalScrollbar,
+            .cursor_style => style_c.Style,
         };
     }
 };
@@ -198,6 +201,7 @@ fn getTyped(
         .cursor_visible => out.* = t.modes.get(.cursor_visible),
         .kitty_keyboard_flags => out.* = @as(u8, t.screens.active.kitty_keyboard.current().int()),
         .scrollbar => out.* = t.screens.active.pages.scrollbar().cval(),
+        .cursor_style => out.* = .fromStyle(t.screens.active.cursor.style),
     }
 
     return .success;

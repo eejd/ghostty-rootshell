@@ -13,6 +13,7 @@
 #include <ghostty/vt/types.h>
 #include <ghostty/vt/allocator.h>
 #include <ghostty/vt/modes.h>
+#include <ghostty/vt/style.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -208,6 +209,15 @@ typedef enum {
    * Output type: GhosttyTerminalScrollbar *
    */
   GHOSTTY_TERMINAL_DATA_SCROLLBAR = 9,
+
+  /**
+   * The current SGR style of the cursor.
+   *
+   * This is the style that will be applied to newly printed characters.
+   *
+   * Output type: GhosttyStyle *
+   */
+  GHOSTTY_TERMINAL_DATA_CURSOR_STYLE = 10,
 } GhosttyTerminalData;
 
 /**

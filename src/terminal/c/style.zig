@@ -23,6 +23,23 @@ pub const ColorValue = extern union {
 pub const Color = extern struct {
     tag: ColorTag,
     value: ColorValue,
+
+    pub fn fromColor(c: style.Style.Color) Color {
+        return switch (c) {
+            .none => .{
+                .tag = .none,
+                .value = .{ ._padding = 0 },
+            },
+            .palette => |idx| .{
+                .tag = .palette,
+                .value = .{ .palette = idx },
+            },
+            .rgb => |rgb| .{
+                .tag = .rgb,
+                .value = .{ .rgb = rgb.cval() },
+            },
+        };
+    }
 };
 
 /// C: GhosttyStyle
@@ -40,45 +57,28 @@ pub const Style = extern struct {
     strikethrough: bool,
     overline: bool,
     underline: c_int,
+
+    pub fn fromStyle(s: style.Style) Style {
+        return .{
+            .fg_color = .fromColor(s.fg_color),
+            .bg_color = .fromColor(s.bg_color),
+            .underline_color = .fromColor(s.underline_color),
+            .bold = s.flags.bold,
+            .italic = s.flags.italic,
+            .faint = s.flags.faint,
+            .blink = s.flags.blink,
+            .inverse = s.flags.inverse,
+            .invisible = s.flags.invisible,
+            .strikethrough = s.flags.strikethrough,
+            .overline = s.flags.overline,
+            .underline = @intFromEnum(s.flags.underline),
+        };
+    }
 };
-
-fn convertColor(c: style.Style.Color) Color {
-    return switch (c) {
-        .none => .{
-            .tag = .none,
-            .value = .{ ._padding = 0 },
-        },
-        .palette => |idx| .{
-            .tag = .palette,
-            .value = .{ .palette = idx },
-        },
-        .rgb => |rgb| .{
-            .tag = .rgb,
-            .value = .{ .rgb = rgb.cval() },
-        },
-    };
-}
-
-pub fn convertStyle(s: style.Style) Style {
-    return .{
-        .fg_color = convertColor(s.fg_color),
-        .bg_color = convertColor(s.bg_color),
-        .underline_color = convertColor(s.underline_color),
-        .bold = s.flags.bold,
-        .italic = s.flags.italic,
-        .faint = s.flags.faint,
-        .blink = s.flags.blink,
-        .inverse = s.flags.inverse,
-        .invisible = s.flags.invisible,
-        .strikethrough = s.flags.strikethrough,
-        .overline = s.flags.overline,
-        .underline = @intFromEnum(s.flags.underline),
-    };
-}
 
 /// Returns the default style.
 pub fn default_style(result: *Style) callconv(.c) void {
-    result.* = convertStyle(.{});
+    result.* = .fromStyle(.{});
     assert(result.size == @sizeOf(Style));
 }
 
@@ -119,7 +119,7 @@ test "convert style with colors" {
         .flags = .{ .bold = true, .underline = .curly },
     };
 
-    const c_style = convertStyle(zig_style);
+    const c_style: Style = .fromStyle(zig_style);
     try testing.expectEqual(ColorTag.palette, c_style.fg_color.tag);
     try testing.expectEqual(@as(u8, 42), c_style.fg_color.value.palette);
     try testing.expectEqual(ColorTag.rgb, c_style.bg_color.tag);
