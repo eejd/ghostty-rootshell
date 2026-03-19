@@ -161,7 +161,7 @@ pub fn add(
             });
             const libc = try std.zig.LibCInstallation.findNative(.{
                 .allocator = b.allocator,
-                .target = target,
+                .target = &target.result,
                 .verbose = false,
             });
             c.addSystemIncludePath(.{ .cwd_relative = libc.sys_include_dir.? });
