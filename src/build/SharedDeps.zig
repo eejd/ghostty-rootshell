@@ -159,6 +159,12 @@ pub fn add(
                 .target = target,
                 .optimize = optimize,
             });
+            const libc = try std.zig.LibCInstallation.findNative(.{
+                .allocator = b.allocator,
+                .target = target,
+                .verbose = false,
+            });
+            c.addSystemIncludePath(.{ .cwd_relative = libc.sys_include_dir.? });
             step.root_module.addImport("pty-c", c.createModule());
         },
         else => {},
