@@ -119,6 +119,13 @@ typedef enum {
 
   /** Current dirty state (GhosttyRenderStateDirty). */
   GHOSTTY_RENDER_STATE_DATA_DIRTY = 3,
+
+  /** Populate a pre-allocated GhosttyRenderStateRowIterator with row data
+   *  from the render state (GhosttyRenderStateRowIterator). Row data is
+   *  only valid as long as the underlying render state is not updated.
+   *  It is unsafe to use row data after updating the render state.
+   *  */
+  GHOSTTY_RENDER_STATE_DATA_ROW_ITERATOR = 4,
 } GhosttyRenderStateData;
 
 /**
@@ -147,7 +154,9 @@ typedef enum {
   GHOSTTY_RENDER_STATE_ROW_DATA_RAW = 2,
 
   /** Populate a pre-allocated GhosttyRenderStateRowCells with cell data for
-   *  the current row (GhosttyRenderStateRowCells). */
+   *  the current row (GhosttyRenderStateRowCells). Cell data is only 
+   *  valid as long as the underlying render state is not updated. 
+   *  It is unsafe to use cell data after updating the render state. */
   GHOSTTY_RENDER_STATE_ROW_DATA_CELLS = 3,
 } GhosttyRenderStateRowData;
 
@@ -298,21 +307,21 @@ GhosttyResult ghostty_render_state_colors_get(GhosttyRenderState state,
                                               GhosttyRenderStateColors* out_colors);
 
 /**
- * Create a row iterator for a render state.
+ * Create a new row iterator instance.
  *
- * The iterator borrows from `state`; `state` must outlive the iterator.
+ * All fields except the allocator are left undefined until populated
+ * via ghostty_render_state_get() with
+ * GHOSTTY_RENDER_STATE_DATA_ROW_ITERATOR.
  *
  * @param allocator Pointer to allocator, or NULL to use the default allocator
- * @param state The render state handle to iterate (NULL returns GHOSTTY_INVALID_VALUE)
  * @param[out] out_iterator On success, receives the created iterator handle
- * @return GHOSTTY_SUCCESS on success, GHOSTTY_INVALID_VALUE if `state` is
- *         NULL, GHOSTTY_OUT_OF_MEMORY on allocation failure
+ * @return GHOSTTY_SUCCESS on success, GHOSTTY_OUT_OF_MEMORY on allocation
+ *         failure
  *
  * @ingroup render
  */
 GhosttyResult ghostty_render_state_row_iterator_new(
     const GhosttyAllocator* allocator,
-    GhosttyRenderState state,
     GhosttyRenderStateRowIterator* out_iterator);
 
 /**

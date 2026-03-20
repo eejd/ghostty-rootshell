@@ -58,6 +58,7 @@ pub const Data = enum(c_int) {
     cols = 1,
     rows = 2,
     dirty = 3,
+    row_iterator = 4,
 
     /// Output type expected for querying the data of the given kind.
     pub fn OutType(comptime self: Data) type {
@@ -65,6 +66,7 @@ pub const Data = enum(c_int) {
             .invalid => void,
             .cols, .rows => size.CellCountInt,
             .dirty => Dirty,
+            .row_iterator => RowIterator,
         };
     }
 };
@@ -163,6 +165,17 @@ fn getTyped(
         .cols => out.* = state.state.cols,
         .rows => out.* = state.state.rows,
         .dirty => out.* = state.state.dirty,
+        .row_iterator => {
+            const it = out.* orelse return .invalid_value;
+            const row_data = state.state.row_data.slice();
+            it.* = .{
+                .alloc = it.alloc,
+                .y = null,
+                .raws = row_data.items(.raw),
+                .cells = row_data.items(.cells),
+                .dirty = row_data.items(.dirty),
+            };
+        },
     }
 
     return .success;
@@ -266,43 +279,22 @@ pub fn colors_get(
 
 pub fn row_iterator_new(
     alloc_: ?*const CAllocator,
-    state_: RenderState,
-    out_iterator_: ?*RowIterator,
+    result: *RowIterator,
 ) callconv(.c) Result {
-    const state = state_ orelse return .invalid_value;
-    const out_iterator = out_iterator_ orelse return .invalid_value;
     const alloc = lib_alloc.default(alloc_);
-
-    out_iterator.* = row_iterator_new_(
-        alloc,
-        state,
-    ) catch |err| {
-        out_iterator.* = null;
-        switch (err) {
-            error.OutOfMemory => return .out_of_memory,
-        }
+    const ptr = alloc.create(RowIteratorWrapper) catch {
+        result.* = null;
+        return .out_of_memory;
     };
-
-    return .success;
-}
-
-fn row_iterator_new_(
-    alloc: Allocator,
-    state: *RenderStateWrapper,
-) !*RowIteratorWrapper {
-    const it = try alloc.create(RowIteratorWrapper);
-    errdefer alloc.destroy(it);
-
-    const row_data = state.state.row_data.slice();
-    it.* = .{
+    ptr.* = .{
         .alloc = alloc,
-        .y = null,
-        .raws = row_data.items(.raw),
-        .cells = row_data.items(.cells),
-        .dirty = row_data.items(.dirty),
+        .y = undefined,
+        .raws = undefined,
+        .cells = undefined,
+        .dirty = undefined,
     };
-
-    return it;
+    result.* = ptr;
+    return .success;
 }
 
 pub fn row_iterator_free(iterator_: RowIterator) callconv(.c) void {
@@ -559,25 +551,15 @@ test "render: set null value" {
     try testing.expectEqual(Result.invalid_value, set(state, .dirty, null));
 }
 
-test "render: row iterator new invalid value" {
-    var state: RenderState = null;
-    try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
-        &state,
-    ));
-    defer free(state);
-
+test "render: row iterator get invalid value" {
     var iterator: RowIterator = null;
-    try testing.expectEqual(Result.invalid_value, row_iterator_new(
+    try testing.expectEqual(Result.success, row_iterator_new(
         &lib_alloc.test_allocator,
-        null,
         &iterator,
     ));
-    try testing.expectEqual(Result.invalid_value, row_iterator_new(
-        &lib_alloc.test_allocator,
-        state,
-        null,
-    ));
+    defer row_iterator_free(iterator);
+
+    try testing.expectEqual(Result.invalid_value, get(null, .row_iterator, @ptrCast(&iterator)));
 }
 
 test "render: row iterator new/free" {
@@ -605,12 +587,14 @@ test "render: row iterator new/free" {
     var iterator: RowIterator = null;
     try testing.expectEqual(Result.success, row_iterator_new(
         &lib_alloc.test_allocator,
-        state,
         &iterator,
     ));
     defer row_iterator_free(iterator);
 
     try testing.expect(iterator != null);
+
+    try testing.expectEqual(Result.success, get(state, .row_iterator, @ptrCast(&iterator)));
+
     const iterator_ptr = iterator.?;
     const row_data = state.?.state.row_data.slice();
 
@@ -658,11 +642,11 @@ test "render: row get invalid data" {
     var iterator: RowIterator = null;
     try testing.expectEqual(Result.success, row_iterator_new(
         &lib_alloc.test_allocator,
-        state,
         &iterator,
     ));
     defer row_iterator_free(iterator);
 
+    try testing.expectEqual(Result.success, get(state, .row_iterator, @ptrCast(&iterator)));
     try testing.expect(row_iterator_next(iterator));
     try testing.expectEqual(Result.invalid_value, row_get(iterator, .invalid, null));
 }
@@ -697,11 +681,11 @@ test "render: row set before iteration" {
     var iterator: RowIterator = null;
     try testing.expectEqual(Result.success, row_iterator_new(
         &lib_alloc.test_allocator,
-        state,
         &iterator,
     ));
     defer row_iterator_free(iterator);
 
+    try testing.expectEqual(Result.success, get(state, .row_iterator, @ptrCast(&iterator)));
     const dirty = false;
     try testing.expectEqual(Result.invalid_value, row_set(iterator, .dirty, @ptrCast(&dirty)));
 }
@@ -731,11 +715,11 @@ test "render: row get before iteration" {
     var iterator: RowIterator = null;
     try testing.expectEqual(Result.success, row_iterator_new(
         &lib_alloc.test_allocator,
-        state,
         &iterator,
     ));
     defer row_iterator_free(iterator);
 
+    try testing.expectEqual(Result.success, get(state, .row_iterator, @ptrCast(&iterator)));
     var dirty: bool = undefined;
     try testing.expectEqual(Result.invalid_value, row_get(iterator, .dirty, @ptrCast(&dirty)));
 }
@@ -770,11 +754,11 @@ test "render: row get/set dirty" {
     var it: RowIterator = null;
     try testing.expectEqual(Result.success, row_iterator_new(
         &lib_alloc.test_allocator,
-        state,
         &it,
     ));
     defer row_iterator_free(it);
 
+    try testing.expectEqual(Result.success, get(state, .row_iterator, @ptrCast(&it)));
     try testing.expect(row_iterator_next(it));
     var dirty: bool = undefined;
     try testing.expectEqual(Result.success, row_get(it, .dirty, @ptrCast(&dirty)));
@@ -788,11 +772,11 @@ test "render: row get/set dirty" {
     var it2: RowIterator = null;
     try testing.expectEqual(Result.success, row_iterator_new(
         &lib_alloc.test_allocator,
-        state,
         &it2,
     ));
     defer row_iterator_free(it2);
 
+    try testing.expectEqual(Result.success, get(state, .row_iterator, @ptrCast(&it2)));
     try testing.expect(row_iterator_next(it2));
     try testing.expectEqual(Result.success, row_get(it2, .dirty, @ptrCast(&dirty)));
     try testing.expect(!dirty);
@@ -823,10 +807,11 @@ test "render: row iterator next" {
     var iterator: RowIterator = null;
     try testing.expectEqual(Result.success, row_iterator_new(
         &lib_alloc.test_allocator,
-        state,
         &iterator,
     ));
     defer row_iterator_free(iterator);
+
+    try testing.expectEqual(Result.success, get(state, .row_iterator, @ptrCast(&iterator)));
 
     const rows = state.?.state.rows;
     if (rows == 0) {
