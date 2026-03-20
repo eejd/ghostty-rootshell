@@ -296,19 +296,25 @@ if (( BASH_VERSINFO[0] > 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] >= 4) )
   }
 
   # Append our hook to PROMPT_COMMAND, preserving its existing type.
+  #
+  # The 2>/dev/null suppresses "command not found" in subshells that inherit
+  # PROMPT_COMMAND without the function definition. This also silences any
+  # errors from inside __ghostty_hook itself, but those are all terminal escape
+  # sequences and non-actionable.
+  #
   # shellcheck disable=SC2128,SC2178,SC2179
-  if [[ ";${PROMPT_COMMAND[*]:-};" != *";__ghostty_hook;"* ]]; then
+  if [[ ";${PROMPT_COMMAND[*]:-};" != *";__ghostty_hook 2>/dev/null;"* ]]; then
     if [[ -z "${PROMPT_COMMAND[*]}" ]]; then
       if (( BASH_VERSINFO[0] > 5 || (BASH_VERSINFO[0] == 5 && BASH_VERSINFO[1] >= 1) )); then
-        PROMPT_COMMAND=(__ghostty_hook)
+        PROMPT_COMMAND=("__ghostty_hook 2>/dev/null")
       else
-        PROMPT_COMMAND="__ghostty_hook"
+        PROMPT_COMMAND="__ghostty_hook 2>/dev/null"
       fi
     elif [[ $(builtin declare -p PROMPT_COMMAND 2>/dev/null) == "declare -a "* ]]; then
-      PROMPT_COMMAND+=(__ghostty_hook)
+      PROMPT_COMMAND+=("__ghostty_hook 2>/dev/null")
     else
       [[ "${PROMPT_COMMAND}" =~ (\;[[:space:]]*|$'\n')$ ]] || PROMPT_COMMAND+=";"
-      PROMPT_COMMAND+=" __ghostty_hook"
+      PROMPT_COMMAND+="__ghostty_hook 2>/dev/null"
     fi
   fi
 else
