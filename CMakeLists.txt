@@ -52,6 +52,15 @@ project(ghostty-vt VERSION 0.1.0 LANGUAGES C)
 
 set(GHOSTTY_ZIG_BUILD_FLAGS "" CACHE STRING "Additional flags to pass to zig build")
 
+# Map CMake build types to Zig optimization levels.
+if(CMAKE_BUILD_TYPE)
+    string(TOUPPER "${CMAKE_BUILD_TYPE}" _bt)
+    if(_bt STREQUAL "RELEASE" OR _bt STREQUAL "MINSIZEREL" OR _bt STREQUAL "RELWITHDEBINFO")
+        list(APPEND GHOSTTY_ZIG_BUILD_FLAGS "-Doptimize=ReleaseFast")
+    endif()
+    unset(_bt)
+endif()
+
 # --- Find Zig ----------------------------------------------------------------
 
 find_program(ZIG_EXECUTABLE zig REQUIRED)
