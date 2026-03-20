@@ -103,6 +103,25 @@ typedef enum {
 } GhosttyRenderStateDirty;
 
 /**
+ * Visual style of the cursor.
+ *
+ * @ingroup render
+ */
+typedef enum {
+  /** Bar cursor (DECSCUSR 5, 6). */
+  GHOSTTY_RENDER_STATE_CURSOR_VISUAL_STYLE_BAR = 0,
+
+  /** Block cursor (DECSCUSR 1, 2). */
+  GHOSTTY_RENDER_STATE_CURSOR_VISUAL_STYLE_BLOCK = 1,
+
+  /** Underline cursor (DECSCUSR 3, 4). */
+  GHOSTTY_RENDER_STATE_CURSOR_VISUAL_STYLE_UNDERLINE = 2,
+
+  /** Hollow block cursor. */
+  GHOSTTY_RENDER_STATE_CURSOR_VISUAL_STYLE_BLOCK_HOLLOW = 3,
+} GhosttyRenderStateCursorVisualStyle;
+
+/**
  * Queryable data kinds for ghostty_render_state_get().
  *
  * @ingroup render
@@ -143,6 +162,34 @@ typedef enum {
 
   /** The active 256-color palette (GhosttyColorRgb[256]). */
   GHOSTTY_RENDER_STATE_DATA_COLOR_PALETTE = 9,
+
+  /** The visual style of the cursor (GhosttyRenderStateCursorVisualStyle). */
+  GHOSTTY_RENDER_STATE_DATA_CURSOR_VISUAL_STYLE = 10,
+
+  /** Whether the cursor is visible based on terminal modes (bool). */
+  GHOSTTY_RENDER_STATE_DATA_CURSOR_VISIBLE = 11,
+
+  /** Whether the cursor should blink based on terminal modes (bool). */
+  GHOSTTY_RENDER_STATE_DATA_CURSOR_BLINKING = 12,
+
+  /** Whether the cursor is at a password input field (bool). */
+  GHOSTTY_RENDER_STATE_DATA_CURSOR_PASSWORD_INPUT = 13,
+
+  /** Whether the cursor is visible within the viewport (bool).
+   *  If false, the cursor viewport position values are undefined. */
+  GHOSTTY_RENDER_STATE_DATA_CURSOR_VIEWPORT_HAS_VALUE = 14,
+
+  /** Cursor viewport x position in cells (uint16_t).
+   *  Only valid when CURSOR_VIEWPORT_HAS_VALUE is true. */
+  GHOSTTY_RENDER_STATE_DATA_CURSOR_VIEWPORT_X = 15,
+
+  /** Cursor viewport y position in cells (uint16_t).
+   *  Only valid when CURSOR_VIEWPORT_HAS_VALUE is true. */
+  GHOSTTY_RENDER_STATE_DATA_CURSOR_VIEWPORT_Y = 16,
+
+  /** Whether the cursor is on the tail of a wide character (bool).
+   *  Only valid when CURSOR_VIEWPORT_HAS_VALUE is true. */
+  GHOSTTY_RENDER_STATE_DATA_CURSOR_VIEWPORT_WIDE_TAIL = 17,
 } GhosttyRenderStateData;
 
 /**

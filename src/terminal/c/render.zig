@@ -5,6 +5,7 @@ const lib = @import("../../lib/main.zig");
 const lib_alloc = @import("../../lib/allocator.zig");
 const CAllocator = lib_alloc.Allocator;
 const colorpkg = @import("../color.zig");
+const cursorpkg = @import("../cursor.zig");
 const page = @import("../page.zig");
 const size = @import("../size.zig");
 const Style = @import("../style.zig").Style;
@@ -53,6 +54,23 @@ pub const RowCells = ?*RowCellsWrapper;
 /// C: GhosttyRenderStateDirty
 pub const Dirty = renderpkg.RenderState.Dirty;
 
+/// C: GhosttyRenderStateCursorVisualStyle
+pub const CursorVisualStyle = enum(c_int) {
+    bar = 0,
+    block = 1,
+    underline = 2,
+    block_hollow = 3,
+
+    pub fn fromCursorStyle(s: cursorpkg.Style) CursorVisualStyle {
+        return switch (s) {
+            .bar => .bar,
+            .block => .block,
+            .underline => .underline,
+            .block_hollow => .block_hollow,
+        };
+    }
+};
+
 /// C: GhosttyRenderStateData
 pub const Data = enum(c_int) {
     invalid = 0,
@@ -65,6 +83,14 @@ pub const Data = enum(c_int) {
     color_cursor = 7,
     color_cursor_has_value = 8,
     color_palette = 9,
+    cursor_visual_style = 10,
+    cursor_visible = 11,
+    cursor_blinking = 12,
+    cursor_password_input = 13,
+    cursor_viewport_has_value = 14,
+    cursor_viewport_x = 15,
+    cursor_viewport_y = 16,
+    cursor_viewport_wide_tail = 17,
 
     /// Output type expected for querying the data of the given kind.
     pub fn OutType(comptime self: Data) type {
@@ -76,6 +102,10 @@ pub const Data = enum(c_int) {
             .color_background, .color_foreground, .color_cursor => colorpkg.RGB.C,
             .color_cursor_has_value => bool,
             .color_palette => [256]colorpkg.RGB.C,
+            .cursor_visual_style => CursorVisualStyle,
+            .cursor_visible, .cursor_blinking, .cursor_password_input => bool,
+            .cursor_viewport_has_value, .cursor_viewport_wide_tail => bool,
+            .cursor_viewport_x, .cursor_viewport_y => size.CellCountInt,
         };
     }
 };
@@ -196,6 +226,23 @@ fn getTyped(
             for (&out.*, state.state.colors.palette) |*dst, src| {
                 dst.* = src.cval();
             }
+        },
+        .cursor_visual_style => out.* = CursorVisualStyle.fromCursorStyle(state.state.cursor.visual_style),
+        .cursor_visible => out.* = state.state.cursor.visible,
+        .cursor_blinking => out.* = state.state.cursor.blinking,
+        .cursor_password_input => out.* = state.state.cursor.password_input,
+        .cursor_viewport_has_value => out.* = state.state.cursor.viewport != null,
+        .cursor_viewport_x => {
+            const vp = state.state.cursor.viewport orelse return .invalid_value;
+            out.* = vp.x;
+        },
+        .cursor_viewport_y => {
+            const vp = state.state.cursor.viewport orelse return .invalid_value;
+            out.* = vp.y;
+        },
+        .cursor_viewport_wide_tail => {
+            const vp = state.state.cursor.viewport orelse return .invalid_value;
+            out.* = vp.wide_tail;
         },
     }
 
