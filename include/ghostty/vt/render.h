@@ -126,6 +126,23 @@ typedef enum {
    *  It is unsafe to use row data after updating the render state.
    *  */
   GHOSTTY_RENDER_STATE_DATA_ROW_ITERATOR = 4,
+
+  /** Default/current background color (GhosttyColorRgb). */
+  GHOSTTY_RENDER_STATE_DATA_COLOR_BACKGROUND = 5,
+
+  /** Default/current foreground color (GhosttyColorRgb). */
+  GHOSTTY_RENDER_STATE_DATA_COLOR_FOREGROUND = 6,
+
+  /** Cursor color when explicitly set by terminal state (GhosttyColorRgb).
+   *  Returns GHOSTTY_INVALID_VALUE if no explicit cursor color is set;
+   *  use COLOR_CURSOR_HAS_VALUE to check first. */
+  GHOSTTY_RENDER_STATE_DATA_COLOR_CURSOR = 7,
+
+  /** Whether an explicit cursor color is set (bool). */
+  GHOSTTY_RENDER_STATE_DATA_COLOR_CURSOR_HAS_VALUE = 8,
+
+  /** The active 256-color palette (GhosttyColorRgb[256]). */
+  GHOSTTY_RENDER_STATE_DATA_COLOR_PALETTE = 9,
 } GhosttyRenderStateData;
 
 /**

@@ -60,6 +60,11 @@ pub const Data = enum(c_int) {
     rows = 2,
     dirty = 3,
     row_iterator = 4,
+    color_background = 5,
+    color_foreground = 6,
+    color_cursor = 7,
+    color_cursor_has_value = 8,
+    color_palette = 9,
 
     /// Output type expected for querying the data of the given kind.
     pub fn OutType(comptime self: Data) type {
@@ -68,6 +73,9 @@ pub const Data = enum(c_int) {
             .cols, .rows => size.CellCountInt,
             .dirty => Dirty,
             .row_iterator => RowIterator,
+            .color_background, .color_foreground, .color_cursor => colorpkg.RGB.C,
+            .color_cursor_has_value => bool,
+            .color_palette => [256]colorpkg.RGB.C,
         };
     }
 };
@@ -176,6 +184,18 @@ fn getTyped(
                 .cells = row_data.items(.cells),
                 .dirty = row_data.items(.dirty),
             };
+        },
+        .color_background => out.* = state.state.colors.background.cval(),
+        .color_foreground => out.* = state.state.colors.foreground.cval(),
+        .color_cursor => {
+            const cursor = state.state.colors.cursor orelse return .invalid_value;
+            out.* = cursor.cval();
+        },
+        .color_cursor_has_value => out.* = state.state.colors.cursor != null,
+        .color_palette => {
+            for (&out.*, state.state.colors.palette) |*dst, src| {
+                dst.* = src.cval();
+            }
         },
     }
 
