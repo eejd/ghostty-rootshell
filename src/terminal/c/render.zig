@@ -435,7 +435,7 @@ pub const RowCellsData = enum(c_int) {
             .raw => page.Cell.C,
             .style => style_c.Style,
             .graphemes_len => u32,
-            .graphemes_buf => [*]u32,
+            .graphemes_buf => u32,
         };
     }
 };
@@ -472,7 +472,10 @@ fn rowCellsGetTyped(
     switch (data) {
         .invalid => return .invalid_value,
         .raw => out.* = cell.cval(),
-        .style => out.* = style_c.Style.fromStyle(cells.styles[x]),
+        .style => out.* = if (cell.hasStyling())
+            style_c.Style.fromStyle(cells.styles[x])
+        else
+            style_c.Style.fromStyle(.{}),
         .graphemes_len => {
             if (!cell.hasText()) {
                 out.* = 0;
@@ -484,11 +487,10 @@ fn rowCellsGetTyped(
         .graphemes_buf => {
             if (!cell.hasText()) return .success;
             const extra = if (cell.hasGrapheme()) cells.graphemes[x] else &[_]u21{};
-            const total = 1 + extra.len;
-            const out_slice = out.*[0..total];
-            out_slice[0] = cell.codepoint();
+            const buf: [*]u32 = @ptrCast(out);
+            buf[0] = cell.codepoint();
             for (extra, 1..) |cp, i| {
-                out_slice[i] = cp;
+                buf[i] = cp;
             }
         },
     }

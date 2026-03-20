@@ -58,9 +58,25 @@ extern "C" {
  * reset the row-level dirty flags. So, the caller of the render state API must
  * be careful to manage both layers of dirty state correctly. 
  *
- * ## Example
+ * ## Examples
  *
+ * ### Creating and updating render state
  * @snippet c-vt-render/src/main.c render-state-update
+ *
+ * ### Checking dirty state
+ * @snippet c-vt-render/src/main.c render-dirty-check
+ *
+ * ### Reading colors
+ * @snippet c-vt-render/src/main.c render-colors
+ *
+ * ### Reading cursor state
+ * @snippet c-vt-render/src/main.c render-cursor
+ *
+ * ### Iterating rows and cells
+ * @snippet c-vt-render/src/main.c render-row-iterate
+ *
+ * ### Resetting dirty state after rendering
+ * @snippet c-vt-render/src/main.c render-dirty-reset
  *
  * @{
  */
