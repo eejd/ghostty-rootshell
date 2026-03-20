@@ -96,6 +96,35 @@ typedef enum {
 } GhosttyRenderStateDirty;
 
 /**
+ * Queryable data kinds for ghostty_render_state_get().
+ *
+ * @ingroup render
+ */
+typedef enum {
+  /** Invalid / sentinel value. */
+  GHOSTTY_RENDER_STATE_DATA_INVALID = 0,
+
+  /** Viewport width in cells (uint16_t). */
+  GHOSTTY_RENDER_STATE_DATA_COLS = 1,
+
+  /** Viewport height in cells (uint16_t). */
+  GHOSTTY_RENDER_STATE_DATA_ROWS = 2,
+
+  /** Current dirty state (GhosttyRenderStateDirty). */
+  GHOSTTY_RENDER_STATE_DATA_DIRTY = 3,
+} GhosttyRenderStateData;
+
+/**
+ * Settable options for ghostty_render_state_set().
+ *
+ * @ingroup render
+ */
+typedef enum {
+  /** Set dirty state (GhosttyRenderStateDirty). */
+  GHOSTTY_RENDER_STATE_OPTION_DIRTY = 0,
+} GhosttyRenderStateOption;
+
+/**
  * Render-state color information.
  *
  * This struct uses the sized-struct ABI pattern. Initialize with
@@ -177,22 +206,41 @@ GhosttyResult ghostty_render_state_update(GhosttyRenderState state,
                                           GhosttyTerminal terminal);
 
 /**
- * Get the current viewport size from a render state.
+ * Get a value from a render state.
  *
- * The returned values are the render-state dimensions in cells. These
- * match the active viewport size from the most recent successful update.
+ * The `out` pointer must point to a value of the type corresponding to the
+ * requested data kind (see GhosttyRenderStateData).
  *
  * @param state The render state handle (NULL returns GHOSTTY_INVALID_VALUE)
- * @param[out] out_cols On success, receives the viewport width in cells
- * @param[out] out_rows On success, receives the viewport height in cells
- * @return GHOSTTY_SUCCESS on success, GHOSTTY_INVALID_VALUE if `state`,
- *         `out_cols`, or `out_rows` is NULL
+ * @param data The data kind to query
+ * @param[out] out Pointer to receive the queried value
+ * @return GHOSTTY_SUCCESS on success, GHOSTTY_INVALID_VALUE if `state` is
+ *         NULL or `data` is not a recognized enum value
  *
  * @ingroup render
  */
-GhosttyResult ghostty_render_state_size_get(GhosttyRenderState state,
-                                            uint16_t* out_cols,
-                                            uint16_t* out_rows);
+GhosttyResult ghostty_render_state_get(GhosttyRenderState state,
+                                       GhosttyRenderStateData data,
+                                       void* out);
+
+/**
+ * Set an option on a render state.
+ *
+ * The `value` pointer must point to a value of the type corresponding to the
+ * requested option kind (see GhosttyRenderStateOption).
+ *
+ * @param state The render state handle (NULL returns GHOSTTY_INVALID_VALUE)
+ * @param option The option to set
+ * @param[in] value Pointer to the value to set (NULL returns
+ *            GHOSTTY_INVALID_VALUE)
+ * @return GHOSTTY_SUCCESS on success, GHOSTTY_INVALID_VALUE if `state` or
+ *         `value` is NULL
+ *
+ * @ingroup render
+ */
+GhosttyResult ghostty_render_state_set(GhosttyRenderState state,
+                                       GhosttyRenderStateOption option,
+                                       const void* value);
 
 /**
  * Get the current color information from a render state.
@@ -211,34 +259,6 @@ GhosttyResult ghostty_render_state_size_get(GhosttyRenderState state,
  */
 GhosttyResult ghostty_render_state_colors_get(GhosttyRenderState state,
                                               GhosttyRenderStateColors* out_colors);
-
-/**
- * Get the current dirty state of a render state.
- *
- * @param state The render state handle (NULL returns GHOSTTY_INVALID_VALUE)
- * @param[out] out_dirty On success, receives the current dirty state
- * @return GHOSTTY_SUCCESS on success, GHOSTTY_INVALID_VALUE if `state` is
- *         NULL
- *
- * @ingroup render
- */
-GhosttyResult ghostty_render_state_dirty_get(GhosttyRenderState state,
-                                             GhosttyRenderStateDirty* out_dirty);
-
-/**
- * Set the dirty state of a render state.
- *
- * This can be used by callers to clear dirty state after handling updates.
- *
- * @param state The render state handle (NULL returns GHOSTTY_INVALID_VALUE)
- * @param dirty The dirty state to set
- * @return GHOSTTY_SUCCESS on success, GHOSTTY_INVALID_VALUE if `state` is
- *         NULL or `dirty` is not a recognized enum value
- *
- * @ingroup render
- */
-GhosttyResult ghostty_render_state_dirty_set(GhosttyRenderState state,
-                                             GhosttyRenderStateDirty dirty);
 
 /**
  * Create a row iterator for a render state.

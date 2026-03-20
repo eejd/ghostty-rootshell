@@ -12,6 +12,8 @@ const terminal_c = @import("terminal.zig");
 const renderpkg = @import("../render.zig");
 const Result = @import("result.zig").Result;
 
+const log = std.log.scoped(.render_state_c);
+
 const RenderStateWrapper = struct {
     alloc: std.mem.Allocator,
     state: renderpkg.RenderState = .empty,
@@ -37,6 +39,35 @@ pub const RowIterator = ?*RowIteratorWrapper;
 
 /// C: GhosttyRenderStateDirty
 pub const Dirty = renderpkg.RenderState.Dirty;
+
+/// C: GhosttyRenderStateData
+pub const Data = enum(c_int) {
+    invalid = 0,
+    cols = 1,
+    rows = 2,
+    dirty = 3,
+
+    /// Output type expected for querying the data of the given kind.
+    pub fn OutType(comptime self: Data) type {
+        return switch (self) {
+            .invalid => void,
+            .cols, .rows => size.CellCountInt,
+            .dirty => Dirty,
+        };
+    }
+};
+
+/// C: GhosttyRenderStateOption
+pub const SetOption = enum(c_int) {
+    dirty = 0,
+
+    /// Input type expected for setting the option.
+    pub fn InType(comptime self: SetOption) type {
+        return switch (self) {
+            .dirty => Dirty,
+        };
+    }
+};
 
 /// C: GhosttyRenderStateColors
 pub const Colors = extern struct {
@@ -88,17 +119,74 @@ pub fn update(
     return .success;
 }
 
-pub fn size_get(
+pub fn get(
     state_: RenderState,
-    out_cols_: ?*size.CellCountInt,
-    out_rows_: ?*size.CellCountInt,
+    data: Data,
+    out: ?*anyopaque,
 ) callconv(.c) Result {
-    const state = state_ orelse return .invalid_value;
-    const out_cols = out_cols_ orelse return .invalid_value;
-    const out_rows = out_rows_ orelse return .invalid_value;
+    if (comptime std.debug.runtime_safety) {
+        _ = std.meta.intToEnum(Data, @intFromEnum(data)) catch {
+            log.warn("render_state_get invalid data value={d}", .{@intFromEnum(data)});
+            return .invalid_value;
+        };
+    }
 
-    out_cols.* = state.state.cols;
-    out_rows.* = state.state.rows;
+    return switch (data) {
+        inline else => |comptime_data| getTyped(
+            state_,
+            comptime_data,
+            @ptrCast(@alignCast(out)),
+        ),
+    };
+}
+
+fn getTyped(
+    state_: RenderState,
+    comptime data: Data,
+    out: *data.OutType(),
+) Result {
+    const state = state_ orelse return .invalid_value;
+    switch (data) {
+        .invalid => return .invalid_value,
+        .cols => out.* = state.state.cols,
+        .rows => out.* = state.state.rows,
+        .dirty => out.* = state.state.dirty,
+    }
+
+    return .success;
+}
+
+pub fn set(
+    state_: RenderState,
+    option: SetOption,
+    value: ?*const anyopaque,
+) callconv(.c) Result {
+    if (comptime std.debug.runtime_safety) {
+        _ = std.meta.intToEnum(SetOption, @intFromEnum(option)) catch {
+            log.warn("render_state_set invalid option value={d}", .{@intFromEnum(option)});
+            return .invalid_value;
+        };
+    }
+
+    return switch (option) {
+        inline else => |comptime_option| setTyped(
+            state_,
+            comptime_option,
+            @ptrCast(@alignCast(value orelse return .invalid_value)),
+        ),
+    };
+}
+
+fn setTyped(
+    state_: RenderState,
+    comptime option: SetOption,
+    value: *const option.InType(),
+) Result {
+    const state = state_ orelse return .invalid_value;
+    switch (option) {
+        .dirty => state.state.dirty = value.*,
+    }
+
     return .success;
 }
 
@@ -164,25 +252,7 @@ pub fn colors_get(
     return .success;
 }
 
-pub fn dirty_get(
-    state_: RenderState,
-    out_dirty: *Dirty,
-) callconv(.c) Result {
-    const state = state_ orelse return .invalid_value;
-    out_dirty.* = state.state.dirty;
-    return .success;
-}
 
-pub fn dirty_set(
-    state_: RenderState,
-    dirty_: c_int,
-) callconv(.c) Result {
-    const state = state_ orelse return .invalid_value;
-    const dirty = std.meta.intToEnum(Dirty, dirty_) catch
-        return .invalid_value;
-    state.state.dirty = dirty;
-    return .success;
-}
 
 pub fn row_iterator_new(
     alloc_: ?*const CAllocator,
@@ -281,7 +351,12 @@ test "render: update invalid value" {
     try testing.expectEqual(Result.invalid_value, update(state, null));
 }
 
-test "render: size get invalid value" {
+test "render: get invalid value" {
+    var cols: size.CellCountInt = 0;
+    try testing.expectEqual(Result.invalid_value, get(null, .cols, @ptrCast(&cols)));
+}
+
+test "render: get invalid data" {
     var state: RenderState = null;
     try testing.expectEqual(Result.success, new(
         &lib_alloc.test_allocator,
@@ -289,23 +364,7 @@ test "render: size get invalid value" {
     ));
     defer free(state);
 
-    var cols: size.CellCountInt = 0;
-    var rows: size.CellCountInt = 0;
-    try testing.expectEqual(Result.invalid_value, size_get(
-        null,
-        &cols,
-        &rows,
-    ));
-    try testing.expectEqual(Result.invalid_value, size_get(
-        state,
-        null,
-        &rows,
-    ));
-    try testing.expectEqual(Result.invalid_value, size_get(
-        state,
-        &cols,
-        null,
-    ));
+    try testing.expectEqual(Result.invalid_value, get(state, .invalid, null));
 }
 
 test "render: colors get invalid value" {
@@ -326,23 +385,14 @@ test "render: colors get invalid value" {
     try testing.expectEqual(Result.invalid_value, colors_get(state, &colors));
 }
 
-test "render: dirty get/set invalid value" {
-    var state: RenderState = null;
-    try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
-        &state,
-    ));
-    defer free(state);
-
+test "render: get/set dirty invalid value" {
     var dirty: Dirty = .false;
-    try testing.expectEqual(Result.invalid_value, dirty_get(null, &dirty));
-    try testing.expectEqual(Result.invalid_value, dirty_set(
-        null,
-        @intFromEnum(Dirty.full),
-    ));
+    try testing.expectEqual(Result.invalid_value, get(null, .dirty, @ptrCast(&dirty)));
+    const dirty_full: Dirty = .full;
+    try testing.expectEqual(Result.invalid_value, set(null, .dirty, @ptrCast(&dirty_full)));
 }
 
-test "render: dirty get/set" {
+test "render: get/set dirty" {
     var state: RenderState = null;
     try testing.expectEqual(Result.success, new(
         &lib_alloc.test_allocator,
@@ -351,25 +401,21 @@ test "render: dirty get/set" {
     defer free(state);
 
     var dirty: Dirty = undefined;
-    try testing.expectEqual(Result.success, dirty_get(state, &dirty));
+    try testing.expectEqual(Result.success, get(state, .dirty, @ptrCast(&dirty)));
     try testing.expectEqual(Dirty.false, dirty);
 
-    try testing.expectEqual(Result.success, dirty_set(
-        state,
-        @intFromEnum(Dirty.partial),
-    ));
-    try testing.expectEqual(Result.success, dirty_get(state, &dirty));
+    const dirty_partial: Dirty = .partial;
+    try testing.expectEqual(Result.success, set(state, .dirty, @ptrCast(&dirty_partial)));
+    try testing.expectEqual(Result.success, get(state, .dirty, @ptrCast(&dirty)));
     try testing.expectEqual(Dirty.partial, dirty);
 
-    try testing.expectEqual(Result.success, dirty_set(
-        state,
-        @intFromEnum(Dirty.full),
-    ));
-    try testing.expectEqual(Result.success, dirty_get(state, &dirty));
+    const dirty_full: Dirty = .full;
+    try testing.expectEqual(Result.success, set(state, .dirty, @ptrCast(&dirty_full)));
+    try testing.expectEqual(Result.success, get(state, .dirty, @ptrCast(&dirty)));
     try testing.expectEqual(Dirty.full, dirty);
 }
 
-test "render: dirty set invalid enum value" {
+test "render: set null value" {
     var state: RenderState = null;
     try testing.expectEqual(Result.success, new(
         &lib_alloc.test_allocator,
@@ -377,7 +423,7 @@ test "render: dirty set invalid enum value" {
     ));
     defer free(state);
 
-    try testing.expectEqual(Result.invalid_value, dirty_set(state, 99));
+    try testing.expectEqual(Result.invalid_value, set(state, .dirty, null));
 }
 
 test "render: row iterator new invalid value" {
@@ -650,14 +696,11 @@ test "render: update" {
     try testing.expectEqual(Result.success, update(state, terminal));
 
     var cols: size.CellCountInt = 0;
-    var rows: size.CellCountInt = 0;
-    try testing.expectEqual(Result.success, size_get(
-        state,
-        &cols,
-        &rows,
-    ));
+    var rows_val: size.CellCountInt = 0;
+    try testing.expectEqual(Result.success, get(state, .cols, @ptrCast(&cols)));
+    try testing.expectEqual(Result.success, get(state, .rows, @ptrCast(&rows_val)));
     try testing.expectEqual(@as(size.CellCountInt, 80), cols);
-    try testing.expectEqual(@as(size.CellCountInt, 24), rows);
+    try testing.expectEqual(@as(size.CellCountInt, 24), rows_val);
 }
 
 test "render: colors get" {
