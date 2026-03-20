@@ -5,7 +5,7 @@ const Row = page.Row;
 const Result = @import("result.zig").Result;
 
 /// C: GhosttyRow
-pub const CRow = u64;
+pub const CRow = Row.C;
 
 /// C: GhosttyRowSemanticPrompt
 pub const SemanticPrompt = enum(c_int) {

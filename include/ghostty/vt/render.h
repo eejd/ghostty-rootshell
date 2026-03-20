@@ -125,6 +125,32 @@ typedef enum {
 } GhosttyRenderStateOption;
 
 /**
+ * Queryable data kinds for ghostty_render_state_row_get().
+ *
+ * @ingroup render
+ */
+typedef enum {
+  /** Invalid / sentinel value. */
+  GHOSTTY_RENDER_STATE_ROW_DATA_INVALID = 0,
+
+  /** Whether the current row is dirty (bool). */
+  GHOSTTY_RENDER_STATE_ROW_DATA_DIRTY = 1,
+
+  /** The raw row value (GhosttyRow). */
+  GHOSTTY_RENDER_STATE_ROW_DATA_RAW = 2,
+} GhosttyRenderStateRowData;
+
+/**
+ * Settable options for ghostty_render_state_row_set().
+ *
+ * @ingroup render
+ */
+typedef enum {
+  /** Set dirty state for the current row (bool). */
+  GHOSTTY_RENDER_STATE_ROW_OPTION_DIRTY = 0,
+} GhosttyRenderStateRowOption;
+
+/**
  * Render-state color information.
  *
  * This struct uses the sized-struct ABI pattern. Initialize with
@@ -302,37 +328,47 @@ void ghostty_render_state_row_iterator_free(GhosttyRenderStateRowIterator iterat
 bool ghostty_render_state_row_iterator_next(GhosttyRenderStateRowIterator iterator);
 
 /**
- * Get the dirty state of the current row in a render-state row iterator.
+ * Get a value from the current row in a render-state row iterator.
  *
- * This reads the dirty flag at the iterator's current row position.
+ * The `out` pointer must point to a value of the type corresponding to the
+ * requested data kind (see GhosttyRenderStateRowData).
  * Call ghostty_render_state_row_iterator_next() at least once before
  * calling this function.
  *
- * @param iterator The iterator handle to query (may be NULL)
- * @return true if the current row is dirty, false if the row is clean,
- *         `iterator` is NULL, or the iterator is not positioned on a row
- *
- * @ingroup render
- */
-bool ghostty_render_state_row_dirty_get(GhosttyRenderStateRowIterator iterator);
-
-/**
- * Set the dirty state of the current row in a render-state row iterator.
- *
- * This writes the dirty flag at the iterator's current row position.
- * Call ghostty_render_state_row_iterator_next() at least once before
- * calling this function.
- *
- * @param iterator The iterator handle to update (may be NULL)
- * @param dirty The dirty state to set for the current row
+ * @param iterator The iterator handle to query (NULL returns GHOSTTY_INVALID_VALUE)
+ * @param data The data kind to query
+ * @param[out] out Pointer to receive the queried value
  * @return GHOSTTY_SUCCESS on success, GHOSTTY_INVALID_VALUE if
  *         `iterator` is NULL or the iterator is not positioned on a row
  *
  * @ingroup render
  */
-GhosttyResult ghostty_render_state_row_dirty_set(
+GhosttyResult ghostty_render_state_row_get(
     GhosttyRenderStateRowIterator iterator,
-    bool dirty);
+    GhosttyRenderStateRowData data,
+    void* out);
+
+/**
+ * Set an option on the current row in a render-state row iterator.
+ *
+ * The `value` pointer must point to a value of the type corresponding to the
+ * requested option kind (see GhosttyRenderStateRowOption).
+ * Call ghostty_render_state_row_iterator_next() at least once before
+ * calling this function.
+ *
+ * @param iterator The iterator handle to update (NULL returns GHOSTTY_INVALID_VALUE)
+ * @param option The option to set
+ * @param[in] value Pointer to the value to set (NULL returns
+ *            GHOSTTY_INVALID_VALUE)
+ * @return GHOSTTY_SUCCESS on success, GHOSTTY_INVALID_VALUE if
+ *         `iterator` is NULL or the iterator is not positioned on a row
+ *
+ * @ingroup render
+ */
+GhosttyResult ghostty_render_state_row_set(
+    GhosttyRenderStateRowIterator iterator,
+    GhosttyRenderStateRowOption option,
+    const void* value);
 
 /** @} */
 

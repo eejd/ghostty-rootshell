@@ -11,6 +11,7 @@ const Style = @import("../style.zig").Style;
 const terminal_c = @import("terminal.zig");
 const renderpkg = @import("../render.zig");
 const Result = @import("result.zig").Result;
+const row = @import("row.zig");
 
 const log = std.log.scoped(.render_state_c);
 
@@ -309,19 +310,103 @@ pub fn row_iterator_next(iterator_: RowIterator) callconv(.c) bool {
     return true;
 }
 
-pub fn row_dirty_get(iterator_: RowIterator) callconv(.c) bool {
-    const it = iterator_ orelse return false;
-    const y = it.y orelse return false;
-    return it.dirty[y];
+/// C: GhosttyRenderStateRowData
+pub const RowData = enum(c_int) {
+    invalid = 0,
+    dirty = 1,
+    raw = 2,
+
+    /// Output type expected for querying the data of the given kind.
+    pub fn OutType(comptime self: RowData) type {
+        return switch (self) {
+            .invalid => void,
+            .dirty => bool,
+            .raw => row.CRow,
+        };
+    }
+};
+
+/// C: GhosttyRenderStateRowOption
+pub const RowOption = enum(c_int) {
+    dirty = 0,
+
+    /// Input type expected for setting the option.
+    pub fn InType(comptime self: RowOption) type {
+        return switch (self) {
+            .dirty => bool,
+        };
+    }
+};
+
+pub fn row_get(
+    iterator_: RowIterator,
+    data: RowData,
+    out: ?*anyopaque,
+) callconv(.c) Result {
+    if (comptime std.debug.runtime_safety) {
+        _ = std.meta.intToEnum(RowData, @intFromEnum(data)) catch {
+            log.warn("render_state_row_get invalid data value={d}", .{@intFromEnum(data)});
+            return .invalid_value;
+        };
+    }
+
+    return switch (data) {
+        inline else => |comptime_data| rowGetTyped(
+            iterator_,
+            comptime_data,
+            @ptrCast(@alignCast(out)),
+        ),
+    };
 }
 
-pub fn row_dirty_set(
+fn rowGetTyped(
     iterator_: RowIterator,
-    dirty: bool,
-) callconv(.c) Result {
+    comptime data: RowData,
+    out: *data.OutType(),
+) Result {
     const it = iterator_ orelse return .invalid_value;
     const y = it.y orelse return .invalid_value;
-    it.dirty[y] = dirty;
+    switch (data) {
+        .invalid => return .invalid_value,
+        .dirty => out.* = it.dirty[y],
+        .raw => out.* = it.raws[y].cval(),
+    }
+
+    return .success;
+}
+
+pub fn row_set(
+    iterator_: RowIterator,
+    option: RowOption,
+    value: ?*const anyopaque,
+) callconv(.c) Result {
+    if (comptime std.debug.runtime_safety) {
+        _ = std.meta.intToEnum(RowOption, @intFromEnum(option)) catch {
+            log.warn("render_state_row_set invalid option value={d}", .{@intFromEnum(option)});
+            return .invalid_value;
+        };
+    }
+
+    return switch (option) {
+        inline else => |comptime_option| rowSetTyped(
+            iterator_,
+            comptime_option,
+            @ptrCast(@alignCast(value orelse return .invalid_value)),
+        ),
+    };
+}
+
+fn rowSetTyped(
+    iterator_: RowIterator,
+    comptime option: RowOption,
+    value: *const option.InType(),
+) Result {
+    const it = iterator_ orelse return .invalid_value;
+    const y = it.y orelse return .invalid_value;
+    switch (option) {
+        .dirty => it.dirty[y] = value.*,
+    }
+
     return .success;
 }
 
@@ -495,13 +580,12 @@ test "render: row iterator next null" {
     try testing.expect(!row_iterator_next(null));
 }
 
-test "render: row iterator dirty get null" {
-    try testing.expect(!row_dirty_get(null));
+test "render: row get null" {
+    var dirty: bool = undefined;
+    try testing.expectEqual(Result.invalid_value, row_get(null, .dirty, @ptrCast(&dirty)));
 }
 
-test "render: row iterator dirty set invalid value" {
-    try testing.expectEqual(Result.invalid_value, row_dirty_set(null, false));
-
+test "render: row get invalid data" {
     var terminal: terminal_c.Terminal = null;
     try testing.expectEqual(Result.success, terminal_c.new(
         &lib_alloc.test_allocator,
@@ -531,10 +615,16 @@ test "render: row iterator dirty set invalid value" {
     ));
     defer row_iterator_free(iterator);
 
-    try testing.expectEqual(Result.invalid_value, row_dirty_set(iterator, false));
+    try testing.expect(row_iterator_next(iterator));
+    try testing.expectEqual(Result.invalid_value, row_get(iterator, .invalid, null));
 }
 
-test "render: row iterator dirty get before iteration" {
+test "render: row set null" {
+    const dirty = false;
+    try testing.expectEqual(Result.invalid_value, row_set(null, .dirty, @ptrCast(&dirty)));
+}
+
+test "render: row set before iteration" {
     var terminal: terminal_c.Terminal = null;
     try testing.expectEqual(Result.success, terminal_c.new(
         &lib_alloc.test_allocator,
@@ -564,10 +654,45 @@ test "render: row iterator dirty get before iteration" {
     ));
     defer row_iterator_free(iterator);
 
-    try testing.expect(!row_dirty_get(iterator));
+    const dirty = false;
+    try testing.expectEqual(Result.invalid_value, row_set(iterator, .dirty, @ptrCast(&dirty)));
 }
 
-test "render: row iterator dirty get" {
+test "render: row get before iteration" {
+    var terminal: terminal_c.Terminal = null;
+    try testing.expectEqual(Result.success, terminal_c.new(
+        &lib_alloc.test_allocator,
+        &terminal,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 10_000,
+        },
+    ));
+    defer terminal_c.free(terminal);
+
+    var state: RenderState = null;
+    try testing.expectEqual(Result.success, new(
+        &lib_alloc.test_allocator,
+        &state,
+    ));
+    defer free(state);
+
+    try testing.expectEqual(Result.success, update(state, terminal));
+
+    var iterator: RowIterator = null;
+    try testing.expectEqual(Result.success, row_iterator_new(
+        &lib_alloc.test_allocator,
+        state,
+        &iterator,
+    ));
+    defer row_iterator_free(iterator);
+
+    var dirty: bool = undefined;
+    try testing.expectEqual(Result.invalid_value, row_get(iterator, .dirty, @ptrCast(&dirty)));
+}
+
+test "render: row get/set dirty" {
     var terminal: terminal_c.Terminal = null;
     try testing.expectEqual(Result.success, terminal_c.new(
         &lib_alloc.test_allocator,
@@ -603,10 +728,13 @@ test "render: row iterator dirty get" {
     defer row_iterator_free(it);
 
     try testing.expect(row_iterator_next(it));
-    try testing.expect(row_dirty_get(it));
+    var dirty: bool = undefined;
+    try testing.expectEqual(Result.success, row_get(it, .dirty, @ptrCast(&dirty)));
+    try testing.expect(dirty);
 
     // Clear dirty on this row.
-    try testing.expectEqual(Result.success, row_dirty_set(it, false));
+    const dirty_false = false;
+    try testing.expectEqual(Result.success, row_set(it, .dirty, @ptrCast(&dirty_false)));
 
     // It should not be dirty anymore.
     var it2: RowIterator = null;
@@ -618,7 +746,8 @@ test "render: row iterator dirty get" {
     defer row_iterator_free(it2);
 
     try testing.expect(row_iterator_next(it2));
-    try testing.expect(!row_dirty_get(it2));
+    try testing.expectEqual(Result.success, row_get(it2, .dirty, @ptrCast(&dirty)));
+    try testing.expect(!dirty);
 }
 
 test "render: row iterator next" {
