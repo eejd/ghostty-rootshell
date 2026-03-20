@@ -146,7 +146,27 @@ pub fn add(
                 .target = target,
                 .optimize = optimize,
             });
-            c.defineCMacro("ZIG_TARGET", @tagName(target.result.os.tag));
+            inline for (@typeInfo(std.Target.Os.Tag).@"enum".fields) |field| {
+                c.defineCMacro(
+                    b.fmt(
+                        "ZIG_TARGET_{s}",
+                        .{try std.ascii.allocUpperString(b.allocator, field.name)},
+                    ),
+                    b.fmt("{d}", .{field.value}),
+                );
+            }
+            c.defineCMacro(
+                "ZIG_TARGET",
+                b.fmt(
+                    "ZIG_TARGET_{s}",
+                    .{
+                        try std.ascii.allocUpperString(
+                            b.allocator,
+                            @tagName(target.result.os.tag),
+                        ),
+                    },
+                ),
+            );
             switch (target.result.os.tag) {
                 .macos => {
                     const libc = try std.zig.LibCInstallation.findNative(.{
