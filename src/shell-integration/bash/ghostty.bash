@@ -278,24 +278,20 @@ if (( BASH_VERSINFO[0] > 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] >= 4) )
     [[ -n "$cmd" ]] && __ghostty_preexec "$cmd"
   }
 
-  # Use function substitution in 5.3+. Otherwise, use command substitution.
-  # Any output (including escape sequences) goes to the terminal.
-  # Only define if not already set (allows re-sourcing).
-  if [[ -z "${__ghostty_ps0+x}" ]]; then
-    if (( BASH_VERSINFO[0] > 5 || (BASH_VERSINFO[0] == 5 && BASH_VERSINFO[1] >= 3) )); then
-      # shellcheck disable=SC2016
-      builtin readonly __ghostty_ps0='${ __ghostty_preexec_hook; }'
-    else
-      # shellcheck disable=SC2016
-      builtin readonly __ghostty_ps0='$(__ghostty_preexec_hook >/dev/tty)'
-    fi
-  fi
-
   __ghostty_hook() {
     builtin local ret=$?
     __ghostty_precmd "$ret"
-    if [[ "$PS0" != *"$__ghostty_ps0"* ]]; then
-      PS0=$PS0"${__ghostty_ps0}"
+
+    # Append preexec hook to PS0 if not already present.
+    # Use function substitution in 5.3+, otherwise command substitution.
+    if [[ "$PS0" != *"__ghostty_preexec_hook"* ]]; then
+      if (( BASH_VERSINFO[0] > 5 || (BASH_VERSINFO[0] == 5 && BASH_VERSINFO[1] >= 3) )); then
+        # shellcheck disable=SC2016
+        PS0+='${ __ghostty_preexec_hook; }'
+      else
+        # shellcheck disable=SC2016
+        PS0+='$(__ghostty_preexec_hook >/dev/tty)'
+      fi
     fi
   }
 
