@@ -80,6 +80,13 @@ typedef struct GhosttyRenderState* GhosttyRenderState;
 typedef struct GhosttyRenderStateRowIterator* GhosttyRenderStateRowIterator;
 
 /**
+ * Opaque handle to render-state row cells.
+ *
+ * @ingroup render
+ */
+typedef struct GhosttyRenderStateRowCells* GhosttyRenderStateRowCells;
+
+/**
  * Dirty state of a render state after update.
  *
  * @ingroup render
@@ -138,6 +145,10 @@ typedef enum {
 
   /** The raw row value (GhosttyRow). */
   GHOSTTY_RENDER_STATE_ROW_DATA_RAW = 2,
+
+  /** Populate a pre-allocated GhosttyRenderStateRowCells with cell data for
+   *  the current row (GhosttyRenderStateRowCells). */
+  GHOSTTY_RENDER_STATE_ROW_DATA_CELLS = 3,
 } GhosttyRenderStateRowData;
 
 /**
@@ -369,6 +380,36 @@ GhosttyResult ghostty_render_state_row_set(
     GhosttyRenderStateRowIterator iterator,
     GhosttyRenderStateRowOption option,
     const void* value);
+
+/**
+ * Create a new row cells instance.
+ *
+ * All fields except the allocator are left undefined until populated
+ * via ghostty_render_state_row_get() with
+ * GHOSTTY_RENDER_STATE_ROW_DATA_CELLS.
+ *
+ * You can reuse this value repeatedly with ghostty_render_state_row_get() to 
+ * avoid allocating a new cells container for every row.
+ *
+ * @param allocator Pointer to allocator, or NULL to use the default allocator
+ * @param[out] out_cells On success, receives the created row cells handle
+ * @return GHOSTTY_SUCCESS on success, GHOSTTY_OUT_OF_MEMORY on allocation
+ *         failure
+ *
+ * @ingroup render
+ */
+GhosttyResult ghostty_render_state_row_cells_new(
+    const GhosttyAllocator* allocator,
+    GhosttyRenderStateRowCells* out_cells);
+
+/**
+ * Free a row cells instance.
+ *
+ * @param cells The row cells handle to free (may be NULL)
+ *
+ * @ingroup render
+ */
+void ghostty_render_state_row_cells_free(GhosttyRenderStateRowCells cells);
 
 /** @} */
 

@@ -197,6 +197,8 @@ comptime {
         @export(&c.render_state_row_get, .{ .name = "ghostty_render_state_row_get" });
         @export(&c.render_state_row_set, .{ .name = "ghostty_render_state_row_set" });
         @export(&c.render_state_row_iterator_free, .{ .name = "ghostty_render_state_row_iterator_free" });
+        @export(&c.render_state_row_cells_new, .{ .name = "ghostty_render_state_row_cells_new" });
+        @export(&c.render_state_row_cells_free, .{ .name = "ghostty_render_state_row_cells_free" });
         @export(&c.render_state_free, .{ .name = "ghostty_render_state_free" });
         @export(&c.terminal_new, .{ .name = "ghostty_terminal_new" });
         @export(&c.terminal_free, .{ .name = "ghostty_terminal_free" });

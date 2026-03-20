@@ -32,11 +32,22 @@ const RowIteratorWrapper = struct {
     dirty: []bool,
 };
 
+const RowCellsWrapper = struct {
+    alloc: std.mem.Allocator,
+    x: ?size.CellCountInt,
+    raws: []const page.Cell,
+    graphemes: []const []const u21,
+    styles: []const Style,
+};
+
 /// C: GhosttyRenderState
 pub const RenderState = ?*RenderStateWrapper;
 
 /// C: GhosttyRenderStateRowIterator
 pub const RowIterator = ?*RowIteratorWrapper;
+
+/// C: GhosttyRenderStateRowCells
+pub const RowCells = ?*RowCellsWrapper;
 
 /// C: GhosttyRenderStateDirty
 pub const Dirty = renderpkg.RenderState.Dirty;
@@ -253,8 +264,6 @@ pub fn colors_get(
     return .success;
 }
 
-
-
 pub fn row_iterator_new(
     alloc_: ?*const CAllocator,
     state_: RenderState,
@@ -310,11 +319,38 @@ pub fn row_iterator_next(iterator_: RowIterator) callconv(.c) bool {
     return true;
 }
 
+pub fn row_cells_new(
+    alloc_: ?*const CAllocator,
+    result: *RowCells,
+) callconv(.c) Result {
+    const alloc = lib_alloc.default(alloc_);
+    const ptr = alloc.create(RowCellsWrapper) catch {
+        result.* = null;
+        return .out_of_memory;
+    };
+    ptr.* = .{
+        .alloc = alloc,
+        .x = undefined,
+        .raws = undefined,
+        .graphemes = undefined,
+        .styles = undefined,
+    };
+    result.* = ptr;
+    return .success;
+}
+
+pub fn row_cells_free(cells_: RowCells) callconv(.c) void {
+    const cells = cells_ orelse return;
+    const alloc = cells.alloc;
+    alloc.destroy(cells);
+}
+
 /// C: GhosttyRenderStateRowData
 pub const RowData = enum(c_int) {
     invalid = 0,
     dirty = 1,
     raw = 2,
+    cells = 3,
 
     /// Output type expected for querying the data of the given kind.
     pub fn OutType(comptime self: RowData) type {
@@ -322,6 +358,7 @@ pub const RowData = enum(c_int) {
             .invalid => void,
             .dirty => bool,
             .raw => row.CRow,
+            .cells => RowCells,
         };
     }
 };
@@ -370,6 +407,17 @@ fn rowGetTyped(
         .invalid => return .invalid_value,
         .dirty => out.* = it.dirty[y],
         .raw => out.* = it.raws[y].cval(),
+        .cells => {
+            const cells = out.* orelse return .invalid_value;
+            const cell_data = it.cells[y].slice();
+            cells.* = .{
+                .alloc = cells.alloc,
+                .x = null,
+                .raws = cell_data.items(.raw),
+                .graphemes = cell_data.items(.grapheme),
+                .styles = cell_data.items(.style),
+            };
+        },
     }
 
     return .success;
