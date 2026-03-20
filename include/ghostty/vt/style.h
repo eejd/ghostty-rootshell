@@ -29,6 +29,16 @@ extern "C" {
  */
 
 /**
+ * Style identifier type.
+ *
+ * Used to look up the full style from a grid reference.
+ * Obtain this from a cell via GHOSTTY_CELL_DATA_STYLE_ID.
+ *
+ * @ingroup style
+ */
+typedef uint16_t GhosttyStyleId;
+
+/**
  * Style color tags.
  *
  * These values identify the type of color in a style color.

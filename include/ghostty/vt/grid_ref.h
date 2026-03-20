@@ -12,6 +12,7 @@
 #include <stdint.h>
 #include <ghostty/vt/types.h>
 #include <ghostty/vt/screen.h>
+#include <ghostty/vt/style.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -76,6 +77,46 @@ GhosttyResult ghostty_grid_ref_cell(const GhosttyGridRef *ref,
  */
 GhosttyResult ghostty_grid_ref_row(const GhosttyGridRef *ref,
                                    GhosttyRow *out_row);
+
+/**
+ * Get the grapheme cluster codepoints for the cell at the grid reference's
+ * position.
+ *
+ * Writes the full grapheme cluster (the cell's primary codepoint followed by
+ * any combining codepoints) into the provided buffer. If the cell has no text,
+ * out_len is set to 0 and GHOSTTY_SUCCESS is returned.
+ *
+ * If the buffer is too small (or NULL), the function returns
+ * GHOSTTY_OUT_OF_SPACE and writes the required number of codepoints to
+ * out_len. The caller can then retry with a sufficiently sized buffer.
+ *
+ * @param ref Pointer to the grid reference
+ * @param buf Output buffer of uint32_t codepoints (may be NULL)
+ * @param buf_len Number of uint32_t elements in the buffer
+ * @param[out] out_len On success, the number of codepoints written. On
+ *             GHOSTTY_OUT_OF_SPACE, the required buffer size in codepoints.
+ * @return GHOSTTY_SUCCESS on success, GHOSTTY_INVALID_VALUE if the ref's
+ *         node is NULL, GHOSTTY_OUT_OF_SPACE if the buffer is too small
+ *
+ * @ingroup grid_ref
+ */
+GhosttyResult ghostty_grid_ref_graphemes(const GhosttyGridRef *ref,
+                                         uint32_t *buf,
+                                         size_t buf_len,
+                                         size_t *out_len);
+
+/**
+ * Get the style of the cell at the grid reference's position.
+ *
+ * @param ref Pointer to the grid reference
+ * @param[out] out_style On success, set to the cell's style (may be NULL)
+ * @return GHOSTTY_SUCCESS on success, GHOSTTY_INVALID_VALUE if the ref's
+ *         node is NULL
+ *
+ * @ingroup grid_ref
+ */
+GhosttyResult ghostty_grid_ref_style(const GhosttyGridRef *ref,
+                                     GhosttyStyle *out_style);
 
 /** @} */
 

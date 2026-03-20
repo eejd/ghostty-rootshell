@@ -114,6 +114,8 @@ pub const terminal_grid_ref = terminal.grid_ref;
 const grid_ref = @import("grid_ref.zig");
 pub const grid_ref_cell = grid_ref.grid_ref_cell;
 pub const grid_ref_row = grid_ref.grid_ref_row;
+pub const grid_ref_graphemes = grid_ref.grid_ref_graphemes;
+pub const grid_ref_style = grid_ref.grid_ref_style;
 
 test {
     _ = cell;
