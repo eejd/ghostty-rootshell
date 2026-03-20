@@ -136,51 +136,24 @@ pub fn add(
     self.config.terminalOptions().add(b, step.root_module);
 
     // C imports needed to manage/create PTYs
-    switch (target.result.os.tag) {
-        .freebsd,
-        .linux,
-        .macos,
-        => {
-            const c = b.addTranslateC(.{
-                .root_source_file = b.path("src/pty.c"),
-                .target = target,
-                .optimize = optimize,
-            });
-            inline for (@typeInfo(std.Target.Os.Tag).@"enum".fields) |field| {
-                c.defineCMacro(
-                    b.fmt(
-                        "ZIG_TARGET_{s}",
-                        .{try std.ascii.allocUpperString(b.allocator, field.name)},
-                    ),
-                    b.fmt("{d}", .{field.value}),
-                );
-            }
-            c.defineCMacro(
-                "ZIG_TARGET",
-                b.fmt(
-                    "ZIG_TARGET_{s}",
-                    .{
-                        try std.ascii.allocUpperString(
-                            b.allocator,
-                            @tagName(target.result.os.tag),
-                        ),
-                    },
-                ),
-            );
-            switch (target.result.os.tag) {
-                .macos => {
-                    const libc = try std.zig.LibCInstallation.findNative(.{
-                        .allocator = b.allocator,
-                        .target = &target.result,
-                        .verbose = false,
-                    });
-                    c.addSystemIncludePath(.{ .cwd_relative = libc.sys_include_dir.? });
-                },
-                else => {},
-            }
-            step.root_module.addImport("pty-c", c.createModule());
-        },
-        else => {},
+    {
+        const c = b.addTranslateC(.{
+            .root_source_file = b.path("src/pty.c"),
+            .target = target,
+            .optimize = optimize,
+        });
+        switch (target.result.os.tag) {
+            .macos => {
+                const libc = try std.zig.LibCInstallation.findNative(.{
+                    .allocator = b.allocator,
+                    .target = &target.result,
+                    .verbose = false,
+                });
+                c.addSystemIncludePath(.{ .cwd_relative = libc.sys_include_dir.? });
+            },
+            else => {},
+        }
+        step.root_module.addImport("pty-c", c.createModule());
     }
 
     // Freetype. We always include this even if our font backend doesn't

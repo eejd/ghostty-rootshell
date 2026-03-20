@@ -1,19 +1,20 @@
-#if ZIG_TARGET == ZIG_TARGET_FREEBSD
+#if defined(__FreeBSD__)
+
   #include <termios.h> // ioctl and constants
   #include <libutil.h> // openpty
   #include <stdlib.h> // ptsname_r
   #include <unistd.h> // tcgetpgrp
-#endif
 
-#if ZIG_TARGET == ZIG_TARGET_LINUX
+#elif defined(__linux__)
+
   #define _GNU_SOURCE // ptsname_r
   #include <pty.h> // openpty
   #include <stdlib.h> // ptsname_r
   #include <sys/ioctl.h> // ioctl and constants
   #include <unistd.h> // tcgetpgrp, setsid
-#endif
 
-#if ZIG_TARGET == ZIG_TARGET_MACOS
+#elif defined(__APPLE__)
+
   #include <sys/ioctl.h> // ioctl and constants
   #include <sys/ttycom.h>  // ioctl and constants for TIOCPTYGNAME
   #include <sys/types.h>
@@ -31,4 +32,9 @@
   #ifndef tiocgwinsz
   #define tiocgwinsz 1074295912
   #endif
+
+#else
+
+  #error "unsupported platform"
+
 #endif
