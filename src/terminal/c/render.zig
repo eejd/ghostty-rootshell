@@ -12,6 +12,7 @@ const terminal_c = @import("terminal.zig");
 const renderpkg = @import("../render.zig");
 const Result = @import("result.zig").Result;
 const row = @import("row.zig");
+const style_c = @import("style.zig");
 
 const log = std.log.scoped(.render_state_c);
 
@@ -331,10 +332,101 @@ pub fn row_cells_new(
     return .success;
 }
 
+pub fn row_cells_next(cells_: RowCells) callconv(.c) bool {
+    const cells = cells_ orelse return false;
+    const next_x: size.CellCountInt = if (cells.x) |x| x + 1 else 0;
+    if (next_x >= cells.raws.len) return false;
+    cells.x = next_x;
+    return true;
+}
+
+pub fn row_cells_select(cells_: RowCells, x: size.CellCountInt) callconv(.c) Result {
+    const cells = cells_ orelse return .invalid_value;
+    if (x >= cells.raws.len) return .invalid_value;
+    cells.x = x;
+    return .success;
+}
+
 pub fn row_cells_free(cells_: RowCells) callconv(.c) void {
     const cells = cells_ orelse return;
     const alloc = cells.alloc;
     alloc.destroy(cells);
+}
+
+/// C: GhosttyRenderStateRowCellsData
+pub const RowCellsData = enum(c_int) {
+    invalid = 0,
+    raw = 1,
+    style = 2,
+    graphemes_len = 3,
+    graphemes_buf = 4,
+
+    /// Output type expected for querying the data of the given kind.
+    pub fn OutType(comptime self: RowCellsData) type {
+        return switch (self) {
+            .invalid => void,
+            .raw => page.Cell.C,
+            .style => style_c.Style,
+            .graphemes_len => u32,
+            .graphemes_buf => [*]u32,
+        };
+    }
+};
+
+pub fn row_cells_get(
+    cells_: RowCells,
+    data: RowCellsData,
+    out: ?*anyopaque,
+) callconv(.c) Result {
+    if (comptime std.debug.runtime_safety) {
+        _ = std.meta.intToEnum(RowCellsData, @intFromEnum(data)) catch {
+            log.warn("render_state_row_cells_get invalid data value={d}", .{@intFromEnum(data)});
+            return .invalid_value;
+        };
+    }
+
+    return switch (data) {
+        inline else => |comptime_data| rowCellsGetTyped(
+            cells_,
+            comptime_data,
+            @ptrCast(@alignCast(out)),
+        ),
+    };
+}
+
+fn rowCellsGetTyped(
+    cells_: RowCells,
+    comptime data: RowCellsData,
+    out: *data.OutType(),
+) Result {
+    const cells = cells_ orelse return .invalid_value;
+    const x = cells.x orelse return .invalid_value;
+    const cell = cells.raws[x];
+    switch (data) {
+        .invalid => return .invalid_value,
+        .raw => out.* = cell.cval(),
+        .style => out.* = style_c.Style.fromStyle(cells.styles[x]),
+        .graphemes_len => {
+            if (!cell.hasText()) {
+                out.* = 0;
+                return .success;
+            }
+            const extra = if (cell.hasGrapheme()) cells.graphemes[x] else &[_]u21{};
+            out.* = @intCast(1 + extra.len);
+        },
+        .graphemes_buf => {
+            if (!cell.hasText()) return .success;
+            const extra = if (cell.hasGrapheme()) cells.graphemes[x] else &[_]u21{};
+            const total = 1 + extra.len;
+            const out_slice = out.*[0..total];
+            out_slice[0] = cell.codepoint();
+            for (extra, 1..) |cp, i| {
+                out_slice[i] = cp;
+            }
+        },
+    }
+
+    return .success;
 }
 
 /// C: GhosttyRenderStateRowData

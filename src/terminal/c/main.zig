@@ -48,6 +48,9 @@ pub const render_state_row_get = render.row_get;
 pub const render_state_row_set = render.row_set;
 pub const render_state_row_iterator_free = render.row_iterator_free;
 pub const render_state_row_cells_new = render.row_cells_new;
+pub const render_state_row_cells_next = render.row_cells_next;
+pub const render_state_row_cells_select = render.row_cells_select;
+pub const render_state_row_cells_get = render.row_cells_get;
 pub const render_state_row_cells_free = render.row_cells_free;
 
 pub const sgr_new = sgr.new;

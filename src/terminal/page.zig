@@ -2059,6 +2059,14 @@ pub const Cell = packed struct(u64) {
         prompt = 2,
     };
 
+    /// C ABI type.
+    pub const C = u64;
+
+    /// Returns this cell as a C ABI value.
+    pub fn cval(self: Cell) C {
+        return @bitCast(self);
+    }
+
     /// Helper to make a cell that just has a codepoint.
     pub fn init(cp: u21) Cell {
         // We have to use this bitCast here to ensure that our memory is

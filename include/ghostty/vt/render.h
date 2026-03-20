@@ -412,6 +412,84 @@ GhosttyResult ghostty_render_state_row_cells_new(
     GhosttyRenderStateRowCells* out_cells);
 
 /**
+ * Queryable data kinds for ghostty_render_state_row_cells_get().
+ *
+ * @ingroup render
+ */
+typedef enum {
+  /** Invalid / sentinel value. */
+  GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_INVALID = 0,
+
+  /** The raw cell value (GhosttyCell). */
+  GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_RAW = 1,
+
+  /** The style for the current cell (GhosttyStyle). */
+  GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_STYLE = 2,
+
+  /** The total number of grapheme codepoints including the base codepoint
+   *  (uint32_t). Returns 0 if the cell has no text. */
+  GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_GRAPHEMES_LEN = 3,
+
+  /** Write grapheme codepoints into a caller-provided buffer (uint32_t*).
+   *  The buffer must be at least graphemes_len elements. The base codepoint
+   *  is written first, followed by any extra codepoints. */
+  GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_GRAPHEMES_BUF = 4,
+} GhosttyRenderStateRowCellsData;
+
+/**
+ * Move a render-state row cells iterator to the next cell.
+ *
+ * Returns true if the iterator moved successfully and cell data is
+ * available to read at the new position.
+ *
+ * @param cells The row cells handle to advance (may be NULL)
+ * @return true if advanced to the next cell, false if `cells` is
+ *         NULL or if the iterator has reached the end
+ *
+ * @ingroup render
+ */
+bool ghostty_render_state_row_cells_next(GhosttyRenderStateRowCells cells);
+
+/**
+ * Move a render-state row cells iterator to a specific column.
+ *
+ * Positions the iterator at the given x (column) index so that
+ * subsequent reads return data for that cell.
+ *
+ * @param cells The row cells handle to reposition (NULL returns
+ *        GHOSTTY_INVALID_VALUE)
+ * @param x The zero-based column index to select
+ * @return GHOSTTY_SUCCESS on success, GHOSTTY_INVALID_VALUE if `cells`
+ *         is NULL or `x` is out of range
+ *
+ * @ingroup render
+ */
+GhosttyResult ghostty_render_state_row_cells_select(
+    GhosttyRenderStateRowCells cells, uint16_t x);
+
+/**
+ * Get a value from the current cell in a render-state row cells iterator.
+ *
+ * The `out` pointer must point to a value of the type corresponding to the
+ * requested data kind (see GhosttyRenderStateRowCellsData).
+ * Call ghostty_render_state_row_cells_next() or
+ * ghostty_render_state_row_cells_select() at least once before
+ * calling this function.
+ *
+ * @param cells The row cells handle to query (NULL returns GHOSTTY_INVALID_VALUE)
+ * @param data The data kind to query
+ * @param[out] out Pointer to receive the queried value
+ * @return GHOSTTY_SUCCESS on success, GHOSTTY_INVALID_VALUE if
+ *         `cells` is NULL or the iterator is not positioned on a cell
+ *
+ * @ingroup render
+ */
+GhosttyResult ghostty_render_state_row_cells_get(
+    GhosttyRenderStateRowCells cells,
+    GhosttyRenderStateRowCellsData data,
+    void* out);
+
+/**
  * Free a row cells instance.
  *
  * @param cells The row cells handle to free (may be NULL)
