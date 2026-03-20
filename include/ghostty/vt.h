@@ -50,6 +50,7 @@
  * - @ref c-vt-paste/src/main.c - Paste safety check example
  * - @ref c-vt-sgr/src/main.c - SGR parser example
  * - @ref c-vt-formatter/src/main.c - Terminal formatter example
+ * - @ref c-vt-grid-traverse/src/main.c - Grid traversal example using grid refs
  *
  */
 
@@ -82,6 +83,11 @@
  * This example demonstrates how to use the terminal and formatter APIs to
  * create a terminal, write VT-encoded content into it, and format the screen
  * contents as plain text.
+ */
+
+/** @example c-vt-grid-traverse/src/main.c
+ * This example demonstrates how to traverse the entire terminal grid using
+ * grid refs to inspect cell codepoints, row wrap state, and cell styles.
  */
 
 #ifndef GHOSTTY_VT_H

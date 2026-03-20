@@ -35,6 +35,10 @@ extern "C" {
  * built to sustain the framerates needed for rendering large screens. 
  * Use the render state API for that. 
  *
+ * ## Example
+ *
+ * @snippet c-vt-grid-traverse/src/main.c grid-ref-traverse
+ *
  * @{
  */
 
