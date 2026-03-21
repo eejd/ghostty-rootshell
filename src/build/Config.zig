@@ -61,6 +61,10 @@ emit_xcframework: bool = false,
 emit_webdata: bool = false,
 emit_unicode_table_gen: bool = false,
 
+/// True when Ghostty is being built as a dependency of another project
+/// rather than as the root project.
+is_dep: bool = false,
+
 /// Environmental properties
 env: std.process.EnvMap,
 
@@ -88,6 +92,10 @@ pub fn init(b: *std.Build, appVersion: []const u8) !Config {
         break :target result;
     };
 
+    // Detect if Ghostty is a dependency of another project.
+    // dep_prefix is non-empty when this build is running as a dependency.
+    const is_dep = b.dep_prefix.len > 0;
+
     // This is set to true when we're building a system package. For now
     // this is trivially detected using the "system_package_mode" bool
     // but we may want to make this more sophisticated in the future.
@@ -110,6 +118,7 @@ pub fn init(b: *std.Build, appVersion: []const u8) !Config {
         .optimize = optimize,
         .target = target,
         .wasm_target = wasm_target,
+        .is_dep = is_dep,
         .env = env,
     };
 
@@ -221,9 +230,7 @@ pub fn init(b: *std.Build, appVersion: []const u8) !Config {
         const app_version = try std.SemanticVersion.parse(appVersion);
 
         // Is ghostty a dependency? If so, skip git detection.
-        // @src().file won't resolve from b.build_root unless ghostty
-        // is the project being built.
-        b.build_root.handle.access(@src().file, .{}) catch break :version .{
+        if (is_dep) break :version .{
             .major = app_version.major,
             .minor = app_version.minor,
             .patch = app_version.patch,

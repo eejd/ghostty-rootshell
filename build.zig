@@ -106,6 +106,29 @@ pub fn build(b: *std.Build) !void {
     };
     libghostty_vt_shared.install(b.getInstallStep());
 
+    // libghostty-vt static lib. We don't build this for wasm since wasm has
+    // no concept of static vs shared and we put the wasm binary up in
+    // our shared handling.
+    if (!config.target.result.cpu.arch.isWasm()) {
+        const libghostty_vt_static = try buildpkg.GhosttyLibVt.initStatic(
+            b,
+            &mod,
+        );
+
+        if (config.is_dep) {
+            // If we're a dependency, we need to install everything as-is
+            // so that dep.artifact("ghostty-vt-static") works.
+            libghostty_vt_static.install(b.getInstallStep());
+        } else {
+            // If we're not a dependency, we rename the static lib to
+            // be idiomatic.
+            b.getInstallStep().dependOn(&b.addInstallLibFile(
+                libghostty_vt_static.output,
+                "libghostty-vt.a",
+            ).step);
+        }
+    }
+
     // Helpgen
     if (config.emit_helpgen) deps.help_strings.install();
 
