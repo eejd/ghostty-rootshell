@@ -32,6 +32,16 @@ extern "C" {
 #endif
 
 /**
+ * Build optimization mode.
+ */
+typedef enum {
+  GHOSTTY_OPTIMIZE_DEBUG = 0,
+  GHOSTTY_OPTIMIZE_RELEASE_SAFE = 1,
+  GHOSTTY_OPTIMIZE_RELEASE_SMALL = 2,
+  GHOSTTY_OPTIMIZE_RELEASE_FAST = 3,
+} GhosttyOptimizeMode;
+
+/**
  * Build info data types that can be queried.
  *
  * Each variant documents the expected output pointer type.
@@ -60,6 +70,13 @@ typedef enum {
    * Output type: bool *
    */
   GHOSTTY_BUILD_INFO_TMUX_CONTROL_MODE = 3,
+
+  /**
+   * The optimization mode the library was built with.
+   *
+   * Output type: GhosttyOptimizeMode *
+   */
+  GHOSTTY_BUILD_INFO_OPTIMIZE = 4,
 } GhosttyBuildInfo;
 
 /**
