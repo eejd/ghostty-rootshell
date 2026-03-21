@@ -2,6 +2,7 @@ const std = @import("std");
 const testing = std.testing;
 const page = @import("../page.zig");
 const Cell = page.Cell;
+const color = @import("../color.zig");
 const style_c = @import("style.zig");
 const Result = @import("result.zig").Result;
 
@@ -71,6 +72,16 @@ pub const CellData = enum(c_int) {
     /// Output type: GhosttyCellSemanticContent *
     semantic_content = 9,
 
+    /// The palette index for the cell's background color.
+    /// Only valid when content_tag is bg_color_palette.
+    /// Output type: GhosttyColorPaletteIndex *
+    color_palette = 10,
+
+    /// The RGB value for the cell's background color.
+    /// Only valid when content_tag is bg_color_rgb.
+    /// Output type: GhosttyColorRgb *
+    color_rgb = 11,
+
     /// Output type expected for querying the data of the given kind.
     pub fn OutType(comptime self: CellData) type {
         return switch (self) {
@@ -81,6 +92,8 @@ pub const CellData = enum(c_int) {
             .has_text, .has_styling, .has_hyperlink, .protected => bool,
             .style_id => u16,
             .semantic_content => SemanticContent,
+            .color_palette => u8,
+            .color_rgb => color.RGB.C,
         };
     }
 };
@@ -122,6 +135,11 @@ fn getTyped(
         .has_hyperlink => out.* = cell.hyperlink,
         .protected => out.* = cell.protected,
         .semantic_content => out.* = @enumFromInt(@intFromEnum(cell.semantic_content)),
+        .color_palette => out.* = cell.content.color_palette,
+        .color_rgb => {
+            const rgb = cell.content.color_rgb;
+            out.* = .{ .r = rgb.r, .g = rgb.g, .b = rgb.b };
+        },
     }
 
     return .success;

@@ -9,6 +9,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <ghostty/vt/color.h>
 #include <ghostty/vt/types.h>
 
 #ifdef __cplusplus
@@ -184,6 +185,22 @@ typedef enum {
    * Output type: GhosttyCellSemanticContent *
    */
   GHOSTTY_CELL_DATA_SEMANTIC_CONTENT = 9,
+
+  /**
+   * The palette index for the cell's background color.
+   * Only valid when content_tag is GHOSTTY_CELL_CONTENT_BG_COLOR_PALETTE.
+   *
+   * Output type: GhosttyColorPaletteIndex *
+   */
+  GHOSTTY_CELL_DATA_COLOR_PALETTE = 10,
+
+  /**
+   * The RGB value for the cell's background color.
+   * Only valid when content_tag is GHOSTTY_CELL_CONTENT_BG_COLOR_RGB.
+   *
+   * Output type: GhosttyColorRgb *
+   */
+  GHOSTTY_CELL_DATA_COLOR_RGB = 11,
 } GhosttyCellData;
 
 /**
