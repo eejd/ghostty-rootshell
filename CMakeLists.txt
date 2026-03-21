@@ -31,7 +31,8 @@
 #   )
 #   FetchContent_MakeAvailable(ghostty)
 #
-#   target_link_libraries(myapp PRIVATE ghostty-vt)
+#   target_link_libraries(myapp PRIVATE ghostty-vt)        # shared
+#   target_link_libraries(myapp PRIVATE ghostty-vt-static) # static
 #
 # To use a local checkout instead of fetching:
 #
@@ -40,7 +41,8 @@
 # Option 2 — find_package (after installing to a prefix):
 #
 #   find_package(ghostty-vt REQUIRED)
-#   target_link_libraries(myapp PRIVATE ghostty-vt::ghostty-vt)
+#   target_link_libraries(myapp PRIVATE ghostty-vt::ghostty-vt)        # shared
+#   target_link_libraries(myapp PRIVATE ghostty-vt::ghostty-vt-static) # static
 #
 # See dist/cmake/README.md for more details and example/c-vt-cmake/ for a
 # complete working example.
@@ -71,7 +73,7 @@ message(STATUS "Found zig: ${ZIG_EXECUTABLE}")
 # The zig build installs into zig-out/ relative to the source tree.
 set(ZIG_OUT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/zig-out")
 
-# The library file that zig build produces.
+# Shared library names (zig build produces both shared and static).
 if(APPLE)
     set(GHOSTTY_VT_LIBNAME "${CMAKE_SHARED_LIBRARY_PREFIX}ghostty-vt${CMAKE_SHARED_LIBRARY_SUFFIX}")
     set(GHOSTTY_VT_SONAME "${CMAKE_SHARED_LIBRARY_PREFIX}ghostty-vt.0${CMAKE_SHARED_LIBRARY_SUFFIX}")
@@ -85,28 +87,35 @@ else()
     set(GHOSTTY_VT_REALNAME "${CMAKE_SHARED_LIBRARY_PREFIX}ghostty-vt${CMAKE_SHARED_LIBRARY_SUFFIX}.0.1.0")
 endif()
 
-set(GHOSTTY_VT_LIBRARY "${ZIG_OUT_DIR}/lib/${GHOSTTY_VT_REALNAME}")
+set(GHOSTTY_VT_SHARED_LIBRARY "${ZIG_OUT_DIR}/lib/${GHOSTTY_VT_REALNAME}")
+
+# Static library name.
+set(GHOSTTY_VT_STATIC_REALNAME "${CMAKE_STATIC_LIBRARY_PREFIX}ghostty-vt${CMAKE_STATIC_LIBRARY_SUFFIX}")
+set(GHOSTTY_VT_STATIC_LIBRARY "${ZIG_OUT_DIR}/lib/${GHOSTTY_VT_STATIC_REALNAME}")
 
 # Ensure the output directories exist so CMake doesn't reject the
 # INTERFACE_INCLUDE_DIRECTORIES before the zig build has run.
 file(MAKE_DIRECTORY "${ZIG_OUT_DIR}/include")
 
-# Custom command: run zig build -Demit-lib-vt
+# Custom command: run zig build -Demit-lib-vt (produces both shared and static)
 add_custom_command(
-    OUTPUT "${GHOSTTY_VT_LIBRARY}"
+    OUTPUT "${GHOSTTY_VT_SHARED_LIBRARY}" "${GHOSTTY_VT_STATIC_LIBRARY}"
     COMMAND "${ZIG_EXECUTABLE}" build -Demit-lib-vt ${GHOSTTY_ZIG_BUILD_FLAGS}
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
     COMMENT "Building libghostty-vt via zig build..."
     USES_TERMINAL
 )
 
-add_custom_target(zig_build_lib_vt ALL DEPENDS "${GHOSTTY_VT_LIBRARY}")
+add_custom_target(zig_build_lib_vt ALL
+    DEPENDS "${GHOSTTY_VT_SHARED_LIBRARY}" "${GHOSTTY_VT_STATIC_LIBRARY}"
+)
 
-# --- IMPORTED library target --------------------------------------------------
+# --- IMPORTED library targets ------------------------------------------------
 
+# Shared
 add_library(ghostty-vt SHARED IMPORTED GLOBAL)
 set_target_properties(ghostty-vt PROPERTIES
-    IMPORTED_LOCATION "${GHOSTTY_VT_LIBRARY}"
+    IMPORTED_LOCATION "${GHOSTTY_VT_SHARED_LIBRARY}"
     INTERFACE_INCLUDE_DIRECTORIES "${ZIG_OUT_DIR}/include"
 )
 if(APPLE)
@@ -118,15 +127,32 @@ elseif(NOT WIN32)
         IMPORTED_SONAME "${GHOSTTY_VT_SONAME}"
     )
 endif()
-
 add_dependencies(ghostty-vt zig_build_lib_vt)
+
+# Static
+#
+# When linking the static library, consumers must also link its transitive
+# dependencies. By default (with SIMD enabled), these are:
+#   - libc
+#   - libc++ (or libstdc++ on Linux)
+#   - highway
+#   - simdutf
+#
+# Building with -Dsimd=false removes the C++ / highway / simdutf
+# dependencies, leaving only libc.
+add_library(ghostty-vt-static STATIC IMPORTED GLOBAL)
+set_target_properties(ghostty-vt-static PROPERTIES
+    IMPORTED_LOCATION "${GHOSTTY_VT_STATIC_LIBRARY}"
+    INTERFACE_INCLUDE_DIRECTORIES "${ZIG_OUT_DIR}/include"
+)
+add_dependencies(ghostty-vt-static zig_build_lib_vt)
 
 # --- Install ------------------------------------------------------------------
 
 include(GNUInstallDirs)
 
-# Install the library
-install(FILES "${GHOSTTY_VT_LIBRARY}" TYPE LIB)
+# Install shared library
+install(FILES "${GHOSTTY_VT_SHARED_LIBRARY}" TYPE LIB)
 if(NOT WIN32)
     # Install symlinks
     install(CODE "
@@ -138,6 +164,9 @@ if(NOT WIN32)
             \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/${GHOSTTY_VT_LIBNAME}\")
     ")
 endif()
+
+# Install static library
+install(FILES "${GHOSTTY_VT_STATIC_LIBRARY}" TYPE LIB)
 
 # Install headers
 install(DIRECTORY "${ZIG_OUT_DIR}/include/ghostty" DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
