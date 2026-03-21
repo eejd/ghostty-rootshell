@@ -3,6 +3,7 @@ const testing = std.testing;
 const lib_alloc = @import("../../lib/allocator.zig");
 const CAllocator = lib_alloc.Allocator;
 const ZigTerminal = @import("../Terminal.zig");
+const ReadonlyStream = @import("../stream_readonly.zig").Stream;
 const ScreenSet = @import("../ScreenSet.zig");
 const PageList = @import("../PageList.zig");
 const kitty = @import("../kitty/key.zig");
@@ -17,8 +18,16 @@ const Result = @import("result.zig").Result;
 
 const log = std.log.scoped(.terminal_c);
 
+/// Wrapper around ZigTerminal that tracks additional state for C API usage,
+/// such as the persistent VT stream needed to handle escape sequences split
+/// across multiple vt_write calls.
+const TerminalWrapper = struct {
+    terminal: *ZigTerminal,
+    stream: ReadonlyStream,
+};
+
 /// C: GhosttyTerminal
-pub const Terminal = ?*ZigTerminal;
+pub const Terminal = ?*TerminalWrapper;
 
 /// C: GhosttyTerminalOptions
 pub const Options = extern struct {
@@ -51,21 +60,28 @@ pub fn new(
 fn new_(
     alloc_: ?*const CAllocator,
     opts: Options,
-) NewError!*ZigTerminal {
+) NewError!*TerminalWrapper {
     if (opts.cols == 0 or opts.rows == 0) return error.InvalidValue;
 
     const alloc = lib_alloc.default(alloc_);
-    const ptr = alloc.create(ZigTerminal) catch
+    const t = alloc.create(ZigTerminal) catch
         return error.OutOfMemory;
-    errdefer alloc.destroy(ptr);
+    errdefer alloc.destroy(t);
 
-    ptr.* = try .init(alloc, .{
+    t.* = try .init(alloc, .{
         .cols = opts.cols,
         .rows = opts.rows,
         .max_scrollback = opts.max_scrollback,
     });
 
-    return ptr;
+    const wrapper = alloc.create(TerminalWrapper) catch
+        return error.OutOfMemory;
+    wrapper.* = .{
+        .terminal = t,
+        .stream = t.vtStream(),
+    };
+
+    return wrapper;
 }
 
 pub fn vt_write(
@@ -73,9 +89,8 @@ pub fn vt_write(
     ptr: [*]const u8,
     len: usize,
 ) callconv(.c) void {
-    const t = terminal_ orelse return;
-    var stream = t.vtStream();
-    stream.nextSlice(ptr[0..len]);
+    const wrapper = terminal_ orelse return;
+    wrapper.stream.nextSlice(ptr[0..len]);
 }
 
 /// C: GhosttyTerminalScrollViewport
@@ -85,7 +100,7 @@ pub fn scroll_viewport(
     terminal_: Terminal,
     behavior: ScrollViewport,
 ) callconv(.c) void {
-    const t = terminal_ orelse return;
+    const t: *ZigTerminal = (terminal_ orelse return).terminal;
     t.scrollViewport(switch (behavior.tag) {
         .top => .top,
         .bottom => .bottom,
@@ -98,14 +113,14 @@ pub fn resize(
     cols: size.CellCountInt,
     rows: size.CellCountInt,
 ) callconv(.c) Result {
-    const t = terminal_ orelse return .invalid_value;
+    const t: *ZigTerminal = (terminal_ orelse return .invalid_value).terminal;
     if (cols == 0 or rows == 0) return .invalid_value;
     t.resize(t.gpa(), cols, rows) catch return .out_of_memory;
     return .success;
 }
 
 pub fn reset(terminal_: Terminal) callconv(.c) void {
-    const t = terminal_ orelse return;
+    const t: *ZigTerminal = (terminal_ orelse return).terminal;
     t.fullReset();
 }
 
@@ -114,7 +129,7 @@ pub fn mode_get(
     tag: modes.ModeTag.Backing,
     out_value: *bool,
 ) callconv(.c) Result {
-    const t = terminal_ orelse return .invalid_value;
+    const t: *ZigTerminal = (terminal_ orelse return .invalid_value).terminal;
     const mode_tag: modes.ModeTag = @bitCast(tag);
     const mode = modes.modeFromInt(mode_tag.value, mode_tag.ansi) orelse return .invalid_value;
     out_value.* = t.modes.get(mode);
@@ -126,7 +141,7 @@ pub fn mode_set(
     tag: modes.ModeTag.Backing,
     value: bool,
 ) callconv(.c) Result {
-    const t = terminal_ orelse return .invalid_value;
+    const t: *ZigTerminal = (terminal_ orelse return .invalid_value).terminal;
     const mode_tag: modes.ModeTag = @bitCast(tag);
     const mode = modes.modeFromInt(mode_tag.value, mode_tag.ansi) orelse return .invalid_value;
     t.modes.set(mode, value);
@@ -193,7 +208,7 @@ fn getTyped(
     comptime data: TerminalData,
     out: *data.OutType(),
 ) Result {
-    const t = terminal_ orelse return .invalid_value;
+    const t: *ZigTerminal = (terminal_ orelse return .invalid_value).terminal;
     switch (data) {
         .invalid => return .invalid_value,
         .cols => out.* = t.cols,
@@ -216,7 +231,7 @@ pub fn grid_ref(
     pt: point.Point.C,
     out_ref: ?*grid_ref_c.CGridRef,
 ) callconv(.c) Result {
-    const t = terminal_ orelse return .invalid_value;
+    const t: *ZigTerminal = (terminal_ orelse return .invalid_value).terminal;
     const zig_pt: point.Point = switch (pt.tag) {
         .active => .{ .active = pt.value.active },
         .viewport => .{ .viewport = pt.value.viewport },
@@ -230,11 +245,14 @@ pub fn grid_ref(
 }
 
 pub fn free(terminal_: Terminal) callconv(.c) void {
-    const t = terminal_ orelse return;
+    const wrapper = terminal_ orelse return;
+    const t = wrapper.terminal;
 
+    wrapper.stream.deinit();
     const alloc = t.gpa();
     t.deinit(alloc);
     alloc.destroy(t);
+    alloc.destroy(wrapper);
 }
 
 test "new/free" {
@@ -296,7 +314,7 @@ test "scroll_viewport" {
     ));
     defer free(t);
 
-    const zt = t.?;
+    const zt = t.?.terminal;
 
     // Write "hello" on the first line
     vt_write(t, "hello", 5);
@@ -355,7 +373,7 @@ test "reset" {
     vt_write(t, "Hello", 5);
     reset(t);
 
-    const str = try t.?.plainString(testing.allocator);
+    const str = try t.?.terminal.plainString(testing.allocator);
     defer testing.allocator.free(str);
     try testing.expectEqualStrings("", str);
 }
@@ -378,8 +396,8 @@ test "resize" {
     defer free(t);
 
     try testing.expectEqual(Result.success, resize(t, 40, 12));
-    try testing.expectEqual(40, t.?.cols);
-    try testing.expectEqual(12, t.?.rows);
+    try testing.expectEqual(40, t.?.terminal.cols);
+    try testing.expectEqual(12, t.?.terminal.rows);
 }
 
 test "resize null" {
@@ -499,9 +517,34 @@ test "vt_write" {
 
     vt_write(t, "Hello", 5);
 
-    const str = try t.?.plainString(testing.allocator);
+    const str = try t.?.terminal.plainString(testing.allocator);
     defer testing.allocator.free(str);
     try testing.expectEqualStrings("Hello", str);
+}
+
+test "vt_write split escape sequence" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib_alloc.test_allocator,
+        &t,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 10_000,
+        },
+    ));
+    defer free(t);
+
+    // Write "Hello" in bold by splitting the CSI bold sequence across two writes.
+    // ESC [ 1 m  = bold on, ESC [ 0 m = reset
+    // Split ESC from the rest of the CSI sequence.
+    vt_write(t, "Hello \x1b", 7);
+    vt_write(t, "[1mBold\x1b[0m", 10);
+
+    const str = try t.?.terminal.plainString(testing.allocator);
+    defer testing.allocator.free(str);
+    // If the escape sequence leaked, we'd see "[1mBold" as literal text.
+    try testing.expectEqualStrings("Hello Bold", str);
 }
 
 test "get cols and rows" {

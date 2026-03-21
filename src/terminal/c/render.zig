@@ -10,6 +10,7 @@ const page = @import("../page.zig");
 const size = @import("../size.zig");
 const Style = @import("../style.zig").Style;
 const terminal_c = @import("terminal.zig");
+const ZigTerminal = @import("../Terminal.zig");
 const renderpkg = @import("../render.zig");
 const Result = @import("result.zig").Result;
 const row = @import("row.zig");
@@ -166,7 +167,7 @@ pub fn update(
     terminal_: terminal_c.Terminal,
 ) callconv(.c) Result {
     const state = state_ orelse return .invalid_value;
-    const t = terminal_ orelse return .invalid_value;
+    const t: *ZigTerminal = (terminal_ orelse return .invalid_value).terminal;
 
     state.state.update(state.alloc, t) catch return .out_of_memory;
     return .success;

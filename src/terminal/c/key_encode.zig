@@ -9,6 +9,7 @@ const OptionAsAlt = @import("../../input/config.zig").OptionAsAlt;
 const Result = @import("result.zig").Result;
 const KeyEvent = @import("key_event.zig").Event;
 const Terminal = @import("terminal.zig").Terminal;
+const ZigTerminal = @import("../Terminal.zig");
 
 const log = std.log.scoped(.key_encode);
 
@@ -121,7 +122,7 @@ pub fn setopt_from_terminal(
     terminal_: Terminal,
 ) callconv(.c) void {
     const wrapper = encoder_ orelse return;
-    const t = terminal_ orelse return;
+    const t: *ZigTerminal = (terminal_ orelse return).terminal;
     wrapper.opts = .fromTerminal(t);
 }
 
