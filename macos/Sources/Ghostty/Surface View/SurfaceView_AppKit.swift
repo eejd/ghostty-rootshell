@@ -652,6 +652,14 @@ extension Ghostty {
         }
 
         private func localEventLeftMouseDown(_ event: NSEvent) -> NSEvent? {
+            let isCommandPaletteVisible = (event.window?.windowController as? BaseTerminalController)?
+                .commandPaletteIsShowing == true
+            guard !isCommandPaletteVisible else {
+                // We don't want to process events that
+                // are supposed to be handled by CommandPaletteView
+                return event
+            }
+
             // We only want to process events that are on this window.
             guard let window,
                   event.window != nil,
