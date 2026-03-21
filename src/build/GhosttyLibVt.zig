@@ -100,6 +100,10 @@ fn initLib(
         // we'll cross that bridge when we get to it.
         lib.bundle_compiler_rt = true;
         lib.bundle_ubsan_rt = true;
+
+        // Enable PIC so the static library can be linked into PIE
+        // executables, which is the default on most Linux distributions.
+        lib.root_module.pic = true;
     }
 
     if (lib.rootModuleTarget().abi.isAndroid()) {
