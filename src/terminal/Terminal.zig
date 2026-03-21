@@ -239,6 +239,11 @@ pub fn deinit(self: *Terminal, alloc: Allocator) void {
 /// terminal state. The streams will only process read-only data that
 /// modifies terminal state. Sequences that query or otherwise require
 /// output will be ignored.
+///
+/// Important: this creates a new stream each time with fresh parser state.
+/// If you need to persist parser state across multiple writes (e.g.
+/// for handling escape sequences split across write boundaries), you
+/// must store and reuse the returned stream.
 pub fn vtStream(self: *Terminal) ReadonlyStream {
     return .initAlloc(self.gpa(), self.vtHandler());
 }
