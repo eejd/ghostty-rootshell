@@ -1,3 +1,4 @@
+const buildpkg = @import("build_info.zig");
 pub const cell = @import("cell.zig");
 pub const color = @import("color.zig");
 pub const focus = @import("focus.zig");
@@ -17,6 +18,8 @@ pub const style = @import("style.zig");
 pub const terminal = @import("terminal.zig");
 
 // The full C API, unexported.
+pub const build_info = buildpkg.get;
+
 pub const osc_new = osc.new;
 pub const osc_free = osc.free;
 pub const osc_reset = osc.reset;
@@ -136,6 +139,7 @@ pub const grid_ref_graphemes = grid_ref.grid_ref_graphemes;
 pub const grid_ref_style = grid_ref.grid_ref_style;
 
 test {
+    _ = buildpkg;
     _ = cell;
     _ = color;
     _ = grid_ref;
