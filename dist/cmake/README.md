@@ -2,7 +2,7 @@
 
 The top-level `CMakeLists.txt` wraps the Zig build system so that CMake
 projects can consume libghostty-vt without invoking `zig build` manually.
-Running `cmake --build` triggers `zig build lib-vt` automatically.
+Running `cmake --build` triggers `zig build -Demit-lib-vt` automatically.
 
 This means downstream projects do require a working Zig compiler on
 `PATH` to build, but don't need to know any Zig-specific details.

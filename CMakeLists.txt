@@ -1,6 +1,6 @@
 # CMake wrapper for libghostty-vt
 #
-# This file delegates to `zig build lib-vt` to produce the shared library,
+# This file delegates to `zig build -Demit-lib-vt` to produce the shared library,
 # headers, and pkg-config file. It exists so that CMake-based projects can
 # consume libghostty-vt without interacting with the Zig build system
 # directly. However, downstream users do still require `zig` on the PATH.
@@ -91,10 +91,10 @@ set(GHOSTTY_VT_LIBRARY "${ZIG_OUT_DIR}/lib/${GHOSTTY_VT_REALNAME}")
 # INTERFACE_INCLUDE_DIRECTORIES before the zig build has run.
 file(MAKE_DIRECTORY "${ZIG_OUT_DIR}/include")
 
-# Custom command: run zig build lib-vt
+# Custom command: run zig build -Demit-lib-vt
 add_custom_command(
     OUTPUT "${GHOSTTY_VT_LIBRARY}"
-    COMMAND "${ZIG_EXECUTABLE}" build lib-vt ${GHOSTTY_ZIG_BUILD_FLAGS}
+    COMMAND "${ZIG_EXECUTABLE}" build -Demit-lib-vt ${GHOSTTY_ZIG_BUILD_FLAGS}
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
     COMMENT "Building libghostty-vt via zig build..."
     USES_TERMINAL
