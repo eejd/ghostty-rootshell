@@ -33,6 +33,10 @@ const RowIteratorWrapper = struct {
     raws: []const page.Row,
     cells: []const std.MultiArrayList(renderpkg.RenderState.Cell),
     dirty: []bool,
+
+    /// The color palette from the render state, needed to resolve
+    /// palette-indexed background colors on cells.
+    palette: *const colorpkg.Palette,
 };
 
 const RowCellsWrapper = struct {
@@ -41,6 +45,9 @@ const RowCellsWrapper = struct {
     raws: []const page.Cell,
     graphemes: []const []const u21,
     styles: []const Style,
+
+    /// The color palette, needed to resolve palette-indexed background colors.
+    palette: *const colorpkg.Palette,
 };
 
 /// C: GhosttyRenderState
@@ -214,6 +221,7 @@ fn getTyped(
                 .raws = row_data.items(.raw),
                 .cells = row_data.items(.cells),
                 .dirty = row_data.items(.dirty),
+                .palette = &state.state.colors.palette,
             };
         },
         .color_background => out.* = state.state.colors.background.cval(),
@@ -361,6 +369,7 @@ pub fn row_iterator_new(
         .raws = undefined,
         .cells = undefined,
         .dirty = undefined,
+        .palette = undefined,
     };
     result.* = ptr;
     return .success;
@@ -395,6 +404,7 @@ pub fn row_cells_new(
         .raws = undefined,
         .graphemes = undefined,
         .styles = undefined,
+        .palette = undefined,
     };
     result.* = ptr;
     return .success;
@@ -428,6 +438,8 @@ pub const RowCellsData = enum(c_int) {
     style = 2,
     graphemes_len = 3,
     graphemes_buf = 4,
+    bg_color = 5,
+    fg_color = 6,
 
     /// Output type expected for querying the data of the given kind.
     pub fn OutType(comptime self: RowCellsData) type {
@@ -437,6 +449,7 @@ pub const RowCellsData = enum(c_int) {
             .style => style_c.Style,
             .graphemes_len => u32,
             .graphemes_buf => u32,
+            .bg_color, .fg_color => colorpkg.RGB.C,
         };
     }
 };
@@ -493,6 +506,17 @@ fn rowCellsGetTyped(
             for (extra, 1..) |cp, i| {
                 buf[i] = cp;
             }
+        },
+        .bg_color => {
+            const s: Style = if (cell.hasStyling()) cells.styles[x] else .{};
+            const bg = s.bg(&cell, cells.palette) orelse return .invalid_value;
+            out.* = bg.cval();
+        },
+        .fg_color => {
+            const s: Style = if (cell.hasStyling()) cells.styles[x] else .{};
+            if (s.fg_color == .none) return .invalid_value;
+            const fg = s.fg(.{ .default = .{}, .palette = cells.palette });
+            out.* = fg.cval();
         },
     }
 
@@ -570,6 +594,7 @@ fn rowGetTyped(
                 .raws = cell_data.items(.raw),
                 .graphemes = cell_data.items(.grapheme),
                 .styles = cell_data.items(.style),
+                .palette = it.palette,
             };
         },
     }
@@ -1067,6 +1092,264 @@ test "render: colors get" {
     for (state_colors.palette, colors.palette) |expected, actual| {
         try testing.expectEqual(expected.cval(), actual);
     }
+}
+
+test "render: row cells bg_color no background" {
+    var terminal: terminal_c.Terminal = null;
+    try testing.expectEqual(Result.success, terminal_c.new(
+        &lib_alloc.test_allocator,
+        &terminal,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 10_000,
+        },
+    ));
+    defer terminal_c.free(terminal);
+
+    // Write plain text (no background color set).
+    terminal_c.vt_write(terminal, "hello", 5);
+
+    var state: RenderState = null;
+    try testing.expectEqual(Result.success, new(
+        &lib_alloc.test_allocator,
+        &state,
+    ));
+    defer free(state);
+
+    try testing.expectEqual(Result.success, update(state, terminal));
+
+    var it: RowIterator = null;
+    try testing.expectEqual(Result.success, row_iterator_new(
+        &lib_alloc.test_allocator,
+        &it,
+    ));
+    defer row_iterator_free(it);
+
+    try testing.expectEqual(Result.success, get(state, .row_iterator, @ptrCast(&it)));
+    try testing.expect(row_iterator_next(it));
+
+    var cells: RowCells = null;
+    try testing.expectEqual(Result.success, row_cells_new(
+        &lib_alloc.test_allocator,
+        &cells,
+    ));
+    defer row_cells_free(cells);
+
+    try testing.expectEqual(Result.success, row_get(it, .cells, @ptrCast(&cells)));
+    try testing.expect(row_cells_next(cells));
+
+    // No background set, should return invalid_value.
+    var bg: colorpkg.RGB.C = undefined;
+    try testing.expectEqual(Result.invalid_value, row_cells_get(cells, .bg_color, @ptrCast(&bg)));
+}
+
+test "render: row cells bg_color from style" {
+    var terminal: terminal_c.Terminal = null;
+    try testing.expectEqual(Result.success, terminal_c.new(
+        &lib_alloc.test_allocator,
+        &terminal,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 10_000,
+        },
+    ));
+    defer terminal_c.free(terminal);
+
+    // Set an RGB background via SGR 48;2;R;G;B and write text.
+    terminal_c.vt_write(terminal, "\x1b[48;2;10;20;30mA", 18);
+
+    var state: RenderState = null;
+    try testing.expectEqual(Result.success, new(
+        &lib_alloc.test_allocator,
+        &state,
+    ));
+    defer free(state);
+
+    try testing.expectEqual(Result.success, update(state, terminal));
+
+    var it: RowIterator = null;
+    try testing.expectEqual(Result.success, row_iterator_new(
+        &lib_alloc.test_allocator,
+        &it,
+    ));
+    defer row_iterator_free(it);
+
+    try testing.expectEqual(Result.success, get(state, .row_iterator, @ptrCast(&it)));
+    try testing.expect(row_iterator_next(it));
+
+    var cells: RowCells = null;
+    try testing.expectEqual(Result.success, row_cells_new(
+        &lib_alloc.test_allocator,
+        &cells,
+    ));
+    defer row_cells_free(cells);
+
+    try testing.expectEqual(Result.success, row_get(it, .cells, @ptrCast(&cells)));
+    try testing.expect(row_cells_next(cells));
+
+    var bg: colorpkg.RGB.C = undefined;
+    try testing.expectEqual(Result.success, row_cells_get(cells, .bg_color, @ptrCast(&bg)));
+    try testing.expectEqual(@as(u8, 10), bg.r);
+    try testing.expectEqual(@as(u8, 20), bg.g);
+    try testing.expectEqual(@as(u8, 30), bg.b);
+}
+
+test "render: row cells bg_color from content tag" {
+    var terminal: terminal_c.Terminal = null;
+    try testing.expectEqual(Result.success, terminal_c.new(
+        &lib_alloc.test_allocator,
+        &terminal,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 10_000,
+        },
+    ));
+    defer terminal_c.free(terminal);
+
+    // Set an RGB background and then erase the line. The erased cells
+    // should carry the background color via the content tag (bg_color_rgb)
+    // rather than through the style.
+    terminal_c.vt_write(terminal, "\x1b[48;2;10;20;30m\x1b[2K", 21);
+
+    var state: RenderState = null;
+    try testing.expectEqual(Result.success, new(
+        &lib_alloc.test_allocator,
+        &state,
+    ));
+    defer free(state);
+
+    try testing.expectEqual(Result.success, update(state, terminal));
+
+    var it: RowIterator = null;
+    try testing.expectEqual(Result.success, row_iterator_new(
+        &lib_alloc.test_allocator,
+        &it,
+    ));
+    defer row_iterator_free(it);
+
+    try testing.expectEqual(Result.success, get(state, .row_iterator, @ptrCast(&it)));
+    try testing.expect(row_iterator_next(it));
+
+    var cells: RowCells = null;
+    try testing.expectEqual(Result.success, row_cells_new(
+        &lib_alloc.test_allocator,
+        &cells,
+    ));
+    defer row_cells_free(cells);
+
+    try testing.expectEqual(Result.success, row_get(it, .cells, @ptrCast(&cells)));
+    try testing.expect(row_cells_next(cells));
+
+    var bg: colorpkg.RGB.C = undefined;
+    try testing.expectEqual(Result.success, row_cells_get(cells, .bg_color, @ptrCast(&bg)));
+    try testing.expectEqual(@as(u8, 10), bg.r);
+    try testing.expectEqual(@as(u8, 20), bg.g);
+    try testing.expectEqual(@as(u8, 30), bg.b);
+}
+
+test "render: row cells fg_color no foreground" {
+    var terminal: terminal_c.Terminal = null;
+    try testing.expectEqual(Result.success, terminal_c.new(
+        &lib_alloc.test_allocator,
+        &terminal,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 10_000,
+        },
+    ));
+    defer terminal_c.free(terminal);
+
+    // Write plain text (no foreground color set).
+    terminal_c.vt_write(terminal, "hello", 5);
+
+    var state: RenderState = null;
+    try testing.expectEqual(Result.success, new(
+        &lib_alloc.test_allocator,
+        &state,
+    ));
+    defer free(state);
+
+    try testing.expectEqual(Result.success, update(state, terminal));
+
+    var it: RowIterator = null;
+    try testing.expectEqual(Result.success, row_iterator_new(
+        &lib_alloc.test_allocator,
+        &it,
+    ));
+    defer row_iterator_free(it);
+
+    try testing.expectEqual(Result.success, get(state, .row_iterator, @ptrCast(&it)));
+    try testing.expect(row_iterator_next(it));
+
+    var cells: RowCells = null;
+    try testing.expectEqual(Result.success, row_cells_new(
+        &lib_alloc.test_allocator,
+        &cells,
+    ));
+    defer row_cells_free(cells);
+
+    try testing.expectEqual(Result.success, row_get(it, .cells, @ptrCast(&cells)));
+    try testing.expect(row_cells_next(cells));
+
+    // No foreground set, should return invalid_value.
+    var fg: colorpkg.RGB.C = undefined;
+    try testing.expectEqual(Result.invalid_value, row_cells_get(cells, .fg_color, @ptrCast(&fg)));
+}
+
+test "render: row cells fg_color from style" {
+    var terminal: terminal_c.Terminal = null;
+    try testing.expectEqual(Result.success, terminal_c.new(
+        &lib_alloc.test_allocator,
+        &terminal,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 10_000,
+        },
+    ));
+    defer terminal_c.free(terminal);
+
+    // Set an RGB foreground via SGR 38;2;R;G;B and write text.
+    terminal_c.vt_write(terminal, "\x1b[38;2;10;20;30mA", 18);
+
+    var state: RenderState = null;
+    try testing.expectEqual(Result.success, new(
+        &lib_alloc.test_allocator,
+        &state,
+    ));
+    defer free(state);
+
+    try testing.expectEqual(Result.success, update(state, terminal));
+
+    var it: RowIterator = null;
+    try testing.expectEqual(Result.success, row_iterator_new(
+        &lib_alloc.test_allocator,
+        &it,
+    ));
+    defer row_iterator_free(it);
+
+    try testing.expectEqual(Result.success, get(state, .row_iterator, @ptrCast(&it)));
+    try testing.expect(row_iterator_next(it));
+
+    var cells: RowCells = null;
+    try testing.expectEqual(Result.success, row_cells_new(
+        &lib_alloc.test_allocator,
+        &cells,
+    ));
+    defer row_cells_free(cells);
+
+    try testing.expectEqual(Result.success, row_get(it, .cells, @ptrCast(&cells)));
+    try testing.expect(row_cells_next(cells));
+
+    var fg: colorpkg.RGB.C = undefined;
+    try testing.expectEqual(Result.success, row_cells_get(cells, .fg_color, @ptrCast(&fg)));
+    try testing.expectEqual(@as(u8, 10), fg.r);
+    try testing.expectEqual(@as(u8, 20), fg.g);
+    try testing.expectEqual(@as(u8, 30), fg.b);
 }
 
 test "render: colors get supports truncated sized struct" {

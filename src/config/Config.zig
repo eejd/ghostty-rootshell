@@ -48,6 +48,7 @@ const string = @import("string.zig");
 const terminal = struct {
     const CursorStyle = @import("../terminal/cursor.zig").Style;
     const color = @import("../terminal/color.zig");
+    const style = @import("../terminal/style.zig");
     const x11_color = @import("../terminal/x11_color.zig");
 };
 
@@ -5596,6 +5597,14 @@ pub const TerminalColor = union(enum) {
 pub const BoldColor = union(enum) {
     color: Color,
     bright,
+
+    /// Convert to the terminal-native BoldColor type.
+    pub fn toTerminal(self: BoldColor) terminal.style.Style.BoldColor {
+        return switch (self) {
+            .color => |col| .{ .color = col.toTerminalRGB() },
+            .bright => .bright,
+        };
+    }
 
     pub fn parseCLI(input_: ?[]const u8) !BoldColor {
         const input = input_ orelse return error.ValueRequired;
