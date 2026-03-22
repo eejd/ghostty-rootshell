@@ -167,13 +167,14 @@ pub const TerminalData = enum(c_int) {
     kitty_keyboard_flags = 8,
     scrollbar = 9,
     cursor_style = 10,
+    mouse_tracking = 11,
 
     /// Output type expected for querying the data of the given kind.
     pub fn OutType(comptime self: TerminalData) type {
         return switch (self) {
             .invalid => void,
             .cols, .rows, .cursor_x, .cursor_y => size.CellCountInt,
-            .cursor_pending_wrap, .cursor_visible => bool,
+            .cursor_pending_wrap, .cursor_visible, .mouse_tracking => bool,
             .active_screen => TerminalScreen,
             .kitty_keyboard_flags => u8,
             .scrollbar => TerminalScrollbar,
@@ -221,6 +222,10 @@ fn getTyped(
         .kitty_keyboard_flags => out.* = @as(u8, t.screens.active.kitty_keyboard.current().int()),
         .scrollbar => out.* = t.screens.active.pages.scrollbar().cval(),
         .cursor_style => out.* = .fromStyle(t.screens.active.cursor.style),
+        .mouse_tracking => out.* = t.modes.get(.mouse_event_x10) or
+            t.modes.get(.mouse_event_normal) or
+            t.modes.get(.mouse_event_button) or
+            t.modes.get(.mouse_event_any),
     }
 
     return .success;
@@ -660,6 +665,56 @@ test "get kitty_keyboard_flags" {
 
     try testing.expectEqual(Result.success, get(t, .kitty_keyboard_flags, @ptrCast(&flags)));
     try testing.expectEqual(3, flags);
+}
+
+test "get mouse_tracking" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib_alloc.test_allocator,
+        &t,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 0,
+        },
+    ));
+    defer free(t);
+
+    var tracking: bool = undefined;
+    try testing.expectEqual(Result.success, get(t, .mouse_tracking, @ptrCast(&tracking)));
+    try testing.expect(!tracking);
+
+    // Enable X10 mouse (DEC mode 9)
+    const x10_mode: modes.ModeTag.Backing = @bitCast(modes.ModeTag{ .value = 9, .ansi = false });
+    try testing.expectEqual(Result.success, mode_set(t, x10_mode, true));
+    try testing.expectEqual(Result.success, get(t, .mouse_tracking, @ptrCast(&tracking)));
+    try testing.expect(tracking);
+
+    // Disable X10, enable normal mouse (DEC mode 1000)
+    try testing.expectEqual(Result.success, mode_set(t, x10_mode, false));
+    const normal_mode: modes.ModeTag.Backing = @bitCast(modes.ModeTag{ .value = 1000, .ansi = false });
+    try testing.expectEqual(Result.success, mode_set(t, normal_mode, true));
+    try testing.expectEqual(Result.success, get(t, .mouse_tracking, @ptrCast(&tracking)));
+    try testing.expect(tracking);
+
+    // Disable normal, enable button mouse (DEC mode 1002)
+    try testing.expectEqual(Result.success, mode_set(t, normal_mode, false));
+    const button_mode: modes.ModeTag.Backing = @bitCast(modes.ModeTag{ .value = 1002, .ansi = false });
+    try testing.expectEqual(Result.success, mode_set(t, button_mode, true));
+    try testing.expectEqual(Result.success, get(t, .mouse_tracking, @ptrCast(&tracking)));
+    try testing.expect(tracking);
+
+    // Disable button, enable any mouse (DEC mode 1003)
+    try testing.expectEqual(Result.success, mode_set(t, button_mode, false));
+    const any_mode: modes.ModeTag.Backing = @bitCast(modes.ModeTag{ .value = 1003, .ansi = false });
+    try testing.expectEqual(Result.success, mode_set(t, any_mode, true));
+    try testing.expectEqual(Result.success, get(t, .mouse_tracking, @ptrCast(&tracking)));
+    try testing.expect(tracking);
+
+    // Disable all - should be false again
+    try testing.expectEqual(Result.success, mode_set(t, any_mode, false));
+    try testing.expectEqual(Result.success, get(t, .mouse_tracking, @ptrCast(&tracking)));
+    try testing.expect(!tracking);
 }
 
 test "get invalid" {

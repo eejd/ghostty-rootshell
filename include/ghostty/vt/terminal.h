@@ -221,6 +221,16 @@ typedef enum {
    * Output type: GhosttyStyle *
    */
   GHOSTTY_TERMINAL_DATA_CURSOR_STYLE = 10,
+
+  /**
+   * Whether any mouse tracking mode is active.
+   *
+   * Returns true if any of the mouse tracking modes (X10, normal, button,
+   * or any-event) are enabled.
+   *
+   * Output type: bool *
+   */
+  GHOSTTY_TERMINAL_DATA_MOUSE_TRACKING = 11,
 } GhosttyTerminalData;
 
 /**
