@@ -98,8 +98,8 @@ pub const RenderState = struct {
         .rows = 0,
         .cols = 0,
         .colors = .{
-            .background = .{},
-            .foreground = .{},
+            .background = .{ .r = 0, .g = 0, .b = 0 },
+            .foreground = .{ .r = 0xff, .g = 0xff, .b = 0xff },
             .cursor = null,
             .palette = color.default,
         },
