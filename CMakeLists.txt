@@ -81,13 +81,18 @@ if(APPLE)
 elseif(WIN32)
     set(GHOSTTY_VT_LIBNAME "ghostty-vt.dll")
     set(GHOSTTY_VT_REALNAME "ghostty-vt.dll")
+    set(GHOSTTY_VT_IMPLIB "ghostty-vt.lib")
 else()
     set(GHOSTTY_VT_LIBNAME "${CMAKE_SHARED_LIBRARY_PREFIX}ghostty-vt${CMAKE_SHARED_LIBRARY_SUFFIX}")
     set(GHOSTTY_VT_SONAME "${CMAKE_SHARED_LIBRARY_PREFIX}ghostty-vt${CMAKE_SHARED_LIBRARY_SUFFIX}.0")
     set(GHOSTTY_VT_REALNAME "${CMAKE_SHARED_LIBRARY_PREFIX}ghostty-vt${CMAKE_SHARED_LIBRARY_SUFFIX}.0.1.0")
 endif()
 
-set(GHOSTTY_VT_SHARED_LIBRARY "${ZIG_OUT_DIR}/lib/${GHOSTTY_VT_REALNAME}")
+if(WIN32)
+    set(GHOSTTY_VT_SHARED_LIBRARY "${ZIG_OUT_DIR}/bin/${GHOSTTY_VT_REALNAME}")
+else()
+    set(GHOSTTY_VT_SHARED_LIBRARY "${ZIG_OUT_DIR}/lib/${GHOSTTY_VT_REALNAME}")
+endif()
 
 # Static library name.
 set(GHOSTTY_VT_STATIC_REALNAME "${CMAKE_STATIC_LIBRARY_PREFIX}ghostty-vt${CMAKE_STATIC_LIBRARY_SUFFIX}")
@@ -122,7 +127,11 @@ if(APPLE)
     set_target_properties(ghostty-vt PROPERTIES
         IMPORTED_SONAME "@rpath/${GHOSTTY_VT_SONAME}"
     )
-elseif(NOT WIN32)
+elseif(WIN32)
+    set_target_properties(ghostty-vt PROPERTIES
+        IMPORTED_IMPLIB "${ZIG_OUT_DIR}/lib/${GHOSTTY_VT_IMPLIB}"
+    )
+else()
     set_target_properties(ghostty-vt PROPERTIES
         IMPORTED_SONAME "${GHOSTTY_VT_SONAME}"
     )
@@ -152,8 +161,12 @@ add_dependencies(ghostty-vt-static zig_build_lib_vt)
 include(GNUInstallDirs)
 
 # Install shared library
-install(FILES "${GHOSTTY_VT_SHARED_LIBRARY}" TYPE LIB)
-if(NOT WIN32)
+if(WIN32)
+    # On Windows, install the DLL and PDB to bin/ and the import library to lib/
+    install(FILES "${GHOSTTY_VT_SHARED_LIBRARY}" "${ZIG_OUT_DIR}/bin/ghostty-vt.pdb" TYPE BIN)
+    install(FILES "${ZIG_OUT_DIR}/lib/${GHOSTTY_VT_IMPLIB}" TYPE LIB)
+else()
+    install(FILES "${GHOSTTY_VT_SHARED_LIBRARY}" TYPE LIB)
     # Install symlinks
     install(CODE "
         execute_process(COMMAND \${CMAKE_COMMAND} -E create_symlink
