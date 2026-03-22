@@ -95,7 +95,13 @@ else()
 endif()
 
 # Static library name.
-set(GHOSTTY_VT_STATIC_REALNAME "${CMAKE_STATIC_LIBRARY_PREFIX}ghostty-vt${CMAKE_STATIC_LIBRARY_SUFFIX}")
+# On Windows, the static lib is named "ghostty-vt-static.lib" to avoid
+# colliding with the DLL import library "ghostty-vt.lib".
+if(WIN32)
+    set(GHOSTTY_VT_STATIC_REALNAME "ghostty-vt-static.lib")
+else()
+    set(GHOSTTY_VT_STATIC_REALNAME "libghostty-vt.a")
+endif()
 set(GHOSTTY_VT_STATIC_LIBRARY "${ZIG_OUT_DIR}/lib/${GHOSTTY_VT_STATIC_REALNAME}")
 
 # Ensure the output directories exist so CMake doesn't reject the
