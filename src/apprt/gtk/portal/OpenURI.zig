@@ -31,6 +31,50 @@ entries: std.AutoArrayHashMapUnmanaged(usize, *Entry) = .empty,
 /// Used to manage a timer to clean up any orphan entries in the map.
 cleanup_timer: ?c_uint = null,
 
+/// Set to false during shutdown so callbacks stop touching internal state.
+alive: bool = true,
+
+const RequestData = struct {
+    open_uri: *OpenURI,
+    token: usize,
+    kind: apprt.action.OpenUrl.Kind,
+    uri: [:0]const u8,
+    request_path: [:0]const u8,
+
+    pub fn init(
+        alloc: Allocator,
+        open_uri: *OpenURI,
+        token: usize,
+        kind: apprt.action.OpenUrl.Kind,
+        uri: []const u8,
+        request_path: []const u8,
+    ) Allocator.Error!*RequestData {
+        const uri_copy = try alloc.dupeZ(u8, uri);
+        errdefer alloc.free(uri_copy);
+
+        const request_path_copy = try alloc.dupeZ(u8, request_path);
+        errdefer alloc.free(request_path_copy);
+
+        const data = try alloc.create(RequestData);
+        errdefer alloc.destroy(data);
+
+        data.* = .{
+            .open_uri = open_uri,
+            .token = token,
+            .kind = kind,
+            .uri = uri_copy,
+            .request_path = request_path_copy,
+        };
+
+        return data;
+    }
+
+    pub fn deinit(self: *const RequestData, alloc: Allocator) void {
+        alloc.free(self.uri);
+        alloc.free(self.request_path);
+    }
+};
+
 /// Data about any in-flight calls to the portal.
 pub const Entry = struct {
     /// When the request started.
@@ -47,7 +91,7 @@ pub const Entry = struct {
     /// method calls are asynchronous and the original may have been freed by
     /// the time we need it.
     uri: [:0]const u8,
-    /// Used to manage a scription to a D-Bus signal, which is how the XDG
+    /// Used to manage a subscription to a D-Bus signal, which is how the XDG
     /// Portal reports results of the method call.
     subscription: ?c_uint = null,
 
@@ -82,23 +126,36 @@ pub fn deinit(self: *OpenURI) void {
     self.mutex.lock();
     defer self.mutex.unlock();
 
+    if (!self.alive) return;
+    self.alive = false;
+
     self.stopCleanupTimer();
 
     for (self.entries.entries.items(.value)) |entry| {
-        entry.deinit(alloc);
-        alloc.destroy(entry);
+        self.unsubscribeFromResponse(entry);
+        destroyEntry(alloc, entry);
     }
 
     self.entries.deinit(alloc);
+    self.entries = .empty;
+    self.dbus = null;
 }
 
 /// Send the D-Bus method call to the XDG Desktop portal. The result of the
 /// method call will be reported asynchronously.
-pub fn start(self: *OpenURI, value: apprt.action.OpenUrl) (Allocator.Error || std.fmt.BufPrintError || Errors)!void {
+pub fn start(self: *OpenURI, value: apprt.action.OpenUrl) (Allocator.Error || Errors)!void {
     const alloc = self.app.app.allocator();
     const dbus = self.dbus orelse return error.DBusConnectionRequired;
 
     const token = portal.generateToken();
+    const request_path = try portal.getRequestPath(alloc, dbus, token);
+    defer alloc.free(request_path);
+
+    const request = try RequestData.init(alloc, self, token, value.kind, value.url, request_path);
+    errdefer {
+        request.deinit(alloc);
+        alloc.destroy(request);
+    }
 
     self.mutex.lock();
     defer self.mutex.unlock();
@@ -121,16 +178,12 @@ pub fn start(self: *OpenURI, value: apprt.action.OpenUrl) (Allocator.Error || st
 
     errdefer {
         _ = self.entries.swapRemove(token);
-        entry.deinit(alloc);
-        alloc.destroy(entry);
+        destroyEntry(alloc, entry);
     }
 
     self.startCleanupTimer();
-
-    try self.subscribeToResponse(entry, dbus);
-    errdefer self.unsubscribeFromResponse(entry);
-
-    try self.sendRequest(entry, dbus);
+    self.subscribeToResponse(entry, dbus, request_path.ptr);
+    self.sendRequest(entry, dbus, request);
 }
 
 /// Subscribe to the D-Bus signal that will contain the results of our method
@@ -139,15 +192,11 @@ fn subscribeToResponse(
     self: *OpenURI,
     entry: *Entry,
     dbus: *gio.DBusConnection,
-) (Allocator.Error || std.fmt.BufPrintError || Errors)!void {
+    request_path: [*:0]const u8,
+) void {
     assert(!self.mutex.tryLock());
 
-    const alloc = self.app.app.allocator();
-
     if (entry.subscription != null) return;
-
-    const request_path = try portal.getRequestPath(alloc, dbus, entry.token);
-    defer alloc.free(request_path);
 
     entry.subscription = dbus.signalSubscribe(
         null,
@@ -180,16 +229,39 @@ fn unsubscribeFromResponse(self: *OpenURI, entry: *Entry) void {
     }
 }
 
+fn destroyEntry(alloc: Allocator, entry: *Entry) void {
+    entry.deinit(alloc);
+    alloc.destroy(entry);
+}
+
+fn failRequest(self: *OpenURI, token: usize) ?*Entry {
+    self.mutex.lock();
+    defer self.mutex.unlock();
+
+    if (!self.alive) return null;
+
+    const entry = (self.entries.fetchSwapRemove(token) orelse return null).value;
+    self.unsubscribeFromResponse(entry);
+    return entry;
+}
+
+fn failRequestAndFallback(self: *OpenURI, request: *const RequestData) void {
+    const alloc = self.app.app.allocator();
+    const entry = self.failRequest(request.token) orelse return;
+    defer destroyEntry(alloc, entry);
+
+    self.app.app.openUrlFallback(request.kind, request.uri);
+}
+
 /// Send the D-Bus method call to the portal. The mutex must be locked when this
 /// is called.
 fn sendRequest(
     self: *OpenURI,
     entry: *Entry,
     dbus: *gio.DBusConnection,
-) Allocator.Error!void {
+    request: *RequestData,
+) void {
     assert(!self.mutex.tryLock());
-
-    const alloc = self.app.app.allocator();
 
     const payload = payload: {
         const builder_type = glib.VariantType.new("(ssa{sv})");
@@ -198,7 +270,6 @@ fn sendRequest(
         // Initialize our builder to build up our parameters
         var builder: glib.VariantBuilder = undefined;
         builder.init(builder_type);
-        errdefer builder.clear();
 
         // parent window - empty string means we have no window
         builder.add("s", "");
@@ -223,8 +294,8 @@ fn sendRequest(
 
                 builder.add("s", "handle_token");
 
-                const token = try std.fmt.allocPrintSentinel(alloc, "{x:0<16}", .{entry.token}, 0);
-                defer alloc.free(token);
+                var token_buf: portal.TokenBuffer = undefined;
+                const token = portal.formatToken(&token_buf, entry.token);
 
                 const handle_token = glib.Variant.newString(token.ptr);
                 builder.add("v", handle_token);
@@ -273,7 +344,7 @@ fn sendRequest(
         -1,
         null,
         requestCallback,
-        self,
+        request,
     );
 }
 
@@ -281,13 +352,25 @@ fn sendRequest(
 /// not indicate that the that the method call succeeded but it may contain an
 /// error message that is useful to log for debugging purposes.
 fn requestCallback(
-    _: ?*gobject.Object,
+    source: ?*gobject.Object,
     result: *gio.AsyncResult,
     ud: ?*anyopaque,
 ) callconv(.c) void {
-    const self: *OpenURI = @ptrCast(@alignCast(ud orelse return));
-    const dbus = self.dbus orelse {
-        log.err("Open URI request finished without a D-Bus connection", .{});
+    const request: *RequestData = @ptrCast(@alignCast(ud orelse return));
+    const self = request.open_uri;
+    const alloc = self.app.app.allocator();
+    defer {
+        request.deinit(alloc);
+        alloc.destroy(request);
+    }
+
+    const dbus = gobject.ext.cast(gio.DBusConnection, source orelse {
+        log.err("Open URI request finished without a D-Bus source object", .{});
+        self.failRequestAndFallback(request);
+        return;
+    }) orelse {
+        log.err("Open URI request finished with an unexpected source object", .{});
+        self.failRequestAndFallback(request);
         return;
     };
 
@@ -301,11 +384,13 @@ fn requestCallback(
             err.f_message orelse "(unknown)",
             err.f_code,
         });
+        self.failRequestAndFallback(request);
         return;
     }
 
     const reply = reply_ orelse {
         log.err("D-Bus method call returned a null value!", .{});
+        self.failRequestAndFallback(request);
         return;
     };
     defer reply.unref();
@@ -315,29 +400,42 @@ fn requestCallback(
 
     if (reply.isOfType(reply_type) == 0) {
         log.warn("Reply from D-Bus method call does not contain an object path!", .{});
+        self.failRequestAndFallback(request);
         return;
     }
 
-    var object_path_: ?[*:0]const u8 = null;
-    reply.get("(o)", &object_path_);
+    var object_path: [*:0]const u8 = undefined;
+    reply.get("(&o)", &object_path);
 
-    const object_path = object_path_ orelse {
-        log.err("D-Bus method call did not return an object path", .{});
-        return;
-    };
-
-    const token = portal.parseRequestPath(std.mem.span(object_path)) orelse {
+    const token = portal.parseRequestPathToken(std.mem.span(object_path)) orelse {
         log.warn("Unable to parse token from the object path {s}", .{object_path});
+        self.failRequestAndFallback(request);
         return;
     };
 
-    // Check to see if the request path returned matches a token that we sent.
+    if (token != request.token) {
+        log.warn("Open URI request returned mismatched token expected={x} actual={x}", .{
+            request.token,
+            token,
+        });
+        self.failRequestAndFallback(request);
+        return;
+    }
+
     self.mutex.lock();
     defer self.mutex.unlock();
 
-    if (!self.entries.contains(token)) {
-        log.warn("Token {x:0<16} not found in the map!", .{token});
-    }
+    if (!self.alive) return;
+
+    const entry = self.entries.get(token) orelse return;
+    if (std.mem.eql(u8, request.request_path, std.mem.span(object_path))) return;
+
+    log.debug("updating open uri request path old={s} new={s}", .{
+        request.request_path,
+        object_path,
+    });
+    self.unsubscribeFromResponse(entry);
+    self.subscribeToResponse(entry, dbus, object_path);
 }
 
 /// Handle the response signal from the portal. This should contain the actual
@@ -358,7 +456,7 @@ fn responseReceived(
 
     const alloc = self.app.app.allocator();
 
-    const token = portal.parseRequestPath(std.mem.span(object_path)) orelse {
+    const token = portal.parseRequestPathToken(std.mem.span(object_path)) orelse {
         log.warn("invalid object path: {s}", .{std.mem.span(object_path)});
         return;
     };
@@ -366,20 +464,20 @@ fn responseReceived(
     self.mutex.lock();
     defer self.mutex.unlock();
 
+    if (!self.alive) return;
+
     const entry = (self.entries.fetchSwapRemove(token) orelse {
-        log.warn("no entry for token {x:0<16}", .{token});
+        log.warn("no entry for token {x}", .{token});
         return;
     }).value;
 
-    defer {
-        entry.deinit(alloc);
-        alloc.destroy(entry);
-    }
+    defer destroyEntry(alloc, entry);
 
     self.unsubscribeFromResponse(entry);
 
     var response: u32 = 0;
     var results: ?*glib.Variant = null;
+    defer if (results) |variant| variant.unref();
     params.get("(u@a{sv})", &response, &results);
 
     switch (response) {
@@ -440,6 +538,7 @@ fn cleanup(ud: ?*anyopaque) callconv(.c) c_int {
     defer self.mutex.unlock();
 
     self.cleanup_timer = null;
+    if (!self.alive) return @intFromBool(glib.SOURCE_REMOVE);
 
     const now = std.time.Instant.now() catch {
         // `now()` should never fail, but if it does, don't crash, just return.
@@ -451,10 +550,11 @@ fn cleanup(ud: ?*anyopaque) callconv(.c) c_int {
     loop: while (true) {
         for (self.entries.entries.items(.value)) |entry| {
             if (now.since(entry.start) > cleanup_timeout * std.time.ns_per_s) {
+                log.warn("open uri request timed out token={x}", .{entry.token});
                 self.unsubscribeFromResponse(entry);
                 _ = self.entries.swapRemove(entry.token);
-                entry.deinit(alloc);
-                alloc.destroy(entry);
+                self.app.app.openUrlFallback(entry.kind, entry.uri);
+                destroyEntry(alloc, entry);
                 continue :loop;
             }
         }
