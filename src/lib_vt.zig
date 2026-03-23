@@ -218,7 +218,7 @@ comptime {
         @export(&c.grid_ref_graphemes, .{ .name = "ghostty_grid_ref_graphemes" });
         @export(&c.grid_ref_style, .{ .name = "ghostty_grid_ref_style" });
         @export(&c.build_info, .{ .name = "ghostty_build_info" });
-        @export(&c.free_alloc, .{ .name = "ghostty_free" });
+        @export(&c.alloc_free, .{ .name = "ghostty_free" });
 
         // On Wasm we need to export our allocator convenience functions.
         if (builtin.target.cpu.arch.isWasm()) {
