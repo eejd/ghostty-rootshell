@@ -399,8 +399,12 @@ pub fn add(
         step.addIncludePath(b.path("src/apprt/gtk"));
     }
 
-    // libcpp is required for various dependencies
-    step.linkLibCpp();
+    // libcpp is required for various dependencies. On MSVC, the C++
+    // standard library is provided by the MSVC runtime and linking
+    // libc++ would conflict with it.
+    if (step.rootModuleTarget().abi != .msvc) {
+        step.linkLibCpp();
+    }
 
     // We always require the system SDK so that our system headers are available.
     // This makes things like `os/log.h` available for cross-compiling.

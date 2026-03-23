@@ -20,7 +20,11 @@ pub fn build(b: *std.Build) !void {
         }),
         .linkage = .static,
     });
-    lib.linkLibCpp();
+    // On MSVC, the C++ standard library is provided by the MSVC runtime
+    // and linking Zig's bundled libc++ would conflict with it.
+    if (target.result.abi != .msvc) {
+        lib.linkLibCpp();
+    }
     if (upstream_) |upstream| {
         lib.addIncludePath(upstream.path(""));
         module.addIncludePath(upstream.path(""));

@@ -64,8 +64,10 @@ fn initVt(
         .optimize = cfg.optimize,
 
         // SIMD require libc/libcpp (both) but otherwise we don't care.
+        // On MSVC, the C++ standard library is provided by the MSVC runtime
+        // and linking libc++ would conflict with it.
         .link_libc = if (cfg.simd) true else null,
-        .link_libcpp = if (cfg.simd) true else null,
+        .link_libcpp = if (cfg.simd and cfg.target.result.abi != .msvc) true else null,
     });
     vt.addOptions("build_options", general_options);
     vt_options.add(b, vt);
