@@ -1,3 +1,6 @@
+const lib_alloc = @import("../../lib/allocator.zig");
+const CAllocator = lib_alloc.Allocator;
+
 const buildpkg = @import("build_info.zig");
 pub const cell = @import("cell.zig");
 pub const color = @import("color.zig");
@@ -111,6 +114,21 @@ pub const mouse_encoder_reset = mouse_encode.reset;
 pub const mouse_encoder_encode = mouse_encode.encode;
 
 pub const paste_is_safe = paste.is_safe;
+
+/// Free memory that was allocated by a libghostty-vt function.
+///
+/// This must be used to free buffers returned by functions like
+/// `format_alloc`. Pass the same allocator (or NULL for the default)
+/// that was used for the allocation.
+pub fn free_alloc(
+    alloc_: ?*const CAllocator,
+    ptr: ?[*]u8,
+    len: usize,
+) callconv(.c) void {
+    const mem = ptr orelse return;
+    const alloc = lib_alloc.default(alloc_);
+    alloc.free(mem[0..len]);
+}
 
 pub const size_report_encode = size_report.encode;
 

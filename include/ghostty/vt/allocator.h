@@ -191,6 +191,31 @@ typedef struct GhosttyAllocator {
     const GhosttyAllocatorVtable *vtable;
 } GhosttyAllocator;
 
+/**
+ * Free memory that was allocated by a libghostty-vt function.
+ *
+ * Use this to free buffers returned by functions such as
+ * ghostty_formatter_format_alloc(). Pass the same allocator that was
+ * used for the allocation, or NULL if the default allocator was used.
+ *
+ * On platforms where the library's internal allocator differs from the
+ * consumer's C runtime (e.g. Windows, where Zig's libc and MSVC's CRT
+ * maintain separate heaps), calling the standard C free() on memory
+ * allocated by the library causes undefined behavior. This function
+ * guarantees the correct allocator is used regardless of platform.
+ *
+ * It is safe to pass a NULL pointer; the call is a no-op in that case.
+ *
+ * @param allocator Pointer to the allocator that was used to allocate the
+ *   memory, or NULL if the default allocator was used
+ * @param ptr Pointer to the memory to free (may be NULL)
+ * @param len Length of the allocation in bytes (must match the original
+ *   allocation size)
+ *
+ * @ingroup allocator
+ */
+void ghostty_free(const GhosttyAllocator* allocator, uint8_t* ptr, size_t len);
+
 /** @} */
 
 #endif /* GHOSTTY_VT_ALLOCATOR_H */
