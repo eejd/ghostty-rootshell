@@ -3,6 +3,20 @@ const testing = std.testing;
 const lib_alloc = @import("../../lib/allocator.zig");
 const CAllocator = lib_alloc.Allocator;
 
+/// Allocate a buffer of `len` bytes using the given allocator
+/// (or the default allocator if NULL).
+///
+/// Returns a pointer to the allocated buffer, or NULL if the
+/// allocation failed.
+pub fn alloc(
+    alloc_: ?*const CAllocator,
+    len: usize,
+) callconv(.c) ?[*]u8 {
+    const allocator = lib_alloc.default(alloc_);
+    const buf = allocator.alloc(u8, len) catch return null;
+    return buf.ptr;
+}
+
 /// Free memory that was allocated by a libghostty-vt function.
 ///
 /// This must be used to free buffers returned by functions like
@@ -14,8 +28,25 @@ pub fn free(
     len: usize,
 ) callconv(.c) void {
     const mem = ptr orelse return;
-    const alloc = lib_alloc.default(alloc_);
-    alloc.free(mem[0..len]);
+    const allocator = lib_alloc.default(alloc_);
+    allocator.free(mem[0..len]);
+}
+
+test "alloc returns non-null" {
+    const ptr = alloc(&lib_alloc.test_allocator, 16);
+    try testing.expect(ptr != null);
+    free(&lib_alloc.test_allocator, ptr, 16);
+}
+
+test "alloc with null allocator" {
+    const ptr = alloc(null, 8);
+    try testing.expect(ptr != null);
+    free(null, ptr, 8);
+}
+
+test "alloc zero length" {
+    const ptr = alloc(&lib_alloc.test_allocator, 0);
+    defer free(&lib_alloc.test_allocator, ptr, 0);
 }
 
 test "free null pointer" {
@@ -23,14 +54,14 @@ test "free null pointer" {
 }
 
 test "free allocated memory" {
-    const alloc = lib_alloc.default(&lib_alloc.test_allocator);
-    const mem = try alloc.alloc(u8, 16);
+    const allocator = lib_alloc.default(&lib_alloc.test_allocator);
+    const mem = try allocator.alloc(u8, 16);
     free(&lib_alloc.test_allocator, mem.ptr, mem.len);
 }
 
 test "free with null allocator" {
     // null allocator falls back to the default (test allocator in tests)
-    const alloc = lib_alloc.default(null);
-    const mem = try alloc.alloc(u8, 8);
+    const allocator = lib_alloc.default(null);
+    const mem = try allocator.alloc(u8, 8);
     free(null, mem.ptr, mem.len);
 }

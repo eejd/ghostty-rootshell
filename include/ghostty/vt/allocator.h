@@ -44,6 +44,24 @@
  * 2. Create a GhosttyAllocator struct with your vtable and context
  * 3. Pass the allocator to functions that accept one
  *
+ * ## Alloc/Free Helpers
+ *
+ * ghostty_alloc() and ghostty_free() provide a simple malloc/free-style
+ * interface for allocating and freeing byte buffers through the library's
+ * allocator. These are useful when:
+ *
+ * - You need to allocate a buffer to pass into a libghostty-vt function
+ *   (e.g. preparing input data for ghostty_terminal_vt_write()).
+ * - You need to free a buffer returned by a libghostty-vt function
+ *   (e.g. the output of ghostty_formatter_format_alloc()).
+ * - You are on a platform where the library's internal allocator differs
+ *   from the consumer's C runtime (e.g. Windows, where Zig's libc and
+ *   MSVC's CRT maintain separate heaps), so calling the standard C
+ *   free() on library-allocated memory would be undefined behavior.
+ *
+ * Always use the same allocator (or NULL) for both the allocation and
+ * the corresponding free.
+ *
  * @{
  */
 
@@ -190,6 +208,21 @@ typedef struct GhosttyAllocator {
      */
     const GhosttyAllocatorVtable *vtable;
 } GhosttyAllocator;
+
+/**
+ * Allocate a buffer of `len` bytes.
+ *
+ * Uses the provided allocator, or the default allocator if NULL is passed.
+ * The returned buffer must be freed with ghostty_free() using the same
+ * allocator.
+ *
+ * @param allocator Pointer to the allocator to use, or NULL for the default
+ * @param len Number of bytes to allocate
+ * @return Pointer to the allocated buffer, or NULL if allocation failed
+ *
+ * @ingroup allocator
+ */
+uint8_t* ghostty_alloc(const GhosttyAllocator* allocator, size_t len);
 
 /**
  * Free memory that was allocated by a libghostty-vt function.

@@ -116,6 +116,7 @@ pub const mouse_encoder_encode = mouse_encode.encode;
 
 pub const paste_is_safe = paste.is_safe;
 
+pub const alloc_alloc = allocator.alloc;
 pub const alloc_free = allocator.free;
 
 pub const size_report_encode = size_report.encode;
