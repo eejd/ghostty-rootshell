@@ -94,23 +94,26 @@ fn initLib(
     );
 
     if (kind == .static) {
-        const is_msvc_abi = target.result.abi == .msvc;
-
         // These must be bundled since we're compiling into a static lib.
         // Otherwise, you get undefined symbol errors. This could cause
         // problems if you're linking multiple static Zig libraries but
         // we'll cross that bridge when we get to it.
-        //
-        // On MSVC targets, the MSVC runtime provides these, and Zig's
-        // bundled versions produce object files with ELF-style linker
-        // directives (e.g. /exclude-symbols) and COMDAT sections that
-        // are incompatible with the MSVC linker (LNK1143, LNK4229).
-        lib.bundle_compiler_rt = !is_msvc_abi;
-        lib.bundle_ubsan_rt = !is_msvc_abi;
+        lib.bundle_compiler_rt = true;
+        lib.bundle_ubsan_rt = true;
 
         // Enable PIC so the static library can be linked into PIE
         // executables, which is the default on most Linux distributions.
         lib.root_module.pic = true;
+    }
+
+    if (target.result.os.tag == .windows) {
+        // Zig's ubsan emits /exclude-symbols linker directives and
+        // its compiler_rt produces COMDAT sections that are
+        // incompatible with the MSVC linker (LNK1143, LNK4229).
+        // Skip bundling these runtimes on Windows since consumers
+        // link against the MSVC runtime.
+        lib.bundle_compiler_rt = false;
+        lib.bundle_ubsan_rt = false;
     }
 
     if (lib.rootModuleTarget().abi.isAndroid()) {
