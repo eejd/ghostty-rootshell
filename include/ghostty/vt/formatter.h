@@ -186,10 +186,9 @@ GhosttyResult ghostty_formatter_format_buf(GhosttyFormatter formatter,
  *
  * Each call formats the current terminal state. The buffer is allocated
  * using the provided allocator (or the default allocator if NULL).
- * The caller is responsible for freeing the returned buffer. When using
- * the default allocator (NULL), the buffer can be freed with `free()`.
- * When using a custom allocator, the buffer must be freed using the
- * same allocator.
+ * The caller is responsible for freeing the returned buffer with
+ * ghostty_free(), passing the same allocator (or NULL for the default)
+ * that was used for the allocation.
  *
  * @param formatter The formatter handle (must not be NULL)
  * @param allocator Pointer to allocator, or NULL to use the default allocator
