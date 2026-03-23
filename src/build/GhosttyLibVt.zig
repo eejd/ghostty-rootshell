@@ -106,6 +106,12 @@ fn initLib(
         lib.root_module.pic = true;
     }
 
+    if (target.result.os.tag == .windows) {
+        // Zig's ubsan emits /exclude-symbols linker directives that
+        // are incompatible with the MSVC linker (LNK4229).
+        lib.bundle_ubsan_rt = false;
+    }
+
     if (lib.rootModuleTarget().abi.isAndroid()) {
         // Support 16kb page sizes, required for Android 15+.
         lib.link_z_max_page_size = 16384; // 16kb

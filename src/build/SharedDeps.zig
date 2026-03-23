@@ -399,8 +399,15 @@ pub fn add(
         step.addIncludePath(b.path("src/apprt/gtk"));
     }
 
-    // libcpp is required for various dependencies
-    step.linkLibCpp();
+    // libcpp is required for various dependencies. On MSVC, we must
+    // not use linkLibCpp because Zig unconditionally passes -nostdinc++
+    // and then adds its bundled libc++/libc++abi include paths, which
+    // conflict with MSVC's own C++ runtime headers. The MSVC SDK
+    // include directories (already added via linkLibC above) contain
+    // both C and C++ headers, so linkLibCpp is not needed.
+    if (step.rootModuleTarget().abi != .msvc) {
+        step.linkLibCpp();
+    }
 
     // We always require the system SDK so that our system headers are available.
     // This makes things like `os/log.h` available for cross-compiling.
@@ -783,12 +790,35 @@ pub fn addSimd(
         const HWY_AVX3_DL: c_int = 1 << 7;
         const HWY_AVX3: c_int = 1 << 8;
 
+        var flags: std.ArrayListUnmanaged([]const u8) = .empty;
+
         // Zig 0.13 bug: https://github.com/ziglang/zig/issues/20414
         // To workaround this we just disable AVX512 support completely.
         // The performance difference between AVX2 and AVX512 is not
         // significant for our use case and AVX512 is very rare on consumer
         // hardware anyways.
         const HWY_DISABLED_TARGETS: c_int = HWY_AVX10_2 | HWY_AVX3_SPR | HWY_AVX3_ZEN4 | HWY_AVX3_DL | HWY_AVX3;
+        if (target.result.cpu.arch == .x86_64) try flags.append(
+            b.allocator,
+            b.fmt("-DHWY_DISABLED_TARGETS={}", .{HWY_DISABLED_TARGETS}),
+        );
+
+        // MSVC requires explicit std specification otherwise these
+        // are guarded, at least on Windows 2025. Doing it unconditionally
+        // doesn't cause any issues on other platforms and ensures we get
+        // C++17 support on MSVC.
+        try flags.append(
+            b.allocator,
+            "-std=c++17",
+        );
+
+        // Disable ubsan for MSVC to avoid undefined references to
+        // __ubsan_handle_* symbols that require a runtime we don't link
+        // and bundle. Hopefully we can fix this one day since ubsan is nice!
+        if (target.result.abi == .msvc) try flags.appendSlice(b.allocator, &.{
+            "-fno-sanitize=undefined",
+            "-fno-sanitize-trap=undefined",
+        });
 
         m.addCSourceFiles(.{
             .files = &.{
@@ -797,9 +827,7 @@ pub fn addSimd(
                 "src/simd/index_of.cpp",
                 "src/simd/vt.cpp",
             },
-            .flags = if (target.result.cpu.arch == .x86_64) &.{
-                b.fmt("-DHWY_DISABLED_TARGETS={}", .{HWY_DISABLED_TARGETS}),
-            } else &.{},
+            .flags = flags.items,
         });
     }
 }
