@@ -94,20 +94,12 @@ fn initLib(
     );
 
     if (kind == .static) {
-        const is_windows = target.result.os.tag == .windows;
-
         // These must be bundled since we're compiling into a static lib.
         // Otherwise, you get undefined symbol errors. This could cause
         // problems if you're linking multiple static Zig libraries but
         // we'll cross that bridge when we get to it.
-        //
-        // On Windows, Zig's compiler_rt produces COFF objects with
-        // invalid COMDAT sections (LNK1143) and its ubsan_rt emits
-        // /exclude-symbols directives the MSVC linker rejects
-        // (LNK4229). Both are skipped since the MSVC CRT provides
-        // the needed builtins (memcpy, memset, etc.).
-        lib.bundle_compiler_rt = !is_windows;
-        lib.bundle_ubsan_rt = !is_windows;
+        lib.bundle_compiler_rt = true;
+        lib.bundle_ubsan_rt = true;
 
         // Enable PIC so the static library can be linked into PIE
         // executables, which is the default on most Linux distributions.
@@ -118,6 +110,11 @@ fn initLib(
         // Zig's ubsan emits /exclude-symbols linker directives that
         // are incompatible with the MSVC linker (LNK4229).
         lib.bundle_ubsan_rt = false;
+
+        // The self-hosted backend produces COFF objects with invalid
+        // COMDAT sections in compiler_rt that the MSVC linker rejects
+        // (LNK1143). Use the LLVM backend to produce valid objects.
+        lib.use_llvm = true;
     }
 
     if (lib.rootModuleTarget().abi.isAndroid()) {

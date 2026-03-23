@@ -53,6 +53,11 @@ if(NOT TARGET ghostty-vt::ghostty-vt-static)
         IMPORTED_LOCATION "${_ghostty_vt_libdir}/@GHOSTTY_VT_STATIC_REALNAME@"
         INTERFACE_INCLUDE_DIRECTORIES "${PACKAGE_PREFIX_DIR}/@CMAKE_INSTALL_INCLUDEDIR@"
     )
+    if(WIN32)
+        set_target_properties(ghostty-vt::ghostty-vt-static PROPERTIES
+            INTERFACE_LINK_LIBRARIES "ntdll;kernel32"
+        )
+    endif()
 endif()
 
 unset(_ghostty_vt_libdir)

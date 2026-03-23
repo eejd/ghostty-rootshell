@@ -160,6 +160,14 @@ set_target_properties(ghostty-vt-static PROPERTIES
     IMPORTED_LOCATION "${GHOSTTY_VT_STATIC_LIBRARY}"
     INTERFACE_INCLUDE_DIRECTORIES "${ZIG_OUT_DIR}/include"
 )
+if(WIN32)
+    # On Windows, the Zig standard library uses NT API functions
+    # (NtClose, NtCreateSection, etc.) and kernel32 functions that
+    # consumers must link when using the static library.
+    set_target_properties(ghostty-vt-static PROPERTIES
+        INTERFACE_LINK_LIBRARIES "ntdll;kernel32"
+    )
+endif()
 add_dependencies(ghostty-vt-static zig_build_lib_vt)
 
 # --- Install ------------------------------------------------------------------
