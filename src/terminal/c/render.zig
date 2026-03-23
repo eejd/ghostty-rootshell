@@ -193,6 +193,7 @@ pub fn get(
     }
 
     return switch (data) {
+        .invalid => .invalid_value,
         inline else => |comptime_data| getTyped(
             state_,
             comptime_data,
@@ -467,6 +468,7 @@ pub fn row_cells_get(
     }
 
     return switch (data) {
+        .invalid => .invalid_value,
         inline else => |comptime_data| rowCellsGetTyped(
             cells_,
             comptime_data,
@@ -566,6 +568,7 @@ pub fn row_get(
     }
 
     return switch (data) {
+        .invalid => .invalid_value,
         inline else => |comptime_data| rowGetTyped(
             iterator_,
             comptime_data,

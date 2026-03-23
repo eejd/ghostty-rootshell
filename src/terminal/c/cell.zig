@@ -110,6 +110,7 @@ pub fn get(
     }
 
     return switch (data) {
+        .invalid => .invalid_value,
         inline else => |comptime_data| getTyped(
             cell_,
             comptime_data,

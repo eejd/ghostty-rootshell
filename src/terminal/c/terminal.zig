@@ -196,6 +196,7 @@ pub fn get(
     }
 
     return switch (data) {
+        .invalid => .invalid_value,
         inline else => |comptime_data| getTyped(
             terminal_,
             comptime_data,
