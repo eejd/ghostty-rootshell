@@ -95,7 +95,10 @@ test "abi by removing a key" {
 /// Verify that for every key in enum T, there is a matching declaration in
 /// `ghostty.h` with the correct value. This should only ever be called inside a `test`
 /// because the `ghostty.h` module is only available then.
-pub fn checkGhosttyHEnum(comptime T: type, comptime prefix: []const u8) !void {
+pub fn checkGhosttyHEnum(
+    comptime T: type,
+    comptime prefix: []const u8,
+) !void {
     const info = @typeInfo(T);
 
     try std.testing.expect(info == .@"enum");

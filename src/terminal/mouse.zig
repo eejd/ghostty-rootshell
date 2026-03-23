@@ -92,6 +92,7 @@ pub const Shape = enum(c_int) {
     };
 
     test "ghostty.h MouseShape" {
+        if (comptime build_options.artifact == .lib) return error.SkipZigTest;
         try lib.checkGhosttyHEnum(Shape, "GHOSTTY_MOUSE_SHAPE_");
     }
 };
