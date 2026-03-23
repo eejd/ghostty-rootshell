@@ -40,12 +40,16 @@ pub const Handler = struct {
         /// during the lifetime of the call.
         write_pty: ?*const fn (*Handler, [:0]const u8) void,
 
+        /// Called when the window title is set via OSC 2.
+        set_window_title: ?*const fn (*Handler, []const u8) void,
+
         /// No effects means that the stream effectively becomes readonly
         /// that only affects pure terminal state and ignores all side
         /// effects beyond that.
         pub const readonly: Effects = .{
             .bell = null,
             .write_pty = null,
+            .set_window_title = null,
         };
     };
 
@@ -190,6 +194,7 @@ pub const Handler = struct {
 
             // Effect-based handlers
             .bell => self.bell(),
+            .window_title => self.setWindowTitle(value.title),
             .request_mode => self.requestMode(value.mode),
             .request_mode_unknown => self.requestModeUnknown(value.mode, value.ansi),
 
@@ -214,7 +219,6 @@ pub const Handler = struct {
             .device_attributes,
             .device_status,
             .kitty_keyboard_query,
-            .window_title,
             .report_pwd,
             .show_desktop_notification,
             .progress_report,
@@ -233,6 +237,11 @@ pub const Handler = struct {
     inline fn writePty(self: *Handler, data: [:0]const u8) void {
         const func = self.effects.write_pty orelse return;
         func(self, data);
+    }
+
+    inline fn setWindowTitle(self: *Handler, title: []const u8) void {
+        const func = self.effects.set_window_title orelse return;
+        func(self, title);
     }
 
     fn requestMode(self: *Handler, mode: modes.Mode) void {
@@ -1162,4 +1171,73 @@ test "stream: CSI W with intermediate but no params" {
     defer s.deinit();
 
     s.nextSlice("\x1b[?W");
+}
+
+test "window_title effect is called" {
+    var t: Terminal = try .init(testing.allocator, .{ .cols = 80, .rows = 24 });
+    defer t.deinit(testing.allocator);
+
+    const S = struct {
+        var last_title: ?[]const u8 = null;
+        fn setWindowTitle(handler: *Handler, title: []const u8) void {
+            _ = handler;
+            if (last_title) |old| testing.allocator.free(old);
+            last_title = testing.allocator.dupe(u8, title) catch null;
+        }
+    };
+    S.last_title = null;
+    defer if (S.last_title) |t2| testing.allocator.free(t2);
+
+    var handler: Handler = .init(&t);
+    handler.effects.set_window_title = &S.setWindowTitle;
+
+    var s: Stream = .initAlloc(testing.allocator, handler);
+    defer s.deinit();
+
+    // Set window title via OSC 2
+    s.nextSlice("\x1b]2;Hello World\x1b\\");
+    try testing.expectEqualStrings("Hello World", S.last_title.?);
+}
+
+test "window_title effect not called without callback" {
+    var t: Terminal = try .init(testing.allocator, .{ .cols = 80, .rows = 24 });
+    defer t.deinit(testing.allocator);
+
+    var s: Stream = .initAlloc(testing.allocator, .init(&t));
+    defer s.deinit();
+
+    // Should not crash when no callback is set
+    s.nextSlice("\x1b]2;Hello World\x1b\\");
+
+    // Terminal should still be functional
+    s.nextSlice("Test");
+    const str = try t.plainString(testing.allocator);
+    defer testing.allocator.free(str);
+    try testing.expectEqualStrings("Test", str);
+}
+
+test "window_title effect with empty title" {
+    var t: Terminal = try .init(testing.allocator, .{ .cols = 80, .rows = 24 });
+    defer t.deinit(testing.allocator);
+
+    const S = struct {
+        var last_title: ?[]const u8 = null;
+        fn setWindowTitle(handler: *Handler, title: []const u8) void {
+            _ = handler;
+            if (last_title) |old| testing.allocator.free(old);
+            last_title = testing.allocator.dupe(u8, title) catch null;
+        }
+    };
+    S.last_title = null;
+    defer if (S.last_title) |t2| testing.allocator.free(t2);
+
+    var handler: Handler = .init(&t);
+    handler.effects.set_window_title = &S.setWindowTitle;
+
+    var s: Stream = .initAlloc(testing.allocator, handler);
+    defer s.deinit();
+
+    // Set empty window title
+    s.nextSlice("\x1b]2;\x1b\\");
+    try testing.expectEqualStrings("", S.last_title.?);
 }
