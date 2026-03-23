@@ -107,12 +107,8 @@ fn initLib(
     }
 
     if (target.result.os.tag == .windows) {
-        // Zig's ubsan emits /exclude-symbols linker directives and
-        // its compiler_rt produces COMDAT sections that are
-        // incompatible with the MSVC linker (LNK1143, LNK4229).
-        // Skip bundling these runtimes on Windows since consumers
-        // link against the MSVC runtime.
-        lib.bundle_compiler_rt = false;
+        // Zig's ubsan emits /exclude-symbols linker directives that
+        // are incompatible with the MSVC linker (LNK4229).
         lib.bundle_ubsan_rt = false;
     }
 
