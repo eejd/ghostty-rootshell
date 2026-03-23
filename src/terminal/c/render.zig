@@ -193,6 +193,7 @@ pub fn get(
     }
 
     return switch (data) {
+        .invalid => .invalid_value,
         inline else => |comptime_data| getTyped(
             state_,
             comptime_data,
@@ -336,11 +337,7 @@ pub fn colors_get(
         out_colors.cursor_has_value = colors.cursor != null;
     }
 
-    if (lib.structSizedFieldFits(
-        Colors,
-        out_size,
-        "palette",
-    )) {
+    {
         const palette_offset = @offsetOf(Colors, "palette");
         if (out_size > palette_offset) {
             const available = out_size - palette_offset;
@@ -467,6 +464,7 @@ pub fn row_cells_get(
     }
 
     return switch (data) {
+        .invalid => .invalid_value,
         inline else => |comptime_data| rowCellsGetTyped(
             cells_,
             comptime_data,
@@ -566,6 +564,7 @@ pub fn row_get(
     }
 
     return switch (data) {
+        .invalid => .invalid_value,
         inline else => |comptime_data| rowGetTyped(
             iterator_,
             comptime_data,

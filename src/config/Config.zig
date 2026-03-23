@@ -39,6 +39,7 @@ pub const Path = @import("path.zig").Path;
 pub const RepeatablePath = @import("path.zig").RepeatablePath;
 const ClipboardCodepointMap = @import("ClipboardCodepointMap.zig");
 const KeyRemapSet = @import("../input/key_mods.zig").RemapSet;
+pub const WindowPaddingBalance = @import("../renderer/size.zig").PaddingBalance;
 const string = @import("string.zig");
 
 // We do this instead of importing all of terminal/main.zig to
@@ -5243,12 +5244,6 @@ pub const Fullscreen = enum(c_int) {
     @"non-native",
     @"non-native-visible-menu",
     @"non-native-padded-notch",
-};
-
-pub const WindowPaddingBalance = enum {
-    false,
-    true,
-    equal,
 };
 
 pub const WindowPaddingColor = enum {

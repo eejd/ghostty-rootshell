@@ -43,6 +43,7 @@ pub fn get(
     }
 
     return switch (data) {
+        .invalid => .invalid_value,
         inline else => |comptime_data| getTyped(
             comptime_data,
             @ptrCast(@alignCast(out)),

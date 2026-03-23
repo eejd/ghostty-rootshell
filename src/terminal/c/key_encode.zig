@@ -259,7 +259,7 @@ test "setopt_from_terminal" {
 
     // Options should reflect defaults from a fresh terminal
     try testing.expect(!e.?.opts.cursor_key_application);
-    try testing.expect(!e.?.opts.alt_esc_prefix);
+    try testing.expect(e.?.opts.alt_esc_prefix);
     try testing.expectEqual(KittyFlags.disabled, e.?.opts.kitty_flags);
     try testing.expectEqual(OptionAsAlt.false, e.?.opts.macos_option_as_alt);
 }

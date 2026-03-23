@@ -76,6 +76,7 @@ pub fn commandData(
     }
 
     return switch (data) {
+        .invalid => false,
         inline else => |comptime_data| commandDataTyped(
             command_,
             comptime_data,

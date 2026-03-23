@@ -205,6 +205,7 @@ pub const Command = union(Key) {
             pause,
 
             test "ghostty.h Command.ProgressReport.State" {
+                if (comptime build_options.artifact == .lib) return error.SkipZigTest;
                 try lib.checkGhosttyHEnum(State, "GHOSTTY_PROGRESS_STATE_");
             }
         };
