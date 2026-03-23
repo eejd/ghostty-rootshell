@@ -39,7 +39,8 @@ pub const Handler = struct {
 
         /// Called when the terminal needs to write data back to the pty,
         /// e.g. in response to a DECRQM query. The data is only valid
-        /// during the lifetime of the call.
+        /// during the lifetime of the call so callers must copy it
+        /// if it needs to be stored or used after the call returns.
         write_pty: ?*const fn (*Handler, [:0]const u8) void,
 
         /// Called when the terminal title changes via escape sequences
@@ -58,6 +59,11 @@ pub const Handler = struct {
         /// Return null to silently ignore the query.
         size: ?*const fn (*Handler) ?size_report.Size,
 
+        /// Called in response to ENQ (0x05). Returns the raw response
+        /// bytes to write back to the pty. The returned memory must be
+        /// valid for the lifetime of the call.
+        enquiry: ?*const fn (*Handler) []const u8,
+
         /// No effects means that the stream effectively becomes readonly
         /// that only affects pure terminal state and ignores all side
         /// effects beyond that.
@@ -67,6 +73,7 @@ pub const Handler = struct {
             .title_changed = null,
             .xtversion = null,
             .size = null,
+            .enquiry = null,
         };
     };
 
@@ -217,6 +224,7 @@ pub const Handler = struct {
             .size_report => self.reportSize(value),
             .window_title => self.windowTitle(value.title),
             .xtversion => self.reportXtversion(),
+            .enquiry => self.reportEnquiry(),
 
             // No supported DCS commands have any terminal-modifying effects,
             // but they may in the future. For now we just ignore it.
@@ -233,7 +241,6 @@ pub const Handler = struct {
             => {},
 
             // Have no terminal-modifying effect
-            .enquiry,
             .device_attributes,
             .device_status,
             .report_pwd,
@@ -254,6 +261,17 @@ pub const Handler = struct {
     fn bell(self: *Handler) void {
         const func = self.effects.bell orelse return;
         func(self);
+    }
+
+    fn reportEnquiry(self: *Handler) void {
+        const func = self.effects.enquiry orelse return;
+        const response = func(self);
+        if (response.len == 0) return;
+        var buf: [256]u8 = undefined;
+        if (response.len >= buf.len) return;
+        @memcpy(buf[0..response.len], response);
+        buf[response.len] = 0;
+        self.writePty(buf[0..response.len :0]);
     }
 
     fn reportXtversion(self: *Handler) void {
@@ -1575,4 +1593,81 @@ test "size report csi_21_t title" {
     s.nextSlice("\x1b[21t");
     defer testing.allocator.free(S.written.?);
     try testing.expectEqualStrings("\x1b]lMy Title\x1b\\", S.written.?);
+}
+
+test "enquiry no effect" {
+    var t: Terminal = try .init(testing.allocator, .{ .cols = 80, .rows = 24 });
+    defer t.deinit(testing.allocator);
+
+    const S = struct {
+        var written: ?[]const u8 = null;
+        fn writePty(_: *Handler, data: [:0]const u8) void {
+            written = testing.allocator.dupe(u8, data) catch @panic("OOM");
+        }
+    };
+    S.written = null;
+
+    var handler: Handler = .init(&t);
+    handler.effects.write_pty = &S.writePty;
+
+    var s: Stream = .initAlloc(testing.allocator, handler);
+    defer s.deinit();
+
+    // ENQ without enquiry effect should not write anything
+    s.nextSlice("\x05");
+    try testing.expect(S.written == null);
+}
+
+test "enquiry with effect" {
+    var t: Terminal = try .init(testing.allocator, .{ .cols = 80, .rows = 24 });
+    defer t.deinit(testing.allocator);
+
+    const S = struct {
+        var written: ?[]const u8 = null;
+        fn writePty(_: *Handler, data: [:0]const u8) void {
+            written = testing.allocator.dupe(u8, data) catch @panic("OOM");
+        }
+        fn enquiry(_: *Handler) []const u8 {
+            return "ghostty";
+        }
+    };
+    S.written = null;
+
+    var handler: Handler = .init(&t);
+    handler.effects.write_pty = &S.writePty;
+    handler.effects.enquiry = &S.enquiry;
+
+    var s: Stream = .initAlloc(testing.allocator, handler);
+    defer s.deinit();
+
+    s.nextSlice("\x05");
+    defer testing.allocator.free(S.written.?);
+    try testing.expectEqualStrings("ghostty", S.written.?);
+}
+
+test "enquiry with empty response" {
+    var t: Terminal = try .init(testing.allocator, .{ .cols = 80, .rows = 24 });
+    defer t.deinit(testing.allocator);
+
+    const S = struct {
+        var written: ?[]const u8 = null;
+        fn writePty(_: *Handler, data: [:0]const u8) void {
+            written = testing.allocator.dupe(u8, data) catch @panic("OOM");
+        }
+        fn enquiry(_: *Handler) []const u8 {
+            return "";
+        }
+    };
+    S.written = null;
+
+    var handler: Handler = .init(&t);
+    handler.effects.write_pty = &S.writePty;
+    handler.effects.enquiry = &S.enquiry;
+
+    var s: Stream = .initAlloc(testing.allocator, handler);
+    defer s.deinit();
+
+    // Empty enquiry response should not write anything
+    s.nextSlice("\x05");
+    try testing.expect(S.written == null);
 }
