@@ -31,6 +31,24 @@ pub const Handler = struct {
     /// The terminal state to modify.
     terminal: *Terminal,
 
+    /// Callbacks for certain effects that handlers may have. These
+    /// may or may not fully replace internal handling of certain effects,
+    /// but they allow for the handler to trigger or query external
+    /// effects.
+    effects: Effects = .readonly,
+
+    pub const Effects = struct {
+        /// Called when the bell is rung (BEL).
+        bell: ?*const fn (*Handler) void,
+
+        /// No effects means that the stream effectively becomes readonly
+        /// that only affects pure terminal state and ignores all side
+        /// effects beyond that.
+        pub const readonly: Effects = .{
+            .bell = null,
+        };
+    };
+
     pub fn init(terminal: *Terminal) Handler {
         return .{
             .terminal = terminal,
@@ -170,6 +188,9 @@ pub const Handler = struct {
             .color_operation => try self.colorOperation(value.op, &value.requests),
             .kitty_color_report => try self.kittyColorOperation(value),
 
+            // Effect-based handlers
+            .bell => self.bell(),
+
             // No supported DCS commands have any terminal-modifying effects,
             // but they may in the future. For now we just ignore it.
             .dcs_hook,
@@ -185,7 +206,6 @@ pub const Handler = struct {
             => {},
 
             // Have no terminal-modifying effect
-            .bell,
             .enquiry,
             .request_mode,
             .request_mode_unknown,
@@ -203,6 +223,11 @@ pub const Handler = struct {
             .title_pop,
             => {},
         }
+    }
+
+    inline fn bell(self: *Handler) void {
+        const func = self.effects.bell orelse return;
+        func(self);
     }
 
     inline fn horizontalTab(self: *Handler, count: u16) void {
@@ -999,6 +1024,50 @@ test "semantic prompt end_prompt_start_input_terminate_eol clears on linefeed" {
     // Linefeed should reset semantic content to output
     s.nextSlice("\n");
     try testing.expectEqual(.output, t.screens.active.cursor.semantic_content);
+}
+
+test "bell effect callback" {
+    var t: Terminal = try .init(testing.allocator, .{ .cols = 80, .rows = 24 });
+    defer t.deinit(testing.allocator);
+
+    // Test bell with null callback (default readonly effects) doesn't crash
+    {
+        var s: Stream = .initAlloc(testing.allocator, .init(&t));
+        defer s.deinit();
+
+        s.nextSlice("\x07");
+
+        // Terminal should still be functional after bell
+        s.nextSlice("AfterBell");
+        const str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("AfterBell", str);
+    }
+
+    t.fullReset();
+
+    // Test bell with a callback
+    {
+        const S = struct {
+            var bell_count: usize = 0;
+            fn bell(_: *Handler) void {
+                bell_count += 1;
+            }
+        };
+        S.bell_count = 0;
+
+        var handler: Handler = .init(&t);
+        handler.effects.bell = &S.bell;
+
+        var s: Stream = .initAlloc(testing.allocator, handler);
+        defer s.deinit();
+
+        s.nextSlice("\x07");
+        try testing.expectEqual(@as(usize, 1), S.bell_count);
+
+        s.nextSlice("\x07\x07");
+        try testing.expectEqual(@as(usize, 3), S.bell_count);
+    }
 }
 
 test "stream: CSI W with intermediate but no params" {
