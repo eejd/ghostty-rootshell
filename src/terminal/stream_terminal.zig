@@ -35,11 +35,17 @@ pub const Handler = struct {
         /// Called when the bell is rung (BEL).
         bell: ?*const fn (*Handler) void,
 
+        /// Called when the terminal needs to write data back to the pty,
+        /// e.g. in response to a DECRQM query. The data is only valid
+        /// during the lifetime of the call.
+        write_pty: ?*const fn (*Handler, [:0]const u8) void,
+
         /// No effects means that the stream effectively becomes readonly
         /// that only affects pure terminal state and ignores all side
         /// effects beyond that.
         pub const readonly: Effects = .{
             .bell = null,
+            .write_pty = null,
         };
     };
 
@@ -184,6 +190,8 @@ pub const Handler = struct {
 
             // Effect-based handlers
             .bell => self.bell(),
+            .request_mode => self.requestMode(value.mode),
+            .request_mode_unknown => self.requestModeUnknown(value.mode, value.ansi),
 
             // No supported DCS commands have any terminal-modifying effects,
             // but they may in the future. For now we just ignore it.
@@ -201,8 +209,6 @@ pub const Handler = struct {
 
             // Have no terminal-modifying effect
             .enquiry,
-            .request_mode,
-            .request_mode_unknown,
             .size_report,
             .xtversion,
             .device_attributes,
@@ -222,6 +228,36 @@ pub const Handler = struct {
     inline fn bell(self: *Handler) void {
         const func = self.effects.bell orelse return;
         func(self);
+    }
+
+    inline fn writePty(self: *Handler, data: [:0]const u8) void {
+        const func = self.effects.write_pty orelse return;
+        func(self, data);
+    }
+
+    fn requestMode(self: *Handler, mode: modes.Mode) void {
+        const report = self.terminal.modes.getReport(.fromMode(mode));
+        self.sendModeReport(report);
+    }
+
+    fn requestModeUnknown(self: *Handler, mode_raw: u16, ansi: bool) void {
+        const report = self.terminal.modes.getReport(.{
+            .value = @truncate(mode_raw),
+            .ansi = ansi,
+        });
+        self.sendModeReport(report);
+    }
+
+    fn sendModeReport(self: *Handler, report: modes.Report) void {
+        var buf: [modes.Report.max_size + 1]u8 = undefined;
+        var writer: std.Io.Writer = .fixed(&buf);
+        report.encode(&writer) catch |err| {
+            log.warn("error encoding mode report err={}", .{err});
+            return;
+        };
+        const len = writer.buffered().len;
+        buf[len] = 0;
+        self.writePty(buf[0..len :0]);
     }
 
     inline fn horizontalTab(self: *Handler, count: u16) void {
@@ -1061,6 +1097,54 @@ test "bell effect callback" {
 
         s.nextSlice("\x07\x07");
         try testing.expectEqual(@as(usize, 3), S.bell_count);
+    }
+}
+
+test "request mode DECRQM with write_pty callback" {
+    var t: Terminal = try .init(testing.allocator, .{ .cols = 80, .rows = 24 });
+    defer t.deinit(testing.allocator);
+
+    // Without callback, DECRQM should not crash
+    {
+        var s: Stream = .initAlloc(testing.allocator, .init(&t));
+        defer s.deinit();
+
+        // DECRQM for mode 7 (wraparound) — should be silently ignored
+        s.nextSlice("\x1B[?7$p");
+    }
+
+    t.fullReset();
+
+    // With callback, DECRQM should produce a response
+    {
+        const S = struct {
+            var last_response: ?[:0]const u8 = null;
+            fn writePty(_: *Handler, data: [:0]const u8) void {
+                if (last_response) |old| testing.allocator.free(old);
+                last_response = testing.allocator.dupeZ(u8, data) catch @panic("OOM");
+            }
+        };
+        S.last_response = null;
+        defer if (S.last_response) |old| testing.allocator.free(old);
+
+        var handler: Handler = .init(&t);
+        handler.effects.write_pty = &S.writePty;
+
+        var s: Stream = .initAlloc(testing.allocator, handler);
+        defer s.deinit();
+
+        // Wraparound mode (7) is set by default
+        s.nextSlice("\x1B[?7$p");
+        try testing.expectEqualStrings("\x1B[?7;1$y", S.last_response.?);
+
+        // Disable wraparound and query again
+        s.nextSlice("\x1B[?7l");
+        s.nextSlice("\x1B[?7$p");
+        try testing.expectEqualStrings("\x1B[?7;2$y", S.last_response.?);
+
+        // Query an unknown mode
+        s.nextSlice("\x1B[?9999$p");
+        try testing.expectEqualStrings("\x1B[?9999;0$y", S.last_response.?);
     }
 }
 
