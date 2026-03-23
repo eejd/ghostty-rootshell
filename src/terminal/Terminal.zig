@@ -24,8 +24,7 @@ const sgr = @import("sgr.zig");
 const Tabstops = @import("Tabstops.zig");
 const color = @import("color.zig");
 const mouse = @import("mouse.zig");
-const ReadonlyHandler = @import("stream_readonly.zig").Handler;
-const ReadonlyStream = @import("stream_readonly.zig").Stream;
+const Stream = @import("stream_terminal.zig").Stream;
 
 const size = @import("size.zig");
 const pagepkg = @import("page.zig");
@@ -237,19 +236,24 @@ pub fn deinit(self: *Terminal, alloc: Allocator) void {
 
 /// Return a terminal.Stream that can process VT streams and update this
 /// terminal state. The streams will only process read-only data that
-/// modifies terminal state. Sequences that query or otherwise require
-/// output will be ignored.
+/// modifies terminal state.
+///
+/// Sequences that query or otherwise require output will be ignored.
+/// If you want to handle side effects, use `vtHandler` and set the
+/// effects field yourself, then initialize a stream.
+///
+/// This must be deinitialized by the caller.
 ///
 /// Important: this creates a new stream each time with fresh parser state.
 /// If you need to persist parser state across multiple writes (e.g.
 /// for handling escape sequences split across write boundaries), you
 /// must store and reuse the returned stream.
-pub fn vtStream(self: *Terminal) ReadonlyStream {
+pub fn vtStream(self: *Terminal) Stream {
     return .initAlloc(self.gpa(), self.vtHandler());
 }
 
 /// This is the handler-side only for vtStream.
-pub fn vtHandler(self: *Terminal) ReadonlyHandler {
+pub fn vtHandler(self: *Terminal) Stream.Handler {
     return .init(self);
 }
 

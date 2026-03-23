@@ -419,11 +419,12 @@ pub const Action = union(Key) {
 /// e.g. you don't need to pay a conditional branching cost on every single
 /// action because the Zig compiler codegens separate code paths for every
 /// single action at comptime.
-pub fn Stream(comptime Handler: type) type {
+pub fn Stream(comptime H: type) type {
     return struct {
         const Self = @This();
 
         pub const Action = streampkg.Action;
+        pub const Handler = H;
 
         const T = switch (@typeInfo(Handler)) {
             .pointer => |p| p.child,

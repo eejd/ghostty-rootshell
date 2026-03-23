@@ -8,25 +8,19 @@ const osc_color = @import("osc/parsers/color.zig");
 const kitty_color = @import("kitty/color.zig");
 const Terminal = @import("Terminal.zig");
 
-const log = std.log.scoped(.stream_readonly);
+const log = std.log.scoped(.stream_terminal);
 
 /// This is a Stream implementation that processes actions against
-/// a Terminal and updates the Terminal state. It is called "readonly" because
-/// it only processes actions that modify terminal state, while ignoring
-/// any actions that require a response (like queries).
-///
-/// If you're implementing a terminal emulator that only needs to render
-/// output and doesn't need to respond (since it maybe isn't running the
-/// actual program), this is the stream type to use. For example, this is
-/// ideal for replay tooling, CI logs, PaaS builder output, etc.
+/// a Terminal and updates the Terminal state.
 pub const Stream = stream.Stream(Handler);
 
-/// See Stream, which is just the stream wrapper around this.
+/// A stream handler that updates terminal state. By default, it is
+/// readonly in the sense that it only updates terminal state and ignores
+/// all other sequences that require a response or otherwise have side
+/// effects (e.g. clipboards).
 ///
-/// This isn't attached directly to Terminal because there is additional
-/// state and options we plan to add in the future, such as APC/DCS which
-/// don't make sense to me to add to the Terminal directly. Instead, you
-/// can call `vtHandler` on Terminal to initialize this handler.
+/// You can manually set various effects callbacks in the `effects` field
+/// to implement certain effects such as bells, titles, clipboard, etc.
 pub const Handler = struct {
     /// The terminal state to modify.
     terminal: *Terminal,
