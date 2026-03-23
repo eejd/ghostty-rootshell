@@ -9,6 +9,7 @@ const lib = @import("../lib/main.zig");
 const Parser = @import("Parser.zig");
 const ansi = @import("ansi.zig");
 const charsets = @import("charsets.zig");
+const device_attributes = @import("device_attributes.zig");
 const device_status = @import("device_status.zig");
 const csi = @import("csi.zig");
 const kitty = @import("kitty.zig");
@@ -97,7 +98,7 @@ pub const Action = union(Key) {
     title_push: u16,
     title_pop: u16,
     xtversion,
-    device_attributes: ansi.DeviceAttributeReq,
+    device_attributes: device_attributes.Req,
     device_status: DeviceStatus,
     kitty_keyboard_query,
     kitty_keyboard_push: KittyKeyboardFlags,
@@ -1282,7 +1283,7 @@ pub fn Stream(comptime H: type) type {
 
                 // c - Device Attributes (DA1)
                 'c' => {
-                    const req: ?ansi.DeviceAttributeReq = switch (input.intermediates.len) {
+                    const req: ?device_attributes.Req = switch (input.intermediates.len) {
                         0 => .primary,
                         1 => switch (input.intermediates[0]) {
                             '>' => .secondary,
