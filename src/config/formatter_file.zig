@@ -5,7 +5,7 @@ const Key = @import("key.zig").Key;
 const help_strings = @import("help_strings");
 const formatter = @import("formatter.zig");
 
-// IMPORTANT: This is in a seperate file from formatter.zig because it
+// IMPORTANT: This is in a separate file from formatter.zig because it
 // puts a build-time dependency on Config.zig which brings in too much
 // into libghostty-vt tests which reference some formattable types.
 
