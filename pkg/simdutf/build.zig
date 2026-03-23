@@ -12,8 +12,12 @@ pub fn build(b: *std.Build) !void {
         }),
         .linkage = .static,
     });
-    // On MSVC, the C++ standard library is provided by the MSVC runtime
-    // and linking Zig's bundled libc++ would conflict with it.
+    lib.linkLibC();
+    // On MSVC, we must not use linkLibCpp because Zig unconditionally
+    // passes -nostdinc++ and then adds its bundled libc++/libc++abi
+    // include paths, which conflict with MSVC's own C++ runtime headers.
+    // The MSVC SDK include directories (added via linkLibC) contain
+    // both C and C++ headers, so linkLibCpp is not needed.
     if (target.result.abi != .msvc) {
         lib.linkLibCpp();
     }

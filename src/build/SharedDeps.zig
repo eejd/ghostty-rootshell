@@ -399,9 +399,12 @@ pub fn add(
         step.addIncludePath(b.path("src/apprt/gtk"));
     }
 
-    // libcpp is required for various dependencies. On MSVC, the C++
-    // standard library is provided by the MSVC runtime and linking
-    // libc++ would conflict with it.
+    // libcpp is required for various dependencies. On MSVC, we must
+    // not use linkLibCpp because Zig unconditionally passes -nostdinc++
+    // and then adds its bundled libc++/libc++abi include paths, which
+    // conflict with MSVC's own C++ runtime headers. The MSVC SDK
+    // include directories (already added via linkLibC above) contain
+    // both C and C++ headers, so linkLibCpp is not needed.
     if (step.rootModuleTarget().abi != .msvc) {
         step.linkLibCpp();
     }
