@@ -211,7 +211,7 @@ test "secondary default" {
     var buf: [64]u8 = undefined;
     var writer: std.Io.Writer = .fixed(&buf);
     try (Secondary{}).encode(&writer);
-    try testing.expectEqualStrings("\x1b[>1;10;0c", writer.buffered());
+    try testing.expectEqualStrings("\x1b[>1;0;0c", writer.buffered());
 }
 
 test "tertiary default" {
