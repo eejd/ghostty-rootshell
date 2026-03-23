@@ -40,8 +40,10 @@ pub const Handler = struct {
         /// during the lifetime of the call.
         write_pty: ?*const fn (*Handler, [:0]const u8) void,
 
-        /// Called when the window title is set via OSC 2.
-        set_window_title: ?*const fn (*Handler, []const u8) void,
+        /// Called when the terminal title changes via escape sequences
+        /// (e.g. OSC 0/2). The new title can be queried via
+        /// handler.terminal.getTitle().
+        title_changed: ?*const fn (*Handler) void,
 
         /// No effects means that the stream effectively becomes readonly
         /// that only affects pure terminal state and ignores all side
@@ -49,7 +51,7 @@ pub const Handler = struct {
         pub const readonly: Effects = .{
             .bell = null,
             .write_pty = null,
-            .set_window_title = null,
+            .title_changed = null,
         };
     };
 
@@ -194,7 +196,7 @@ pub const Handler = struct {
 
             // Effect-based handlers
             .bell => self.bell(),
-            .window_title => self.setWindowTitle(value.title),
+            .window_title => self.windowTitle(value.title),
             .request_mode => self.requestMode(value.mode),
             .request_mode_unknown => self.requestModeUnknown(value.mode, value.ansi),
 
@@ -239,9 +241,24 @@ pub const Handler = struct {
         func(self, data);
     }
 
-    inline fn setWindowTitle(self: *Handler, title: []const u8) void {
-        const func = self.effects.set_window_title orelse return;
-        func(self, title);
+    inline fn windowTitle(self: *Handler, title_raw: []const u8) void {
+        // Prevent DoS attacks by limiting title length.
+        const max_title_len = 1024;
+        const title = if (title_raw.len > max_title_len) title: {
+            log.warn("title length {d} exceeds max length {d}, truncating", .{
+                title_raw.len,
+                max_title_len,
+            });
+            break :title title_raw[0..max_title_len];
+        } else title_raw;
+
+        self.terminal.setTitle(title) catch |err| {
+            log.warn("error setting title err={}", .{err});
+            return;
+        };
+
+        const func = self.effects.title_changed orelse return;
+        func(self);
     }
 
     fn requestMode(self: *Handler, mode: modes.Mode) void {
@@ -1178,25 +1195,23 @@ test "window_title effect is called" {
     defer t.deinit(testing.allocator);
 
     const S = struct {
-        var last_title: ?[]const u8 = null;
-        fn setWindowTitle(handler: *Handler, title: []const u8) void {
-            _ = handler;
-            if (last_title) |old| testing.allocator.free(old);
-            last_title = testing.allocator.dupe(u8, title) catch null;
+        var title_changed_count: usize = 0;
+        fn titleChanged(_: *Handler) void {
+            title_changed_count += 1;
         }
     };
-    S.last_title = null;
-    defer if (S.last_title) |t2| testing.allocator.free(t2);
+    S.title_changed_count = 0;
 
     var handler: Handler = .init(&t);
-    handler.effects.set_window_title = &S.setWindowTitle;
+    handler.effects.title_changed = &S.titleChanged;
 
     var s: Stream = .initAlloc(testing.allocator, handler);
     defer s.deinit();
 
     // Set window title via OSC 2
     s.nextSlice("\x1b]2;Hello World\x1b\\");
-    try testing.expectEqualStrings("Hello World", S.last_title.?);
+    try testing.expectEqualStrings("Hello World", t.getTitle().?);
+    try testing.expectEqual(@as(usize, 1), S.title_changed_count);
 }
 
 test "window_title effect not called without callback" {
@@ -1208,6 +1223,9 @@ test "window_title effect not called without callback" {
 
     // Should not crash when no callback is set
     s.nextSlice("\x1b]2;Hello World\x1b\\");
+
+    // Title should still be set on terminal state
+    try testing.expectEqualStrings("Hello World", t.getTitle().?);
 
     // Terminal should still be functional
     s.nextSlice("Test");
@@ -1221,23 +1239,21 @@ test "window_title effect with empty title" {
     defer t.deinit(testing.allocator);
 
     const S = struct {
-        var last_title: ?[]const u8 = null;
-        fn setWindowTitle(handler: *Handler, title: []const u8) void {
-            _ = handler;
-            if (last_title) |old| testing.allocator.free(old);
-            last_title = testing.allocator.dupe(u8, title) catch null;
+        var title_changed_count: usize = 0;
+        fn titleChanged(_: *Handler) void {
+            title_changed_count += 1;
         }
     };
-    S.last_title = null;
-    defer if (S.last_title) |t2| testing.allocator.free(t2);
+    S.title_changed_count = 0;
 
     var handler: Handler = .init(&t);
-    handler.effects.set_window_title = &S.setWindowTitle;
+    handler.effects.title_changed = &S.titleChanged;
 
     var s: Stream = .initAlloc(testing.allocator, handler);
     defer s.deinit();
 
     // Set empty window title
     s.nextSlice("\x1b]2;\x1b\\");
-    try testing.expectEqualStrings("", S.last_title.?);
+    try testing.expect(t.getTitle() == null);
+    try testing.expectEqual(@as(usize, 1), S.title_changed_count);
 }

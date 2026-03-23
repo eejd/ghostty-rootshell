@@ -1002,7 +1002,7 @@ pub const StreamHandler = struct {
         // Set the title on the terminal state. We ignore any errors since
         // we can continue to operate just fine without it.
         self.terminal.setTitle(title) catch |err| {
-            log.warn("error setting title in terminal state: {e}", .{err});
+            log.warn("error setting title in terminal state: {}", .{err});
         };
 
         @memcpy(buf[0..title.len], title);
