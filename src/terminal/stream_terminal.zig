@@ -196,9 +196,10 @@ pub const Handler = struct {
 
             // Effect-based handlers
             .bell => self.bell(),
-            .window_title => self.windowTitle(value.title),
+            .kitty_keyboard_query => self.queryKittyKeyboard(),
             .request_mode => self.requestMode(value.mode),
             .request_mode_unknown => self.requestModeUnknown(value.mode, value.ansi),
+            .window_title => self.windowTitle(value.title),
 
             // No supported DCS commands have any terminal-modifying effects,
             // but they may in the future. For now we just ignore it.
@@ -220,7 +221,6 @@ pub const Handler = struct {
             .xtversion,
             .device_attributes,
             .device_status,
-            .kitty_keyboard_query,
             .report_pwd,
             .show_desktop_notification,
             .progress_report,
@@ -231,17 +231,17 @@ pub const Handler = struct {
         }
     }
 
-    inline fn bell(self: *Handler) void {
-        const func = self.effects.bell orelse return;
-        func(self);
-    }
-
     inline fn writePty(self: *Handler, data: [:0]const u8) void {
         const func = self.effects.write_pty orelse return;
         func(self, data);
     }
 
-    inline fn windowTitle(self: *Handler, title_raw: []const u8) void {
+    fn bell(self: *Handler) void {
+        const func = self.effects.bell orelse return;
+        func(self);
+    }
+
+    fn windowTitle(self: *Handler, title_raw: []const u8) void {
         // Prevent DoS attacks by limiting title length.
         const max_title_len = 1024;
         const title = if (title_raw.len > max_title_len) title: {
@@ -284,6 +284,15 @@ pub const Handler = struct {
         const len = writer.buffered().len;
         buf[len] = 0;
         self.writePty(buf[0..len :0]);
+    }
+
+    fn queryKittyKeyboard(self: *Handler) void {
+        // Max response is "\x1b[?31u\x00" (7 bytes): the flags are a u5 (max 31).
+        var buf: [32]u8 = undefined;
+        const resp = std.fmt.bufPrintZ(&buf, "\x1b[?{}u", .{
+            self.terminal.screens.active.kitty_keyboard.current().int(),
+        }) catch return;
+        self.writePty(resp);
     }
 
     inline fn horizontalTab(self: *Handler, count: u16) void {
@@ -1256,4 +1265,33 @@ test "window_title effect with empty title" {
     s.nextSlice("\x1b]2;\x1b\\");
     try testing.expect(t.getTitle() == null);
     try testing.expectEqual(@as(usize, 1), S.title_changed_count);
+}
+
+test "kitty_keyboard_query" {
+    var t: Terminal = try .init(testing.allocator, .{ .cols = 80, .rows = 24 });
+    defer t.deinit(testing.allocator);
+
+    const S = struct {
+        var written: ?[:0]const u8 = null;
+        fn writePty(_: *Handler, data: [:0]const u8) void {
+            written = data;
+        }
+    };
+    S.written = null;
+
+    var handler: Handler = .init(&t);
+    handler.effects.write_pty = &S.writePty;
+
+    var s: Stream = .initAlloc(testing.allocator, handler);
+    defer s.deinit();
+
+    // Default kitty keyboard flags should be 0
+    s.nextSlice("\x1b[?u");
+    try testing.expectEqualStrings("\x1b[?0u", S.written.?);
+
+    // Push kitty keyboard mode with flags and query again
+    S.written = null;
+    s.nextSlice("\x1b[>1u"); // push with disambiguate flag
+    s.nextSlice("\x1b[?u");
+    try testing.expectEqualStrings("\x1b[?1u", S.written.?);
 }
