@@ -812,6 +812,14 @@ pub fn addSimd(
             "-std=c++17",
         );
 
+        // Disable ubsan for MSVC to avoid undefined references to
+        // __ubsan_handle_* symbols that require a runtime we don't link
+        // and bundle. Hopefully we can fix this one day since ubsan is nice!
+        if (target.result.abi == .msvc) try flags.appendSlice(b.allocator, &.{
+            "-fno-sanitize=undefined",
+            "-fno-sanitize-trap=undefined",
+        });
+
         m.addCSourceFiles(.{
             .files = &.{
                 "src/simd/base64.cpp",
