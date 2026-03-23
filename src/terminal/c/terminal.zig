@@ -3,7 +3,7 @@ const testing = std.testing;
 const lib_alloc = @import("../../lib/allocator.zig");
 const CAllocator = lib_alloc.Allocator;
 const ZigTerminal = @import("../Terminal.zig");
-const ReadonlyStream = @import("../stream_readonly.zig").Stream;
+const Stream = @import("../stream_terminal.zig").Stream;
 const ScreenSet = @import("../ScreenSet.zig");
 const PageList = @import("../PageList.zig");
 const kitty = @import("../kitty/key.zig");
@@ -23,7 +23,7 @@ const log = std.log.scoped(.terminal_c);
 /// across multiple vt_write calls.
 const TerminalWrapper = struct {
     terminal: *ZigTerminal,
-    stream: ReadonlyStream,
+    stream: Stream,
 };
 
 /// C: GhosttyTerminal
@@ -68,17 +68,24 @@ fn new_(
         return error.OutOfMemory;
     errdefer alloc.destroy(t);
 
+    const wrapper = alloc.create(TerminalWrapper) catch
+        return error.OutOfMemory;
+    errdefer alloc.destroy(wrapper);
+
+    // Setup our terminal
     t.* = try .init(alloc, .{
         .cols = opts.cols,
         .rows = opts.rows,
         .max_scrollback = opts.max_scrollback,
     });
+    errdefer t.deinit(alloc);
 
-    const wrapper = alloc.create(TerminalWrapper) catch
-        return error.OutOfMemory;
+    // Setup our stream
+    const handler: Stream.Handler = t.vtHandler();
+
     wrapper.* = .{
         .terminal = t,
-        .stream = t.vtStream(),
+        .stream = .initAlloc(alloc, handler),
     };
 
     return wrapper;

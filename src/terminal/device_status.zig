@@ -1,5 +1,11 @@
 const std = @import("std");
 
+/// The color scheme reported in response to a CSI ? 996 n query.
+pub const ColorScheme = enum {
+    light,
+    dark,
+};
+
 /// An enum(u16) of the available device status requests.
 pub const Request = dsr_enum: {
     const EnumField = std.builtin.Type.EnumField;
