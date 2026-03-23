@@ -45,6 +45,12 @@ pub const Handler = struct {
         /// handler.terminal.getTitle().
         title_changed: ?*const fn (*Handler) void,
 
+        /// Called in response to an XTVERSION query. Returns the version
+        /// string to report (e.g. "ghostty 1.2.3"). The returned memory
+        /// must be valid for the lifetime of the call. The maximum length
+        /// is 256 bytes; longer strings will be silently ignored.
+        xtversion: ?*const fn (*Handler) []const u8,
+
         /// No effects means that the stream effectively becomes readonly
         /// that only affects pure terminal state and ignores all side
         /// effects beyond that.
@@ -52,6 +58,7 @@ pub const Handler = struct {
             .bell = null,
             .write_pty = null,
             .title_changed = null,
+            .xtversion = null,
         };
     };
 
@@ -200,6 +207,7 @@ pub const Handler = struct {
             .request_mode => self.requestMode(value.mode),
             .request_mode_unknown => self.requestModeUnknown(value.mode, value.ansi),
             .window_title => self.windowTitle(value.title),
+            .xtversion => self.reportXtversion(),
 
             // No supported DCS commands have any terminal-modifying effects,
             // but they may in the future. For now we just ignore it.
@@ -218,7 +226,6 @@ pub const Handler = struct {
             // Have no terminal-modifying effect
             .enquiry,
             .size_report,
-            .xtversion,
             .device_attributes,
             .device_status,
             .report_pwd,
@@ -239,6 +246,17 @@ pub const Handler = struct {
     fn bell(self: *Handler) void {
         const func = self.effects.bell orelse return;
         func(self);
+    }
+
+    fn reportXtversion(self: *Handler) void {
+        const version = if (self.effects.xtversion) |func| func(self) else "";
+        var buf: [288]u8 = undefined;
+        const resp = std.fmt.bufPrintZ(
+            &buf,
+            "\x1BP>|{s}\x1B\\",
+            .{if (version.len > 0) version else "libghostty"},
+        ) catch return;
+        self.writePty(resp);
     }
 
     fn windowTitle(self: *Handler, title_raw: []const u8) void {
@@ -1294,4 +1312,80 @@ test "kitty_keyboard_query" {
     s.nextSlice("\x1b[>1u"); // push with disambiguate flag
     s.nextSlice("\x1b[?u");
     try testing.expectEqualStrings("\x1b[?1u", S.written.?);
+}
+
+test "xtversion default" {
+    var t: Terminal = try .init(testing.allocator, .{ .cols = 80, .rows = 24 });
+    defer t.deinit(testing.allocator);
+
+    const S = struct {
+        var written: ?[:0]const u8 = null;
+        fn writePty(_: *Handler, data: [:0]const u8) void {
+            written = data;
+        }
+    };
+    S.written = null;
+
+    var handler: Handler = .init(&t);
+    handler.effects.write_pty = &S.writePty;
+
+    var s: Stream = .initAlloc(testing.allocator, handler);
+    defer s.deinit();
+
+    // Without xtversion effect set, should report "libghostty"
+    s.nextSlice("\x1b[>0q");
+    try testing.expectEqualStrings("\x1bP>|libghostty\x1b\\", S.written.?);
+}
+
+test "xtversion with effect" {
+    var t: Terminal = try .init(testing.allocator, .{ .cols = 80, .rows = 24 });
+    defer t.deinit(testing.allocator);
+
+    const S = struct {
+        var written: ?[:0]const u8 = null;
+        fn writePty(_: *Handler, data: [:0]const u8) void {
+            written = data;
+        }
+        fn xtversion(_: *Handler) []const u8 {
+            return "ghostty 1.2.3";
+        }
+    };
+    S.written = null;
+
+    var handler: Handler = .init(&t);
+    handler.effects.write_pty = &S.writePty;
+    handler.effects.xtversion = &S.xtversion;
+
+    var s: Stream = .initAlloc(testing.allocator, handler);
+    defer s.deinit();
+
+    s.nextSlice("\x1b[>0q");
+    try testing.expectEqualStrings("\x1bP>|ghostty 1.2.3\x1b\\", S.written.?);
+}
+
+test "xtversion with empty string effect" {
+    var t: Terminal = try .init(testing.allocator, .{ .cols = 80, .rows = 24 });
+    defer t.deinit(testing.allocator);
+
+    const S = struct {
+        var written: ?[:0]const u8 = null;
+        fn writePty(_: *Handler, data: [:0]const u8) void {
+            written = data;
+        }
+        fn xtversion(_: *Handler) []const u8 {
+            return "";
+        }
+    };
+    S.written = null;
+
+    var handler: Handler = .init(&t);
+    handler.effects.write_pty = &S.writePty;
+    handler.effects.xtversion = &S.xtversion;
+
+    var s: Stream = .initAlloc(testing.allocator, handler);
+    defer s.deinit();
+
+    // Empty string from effect should fall back to "libghostty"
+    s.nextSlice("\x1b[>0q");
+    try testing.expectEqualStrings("\x1bP>|libghostty\x1b\\", S.written.?);
 }
