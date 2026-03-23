@@ -337,11 +337,7 @@ pub fn colors_get(
         out_colors.cursor_has_value = colors.cursor != null;
     }
 
-    if (lib.structSizedFieldFits(
-        Colors,
-        out_size,
-        "palette",
-    )) {
+    {
         const palette_offset = @offsetOf(Colors, "palette");
         if (out_size > palette_offset) {
             const available = out_size - palette_offset;
