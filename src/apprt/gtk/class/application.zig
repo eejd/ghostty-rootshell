@@ -812,7 +812,7 @@ pub const Application = extern struct {
     }
 
     /// Returns the open URI portal implementation.
-    pub fn open_uri(self: *Self) *OpenURI {
+    pub fn openUri(self: *Self) *OpenURI {
         return &self.private().open_uri;
     }
 
@@ -1300,7 +1300,7 @@ pub const Application = extern struct {
         gio.Application.setDefault(self.as(gio.Application));
 
         // The D-Bus connection is only valid after GApplication startup.
-        self.open_uri().setDbusConnection(
+        self.openUri().setDbusConnection(
             self.as(gio.Application).getDbusConnection(),
         );
 
@@ -2352,7 +2352,7 @@ const Action = struct {
             return;
         }
 
-        self.open_uri().start(value) catch |err| {
+        self.openUri().start(value) catch |err| {
             log.err("unable to open uri err={}", .{err});
             self.openUrlFallback(value.kind, value.url);
             return;
