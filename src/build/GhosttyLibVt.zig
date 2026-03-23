@@ -110,11 +110,6 @@ fn initLib(
         // Zig's ubsan emits /exclude-symbols linker directives that
         // are incompatible with the MSVC linker (LNK4229).
         lib.bundle_ubsan_rt = false;
-
-        // The self-hosted backend produces COFF objects with invalid
-        // COMDAT sections in compiler_rt that the MSVC linker rejects
-        // (LNK1143). Use the LLVM backend to produce valid objects.
-        lib.use_llvm = true;
     }
 
     if (lib.rootModuleTarget().abi.isAndroid()) {
