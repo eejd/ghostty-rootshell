@@ -94,12 +94,20 @@ fn initLib(
     );
 
     if (kind == .static) {
+        const is_windows = target.result.os.tag == .windows;
+
         // These must be bundled since we're compiling into a static lib.
         // Otherwise, you get undefined symbol errors. This could cause
         // problems if you're linking multiple static Zig libraries but
         // we'll cross that bridge when we get to it.
-        lib.bundle_compiler_rt = true;
-        lib.bundle_ubsan_rt = true;
+        //
+        // On Windows, Zig's compiler_rt produces COFF objects with
+        // invalid COMDAT sections (LNK1143) and its ubsan_rt emits
+        // /exclude-symbols directives the MSVC linker rejects
+        // (LNK4229). Both are skipped since the MSVC CRT provides
+        // the needed builtins (memcpy, memset, etc.).
+        lib.bundle_compiler_rt = !is_windows;
+        lib.bundle_ubsan_rt = !is_windows;
 
         // Enable PIC so the static library can be linked into PIE
         // executables, which is the default on most Linux distributions.
