@@ -12,7 +12,7 @@ pub const Req = lib.Enum(lib_target, &.{
 });
 
 /// Response data for all device attribute queries.
-pub const Response = struct {
+pub const Attributes = struct {
     /// Reply to CSI c (DA1).
     primary: Primary = .{},
 
@@ -21,6 +21,19 @@ pub const Response = struct {
 
     /// Reply to CSI = c (DA3).
     tertiary: Tertiary = .{},
+
+    /// Encode the response for the given request type into the writer.
+    pub fn encode(
+        self: Attributes,
+        req: Req,
+        writer: *std.Io.Writer,
+    ) std.Io.Writer.Error!void {
+        switch (req) {
+            .primary => try self.primary.encode(writer),
+            .secondary => try self.secondary.encode(writer),
+            .tertiary => try self.tertiary.encode(writer),
+        }
+    }
 };
 
 /// Primary device attributes (DA1).

@@ -1,6 +1,7 @@
 const std = @import("std");
 const testing = std.testing;
 const csi = @import("csi.zig");
+const device_attributes = @import("device_attributes.zig");
 const device_status = @import("device_status.zig");
 const stream = @import("stream.zig");
 const Action = stream.Action;
@@ -49,6 +50,11 @@ pub const Handler = struct {
         /// ignore the query.
         color_scheme: ?*const fn (*Handler) ?device_status.ColorScheme,
 
+        /// Called in response to a device attributes query (CSI c,
+        /// CSI > c, CSI = c). Returns the response to encode and
+        /// write back to the pty.
+        device_attributes: ?*const fn (*Handler) device_attributes.Attributes,
+
         /// Called in response to ENQ (0x05). Returns the raw response
         /// bytes to write back to the pty. The returned memory must be
         /// valid for the lifetime of the call.
@@ -75,12 +81,13 @@ pub const Handler = struct {
         /// effects beyond that.
         pub const readonly: Effects = .{
             .bell = null,
-            .write_pty = null,
-            .title_changed = null,
-            .xtversion = null,
-            .size = null,
-            .enquiry = null,
             .color_scheme = null,
+            .device_attributes = null,
+            .enquiry = null,
+            .size = null,
+            .title_changed = null,
+            .write_pty = null,
+            .xtversion = null,
         };
     };
 
@@ -225,6 +232,7 @@ pub const Handler = struct {
 
             // Effect-based handlers
             .bell => self.bell(),
+            .device_attributes => self.reportDeviceAttributes(value),
             .device_status => self.deviceStatus(value.request),
             .enquiry => self.reportEnquiry(),
             .kitty_keyboard_query => self.queryKittyKeyboard(),
@@ -249,7 +257,6 @@ pub const Handler = struct {
             => {},
 
             // Have no terminal-modifying effect
-            .device_attributes,
             .report_pwd,
             .show_desktop_notification,
             .progress_report,
@@ -268,6 +275,23 @@ pub const Handler = struct {
     fn bell(self: *Handler) void {
         const func = self.effects.bell orelse return;
         func(self);
+    }
+
+    fn reportDeviceAttributes(self: *Handler, req: device_attributes.Req) void {
+        const func = self.effects.device_attributes orelse return;
+        const attrs = func(self);
+
+        var stack = std.heap.stackFallback(128, self.terminal.gpa());
+        const alloc = stack.get();
+
+        var aw: std.Io.Writer.Allocating = .init(alloc);
+        defer aw.deinit();
+
+        attrs.encode(req, &aw.writer) catch return;
+
+        const written = aw.toOwnedSliceSentinel(0) catch return;
+        defer alloc.free(written);
+        self.writePty(written);
     }
 
     fn deviceStatus(self: *Handler, req: device_status.Request) void {
@@ -1901,4 +1925,147 @@ test "device status: readonly ignores all" {
     const str = try t.plainString(testing.allocator);
     defer testing.allocator.free(str);
     try testing.expectEqualStrings("Test", str);
+}
+
+test "device attributes: primary DA" {
+    var t: Terminal = try .init(testing.allocator, .{ .cols = 80, .rows = 24 });
+    defer t.deinit(testing.allocator);
+
+    const S = struct {
+        var written: ?[]const u8 = null;
+        fn writePty(_: *Handler, data: [:0]const u8) void {
+            if (written) |old| testing.allocator.free(old);
+            written = testing.allocator.dupe(u8, data) catch @panic("OOM");
+        }
+        fn da(_: *Handler) device_attributes.Attributes {
+            return .{};
+        }
+    };
+    S.written = null;
+    defer if (S.written) |old| testing.allocator.free(old);
+
+    var handler: Handler = .init(&t);
+    handler.effects.write_pty = &S.writePty;
+    handler.effects.device_attributes = &S.da;
+
+    var s: Stream = .initAlloc(testing.allocator, handler);
+    defer s.deinit();
+
+    s.nextSlice("\x1B[c");
+    try testing.expectEqualStrings("\x1b[?62;22c", S.written.?);
+}
+
+test "device attributes: secondary DA" {
+    var t: Terminal = try .init(testing.allocator, .{ .cols = 80, .rows = 24 });
+    defer t.deinit(testing.allocator);
+
+    const S = struct {
+        var written: ?[]const u8 = null;
+        fn writePty(_: *Handler, data: [:0]const u8) void {
+            if (written) |old| testing.allocator.free(old);
+            written = testing.allocator.dupe(u8, data) catch @panic("OOM");
+        }
+        fn da(_: *Handler) device_attributes.Attributes {
+            return .{};
+        }
+    };
+    S.written = null;
+    defer if (S.written) |old| testing.allocator.free(old);
+
+    var handler: Handler = .init(&t);
+    handler.effects.write_pty = &S.writePty;
+    handler.effects.device_attributes = &S.da;
+
+    var s: Stream = .initAlloc(testing.allocator, handler);
+    defer s.deinit();
+
+    s.nextSlice("\x1B[>c");
+    try testing.expectEqualStrings("\x1b[>1;0;0c", S.written.?);
+}
+
+test "device attributes: tertiary DA" {
+    var t: Terminal = try .init(testing.allocator, .{ .cols = 80, .rows = 24 });
+    defer t.deinit(testing.allocator);
+
+    const S = struct {
+        var written: ?[]const u8 = null;
+        fn writePty(_: *Handler, data: [:0]const u8) void {
+            if (written) |old| testing.allocator.free(old);
+            written = testing.allocator.dupe(u8, data) catch @panic("OOM");
+        }
+        fn da(_: *Handler) device_attributes.Attributes {
+            return .{};
+        }
+    };
+    S.written = null;
+    defer if (S.written) |old| testing.allocator.free(old);
+
+    var handler: Handler = .init(&t);
+    handler.effects.write_pty = &S.writePty;
+    handler.effects.device_attributes = &S.da;
+
+    var s: Stream = .initAlloc(testing.allocator, handler);
+    defer s.deinit();
+
+    s.nextSlice("\x1B[=c");
+    try testing.expectEqualStrings("\x1bP!|00000000\x1b\\", S.written.?);
+}
+
+test "device attributes: readonly ignores" {
+    var t: Terminal = try .init(testing.allocator, .{ .cols = 80, .rows = 24 });
+    defer t.deinit(testing.allocator);
+
+    var s: Stream = .initAlloc(testing.allocator, .init(&t));
+    defer s.deinit();
+
+    // All DA queries should be silently ignored without effects
+    s.nextSlice("\x1B[c");
+    s.nextSlice("\x1B[>c");
+    s.nextSlice("\x1B[=c");
+
+    // Terminal should still be functional
+    s.nextSlice("Test");
+    const str = try t.plainString(testing.allocator);
+    defer testing.allocator.free(str);
+    try testing.expectEqualStrings("Test", str);
+}
+
+test "device attributes: custom response" {
+    var t: Terminal = try .init(testing.allocator, .{ .cols = 80, .rows = 24 });
+    defer t.deinit(testing.allocator);
+
+    const S = struct {
+        var written: ?[]const u8 = null;
+        fn writePty(_: *Handler, data: [:0]const u8) void {
+            if (written) |old| testing.allocator.free(old);
+            written = testing.allocator.dupe(u8, data) catch @panic("OOM");
+        }
+        fn da(_: *Handler) device_attributes.Attributes {
+            return .{
+                .primary = .{
+                    .conformance_level = .vt420,
+                    .features = &.{ .ansi_color, .clipboard },
+                },
+                .secondary = .{
+                    .device_type = .vt420,
+                    .firmware_version = 100,
+                },
+            };
+        }
+    };
+    S.written = null;
+    defer if (S.written) |old| testing.allocator.free(old);
+
+    var handler: Handler = .init(&t);
+    handler.effects.write_pty = &S.writePty;
+    handler.effects.device_attributes = &S.da;
+
+    var s: Stream = .initAlloc(testing.allocator, handler);
+    defer s.deinit();
+
+    s.nextSlice("\x1B[c");
+    try testing.expectEqualStrings("\x1b[?64;22;52c", S.written.?);
+
+    s.nextSlice("\x1B[>c");
+    try testing.expectEqualStrings("\x1b[>41;100;0c", S.written.?);
 }
