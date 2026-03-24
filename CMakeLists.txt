@@ -110,7 +110,7 @@ file(MAKE_DIRECTORY "${ZIG_OUT_DIR}/include")
 
 # Custom command: run zig build -Demit-lib-vt (produces both shared and static)
 add_custom_command(
-    OUTPUT "${GHOSTTY_VT_SHARED_LIBRARY}" "${GHOSTTY_VT_STATIC_LIBRARY}"
+    OUTPUT "${GHOSTTY_VT_SHARED_LIBRARY}" "${GHOSTTY_VT_STATIC_LIBRARY}" "${ZIG_OUT_DIR}/lib/${GHOSTTY_VT_IMPLIB}"
     COMMAND "${ZIG_EXECUTABLE}" build -Demit-lib-vt ${GHOSTTY_ZIG_BUILD_FLAGS}
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
     COMMENT "Building libghostty-vt via zig build..."
