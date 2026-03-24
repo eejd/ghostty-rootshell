@@ -168,6 +168,40 @@ typedef void (*GhosttyTerminalBellFn)(GhosttyTerminal terminal,
                                       void* userdata);
 
 /**
+ * Callback function type for enquiry (ENQ, 0x05).
+ *
+ * Called when the terminal receives an ENQ character. Return the
+ * response bytes as a GhosttyString. The memory must remain valid
+ * until the callback returns. Return a zero-length string to send
+ * no response.
+ *
+ * @param terminal The terminal handle
+ * @param userdata The userdata pointer set via GHOSTTY_TERMINAL_OPT_USERDATA
+ * @return The response bytes to write back to the pty
+ *
+ * @ingroup terminal
+ */
+typedef GhosttyString (*GhosttyTerminalEnquiryFn)(GhosttyTerminal terminal,
+                                                   void* userdata);
+
+/**
+ * Callback function type for XTVERSION.
+ *
+ * Called when the terminal receives an XTVERSION query (CSI > q).
+ * Return the version string (e.g. "myterm 1.0") as a GhosttyString.
+ * The memory must remain valid until the callback returns. Return a
+ * zero-length string to report the default "libghostty" version.
+ *
+ * @param terminal The terminal handle
+ * @param userdata The userdata pointer set via GHOSTTY_TERMINAL_OPT_USERDATA
+ * @return The version string to report
+ *
+ * @ingroup terminal
+ */
+typedef GhosttyString (*GhosttyTerminalXtversionFn)(GhosttyTerminal terminal,
+                                                     void* userdata);
+
+/**
  * Terminal option identifiers.
  *
  * These values are used with ghostty_terminal_set() to configure
@@ -199,6 +233,22 @@ typedef enum {
    * Input type: GhosttyTerminalBellFn*
    */
   GHOSTTY_TERMINAL_OPT_BELL = 2,
+
+  /**
+   * Callback invoked when the terminal receives an ENQ character
+   * (0x05). Set to NULL to send no response.
+   *
+   * Input type: GhosttyTerminalEnquiryFn*
+   */
+  GHOSTTY_TERMINAL_OPT_ENQUIRY = 3,
+
+  /**
+   * Callback invoked when the terminal receives an XTVERSION query
+   * (CSI > q). Set to NULL to report the default "libghostty" string.
+   *
+   * Input type: GhosttyTerminalXtversionFn*
+   */
+  GHOSTTY_TERMINAL_OPT_XTVERSION = 4,
 } GhosttyTerminalOption;
 
 /**
