@@ -444,6 +444,8 @@ pub const TerminalData = enum(c_int) {
     mouse_tracking = 11,
     title = 12,
     pwd = 13,
+    total_rows = 14,
+    scrollback_rows = 15,
 
     /// Output type expected for querying the data of the given kind.
     pub fn OutType(comptime self: TerminalData) type {
@@ -456,6 +458,7 @@ pub const TerminalData = enum(c_int) {
             .scrollbar => TerminalScrollbar,
             .cursor_style => style_c.Style,
             .title, .pwd => lib.String,
+            .total_rows, .scrollback_rows => usize,
         };
     }
 };
@@ -512,6 +515,8 @@ fn getTyped(
             const pwd = t.getPwd() orelse "";
             out.* = .{ .ptr = pwd.ptr, .len = pwd.len };
         },
+        .total_rows => out.* = t.screens.active.pages.total_rows,
+        .scrollback_rows => out.* = t.screens.active.pages.total_rows - t.rows,
     }
 
     return .success;
@@ -1001,6 +1006,48 @@ test "get mouse_tracking" {
     try testing.expectEqual(Result.success, mode_set(t, any_mode, false));
     try testing.expectEqual(Result.success, get(t, .mouse_tracking, @ptrCast(&tracking)));
     try testing.expect(!tracking);
+}
+
+test "get total_rows" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib_alloc.test_allocator,
+        &t,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 10_000,
+        },
+    ));
+    defer free(t);
+
+    var total: usize = undefined;
+    try testing.expectEqual(Result.success, get(t, .total_rows, @ptrCast(&total)));
+    try testing.expect(total >= 24);
+}
+
+test "get scrollback_rows" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib_alloc.test_allocator,
+        &t,
+        .{
+            .cols = 80,
+            .rows = 3,
+            .max_scrollback = 10_000,
+        },
+    ));
+    defer free(t);
+
+    var scrollback: usize = undefined;
+    try testing.expectEqual(Result.success, get(t, .scrollback_rows, @ptrCast(&scrollback)));
+    try testing.expectEqual(@as(usize, 0), scrollback);
+
+    // Write enough lines to push content into scrollback
+    vt_write(t, "line1\r\nline2\r\nline3\r\nline4\r\nline5\r\n", 34);
+
+    try testing.expectEqual(Result.success, get(t, .scrollback_rows, @ptrCast(&scrollback)));
+    try testing.expectEqual(@as(usize, 2), scrollback);
 }
 
 test "get invalid" {

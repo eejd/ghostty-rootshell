@@ -556,6 +556,20 @@ typedef enum {
    * Output type: GhosttyString *
    */
   GHOSTTY_TERMINAL_DATA_PWD = 13,
+
+  /**
+   * The total number of rows in the active screen including scrollback.
+   *
+   * Output type: size_t *
+   */
+  GHOSTTY_TERMINAL_DATA_TOTAL_ROWS = 14,
+
+  /**
+   * The number of scrollback rows (total rows minus viewport rows).
+   *
+   * Output type: size_t *
+   */
+  GHOSTTY_TERMINAL_DATA_SCROLLBACK_ROWS = 15,
 } GhosttyTerminalData;
 
 /**
