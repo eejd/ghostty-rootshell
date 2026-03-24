@@ -55,18 +55,15 @@ int main() {
 
   // Set up userdata — a simple bell counter
   int bell_count = 0;
-  void* ud = &bell_count;
-  ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_USERDATA, &ud);
+  ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_USERDATA, &bell_count);
 
   // Register effect callbacks
-  GhosttyTerminalWritePtyFn write_fn = on_write_pty;
-  ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_WRITE_PTY, &write_fn);
-
-  GhosttyTerminalBellFn bell_fn = on_bell;
-  ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_BELL, &bell_fn);
-
-  GhosttyTerminalTitleChangedFn title_fn = on_title_changed;
-  ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_TITLE_CHANGED, &title_fn);
+  ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_WRITE_PTY,
+      (const void *)on_write_pty);
+  ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_BELL,
+      (const void *)on_bell);
+  ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_TITLE_CHANGED,
+      (const void *)on_title_changed);
 
   // Feed VT data that triggers effects:
 
