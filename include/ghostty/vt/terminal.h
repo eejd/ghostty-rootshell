@@ -135,6 +135,52 @@ typedef struct {
 } GhosttyTerminalScrollbar;
 
 /**
+ * Callback function type for write_pty.
+ *
+ * Called when the terminal needs to write data back to the pty, for
+ * example in response to a device status report or mode query. The
+ * data is only valid for the duration of the call; callers must copy
+ * it if it needs to persist.
+ *
+ * @param terminal The terminal handle
+ * @param userdata The userdata pointer set via GHOSTTY_TERMINAL_OPT_USERDATA
+ * @param data Pointer to the response bytes
+ * @param len Length of the response in bytes
+ *
+ * @ingroup terminal
+ */
+typedef void (*GhosttyTerminalWritePtyFn)(GhosttyTerminal terminal,
+                                          void* userdata,
+                                          const uint8_t* data,
+                                          size_t len);
+
+/**
+ * Terminal option identifiers.
+ *
+ * These values are used with ghostty_terminal_set() to configure
+ * terminal callbacks and associated state.
+ *
+ * @ingroup terminal
+ */
+typedef enum {
+  /**
+   * Opaque userdata pointer passed to all callbacks.
+   *
+   * Input type: void**
+   */
+  GHOSTTY_TERMINAL_OPT_USERDATA = 0,
+
+  /**
+   * Callback invoked when the terminal needs to write data back
+   * to the pty (e.g. in response to a DECRQM query or device
+   * status report). Set to NULL to ignore such sequences.
+   *
+   * Input type: GhosttyTerminalWritePtyFn*
+   */
+  GHOSTTY_TERMINAL_OPT_WRITE_PTY = 1,
+} GhosttyTerminalOption;
+
+/**
  * Terminal data types.
  *
  * These values specify what type of data to extract from a terminal
@@ -291,14 +337,35 @@ GhosttyResult ghostty_terminal_resize(GhosttyTerminal terminal,
                                       uint16_t rows);
 
 /**
+ * Set an option on the terminal.
+ *
+ * Configures terminal callbacks and associated state such as the
+ * write_pty callback and userdata pointer. A NULL value pointer
+ * clears the option to its default (NULL/disabled).
+ *
+ * Callbacks are invoked synchronously during ghostty_terminal_vt_write().
+ * Callbacks must not call ghostty_terminal_vt_write() on the same
+ * terminal (no reentrancy).
+ *
+ * @param terminal The terminal handle (may be NULL, in which case this is a no-op)
+ * @param option The option to set
+ * @param value Pointer to the value to set (type depends on the option),
+ *              or NULL to clear the option
+ *
+ * @ingroup terminal
+ */
+void ghostty_terminal_set(GhosttyTerminal terminal,
+                           GhosttyTerminalOption option,
+                           const void* value);
+
+/**
  * Write VT-encoded data to the terminal for processing.
  *
  * Feeds raw bytes through the terminal's VT stream parser, updating
- * terminal state accordingly. Only read-only sequences are processed;
- * sequences that require output (queries) are ignored.
- *
- * In the future, a callback-based API will be added to allow handling
- * of output or side effect sequences.
+ * terminal state accordingly. By default, sequences that require output
+ * (queries, device status reports) are silently ignored. Use
+ * ghostty_terminal_set() with GHOSTTY_TERMINAL_OPT_WRITE_PTY to install
+ * a callback that receives response data.
  *
  * This never fails. Any erroneous input or errors in processing the
  * input are logged internally but do not cause this function to fail

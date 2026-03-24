@@ -16,7 +16,12 @@ const grid_ref_c = @import("grid_ref.zig");
 const style_c = @import("style.zig");
 const Result = @import("result.zig").Result;
 
+const Handler = @import("../stream_terminal.zig").Handler;
+
 const log = std.log.scoped(.terminal_c);
+
+/// C function pointer type for the write_pty callback.
+pub const CWritePtyFn = *const fn (Terminal, ?*anyopaque, [*]const u8, usize) callconv(.c) void;
 
 /// Wrapper around ZigTerminal that tracks additional state for C API usage,
 /// such as the persistent VT stream needed to handle escape sequences split
@@ -24,6 +29,22 @@ const log = std.log.scoped(.terminal_c);
 const TerminalWrapper = struct {
     terminal: *ZigTerminal,
     stream: Stream,
+    effects: Effects = .{},
+};
+
+/// C callback state for terminal effects. Trampolines are always
+/// installed on the stream handler; they check these fields and
+/// no-op when the corresponding callback is null.
+const Effects = struct {
+    userdata: ?*anyopaque = null,
+    write_pty: ?CWritePtyFn = null,
+
+    fn writePtyTrampoline(handler: *Handler, data: [:0]const u8) void {
+        const stream_ptr: *Stream = @fieldParentPtr("handler", handler);
+        const wrapper: *TerminalWrapper = @fieldParentPtr("stream", stream_ptr);
+        const func = wrapper.effects.write_pty orelse return;
+        func(@ptrCast(wrapper), wrapper.effects.userdata, data.ptr, data.len);
+    }
 };
 
 /// C: GhosttyTerminal
@@ -80,8 +101,10 @@ fn new_(
     });
     errdefer t.deinit(alloc);
 
-    // Setup our stream
-    const handler: Stream.Handler = t.vtHandler();
+    // Setup our stream with trampolines always installed so that
+    // setting C callbacks at any time takes effect immediately.
+    var handler: Stream.Handler = t.vtHandler();
+    handler.effects.write_pty = &Effects.writePtyTrampoline;
 
     wrapper.* = .{
         .terminal = t,
@@ -98,6 +121,53 @@ pub fn vt_write(
 ) callconv(.c) void {
     const wrapper = terminal_ orelse return;
     wrapper.stream.nextSlice(ptr[0..len]);
+}
+
+/// C: GhosttyTerminalOption
+pub const Option = enum(c_int) {
+    userdata = 0,
+    write_pty = 1,
+
+    /// Input type expected for setting the option.
+    pub fn InType(comptime self: Option) type {
+        return switch (self) {
+            .userdata => ?*anyopaque,
+            .write_pty => ?CWritePtyFn,
+        };
+    }
+};
+
+pub fn set(
+    terminal_: Terminal,
+    option: Option,
+    value: ?*const anyopaque,
+) callconv(.c) void {
+    if (comptime std.debug.runtime_safety) {
+        _ = std.meta.intToEnum(Option, @intFromEnum(option)) catch {
+            log.warn("terminal_set invalid option value={d}", .{@intFromEnum(option)});
+            return;
+        };
+    }
+
+    return switch (option) {
+        inline else => |comptime_option| setTyped(
+            terminal_,
+            comptime_option,
+            @ptrCast(@alignCast(value)),
+        ),
+    };
+}
+
+fn setTyped(
+    terminal_: Terminal,
+    comptime option: Option,
+    value: ?*const option.InType(),
+) void {
+    const wrapper = terminal_ orelse return;
+    switch (option) {
+        .userdata => wrapper.effects.userdata = if (value) |v| v.* else null,
+        .write_pty => wrapper.effects.write_pty = if (value) |v| v.* else null,
+    }
 }
 
 /// C: GhosttyTerminalScrollViewport
