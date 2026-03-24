@@ -105,7 +105,7 @@ pub fn checkGhosttyHEnum(
     try std.testing.expect(info.@"enum".tag_type == c_int);
     try std.testing.expect(info.@"enum".is_exhaustive == true);
 
-    @setEvalBranchQuota(1000000);
+    @setEvalBranchQuota(10_000_000);
 
     const c = @import("ghostty.h");
 
