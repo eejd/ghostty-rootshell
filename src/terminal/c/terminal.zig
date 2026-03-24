@@ -387,10 +387,39 @@ pub fn resize(
     terminal_: Terminal,
     cols: size.CellCountInt,
     rows: size.CellCountInt,
+    cell_width_px: u32,
+    cell_height_px: u32,
 ) callconv(.c) Result {
-    const t: *ZigTerminal = (terminal_ orelse return .invalid_value).terminal;
+    const wrapper = terminal_ orelse return .invalid_value;
+    const t = wrapper.terminal;
     if (cols == 0 or rows == 0) return .invalid_value;
     t.resize(t.gpa(), cols, rows) catch return .out_of_memory;
+
+    // Update pixel sizes
+    t.width_px = std.math.mul(u32, cols, cell_width_px) catch std.math.maxInt(u32);
+    t.height_px = std.math.mul(u32, rows, cell_height_px) catch std.math.maxInt(u32);
+
+    // Disable synchronized output mode so that we show changes
+    // immediately for a resize. This is allowed by the spec.
+    t.modes.set(.synchronized_output, false);
+
+    // If we have in-band size reporting enabled, send a report.
+    if (t.modes.get(.in_band_size_reports)) in_band: {
+        const func = wrapper.effects.write_pty orelse break :in_band;
+
+        var buf: [1024]u8 = undefined;
+        var writer: std.Io.Writer = .fixed(&buf);
+        size_report.encode(&writer, .mode_2048, .{
+            .rows = rows,
+            .columns = cols,
+            .cell_width = cell_width_px,
+            .cell_height = cell_height_px,
+        }) catch break :in_band;
+
+        const data = writer.buffered();
+        func(@ptrCast(wrapper), wrapper.effects.userdata, data.ptr, data.len);
+    }
+
     return .success;
 }
 
@@ -447,6 +476,8 @@ pub const TerminalData = enum(c_int) {
     pwd = 13,
     total_rows = 14,
     scrollback_rows = 15,
+    width_px = 16,
+    height_px = 17,
 
     /// Output type expected for querying the data of the given kind.
     pub fn OutType(comptime self: TerminalData) type {
@@ -460,6 +491,7 @@ pub const TerminalData = enum(c_int) {
             .cursor_style => style_c.Style,
             .title, .pwd => lib.String,
             .total_rows, .scrollback_rows => usize,
+            .width_px, .height_px => u32,
         };
     }
 };
@@ -518,6 +550,8 @@ fn getTyped(
         },
         .total_rows => out.* = t.screens.active.pages.total_rows,
         .scrollback_rows => out.* = t.screens.active.pages.total_rows - t.rows,
+        .width_px => out.* = t.width_px,
+        .height_px => out.* = t.height_px,
     }
 
     return .success;
@@ -692,13 +726,13 @@ test "resize" {
     ));
     defer free(t);
 
-    try testing.expectEqual(Result.success, resize(t, 40, 12));
+    try testing.expectEqual(Result.success, resize(t, 40, 12, 9, 18));
     try testing.expectEqual(40, t.?.terminal.cols);
     try testing.expectEqual(12, t.?.terminal.rows);
 }
 
 test "resize null" {
-    try testing.expectEqual(Result.invalid_value, resize(null, 80, 24));
+    try testing.expectEqual(Result.invalid_value, resize(null, 80, 24, 9, 18));
 }
 
 test "resize invalid value" {
@@ -714,8 +748,8 @@ test "resize invalid value" {
     ));
     defer free(t);
 
-    try testing.expectEqual(Result.invalid_value, resize(t, 0, 24));
-    try testing.expectEqual(Result.invalid_value, resize(t, 80, 0));
+    try testing.expectEqual(Result.invalid_value, resize(t, 0, 24, 9, 18));
+    try testing.expectEqual(Result.invalid_value, resize(t, 80, 0, 9, 18));
 }
 
 test "mode_get and mode_set" {
@@ -1838,6 +1872,189 @@ test "get title set via vt_write" {
     var title: lib.String = undefined;
     try testing.expectEqual(Result.success, get(t, .title, @ptrCast(&title)));
     try testing.expectEqualStrings("VT Title", title.ptr[0..title.len]);
+}
+
+test "resize updates pixel dimensions" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib_alloc.test_allocator,
+        &t,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 0,
+        },
+    ));
+    defer free(t);
+
+    try testing.expectEqual(Result.success, resize(t, 100, 40, 9, 18));
+
+    const zt = t.?.terminal;
+    try testing.expectEqual(@as(u32, 100 * 9), zt.width_px);
+    try testing.expectEqual(@as(u32, 40 * 18), zt.height_px);
+}
+
+test "resize pixel overflow saturates" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib_alloc.test_allocator,
+        &t,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 0,
+        },
+    ));
+    defer free(t);
+
+    try testing.expectEqual(Result.success, resize(t, 100, 40, std.math.maxInt(u32), std.math.maxInt(u32)));
+
+    const zt = t.?.terminal;
+    try testing.expectEqual(std.math.maxInt(u32), zt.width_px);
+    try testing.expectEqual(std.math.maxInt(u32), zt.height_px);
+}
+
+test "resize disables synchronized output" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib_alloc.test_allocator,
+        &t,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 0,
+        },
+    ));
+    defer free(t);
+
+    const zt = t.?.terminal;
+    zt.modes.set(.synchronized_output, true);
+
+    try testing.expectEqual(Result.success, resize(t, 100, 40, 9, 18));
+    try testing.expect(!zt.modes.get(.synchronized_output));
+}
+
+test "resize sends in-band size report" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib_alloc.test_allocator,
+        &t,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 0,
+        },
+    ));
+    defer free(t);
+
+    const S = struct {
+        var last_data: ?[]u8 = null;
+
+        fn deinit() void {
+            if (last_data) |d| testing.allocator.free(d);
+            last_data = null;
+        }
+
+        fn writePty(_: Terminal, _: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(.c) void {
+            if (last_data) |d| testing.allocator.free(d);
+            last_data = testing.allocator.dupe(u8, ptr[0..len]) catch @panic("OOM");
+        }
+    };
+    defer S.deinit();
+
+    try testing.expectEqual(Result.success, set(t, .write_pty, @ptrCast(&S.writePty)));
+
+    // Enable in-band size reports (mode 2048)
+    t.?.terminal.modes.set(.in_band_size_reports, true);
+
+    try testing.expectEqual(Result.success, resize(t, 100, 40, 9, 18));
+
+    // Expected: \x1B[48;rows;cols;height_px;width_pxt
+    // height_px = 40*18 = 720, width_px = 100*9 = 900
+    try testing.expect(S.last_data != null);
+    try testing.expectEqualStrings("\x1B[48;40;100;720;900t", S.last_data.?);
+}
+
+test "resize no size report without mode 2048" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib_alloc.test_allocator,
+        &t,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 0,
+        },
+    ));
+    defer free(t);
+
+    const S = struct {
+        var called: bool = false;
+        fn writePty(_: Terminal, _: ?*anyopaque, _: [*]const u8, _: usize) callconv(.c) void {
+            called = true;
+        }
+    };
+    S.called = false;
+
+    try testing.expectEqual(Result.success, set(t, .write_pty, @ptrCast(&S.writePty)));
+
+    // in_band_size_reports is off by default
+    try testing.expectEqual(Result.success, resize(t, 100, 40, 9, 18));
+    try testing.expect(!S.called);
+}
+
+test "resize in-band report without write_pty callback" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib_alloc.test_allocator,
+        &t,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 0,
+        },
+    ));
+    defer free(t);
+
+    // Enable mode 2048 but don't set a write_pty callback — should not crash
+    t.?.terminal.modes.set(.in_band_size_reports, true);
+    try testing.expectEqual(Result.success, resize(t, 100, 40, 9, 18));
+}
+
+test "resize null terminal" {
+    try testing.expectEqual(Result.invalid_value, resize(null, 100, 40, 9, 18));
+}
+
+test "resize zero cols" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib_alloc.test_allocator,
+        &t,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 0,
+        },
+    ));
+    defer free(t);
+
+    try testing.expectEqual(Result.invalid_value, resize(t, 0, 40, 9, 18));
+}
+
+test "resize zero rows" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib_alloc.test_allocator,
+        &t,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 0,
+        },
+    ));
+    defer free(t);
+
+    try testing.expectEqual(Result.invalid_value, resize(t, 100, 0, 9, 18));
 }
 
 test "grid_ref out of bounds" {

@@ -570,6 +570,24 @@ typedef enum {
    * Output type: size_t *
    */
   GHOSTTY_TERMINAL_DATA_SCROLLBACK_ROWS = 15,
+
+  /**
+   * The total width of the terminal in pixels.
+   *
+   * This is cols * cell_width_px as set by ghostty_terminal_resize().
+   *
+   * Output type: uint32_t *
+   */
+  GHOSTTY_TERMINAL_DATA_WIDTH_PX = 16,
+
+  /**
+   * The total height of the terminal in pixels.
+   *
+   * This is rows * cell_height_px as set by ghostty_terminal_resize().
+   *
+   * Output type: uint32_t *
+   */
+  GHOSTTY_TERMINAL_DATA_HEIGHT_PX = 17,
 } GhosttyTerminalData;
 
 /**
@@ -618,16 +636,25 @@ void ghostty_terminal_reset(GhosttyTerminal terminal);
  * screen will reflow content if wraparound mode is enabled; the alternate
  * screen does not reflow. If the dimensions are unchanged, this is a no-op.
  *
+ * This also updates the terminal's pixel dimensions (used for image
+ * protocols and size reports), disables synchronized output mode (allowed
+ * by the spec so that resize results are shown immediately), and sends an
+ * in-band size report if mode 2048 is enabled.
+ *
  * @param terminal The terminal handle (NULL returns GHOSTTY_INVALID_VALUE)
  * @param cols New width in cells (must be greater than zero)
  * @param rows New height in cells (must be greater than zero)
+ * @param cell_width_px Width of a single cell in pixels
+ * @param cell_height_px Height of a single cell in pixels
  * @return GHOSTTY_SUCCESS on success, or an error code on failure
  *
  * @ingroup terminal
  */
 GhosttyResult ghostty_terminal_resize(GhosttyTerminal terminal,
                                       uint16_t cols,
-                                      uint16_t rows);
+                                      uint16_t rows,
+                                      uint32_t cell_width_px,
+                                      uint32_t cell_height_px);
 
 /**
  * Set an option on the terminal.
