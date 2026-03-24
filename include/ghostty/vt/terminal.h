@@ -12,6 +12,7 @@
 #include <stdint.h>
 #include <ghostty/vt/types.h>
 #include <ghostty/vt/allocator.h>
+#include <ghostty/vt/device_status.h>
 #include <ghostty/vt/modes.h>
 #include <ghostty/vt/size_report.h>
 #include <ghostty/vt/grid_ref.h>
@@ -218,6 +219,24 @@ typedef void (*GhosttyTerminalTitleChangedFn)(GhosttyTerminal terminal,
                                               void* userdata);
 
 /**
+ * Callback function type for color scheme queries (CSI ? 996 n).
+ *
+ * Called when the terminal receives a color scheme device status report
+ * query. Return true and fill *out_scheme with the current color scheme,
+ * or return false to silently ignore the query.
+ *
+ * @param terminal The terminal handle
+ * @param userdata The userdata pointer set via GHOSTTY_TERMINAL_OPT_USERDATA
+ * @param[out] out_scheme Pointer to store the current color scheme
+ * @return true if the color scheme was filled, false to ignore the query
+ *
+ * @ingroup terminal
+ */
+typedef bool (*GhosttyTerminalColorSchemeFn)(GhosttyTerminal terminal,
+                                             void* userdata,
+                                             GhosttyColorScheme* out_scheme);
+
+/**
  * Callback function type for size queries (XTWINOPS).
  *
  * Called in response to XTWINOPS size queries (CSI 14/16/18 t).
@@ -300,6 +319,16 @@ typedef enum {
    * Input type: GhosttyTerminalSizeFn*
    */
   GHOSTTY_TERMINAL_OPT_SIZE = 6,
+
+  /**
+   * Callback invoked in response to a color scheme device status
+   * report query (CSI ? 996 n). Return true and fill the out pointer
+   * to report the current scheme, or return false to silently ignore.
+   * Set to NULL to ignore color scheme queries.
+   *
+   * Input type: GhosttyTerminalColorSchemeFn*
+   */
+  GHOSTTY_TERMINAL_OPT_COLOR_SCHEME = 7,
 } GhosttyTerminalOption;
 
 /**

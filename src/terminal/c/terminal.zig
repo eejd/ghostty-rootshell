@@ -11,6 +11,7 @@ const kitty = @import("../kitty/key.zig");
 const modes = @import("../modes.zig");
 const point = @import("../point.zig");
 const size = @import("../size.zig");
+const device_status = @import("../device_status.zig");
 const size_report = @import("../size_report.zig");
 const cell_c = @import("cell.zig");
 const row_c = @import("row.zig");
@@ -38,6 +39,7 @@ const Effects = struct {
     userdata: ?*anyopaque = null,
     write_pty: ?WritePtyFn = null,
     bell: ?BellFn = null,
+    color_scheme: ?ColorSchemeFn = null,
     enquiry: ?EnquiryFn = null,
     xtversion: ?XtversionFn = null,
     title_changed: ?TitleChangedFn = null,
@@ -48,6 +50,11 @@ const Effects = struct {
 
     /// C function pointer type for the bell callback.
     pub const BellFn = *const fn (Terminal, ?*anyopaque) callconv(.c) void;
+
+    /// C function pointer type for the color_scheme callback.
+    /// Returns true and fills out_scheme if a color scheme is available,
+    /// or returns false to silently ignore the query.
+    pub const ColorSchemeFn = *const fn (Terminal, ?*anyopaque, *device_status.ColorScheme) callconv(.c) bool;
 
     /// C function pointer type for the enquiry callback.
     /// Returns the response bytes. The memory must remain valid
@@ -80,6 +87,15 @@ const Effects = struct {
         const wrapper: *TerminalWrapper = @fieldParentPtr("stream", stream_ptr);
         const func = wrapper.effects.bell orelse return;
         func(@ptrCast(wrapper), wrapper.effects.userdata);
+    }
+
+    fn colorSchemeTrampoline(handler: *Handler) ?device_status.ColorScheme {
+        const stream_ptr: *Stream = @fieldParentPtr("handler", handler);
+        const wrapper: *TerminalWrapper = @fieldParentPtr("stream", stream_ptr);
+        const func = wrapper.effects.color_scheme orelse return null;
+        var scheme: device_status.ColorScheme = undefined;
+        if (func(@ptrCast(wrapper), wrapper.effects.userdata, &scheme)) return scheme;
+        return null;
     }
 
     fn enquiryTrampoline(handler: *Handler) []const u8 {
@@ -176,6 +192,7 @@ fn new_(
     var handler: Stream.Handler = t.vtHandler();
     handler.effects.write_pty = &Effects.writePtyTrampoline;
     handler.effects.bell = &Effects.bellTrampoline;
+    handler.effects.color_scheme = &Effects.colorSchemeTrampoline;
     handler.effects.enquiry = &Effects.enquiryTrampoline;
     handler.effects.xtversion = &Effects.xtversionTrampoline;
     handler.effects.title_changed = &Effects.titleChangedTrampoline;
@@ -207,6 +224,7 @@ pub const Option = enum(c_int) {
     xtversion = 4,
     title_changed = 5,
     size_cb = 6,
+    color_scheme = 7,
 
     /// Input type expected for setting the option.
     pub fn InType(comptime self: Option) type {
@@ -214,6 +232,7 @@ pub const Option = enum(c_int) {
             .userdata => ?*anyopaque,
             .write_pty => ?Effects.WritePtyFn,
             .bell => ?Effects.BellFn,
+            .color_scheme => ?Effects.ColorSchemeFn,
             .enquiry => ?Effects.EnquiryFn,
             .xtversion => ?Effects.XtversionFn,
             .title_changed => ?Effects.TitleChangedFn,
@@ -253,6 +272,7 @@ fn setTyped(
         .userdata => wrapper.effects.userdata = if (value) |v| v.* else null,
         .write_pty => wrapper.effects.write_pty = if (value) |v| v.* else null,
         .bell => wrapper.effects.bell = if (value) |v| v.* else null,
+        .color_scheme => wrapper.effects.color_scheme = if (value) |v| v.* else null,
         .enquiry => wrapper.effects.enquiry = if (value) |v| v.* else null,
         .xtversion => wrapper.effects.xtversion = if (value) |v| v.* else null,
         .title_changed => wrapper.effects.title_changed = if (value) |v| v.* else null,
