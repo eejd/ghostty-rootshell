@@ -155,6 +155,19 @@ typedef void (*GhosttyTerminalWritePtyFn)(GhosttyTerminal terminal,
                                           size_t len);
 
 /**
+ * Callback function type for bell.
+ *
+ * Called when the terminal receives a BEL character (0x07).
+ *
+ * @param terminal The terminal handle
+ * @param userdata The userdata pointer set via GHOSTTY_TERMINAL_OPT_USERDATA
+ *
+ * @ingroup terminal
+ */
+typedef void (*GhosttyTerminalBellFn)(GhosttyTerminal terminal,
+                                      void* userdata);
+
+/**
  * Terminal option identifiers.
  *
  * These values are used with ghostty_terminal_set() to configure
@@ -178,6 +191,14 @@ typedef enum {
    * Input type: GhosttyTerminalWritePtyFn*
    */
   GHOSTTY_TERMINAL_OPT_WRITE_PTY = 1,
+
+  /**
+   * Callback invoked when the terminal receives a BEL character
+   * (0x07). Set to NULL to ignore bell events.
+   *
+   * Input type: GhosttyTerminalBellFn*
+   */
+  GHOSTTY_TERMINAL_OPT_BELL = 2,
 } GhosttyTerminalOption;
 
 /**

@@ -20,9 +20,6 @@ const Handler = @import("../stream_terminal.zig").Handler;
 
 const log = std.log.scoped(.terminal_c);
 
-/// C function pointer type for the write_pty callback.
-pub const CWritePtyFn = *const fn (Terminal, ?*anyopaque, [*]const u8, usize) callconv(.c) void;
-
 /// Wrapper around ZigTerminal that tracks additional state for C API usage,
 /// such as the persistent VT stream needed to handle escape sequences split
 /// across multiple vt_write calls.
@@ -37,13 +34,27 @@ const TerminalWrapper = struct {
 /// no-op when the corresponding callback is null.
 const Effects = struct {
     userdata: ?*anyopaque = null,
-    write_pty: ?CWritePtyFn = null,
+    write_pty: ?WritePtyFn = null,
+    bell: ?BellFn = null,
+
+    /// C function pointer type for the write_pty callback.
+    pub const WritePtyFn = *const fn (Terminal, ?*anyopaque, [*]const u8, usize) callconv(.c) void;
+
+    /// C function pointer type for the bell callback.
+    pub const BellFn = *const fn (Terminal, ?*anyopaque) callconv(.c) void;
 
     fn writePtyTrampoline(handler: *Handler, data: [:0]const u8) void {
         const stream_ptr: *Stream = @fieldParentPtr("handler", handler);
         const wrapper: *TerminalWrapper = @fieldParentPtr("stream", stream_ptr);
         const func = wrapper.effects.write_pty orelse return;
         func(@ptrCast(wrapper), wrapper.effects.userdata, data.ptr, data.len);
+    }
+
+    fn bellTrampoline(handler: *Handler) void {
+        const stream_ptr: *Stream = @fieldParentPtr("handler", handler);
+        const wrapper: *TerminalWrapper = @fieldParentPtr("stream", stream_ptr);
+        const func = wrapper.effects.bell orelse return;
+        func(@ptrCast(wrapper), wrapper.effects.userdata);
     }
 };
 
@@ -105,6 +116,7 @@ fn new_(
     // setting C callbacks at any time takes effect immediately.
     var handler: Stream.Handler = t.vtHandler();
     handler.effects.write_pty = &Effects.writePtyTrampoline;
+    handler.effects.bell = &Effects.bellTrampoline;
 
     wrapper.* = .{
         .terminal = t,
@@ -127,12 +139,14 @@ pub fn vt_write(
 pub const Option = enum(c_int) {
     userdata = 0,
     write_pty = 1,
+    bell = 2,
 
     /// Input type expected for setting the option.
     pub fn InType(comptime self: Option) type {
         return switch (self) {
             .userdata => ?*anyopaque,
-            .write_pty => ?CWritePtyFn,
+            .write_pty => ?Effects.WritePtyFn,
+            .bell => ?Effects.BellFn,
         };
     }
 };
@@ -167,6 +181,7 @@ fn setTyped(
     switch (option) {
         .userdata => wrapper.effects.userdata = if (value) |v| v.* else null,
         .write_pty => wrapper.effects.write_pty = if (value) |v| v.* else null,
+        .bell => wrapper.effects.bell = if (value) |v| v.* else null,
     }
 }
 
