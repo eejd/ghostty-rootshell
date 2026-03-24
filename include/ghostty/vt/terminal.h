@@ -34,6 +34,60 @@ extern "C" {
  * Once a terminal session is up and running, you can configure a key encoder
  * to write keyboard input via ghostty_key_encoder_setopt_from_terminal().
  *
+ * ## Effects
+ *
+ * By default, the terminal sequence processing with ghostty_terminal_vt_write() 
+ * only process sequences that directly affect terminal state and 
+ * ignores sequences that have side effect behavior or require responses.
+ * These sequences include things like bell characters, title changes, device
+ * attributes queries, and more. To handle these sequences, the embedder
+ * must configure "effects."
+ *
+ * Effects are callbacks that the terminal invokes in response to VT
+ * sequences processed during ghostty_terminal_vt_write(). They let the
+ * embedding application react to terminal-initiated events such as bell
+ * characters, title changes, device status report responses, and more.
+ *
+ * Each effect is registered with ghostty_terminal_set() using the
+ * corresponding `GhosttyTerminalOption` identifier. A `NULL` value
+ * pointer clears the callback and disables the effect.
+ *
+ * A userdata pointer can be attached via `GHOSTTY_TERMINAL_OPT_USERDATA`
+ * and is passed to every callback, allowing callers to route events
+ * back to their own application state without global variables.
+ * You cannot specify different userdata for different callbacks.
+ *
+ * All callbacks are invoked synchronously during
+ * ghostty_terminal_vt_write(). Callbacks **must not** call
+ * ghostty_terminal_vt_write() on the same terminal (no reentrancy).
+ * And callbacks must be very careful to not block for too long or perform 
+ * expensive operations, since they are blocking further IO processing.
+ *
+ * The available effects are:
+ *
+ * | Option                                  | Callback Type                     | Trigger                                   |
+ * |-----------------------------------------|-----------------------------------|-------------------------------------------|
+ * | `GHOSTTY_TERMINAL_OPT_WRITE_PTY`        | `GhosttyTerminalWritePtyFn`       | Query responses written back to the pty   |
+ * | `GHOSTTY_TERMINAL_OPT_BELL`             | `GhosttyTerminalBellFn`           | BEL character (0x07)                      |
+ * | `GHOSTTY_TERMINAL_OPT_TITLE_CHANGED`    | `GhosttyTerminalTitleChangedFn`   | Title change via OSC 0 / OSC 2            |
+ * | `GHOSTTY_TERMINAL_OPT_ENQUIRY`          | `GhosttyTerminalEnquiryFn`        | ENQ character (0x05)                      |
+ * | `GHOSTTY_TERMINAL_OPT_XTVERSION`        | `GhosttyTerminalXtversionFn`      | XTVERSION query (CSI > q)                 |
+ * | `GHOSTTY_TERMINAL_OPT_SIZE`             | `GhosttyTerminalSizeFn`           | XTWINOPS size query (CSI 14/16/18 t)      |
+ * | `GHOSTTY_TERMINAL_OPT_COLOR_SCHEME`     | `GhosttyTerminalColorSchemeFn`    | Color scheme query (CSI ? 996 n)          |
+ * | `GHOSTTY_TERMINAL_OPT_DEVICE_ATTRIBUTES`| `GhosttyTerminalDeviceAttributesFn`| Device attributes query (CSI c / > c / = c)|
+ *
+ * ### Defining a write_pty callback
+ * @snippet c-vt-effects/src/main.c effects-write-pty
+ *
+ * ### Defining a bell callback
+ * @snippet c-vt-effects/src/main.c effects-bell
+ *
+ * ### Defining a title_changed callback
+ * @snippet c-vt-effects/src/main.c effects-title-changed
+ *
+ * ### Registering effects and processing VT data
+ * @snippet c-vt-effects/src/main.c effects-register
+ *
  * @{
  */
 
