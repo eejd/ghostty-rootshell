@@ -414,6 +414,26 @@ typedef enum {
    * Input type: GhosttyTerminalDeviceAttributesFn*
    */
   GHOSTTY_TERMINAL_OPT_DEVICE_ATTRIBUTES = 8,
+
+  /**
+   * Set the terminal title manually.
+   *
+   * The string data is copied into the terminal. A NULL value pointer
+   * clears the title (equivalent to setting an empty string).
+   *
+   * Input type: GhosttyString*
+   */
+  GHOSTTY_TERMINAL_OPT_TITLE = 9,
+
+  /**
+   * Set the terminal working directory manually.
+   *
+   * The string data is copied into the terminal. A NULL value pointer
+   * clears the pwd (equivalent to setting an empty string).
+   *
+   * Input type: GhosttyString*
+   */
+  GHOSTTY_TERMINAL_OPT_PWD = 10,
 } GhosttyTerminalOption;
 
 /**
@@ -513,6 +533,29 @@ typedef enum {
    * Output type: bool *
    */
   GHOSTTY_TERMINAL_DATA_MOUSE_TRACKING = 11,
+
+  /**
+   * The terminal title as set by escape sequences (e.g. OSC 0/2).
+   *
+   * Returns a borrowed string. The pointer is valid until the next call
+   * to ghostty_terminal_vt_write() or ghostty_terminal_reset(). An empty
+   * string (len=0) is returned when no title has been set.
+   *
+   * Output type: GhosttyString *
+   */
+  GHOSTTY_TERMINAL_DATA_TITLE = 12,
+
+  /**
+   * The terminal's current working directory as set by escape sequences
+   * (e.g. OSC 7).
+   *
+   * Returns a borrowed string. The pointer is valid until the next call
+   * to ghostty_terminal_vt_write() or ghostty_terminal_reset(). An empty
+   * string (len=0) is returned when no pwd has been set.
+   *
+   * Output type: GhosttyString *
+   */
+  GHOSTTY_TERMINAL_DATA_PWD = 13,
 } GhosttyTerminalData;
 
 /**
@@ -590,9 +633,9 @@ GhosttyResult ghostty_terminal_resize(GhosttyTerminal terminal,
  *
  * @ingroup terminal
  */
-void ghostty_terminal_set(GhosttyTerminal terminal,
-                           GhosttyTerminalOption option,
-                           const void* value);
+GhosttyResult ghostty_terminal_set(GhosttyTerminal terminal,
+                                   GhosttyTerminalOption option,
+                                   const void* value);
 
 /**
  * Write VT-encoded data to the terminal for processing.
