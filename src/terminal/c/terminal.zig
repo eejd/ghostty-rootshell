@@ -253,14 +253,16 @@ fn new_(
     // Setup our stream with trampolines always installed so that
     // setting C callbacks at any time takes effect immediately.
     var handler: Stream.Handler = t.vtHandler();
-    handler.effects.write_pty = &Effects.writePtyTrampoline;
-    handler.effects.bell = &Effects.bellTrampoline;
-    handler.effects.color_scheme = &Effects.colorSchemeTrampoline;
-    handler.effects.device_attributes = &Effects.deviceAttributesTrampoline;
-    handler.effects.enquiry = &Effects.enquiryTrampoline;
-    handler.effects.xtversion = &Effects.xtversionTrampoline;
-    handler.effects.title_changed = &Effects.titleChangedTrampoline;
-    handler.effects.size = &Effects.sizeTrampoline;
+    handler.effects = .{
+        .write_pty = &Effects.writePtyTrampoline,
+        .bell = &Effects.bellTrampoline,
+        .color_scheme = &Effects.colorSchemeTrampoline,
+        .device_attributes = &Effects.deviceAttributesTrampoline,
+        .enquiry = &Effects.enquiryTrampoline,
+        .xtversion = &Effects.xtversionTrampoline,
+        .title_changed = &Effects.titleChangedTrampoline,
+        .size = &Effects.sizeTrampoline,
+    };
 
     wrapper.* = .{
         .terminal = t,

@@ -137,26 +137,6 @@ typedef struct {
 } GhosttyTerminalScrollbar;
 
 /**
- * Callback function type for write_pty.
- *
- * Called when the terminal needs to write data back to the pty, for
- * example in response to a device status report or mode query. The
- * data is only valid for the duration of the call; callers must copy
- * it if it needs to persist.
- *
- * @param terminal The terminal handle
- * @param userdata The userdata pointer set via GHOSTTY_TERMINAL_OPT_USERDATA
- * @param data Pointer to the response bytes
- * @param len Length of the response in bytes
- *
- * @ingroup terminal
- */
-typedef void (*GhosttyTerminalWritePtyFn)(GhosttyTerminal terminal,
-                                          void* userdata,
-                                          const uint8_t* data,
-                                          size_t len);
-
-/**
  * Callback function type for bell.
  *
  * Called when the terminal receives a BEL character (0x07).
@@ -168,55 +148,6 @@ typedef void (*GhosttyTerminalWritePtyFn)(GhosttyTerminal terminal,
  */
 typedef void (*GhosttyTerminalBellFn)(GhosttyTerminal terminal,
                                       void* userdata);
-
-/**
- * Callback function type for enquiry (ENQ, 0x05).
- *
- * Called when the terminal receives an ENQ character. Return the
- * response bytes as a GhosttyString. The memory must remain valid
- * until the callback returns. Return a zero-length string to send
- * no response.
- *
- * @param terminal The terminal handle
- * @param userdata The userdata pointer set via GHOSTTY_TERMINAL_OPT_USERDATA
- * @return The response bytes to write back to the pty
- *
- * @ingroup terminal
- */
-typedef GhosttyString (*GhosttyTerminalEnquiryFn)(GhosttyTerminal terminal,
-                                                   void* userdata);
-
-/**
- * Callback function type for XTVERSION.
- *
- * Called when the terminal receives an XTVERSION query (CSI > q).
- * Return the version string (e.g. "myterm 1.0") as a GhosttyString.
- * The memory must remain valid until the callback returns. Return a
- * zero-length string to report the default "libghostty" version.
- *
- * @param terminal The terminal handle
- * @param userdata The userdata pointer set via GHOSTTY_TERMINAL_OPT_USERDATA
- * @return The version string to report
- *
- * @ingroup terminal
- */
-typedef GhosttyString (*GhosttyTerminalXtversionFn)(GhosttyTerminal terminal,
-                                                     void* userdata);
-
-/**
- * Callback function type for title_changed.
- *
- * Called when the terminal title changes via escape sequences
- * (e.g. OSC 0 or OSC 2). The new title can be queried from the
- * terminal after the callback returns.
- *
- * @param terminal The terminal handle
- * @param userdata The userdata pointer set via GHOSTTY_TERMINAL_OPT_USERDATA
- *
- * @ingroup terminal
- */
-typedef void (*GhosttyTerminalTitleChangedFn)(GhosttyTerminal terminal,
-                                              void* userdata);
 
 /**
  * Callback function type for color scheme queries (CSI ? 996 n).
@@ -258,6 +189,23 @@ typedef bool (*GhosttyTerminalDeviceAttributesFn)(GhosttyTerminal terminal,
                                                    GhosttyDeviceAttributes* out_attrs);
 
 /**
+ * Callback function type for enquiry (ENQ, 0x05).
+ *
+ * Called when the terminal receives an ENQ character. Return the
+ * response bytes as a GhosttyString. The memory must remain valid
+ * until the callback returns. Return a zero-length string to send
+ * no response.
+ *
+ * @param terminal The terminal handle
+ * @param userdata The userdata pointer set via GHOSTTY_TERMINAL_OPT_USERDATA
+ * @return The response bytes to write back to the pty
+ *
+ * @ingroup terminal
+ */
+typedef GhosttyString (*GhosttyTerminalEnquiryFn)(GhosttyTerminal terminal,
+                                                   void* userdata);
+
+/**
  * Callback function type for size queries (XTWINOPS).
  *
  * Called in response to XTWINOPS size queries (CSI 14/16/18 t).
@@ -274,6 +222,58 @@ typedef bool (*GhosttyTerminalDeviceAttributesFn)(GhosttyTerminal terminal,
 typedef bool (*GhosttyTerminalSizeFn)(GhosttyTerminal terminal,
                                       void* userdata,
                                       GhosttySizeReportSize* out_size);
+
+/**
+ * Callback function type for title_changed.
+ *
+ * Called when the terminal title changes via escape sequences
+ * (e.g. OSC 0 or OSC 2). The new title can be queried from the
+ * terminal after the callback returns.
+ *
+ * @param terminal The terminal handle
+ * @param userdata The userdata pointer set via GHOSTTY_TERMINAL_OPT_USERDATA
+ *
+ * @ingroup terminal
+ */
+typedef void (*GhosttyTerminalTitleChangedFn)(GhosttyTerminal terminal,
+                                              void* userdata);
+
+/**
+ * Callback function type for write_pty.
+ *
+ * Called when the terminal needs to write data back to the pty, for
+ * example in response to a device status report or mode query. The
+ * data is only valid for the duration of the call; callers must copy
+ * it if it needs to persist.
+ *
+ * @param terminal The terminal handle
+ * @param userdata The userdata pointer set via GHOSTTY_TERMINAL_OPT_USERDATA
+ * @param data Pointer to the response bytes
+ * @param len Length of the response in bytes
+ *
+ * @ingroup terminal
+ */
+typedef void (*GhosttyTerminalWritePtyFn)(GhosttyTerminal terminal,
+                                          void* userdata,
+                                          const uint8_t* data,
+                                          size_t len);
+
+/**
+ * Callback function type for XTVERSION.
+ *
+ * Called when the terminal receives an XTVERSION query (CSI > q).
+ * Return the version string (e.g. "myterm 1.0") as a GhosttyString.
+ * The memory must remain valid until the callback returns. Return a
+ * zero-length string to report the default "libghostty" version.
+ *
+ * @param terminal The terminal handle
+ * @param userdata The userdata pointer set via GHOSTTY_TERMINAL_OPT_USERDATA
+ * @return The version string to report
+ *
+ * @ingroup terminal
+ */
+typedef GhosttyString (*GhosttyTerminalXtversionFn)(GhosttyTerminal terminal,
+                                                     void* userdata);
 
 /**
  * Terminal option identifiers.
