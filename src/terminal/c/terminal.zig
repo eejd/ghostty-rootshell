@@ -298,6 +298,8 @@ pub const Option = enum(c_int) {
     size_cb = 6,
     color_scheme = 7,
     device_attributes = 8,
+    title = 9,
+    pwd = 10,
 
     /// Input type expected for setting the option.
     pub fn InType(comptime self: Option) type {
@@ -311,6 +313,7 @@ pub const Option = enum(c_int) {
             .xtversion => ?Effects.XtversionFn,
             .title_changed => ?Effects.TitleChangedFn,
             .size_cb => ?Effects.SizeFn,
+            .title, .pwd => lib.String,
         };
     }
 };
@@ -319,11 +322,11 @@ pub fn set(
     terminal_: Terminal,
     option: Option,
     value: ?*const anyopaque,
-) callconv(.c) void {
+) callconv(.c) Result {
     if (comptime std.debug.runtime_safety) {
         _ = std.meta.intToEnum(Option, @intFromEnum(option)) catch {
             log.warn("terminal_set invalid option value={d}", .{@intFromEnum(option)});
-            return;
+            return .invalid_value;
         };
     }
 
@@ -340,8 +343,8 @@ fn setTyped(
     terminal_: Terminal,
     comptime option: Option,
     value: ?*const option.InType(),
-) void {
-    const wrapper = terminal_ orelse return;
+) Result {
+    const wrapper = terminal_ orelse return .invalid_value;
     switch (option) {
         .userdata => wrapper.effects.userdata = if (value) |v| v.* else null,
         .write_pty => wrapper.effects.write_pty = if (value) |v| v.* else null,
@@ -352,7 +355,16 @@ fn setTyped(
         .xtversion => wrapper.effects.xtversion = if (value) |v| v.* else null,
         .title_changed => wrapper.effects.title_changed = if (value) |v| v.* else null,
         .size_cb => wrapper.effects.size_cb = if (value) |v| v.* else null,
+        .title => {
+            const str = if (value) |v| v.ptr[0..v.len] else "";
+            wrapper.terminal.setTitle(str) catch return .out_of_memory;
+        },
+        .pwd => {
+            const str = if (value) |v| v.ptr[0..v.len] else "";
+            wrapper.terminal.setPwd(str) catch return .out_of_memory;
+        },
     }
+    return .success;
 }
 
 /// C: GhosttyTerminalScrollViewport
@@ -430,6 +442,8 @@ pub const TerminalData = enum(c_int) {
     scrollbar = 9,
     cursor_style = 10,
     mouse_tracking = 11,
+    title = 12,
+    pwd = 13,
 
     /// Output type expected for querying the data of the given kind.
     pub fn OutType(comptime self: TerminalData) type {
@@ -441,6 +455,7 @@ pub const TerminalData = enum(c_int) {
             .kitty_keyboard_flags => u8,
             .scrollbar => TerminalScrollbar,
             .cursor_style => style_c.Style,
+            .title, .pwd => lib.String,
         };
     }
 };
@@ -489,6 +504,14 @@ fn getTyped(
             t.modes.get(.mouse_event_normal) or
             t.modes.get(.mouse_event_button) or
             t.modes.get(.mouse_event_any),
+        .title => {
+            const title = t.getTitle() orelse "";
+            out.* = .{ .ptr = title.ptr, .len = title.len };
+        },
+        .pwd => {
+            const pwd = t.getPwd() orelse "";
+            out.* = .{ .ptr = pwd.ptr, .len = pwd.len };
+        },
     }
 
     return .success;
@@ -1068,9 +1091,9 @@ test "set write_pty callback" {
     // Set userdata and write_pty callback
     var sentinel: u8 = 42;
     const ud: ?*anyopaque = @ptrCast(&sentinel);
-    set(t, .userdata, @ptrCast(&ud));
+    try testing.expectEqual(Result.success, set(t, .userdata, @ptrCast(&ud)));
     const cb: ?Effects.WritePtyFn = &S.writePty;
-    set(t, .write_pty, @ptrCast(&cb));
+    try testing.expectEqual(Result.success, set(t, .write_pty, @ptrCast(&cb)));
 
     // DECRQM for wraparound mode (mode 7, set by default) should trigger write_pty
     vt_write(t, "\x1B[?7$p", 6);
@@ -1119,8 +1142,8 @@ test "set write_pty null clears callback" {
 
     // Set then clear the callback
     const cb: ?Effects.WritePtyFn = &S.writePty;
-    set(t, .write_pty, @ptrCast(&cb));
-    set(t, .write_pty, null);
+    try testing.expectEqual(Result.success, set(t, .write_pty, @ptrCast(&cb)));
+    try testing.expectEqual(Result.success, set(t, .write_pty, null));
 
     vt_write(t, "\x1B[?7$p", 6);
     try testing.expect(!S.called);
@@ -1154,9 +1177,9 @@ test "set bell callback" {
     // Set userdata and bell callback
     var sentinel: u8 = 99;
     const ud: ?*anyopaque = @ptrCast(&sentinel);
-    set(t, .userdata, @ptrCast(&ud));
+    try testing.expectEqual(Result.success, set(t, .userdata, @ptrCast(&ud)));
     const cb: ?Effects.BellFn = &S.bell;
-    set(t, .bell, @ptrCast(&cb));
+    try testing.expectEqual(Result.success, set(t, .bell, @ptrCast(&cb)));
 
     // Single BEL
     vt_write(t, "\x07", 1);
@@ -1219,9 +1242,9 @@ test "set enquiry callback" {
     defer S.deinit();
 
     const write_cb: ?Effects.WritePtyFn = &S.writePty;
-    set(t, .write_pty, @ptrCast(&write_cb));
+    try testing.expectEqual(Result.success, set(t, .write_pty, @ptrCast(&write_cb)));
     const enq_cb: ?Effects.EnquiryFn = &S.enquiry;
-    set(t, .enquiry, @ptrCast(&enq_cb));
+    try testing.expectEqual(Result.success, set(t, .enquiry, @ptrCast(&enq_cb)));
 
     // ENQ (0x05) should trigger the enquiry callback and write response via write_pty
     vt_write(t, "\x05", 1);
@@ -1280,9 +1303,9 @@ test "set xtversion callback" {
     defer S.deinit();
 
     const write_cb: ?Effects.WritePtyFn = &S.writePty;
-    set(t, .write_pty, @ptrCast(&write_cb));
+    try testing.expectEqual(Result.success, set(t, .write_pty, @ptrCast(&write_cb)));
     const xtv_cb: ?Effects.XtversionFn = &S.xtversion;
-    set(t, .xtversion, @ptrCast(&xtv_cb));
+    try testing.expectEqual(Result.success, set(t, .xtversion, @ptrCast(&xtv_cb)));
 
     // XTVERSION: CSI > q
     vt_write(t, "\x1B[>q", 4);
@@ -1321,7 +1344,7 @@ test "xtversion without callback reports default" {
 
     // Set write_pty but not xtversion — should get default "libghostty"
     const write_cb: ?Effects.WritePtyFn = &S.writePty;
-    set(t, .write_pty, @ptrCast(&write_cb));
+    try testing.expectEqual(Result.success, set(t, .write_pty, @ptrCast(&write_cb)));
 
     vt_write(t, "\x1B[>q", 4);
     try testing.expect(S.last_data != null);
@@ -1355,9 +1378,9 @@ test "set title_changed callback" {
 
     var sentinel: u8 = 77;
     const ud: ?*anyopaque = @ptrCast(&sentinel);
-    set(t, .userdata, @ptrCast(&ud));
+    try testing.expectEqual(Result.success, set(t, .userdata, @ptrCast(&ud)));
     const cb: ?Effects.TitleChangedFn = &S.titleChanged;
-    set(t, .title_changed, @ptrCast(&cb));
+    try testing.expectEqual(Result.success, set(t, .title_changed, @ptrCast(&cb)));
 
     // OSC 2 ; title ST — set window title
     vt_write(t, "\x1B]2;Hello\x1B\\", 10);
@@ -1425,9 +1448,9 @@ test "set size callback" {
     defer S.deinit();
 
     const write_cb: ?Effects.WritePtyFn = &S.writePty;
-    set(t, .write_pty, @ptrCast(&write_cb));
+    try testing.expectEqual(Result.success, set(t, .write_pty, @ptrCast(&write_cb)));
     const size_cb_fn: ?Effects.SizeFn = &S.sizeCb;
-    set(t, .size_cb, @ptrCast(&size_cb_fn));
+    try testing.expectEqual(Result.success, set(t, .size_cb, @ptrCast(&size_cb_fn)));
 
     // CSI 18 t — report text area size in characters
     vt_write(t, "\x1B[18t", 5);
@@ -1498,9 +1521,9 @@ test "set device_attributes callback primary" {
     defer S.deinit();
 
     const write_cb: ?Effects.WritePtyFn = &S.writePty;
-    set(t, .write_pty, @ptrCast(&write_cb));
+    try testing.expectEqual(Result.success, set(t, .write_pty, @ptrCast(&write_cb)));
     const da_cb: ?Effects.DeviceAttributesFn = &S.da;
-    set(t, .device_attributes, @ptrCast(&da_cb));
+    try testing.expectEqual(Result.success, set(t, .device_attributes, @ptrCast(&da_cb)));
 
     // CSI c — primary DA
     vt_write(t, "\x1B[c", 3);
@@ -1554,9 +1577,9 @@ test "set device_attributes callback secondary" {
     defer S.deinit();
 
     const write_cb: ?Effects.WritePtyFn = &S.writePty;
-    set(t, .write_pty, @ptrCast(&write_cb));
+    try testing.expectEqual(Result.success, set(t, .write_pty, @ptrCast(&write_cb)));
     const da_cb: ?Effects.DeviceAttributesFn = &S.da;
-    set(t, .device_attributes, @ptrCast(&da_cb));
+    try testing.expectEqual(Result.success, set(t, .device_attributes, @ptrCast(&da_cb)));
 
     // CSI > c — secondary DA
     vt_write(t, "\x1B[>c", 4);
@@ -1610,9 +1633,9 @@ test "set device_attributes callback tertiary" {
     defer S.deinit();
 
     const write_cb: ?Effects.WritePtyFn = &S.writePty;
-    set(t, .write_pty, @ptrCast(&write_cb));
+    try testing.expectEqual(Result.success, set(t, .write_pty, @ptrCast(&write_cb)));
     const da_cb: ?Effects.DeviceAttributesFn = &S.da;
-    set(t, .device_attributes, @ptrCast(&da_cb));
+    try testing.expectEqual(Result.success, set(t, .device_attributes, @ptrCast(&da_cb)));
 
     // CSI = c — tertiary DA
     vt_write(t, "\x1B[=c", 4);
@@ -1649,7 +1672,7 @@ test "device_attributes without callback uses default" {
     defer S.deinit();
 
     const write_cb: ?Effects.WritePtyFn = &S.writePty;
-    set(t, .write_pty, @ptrCast(&write_cb));
+    try testing.expectEqual(Result.success, set(t, .write_pty, @ptrCast(&write_cb)));
 
     // Without setting a device_attributes callback, DA1 should return the default
     vt_write(t, "\x1B[c", 3);
@@ -1690,14 +1713,106 @@ test "device_attributes callback returns false uses default" {
     defer S.deinit();
 
     const write_cb: ?Effects.WritePtyFn = &S.writePty;
-    set(t, .write_pty, @ptrCast(&write_cb));
+    try testing.expectEqual(Result.success, set(t, .write_pty, @ptrCast(&write_cb)));
     const da_cb: ?Effects.DeviceAttributesFn = &S.da;
-    set(t, .device_attributes, @ptrCast(&da_cb));
+    try testing.expectEqual(Result.success, set(t, .device_attributes, @ptrCast(&da_cb)));
 
     // Callback returns false, should use default response
     vt_write(t, "\x1B[c", 3);
     try testing.expect(S.last_data != null);
     try testing.expectEqualStrings("\x1b[?62;22c", S.last_data.?);
+}
+
+test "set and get title" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib_alloc.test_allocator,
+        &t,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 0,
+        },
+    ));
+    defer free(t);
+
+    // No title set yet — should return empty string
+    var title: lib.String = undefined;
+    try testing.expectEqual(Result.success, get(t, .title, @ptrCast(&title)));
+    try testing.expectEqual(@as(usize, 0), title.len);
+
+    // Set title via option
+    const hello: lib.String = .{ .ptr = "Hello", .len = 5 };
+    try testing.expectEqual(Result.success, set(t, .title, @ptrCast(&hello)));
+
+    try testing.expectEqual(Result.success, get(t, .title, @ptrCast(&title)));
+    try testing.expectEqualStrings("Hello", title.ptr[0..title.len]);
+
+    // Overwrite title
+    const world: lib.String = .{ .ptr = "World", .len = 5 };
+    try testing.expectEqual(Result.success, set(t, .title, @ptrCast(&world)));
+
+    try testing.expectEqual(Result.success, get(t, .title, @ptrCast(&title)));
+    try testing.expectEqualStrings("World", title.ptr[0..title.len]);
+
+    // Clear title with NULL
+    try testing.expectEqual(Result.success, set(t, .title, null));
+
+    try testing.expectEqual(Result.success, get(t, .title, @ptrCast(&title)));
+    try testing.expectEqual(@as(usize, 0), title.len);
+}
+
+test "set and get pwd" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib_alloc.test_allocator,
+        &t,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 0,
+        },
+    ));
+    defer free(t);
+
+    // No pwd set yet — should return empty string
+    var pwd: lib.String = undefined;
+    try testing.expectEqual(Result.success, get(t, .pwd, @ptrCast(&pwd)));
+    try testing.expectEqual(@as(usize, 0), pwd.len);
+
+    // Set pwd via option
+    const home: lib.String = .{ .ptr = "/home/user", .len = 10 };
+    try testing.expectEqual(Result.success, set(t, .pwd, @ptrCast(&home)));
+
+    try testing.expectEqual(Result.success, get(t, .pwd, @ptrCast(&pwd)));
+    try testing.expectEqualStrings("/home/user", pwd.ptr[0..pwd.len]);
+
+    // Clear pwd with NULL
+    try testing.expectEqual(Result.success, set(t, .pwd, null));
+
+    try testing.expectEqual(Result.success, get(t, .pwd, @ptrCast(&pwd)));
+    try testing.expectEqual(@as(usize, 0), pwd.len);
+}
+
+test "get title set via vt_write" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib_alloc.test_allocator,
+        &t,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 0,
+        },
+    ));
+    defer free(t);
+
+    // Set title via OSC 2
+    vt_write(t, "\x1B]2;VT Title\x1B\\", 14);
+
+    var title: lib.String = undefined;
+    try testing.expectEqual(Result.success, get(t, .title, @ptrCast(&title)));
+    try testing.expectEqualStrings("VT Title", title.ptr[0..title.len]);
 }
 
 test "grid_ref out of bounds" {
