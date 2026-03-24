@@ -202,6 +202,21 @@ typedef GhosttyString (*GhosttyTerminalXtversionFn)(GhosttyTerminal terminal,
                                                      void* userdata);
 
 /**
+ * Callback function type for title_changed.
+ *
+ * Called when the terminal title changes via escape sequences
+ * (e.g. OSC 0 or OSC 2). The new title can be queried from the
+ * terminal after the callback returns.
+ *
+ * @param terminal The terminal handle
+ * @param userdata The userdata pointer set via GHOSTTY_TERMINAL_OPT_USERDATA
+ *
+ * @ingroup terminal
+ */
+typedef void (*GhosttyTerminalTitleChangedFn)(GhosttyTerminal terminal,
+                                              void* userdata);
+
+/**
  * Terminal option identifiers.
  *
  * These values are used with ghostty_terminal_set() to configure
@@ -249,6 +264,15 @@ typedef enum {
    * Input type: GhosttyTerminalXtversionFn*
    */
   GHOSTTY_TERMINAL_OPT_XTVERSION = 4,
+
+  /**
+   * Callback invoked when the terminal title changes via escape
+   * sequences (e.g. OSC 0 or OSC 2). Set to NULL to ignore title
+   * change events.
+   *
+   * Input type: GhosttyTerminalTitleChangedFn*
+   */
+  GHOSTTY_TERMINAL_OPT_TITLE_CHANGED = 5,
 } GhosttyTerminalOption;
 
 /**

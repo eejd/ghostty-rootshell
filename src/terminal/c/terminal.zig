@@ -39,6 +39,7 @@ const Effects = struct {
     bell: ?BellFn = null,
     enquiry: ?EnquiryFn = null,
     xtversion: ?XtversionFn = null,
+    title_changed: ?TitleChangedFn = null,
 
     /// C function pointer type for the write_pty callback.
     pub const WritePtyFn = *const fn (Terminal, ?*anyopaque, [*]const u8, usize) callconv(.c) void;
@@ -56,6 +57,9 @@ const Effects = struct {
     /// must remain valid until the callback returns. An empty string
     /// (len=0) causes the default "libghostty" to be reported.
     pub const XtversionFn = *const fn (Terminal, ?*anyopaque) callconv(.c) lib.String;
+
+    /// C function pointer type for the title_changed callback.
+    pub const TitleChangedFn = *const fn (Terminal, ?*anyopaque) callconv(.c) void;
 
     fn writePtyTrampoline(handler: *Handler, data: [:0]const u8) void {
         const stream_ptr: *Stream = @fieldParentPtr("handler", handler);
@@ -87,6 +91,13 @@ const Effects = struct {
         const result = func(@ptrCast(wrapper), wrapper.effects.userdata);
         if (result.len == 0) return "";
         return result.ptr[0..result.len];
+    }
+
+    fn titleChangedTrampoline(handler: *Handler) void {
+        const stream_ptr: *Stream = @fieldParentPtr("handler", handler);
+        const wrapper: *TerminalWrapper = @fieldParentPtr("stream", stream_ptr);
+        const func = wrapper.effects.title_changed orelse return;
+        func(@ptrCast(wrapper), wrapper.effects.userdata);
     }
 };
 
@@ -151,6 +162,7 @@ fn new_(
     handler.effects.bell = &Effects.bellTrampoline;
     handler.effects.enquiry = &Effects.enquiryTrampoline;
     handler.effects.xtversion = &Effects.xtversionTrampoline;
+    handler.effects.title_changed = &Effects.titleChangedTrampoline;
 
     wrapper.* = .{
         .terminal = t,
@@ -176,6 +188,7 @@ pub const Option = enum(c_int) {
     bell = 2,
     enquiry = 3,
     xtversion = 4,
+    title_changed = 5,
 
     /// Input type expected for setting the option.
     pub fn InType(comptime self: Option) type {
@@ -185,6 +198,7 @@ pub const Option = enum(c_int) {
             .bell => ?Effects.BellFn,
             .enquiry => ?Effects.EnquiryFn,
             .xtversion => ?Effects.XtversionFn,
+            .title_changed => ?Effects.TitleChangedFn,
         };
     }
 };
@@ -222,6 +236,7 @@ fn setTyped(
         .bell => wrapper.effects.bell = if (value) |v| v.* else null,
         .enquiry => wrapper.effects.enquiry = if (value) |v| v.* else null,
         .xtversion => wrapper.effects.xtversion = if (value) |v| v.* else null,
+        .title_changed => wrapper.effects.title_changed = if (value) |v| v.* else null,
     }
 }
 
@@ -1196,6 +1211,64 @@ test "xtversion without callback reports default" {
     vt_write(t, "\x1B[>q", 4);
     try testing.expect(S.last_data != null);
     try testing.expectEqualStrings("\x1BP>|libghostty\x1B\\", S.last_data.?);
+}
+
+test "set title_changed callback" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib_alloc.test_allocator,
+        &t,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 0,
+        },
+    ));
+    defer free(t);
+
+    const S = struct {
+        var title_count: usize = 0;
+        var last_userdata: ?*anyopaque = null;
+
+        fn titleChanged(_: Terminal, ud: ?*anyopaque) callconv(.c) void {
+            title_count += 1;
+            last_userdata = ud;
+        }
+    };
+    S.title_count = 0;
+    S.last_userdata = null;
+
+    var sentinel: u8 = 77;
+    const ud: ?*anyopaque = @ptrCast(&sentinel);
+    set(t, .userdata, @ptrCast(&ud));
+    const cb: ?Effects.TitleChangedFn = &S.titleChanged;
+    set(t, .title_changed, @ptrCast(&cb));
+
+    // OSC 2 ; title ST — set window title
+    vt_write(t, "\x1B]2;Hello\x1B\\", 10);
+    try testing.expectEqual(@as(usize, 1), S.title_count);
+    try testing.expectEqual(@as(?*anyopaque, @ptrCast(&sentinel)), S.last_userdata);
+
+    // Another title change
+    vt_write(t, "\x1B]2;World\x1B\\", 10);
+    try testing.expectEqual(@as(usize, 2), S.title_count);
+}
+
+test "title_changed without callback is silent" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib_alloc.test_allocator,
+        &t,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 0,
+        },
+    ));
+    defer free(t);
+
+    // OSC 2 without a callback should not crash
+    vt_write(t, "\x1B]2;Hello\x1B\\", 10);
 }
 
 test "grid_ref out of bounds" {
