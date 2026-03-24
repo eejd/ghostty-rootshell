@@ -1476,7 +1476,7 @@ test "set device_attributes callback primary" {
             out.* = .{
                 .primary = .{
                     .conformance_level = 64,
-                    .features = .{22, 52} ++ .{0} ** 62,
+                    .features = .{ 22, 52 } ++ .{0} ** 62,
                     .num_features = 2,
                 },
                 .secondary = .{
