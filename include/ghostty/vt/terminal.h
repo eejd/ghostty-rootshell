@@ -12,7 +12,7 @@
 #include <stdint.h>
 #include <ghostty/vt/types.h>
 #include <ghostty/vt/allocator.h>
-#include <ghostty/vt/device_status.h>
+#include <ghostty/vt/device.h>
 #include <ghostty/vt/modes.h>
 #include <ghostty/vt/size_report.h>
 #include <ghostty/vt/grid_ref.h>
@@ -237,6 +237,27 @@ typedef bool (*GhosttyTerminalColorSchemeFn)(GhosttyTerminal terminal,
                                              GhosttyColorScheme* out_scheme);
 
 /**
+ * Callback function type for device attributes queries (DA1/DA2/DA3).
+ *
+ * Called when the terminal receives a device attributes query (CSI c,
+ * CSI > c, or CSI = c). Return true and fill *out_attrs with the
+ * response data, or return false to silently ignore the query.
+ *
+ * The terminal uses whichever sub-struct (primary, secondary, tertiary)
+ * matches the request type, but all three should be filled for simplicity.
+ *
+ * @param terminal The terminal handle
+ * @param userdata The userdata pointer set via GHOSTTY_TERMINAL_OPT_USERDATA
+ * @param[out] out_attrs Pointer to store the device attributes response
+ * @return true if attributes were filled, false to ignore the query
+ *
+ * @ingroup terminal
+ */
+typedef bool (*GhosttyTerminalDeviceAttributesFn)(GhosttyTerminal terminal,
+                                                   void* userdata,
+                                                   GhosttyDeviceAttributes* out_attrs);
+
+/**
  * Callback function type for size queries (XTWINOPS).
  *
  * Called in response to XTWINOPS size queries (CSI 14/16/18 t).
@@ -329,6 +350,16 @@ typedef enum {
    * Input type: GhosttyTerminalColorSchemeFn*
    */
   GHOSTTY_TERMINAL_OPT_COLOR_SCHEME = 7,
+
+  /**
+   * Callback invoked in response to a device attributes query
+   * (CSI c, CSI > c, or CSI = c). Return true and fill the out
+   * pointer with response data, or return false to silently ignore.
+   * Set to NULL to ignore device attributes queries.
+   *
+   * Input type: GhosttyTerminalDeviceAttributesFn*
+   */
+  GHOSTTY_TERMINAL_OPT_DEVICE_ATTRIBUTES = 8,
 } GhosttyTerminalOption;
 
 /**

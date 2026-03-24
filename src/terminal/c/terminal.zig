@@ -11,6 +11,7 @@ const kitty = @import("../kitty/key.zig");
 const modes = @import("../modes.zig");
 const point = @import("../point.zig");
 const size = @import("../size.zig");
+const device_attributes = @import("../device_attributes.zig");
 const device_status = @import("../device_status.zig");
 const size_report = @import("../size_report.zig");
 const cell_c = @import("cell.zig");
@@ -40,6 +41,7 @@ const Effects = struct {
     write_pty: ?WritePtyFn = null,
     bell: ?BellFn = null,
     color_scheme: ?ColorSchemeFn = null,
+    device_attributes_cb: ?DeviceAttributesFn = null,
     enquiry: ?EnquiryFn = null,
     xtversion: ?XtversionFn = null,
     title_changed: ?TitleChangedFn = null,
@@ -75,6 +77,35 @@ const Effects = struct {
     /// or returns false to silently ignore the query.
     pub const SizeFn = *const fn (Terminal, ?*anyopaque, *size_report.Size) callconv(.c) bool;
 
+    /// C function pointer type for the device_attributes callback.
+    /// Returns true and fills out_attrs if attributes are available,
+    /// or returns false to silently ignore the query.
+    pub const DeviceAttributesFn = *const fn (Terminal, ?*anyopaque, *CDeviceAttributes) callconv(.c) bool;
+
+    /// C-compatible device attributes struct.
+    /// C: GhosttyDeviceAttributes
+    pub const CDeviceAttributes = extern struct {
+        primary: Primary,
+        secondary: Secondary,
+        tertiary: Tertiary,
+
+        pub const Primary = extern struct {
+            conformance_level: u16,
+            features: [64]u16,
+            num_features: usize,
+        };
+
+        pub const Secondary = extern struct {
+            device_type: u16,
+            firmware_version: u16,
+            rom_cartridge: u16,
+        };
+
+        pub const Tertiary = extern struct {
+            unit_id: u32,
+        };
+    };
+
     fn writePtyTrampoline(handler: *Handler, data: [:0]const u8) void {
         const stream_ptr: *Stream = @fieldParentPtr("handler", handler);
         const wrapper: *TerminalWrapper = @fieldParentPtr("stream", stream_ptr);
@@ -96,6 +127,38 @@ const Effects = struct {
         var scheme: device_status.ColorScheme = undefined;
         if (func(@ptrCast(wrapper), wrapper.effects.userdata, &scheme)) return scheme;
         return null;
+    }
+
+    fn deviceAttributesTrampoline(handler: *Handler) device_attributes.Attributes {
+        const stream_ptr: *Stream = @fieldParentPtr("handler", handler);
+        const wrapper: *TerminalWrapper = @fieldParentPtr("stream", stream_ptr);
+        const func = wrapper.effects.device_attributes_cb orelse return .{};
+
+        // Get our attributes from the callback.
+        var c_attrs: CDeviceAttributes = undefined;
+        if (!func(@ptrCast(wrapper), wrapper.effects.userdata, &c_attrs)) return .{};
+
+        // Note below we use a lot of enumFromInt but its always safe
+        // because all our types are non-exhaustive enums.
+
+        const n: usize = @min(c_attrs.primary.num_features, 64);
+        var features: [64]device_attributes.Primary.Feature = undefined;
+        for (0..n) |i| features[i] = @enumFromInt(c_attrs.primary.features[i]);
+
+        return .{
+            .primary = .{
+                .conformance_level = @enumFromInt(c_attrs.primary.conformance_level),
+                .features = features[0..n],
+            },
+            .secondary = .{
+                .device_type = @enumFromInt(c_attrs.secondary.device_type),
+                .firmware_version = c_attrs.secondary.firmware_version,
+                .rom_cartridge = c_attrs.secondary.rom_cartridge,
+            },
+            .tertiary = .{
+                .unit_id = c_attrs.tertiary.unit_id,
+            },
+        };
     }
 
     fn enquiryTrampoline(handler: *Handler) []const u8 {
@@ -193,6 +256,7 @@ fn new_(
     handler.effects.write_pty = &Effects.writePtyTrampoline;
     handler.effects.bell = &Effects.bellTrampoline;
     handler.effects.color_scheme = &Effects.colorSchemeTrampoline;
+    handler.effects.device_attributes = &Effects.deviceAttributesTrampoline;
     handler.effects.enquiry = &Effects.enquiryTrampoline;
     handler.effects.xtversion = &Effects.xtversionTrampoline;
     handler.effects.title_changed = &Effects.titleChangedTrampoline;
@@ -225,6 +289,7 @@ pub const Option = enum(c_int) {
     title_changed = 5,
     size_cb = 6,
     color_scheme = 7,
+    device_attributes = 8,
 
     /// Input type expected for setting the option.
     pub fn InType(comptime self: Option) type {
@@ -233,6 +298,7 @@ pub const Option = enum(c_int) {
             .write_pty => ?Effects.WritePtyFn,
             .bell => ?Effects.BellFn,
             .color_scheme => ?Effects.ColorSchemeFn,
+            .device_attributes => ?Effects.DeviceAttributesFn,
             .enquiry => ?Effects.EnquiryFn,
             .xtversion => ?Effects.XtversionFn,
             .title_changed => ?Effects.TitleChangedFn,
@@ -273,6 +339,7 @@ fn setTyped(
         .write_pty => wrapper.effects.write_pty = if (value) |v| v.* else null,
         .bell => wrapper.effects.bell = if (value) |v| v.* else null,
         .color_scheme => wrapper.effects.color_scheme = if (value) |v| v.* else null,
+        .device_attributes => wrapper.effects.device_attributes_cb = if (value) |v| v.* else null,
         .enquiry => wrapper.effects.enquiry = if (value) |v| v.* else null,
         .xtversion => wrapper.effects.xtversion = if (value) |v| v.* else null,
         .title_changed => wrapper.effects.title_changed = if (value) |v| v.* else null,
@@ -1375,6 +1442,254 @@ test "size without callback is silent" {
 
     // CSI 18 t without a size callback should not crash
     vt_write(t, "\x1B[18t", 5);
+}
+
+test "set device_attributes callback primary" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib_alloc.test_allocator,
+        &t,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 0,
+        },
+    ));
+    defer free(t);
+
+    const S = struct {
+        var last_data: ?[]u8 = null;
+
+        fn deinit() void {
+            if (last_data) |d| testing.allocator.free(d);
+            last_data = null;
+        }
+
+        fn writePty(_: Terminal, _: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(.c) void {
+            if (last_data) |d| testing.allocator.free(d);
+            last_data = testing.allocator.dupe(u8, ptr[0..len]) catch @panic("OOM");
+        }
+
+        fn da(_: Terminal, _: ?*anyopaque, out: *Effects.CDeviceAttributes) callconv(.c) bool {
+            out.* = .{
+                .primary = .{
+                    .conformance_level = 64,
+                    .features = .{22, 52} ++ .{0} ** 62,
+                    .num_features = 2,
+                },
+                .secondary = .{
+                    .device_type = 1,
+                    .firmware_version = 10,
+                    .rom_cartridge = 0,
+                },
+                .tertiary = .{ .unit_id = 0 },
+            };
+            return true;
+        }
+    };
+    defer S.deinit();
+
+    const write_cb: ?Effects.WritePtyFn = &S.writePty;
+    set(t, .write_pty, @ptrCast(&write_cb));
+    const da_cb: ?Effects.DeviceAttributesFn = &S.da;
+    set(t, .device_attributes, @ptrCast(&da_cb));
+
+    // CSI c — primary DA
+    vt_write(t, "\x1B[c", 3);
+    try testing.expect(S.last_data != null);
+    try testing.expectEqualStrings("\x1b[?64;22;52c", S.last_data.?);
+}
+
+test "set device_attributes callback secondary" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib_alloc.test_allocator,
+        &t,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 0,
+        },
+    ));
+    defer free(t);
+
+    const S = struct {
+        var last_data: ?[]u8 = null;
+
+        fn deinit() void {
+            if (last_data) |d| testing.allocator.free(d);
+            last_data = null;
+        }
+
+        fn writePty(_: Terminal, _: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(.c) void {
+            if (last_data) |d| testing.allocator.free(d);
+            last_data = testing.allocator.dupe(u8, ptr[0..len]) catch @panic("OOM");
+        }
+
+        fn da(_: Terminal, _: ?*anyopaque, out: *Effects.CDeviceAttributes) callconv(.c) bool {
+            out.* = .{
+                .primary = .{
+                    .conformance_level = 62,
+                    .features = .{22} ++ .{0} ** 63,
+                    .num_features = 1,
+                },
+                .secondary = .{
+                    .device_type = 1,
+                    .firmware_version = 10,
+                    .rom_cartridge = 0,
+                },
+                .tertiary = .{ .unit_id = 0 },
+            };
+            return true;
+        }
+    };
+    defer S.deinit();
+
+    const write_cb: ?Effects.WritePtyFn = &S.writePty;
+    set(t, .write_pty, @ptrCast(&write_cb));
+    const da_cb: ?Effects.DeviceAttributesFn = &S.da;
+    set(t, .device_attributes, @ptrCast(&da_cb));
+
+    // CSI > c — secondary DA
+    vt_write(t, "\x1B[>c", 4);
+    try testing.expect(S.last_data != null);
+    try testing.expectEqualStrings("\x1b[>1;10;0c", S.last_data.?);
+}
+
+test "set device_attributes callback tertiary" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib_alloc.test_allocator,
+        &t,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 0,
+        },
+    ));
+    defer free(t);
+
+    const S = struct {
+        var last_data: ?[]u8 = null;
+
+        fn deinit() void {
+            if (last_data) |d| testing.allocator.free(d);
+            last_data = null;
+        }
+
+        fn writePty(_: Terminal, _: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(.c) void {
+            if (last_data) |d| testing.allocator.free(d);
+            last_data = testing.allocator.dupe(u8, ptr[0..len]) catch @panic("OOM");
+        }
+
+        fn da(_: Terminal, _: ?*anyopaque, out: *Effects.CDeviceAttributes) callconv(.c) bool {
+            out.* = .{
+                .primary = .{
+                    .conformance_level = 62,
+                    .features = .{0} ** 64,
+                    .num_features = 0,
+                },
+                .secondary = .{
+                    .device_type = 1,
+                    .firmware_version = 0,
+                    .rom_cartridge = 0,
+                },
+                .tertiary = .{ .unit_id = 0xAABBCCDD },
+            };
+            return true;
+        }
+    };
+    defer S.deinit();
+
+    const write_cb: ?Effects.WritePtyFn = &S.writePty;
+    set(t, .write_pty, @ptrCast(&write_cb));
+    const da_cb: ?Effects.DeviceAttributesFn = &S.da;
+    set(t, .device_attributes, @ptrCast(&da_cb));
+
+    // CSI = c — tertiary DA
+    vt_write(t, "\x1B[=c", 4);
+    try testing.expect(S.last_data != null);
+    try testing.expectEqualStrings("\x1bP!|AABBCCDD\x1b\\", S.last_data.?);
+}
+
+test "device_attributes without callback uses default" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib_alloc.test_allocator,
+        &t,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 0,
+        },
+    ));
+    defer free(t);
+
+    const S = struct {
+        var last_data: ?[]u8 = null;
+
+        fn deinit() void {
+            if (last_data) |d| testing.allocator.free(d);
+            last_data = null;
+        }
+
+        fn writePty(_: Terminal, _: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(.c) void {
+            if (last_data) |d| testing.allocator.free(d);
+            last_data = testing.allocator.dupe(u8, ptr[0..len]) catch @panic("OOM");
+        }
+    };
+    defer S.deinit();
+
+    const write_cb: ?Effects.WritePtyFn = &S.writePty;
+    set(t, .write_pty, @ptrCast(&write_cb));
+
+    // Without setting a device_attributes callback, DA1 should return the default
+    vt_write(t, "\x1B[c", 3);
+    try testing.expect(S.last_data != null);
+    try testing.expectEqualStrings("\x1b[?62;22c", S.last_data.?);
+}
+
+test "device_attributes callback returns false uses default" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib_alloc.test_allocator,
+        &t,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 0,
+        },
+    ));
+    defer free(t);
+
+    const S = struct {
+        var last_data: ?[]u8 = null;
+
+        fn deinit() void {
+            if (last_data) |d| testing.allocator.free(d);
+            last_data = null;
+        }
+
+        fn writePty(_: Terminal, _: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(.c) void {
+            if (last_data) |d| testing.allocator.free(d);
+            last_data = testing.allocator.dupe(u8, ptr[0..len]) catch @panic("OOM");
+        }
+
+        fn da(_: Terminal, _: ?*anyopaque, _: *Effects.CDeviceAttributes) callconv(.c) bool {
+            return false;
+        }
+    };
+    defer S.deinit();
+
+    const write_cb: ?Effects.WritePtyFn = &S.writePty;
+    set(t, .write_pty, @ptrCast(&write_cb));
+    const da_cb: ?Effects.DeviceAttributesFn = &S.da;
+    set(t, .device_attributes, @ptrCast(&da_cb));
+
+    // Callback returns false, should use default response
+    vt_write(t, "\x1B[c", 3);
+    try testing.expect(S.last_data != null);
+    try testing.expectEqualStrings("\x1b[?62;22c", S.last_data.?);
 }
 
 test "grid_ref out of bounds" {
