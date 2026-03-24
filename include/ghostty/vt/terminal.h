@@ -13,6 +13,7 @@
 #include <ghostty/vt/types.h>
 #include <ghostty/vt/allocator.h>
 #include <ghostty/vt/modes.h>
+#include <ghostty/vt/size_report.h>
 #include <ghostty/vt/grid_ref.h>
 #include <ghostty/vt/screen.h>
 #include <ghostty/vt/point.h>
@@ -217,6 +218,24 @@ typedef void (*GhosttyTerminalTitleChangedFn)(GhosttyTerminal terminal,
                                               void* userdata);
 
 /**
+ * Callback function type for size queries (XTWINOPS).
+ *
+ * Called in response to XTWINOPS size queries (CSI 14/16/18 t).
+ * Return true and fill *out_size with the current terminal geometry,
+ * or return false to silently ignore the query.
+ *
+ * @param terminal The terminal handle
+ * @param userdata The userdata pointer set via GHOSTTY_TERMINAL_OPT_USERDATA
+ * @param[out] out_size Pointer to store the terminal size information
+ * @return true if size was filled, false to ignore the query
+ *
+ * @ingroup terminal
+ */
+typedef bool (*GhosttyTerminalSizeFn)(GhosttyTerminal terminal,
+                                      void* userdata,
+                                      GhosttySizeReportSize* out_size);
+
+/**
  * Terminal option identifiers.
  *
  * These values are used with ghostty_terminal_set() to configure
@@ -273,6 +292,14 @@ typedef enum {
    * Input type: GhosttyTerminalTitleChangedFn*
    */
   GHOSTTY_TERMINAL_OPT_TITLE_CHANGED = 5,
+
+  /**
+   * Callback invoked in response to XTWINOPS size queries
+   * (CSI 14/16/18 t). Set to NULL to silently ignore size queries.
+   *
+   * Input type: GhosttyTerminalSizeFn*
+   */
+  GHOSTTY_TERMINAL_OPT_SIZE = 6,
 } GhosttyTerminalOption;
 
 /**

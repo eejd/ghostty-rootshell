@@ -11,6 +11,7 @@ const kitty = @import("../kitty/key.zig");
 const modes = @import("../modes.zig");
 const point = @import("../point.zig");
 const size = @import("../size.zig");
+const size_report = @import("../size_report.zig");
 const cell_c = @import("cell.zig");
 const row_c = @import("row.zig");
 const grid_ref_c = @import("grid_ref.zig");
@@ -40,6 +41,7 @@ const Effects = struct {
     enquiry: ?EnquiryFn = null,
     xtversion: ?XtversionFn = null,
     title_changed: ?TitleChangedFn = null,
+    size_cb: ?SizeFn = null,
 
     /// C function pointer type for the write_pty callback.
     pub const WritePtyFn = *const fn (Terminal, ?*anyopaque, [*]const u8, usize) callconv(.c) void;
@@ -60,6 +62,11 @@ const Effects = struct {
 
     /// C function pointer type for the title_changed callback.
     pub const TitleChangedFn = *const fn (Terminal, ?*anyopaque) callconv(.c) void;
+
+    /// C function pointer type for the size callback.
+    /// Returns true and fills out_size if size is available,
+    /// or returns false to silently ignore the query.
+    pub const SizeFn = *const fn (Terminal, ?*anyopaque, *size_report.Size) callconv(.c) bool;
 
     fn writePtyTrampoline(handler: *Handler, data: [:0]const u8) void {
         const stream_ptr: *Stream = @fieldParentPtr("handler", handler);
@@ -98,6 +105,15 @@ const Effects = struct {
         const wrapper: *TerminalWrapper = @fieldParentPtr("stream", stream_ptr);
         const func = wrapper.effects.title_changed orelse return;
         func(@ptrCast(wrapper), wrapper.effects.userdata);
+    }
+
+    fn sizeTrampoline(handler: *Handler) ?size_report.Size {
+        const stream_ptr: *Stream = @fieldParentPtr("handler", handler);
+        const wrapper: *TerminalWrapper = @fieldParentPtr("stream", stream_ptr);
+        const func = wrapper.effects.size_cb orelse return null;
+        var s: size_report.Size = undefined;
+        if (func(@ptrCast(wrapper), wrapper.effects.userdata, &s)) return s;
+        return null;
     }
 };
 
@@ -163,6 +179,7 @@ fn new_(
     handler.effects.enquiry = &Effects.enquiryTrampoline;
     handler.effects.xtversion = &Effects.xtversionTrampoline;
     handler.effects.title_changed = &Effects.titleChangedTrampoline;
+    handler.effects.size = &Effects.sizeTrampoline;
 
     wrapper.* = .{
         .terminal = t,
@@ -189,6 +206,7 @@ pub const Option = enum(c_int) {
     enquiry = 3,
     xtversion = 4,
     title_changed = 5,
+    size_cb = 6,
 
     /// Input type expected for setting the option.
     pub fn InType(comptime self: Option) type {
@@ -199,6 +217,7 @@ pub const Option = enum(c_int) {
             .enquiry => ?Effects.EnquiryFn,
             .xtversion => ?Effects.XtversionFn,
             .title_changed => ?Effects.TitleChangedFn,
+            .size_cb => ?Effects.SizeFn,
         };
     }
 };
@@ -237,6 +256,7 @@ fn setTyped(
         .enquiry => wrapper.effects.enquiry = if (value) |v| v.* else null,
         .xtversion => wrapper.effects.xtversion = if (value) |v| v.* else null,
         .title_changed => wrapper.effects.title_changed = if (value) |v| v.* else null,
+        .size_cb => wrapper.effects.size_cb = if (value) |v| v.* else null,
     }
 }
 
@@ -1269,6 +1289,72 @@ test "title_changed without callback is silent" {
 
     // OSC 2 without a callback should not crash
     vt_write(t, "\x1B]2;Hello\x1B\\", 10);
+}
+
+test "set size callback" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib_alloc.test_allocator,
+        &t,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 0,
+        },
+    ));
+    defer free(t);
+
+    const S = struct {
+        var last_data: ?[]u8 = null;
+
+        fn deinit() void {
+            if (last_data) |d| testing.allocator.free(d);
+            last_data = null;
+        }
+
+        fn writePty(_: Terminal, _: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(.c) void {
+            if (last_data) |d| testing.allocator.free(d);
+            last_data = testing.allocator.dupe(u8, ptr[0..len]) catch @panic("OOM");
+        }
+
+        fn sizeCb(_: Terminal, _: ?*anyopaque, out_size: *size_report.Size) callconv(.c) bool {
+            out_size.* = .{
+                .rows = 24,
+                .columns = 80,
+                .cell_width = 8,
+                .cell_height = 16,
+            };
+            return true;
+        }
+    };
+    defer S.deinit();
+
+    const write_cb: ?Effects.WritePtyFn = &S.writePty;
+    set(t, .write_pty, @ptrCast(&write_cb));
+    const size_cb_fn: ?Effects.SizeFn = &S.sizeCb;
+    set(t, .size_cb, @ptrCast(&size_cb_fn));
+
+    // CSI 18 t — report text area size in characters
+    vt_write(t, "\x1B[18t", 5);
+    try testing.expect(S.last_data != null);
+    try testing.expectEqualStrings("\x1b[8;24;80t", S.last_data.?);
+}
+
+test "size without callback is silent" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib_alloc.test_allocator,
+        &t,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 0,
+        },
+    ));
+    defer free(t);
+
+    // CSI 18 t without a size callback should not crash
+    vt_write(t, "\x1B[18t", 5);
 }
 
 test "grid_ref out of bounds" {
