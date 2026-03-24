@@ -47,6 +47,13 @@ const Effects = struct {
     title_changed: ?TitleChangedFn = null,
     size_cb: ?SizeFn = null,
 
+    /// Scratch buffer for DA1 feature codes. The device attributes
+    /// trampoline converts C feature codes into this buffer and returns
+    /// a slice pointing into it. Storing it here ensures the slice
+    /// remains valid after the trampoline returns, since the caller
+    /// (`reportDeviceAttributes`) reads it before any re-entrant call.
+    da_features_buf: [64]device_attributes.Primary.Feature = undefined,
+
     /// C function pointer type for the write_pty callback.
     pub const WritePtyFn = *const fn (Terminal, ?*anyopaque, [*]const u8, usize) callconv(.c) void;
 
@@ -142,13 +149,12 @@ const Effects = struct {
         // because all our types are non-exhaustive enums.
 
         const n: usize = @min(c_attrs.primary.num_features, 64);
-        var features: [64]device_attributes.Primary.Feature = undefined;
-        for (0..n) |i| features[i] = @enumFromInt(c_attrs.primary.features[i]);
+        for (0..n) |i| wrapper.effects.da_features_buf[i] = @enumFromInt(c_attrs.primary.features[i]);
 
         return .{
             .primary = .{
                 .conformance_level = @enumFromInt(c_attrs.primary.conformance_level),
-                .features = features[0..n],
+                .features = wrapper.effects.da_features_buf[0..n],
             },
             .secondary = .{
                 .device_type = @enumFromInt(c_attrs.secondary.device_type),
