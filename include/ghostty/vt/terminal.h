@@ -12,7 +12,9 @@
 #include <stdint.h>
 #include <ghostty/vt/types.h>
 #include <ghostty/vt/allocator.h>
+#include <ghostty/vt/device.h>
 #include <ghostty/vt/modes.h>
+#include <ghostty/vt/size_report.h>
 #include <ghostty/vt/grid_ref.h>
 #include <ghostty/vt/screen.h>
 #include <ghostty/vt/point.h>
@@ -31,6 +33,60 @@ extern "C" {
  *
  * Once a terminal session is up and running, you can configure a key encoder
  * to write keyboard input via ghostty_key_encoder_setopt_from_terminal().
+ *
+ * ## Effects
+ *
+ * By default, the terminal sequence processing with ghostty_terminal_vt_write() 
+ * only process sequences that directly affect terminal state and 
+ * ignores sequences that have side effect behavior or require responses.
+ * These sequences include things like bell characters, title changes, device
+ * attributes queries, and more. To handle these sequences, the embedder
+ * must configure "effects."
+ *
+ * Effects are callbacks that the terminal invokes in response to VT
+ * sequences processed during ghostty_terminal_vt_write(). They let the
+ * embedding application react to terminal-initiated events such as bell
+ * characters, title changes, device status report responses, and more.
+ *
+ * Each effect is registered with ghostty_terminal_set() using the
+ * corresponding `GhosttyTerminalOption` identifier. A `NULL` value
+ * pointer clears the callback and disables the effect.
+ *
+ * A userdata pointer can be attached via `GHOSTTY_TERMINAL_OPT_USERDATA`
+ * and is passed to every callback, allowing callers to route events
+ * back to their own application state without global variables.
+ * You cannot specify different userdata for different callbacks.
+ *
+ * All callbacks are invoked synchronously during
+ * ghostty_terminal_vt_write(). Callbacks **must not** call
+ * ghostty_terminal_vt_write() on the same terminal (no reentrancy).
+ * And callbacks must be very careful to not block for too long or perform 
+ * expensive operations, since they are blocking further IO processing.
+ *
+ * The available effects are:
+ *
+ * | Option                                  | Callback Type                     | Trigger                                   |
+ * |-----------------------------------------|-----------------------------------|-------------------------------------------|
+ * | `GHOSTTY_TERMINAL_OPT_WRITE_PTY`        | `GhosttyTerminalWritePtyFn`       | Query responses written back to the pty   |
+ * | `GHOSTTY_TERMINAL_OPT_BELL`             | `GhosttyTerminalBellFn`           | BEL character (0x07)                      |
+ * | `GHOSTTY_TERMINAL_OPT_TITLE_CHANGED`    | `GhosttyTerminalTitleChangedFn`   | Title change via OSC 0 / OSC 2            |
+ * | `GHOSTTY_TERMINAL_OPT_ENQUIRY`          | `GhosttyTerminalEnquiryFn`        | ENQ character (0x05)                      |
+ * | `GHOSTTY_TERMINAL_OPT_XTVERSION`        | `GhosttyTerminalXtversionFn`      | XTVERSION query (CSI > q)                 |
+ * | `GHOSTTY_TERMINAL_OPT_SIZE`             | `GhosttyTerminalSizeFn`           | XTWINOPS size query (CSI 14/16/18 t)      |
+ * | `GHOSTTY_TERMINAL_OPT_COLOR_SCHEME`     | `GhosttyTerminalColorSchemeFn`    | Color scheme query (CSI ? 996 n)          |
+ * | `GHOSTTY_TERMINAL_OPT_DEVICE_ATTRIBUTES`| `GhosttyTerminalDeviceAttributesFn`| Device attributes query (CSI c / > c / = c)|
+ *
+ * ### Defining a write_pty callback
+ * @snippet c-vt-effects/src/main.c effects-write-pty
+ *
+ * ### Defining a bell callback
+ * @snippet c-vt-effects/src/main.c effects-bell
+ *
+ * ### Defining a title_changed callback
+ * @snippet c-vt-effects/src/main.c effects-title-changed
+ *
+ * ### Registering effects and processing VT data
+ * @snippet c-vt-effects/src/main.c effects-register
  *
  * @{
  */
@@ -133,6 +189,232 @@ typedef struct {
   /** Length of the visible area in rows. */
   uint64_t len;
 } GhosttyTerminalScrollbar;
+
+/**
+ * Callback function type for bell.
+ *
+ * Called when the terminal receives a BEL character (0x07).
+ *
+ * @param terminal The terminal handle
+ * @param userdata The userdata pointer set via GHOSTTY_TERMINAL_OPT_USERDATA
+ *
+ * @ingroup terminal
+ */
+typedef void (*GhosttyTerminalBellFn)(GhosttyTerminal terminal,
+                                      void* userdata);
+
+/**
+ * Callback function type for color scheme queries (CSI ? 996 n).
+ *
+ * Called when the terminal receives a color scheme device status report
+ * query. Return true and fill *out_scheme with the current color scheme,
+ * or return false to silently ignore the query.
+ *
+ * @param terminal The terminal handle
+ * @param userdata The userdata pointer set via GHOSTTY_TERMINAL_OPT_USERDATA
+ * @param[out] out_scheme Pointer to store the current color scheme
+ * @return true if the color scheme was filled, false to ignore the query
+ *
+ * @ingroup terminal
+ */
+typedef bool (*GhosttyTerminalColorSchemeFn)(GhosttyTerminal terminal,
+                                             void* userdata,
+                                             GhosttyColorScheme* out_scheme);
+
+/**
+ * Callback function type for device attributes queries (DA1/DA2/DA3).
+ *
+ * Called when the terminal receives a device attributes query (CSI c,
+ * CSI > c, or CSI = c). Return true and fill *out_attrs with the
+ * response data, or return false to silently ignore the query.
+ *
+ * The terminal uses whichever sub-struct (primary, secondary, tertiary)
+ * matches the request type, but all three should be filled for simplicity.
+ *
+ * @param terminal The terminal handle
+ * @param userdata The userdata pointer set via GHOSTTY_TERMINAL_OPT_USERDATA
+ * @param[out] out_attrs Pointer to store the device attributes response
+ * @return true if attributes were filled, false to ignore the query
+ *
+ * @ingroup terminal
+ */
+typedef bool (*GhosttyTerminalDeviceAttributesFn)(GhosttyTerminal terminal,
+                                                   void* userdata,
+                                                   GhosttyDeviceAttributes* out_attrs);
+
+/**
+ * Callback function type for enquiry (ENQ, 0x05).
+ *
+ * Called when the terminal receives an ENQ character. Return the
+ * response bytes as a GhosttyString. The memory must remain valid
+ * until the callback returns. Return a zero-length string to send
+ * no response.
+ *
+ * @param terminal The terminal handle
+ * @param userdata The userdata pointer set via GHOSTTY_TERMINAL_OPT_USERDATA
+ * @return The response bytes to write back to the pty
+ *
+ * @ingroup terminal
+ */
+typedef GhosttyString (*GhosttyTerminalEnquiryFn)(GhosttyTerminal terminal,
+                                                   void* userdata);
+
+/**
+ * Callback function type for size queries (XTWINOPS).
+ *
+ * Called in response to XTWINOPS size queries (CSI 14/16/18 t).
+ * Return true and fill *out_size with the current terminal geometry,
+ * or return false to silently ignore the query.
+ *
+ * @param terminal The terminal handle
+ * @param userdata The userdata pointer set via GHOSTTY_TERMINAL_OPT_USERDATA
+ * @param[out] out_size Pointer to store the terminal size information
+ * @return true if size was filled, false to ignore the query
+ *
+ * @ingroup terminal
+ */
+typedef bool (*GhosttyTerminalSizeFn)(GhosttyTerminal terminal,
+                                      void* userdata,
+                                      GhosttySizeReportSize* out_size);
+
+/**
+ * Callback function type for title_changed.
+ *
+ * Called when the terminal title changes via escape sequences
+ * (e.g. OSC 0 or OSC 2). The new title can be queried from the
+ * terminal after the callback returns.
+ *
+ * @param terminal The terminal handle
+ * @param userdata The userdata pointer set via GHOSTTY_TERMINAL_OPT_USERDATA
+ *
+ * @ingroup terminal
+ */
+typedef void (*GhosttyTerminalTitleChangedFn)(GhosttyTerminal terminal,
+                                              void* userdata);
+
+/**
+ * Callback function type for write_pty.
+ *
+ * Called when the terminal needs to write data back to the pty, for
+ * example in response to a device status report or mode query. The
+ * data is only valid for the duration of the call; callers must copy
+ * it if it needs to persist.
+ *
+ * @param terminal The terminal handle
+ * @param userdata The userdata pointer set via GHOSTTY_TERMINAL_OPT_USERDATA
+ * @param data Pointer to the response bytes
+ * @param len Length of the response in bytes
+ *
+ * @ingroup terminal
+ */
+typedef void (*GhosttyTerminalWritePtyFn)(GhosttyTerminal terminal,
+                                          void* userdata,
+                                          const uint8_t* data,
+                                          size_t len);
+
+/**
+ * Callback function type for XTVERSION.
+ *
+ * Called when the terminal receives an XTVERSION query (CSI > q).
+ * Return the version string (e.g. "myterm 1.0") as a GhosttyString.
+ * The memory must remain valid until the callback returns. Return a
+ * zero-length string to report the default "libghostty" version.
+ *
+ * @param terminal The terminal handle
+ * @param userdata The userdata pointer set via GHOSTTY_TERMINAL_OPT_USERDATA
+ * @return The version string to report
+ *
+ * @ingroup terminal
+ */
+typedef GhosttyString (*GhosttyTerminalXtversionFn)(GhosttyTerminal terminal,
+                                                     void* userdata);
+
+/**
+ * Terminal option identifiers.
+ *
+ * These values are used with ghostty_terminal_set() to configure
+ * terminal callbacks and associated state.
+ *
+ * @ingroup terminal
+ */
+typedef enum {
+  /**
+   * Opaque userdata pointer passed to all callbacks.
+   *
+   * Input type: void**
+   */
+  GHOSTTY_TERMINAL_OPT_USERDATA = 0,
+
+  /**
+   * Callback invoked when the terminal needs to write data back
+   * to the pty (e.g. in response to a DECRQM query or device
+   * status report). Set to NULL to ignore such sequences.
+   *
+   * Input type: GhosttyTerminalWritePtyFn*
+   */
+  GHOSTTY_TERMINAL_OPT_WRITE_PTY = 1,
+
+  /**
+   * Callback invoked when the terminal receives a BEL character
+   * (0x07). Set to NULL to ignore bell events.
+   *
+   * Input type: GhosttyTerminalBellFn*
+   */
+  GHOSTTY_TERMINAL_OPT_BELL = 2,
+
+  /**
+   * Callback invoked when the terminal receives an ENQ character
+   * (0x05). Set to NULL to send no response.
+   *
+   * Input type: GhosttyTerminalEnquiryFn*
+   */
+  GHOSTTY_TERMINAL_OPT_ENQUIRY = 3,
+
+  /**
+   * Callback invoked when the terminal receives an XTVERSION query
+   * (CSI > q). Set to NULL to report the default "libghostty" string.
+   *
+   * Input type: GhosttyTerminalXtversionFn*
+   */
+  GHOSTTY_TERMINAL_OPT_XTVERSION = 4,
+
+  /**
+   * Callback invoked when the terminal title changes via escape
+   * sequences (e.g. OSC 0 or OSC 2). Set to NULL to ignore title
+   * change events.
+   *
+   * Input type: GhosttyTerminalTitleChangedFn*
+   */
+  GHOSTTY_TERMINAL_OPT_TITLE_CHANGED = 5,
+
+  /**
+   * Callback invoked in response to XTWINOPS size queries
+   * (CSI 14/16/18 t). Set to NULL to silently ignore size queries.
+   *
+   * Input type: GhosttyTerminalSizeFn*
+   */
+  GHOSTTY_TERMINAL_OPT_SIZE = 6,
+
+  /**
+   * Callback invoked in response to a color scheme device status
+   * report query (CSI ? 996 n). Return true and fill the out pointer
+   * to report the current scheme, or return false to silently ignore.
+   * Set to NULL to ignore color scheme queries.
+   *
+   * Input type: GhosttyTerminalColorSchemeFn*
+   */
+  GHOSTTY_TERMINAL_OPT_COLOR_SCHEME = 7,
+
+  /**
+   * Callback invoked in response to a device attributes query
+   * (CSI c, CSI > c, or CSI = c). Return true and fill the out
+   * pointer with response data, or return false to silently ignore.
+   * Set to NULL to ignore device attributes queries.
+   *
+   * Input type: GhosttyTerminalDeviceAttributesFn*
+   */
+  GHOSTTY_TERMINAL_OPT_DEVICE_ATTRIBUTES = 8,
+} GhosttyTerminalOption;
 
 /**
  * Terminal data types.
@@ -291,14 +573,35 @@ GhosttyResult ghostty_terminal_resize(GhosttyTerminal terminal,
                                       uint16_t rows);
 
 /**
+ * Set an option on the terminal.
+ *
+ * Configures terminal callbacks and associated state such as the
+ * write_pty callback and userdata pointer. A NULL value pointer
+ * clears the option to its default (NULL/disabled).
+ *
+ * Callbacks are invoked synchronously during ghostty_terminal_vt_write().
+ * Callbacks must not call ghostty_terminal_vt_write() on the same
+ * terminal (no reentrancy).
+ *
+ * @param terminal The terminal handle (may be NULL, in which case this is a no-op)
+ * @param option The option to set
+ * @param value Pointer to the value to set (type depends on the option),
+ *              or NULL to clear the option
+ *
+ * @ingroup terminal
+ */
+void ghostty_terminal_set(GhosttyTerminal terminal,
+                           GhosttyTerminalOption option,
+                           const void* value);
+
+/**
  * Write VT-encoded data to the terminal for processing.
  *
  * Feeds raw bytes through the terminal's VT stream parser, updating
- * terminal state accordingly. Only read-only sequences are processed;
- * sequences that require output (queries) are ignored.
- *
- * In the future, a callback-based API will be added to allow handling
- * of output or side effect sequences.
+ * terminal state accordingly. By default, sequences that require output
+ * (queries, device status reports) are silently ignored. Use
+ * ghostty_terminal_set() with GHOSTTY_TERMINAL_OPT_WRITE_PTY to install
+ * a callback that receives response data.
  *
  * This never fails. Any erroneous input or errors in processing the
  * input are logged internally but do not cause this function to fail
