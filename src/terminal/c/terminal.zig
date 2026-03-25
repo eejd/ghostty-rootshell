@@ -1,6 +1,6 @@
 const std = @import("std");
 const testing = std.testing;
-const lib = @import("../../lib/main.zig");
+const lib = @import("../lib.zig");
 const lib_alloc = @import("../../lib/allocator.zig");
 const CAllocator = lib_alloc.Allocator;
 const ZigTerminal = @import("../Terminal.zig");
