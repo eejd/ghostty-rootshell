@@ -2,8 +2,7 @@ const std = @import("std");
 const testing = std.testing;
 const Allocator = std.mem.Allocator;
 const lib = @import("../lib.zig");
-const lib_alloc = @import("../../lib/allocator.zig");
-const CAllocator = lib_alloc.Allocator;
+const CAllocator = lib.alloc.Allocator;
 const sgr = @import("../sgr.zig");
 const Result = @import("result.zig").Result;
 
@@ -22,7 +21,7 @@ pub fn new(
     alloc_: ?*const CAllocator,
     result: *Parser,
 ) callconv(lib.calling_conv) Result {
-    const alloc = lib_alloc.default(alloc_);
+    const alloc = lib.alloc.default(alloc_);
     const ptr = alloc.create(ParserWrapper) catch
         return .out_of_memory;
     ptr.* = .{
@@ -141,7 +140,7 @@ pub fn wasm_free_attribute(attr: *sgr.Attribute.C) callconv(lib.calling_conv) vo
 test "alloc" {
     var p: Parser = undefined;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &p,
     ));
     free(p);
@@ -150,7 +149,7 @@ test "alloc" {
 test "simple params, no seps" {
     var p: Parser = undefined;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &p,
     ));
     defer free(p);

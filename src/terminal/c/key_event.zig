@@ -1,8 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const lib = @import("../lib.zig");
-const lib_alloc = @import("../../lib/allocator.zig");
-const CAllocator = lib_alloc.Allocator;
+const CAllocator = lib.alloc.Allocator;
 const key = @import("../../input/key.zig");
 const Result = @import("result.zig").Result;
 
@@ -23,7 +22,7 @@ pub fn new(
     alloc_: ?*const CAllocator,
     result: *Event,
 ) callconv(lib.calling_conv) Result {
-    const alloc = lib_alloc.default(alloc_);
+    const alloc = lib.alloc.default(alloc_);
     const ptr = alloc.create(KeyEventWrapper) catch
         return .out_of_memory;
     ptr.* = .{ .alloc = alloc };
@@ -126,7 +125,7 @@ test "alloc" {
     const testing = std.testing;
     var e: Event = undefined;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &e,
     ));
     free(e);
@@ -136,7 +135,7 @@ test "set" {
     const testing = std.testing;
     var e: Event = undefined;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &e,
     ));
     defer free(e);
@@ -183,7 +182,7 @@ test "get" {
     const testing = std.testing;
     var e: Event = undefined;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &e,
     ));
     defer free(e);
@@ -232,7 +231,7 @@ test "complete key event" {
     const testing = std.testing;
     var e: Event = undefined;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &e,
     ));
     defer free(e);

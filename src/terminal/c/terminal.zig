@@ -1,8 +1,7 @@
 const std = @import("std");
 const testing = std.testing;
 const lib = @import("../lib.zig");
-const lib_alloc = @import("../../lib/allocator.zig");
-const CAllocator = lib_alloc.Allocator;
+const CAllocator = lib.alloc.Allocator;
 const ZigTerminal = @import("../Terminal.zig");
 const Stream = @import("../stream_terminal.zig").Stream;
 const ScreenSet = @import("../ScreenSet.zig");
@@ -239,7 +238,7 @@ fn new_(
 ) NewError!*TerminalWrapper {
     if (opts.cols == 0 or opts.rows == 0) return error.InvalidValue;
 
-    const alloc = lib_alloc.default(alloc_);
+    const alloc = lib.alloc.default(alloc_);
     const t = alloc.create(ZigTerminal) catch
         return error.OutOfMemory;
     errdefer alloc.destroy(t);
@@ -589,7 +588,7 @@ pub fn free(terminal_: Terminal) callconv(lib.calling_conv) void {
 test "new/free" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -606,7 +605,7 @@ test "new invalid value" {
     var t: Terminal = null;
 
     try testing.expectEqual(Result.invalid_value, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 0,
@@ -617,7 +616,7 @@ test "new invalid value" {
     try testing.expect(t == null);
 
     try testing.expectEqual(Result.invalid_value, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -635,7 +634,7 @@ test "free null" {
 test "scroll_viewport" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 5,
@@ -691,7 +690,7 @@ test "scroll_viewport null" {
 test "reset" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -716,7 +715,7 @@ test "reset null" {
 test "resize" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -738,7 +737,7 @@ test "resize null" {
 test "resize invalid value" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -755,7 +754,7 @@ test "resize invalid value" {
 test "mode_get and mode_set" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -801,7 +800,7 @@ test "mode_set null" {
 test "mode_get unknown mode" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -819,7 +818,7 @@ test "mode_get unknown mode" {
 test "mode_set unknown mode" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -836,7 +835,7 @@ test "mode_set unknown mode" {
 test "vt_write" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -856,7 +855,7 @@ test "vt_write" {
 test "vt_write split escape sequence" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -881,7 +880,7 @@ test "vt_write split escape sequence" {
 test "get cols and rows" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -902,7 +901,7 @@ test "get cols and rows" {
 test "get cursor position" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -930,7 +929,7 @@ test "get null" {
 test "get cursor_visible" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -954,7 +953,7 @@ test "get cursor_visible" {
 test "get active_screen" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -972,7 +971,7 @@ test "get active_screen" {
 test "get kitty_keyboard_flags" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -996,7 +995,7 @@ test "get kitty_keyboard_flags" {
 test "get mouse_tracking" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1046,7 +1045,7 @@ test "get mouse_tracking" {
 test "get total_rows" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1064,7 +1063,7 @@ test "get total_rows" {
 test "get scrollback_rows" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1088,7 +1087,7 @@ test "get scrollback_rows" {
 test "get invalid" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1104,7 +1103,7 @@ test "get invalid" {
 test "grid_ref" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1142,7 +1141,7 @@ test "grid_ref null terminal" {
 test "set write_pty callback" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1185,7 +1184,7 @@ test "set write_pty callback" {
 test "set write_pty without callback ignores queries" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1202,7 +1201,7 @@ test "set write_pty without callback ignores queries" {
 test "set write_pty null clears callback" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1231,7 +1230,7 @@ test "set write_pty null clears callback" {
 test "set bell callback" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1271,7 +1270,7 @@ test "set bell callback" {
 test "bell without callback is silent" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1288,7 +1287,7 @@ test "bell without callback is silent" {
 test "set enquiry callback" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1330,7 +1329,7 @@ test "set enquiry callback" {
 test "enquiry without callback is silent" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1347,7 +1346,7 @@ test "enquiry without callback is silent" {
 test "set xtversion callback" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1390,7 +1389,7 @@ test "set xtversion callback" {
 test "xtversion without callback reports default" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1426,7 +1425,7 @@ test "xtversion without callback reports default" {
 test "set title_changed callback" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1465,7 +1464,7 @@ test "set title_changed callback" {
 test "title_changed without callback is silent" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1482,7 +1481,7 @@ test "title_changed without callback is silent" {
 test "set size callback" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1529,7 +1528,7 @@ test "set size callback" {
 test "size without callback is silent" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1546,7 +1545,7 @@ test "size without callback is silent" {
 test "set device_attributes callback primary" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1600,7 +1599,7 @@ test "set device_attributes callback primary" {
 test "set device_attributes callback secondary" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1654,7 +1653,7 @@ test "set device_attributes callback secondary" {
 test "set device_attributes callback tertiary" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1708,7 +1707,7 @@ test "set device_attributes callback tertiary" {
 test "device_attributes without callback uses default" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1744,7 +1743,7 @@ test "device_attributes without callback uses default" {
 test "device_attributes callback returns false uses default" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1785,7 +1784,7 @@ test "device_attributes callback returns false uses default" {
 test "set and get title" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1824,7 +1823,7 @@ test "set and get title" {
 test "set and get pwd" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1856,7 +1855,7 @@ test "set and get pwd" {
 test "get title set via vt_write" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1877,7 +1876,7 @@ test "get title set via vt_write" {
 test "resize updates pixel dimensions" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1897,7 +1896,7 @@ test "resize updates pixel dimensions" {
 test "resize pixel overflow saturates" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1917,7 +1916,7 @@ test "resize pixel overflow saturates" {
 test "resize disables synchronized output" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1937,7 +1936,7 @@ test "resize disables synchronized output" {
 test "resize sends in-band size report" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -1978,7 +1977,7 @@ test "resize sends in-band size report" {
 test "resize no size report without mode 2048" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -2006,7 +2005,7 @@ test "resize no size report without mode 2048" {
 test "resize in-band report without write_pty callback" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -2028,7 +2027,7 @@ test "resize null terminal" {
 test "resize zero cols" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -2044,7 +2043,7 @@ test "resize zero cols" {
 test "resize zero rows" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,
@@ -2060,7 +2059,7 @@ test "resize zero rows" {
 test "grid_ref out of bounds" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{
             .cols = 80,

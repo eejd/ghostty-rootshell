@@ -2,8 +2,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const testing = std.testing;
 const lib = @import("../lib.zig");
-const lib_alloc = @import("../../lib/allocator.zig");
-const CAllocator = lib_alloc.Allocator;
+const CAllocator = lib.alloc.Allocator;
 const key = @import("../../input/key.zig");
 const mouse = @import("../../input/mouse.zig");
 const mouse_encode = @import("../../input/mouse_encode.zig");
@@ -36,7 +35,7 @@ pub fn new(
     alloc_: ?*const CAllocator,
     result: *Event,
 ) callconv(lib.calling_conv) Result {
-    const alloc = lib_alloc.default(alloc_);
+    const alloc = lib.alloc.default(alloc_);
     const ptr = alloc.create(MouseEventWrapper) catch
         return .out_of_memory;
     ptr.* = .{ .alloc = alloc };
@@ -108,7 +107,7 @@ pub fn get_position(event_: Event) callconv(lib.calling_conv) Position {
 test "alloc" {
     var e: Event = undefined;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &e,
     ));
     free(e);
@@ -121,7 +120,7 @@ test "free null" {
 test "set/get" {
     var e: Event = undefined;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &e,
     ));
     defer free(e);

@@ -15,6 +15,7 @@ else
     .auto;
 
 /// Forwarded decls from lib that are used.
+pub const alloc = lib.allocator;
 pub const Enum = lib.Enum;
 pub const TaggedUnion = lib.TaggedUnion;
 pub const Struct = lib.Struct;

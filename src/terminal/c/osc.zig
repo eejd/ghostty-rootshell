@@ -1,7 +1,6 @@
 const std = @import("std");
 const lib = @import("../lib.zig");
-const lib_alloc = @import("../../lib/allocator.zig");
-const CAllocator = lib_alloc.Allocator;
+const CAllocator = lib.alloc.Allocator;
 const osc = @import("../osc.zig");
 const Result = @import("result.zig").Result;
 
@@ -17,7 +16,7 @@ pub fn new(
     alloc_: ?*const CAllocator,
     result: *Parser,
 ) callconv(lib.calling_conv) Result {
-    const alloc = lib_alloc.default(alloc_);
+    const alloc = lib.alloc.default(alloc_);
     const ptr = alloc.create(osc.Parser) catch
         return .out_of_memory;
     ptr.* = .init(alloc);
@@ -107,7 +106,7 @@ test "alloc" {
     const testing = std.testing;
     var p: Parser = undefined;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &p,
     ));
     free(p);
@@ -122,7 +121,7 @@ test "change window title" {
     const testing = std.testing;
     var p: Parser = undefined;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &p,
     ));
     defer free(p);

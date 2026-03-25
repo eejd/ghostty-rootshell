@@ -2,8 +2,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const testing = std.testing;
 const lib = @import("../lib.zig");
-const lib_alloc = @import("../../lib/allocator.zig");
-const CAllocator = lib_alloc.Allocator;
+const CAllocator = lib.alloc.Allocator;
 const input_mouse_encode = @import("../../input/mouse_encode.zig");
 const renderer_size = @import("../../renderer/size.zig");
 const point = @import("../point.zig");
@@ -91,7 +90,7 @@ pub fn new(
     alloc_: ?*const CAllocator,
     result: *Encoder,
 ) callconv(lib.calling_conv) Result {
-    const alloc = lib_alloc.default(alloc_);
+    const alloc = lib.alloc.default(alloc_);
     const ptr = alloc.create(MouseEncoderWrapper) catch
         return .out_of_memory;
     ptr.* = .{
@@ -275,7 +274,7 @@ fn testSize() Size {
 test "alloc" {
     var e: Encoder = undefined;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &e,
     ));
     free(e);
@@ -284,7 +283,7 @@ test "alloc" {
 test "setopt" {
     var e: Encoder = undefined;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &e,
     ));
     defer free(e);
@@ -316,14 +315,14 @@ test "setopt_from_terminal" {
 
     var e: Encoder = undefined;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &e,
     ));
     defer free(e);
 
     var t: Terminal = undefined;
     try testing.expectEqual(Result.success, terminal_c.new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
     ));
@@ -345,7 +344,7 @@ test "setopt_from_terminal null" {
     const terminal_c = @import("terminal.zig");
     var t: Terminal = undefined;
     try testing.expectEqual(Result.success, terminal_c.new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
     ));
@@ -354,7 +353,7 @@ test "setopt_from_terminal null" {
 
     var e: Encoder = undefined;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &e,
     ));
     defer free(e);
@@ -364,7 +363,7 @@ test "setopt_from_terminal null" {
 test "encode: sgr press left" {
     var encoder: Encoder = undefined;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &encoder,
     ));
     defer free(encoder);
@@ -378,7 +377,7 @@ test "encode: sgr press left" {
 
     var event: Event = undefined;
     try testing.expectEqual(Result.success, mouse_event.new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &event,
     ));
     defer mouse_event.free(event);
@@ -413,7 +412,7 @@ test "encode: sgr press left" {
 test "encode: motion dedupe and reset" {
     var encoder: Encoder = undefined;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &encoder,
     ));
     defer free(encoder);
@@ -429,7 +428,7 @@ test "encode: motion dedupe and reset" {
 
     var event: Event = undefined;
     try testing.expectEqual(Result.success, mouse_event.new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &event,
     ));
     defer mouse_event.free(event);
@@ -483,7 +482,7 @@ test "encode: motion dedupe and reset" {
 test "encode: querying required size doesn't update dedupe state" {
     var encoder: Encoder = undefined;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &encoder,
     ));
     defer free(encoder);
@@ -499,7 +498,7 @@ test "encode: querying required size doesn't update dedupe state" {
 
     var event: Event = undefined;
     try testing.expectEqual(Result.success, mouse_event.new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &event,
     ));
     defer mouse_event.free(event);

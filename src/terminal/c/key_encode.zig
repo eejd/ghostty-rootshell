@@ -1,8 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const lib = @import("../lib.zig");
-const lib_alloc = @import("../../lib/allocator.zig");
-const CAllocator = lib_alloc.Allocator;
+const CAllocator = lib.alloc.Allocator;
 const key_encode = @import("../../input/key_encode.zig");
 const key_event = @import("key_event.zig");
 const KittyFlags = @import("../../terminal/kitty/key.zig").Flags;
@@ -27,7 +26,7 @@ pub fn new(
     alloc_: ?*const CAllocator,
     result: *Encoder,
 ) callconv(lib.calling_conv) Result {
-    const alloc = lib_alloc.default(alloc_);
+    const alloc = lib.alloc.default(alloc_);
     const ptr = alloc.create(KeyEncoderWrapper) catch
         return .out_of_memory;
     ptr.* = .{
@@ -166,7 +165,7 @@ test "alloc" {
     const testing = std.testing;
     var e: Encoder = undefined;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &e,
     ));
     free(e);
@@ -176,7 +175,7 @@ test "setopt bool" {
     const testing = std.testing;
     var e: Encoder = undefined;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &e,
     ));
     defer free(e);
@@ -198,7 +197,7 @@ test "setopt kitty flags" {
     const testing = std.testing;
     var e: Encoder = undefined;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &e,
     ));
     defer free(e);
@@ -219,7 +218,7 @@ test "setopt macos option as alt" {
     const testing = std.testing;
     var e: Encoder = undefined;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &e,
     ));
     defer free(e);
@@ -241,7 +240,7 @@ test "setopt_from_terminal" {
     // Create encoder
     var e: Encoder = undefined;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &e,
     ));
     defer free(e);
@@ -249,7 +248,7 @@ test "setopt_from_terminal" {
     // Create terminal
     var t: Terminal = undefined;
     try testing.expectEqual(Result.success, terminal_c.new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
     ));
@@ -275,7 +274,7 @@ test "setopt_from_terminal null" {
     const terminal_c = @import("terminal.zig");
     var t: Terminal = undefined;
     try testing.expectEqual(Result.success, terminal_c.new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &t,
         .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
     ));
@@ -285,7 +284,7 @@ test "setopt_from_terminal null" {
     // Valid encoder with null terminal
     var e: Encoder = undefined;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &e,
     ));
     defer free(e);
@@ -298,7 +297,7 @@ test "encode: kitty ctrl release with ctrl mod set" {
     // Create encoder
     var encoder: Encoder = undefined;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &encoder,
     ));
     defer free(encoder);
@@ -319,7 +318,7 @@ test "encode: kitty ctrl release with ctrl mod set" {
     // Create key event
     var event: key_event.Event = undefined;
     try testing.expectEqual(Result.success, key_event.new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &event,
     ));
     defer key_event.free(event);

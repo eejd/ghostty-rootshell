@@ -2,8 +2,7 @@ const std = @import("std");
 const testing = std.testing;
 const Allocator = std.mem.Allocator;
 const lib = @import("../lib.zig");
-const lib_alloc = @import("../../lib/allocator.zig");
-const CAllocator = lib_alloc.Allocator;
+const CAllocator = lib.alloc.Allocator;
 const colorpkg = @import("../color.zig");
 const cursorpkg = @import("../cursor.zig");
 const page = @import("../page.zig");
@@ -155,7 +154,7 @@ pub fn new(
 }
 
 fn new_(alloc_: ?*const CAllocator) error{OutOfMemory}!*RenderStateWrapper {
-    const alloc = lib_alloc.default(alloc_);
+    const alloc = lib.alloc.default(alloc_);
     const ptr = alloc.create(RenderStateWrapper) catch
         return error.OutOfMemory;
     ptr.* = .{ .alloc = alloc };
@@ -355,7 +354,7 @@ pub fn row_iterator_new(
     alloc_: ?*const CAllocator,
     result: *RowIterator,
 ) callconv(lib.calling_conv) Result {
-    const alloc = lib_alloc.default(alloc_);
+    const alloc = lib.alloc.default(alloc_);
     const ptr = alloc.create(RowIteratorWrapper) catch {
         result.* = null;
         return .out_of_memory;
@@ -390,7 +389,7 @@ pub fn row_cells_new(
     alloc_: ?*const CAllocator,
     result: *RowCells,
 ) callconv(lib.calling_conv) Result {
-    const alloc = lib_alloc.default(alloc_);
+    const alloc = lib.alloc.default(alloc_);
     const ptr = alloc.create(RowCellsWrapper) catch {
         result.* = null;
         return .out_of_memory;
@@ -639,7 +638,7 @@ fn rowSetTyped(
 test "render: new/free" {
     var state: RenderState = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &state,
     ));
     try testing.expect(state != null);
@@ -653,7 +652,7 @@ test "render: free null" {
 test "render: update invalid value" {
     var state: RenderState = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &state,
     ));
     defer free(state);
@@ -670,7 +669,7 @@ test "render: get invalid value" {
 test "render: get invalid data" {
     var state: RenderState = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &state,
     ));
     defer free(state);
@@ -681,7 +680,7 @@ test "render: get invalid data" {
 test "render: colors get invalid value" {
     var state: RenderState = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &state,
     ));
     defer free(state);
@@ -706,7 +705,7 @@ test "render: get/set dirty invalid value" {
 test "render: get/set dirty" {
     var state: RenderState = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &state,
     ));
     defer free(state);
@@ -729,7 +728,7 @@ test "render: get/set dirty" {
 test "render: set null value" {
     var state: RenderState = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &state,
     ));
     defer free(state);
@@ -740,7 +739,7 @@ test "render: set null value" {
 test "render: row iterator get invalid value" {
     var iterator: RowIterator = null;
     try testing.expectEqual(Result.success, row_iterator_new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &iterator,
     ));
     defer row_iterator_free(iterator);
@@ -751,7 +750,7 @@ test "render: row iterator get invalid value" {
 test "render: row iterator new/free" {
     var terminal: terminal_c.Terminal = null;
     try testing.expectEqual(Result.success, terminal_c.new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &terminal,
         .{
             .cols = 80,
@@ -763,7 +762,7 @@ test "render: row iterator new/free" {
 
     var state: RenderState = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &state,
     ));
     defer free(state);
@@ -772,7 +771,7 @@ test "render: row iterator new/free" {
 
     var iterator: RowIterator = null;
     try testing.expectEqual(Result.success, row_iterator_new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &iterator,
     ));
     defer row_iterator_free(iterator);
@@ -806,7 +805,7 @@ test "render: row get null" {
 test "render: row get invalid data" {
     var terminal: terminal_c.Terminal = null;
     try testing.expectEqual(Result.success, terminal_c.new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &terminal,
         .{
             .cols = 80,
@@ -818,7 +817,7 @@ test "render: row get invalid data" {
 
     var state: RenderState = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &state,
     ));
     defer free(state);
@@ -827,7 +826,7 @@ test "render: row get invalid data" {
 
     var iterator: RowIterator = null;
     try testing.expectEqual(Result.success, row_iterator_new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &iterator,
     ));
     defer row_iterator_free(iterator);
@@ -845,7 +844,7 @@ test "render: row set null" {
 test "render: row set before iteration" {
     var terminal: terminal_c.Terminal = null;
     try testing.expectEqual(Result.success, terminal_c.new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &terminal,
         .{
             .cols = 80,
@@ -857,7 +856,7 @@ test "render: row set before iteration" {
 
     var state: RenderState = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &state,
     ));
     defer free(state);
@@ -866,7 +865,7 @@ test "render: row set before iteration" {
 
     var iterator: RowIterator = null;
     try testing.expectEqual(Result.success, row_iterator_new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &iterator,
     ));
     defer row_iterator_free(iterator);
@@ -879,7 +878,7 @@ test "render: row set before iteration" {
 test "render: row get before iteration" {
     var terminal: terminal_c.Terminal = null;
     try testing.expectEqual(Result.success, terminal_c.new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &terminal,
         .{
             .cols = 80,
@@ -891,7 +890,7 @@ test "render: row get before iteration" {
 
     var state: RenderState = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &state,
     ));
     defer free(state);
@@ -900,7 +899,7 @@ test "render: row get before iteration" {
 
     var iterator: RowIterator = null;
     try testing.expectEqual(Result.success, row_iterator_new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &iterator,
     ));
     defer row_iterator_free(iterator);
@@ -913,7 +912,7 @@ test "render: row get before iteration" {
 test "render: row get/set dirty" {
     var terminal: terminal_c.Terminal = null;
     try testing.expectEqual(Result.success, terminal_c.new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &terminal,
         .{
             .cols = 80,
@@ -925,7 +924,7 @@ test "render: row get/set dirty" {
 
     var state: RenderState = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &state,
     ));
     defer free(state);
@@ -939,7 +938,7 @@ test "render: row get/set dirty" {
     // Create an iterator and verify it is dirty.
     var it: RowIterator = null;
     try testing.expectEqual(Result.success, row_iterator_new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &it,
     ));
     defer row_iterator_free(it);
@@ -957,7 +956,7 @@ test "render: row get/set dirty" {
     // It should not be dirty anymore.
     var it2: RowIterator = null;
     try testing.expectEqual(Result.success, row_iterator_new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &it2,
     ));
     defer row_iterator_free(it2);
@@ -971,7 +970,7 @@ test "render: row get/set dirty" {
 test "render: row iterator next" {
     var terminal: terminal_c.Terminal = null;
     try testing.expectEqual(Result.success, terminal_c.new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &terminal,
         .{
             .cols = 80,
@@ -983,7 +982,7 @@ test "render: row iterator next" {
 
     var state: RenderState = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &state,
     ));
     defer free(state);
@@ -992,7 +991,7 @@ test "render: row iterator next" {
 
     var iterator: RowIterator = null;
     try testing.expectEqual(Result.success, row_iterator_new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &iterator,
     ));
     defer row_iterator_free(iterator);
@@ -1021,7 +1020,7 @@ test "render: row iterator next" {
 test "render: update" {
     var terminal: terminal_c.Terminal = null;
     try testing.expectEqual(Result.success, terminal_c.new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &terminal,
         .{
             .cols = 80,
@@ -1033,7 +1032,7 @@ test "render: update" {
 
     var state: RenderState = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &state,
     ));
     defer free(state);
@@ -1054,7 +1053,7 @@ test "render: update" {
 test "render: colors get" {
     var terminal: terminal_c.Terminal = null;
     try testing.expectEqual(Result.success, terminal_c.new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &terminal,
         .{
             .cols = 80,
@@ -1066,7 +1065,7 @@ test "render: colors get" {
 
     var state: RenderState = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &state,
     ));
     defer free(state);
@@ -1096,7 +1095,7 @@ test "render: colors get" {
 test "render: row cells bg_color no background" {
     var terminal: terminal_c.Terminal = null;
     try testing.expectEqual(Result.success, terminal_c.new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &terminal,
         .{
             .cols = 80,
@@ -1111,7 +1110,7 @@ test "render: row cells bg_color no background" {
 
     var state: RenderState = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &state,
     ));
     defer free(state);
@@ -1120,7 +1119,7 @@ test "render: row cells bg_color no background" {
 
     var it: RowIterator = null;
     try testing.expectEqual(Result.success, row_iterator_new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &it,
     ));
     defer row_iterator_free(it);
@@ -1130,7 +1129,7 @@ test "render: row cells bg_color no background" {
 
     var cells: RowCells = null;
     try testing.expectEqual(Result.success, row_cells_new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &cells,
     ));
     defer row_cells_free(cells);
@@ -1146,7 +1145,7 @@ test "render: row cells bg_color no background" {
 test "render: row cells bg_color from style" {
     var terminal: terminal_c.Terminal = null;
     try testing.expectEqual(Result.success, terminal_c.new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &terminal,
         .{
             .cols = 80,
@@ -1161,7 +1160,7 @@ test "render: row cells bg_color from style" {
 
     var state: RenderState = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &state,
     ));
     defer free(state);
@@ -1170,7 +1169,7 @@ test "render: row cells bg_color from style" {
 
     var it: RowIterator = null;
     try testing.expectEqual(Result.success, row_iterator_new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &it,
     ));
     defer row_iterator_free(it);
@@ -1180,7 +1179,7 @@ test "render: row cells bg_color from style" {
 
     var cells: RowCells = null;
     try testing.expectEqual(Result.success, row_cells_new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &cells,
     ));
     defer row_cells_free(cells);
@@ -1198,7 +1197,7 @@ test "render: row cells bg_color from style" {
 test "render: row cells bg_color from content tag" {
     var terminal: terminal_c.Terminal = null;
     try testing.expectEqual(Result.success, terminal_c.new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &terminal,
         .{
             .cols = 80,
@@ -1215,7 +1214,7 @@ test "render: row cells bg_color from content tag" {
 
     var state: RenderState = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &state,
     ));
     defer free(state);
@@ -1224,7 +1223,7 @@ test "render: row cells bg_color from content tag" {
 
     var it: RowIterator = null;
     try testing.expectEqual(Result.success, row_iterator_new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &it,
     ));
     defer row_iterator_free(it);
@@ -1234,7 +1233,7 @@ test "render: row cells bg_color from content tag" {
 
     var cells: RowCells = null;
     try testing.expectEqual(Result.success, row_cells_new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &cells,
     ));
     defer row_cells_free(cells);
@@ -1252,7 +1251,7 @@ test "render: row cells bg_color from content tag" {
 test "render: row cells fg_color no foreground" {
     var terminal: terminal_c.Terminal = null;
     try testing.expectEqual(Result.success, terminal_c.new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &terminal,
         .{
             .cols = 80,
@@ -1267,7 +1266,7 @@ test "render: row cells fg_color no foreground" {
 
     var state: RenderState = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &state,
     ));
     defer free(state);
@@ -1276,7 +1275,7 @@ test "render: row cells fg_color no foreground" {
 
     var it: RowIterator = null;
     try testing.expectEqual(Result.success, row_iterator_new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &it,
     ));
     defer row_iterator_free(it);
@@ -1286,7 +1285,7 @@ test "render: row cells fg_color no foreground" {
 
     var cells: RowCells = null;
     try testing.expectEqual(Result.success, row_cells_new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &cells,
     ));
     defer row_cells_free(cells);
@@ -1302,7 +1301,7 @@ test "render: row cells fg_color no foreground" {
 test "render: row cells fg_color from style" {
     var terminal: terminal_c.Terminal = null;
     try testing.expectEqual(Result.success, terminal_c.new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &terminal,
         .{
             .cols = 80,
@@ -1317,7 +1316,7 @@ test "render: row cells fg_color from style" {
 
     var state: RenderState = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &state,
     ));
     defer free(state);
@@ -1326,7 +1325,7 @@ test "render: row cells fg_color from style" {
 
     var it: RowIterator = null;
     try testing.expectEqual(Result.success, row_iterator_new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &it,
     ));
     defer row_iterator_free(it);
@@ -1336,7 +1335,7 @@ test "render: row cells fg_color from style" {
 
     var cells: RowCells = null;
     try testing.expectEqual(Result.success, row_cells_new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &cells,
     ));
     defer row_cells_free(cells);
@@ -1354,7 +1353,7 @@ test "render: row cells fg_color from style" {
 test "render: colors get supports truncated sized struct" {
     var terminal: terminal_c.Terminal = null;
     try testing.expectEqual(Result.success, terminal_c.new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &terminal,
         .{
             .cols = 80,
@@ -1366,7 +1365,7 @@ test "render: colors get supports truncated sized struct" {
 
     var state: RenderState = null;
     try testing.expectEqual(Result.success, new(
-        &lib_alloc.test_allocator,
+        &lib.alloc.test_allocator,
         &state,
     ));
     defer free(state);
