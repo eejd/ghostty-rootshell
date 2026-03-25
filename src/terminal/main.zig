@@ -73,7 +73,8 @@ pub const Attribute = sgr.Attribute;
 pub const Options = @import("build_options.zig").Options;
 pub const options = @import("terminal_options");
 
-pub const c_api = @import("c/main.zig");
+/// This is set to true when we're building the C library.
+pub const c_api = if (options.c_abi) @import("c/main.zig") else void;
 
 test {
     @import("std").testing.refAllDecls(@This());

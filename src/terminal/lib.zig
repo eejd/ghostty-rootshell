@@ -5,14 +5,12 @@ const lib = @import("../lib/main.zig");
 /// The target for the terminal lib in particular.
 pub const target: lib.Target = if (build_options.c_abi) .c else .zig;
 
-/// The calling convention to use for C APIs. If we're not building for
-/// C ABI then we use auto which allows our C APIs to be cleanly called
-/// by Zig. This is required because we modify our struct layouts based
-/// on C ABI too.
-pub const calling_conv: std.builtin.CallingConvention = if (build_options.c_abi)
-    .c
-else
-    .auto;
+/// The calling convention to use for C APIs.
+///
+/// This is always .c for now. I want to make this "Zig" when we're not
+/// building the C ABI but there are bigger issues we need to resolve to
+/// make that possible (change it and see for yourself).
+pub const calling_conv: std.builtin.CallingConvention = .c;
 
 /// Forwarded decls from lib that are used.
 pub const alloc = lib.allocator;
