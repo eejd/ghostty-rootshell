@@ -55,39 +55,39 @@ const Effects = struct {
     da_features_buf: [64]device_attributes.Primary.Feature = undefined,
 
     /// C function pointer type for the write_pty callback.
-    pub const WritePtyFn = *const fn (Terminal, ?*anyopaque, [*]const u8, usize) callconv(.c) void;
+    pub const WritePtyFn = *const fn (Terminal, ?*anyopaque, [*]const u8, usize) callconv(lib.calling_conv) void;
 
     /// C function pointer type for the bell callback.
-    pub const BellFn = *const fn (Terminal, ?*anyopaque) callconv(.c) void;
+    pub const BellFn = *const fn (Terminal, ?*anyopaque) callconv(lib.calling_conv) void;
 
     /// C function pointer type for the color_scheme callback.
     /// Returns true and fills out_scheme if a color scheme is available,
     /// or returns false to silently ignore the query.
-    pub const ColorSchemeFn = *const fn (Terminal, ?*anyopaque, *device_status.ColorScheme) callconv(.c) bool;
+    pub const ColorSchemeFn = *const fn (Terminal, ?*anyopaque, *device_status.ColorScheme) callconv(lib.calling_conv) bool;
 
     /// C function pointer type for the enquiry callback.
     /// Returns the response bytes. The memory must remain valid
     /// until the callback returns.
-    pub const EnquiryFn = *const fn (Terminal, ?*anyopaque) callconv(.c) lib.String;
+    pub const EnquiryFn = *const fn (Terminal, ?*anyopaque) callconv(lib.calling_conv) lib.String;
 
     /// C function pointer type for the xtversion callback.
     /// Returns the version string (e.g. "ghostty 1.2.3"). The memory
     /// must remain valid until the callback returns. An empty string
     /// (len=0) causes the default "libghostty" to be reported.
-    pub const XtversionFn = *const fn (Terminal, ?*anyopaque) callconv(.c) lib.String;
+    pub const XtversionFn = *const fn (Terminal, ?*anyopaque) callconv(lib.calling_conv) lib.String;
 
     /// C function pointer type for the title_changed callback.
-    pub const TitleChangedFn = *const fn (Terminal, ?*anyopaque) callconv(.c) void;
+    pub const TitleChangedFn = *const fn (Terminal, ?*anyopaque) callconv(lib.calling_conv) void;
 
     /// C function pointer type for the size callback.
     /// Returns true and fills out_size if size is available,
     /// or returns false to silently ignore the query.
-    pub const SizeFn = *const fn (Terminal, ?*anyopaque, *size_report.Size) callconv(.c) bool;
+    pub const SizeFn = *const fn (Terminal, ?*anyopaque, *size_report.Size) callconv(lib.calling_conv) bool;
 
     /// C function pointer type for the device_attributes callback.
     /// Returns true and fills out_attrs if attributes are available,
     /// or returns false to silently ignore the query.
-    pub const DeviceAttributesFn = *const fn (Terminal, ?*anyopaque, *CDeviceAttributes) callconv(.c) bool;
+    pub const DeviceAttributesFn = *const fn (Terminal, ?*anyopaque, *CDeviceAttributes) callconv(lib.calling_conv) bool;
 
     /// C-compatible device attributes struct.
     /// C: GhosttyDeviceAttributes
@@ -221,7 +221,7 @@ pub fn new(
     alloc_: ?*const CAllocator,
     result: *Terminal,
     opts: Options,
-) callconv(.c) Result {
+) callconv(lib.calling_conv) Result {
     result.* = new_(alloc_, opts) catch |err| {
         result.* = null;
         return switch (err) {
@@ -282,7 +282,7 @@ pub fn vt_write(
     terminal_: Terminal,
     ptr: [*]const u8,
     len: usize,
-) callconv(.c) void {
+) callconv(lib.calling_conv) void {
     const wrapper = terminal_ orelse return;
     wrapper.stream.nextSlice(ptr[0..len]);
 }
@@ -322,7 +322,7 @@ pub fn set(
     terminal_: Terminal,
     option: Option,
     value: ?*const anyopaque,
-) callconv(.c) Result {
+) callconv(lib.calling_conv) Result {
     if (comptime std.debug.runtime_safety) {
         _ = std.meta.intToEnum(Option, @intFromEnum(option)) catch {
             log.warn("terminal_set invalid option value={d}", .{@intFromEnum(option)});
@@ -374,7 +374,7 @@ pub const ScrollViewport = ZigTerminal.ScrollViewport.C;
 pub fn scroll_viewport(
     terminal_: Terminal,
     behavior: ScrollViewport,
-) callconv(.c) void {
+) callconv(lib.calling_conv) void {
     const t: *ZigTerminal = (terminal_ orelse return).terminal;
     t.scrollViewport(switch (behavior.tag) {
         .top => .top,
@@ -389,7 +389,7 @@ pub fn resize(
     rows: size.CellCountInt,
     cell_width_px: u32,
     cell_height_px: u32,
-) callconv(.c) Result {
+) callconv(lib.calling_conv) Result {
     const wrapper = terminal_ orelse return .invalid_value;
     const t = wrapper.terminal;
     if (cols == 0 or rows == 0) return .invalid_value;
@@ -423,7 +423,7 @@ pub fn resize(
     return .success;
 }
 
-pub fn reset(terminal_: Terminal) callconv(.c) void {
+pub fn reset(terminal_: Terminal) callconv(lib.calling_conv) void {
     const t: *ZigTerminal = (terminal_ orelse return).terminal;
     t.fullReset();
 }
@@ -432,7 +432,7 @@ pub fn mode_get(
     terminal_: Terminal,
     tag: modes.ModeTag.Backing,
     out_value: *bool,
-) callconv(.c) Result {
+) callconv(lib.calling_conv) Result {
     const t: *ZigTerminal = (terminal_ orelse return .invalid_value).terminal;
     const mode_tag: modes.ModeTag = @bitCast(tag);
     const mode = modes.modeFromInt(mode_tag.value, mode_tag.ansi) orelse return .invalid_value;
@@ -444,7 +444,7 @@ pub fn mode_set(
     terminal_: Terminal,
     tag: modes.ModeTag.Backing,
     value: bool,
-) callconv(.c) Result {
+) callconv(lib.calling_conv) Result {
     const t: *ZigTerminal = (terminal_ orelse return .invalid_value).terminal;
     const mode_tag: modes.ModeTag = @bitCast(tag);
     const mode = modes.modeFromInt(mode_tag.value, mode_tag.ansi) orelse return .invalid_value;
@@ -500,7 +500,7 @@ pub fn get(
     terminal_: Terminal,
     data: TerminalData,
     out: ?*anyopaque,
-) callconv(.c) Result {
+) callconv(lib.calling_conv) Result {
     if (comptime std.debug.runtime_safety) {
         _ = std.meta.intToEnum(TerminalData, @intFromEnum(data)) catch {
             log.warn("terminal_get invalid data value={d}", .{@intFromEnum(data)});
@@ -561,7 +561,7 @@ pub fn grid_ref(
     terminal_: Terminal,
     pt: point.Point.C,
     out_ref: ?*grid_ref_c.CGridRef,
-) callconv(.c) Result {
+) callconv(lib.calling_conv) Result {
     const t: *ZigTerminal = (terminal_ orelse return .invalid_value).terminal;
     const zig_pt: point.Point = switch (pt.tag) {
         .active => .{ .active = pt.value.active },
@@ -575,7 +575,7 @@ pub fn grid_ref(
     return .success;
 }
 
-pub fn free(terminal_: Terminal) callconv(.c) void {
+pub fn free(terminal_: Terminal) callconv(lib.calling_conv) void {
     const wrapper = terminal_ orelse return;
     const t = wrapper.terminal;
 
@@ -1162,7 +1162,7 @@ test "set write_pty callback" {
             last_userdata = null;
         }
 
-        fn writePty(_: Terminal, ud: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(.c) void {
+        fn writePty(_: Terminal, ud: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(lib.calling_conv) void {
             if (last_data) |d| testing.allocator.free(d);
             last_data = testing.allocator.dupe(u8, ptr[0..len]) catch @panic("OOM");
             last_userdata = ud;
@@ -1214,7 +1214,7 @@ test "set write_pty null clears callback" {
 
     const S = struct {
         var called: bool = false;
-        fn writePty(_: Terminal, _: ?*anyopaque, _: [*]const u8, _: usize) callconv(.c) void {
+        fn writePty(_: Terminal, _: ?*anyopaque, _: [*]const u8, _: usize) callconv(lib.calling_conv) void {
             called = true;
         }
     };
@@ -1245,7 +1245,7 @@ test "set bell callback" {
         var bell_count: usize = 0;
         var last_userdata: ?*anyopaque = null;
 
-        fn bell(_: Terminal, ud: ?*anyopaque) callconv(.c) void {
+        fn bell(_: Terminal, ud: ?*anyopaque) callconv(lib.calling_conv) void {
             bell_count += 1;
             last_userdata = ud;
         }
@@ -1306,13 +1306,13 @@ test "set enquiry callback" {
             last_data = null;
         }
 
-        fn writePty(_: Terminal, _: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(.c) void {
+        fn writePty(_: Terminal, _: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(lib.calling_conv) void {
             if (last_data) |d| testing.allocator.free(d);
             last_data = testing.allocator.dupe(u8, ptr[0..len]) catch @panic("OOM");
         }
 
         const response = "OK";
-        fn enquiry(_: Terminal, _: ?*anyopaque) callconv(.c) lib.String {
+        fn enquiry(_: Terminal, _: ?*anyopaque) callconv(lib.calling_conv) lib.String {
             return .{ .ptr = response, .len = response.len };
         }
     };
@@ -1365,13 +1365,13 @@ test "set xtversion callback" {
             last_data = null;
         }
 
-        fn writePty(_: Terminal, _: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(.c) void {
+        fn writePty(_: Terminal, _: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(lib.calling_conv) void {
             if (last_data) |d| testing.allocator.free(d);
             last_data = testing.allocator.dupe(u8, ptr[0..len]) catch @panic("OOM");
         }
 
         const version = "myterm 1.0";
-        fn xtversion(_: Terminal, _: ?*anyopaque) callconv(.c) lib.String {
+        fn xtversion(_: Terminal, _: ?*anyopaque) callconv(lib.calling_conv) lib.String {
             return .{ .ptr = version, .len = version.len };
         }
     };
@@ -1408,7 +1408,7 @@ test "xtversion without callback reports default" {
             last_data = null;
         }
 
-        fn writePty(_: Terminal, _: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(.c) void {
+        fn writePty(_: Terminal, _: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(lib.calling_conv) void {
             if (last_data) |d| testing.allocator.free(d);
             last_data = testing.allocator.dupe(u8, ptr[0..len]) catch @panic("OOM");
         }
@@ -1440,7 +1440,7 @@ test "set title_changed callback" {
         var title_count: usize = 0;
         var last_userdata: ?*anyopaque = null;
 
-        fn titleChanged(_: Terminal, ud: ?*anyopaque) callconv(.c) void {
+        fn titleChanged(_: Terminal, ud: ?*anyopaque) callconv(lib.calling_conv) void {
             title_count += 1;
             last_userdata = ud;
         }
@@ -1500,12 +1500,12 @@ test "set size callback" {
             last_data = null;
         }
 
-        fn writePty(_: Terminal, _: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(.c) void {
+        fn writePty(_: Terminal, _: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(lib.calling_conv) void {
             if (last_data) |d| testing.allocator.free(d);
             last_data = testing.allocator.dupe(u8, ptr[0..len]) catch @panic("OOM");
         }
 
-        fn sizeCb(_: Terminal, _: ?*anyopaque, out_size: *size_report.Size) callconv(.c) bool {
+        fn sizeCb(_: Terminal, _: ?*anyopaque, out_size: *size_report.Size) callconv(lib.calling_conv) bool {
             out_size.* = .{
                 .rows = 24,
                 .columns = 80,
@@ -1564,12 +1564,12 @@ test "set device_attributes callback primary" {
             last_data = null;
         }
 
-        fn writePty(_: Terminal, _: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(.c) void {
+        fn writePty(_: Terminal, _: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(lib.calling_conv) void {
             if (last_data) |d| testing.allocator.free(d);
             last_data = testing.allocator.dupe(u8, ptr[0..len]) catch @panic("OOM");
         }
 
-        fn da(_: Terminal, _: ?*anyopaque, out: *Effects.CDeviceAttributes) callconv(.c) bool {
+        fn da(_: Terminal, _: ?*anyopaque, out: *Effects.CDeviceAttributes) callconv(lib.calling_conv) bool {
             out.* = .{
                 .primary = .{
                     .conformance_level = 64,
@@ -1618,12 +1618,12 @@ test "set device_attributes callback secondary" {
             last_data = null;
         }
 
-        fn writePty(_: Terminal, _: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(.c) void {
+        fn writePty(_: Terminal, _: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(lib.calling_conv) void {
             if (last_data) |d| testing.allocator.free(d);
             last_data = testing.allocator.dupe(u8, ptr[0..len]) catch @panic("OOM");
         }
 
-        fn da(_: Terminal, _: ?*anyopaque, out: *Effects.CDeviceAttributes) callconv(.c) bool {
+        fn da(_: Terminal, _: ?*anyopaque, out: *Effects.CDeviceAttributes) callconv(lib.calling_conv) bool {
             out.* = .{
                 .primary = .{
                     .conformance_level = 62,
@@ -1672,12 +1672,12 @@ test "set device_attributes callback tertiary" {
             last_data = null;
         }
 
-        fn writePty(_: Terminal, _: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(.c) void {
+        fn writePty(_: Terminal, _: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(lib.calling_conv) void {
             if (last_data) |d| testing.allocator.free(d);
             last_data = testing.allocator.dupe(u8, ptr[0..len]) catch @panic("OOM");
         }
 
-        fn da(_: Terminal, _: ?*anyopaque, out: *Effects.CDeviceAttributes) callconv(.c) bool {
+        fn da(_: Terminal, _: ?*anyopaque, out: *Effects.CDeviceAttributes) callconv(lib.calling_conv) bool {
             out.* = .{
                 .primary = .{
                     .conformance_level = 62,
@@ -1726,7 +1726,7 @@ test "device_attributes without callback uses default" {
             last_data = null;
         }
 
-        fn writePty(_: Terminal, _: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(.c) void {
+        fn writePty(_: Terminal, _: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(lib.calling_conv) void {
             if (last_data) |d| testing.allocator.free(d);
             last_data = testing.allocator.dupe(u8, ptr[0..len]) catch @panic("OOM");
         }
@@ -1762,12 +1762,12 @@ test "device_attributes callback returns false uses default" {
             last_data = null;
         }
 
-        fn writePty(_: Terminal, _: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(.c) void {
+        fn writePty(_: Terminal, _: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(lib.calling_conv) void {
             if (last_data) |d| testing.allocator.free(d);
             last_data = testing.allocator.dupe(u8, ptr[0..len]) catch @panic("OOM");
         }
 
-        fn da(_: Terminal, _: ?*anyopaque, _: *Effects.CDeviceAttributes) callconv(.c) bool {
+        fn da(_: Terminal, _: ?*anyopaque, _: *Effects.CDeviceAttributes) callconv(lib.calling_conv) bool {
             return false;
         }
     };
@@ -1955,7 +1955,7 @@ test "resize sends in-band size report" {
             last_data = null;
         }
 
-        fn writePty(_: Terminal, _: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(.c) void {
+        fn writePty(_: Terminal, _: ?*anyopaque, ptr: [*]const u8, len: usize) callconv(lib.calling_conv) void {
             if (last_data) |d| testing.allocator.free(d);
             last_data = testing.allocator.dupe(u8, ptr[0..len]) catch @panic("OOM");
         }
@@ -1990,7 +1990,7 @@ test "resize no size report without mode 2048" {
 
     const S = struct {
         var called: bool = false;
-        fn writePty(_: Terminal, _: ?*anyopaque, _: [*]const u8, _: usize) callconv(.c) void {
+        fn writePty(_: Terminal, _: ?*anyopaque, _: [*]const u8, _: usize) callconv(lib.calling_conv) void {
             called = true;
         }
     };

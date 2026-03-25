@@ -264,7 +264,4 @@ test {
     _ = terminal;
     _ = @import("lib/main.zig");
     @import("std").testing.refAllDecls(input);
-    if (comptime terminal.options.c_abi) {
-        _ = terminal.c_api;
-    }
 }

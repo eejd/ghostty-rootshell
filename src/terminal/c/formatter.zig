@@ -1,5 +1,6 @@
 const std = @import("std");
 const testing = std.testing;
+const lib = @import("../lib.zig");
 const lib_alloc = @import("../../lib/allocator.zig");
 const CAllocator = lib_alloc.Allocator;
 const terminal_c = @import("terminal.zig");
@@ -100,7 +101,7 @@ pub fn terminal_new(
     result: *Formatter,
     terminal_: terminal_c.Terminal,
     opts: TerminalOptions,
-) callconv(.c) Result {
+) callconv(lib.calling_conv) Result {
     result.* = terminal_new_(
         alloc_,
         terminal_,
@@ -151,7 +152,7 @@ pub fn format_buf(
     out_: ?[*]u8,
     out_len: usize,
     out_written: *usize,
-) callconv(.c) Result {
+) callconv(lib.calling_conv) Result {
     const wrapper = formatter_ orelse return .invalid_value;
 
     var writer: std.Io.Writer = .fixed(if (out_) |out|
@@ -181,7 +182,7 @@ pub fn format_alloc(
     alloc_: ?*const CAllocator,
     out_ptr: *?[*]u8,
     out_len: *usize,
-) callconv(.c) Result {
+) callconv(lib.calling_conv) Result {
     const wrapper = formatter_ orelse return .invalid_value;
     const alloc = lib_alloc.default(alloc_);
 
@@ -198,7 +199,7 @@ pub fn format_alloc(
     return .success;
 }
 
-pub fn free(formatter_: Formatter) callconv(.c) void {
+pub fn free(formatter_: Formatter) callconv(lib.calling_conv) void {
     const wrapper = formatter_ orelse return;
     const alloc = wrapper.alloc;
     alloc.destroy(wrapper);

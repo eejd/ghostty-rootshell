@@ -1,5 +1,6 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const lib = @import("../lib.zig");
 const lib_alloc = @import("../../lib/allocator.zig");
 const CAllocator = lib_alloc.Allocator;
 const key_encode = @import("../../input/key_encode.zig");
@@ -25,7 +26,7 @@ pub const Encoder = ?*KeyEncoderWrapper;
 pub fn new(
     alloc_: ?*const CAllocator,
     result: *Encoder,
-) callconv(.c) Result {
+) callconv(lib.calling_conv) Result {
     const alloc = lib_alloc.default(alloc_);
     const ptr = alloc.create(KeyEncoderWrapper) catch
         return .out_of_memory;
@@ -37,7 +38,7 @@ pub fn new(
     return .success;
 }
 
-pub fn free(encoder_: Encoder) callconv(.c) void {
+pub fn free(encoder_: Encoder) callconv(lib.calling_conv) void {
     const wrapper = encoder_ orelse return;
     const alloc = wrapper.alloc;
     alloc.destroy(wrapper);
@@ -72,7 +73,7 @@ pub fn setopt(
     encoder_: Encoder,
     option: Option,
     value: ?*const anyopaque,
-) callconv(.c) void {
+) callconv(lib.calling_conv) void {
     if (comptime std.debug.runtime_safety) {
         _ = std.meta.intToEnum(Option, @intFromEnum(option)) catch {
             log.warn("setopt invalid option value={d}", .{@intFromEnum(option)});
@@ -120,7 +121,7 @@ fn setoptTyped(
 pub fn setopt_from_terminal(
     encoder_: Encoder,
     terminal_: Terminal,
-) callconv(.c) void {
+) callconv(lib.calling_conv) void {
     const wrapper = encoder_ orelse return;
     const t: *ZigTerminal = (terminal_ orelse return).terminal;
     wrapper.opts = .fromTerminal(t);
@@ -132,7 +133,7 @@ pub fn encode(
     out_: ?[*]u8,
     out_len: usize,
     out_written: *usize,
-) callconv(.c) Result {
+) callconv(lib.calling_conv) Result {
     // Attempt to write to this buffer
     var writer: std.Io.Writer = .fixed(if (out_) |out| out[0..out_len] else &.{});
     key_encode.encode(

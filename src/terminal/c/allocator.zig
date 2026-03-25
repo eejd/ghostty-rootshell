@@ -1,5 +1,6 @@
 const std = @import("std");
 const testing = std.testing;
+const lib = @import("../lib.zig");
 const lib_alloc = @import("../../lib/allocator.zig");
 const CAllocator = lib_alloc.Allocator;
 
@@ -11,7 +12,7 @@ const CAllocator = lib_alloc.Allocator;
 pub fn alloc(
     alloc_: ?*const CAllocator,
     len: usize,
-) callconv(.c) ?[*]u8 {
+) callconv(lib.calling_conv) ?[*]u8 {
     const allocator = lib_alloc.default(alloc_);
     const buf = allocator.alloc(u8, len) catch return null;
     return buf.ptr;
@@ -26,7 +27,7 @@ pub fn free(
     alloc_: ?*const CAllocator,
     ptr: ?[*]u8,
     len: usize,
-) callconv(.c) void {
+) callconv(lib.calling_conv) void {
     const mem = ptr orelse return;
     const allocator = lib_alloc.default(alloc_);
     allocator.free(mem[0..len]);
