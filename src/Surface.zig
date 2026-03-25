@@ -4635,7 +4635,9 @@ fn linkAtPinExtended(
             if (prev_last_x == null or prev_last_x.? < prev_window.right) break;
 
             const p = it.next() orelse break;
-            if (p.rowAndCell().row.wrap_continuation) break;
+            const p_row = p.rowAndCell().row;
+            // Stop at any soft-wrap boundary to avoid mixing contexts.
+            if (p_row.wrap or p_row.wrap_continuation) break;
             const p_cells = p.cells(.all);
             const pw = link_ext.detectColumnWindow(p_cells, window.left, cols);
             if (pw.left != window.left or pw.right != window.right) break;
@@ -4658,13 +4660,10 @@ fn linkAtPinExtended(
     var pin_map: std.ArrayListUnmanaged(terminal.Pin) = .empty;
     defer pin_map.deinit(self.alloc);
 
-    var mouse_byte_start: usize = 0;
-    var mouse_byte_end: usize = 0;
+    // Track the exact byte offset of the mouse cell (not the whole row).
+    var mouse_cell_byte: ?usize = null;
 
     for (row_pins, 0..) |rp, idx| {
-        const before_len = text_buf.writer.buffered().len;
-        if (idx == mouse_row_idx) mouse_byte_start = before_len;
-
         // Write cells within the column window (grapheme-aware).
         const r_cells = rp.cells(.all);
         const end_col: usize = @min(@as(usize, window.right) + 1, @as(usize, cols));
@@ -4673,6 +4672,11 @@ fn linkAtPinExtended(
             const cell = &r_cells[x];
             const cp = cell.codepoint();
             if (cp == 0) continue;
+
+            // Record byte offset of the exact mouse cell.
+            if (idx == mouse_row_idx and x == mouse_pin.x) {
+                mouse_cell_byte = text_buf.writer.buffered().len;
+            }
 
             var byte_len: usize = std.unicode.utf8CodepointSequenceLength(cp) catch continue;
             try text_buf.writer.print("{u}", .{cp});
@@ -4693,12 +4697,11 @@ fn linkAtPinExtended(
             cell_pin.x = @intCast(x);
             try pin_map.appendNTimes(self.alloc, cell_pin, byte_len);
         }
-
-        if (idx == mouse_row_idx) mouse_byte_end = text_buf.writer.buffered().len;
     }
 
     const text = text_buf.writer.buffered();
-    if (text.len == 0 or mouse_byte_start == mouse_byte_end) return null;
+    if (text.len == 0) return null;
+    const mouse_byte = mouse_cell_byte orelse return null;
 
     // Search using the same strategy as the renderer: find a regex match
     // on a single row that ends at that row's right boundary, then extend
@@ -4792,8 +4795,8 @@ fn linkAtPinExtended(
                 // Must actually extend beyond the anchor row.
                 if (full_m_end <= m_end_anchor) continue;
 
-                // Must overlap with the mouse position.
-                if (mouse_byte_start >= full_m_end or mouse_byte_end <= m_start) continue;
+                // The mouse cell must be within the match (cell-precise).
+                if (mouse_byte < m_start or mouse_byte >= full_m_end) continue;
 
                 // Bounds check the pin map.
                 if (full_m_end > pin_map.items.len or m_start >= pin_map.items.len) continue;

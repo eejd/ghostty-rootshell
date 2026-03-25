@@ -197,9 +197,13 @@ fn extendMatchAcrossRows(
     const row_raws = row_slice.items(.raw);
     const row_cells_all = row_slice.items(.cells);
 
-    // Don't extend if the row is already soft-wrapped; the standard
+    // Don't extend if the row is part of a soft-wrap chain; the standard
     // string concatenation in RenderState.string() handles that case.
-    if (row_raws[end_coord.y].wrap) return false;
+    // Must match the Surface-side guard (linkAtPinExtended) which rejects
+    // both wrap and wrap_continuation to keep highlight and activation
+    // consistent.
+    const end_row = row_raws[end_coord.y];
+    if (end_row.wrap or end_row.wrap_continuation) return false;
 
     // Get the cells for the row where the match ends.
     const end_row_cells = row_cells_all[end_coord.y].slice().items(.raw);
@@ -238,6 +242,12 @@ fn extendMatchAcrossRows(
 
     var next_y: usize = @as(usize, end_coord.y) + 1;
     while (next_y < max_y) : (next_y += 1) {
+        // Stop at any soft-wrap boundary to avoid mixing contexts.
+        // A row with wrap_continuation is the tail of a soft-wrapped line
+        // above; a row with wrap starts a soft-wrapped continuation below.
+        const next_row_raw = row_raws[next_y];
+        if (next_row_raw.wrap or next_row_raw.wrap_continuation) break;
+
         const next_slice = row_cells_all[next_y].slice();
         const next_cells_raw = next_slice.items(.raw);
         const next_cells_grapheme = next_slice.items(.grapheme);
