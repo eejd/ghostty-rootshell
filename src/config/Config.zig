@@ -890,6 +890,30 @@ palette: Palette = .{},
 ///   * `false`
 @"cursor-style-blink": ?bool = null,
 
+/// Controls the cursor blink animation style when blinking is enabled.
+///
+/// `normal` is the classic blink behavior where the cursor alternates
+/// between fully visible and invisible at a fixed interval.
+///
+/// `breathing` smoothly fades the cursor using a sinusoidal curve over
+/// a 2 second period. The cursor is never fully hidden.
+///
+/// `heartbeat` uses a double-pulse rhythm (lub-dub... pause) over a
+/// 2 second cycle.
+///
+/// `neon_flicker` keeps the cursor bright with occasional random rapid
+/// brightness dips, like a neon sign.
+///
+/// `pulse` snaps to full brightness then slowly decays exponentially.
+///
+/// `candle` produces gentle irregular flickering that never repeats,
+/// like a candle flame.
+///
+/// `rootshell` renders a `#` symbol as the cursor with pulse animation.
+///
+/// This only has an effect when cursor blinking is enabled.
+@"cursor-blink-mode": CursorBlinkMode = .normal,
+
 /// The color of the text under the cursor. If this is not set, a default will
 /// be chosen.
 /// Specified as either hex (`#RRGGBB` or `RRGGBB`) or a named X11 color.
@@ -5176,6 +5200,17 @@ pub const ConfirmCloseSurface = enum(c_int) {
     false,
     true,
     always,
+};
+
+/// Valid values for cursor-blink-mode
+pub const CursorBlinkMode = enum(c_int) {
+    normal,
+    breathing,
+    heartbeat,
+    neon_flicker,
+    pulse,
+    candle,
+    rootshell,
 };
 
 /// Valid values for custom-shader-animation

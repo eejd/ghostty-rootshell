@@ -13,6 +13,7 @@ pub const Style = enum {
 
     // Special cursor styles
     lock,
+    rootshell,
 
     /// Create a cursor style from the terminal style request.
     pub fn fromTerminal(term: terminal.CursorStyle) Style {

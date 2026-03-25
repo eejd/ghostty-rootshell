@@ -118,6 +118,9 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         /// True if the window is focused
         focused: bool,
 
+        /// Current cursor blink alpha for animated blink modes.
+        cursor_blink_alpha: f64 = 1.0,
+
         /// Flag to indicate that our focus state changed for custom
         /// shaders to update their state.
         custom_shader_focused_changed: bool = false,
@@ -557,6 +560,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             cursor_color: ?configpkg.Config.TerminalColor,
             cursor_opacity: f64,
             cursor_text: ?configpkg.Config.TerminalColor,
+            cursor_blink_mode: configpkg.CursorBlinkMode,
             background: terminal.color.RGB,
             background_opacity: f64,
             background_opacity_cells: bool,
@@ -629,6 +633,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     .cursor_color = config.@"cursor-color",
                     .cursor_text = config.@"cursor-text",
                     .cursor_opacity = @max(0, @min(1, config.@"cursor-opacity")),
+                    .cursor_blink_mode = config.@"cursor-blink-mode",
 
                     .background = config.background.toTerminalRGB(),
                     .foreground = config.foreground.toTerminalRGB(),
@@ -1185,6 +1190,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             self: *Self,
             state: *renderer.State,
             cursor_blink_visible: bool,
+            cursor_blink_alpha: f64,
         ) Allocator.Error!void {
             // const start = std.time.Instant.now() catch unreachable;
             // const start_micro = std.time.microTimestamp();
@@ -1421,14 +1427,24 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 self.draw_mutex.lock();
                 defer self.draw_mutex.unlock();
 
+                // Store blink alpha for use in addCursor
+                self.cursor_blink_alpha = cursor_blink_alpha;
+
                 // Build our GPU cells
+                var cursor_style = renderer.cursorStyle(&self.terminal_state, .{
+                    .preedit = critical.preedit != null,
+                    .focused = self.focused,
+                    .blink_visible = cursor_blink_visible,
+                });
+
+                // Rootshell blink mode overrides cursor shape to # symbol
+                if (cursor_style != null and self.config.cursor_blink_mode == .rootshell) {
+                    cursor_style = .rootshell;
+                }
+
                 self.rebuildCells(
                     critical.preedit,
-                    renderer.cursorStyle(&self.terminal_state, .{
-                        .preedit = critical.preedit != null,
-                        .focused = self.focused,
-                        .blink_visible = cursor_blink_visible,
-                    }),
+                    cursor_style,
                     &critical.links,
                 ) catch |err| {
                     // This means we weren't able to allocate our buffer
@@ -3326,8 +3342,9 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             };
 
             const alpha: u8 = if (!self.focused) 255 else alpha: {
-                const alpha = 255 * self.config.cursor_opacity;
-                break :alpha @intFromFloat(@ceil(alpha));
+                const base = 255.0 * self.config.cursor_opacity;
+                const effective = base * self.cursor_blink_alpha;
+                break :alpha @intFromFloat(@ceil(effective));
             };
 
             const render = switch (cursor_style) {
@@ -3341,7 +3358,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                         .block_hollow => .cursor_hollow_rect,
                         .bar => .cursor_bar,
                         .underline => .cursor_underline,
-                        .lock => unreachable,
+                        .lock, .rootshell => unreachable,
                     };
 
                     break :render self.font_grid.renderGlyph(
@@ -3374,6 +3391,23 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     // This should never happen because we embed nerd
                     // fonts so we just log and return instead of fallback.
                     log.warn("failed to find lock symbol for cursor codepoint=0xF023", .{});
+                    return;
+                },
+
+                .rootshell => self.font_grid.renderCodepoint(
+                    self.alloc,
+                    '#',
+                    .regular,
+                    .text,
+                    .{
+                        .cell_width = if (wide) 2 else 1,
+                        .grid_metrics = self.grid_metrics,
+                    },
+                ) catch |err| {
+                    log.warn("error rendering cursor glyph err={}", .{err});
+                    return;
+                } orelse {
+                    log.warn("failed to find '#' for rootshell cursor", .{});
                     return;
                 },
             };

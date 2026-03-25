@@ -18,6 +18,8 @@ const log = std.log.scoped(.renderer_thread);
 
 const DRAW_INTERVAL = 8; // 120 FPS target (skipped when display link provides vsync)
 const CURSOR_BLINK_INTERVAL = 600;
+const CURSOR_ANIM_INTERVAL = 33; // ~30fps for animated cursor blink modes
+const CURSOR_ANIM_MIN_ALPHA = 0.2;
 
 /// Whether calls to `drawFrame` must be done from the app thread.
 ///
@@ -109,12 +111,18 @@ flags: packed struct {
     focused: bool = true,
 } = .{},
 
+/// Current cursor blink alpha for animated blink modes (breathing, etc.).
+/// Range [0.0, 1.0]. Only meaningful when cursor_blink_mode != .normal.
+cursor_blink_alpha: f64 = 1.0,
+
 pub const DerivedConfig = struct {
     custom_shader_animation: configpkg.CustomShaderAnimation,
+    cursor_blink_mode: configpkg.CursorBlinkMode,
 
     pub fn init(config: *const configpkg.Config) DerivedConfig {
         return .{
             .custom_shader_animation = config.@"custom-shader-animation",
+            .cursor_blink_mode = config.@"cursor-blink-mode",
         };
     }
 };
@@ -411,10 +419,15 @@ fn drainMailbox(self: *Thread) !void {
                     // and then restart the timer.
                     if (self.cursor_c.state() != .active) {
                         self.flags.cursor_blink_visible = true;
+                        self.cursor_blink_alpha = 1.0;
+                        const interval: u64 = switch (self.config.cursor_blink_mode) {
+                            .normal => cursorBlinkInterval(),
+                            else => CURSOR_ANIM_INTERVAL,
+                        };
                         self.cursor_h.run(
                             &self.loop,
                             &self.cursor_c,
-                            cursorBlinkInterval(),
+                            interval,
                             Thread,
                             self,
                             cursorTimerCallback,
@@ -425,12 +438,17 @@ fn drainMailbox(self: *Thread) !void {
 
             .reset_cursor_blink => {
                 self.flags.cursor_blink_visible = true;
+                self.cursor_blink_alpha = 1.0;
                 if (self.cursor_c.state() == .active) {
+                    const interval: u64 = switch (self.config.cursor_blink_mode) {
+                        .normal => cursorBlinkInterval(),
+                        else => CURSOR_ANIM_INTERVAL,
+                    };
                     self.cursor_h.reset(
                         &self.loop,
                         &self.cursor_c,
                         &self.cursor_c_cancel,
-                        cursorBlinkInterval(),
+                        interval,
                         Thread,
                         self,
                         cursorTimerCallback,
@@ -610,6 +628,7 @@ fn renderCallback(
     t.renderer.updateFrame(
         t.state,
         t.flags.cursor_blink_visible,
+        t.cursor_blink_alpha,
     ) catch |err|
         log.warn("error rendering err={}", .{err});
 
@@ -641,13 +660,29 @@ fn cursorTimerCallback(
         return .disarm;
     };
 
-    t.flags.cursor_blink_visible = !t.flags.cursor_blink_visible;
+    switch (t.config.cursor_blink_mode) {
+        .normal => {
+            // Classic blink: toggle visible/invisible
+            t.flags.cursor_blink_visible = !t.flags.cursor_blink_visible;
+        },
+        else => {
+            // Animated modes: keep cursor visible, modulate alpha
+            t.flags.cursor_blink_visible = true;
+            t.cursor_blink_alpha = computeBlinkAlpha(t.config.cursor_blink_mode);
+        },
+    }
+
     t.wakeup.notify() catch {};
+
+    const interval: u64 = switch (t.config.cursor_blink_mode) {
+        .normal => cursorBlinkInterval(),
+        else => CURSOR_ANIM_INTERVAL,
+    };
 
     t.cursor_h.run(
         &t.loop,
         &t.cursor_c,
-        cursorBlinkInterval(),
+        interval,
         Thread,
         t,
         cursorTimerCallback,
@@ -712,4 +747,70 @@ fn cursorBlinkInterval() u64 {
     }
 
     return CURSOR_BLINK_INTERVAL;
+}
+
+/// Compute the cursor blink alpha for animated blink modes.
+/// Uses monotonic time to produce smooth, drift-free animation.
+fn computeBlinkAlpha(mode: configpkg.CursorBlinkMode) f64 {
+    const now_ns = std.time.nanoTimestamp();
+    const elapsed_s: f64 = @as(f64, @floatFromInt(now_ns)) / @as(f64, std.time.ns_per_s);
+
+    return switch (mode) {
+        .normal => 1.0,
+
+        .breathing => breathing: {
+            // Sinusoidal fade: 2s period, [0.2, 1.0]
+            const phase = (elapsed_s / 2.0) * 2.0 * std.math.pi;
+            break :breathing CURSOR_ANIM_MIN_ALPHA + (1.0 - CURSOR_ANIM_MIN_ALPHA) * (@sin(phase) + 1.0) / 2.0;
+        },
+
+        .heartbeat => heartbeat: {
+            // Double-pulse rhythm over 2s cycle
+            const t = @mod(elapsed_s, 2.0) / 2.0; // 0..1
+            const range = 1.0 - CURSOR_ANIM_MIN_ALPHA;
+            if (t < 0.10) {
+                // First beat
+                break :heartbeat CURSOR_ANIM_MIN_ALPHA + range * @sin(std.math.pi * t / 0.10);
+            } else if (t < 0.15) {
+                // Gap between beats
+                break :heartbeat CURSOR_ANIM_MIN_ALPHA;
+            } else if (t < 0.25) {
+                // Second beat (slightly weaker)
+                break :heartbeat CURSOR_ANIM_MIN_ALPHA + range * 0.75 * @sin(std.math.pi * (t - 0.15) / 0.10);
+            } else {
+                // Rest
+                break :heartbeat CURSOR_ANIM_MIN_ALPHA;
+            }
+        },
+
+        .neon_flicker => neon: {
+            // Deterministic pseudo-random flicker using time-based hash
+            const slot: u64 = @intFromFloat(@floor(elapsed_s * 20.0));
+            const hash = slot *% 2654435761; // Knuth multiplicative hash
+            const scrambled = (hash >> 16) ^ hash;
+            if (scrambled % 20 < 2) {
+                // ~10% chance: rapid dim
+                const frac = @as(f64, @floatFromInt(scrambled % 10)) / 10.0;
+                break :neon 0.3 + 0.4 * frac;
+            } else {
+                break :neon 1.0;
+            }
+        },
+
+        .pulse, .rootshell => pulse: {
+            // Sharp attack, exponential decay: 1.5s period
+            const t = @mod(elapsed_s, 1.5) / 1.5;
+            break :pulse CURSOR_ANIM_MIN_ALPHA + (1.0 - CURSOR_ANIM_MIN_ALPHA) * @exp(-5.0 * t);
+        },
+
+        .candle => candle: {
+            // Layered incommensurate sines for organic flickering
+            const raw = 0.5 +
+                0.20 * @sin(elapsed_s * 3.7) +
+                0.15 * @sin(elapsed_s * 7.3) +
+                0.10 * @sin(elapsed_s * 13.1) +
+                0.05 * @sin(elapsed_s * 23.7);
+            break :candle @max(CURSOR_ANIM_MIN_ALPHA, @min(1.0, raw));
+        },
+    };
 }

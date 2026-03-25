@@ -22,6 +22,7 @@ pub const Command = Config.Command;
 pub const ConfirmCloseSurface = Config.ConfirmCloseSurface;
 pub const CopyOnSelect = Config.CopyOnSelect;
 pub const RightClickAction = Config.RightClickAction;
+pub const CursorBlinkMode = Config.CursorBlinkMode;
 pub const CustomShaderAnimation = Config.CustomShaderAnimation;
 pub const FontSyntheticStyle = Config.FontSyntheticStyle;
 pub const FontShapingBreak = Config.FontShapingBreak;
