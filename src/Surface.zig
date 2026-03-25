@@ -1609,12 +1609,18 @@ fn mouseRefreshLinks(
         }
 
         const link = (try self.linkAtPos(pos)) orelse break :link .{ null, false };
+        defer if (link.url) |u| self.alloc.free(u);
         switch (link.action) {
             .open => {
-                const str = try self.io.terminal.screens.active.selectionString(alloc, .{
-                    .sel = link.selection,
-                    .trim = false,
-                });
+                // Use the pre-computed URL if available (multi-row extended match),
+                // otherwise extract from the selection.
+                const str = if (link.url) |u|
+                    try alloc.dupeZ(u8, u)
+                else
+                    try self.io.terminal.screens.active.selectionString(alloc, .{
+                        .sel = link.selection,
+                        .trim = false,
+                    });
                 break :link .{
                     .{ .url = str },
                     self.config.link_previews == .true,
@@ -4228,8 +4234,17 @@ pub fn mouseButtonCallback(
 
                 // If there is a link at this position, we want to
                 // select the link. Otherwise, select the word.
-                if (try self.linkAtPos(pos)) |link| {
-                    try self.setSelection(link.selection);
+                // For multi-row extended links (link.url != null), the
+                // selection spans rows with padding so fall through to
+                // word selection instead.
+                const link_sel: ?terminal.Selection = link_sel: {
+                    const link = (try self.linkAtPos(pos)) orelse break :link_sel null;
+                    defer if (link.url) |u| self.alloc.free(u);
+                    if (link.url != null) break :link_sel null;
+                    break :link_sel link.selection;
+                };
+                if (link_sel) |sel| {
+                    try self.setSelection(sel);
                 } else {
                     const sel = screen.selectWord(
                         pin,
@@ -4410,6 +4425,11 @@ fn maybePromptClick(self: *Surface) !bool {
 const Link = struct {
     action: input.Link.Action,
     selection: terminal.Selection,
+    /// Pre-computed URL string for multi-row extended matches.
+    /// When non-null, processLinks should use this directly instead of
+    /// calling selectionString, because the selection may span multiple
+    /// non-wrapped rows where selectionString would insert newlines.
+    url: ?[:0]const u8 = null,
 };
 
 /// Returns the link at the given cursor position, if any.
@@ -4442,8 +4462,9 @@ fn linkAtPos(
         return .{ .action = ._open_osc8, .selection = sel };
     }
 
-    // Fall back to configured links
-    return try self.linkAtPin(mouse_pin, mouse_mods);
+    // Fall back to configured links, then try multi-row extension.
+    return try self.linkAtPin(mouse_pin, mouse_mods) orelse
+        try self.linkAtPinExtended(mouse_pin, mouse_mods);
 }
 
 /// Detects if a link is present at the given pin.
@@ -4497,6 +4518,302 @@ fn linkAtPin(
     return null;
 }
 
+/// Attempts to detect a link that spans multiple non-soft-wrapped rows
+/// within a logical column window (e.g., a tmux pane). This is called
+/// as a fallback when the standard `linkAtPin` finds no match.
+///
+/// When terminal multiplexers use explicit cursor positioning, URLs that
+/// wrap at pane boundaries are split across physical rows without the
+/// `row.wrap` flag. This method detects the column window (bounded by
+/// box-drawing dividers or terminal edges), concatenates text from
+/// adjacent rows within the window, and searches for URL matches.
+///
+/// Requires the renderer state mutex is held.
+fn linkAtPinExtended(
+    self: *Surface,
+    mouse_pin: terminal.Pin,
+    mouse_mods: ?input.Mods,
+) !?Link {
+    const link_ext = terminal.link_extend;
+
+    if (self.config.links.len == 0) return null;
+
+    // Don't extend for soft-wrapped rows (standard path handles them).
+    const mouse_row = mouse_pin.rowAndCell().row;
+    if (mouse_row.wrap or mouse_row.wrap_continuation) return null;
+
+    // Detect column window at mouse position.
+    const all_cells = mouse_pin.cells(.all);
+    const cols = mouse_pin.node.data.size.cols;
+    const window = link_ext.detectColumnWindow(all_cells, mouse_pin.x, cols);
+
+    // Don't try extension if mouse is on a divider.
+    if (link_ext.isVerticalDivider(all_cells[mouse_pin.x].codepoint())) return null;
+
+    // Collect row pins: upward + current + downward (stack-allocated buffer).
+    var row_pins_buf: [link_ext.max_extend_rows * 2 + 1]terminal.Pin = undefined;
+    var row_count: usize = 0;
+    var mouse_row_idx: usize = 0;
+
+    // Go up from mouse row to find the top of the potential URL.
+    // Only include rows above whose content fills the column window
+    // to the right boundary — this indicates the text wrapped from
+    // that row to the next. A row like "/tmp/url.sh" that doesn't
+    // fill the pane width is NOT a continuation source.
+    {
+        var up_pins: [link_ext.max_extend_rows]terminal.Pin = undefined;
+        var up_count: usize = 0;
+        var it = mouse_pin.rowIterator(.left_up, null);
+        _ = it.next(); // skip self
+        while (up_count < link_ext.max_extend_rows) {
+            const p = it.next() orelse break;
+            const p_row = p.rowAndCell().row;
+            // Stop at soft-wrap boundaries (different wrapping context).
+            if (p_row.wrap or p_row.wrap_continuation) break;
+            const p_cells = p.cells(.all);
+            const pw = link_ext.detectColumnWindow(p_cells, window.left, cols);
+            if (pw.left != window.left or pw.right != window.right) break;
+            // Only include this row if its content fills the window to
+            // the right boundary (meaning it wrapped to the next row).
+            var last_content_x: ?terminal.size.CellCountInt = null;
+            {
+                var x = pw.right;
+                while (true) {
+                    const cp = p_cells[x].codepoint();
+                    if (cp != 0 and cp != ' ') {
+                        last_content_x = x;
+                        break;
+                    }
+                    if (x == pw.left) break;
+                    x -= 1;
+                }
+            }
+            if (last_content_x == null or last_content_x.? < pw.right) break;
+            up_pins[up_count] = p;
+            up_count += 1;
+        }
+        // Add in reverse order (top to bottom).
+        var i = up_count;
+        while (i > 0) {
+            i -= 1;
+            row_pins_buf[row_count] = up_pins[i];
+            row_count += 1;
+        }
+    }
+
+    // Current (mouse) row.
+    mouse_row_idx = row_count;
+    row_pins_buf[row_count] = mouse_pin;
+    row_count += 1;
+
+    // Go down from mouse row. Only extend if the previous row's content
+    // fills the window to the right boundary (indicating it wrapped).
+    {
+        var it = mouse_pin.rowIterator(.right_down, null);
+        _ = it.next(); // skip self
+
+        // Check if the previous row (initially the mouse row) fills the window.
+        var prev_cells = all_cells;
+        var prev_window = window;
+
+        var down_count: usize = 0;
+        while (down_count < link_ext.max_extend_rows) : (down_count += 1) {
+            // Only extend if previous row fills the window to the right edge.
+            var prev_last_x: ?terminal.size.CellCountInt = null;
+            {
+                var x = prev_window.right;
+                while (true) {
+                    const cp = prev_cells[x].codepoint();
+                    if (cp != 0 and cp != ' ') {
+                        prev_last_x = x;
+                        break;
+                    }
+                    if (x == prev_window.left) break;
+                    x -= 1;
+                }
+            }
+            if (prev_last_x == null or prev_last_x.? < prev_window.right) break;
+
+            const p = it.next() orelse break;
+            if (p.rowAndCell().row.wrap_continuation) break;
+            const p_cells = p.cells(.all);
+            const pw = link_ext.detectColumnWindow(p_cells, window.left, cols);
+            if (pw.left != window.left or pw.right != window.right) break;
+            row_pins_buf[row_count] = p;
+            row_count += 1;
+
+            prev_cells = p_cells;
+            prev_window = pw;
+        }
+    }
+
+    // Need more than one row for multi-row extension.
+    if (row_count <= 1) return null;
+
+    const row_pins = row_pins_buf[0..row_count];
+
+    // Build concatenated text and pin map from all rows within the window.
+    var text_buf: std.Io.Writer.Allocating = .init(self.alloc);
+    defer text_buf.deinit();
+    var pin_map: std.ArrayListUnmanaged(terminal.Pin) = .empty;
+    defer pin_map.deinit(self.alloc);
+
+    var mouse_byte_start: usize = 0;
+    var mouse_byte_end: usize = 0;
+
+    for (row_pins, 0..) |rp, idx| {
+        const before_len = text_buf.writer.buffered().len;
+        if (idx == mouse_row_idx) mouse_byte_start = before_len;
+
+        // Write cells within the column window (grapheme-aware).
+        const r_cells = rp.cells(.all);
+        const end_col: usize = @min(@as(usize, window.right) + 1, @as(usize, cols));
+        var x: usize = window.left;
+        while (x < end_col) : (x += 1) {
+            const cell = &r_cells[x];
+            const cp = cell.codepoint();
+            if (cp == 0) continue;
+
+            var byte_len: usize = std.unicode.utf8CodepointSequenceLength(cp) catch continue;
+            try text_buf.writer.print("{u}", .{cp});
+
+            // Include grapheme cluster codepoints if present.
+            if (cell.hasGrapheme()) {
+                var grapheme_pin = rp;
+                grapheme_pin.x = @intCast(x);
+                if (grapheme_pin.grapheme(cell)) |graphemes| {
+                    for (graphemes) |gcp| {
+                        byte_len += std.unicode.utf8CodepointSequenceLength(gcp) catch continue;
+                        try text_buf.writer.print("{u}", .{gcp});
+                    }
+                }
+            }
+
+            var cell_pin = rp;
+            cell_pin.x = @intCast(x);
+            try pin_map.appendNTimes(self.alloc, cell_pin, byte_len);
+        }
+
+        if (idx == mouse_row_idx) mouse_byte_end = text_buf.writer.buffered().len;
+    }
+
+    const text = text_buf.writer.buffered();
+    if (text.len == 0 or mouse_byte_start == mouse_byte_end) return null;
+
+    // Search using the same strategy as the renderer: find a regex match
+    // on a single row that ends at that row's right boundary, then extend
+    // forward across continuation rows and verify the extended match covers
+    // the mouse position.
+    //
+    // Try each collected row as a potential anchor (not just the first),
+    // because unrelated full-width rows may have been collected above the
+    // real URL start.
+
+    // Build per-row byte boundaries in the concatenated text.
+    var row_byte_ends: [link_ext.max_extend_rows * 2 + 1]usize = undefined;
+    {
+        var byte_pos: usize = 0;
+        for (row_pins, 0..) |rp, idx| {
+            const r_cells = rp.cells(.all);
+            const end_col: usize = @min(@as(usize, window.right) + 1, @as(usize, cols));
+            var rx: usize = window.left;
+            while (rx < end_col) : (rx += 1) {
+                const cell = &r_cells[rx];
+                const cp = cell.codepoint();
+                if (cp == 0) continue;
+                byte_pos += std.unicode.utf8CodepointSequenceLength(cp) catch continue;
+                if (cell.hasGrapheme()) {
+                    var gp = rp;
+                    gp.x = @intCast(rx);
+                    if (gp.grapheme(cell)) |graphemes| {
+                        for (graphemes) |gcp| {
+                            byte_pos += std.unicode.utf8CodepointSequenceLength(gcp) catch continue;
+                        }
+                    }
+                }
+            }
+            row_byte_ends[idx] = byte_pos;
+        }
+    }
+
+    for (self.config.links) |*cfg_link| {
+        if (mouse_mods) |mods| switch (cfg_link.highlight) {
+            .always, .hover => {},
+            .always_mods, .hover_mods => |v| if (!v.equal(mods)) continue,
+        };
+
+        // Try each row as a potential anchor for the match.
+        for (0..row_count) |anchor_idx| {
+            const anchor_start: usize = if (anchor_idx == 0) 0 else row_byte_ends[anchor_idx - 1];
+            const anchor_end: usize = row_byte_ends[anchor_idx];
+            if (anchor_start >= anchor_end) continue;
+            const anchor_text = text[anchor_start..anchor_end];
+
+            // Search for a regex match within this single row's text.
+            var search_offset: usize = 0;
+            while (search_offset < anchor_text.len) {
+                var region = cfg_link.regex.search(
+                    anchor_text[search_offset..],
+                    .{},
+                ) catch |err| switch (err) {
+                    error.Mismatch => break,
+                    else => return err,
+                };
+                defer region.deinit();
+
+                const m_start = anchor_start + search_offset + @as(usize, @intCast(region.starts()[0]));
+                const m_end_anchor = anchor_start + search_offset + @as(usize, @intCast(region.ends()[0]));
+                defer search_offset += @as(usize, @intCast(region.ends()[0]));
+
+                // The match must end at this row's boundary (fills the row).
+                if (m_end_anchor < anchor_end) continue;
+
+                // Only extend scheme-based URLs (https://, ftp://, etc.),
+                // NOT file path matches. The path branches of the URL regex
+                // are too broad (allow spaces, bare relatives) and would
+                // stitch unrelated text across rows.
+                if (!terminal.link_extend.hasUrlScheme(text[m_start..m_end_anchor])) continue;
+
+                // Extend: re-run the regex on the full text from this match start.
+                var full_region = cfg_link.regex.search(
+                    text[m_start..],
+                    .{},
+                ) catch |err| switch (err) {
+                    error.Mismatch => continue,
+                    else => return err,
+                };
+                defer full_region.deinit();
+
+                // Must start at position 0 (same match).
+                if (full_region.starts()[0] != 0) continue;
+
+                const full_m_end = m_start + @as(usize, @intCast(full_region.ends()[0]));
+
+                // Must actually extend beyond the anchor row.
+                if (full_m_end <= m_end_anchor) continue;
+
+                // Must overlap with the mouse position.
+                if (mouse_byte_start >= full_m_end or mouse_byte_end <= m_start) continue;
+
+                // Bounds check the pin map.
+                if (full_m_end > pin_map.items.len or m_start >= pin_map.items.len) continue;
+
+                const url = try self.alloc.dupeZ(u8, text[m_start..full_m_end]);
+                const sel_start_pin = pin_map.items[m_start];
+                const sel_end_pin = pin_map.items[full_m_end - 1];
+
+                return .{
+                    .action = cfg_link.action,
+                    .selection = terminal.Selection.init(sel_start_pin, sel_end_pin, false),
+                    .url = url,
+                };
+            }
+        }
+    }
+
+    return null;
+}
+
 /// This returns the mouse mods to consider for link highlighting or
 /// other purposes taking into account when shift is pressed for releasing
 /// the mouse from capture.
@@ -4533,13 +4850,16 @@ fn mouseLinkModBypass(self: *const Surface) bool {
 /// Requires the renderer state mutex is held.
 fn processLinks(self: *Surface, pos: apprt.CursorPos) !bool {
     const link = try self.linkAtPos(pos) orelse return false;
+    defer if (link.url) |u| self.alloc.free(u);
     switch (link.action) {
         .open => {
-            const str = try self.io.terminal.screens.active.selectionString(self.alloc, .{
+            // Use the pre-computed URL if available (multi-row extended match),
+            // otherwise extract from the selection as before.
+            const str = link.url orelse try self.io.terminal.screens.active.selectionString(self.alloc, .{
                 .sel = link.selection,
                 .trim = false,
             });
-            defer self.alloc.free(str);
+            defer if (link.url == null) self.alloc.free(str);
 
             const resolved_path = try self.resolvePathForOpening(str);
             defer if (resolved_path) |p| self.alloc.free(p);
@@ -5402,9 +5722,14 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             self.renderer_state.mutex.lock();
             defer self.renderer_state.mutex.unlock();
             if (try self.linkAtPos(pos)) |link_info| {
+                defer if (link_info.url) |u| self.alloc.free(u);
                 const url_text = switch (link_info.action) {
                     .open => url_text: {
-                        // For regex links, get the text from selection
+                        // Use pre-computed URL for multi-row matches,
+                        // otherwise extract from selection.
+                        if (link_info.url) |u| {
+                            break :url_text try self.alloc.dupeZ(u8, u);
+                        }
                         break :url_text (self.io.terminal.screens.active.selectionString(self.alloc, .{
                             .sel = link_info.selection,
                             .trim = self.config.clipboard_trim_trailing_spaces,

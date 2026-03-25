@@ -28,6 +28,27 @@ const url_schemes =
     \\https?://|mailto:|ftp://|file:|ssh:|git://|ssh://|tel:|magnet:|ipfs://|ipns://|gemini://|gopher://|news:
 ;
 
+/// Canonical list of URL scheme prefixes for non-regex use (e.g., checking
+/// whether a matched string starts with a URL scheme). Kept in sync with
+/// the `url_schemes` regex above.
+pub const scheme_prefixes = [_][]const u8{
+    "https://",
+    "http://",
+    "mailto:",
+    "ftp://",
+    "file:",
+    "ssh:",
+    "git://",
+    "ssh://",
+    "tel:",
+    "magnet:",
+    "ipfs://",
+    "ipns://",
+    "gemini://",
+    "gopher://",
+    "news:",
+};
+
 const ipv6_url_pattern =
     \\(?:\[[:0-9a-fA-F]+(?:[:0-9a-fA-F]*)+\](?::[0-9]+)?)
 ;

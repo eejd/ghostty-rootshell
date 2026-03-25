@@ -4,6 +4,7 @@ const Allocator = std.mem.Allocator;
 const oni = @import("oniguruma");
 const inputpkg = @import("../input.zig");
 const terminal = @import("../terminal/main.zig");
+const link_extend = terminal.link_extend;
 const point = terminal.point;
 const Screen = terminal.Screen;
 const Terminal = terminal.Terminal;
@@ -117,23 +118,195 @@ pub const Set = struct {
                 // modifying the offset.
                 defer offset = end;
 
+                // Try to extend the match across non-soft-wrapped row
+                // boundaries (e.g., tmux pane wrapping). This appends
+                // coordinates for continuation cells to ext_coords.
+                var ext_coords: terminal.RenderState.StringMap = .empty;
+                defer ext_coords.deinit(alloc);
+                if (end > start) {
+                    _ = extendMatchAcrossRows(
+                        alloc,
+                        link.regex,
+                        render_state,
+                        str[start..end],
+                        map.items[end - 1],
+                        &ext_coords,
+                    ) catch {};
+                }
+
+                // Check hover against both original and extended cells.
                 switch (link.highlight) {
                     .always, .always_mods => {},
                     .hover, .hover_mods => if (mouse_viewport) |vp| {
+                        var found = false;
                         for (map.items[start..end]) |pt| {
-                            if (pt.eql(vp)) break;
-                        } else continue;
+                            if (pt.eql(vp)) {
+                                found = true;
+                                break;
+                            }
+                        }
+                        if (!found) {
+                            for (ext_coords.items) |pt| {
+                                if (pt.eql(vp)) {
+                                    found = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (!found) continue;
                     } else continue,
                 }
 
-                // Record the match
+                // Record the match (original + extended cells).
                 for (map.items[start..end]) |pt| {
+                    try result.put(alloc, pt, {});
+                }
+                for (ext_coords.items) |pt| {
                     try result.put(alloc, pt, {});
                 }
             }
         }
     }
 };
+
+/// Attempt to extend a regex match across non-soft-wrapped row boundaries.
+///
+/// When terminal multiplexers like tmux render pane content using explicit
+/// cursor positioning, the terminal never sets soft-wrap flags. URLs that
+/// span multiple visual rows within a pane appear as separate fragments.
+///
+/// This function detects when a match ends at a "logical window boundary"
+/// (the right edge of a column range bounded by box-drawing dividers or
+/// terminal edges), then concatenates text from subsequent rows within the
+/// same window and re-runs the regex to find a longer match.
+///
+/// Extended cell coordinates are appended to `ext_coords`. Returns true
+/// if the match was successfully extended.
+fn extendMatchAcrossRows(
+    alloc: Allocator,
+    regex: oni.Regex,
+    render_state: *const terminal.RenderState,
+    initial_text: []const u8,
+    end_coord: point.Coordinate,
+    ext_coords: *terminal.RenderState.StringMap,
+) !bool {
+    // Must have rows below the current match end.
+    if (end_coord.y + 1 >= render_state.rows) return false;
+
+    const row_slice = render_state.row_data.slice();
+    const row_raws = row_slice.items(.raw);
+    const row_cells_all = row_slice.items(.cells);
+
+    // Don't extend if the row is already soft-wrapped; the standard
+    // string concatenation in RenderState.string() handles that case.
+    if (row_raws[end_coord.y].wrap) return false;
+
+    // Get the cells for the row where the match ends.
+    const end_row_cells = row_cells_all[end_coord.y].slice().items(.raw);
+
+    // Detect the logical column window around the match end position.
+    const window = link_extend.detectColumnWindow(
+        end_row_cells,
+        end_coord.x,
+        render_state.cols,
+    );
+
+    // Check if the match is at the right boundary of the window.
+    if (!link_extend.isAtRightBoundary(end_row_cells, end_coord.x, window)) return false;
+
+    // Only extend scheme-based URLs (https://, ftp://, etc.), NOT file
+    // path matches. The path branches of the URL regex are too broad
+    // (allow spaces, bare relatives) and would stitch unrelated text.
+    if (!link_extend.hasUrlScheme(initial_text)) return false;
+
+    // Build the extended string: initial match text + continuation rows.
+    var ext_builder: std.Io.Writer.Allocating = .init(alloc);
+    defer ext_builder.deinit();
+    var ext_map: std.ArrayListUnmanaged(point.Coordinate) = .empty;
+    defer ext_map.deinit(alloc);
+
+    // Prepend the initial match text (coordinates already tracked in the
+    // caller's map, so we only track continuation coordinates).
+    try ext_builder.writer.writeAll(initial_text);
+    const initial_len = initial_text.len;
+
+    // Extend across subsequent rows within the same column window.
+    const max_y: usize = @min(
+        @as(usize, end_coord.y) + link_extend.max_extend_rows + 1,
+        render_state.rows,
+    );
+
+    var next_y: usize = @as(usize, end_coord.y) + 1;
+    while (next_y < max_y) : (next_y += 1) {
+        const next_slice = row_cells_all[next_y].slice();
+        const next_cells_raw = next_slice.items(.raw);
+        const next_cells_grapheme = next_slice.items(.grapheme);
+
+        // Verify that the same column window exists on this row.
+        const next_window = link_extend.detectColumnWindow(
+            next_cells_raw,
+            window.left,
+            render_state.cols,
+        );
+        if (next_window.left != window.left or next_window.right != window.right) break;
+
+        // Extract text from this row within the window.
+        try link_extend.extractWindowText(
+            &ext_builder.writer,
+            next_cells_raw,
+            next_cells_grapheme,
+            next_window,
+            @intCast(next_y),
+            .{ .alloc = alloc, .map = &ext_map },
+        );
+
+        // If this row's content doesn't fill the window, it's likely
+        // the last row of the URL. Include it but stop extending.
+        var last_content_x: ?@TypeOf(end_coord.x) = null;
+        {
+            var x = next_window.right;
+            while (true) {
+                const cp = next_cells_raw[x].codepoint();
+                if (cp != 0 and cp != ' ') {
+                    last_content_x = x;
+                    break;
+                }
+                if (x == next_window.left) break;
+                x -= 1;
+            }
+        }
+        if (last_content_x == null or last_content_x.? < next_window.right) break;
+    }
+
+    if (ext_map.items.len == 0) return false;
+
+    // Re-run the regex on the extended string to find the full match.
+    const ext_str = ext_builder.writer.buffered();
+    var regex_mut = regex;
+    var ext_region = regex_mut.search(ext_str, .{}) catch |err| switch (err) {
+        error.Mismatch => return false,
+        else => return err,
+    };
+    defer ext_region.deinit();
+
+    // The match must start at position 0 (continuation of the same URL).
+    if (ext_region.starts()[0] != 0) return false;
+
+    // Check that the match extends beyond the initial text.
+    const match_end: usize = @intCast(ext_region.ends()[0]);
+    if (match_end <= initial_len) return false;
+
+    // The extended portion covers bytes initial_len..match_end.
+    // ext_map tracks coordinates starting from the first continuation byte.
+    const ext_byte_count = @min(match_end - initial_len, ext_map.items.len);
+    if (ext_byte_count == 0) return false;
+
+    for (ext_map.items[0..ext_byte_count]) |pt| {
+        try ext_coords.append(alloc, pt);
+    }
+
+    return true;
+}
 
 test "renderCellMap" {
     const testing = std.testing;

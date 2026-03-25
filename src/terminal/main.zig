@@ -14,6 +14,7 @@ pub const device_status = @import("device_status.zig");
 pub const formatter = @import("formatter.zig");
 pub const highlight = @import("highlight.zig");
 pub const kitty = @import("kitty.zig");
+pub const link_extend = @import("link_extend.zig");
 pub const modes = @import("modes.zig");
 pub const page = @import("page.zig");
 pub const parse_table = @import("parse_table.zig");
