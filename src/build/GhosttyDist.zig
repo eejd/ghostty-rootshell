@@ -72,7 +72,7 @@ pub fn init(b: *std.Build, cfg: *const Config) !GhosttyDist {
         // --add-file uses the most recent --prefix to determine the path
         // in the archive to copy the file (the directory only).
         git_archive.addArg(b.fmt("--prefix={s}-{f}/{s}/", .{
-            name, cfg.version,
+            name,                                 cfg.version,
             std.fs.path.dirname(resource.dist).?,
         }));
         git_archive.addPrefixedFileArg("--add-file=", copied);
@@ -153,6 +153,23 @@ pub fn init(b: *std.Build, cfg: *const Config) !GhosttyDist {
         check_test.step.dependOn(&check_path.step);
     }
 
+    // For lib-vt, also verify the CMake build works from the tarball.
+    if (cfg.emit_lib_vt) {
+        const cmake_build_dir = extract_dir.path(b, "cmake-build");
+        const cmake_configure = b.addSystemCommand(&.{ "cmake", "-B" });
+        cmake_configure.addDirectoryArg(cmake_build_dir);
+        cmake_configure.setCwd(extract_dir);
+        cmake_configure.expectExitCode(0);
+        cmake_configure.step.dependOn(&check.step);
+
+        const cmake_build = b.addSystemCommand(&.{ "cmake", "--build" });
+        cmake_build.addDirectoryArg(cmake_build_dir);
+        cmake_build.expectExitCode(0);
+        cmake_build.step.dependOn(&cmake_configure.step);
+
+        check_test.step.dependOn(&cmake_build.step);
+    }
+
     return .{
         .archive = output,
         .install_step = &install.step,
@@ -168,7 +185,10 @@ const lib_vt_excludes = &[_][]const u8{
     // App and platform resources
     "images",
     "macos",
-    "dist",
+    "dist/doxygen",
+    "dist/linux",
+    "dist/macos",
+    "dist/windows",
     "flatpak",
     "snap",
     "po",
