@@ -136,12 +136,20 @@ fn runInner(alloc: Allocator, stderr: *std.Io.Writer) !u8 {
         return 1;
     }
 
-    const command = try std.fmt.allocPrintSentinel(
-        alloc,
-        "{s} {s}",
-        .{ editor, path },
-        0,
-    );
+    const command = command: {
+        var buffer: std.io.Writer.Allocating = .init(alloc);
+        defer buffer.deinit();
+        const writer = &buffer.writer;
+        try writer.writeAll(editor);
+        try writer.writeByte(' ');
+        {
+            var sh: internal_os.ShellEscapeWriter = .init(writer);
+            try sh.writer.writeAll(path);
+            try sh.writer.flush();
+        }
+        try writer.flush();
+        break :command try buffer.toOwnedSliceSentinel(0);
+    };
     defer alloc.free(command);
 
     // We require libc because we want to use std.c.environ for envp
