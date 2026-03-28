@@ -3,11 +3,17 @@ const assert = std.debug.assert;
 const builtin = @import("builtin");
 const buildpkg = @import("src/build/main.zig");
 
-const buildZonVersion = @import("build.zig.zon").version;
-const minimumZigVersion = @import("build.zig.zon").minimum_zig_version;
+/// App version from build.zig.zon.
+const app_zon_version = @import("build.zig.zon").version;
+
+/// Libghostty version. We use a separate version from the app.
+const lib_version = "0.1.0";
+
+/// Minimum required zig version.
+const minimum_zig_version = @import("build.zig.zon").minimum_zig_version;
 
 comptime {
-    buildpkg.requireZig(minimumZigVersion);
+    buildpkg.requireZig(minimum_zig_version);
 }
 
 pub fn build(b: *std.Build) !void {
@@ -18,7 +24,7 @@ pub fn build(b: *std.Build) !void {
     // If we have a VERSION file (present in source tarballs) then we
     // use that as the version source of truth. Otherwise we fall back
     // to what is in the build.zig.zon.
-    const app_version: []const u8 = if (b.build_root.handle.readFileAlloc(
+    const file_version: ?[]const u8 = if (b.build_root.handle.readFileAlloc(
         b.allocator,
         "VERSION",
         128,
@@ -26,9 +32,12 @@ pub fn build(b: *std.Build) !void {
         u8,
         content,
         &std.ascii.whitespace,
-    ) else |_| buildZonVersion;
+    ) else |_| null;
 
-    const config = try buildpkg.Config.init(b, app_version);
+    const config = try buildpkg.Config.init(
+        b,
+        file_version orelse app_zon_version,
+    );
     const test_filters = b.option(
         [][]const u8,
         "test-filter",
