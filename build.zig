@@ -3,7 +3,7 @@ const assert = std.debug.assert;
 const builtin = @import("builtin");
 const buildpkg = @import("src/build/main.zig");
 
-const appVersion = @import("build.zig.zon").version;
+const buildZonVersion = @import("build.zig.zon").version;
 const minimumZigVersion = @import("build.zig.zon").minimum_zig_version;
 
 comptime {
@@ -15,7 +15,20 @@ pub fn build(b: *std.Build) !void {
     // want to know what options are available, you can run `--help` or
     // you can read `src/build/Config.zig`.
 
-    const config = try buildpkg.Config.init(b, appVersion);
+    // If we have a VERSION file (present in source tarballs) then we
+    // use that as the version source of truth. Otherwise we fall back
+    // to what is in the build.zig.zon.
+    const app_version: []const u8 = if (b.build_root.handle.readFileAlloc(
+        b.allocator,
+        "VERSION",
+        128,
+    )) |content| std.mem.trim(
+        u8,
+        content,
+        &std.ascii.whitespace,
+    ) else |_| buildZonVersion;
+
+    const config = try buildpkg.Config.init(b, app_version);
     const test_filters = b.option(
         [][]const u8,
         "test-filter",
