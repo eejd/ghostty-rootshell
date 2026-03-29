@@ -15,9 +15,6 @@ child: ?std.process.Child = null,
 /// stdout paths.
 file_writer: std.fs.File.Writer = undefined,
 
-/// The write buffer.
-buffer: [4096]u8 = undefined,
-
 /// Initialize the pager. If stdout is a TTY, this spawns the pager
 /// process. Otherwise, output goes directly to stdout.
 pub fn init(alloc: Allocator) Pager {
@@ -25,11 +22,11 @@ pub fn init(alloc: Allocator) Pager {
 }
 
 /// Writes to the pager process if available; otherwise, stdout.
-pub fn writer(self: *Pager) *std.Io.Writer {
+pub fn writer(self: *Pager, buffer: []u8) *std.Io.Writer {
     if (self.child) |child| {
-        self.file_writer = child.stdin.?.writer(&self.buffer);
+        self.file_writer = child.stdin.?.writer(buffer);
     } else {
-        self.file_writer = std.fs.File.stdout().writer(&self.buffer);
+        self.file_writer = std.fs.File.stdout().writer(buffer);
     }
     return &self.file_writer.interface;
 }
@@ -84,6 +81,7 @@ test "pager: default writer" {
     var pager: Pager = .{};
     defer pager.deinit();
     try std.testing.expect(pager.child == null);
-    const w = pager.writer();
+    var buf: [4096]u8 = undefined;
+    const w = pager.writer(&buf);
     try w.writeAll("hello");
 }

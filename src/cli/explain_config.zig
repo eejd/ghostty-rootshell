@@ -94,7 +94,8 @@ pub fn run(alloc: Allocator) !u8 {
 
     var pager: Pager = if (!no_pager) .init(alloc) else .{};
     defer pager.deinit();
-    const writer = pager.writer();
+    var buffer: [4096]u8 = undefined;
+    const writer = pager.writer(&buffer);
 
     if (text) |t| {
         try writer.writeAll(t);
