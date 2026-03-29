@@ -159,7 +159,7 @@ extern "C" {
  *
  * @ingroup terminal
  */
-typedef struct GhosttyTerminal* GhosttyTerminal;
+typedef struct GhosttyTerminalImpl* GhosttyTerminal;
 
 /**
  * Terminal initialization options.
