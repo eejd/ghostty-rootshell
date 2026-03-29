@@ -478,9 +478,12 @@ fn initPages(
             page_alloc.free(page_buf);
 
         // In runtime safety modes we have to memset because the Zig allocator
-        // interface will always memset to 0xAA for undefined. In non-safe modes
-        // we use a page allocator and the OS guarantees zeroed memory.
-        if (comptime std.debug.runtime_safety) @memset(page_buf, 0);
+        // interface will always memset to 0xAA for undefined. On freestanding
+        // (WASM), the WasmAllocator reuses freed slots without zeroing since
+        // only fresh memory.grow pages are guaranteed zero by the WASM spec.
+        // On native, the OS page allocator (mmap) returns zeroed pages.
+        if (comptime std.debug.runtime_safety or builtin.os.tag == .freestanding)
+            @memset(page_buf, 0);
 
         // Initialize the first set of pages to contain our viewport so that
         // the top of the first page is always the active area.
@@ -3385,9 +3388,10 @@ inline fn createPageExt(
     else
         page_alloc.free(page_buf);
 
-    // Required only with runtime safety because allocators initialize
-    // to undefined, 0xAA.
-    if (comptime std.debug.runtime_safety) @memset(page_buf, 0);
+    // In runtime safety modes, allocators fill with 0xAA. On freestanding
+    // (WASM), the WasmAllocator reuses freed slots without zeroing.
+    if (comptime std.debug.runtime_safety or builtin.os.tag == .freestanding)
+        @memset(page_buf, 0);
 
     page.* = .{
         .data = .initBuf(.init(page_buf), layout),
