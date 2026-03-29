@@ -1773,11 +1773,11 @@ pub const CAPI = struct {
         surface.texture_callback_userdata = userdata;
     }
 
-    /// Get the PTY master file descriptor for iOS external backend.
-    /// Returns -1 if not using iOS external backend or if FD is unavailable.
-    /// Only available on iOS platform.
+    /// Get the PTY master file descriptor for pipe-based external backend.
+    /// Returns -1 if not using pipe backend or if FD is unavailable.
+    /// Available on iOS and visionOS platforms.
     export fn ghostty_surface_pty_master_fd(surface: *Surface) c_int {
-        if (comptime builtin.os.tag != .ios) return -1;
+        if (comptime builtin.os.tag != .ios and builtin.os.tag != .visionos) return -1;
 
         // Access the backend through the termio
         switch (surface.core_surface.io.backend) {
@@ -1789,9 +1789,9 @@ pub const CAPI = struct {
     /// Get the response pipe read FD for pipe backend.
     /// Swift should read from this FD to get terminal responses (e.g., cursor position).
     /// Returns -1 if not using pipe backend or if FD is unavailable.
-    /// Only available on iOS platform.
+    /// Available on iOS and visionOS platforms.
     export fn ghostty_surface_response_read_fd(surface: *Surface) c_int {
-        if (comptime builtin.os.tag != .ios) return -1;
+        if (comptime builtin.os.tag != .ios and builtin.os.tag != .visionos) return -1;
 
         // Access the backend through the termio
         switch (surface.core_surface.io.backend) {
