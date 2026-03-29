@@ -21,7 +21,7 @@
  *
  * @ingroup key
  */
-typedef struct GhosttyKeyEvent *GhosttyKeyEvent;
+typedef struct GhosttyKeyEventImpl *GhosttyKeyEvent;
 
 /**
  * Keyboard input event types.
