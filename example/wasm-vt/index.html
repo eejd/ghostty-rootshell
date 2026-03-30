@@ -138,12 +138,11 @@
                 wasmMemory = wasmInstance.exports.memory;
 
                 // Load the type layout JSON from the library
-                const lenPtr = wasmInstance.exports.ghostty_wasm_alloc_usize();
-                const jsonPtr = wasmInstance.exports.ghostty_type_json(lenPtr);
-                const jsonLen = new DataView(wasmMemory.buffer).getUint32(lenPtr, true);
-                wasmInstance.exports.ghostty_wasm_free_usize(lenPtr);
-                const jsonBytes = new Uint8Array(wasmMemory.buffer, jsonPtr, jsonLen);
-                typeLayout = JSON.parse(new TextDecoder().decode(jsonBytes));
+                const jsonPtr = wasmInstance.exports.ghostty_type_json();
+                const jsonStr = new TextDecoder().decode(
+                    new Uint8Array(wasmMemory.buffer, jsonPtr, wasmMemory.buffer.byteLength - jsonPtr)
+                ).split('\0')[0];
+                typeLayout = JSON.parse(jsonStr);
 
                 return true;
             } catch (e) {

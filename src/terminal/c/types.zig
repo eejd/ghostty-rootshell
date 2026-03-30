@@ -2,7 +2,7 @@
 //! extern structs for the current target.
 //!
 //! This is embedded in the binary as a const string and exposed via
-//! `ghostty_struct_meta` so that WASM (and other FFI) consumers can
+//! `ghostty_type_json` so that WASM (and other FFI) consumers can
 //! build structs without hardcoding byte offsets.
 const std = @import("std");
 const lib = @import("../lib.zig");
@@ -28,23 +28,22 @@ pub const structs: std.StaticStringMap(StructInfo) = .initComptime(.{
 });
 
 /// The comptime-generated JSON string of all structs.
-pub const json: []const u8 = json: {
+pub const json: [:0]const u8 = json: {
     @setEvalBranchQuota(50000);
     var counter: std.Io.Writer.Discarding = .init(&.{});
     jsonWriteAll(&counter.writer) catch unreachable;
 
-    var buf: [counter.count]u8 = undefined;
+    var buf: [counter.count:0]u8 = undefined;
     var writer: std.Io.Writer = .fixed(&buf);
     jsonWriteAll(&writer) catch unreachable;
     const final = buf;
-    break :json final[0..writer.end];
+    break :json final[0..writer.end :0];
 };
 
 /// Returns a pointer to the comptime-generated JSON string describing
 /// the layout of all C API extern structs, and writes its length to `len`.
 /// Exported as `ghostty_type_json` for FFI consumers.
-pub fn get_json(len: *usize) callconv(lib.calling_conv) [*]const u8 {
-    len.* = json.len;
+pub fn get_json() callconv(lib.calling_conv) [*:0]const u8 {
     return json.ptr;
 }
 

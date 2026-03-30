@@ -84,8 +84,8 @@ typedef struct {
   ((type){ .size = sizeof(type) })
 
 /**
- * Return a pointer to a JSON string describing the layout of every
- * C API struct for the current target.
+ * Return a pointer to a null-terminated JSON string describing the
+ * layout of every C API struct for the current target.
  *
  * This is primarily useful for language bindings that can't easily
  * set C struct fields and need to do so via byte offsets. For example,
@@ -113,12 +113,9 @@ typedef struct {
  * @endcode
  *
  * The returned pointer is valid for the lifetime of the process.
- * The length of the string (excluding any null terminator) is
- * written to @p len.
  *
- * @param[out] len Receives the length of the returned string in bytes.
- * @return Pointer to the JSON string.
+ * @return Pointer to the null-terminated JSON string.
  */
-const char *ghostty_type_json(size_t *len);
+const char *ghostty_type_json(void);
 
 #endif /* GHOSTTY_VT_TYPES_H */
