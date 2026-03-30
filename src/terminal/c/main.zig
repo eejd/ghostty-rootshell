@@ -7,6 +7,8 @@ pub const cell = @import("cell.zig");
 pub const color = @import("color.zig");
 pub const focus = @import("focus.zig");
 pub const formatter = @import("formatter.zig");
+pub const grid_ref = @import("grid_ref.zig");
+pub const types = @import("types.zig");
 pub const modes = @import("modes.zig");
 pub const osc = @import("osc.zig");
 pub const render = @import("render.zig");
@@ -141,7 +143,8 @@ pub const terminal_mode_set = terminal.mode_set;
 pub const terminal_get = terminal.get;
 pub const terminal_grid_ref = terminal.grid_ref;
 
-const grid_ref = @import("grid_ref.zig");
+pub const type_json = types.get_json;
+
 pub const grid_ref_cell = grid_ref.grid_ref_cell;
 pub const grid_ref_row = grid_ref.grid_ref_row;
 pub const grid_ref_graphemes = grid_ref.grid_ref_graphemes;
@@ -168,6 +171,7 @@ test {
     _ = size_report;
     _ = style;
     _ = terminal;
+    _ = types;
 
     // We want to make sure we run the tests for the C allocator interface.
     _ = @import("../../lib/allocator.zig");
