@@ -1288,18 +1288,25 @@ extension AppDelegate {
     }
 
     /// Hashable key for a menu shortcut match, normalized for quick lookup.
-    private struct MenuShortcutKey: Hashable {
+    struct MenuShortcutKey: Hashable {
         private static let shortcutModifiers: NSEvent.ModifierFlags = [.shift, .control, .option, .command]
 
-        private let keyEquivalent: String
-        private let modifiersRawValue: UInt
+        let keyEquivalent: String
+        let modifiersRawValue: UInt
 
         init?(keyEquivalent: String, modifiers: NSEvent.ModifierFlags) {
             let normalized = keyEquivalent.lowercased()
             guard !normalized.isEmpty else { return nil }
-
+            var mods = modifiers.intersection(Self.shortcutModifiers)
+            if
+                keyEquivalent.lowercased() != keyEquivalent.uppercased(),
+                normalized.uppercased() == keyEquivalent {
+                // If key equivalent is case sensitive and
+                // it's originally uppercased, then we need to add `shift` to the modifiers
+                mods.insert(.shift)
+            }
             self.keyEquivalent = normalized
-            self.modifiersRawValue = modifiers.intersection(Self.shortcutModifiers).rawValue
+            self.modifiersRawValue = mods.rawValue
         }
 
         init?(event: NSEvent) {
