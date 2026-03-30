@@ -16,6 +16,11 @@ A file for [guiding coding agents](https://agents.md/).
 - **Formatting (Swift)**: `swiftlint lint --strict --fix`
 - **Formatting (other)**: `prettier -w .`
 
+## libghostty-vt
+
+- Build: `zig build -Demit-lib-vt`
+- Build WASM: `zig build -Demit-lib-vt -Dtarget=wasm32-freestanding -Doptimize=ReleaseSmall`
+
 ## Directory Structure
 
 - Shared Zig core: `src/`
