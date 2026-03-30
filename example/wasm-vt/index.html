@@ -37,26 +37,6 @@
             box-sizing: border-box;
             resize: vertical;
         }
-        .effects-log {
-            background: #1a1a2e;
-            color: #e0e0e0;
-            border: 1px solid #444;
-            border-radius: 4px;
-            padding: 15px;
-            margin: 20px 0;
-            font-family: 'Courier New', monospace;
-            white-space: pre-wrap;
-            font-size: 13px;
-            max-height: 200px;
-            overflow-y: auto;
-        }
-        .effects-log .effect-label {
-            color: #00d9ff;
-            font-weight: bold;
-        }
-        .effects-log .effect-data {
-            color: #a0ffa0;
-        }
         button {
             background: #0066cc;
             color: white;
@@ -125,13 +105,10 @@
             <label>Rows: <input type="number" id="rows" value="24" min="1" max="500" disabled></label>
         </div>
         <h3>VT Input</h3>
-        <textarea id="vtInput" rows="6" disabled>Hello, World!\r\n\x1b[1;32mGreen Bold\x1b[0m and \x1b[4mUnderline\x1b[0m\r\n\x07\x1b]2;Hello Effects\x1b\\\x1b[?7$p</textarea>
-        <p style="font-size: 13px; color: #666; margin-top: 5px;">Use \x1b for ESC, \r\n for CR+LF, \x07 for BEL. Press "Run" to process.</p>
+        <textarea id="vtInput" rows="6" disabled>Hello, World!\r\n\x1b[1;32mGreen Bold\x1b[0m and \x1b[4mUnderline\x1b[0m\r\nLine 3: placeholder\r\n\x1b[3;1H\x1b[2KLine 3: Overwritten!</textarea>
+        <p style="font-size: 13px; color: #666; margin-top: 5px;">Use \x1b for ESC, \r\n for CR+LF. Press "Run" to process.</p>
         <button id="runBtn" disabled>Run</button>
     </div>
-
-    <h3>Effects Log</h3>
-    <div id="effectsLog" class="effects-log">No effects triggered yet.</div>
 
     <div id="output" class="output">Waiting for input...</div>
 
@@ -141,11 +118,6 @@
         let wasmInstance = null;
         let wasmMemory = null;
         let typeLayout = null;
-        let effectsLog = [];
-
-        function logEffect(label, data) {
-            effectsLog.push({ label, data });
-        }
 
         async function loadWasm() {
             try {
@@ -219,119 +191,7 @@
         // GHOSTTY_SUCCESS = 0
         const GHOSTTY_SUCCESS = 0;
 
-        // GhosttyTerminalOption enum values
-        const GHOSTTY_TERMINAL_OPT_WRITE_PTY = 1;
-        const GHOSTTY_TERMINAL_OPT_BELL = 2;
-        const GHOSTTY_TERMINAL_OPT_TITLE_CHANGED = 5;
-
-        // Allocate slots in the WASM indirect function table for JS callbacks.
-        // Returns the table index (i.e. the function pointer value in WASM).
-        let effectTableIndices = [];
-        function addToWasmTable(func) {
-            const table = wasmInstance.exports.__indirect_function_table;
-            const idx = table.length;
-            table.grow(1);
-            table.set(idx, func);
-            effectTableIndices.push(idx);
-            return idx;
-        }
-
-        // Build a tiny WASM trampoline module that imports JS callbacks and
-        // re-exports them as properly typed WASM functions. This is needed
-        // because adding JS functions to a WASM table requires them to be
-        // wrapped as WebAssembly function objects with the correct signature.
-        // WebAssembly.Function is not supported in all browsers (e.g. Safari),
-        // so we compile a minimal module instead.
-        let effectWrappers = null;
-        async function buildEffectWrappers() {
-            if (effectWrappers) return effectWrappers;
-
-            // Hand-coded WASM module with:
-            //   Type 0: (i32, i32, i32, i32) -> void   [write_pty]
-            //   Type 1: (i32, i32) -> void              [bell, title_changed]
-            //   Imports: env.a (type 0), env.b (type 1), env.c (type 1)
-            //   Functions 3,4,5 wrap imports 0,1,2 respectively
-            //   Exports: "a" -> func 3, "b" -> func 4, "c" -> func 5
-            const bytes = new Uint8Array([
-                0x00, 0x61, 0x73, 0x6d,  // magic
-                0x01, 0x00, 0x00, 0x00,  // version
-
-                // Type section (id=1)
-                0x01, 0x0d,  // section id, size=13
-                0x02,        // 2 types
-                // type 0: (i32, i32, i32, i32) -> ()
-                0x60, 0x04, 0x7f, 0x7f, 0x7f, 0x7f, 0x00,
-                // type 1: (i32, i32) -> ()
-                0x60, 0x02, 0x7f, 0x7f, 0x00,
-
-                // Import section (id=2)
-                0x02, 0x19,  // section id, size=25
-                0x03,        // 3 imports
-                // import 0: env.a type 0
-                0x03, 0x65, 0x6e, 0x76,  // "env"
-                0x01, 0x61,              // "a"
-                0x00, 0x00,              // func, type 0
-                // import 1: env.b type 1
-                0x03, 0x65, 0x6e, 0x76,  // "env"
-                0x01, 0x62,              // "b"
-                0x00, 0x01,              // func, type 1
-                // import 2: env.c type 1
-                0x03, 0x65, 0x6e, 0x76,  // "env"
-                0x01, 0x63,              // "c"
-                0x00, 0x01,              // func, type 1
-
-                // Function section (id=3)
-                0x03, 0x04,  // section id, size=4
-                0x03,        // 3 functions
-                0x00, 0x01, 0x01,  // types: 0, 1, 1
-
-                // Export section (id=7)
-                0x07, 0x0d,  // section id, size=13
-                0x03,        // 3 exports
-                0x01, 0x61, 0x00, 0x03,  // "a" -> func 3
-                0x01, 0x62, 0x00, 0x04,  // "b" -> func 4
-                0x01, 0x63, 0x00, 0x05,  // "c" -> func 5
-
-                // Code section (id=10)
-                0x0a, 0x20,  // section id, size=32
-                0x03,        // 3 function bodies
-                // func 3: call import 0 with 4 args
-                0x0c, 0x00,  // body size=12, 0 locals
-                0x20, 0x00, 0x20, 0x01, 0x20, 0x02, 0x20, 0x03, 0x10, 0x00, 0x0b,
-                // func 4: call import 1 with 2 args
-                0x08, 0x00,  // body size=8, 0 locals
-                0x20, 0x00, 0x20, 0x01, 0x10, 0x01, 0x0b,
-                // func 5: call import 2 with 2 args
-                0x08, 0x00,  // body size=8, 0 locals
-                0x20, 0x00, 0x20, 0x01, 0x10, 0x02, 0x0b,
-            ]);
-
-            const mod = await WebAssembly.instantiate(bytes, {
-                env: {
-                    a: (terminal, userdata, dataPtr, len) => {
-                        const b = new Uint8Array(getBuffer(), dataPtr, len);
-                        const text = new TextDecoder().decode(b.slice());
-                        const hex = Array.from(b).map(v => v.toString(16).padStart(2, '0')).join(' ');
-                        logEffect('write_pty', `${len} bytes: ${hex}  "${text}"`);
-                    },
-                    b: (terminal, userdata) => {
-                        logEffect('bell', 'BEL received!');
-                    },
-                    c: (terminal, userdata) => {
-                        logEffect('title_changed', 'Terminal title changed');
-                    },
-                },
-            });
-
-            effectWrappers = {
-                writePtyWrapper: mod.instance.exports.a,
-                bellWrapper: mod.instance.exports.b,
-                titleChangedWrapper: mod.instance.exports.c,
-            };
-            return effectWrappers;
-        }
-
-        async function run() {
+        function run() {
             const outputDiv = document.getElementById('output');
 
             try {
@@ -360,17 +220,6 @@
 
                 const termPtr = new DataView(getBuffer()).getUint32(termPtrPtr, true);
                 wasmInstance.exports.ghostty_wasm_free_opaque(termPtrPtr);
-
-                // Register effect callbacks
-                effectsLog = [];
-                const wrappers = await buildEffectWrappers();
-                const writePtyIdx = addToWasmTable(wrappers.writePtyWrapper);
-                const bellIdx = addToWasmTable(wrappers.bellWrapper);
-                const titleIdx = addToWasmTable(wrappers.titleChangedWrapper);
-
-                wasmInstance.exports.ghostty_terminal_set(termPtr, GHOSTTY_TERMINAL_OPT_WRITE_PTY, writePtyIdx);
-                wasmInstance.exports.ghostty_terminal_set(termPtr, GHOSTTY_TERMINAL_OPT_BELL, bellIdx);
-                wasmInstance.exports.ghostty_terminal_set(termPtr, GHOSTTY_TERMINAL_OPT_TITLE_CHANGED, titleIdx);
 
                 // Write VT data to the terminal
                 const vtBytes = new TextEncoder().encode(vtText);
@@ -441,16 +290,6 @@
                 outputDiv.className = 'output';
                 outputDiv.textContent = output;
 
-                // Render effects log
-                const effectsDiv = document.getElementById('effectsLog');
-                if (effectsLog.length === 0) {
-                    effectsDiv.textContent = 'No effects triggered.';
-                } else {
-                    effectsDiv.innerHTML = effectsLog.map(e =>
-                        `<span class="effect-label">[${e.label}]</span> <span class="effect-data">${e.data}</span>`
-                    ).join('\n');
-                }
-
                 // Clean up
                 wasmInstance.exports.ghostty_free(0, outPtr, outLen);
                 wasmInstance.exports.ghostty_wasm_free_opaque(outPtrPtr);
@@ -489,7 +328,7 @@
                 runBtn.addEventListener('click', run);
 
                 // Run the default example on load
-                await run();
+                run();
                 return;
             } catch (e) {
                 statusDiv.textContent = `Error: ${e.message}`;
