@@ -1,7 +1,9 @@
 //! A pager wraps output to an external pager program (like `less`) when
-//! stdout is a TTY. The pager command is determined by `$PAGER`, falling
-//! back to `less` if `$PAGER` isn't set.
+//! stdout is a TTY. The pager command is resolved as:
 //!
+//!   `$GHOSTTY_PAGER` > `$PAGER` > `less`
+//!
+//! Setting either env var to an empty string disables paging.
 //! If stdout is not a TTY, writes go directly to stdout.
 const Pager = @This();
 const std = @import("std");
@@ -51,14 +53,18 @@ fn initPager(alloc: Allocator) ?std.process.Child {
     const stdout_file: std.fs.File = .stdout();
     if (!stdout_file.isTty()) return null;
 
-    // Resolve the pager command: $PAGER > "less".
-    // An empty $PAGER disables paging.
-    const env_result = internal_os.getenv(alloc, "PAGER") catch null;
+    // Resolve the pager command: $GHOSTTY_PAGER > $PAGER > `less`.
+    // An empty value for either env var disables paging.
+    const ghostty_var = internal_os.getenv(alloc, "GHOSTTY_PAGER") catch null;
+    defer if (ghostty_var) |v| v.deinit(alloc);
+    const pager_var = internal_os.getenv(alloc, "PAGER") catch null;
+    defer if (pager_var) |v| v.deinit(alloc);
+
     const cmd: ?[]const u8 = cmd: {
-        const r = env_result orelse break :cmd "less";
-        break :cmd if (r.value.len > 0) r.value else null;
+        if (ghostty_var) |v| break :cmd if (v.value.len > 0) v.value else null;
+        if (pager_var) |v| break :cmd if (v.value.len > 0) v.value else null;
+        break :cmd "less";
     };
-    defer if (env_result) |r| r.deinit(alloc);
 
     if (cmd == null) return null;
 
