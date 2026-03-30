@@ -52,29 +52,30 @@ pub fn initWasm(
     exe.entry = .disabled;
 
     // Zig's WASM linker doesn't support --growable-table, so the table
-    // has a fixed max equal to its initial size. Post-process with wabt
-    // tools (wasm2wat → sed → wat2wasm) to remove the max limit, making
-    // the table growable from JS via Table.grow().
-    const wasm2wat = b.addSystemCommand(&.{"wasm2wat"});
-    wasm2wat.addFileArg(exe.getEmittedBin());
-
-    const awk = b.addSystemCommand(&.{
-        "awk",
-        // Remove the table max from "(table (;0;) MIN MAX funcref)"
-        // so that it becomes "(table (;0;) MIN funcref)", making the
-        // table growable from JS.
-        "/\\(table \\(;[0-9]+;\\) [0-9]+ [0-9]+ funcref\\)/ { sub(/ [0-9]+ funcref\\)/, \" funcref)\") } 1",
-    });
-    awk.addFileArg(wasm2wat.captureStdOut());
-
-    const wat2wasm = b.addSystemCommand(&.{ "wat2wasm", "--enable-all" });
-    wat2wasm.addFileArg(awk.captureStdOut());
-    wat2wasm.addArgs(&.{"-o"});
-    const output = wat2wasm.addOutputFileArg("ghostty-vt.wasm");
+    // is emitted with max == min and can't be grown from JS. Run a
+    // small Zig build tool that patches the binary's table section to
+    // remove the max limit.
+    const patch_run = patch: {
+        const patcher = b.addExecutable(.{
+            .name = "wasm_patch_growable_table",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("src/build/wasm_patch_growable_table.zig"),
+                .target = b.graph.host,
+            }),
+        });
+        break :patch b.addRunArtifact(patcher);
+    };
+    patch_run.addFileArg(exe.getEmittedBin());
+    const output = patch_run.addOutputFileArg("ghostty-vt.wasm");
+    const artifact_install = b.addInstallFileWithDir(
+        output,
+        .bin,
+        "ghostty-vt.wasm",
+    );
 
     return .{
-        .step = &wat2wasm.step,
-        .artifact = &b.addInstallFileWithDir(output, .bin, "ghostty-vt.wasm").step,
+        .step = &patch_run.step,
+        .artifact = &artifact_install.step,
         .kind = .wasm,
         .output = output,
         .dsym = null,
