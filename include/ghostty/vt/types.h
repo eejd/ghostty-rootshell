@@ -116,6 +116,6 @@ typedef struct {
  *
  * @return Pointer to the null-terminated JSON string.
  */
-const char *ghostty_type_json(void);
+GHOSTTY_EXPORT const char *ghostty_type_json(void);
 
 #endif /* GHOSTTY_VT_TYPES_H */
