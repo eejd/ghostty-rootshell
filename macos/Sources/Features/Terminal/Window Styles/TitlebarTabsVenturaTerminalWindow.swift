@@ -69,11 +69,6 @@ class TitlebarTabsVenturaTerminalWindow: TerminalWindow {
         tab.attributedTitle = attributedTitle
     }
 
-    override func sendEvent(_ event: NSEvent) {
-        if tabBarView != nil && handleTabBarMiddleClick(event) { return }
-        super.sendEvent(event)
-    }
-
 	override func layoutIfNeeded() {
 		super.layoutIfNeeded()
 

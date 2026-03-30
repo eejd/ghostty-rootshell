@@ -184,6 +184,10 @@ class TerminalWindow: NSWindow {
             return
         }
 
+        if tabTitleEditor.handleRightMouseDown(event) {
+            return
+        }
+
         super.sendEvent(event)
     }
 
@@ -838,31 +842,5 @@ extension TerminalWindow: TabTitleEditorDelegate {
               let focusedSurface = controller.focusedSurface
         else { return }
         makeFirstResponder(focusedSurface)
-    }
-}
-
-// MARK: - Tab Clicks
-
-extension TerminalWindow {
-    /// Handles a middle-click event to close the tab under the cursor
-    ///
-    /// Returns true if the event was handled and should be consumed
-    func handleTabBarMiddleClick(_ event: NSEvent) -> Bool {
-        // Require middle click
-        guard event.type == .otherMouseDown && event.buttonNumber == 2 else { return false }
-
-        // Require tab hit
-        let screenPoint = convertPoint(toScreen: event.locationInWindow)
-        guard let hit = tabButtonHit(atScreenPoint: screenPoint) else { return false }
-
-        // Require we have tabs and the index is valid
-        guard let tabbedWindows = tabbedWindows,
-              hit.index < tabbedWindows.count else { return false }
-
-        // Find the controller and close it
-        let targetWindow = tabbedWindows[hit.index]
-        guard let controller = targetWindow.windowController as? TerminalController else { return false }
-        controller.closeTab(nil)
-        return true
     }
 }
