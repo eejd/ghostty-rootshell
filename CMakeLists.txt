@@ -164,6 +164,7 @@ add_library(ghostty-vt-static STATIC IMPORTED GLOBAL)
 set_target_properties(ghostty-vt-static PROPERTIES
     IMPORTED_LOCATION "${GHOSTTY_VT_STATIC_LIBRARY}"
     INTERFACE_INCLUDE_DIRECTORIES "${ZIG_OUT_DIR}/include"
+    INTERFACE_COMPILE_DEFINITIONS "GHOSTTY_STATIC"
 )
 if(WIN32)
     # On Windows, the Zig standard library uses NT API functions
