@@ -2045,6 +2045,74 @@ pub const CAPI = struct {
         return text.ptr;
     }
 
+    /// Dump the alternate screen active viewport as ANSI-styled text.
+    /// Returns null if the alternate screen is not initialized (no TUI app
+    /// has ever switched to it) or if it is empty. Uses unwrap=false to
+    /// preserve TUI layout (cursor-addressed apps like vim, htop, etc.).
+    /// Caller must free with ghostty_surface_free_dump.
+    export fn ghostty_surface_dump_alternate_screen(
+        surface: *Surface,
+        out_len: *usize,
+    ) ?[*]const u8 {
+        const core_surface = &surface.core_surface;
+        core_surface.renderer_state.mutex.lock();
+        defer core_surface.renderer_state.mutex.unlock();
+
+        const screen = core_surface.io.terminal.screens.get(.alternate) orelse return null;
+        const br_active = screen.pages.getBottomRight(.active) orelse return null;
+        const tl_active = screen.pages.getTopLeft(.active);
+
+        var aw: std.Io.Writer.Allocating = .init(global.alloc);
+
+        const fmt_opts: terminal.formatter.Options = .{
+            .emit = .vt,
+            .unwrap = false,
+            .trim = false,
+            .palette = &core_surface.io.terminal.colors.palette.current,
+        };
+
+        // Home cursor, then emit the active viewport.
+        aw.writer.writeAll("\x1b[H") catch {
+            aw.deinit();
+            return null;
+        };
+
+        var active_fmt: terminal.formatter.ScreenFormatter = .init(screen, fmt_opts);
+        active_fmt.content = .{
+            .selection = terminal.Selection.init(tl_active, br_active, false),
+        };
+        active_fmt.format(&aw.writer) catch {
+            aw.deinit();
+            return null;
+        };
+
+        // Reset SGR and erase from cursor to end of display.
+        aw.writer.writeAll("\x1b[0m\x1b[J") catch {
+            aw.deinit();
+            return null;
+        };
+
+        // Position cursor.
+        const cursor = screen.cursor;
+        aw.writer.print("\x1b[{d};{d}H", .{ @as(usize, cursor.y) + 1, @as(usize, cursor.x) + 1 }) catch {
+            aw.deinit();
+            return null;
+        };
+
+        const text = aw.toOwnedSliceSentinel(0) catch {
+            aw.deinit();
+            return null;
+        };
+
+        if (text.len == 0) {
+            global.alloc.free(text);
+            return null;
+        }
+
+        out_len.* = text.len;
+        return text.ptr;
+    }
+
     /// Returns true if the terminal's alternate screen is currently active
     /// (e.g., a TUI app like vim/helix is running). Used by the iOS app to
     /// detect which screen was active before app eviction so it can switch
