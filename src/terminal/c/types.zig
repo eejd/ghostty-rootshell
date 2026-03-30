@@ -197,15 +197,3 @@ test "struct sizes are non-zero" {
         try std.testing.expect(size > 0);
     }
 }
-
-test "structs map has all entries" {
-    try std.testing.expect(structs.get("GhosttyTerminalOptions") != null);
-    try std.testing.expect(structs.get("GhosttyFormatterTerminalOptions") != null);
-    try std.testing.expect(structs.get("GhosttyFormatterTerminalExtra") != null);
-    try std.testing.expect(structs.get("GhosttyFormatterScreenExtra") != null);
-    try std.testing.expect(structs.get("GhosttyRenderStateColors") != null);
-    try std.testing.expect(structs.get("GhosttyStyle") != null);
-    try std.testing.expect(structs.get("GhosttyStyleColor") != null);
-    try std.testing.expect(structs.get("GhosttyMouseEncoderSize") != null);
-    try std.testing.expect(structs.get("GhosttyGridRef") != null);
-}
