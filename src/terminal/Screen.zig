@@ -2753,8 +2753,8 @@ pub fn selectWordBetween(
             .left_up => if (pin.before(end)) return null,
         }
 
-        // If we found a word, then return it
-        if (self.selectWord(pin, boundary_codepoints)) |sel| return sel;
+        // If we found a word (or IPv6 address), then return it
+        if (self.selectWordOrIPv6(pin, boundary_codepoints)) |sel| return sel;
     }
 
     return null;
@@ -2851,6 +2851,173 @@ pub fn selectWord(
     };
 
     return .init(start, end, false);
+}
+
+/// Select the word or IPv6 address under the given pin. This first attempts
+/// to detect an IPv6 address at the pin. If no IPv6 address is found, it
+/// falls back to standard word selection.
+pub fn selectWordOrIPv6(
+    self: *Screen,
+    pin: Pin,
+    boundary_codepoints: []const u21,
+) ?Selection {
+    if (self.selectIPv6Address(pin)) |sel| return sel;
+    return self.selectWord(pin, boundary_codepoints);
+}
+
+/// Attempt to select an IPv6 address at the given pin. Scans outward from
+/// the pin collecting characters in [0-9a-fA-F:.] and validates the result
+/// as a plausible IPv6 address. Returns null if the pin is not within an
+/// IPv6 address.
+fn selectIPv6Address(_: *Screen, pin: Pin) ?Selection {
+    const start_cell = pin.rowAndCell().cell;
+    if (!start_cell.hasText()) return null;
+
+    const start_cp = start_cell.content.codepoint;
+    if (!isIPv6Char(start_cp)) return null;
+
+    // Stack buffers for collecting characters. Max IPv6 string is 45 chars.
+    var left_buf: [45]u8 = undefined;
+    var left_len: usize = 0;
+    var right_buf: [45]u8 = undefined;
+    var right_len: usize = 0;
+
+    var start_pin = pin;
+    var end_pin = pin;
+
+    // Scan left
+    {
+        var it = pin.cellIterator(.left_up, null);
+        _ = it.next(); // consume start position
+        while (it.next()) |p| {
+            const rac = p.rowAndCell();
+            const cell = rac.cell;
+
+            // Stop at non-wrapped row boundary (same logic as selectWord)
+            if (p.x == p.node.data.size.cols - 1 and !rac.row.wrap)
+                break;
+
+            if (!cell.hasText()) break;
+
+            const cp = cell.content.codepoint;
+            if (!isIPv6Char(cp) or cp > 127) break;
+
+            if (left_len >= 45) return null;
+            left_buf[left_len] = @intCast(cp);
+            left_len += 1;
+            start_pin = p;
+        }
+    }
+
+    // Scan right
+    {
+        var it = pin.cellIterator(.right_down, null);
+        _ = it.next(); // consume start position
+        while (it.next()) |p| {
+            const rac = p.rowAndCell();
+            const cell = rac.cell;
+
+            if (!cell.hasText()) break;
+
+            const cp = cell.content.codepoint;
+            if (!isIPv6Char(cp) or cp > 127) break;
+
+            if (right_len >= 45) return null;
+            right_buf[right_len] = @intCast(cp);
+            right_len += 1;
+            end_pin = p;
+
+            // Stop at non-wrapped row boundary
+            if (p.x == p.node.data.size.cols - 1 and !rac.row.wrap)
+                break;
+        }
+    }
+
+    // Assemble full string: reverse(left) + center + right
+    var full_buf: [91]u8 = undefined;
+    var full_len: usize = 0;
+
+    // Add reversed left part
+    {
+        var i: usize = left_len;
+        while (i > 0) {
+            i -= 1;
+            full_buf[full_len] = left_buf[i];
+            full_len += 1;
+        }
+    }
+
+    // Add center character
+    full_buf[full_len] = @intCast(start_cp);
+    full_len += 1;
+
+    // Add right part
+    @memcpy(full_buf[full_len..][0..right_len], right_buf[0..right_len]);
+    full_len += right_len;
+
+    if (!isValidIPv6(full_buf[0..full_len])) return null;
+
+    return .init(start_pin, end_pin, false);
+}
+
+fn isIPv6Char(cp: u21) bool {
+    return (cp >= '0' and cp <= '9') or
+        (cp >= 'a' and cp <= 'f') or
+        (cp >= 'A' and cp <= 'F') or
+        cp == ':' or cp == '.';
+}
+
+fn isValidIPv6(str: []const u8) bool {
+    if (str.len < 2 or str.len > 45) return false;
+
+    // No triple colon
+    if (std.mem.indexOf(u8, str, ":::") != null) return false;
+
+    // Count colons and detect ::
+    var colon_count: usize = 0;
+    for (str) |c| {
+        if (c == ':') colon_count += 1;
+    }
+
+    const dc_pos = std.mem.indexOf(u8, str, "::");
+    const has_double_colon = dc_pos != null;
+
+    // At most one ::
+    if (has_double_colon) {
+        const first = dc_pos.?;
+        if (first + 2 < str.len) {
+            if (std.mem.indexOf(u8, str[first + 2 ..], "::") != null)
+                return false;
+        }
+    }
+
+    // Must have :: or exactly 7 colons (8 groups)
+    if (!has_double_colon and colon_count != 7) return false;
+    if (has_double_colon and colon_count > 7) return false;
+
+    // Must not start or end with single colon
+    if (str[0] == ':' and (str.len < 2 or str[1] != ':')) return false;
+    if (str[str.len - 1] == ':' and (str.len < 2 or str[str.len - 2] != ':')) return false;
+
+    // Validate each group
+    var iter = std.mem.splitScalar(u8, str, ':');
+    while (iter.next()) |group| {
+        if (group.len == 0) continue; // empty group from ::
+
+        // Allow IPv4-mapped suffix (contains dots)
+        if (std.mem.indexOfScalar(u8, group, '.') != null) continue;
+
+        // Must be 1-4 hex chars
+        if (group.len > 4) return false;
+        for (group) |c| {
+            const is_hex = (c >= '0' and c <= '9') or
+                (c >= 'a' and c <= 'f') or
+                (c >= 'A' and c <= 'F');
+            if (!is_hex) return false;
+        }
+    }
+
+    return true;
 }
 
 /// Select the command output under the given point. The limits of the output
@@ -8607,6 +8774,312 @@ test "Screen: selectWord with character boundary" {
                 .y = 0,
             } }, s.pages.pointFromPin(.screen, sel.end()).?);
         }
+    }
+}
+
+test "Screen: selectWordOrIPv6 full address" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, .{ .cols = 50, .rows = 10, .max_scrollback = 0 });
+    defer s.deinit();
+    try s.testWriteString("addr 2001:0db8:85a3:0000:0000:8a2e:0370:7334 end");
+
+    const boundary_codepoints = &[_]u21{
+        0, ' ', '\t', '\'', '"', '│', '`', '|', ':', ';',
+        ',', '(', ')', '[', ']', '{', '}', '<', '>', '$',
+    };
+
+    // Click in the middle of the address
+    {
+        var sel = s.selectWordOrIPv6(s.pages.pin(.{ .active = .{
+            .x = 20,
+            .y = 0,
+        } }).?, boundary_codepoints).?;
+        defer sel.deinit(&s);
+        try testing.expectEqual(point.Point{ .screen = .{
+            .x = 5,
+            .y = 0,
+        } }, s.pages.pointFromPin(.screen, sel.start()).?);
+        try testing.expectEqual(point.Point{ .screen = .{
+            .x = 43,
+            .y = 0,
+        } }, s.pages.pointFromPin(.screen, sel.end()).?);
+    }
+}
+
+test "Screen: selectWordOrIPv6 compressed" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, .{ .cols = 30, .rows = 10, .max_scrollback = 0 });
+    defer s.deinit();
+    try s.testWriteString("addr 2001:db8::1 end");
+
+    const boundary_codepoints = &[_]u21{
+        0, ' ', '\t', '\'', '"', '│', '`', '|', ':', ';',
+        ',', '(', ')', '[', ']', '{', '}', '<', '>', '$',
+    };
+
+    {
+        var sel = s.selectWordOrIPv6(s.pages.pin(.{ .active = .{
+            .x = 7,
+            .y = 0,
+        } }).?, boundary_codepoints).?;
+        defer sel.deinit(&s);
+        try testing.expectEqual(point.Point{ .screen = .{
+            .x = 5,
+            .y = 0,
+        } }, s.pages.pointFromPin(.screen, sel.start()).?);
+        try testing.expectEqual(point.Point{ .screen = .{
+            .x = 15,
+            .y = 0,
+        } }, s.pages.pointFromPin(.screen, sel.end()).?);
+    }
+}
+
+test "Screen: selectWordOrIPv6 loopback" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, .{ .cols = 20, .rows = 10, .max_scrollback = 0 });
+    defer s.deinit();
+    try s.testWriteString("addr ::1 end");
+
+    const boundary_codepoints = &[_]u21{
+        0, ' ', '\t', '\'', '"', '│', '`', '|', ':', ';',
+        ',', '(', ')', '[', ']', '{', '}', '<', '>', '$',
+    };
+
+    {
+        var sel = s.selectWordOrIPv6(s.pages.pin(.{ .active = .{
+            .x = 5,
+            .y = 0,
+        } }).?, boundary_codepoints).?;
+        defer sel.deinit(&s);
+        try testing.expectEqual(point.Point{ .screen = .{
+            .x = 5,
+            .y = 0,
+        } }, s.pages.pointFromPin(.screen, sel.start()).?);
+        try testing.expectEqual(point.Point{ .screen = .{
+            .x = 7,
+            .y = 0,
+        } }, s.pages.pointFromPin(.screen, sel.end()).?);
+    }
+}
+
+test "Screen: selectWordOrIPv6 all-zeros" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, .{ .cols = 20, .rows = 10, .max_scrollback = 0 });
+    defer s.deinit();
+    try s.testWriteString("addr :: end");
+
+    const boundary_codepoints = &[_]u21{
+        0, ' ', '\t', '\'', '"', '│', '`', '|', ':', ';',
+        ',', '(', ')', '[', ']', '{', '}', '<', '>', '$',
+    };
+
+    {
+        var sel = s.selectWordOrIPv6(s.pages.pin(.{ .active = .{
+            .x = 5,
+            .y = 0,
+        } }).?, boundary_codepoints).?;
+        defer sel.deinit(&s);
+        try testing.expectEqual(point.Point{ .screen = .{
+            .x = 5,
+            .y = 0,
+        } }, s.pages.pointFromPin(.screen, sel.start()).?);
+        try testing.expectEqual(point.Point{ .screen = .{
+            .x = 6,
+            .y = 0,
+        } }, s.pages.pointFromPin(.screen, sel.end()).?);
+    }
+}
+
+test "Screen: selectWordOrIPv6 IPv4-mapped" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, .{ .cols = 40, .rows = 10, .max_scrollback = 0 });
+    defer s.deinit();
+    try s.testWriteString("addr ::ffff:192.168.1.1 end");
+
+    const boundary_codepoints = &[_]u21{
+        0, ' ', '\t', '\'', '"', '│', '`', '|', ':', ';',
+        ',', '(', ')', '[', ']', '{', '}', '<', '>', '$',
+    };
+
+    {
+        var sel = s.selectWordOrIPv6(s.pages.pin(.{ .active = .{
+            .x = 10,
+            .y = 0,
+        } }).?, boundary_codepoints).?;
+        defer sel.deinit(&s);
+        try testing.expectEqual(point.Point{ .screen = .{
+            .x = 5,
+            .y = 0,
+        } }, s.pages.pointFromPin(.screen, sel.start()).?);
+        try testing.expectEqual(point.Point{ .screen = .{
+            .x = 22,
+            .y = 0,
+        } }, s.pages.pointFromPin(.screen, sel.end()).?);
+    }
+}
+
+test "Screen: selectWordOrIPv6 not IPv6 single colon" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, .{ .cols = 20, .rows = 10, .max_scrollback = 0 });
+    defer s.deinit();
+    try s.testWriteString("key:value");
+
+    const boundary_codepoints = &[_]u21{
+        0, ' ', '\t', '\'', '"', '│', '`', '|', ':', ';',
+        ',', '(', ')', '[', ']', '{', '}', '<', '>', '$',
+    };
+
+    // Click on 'k' - should select "key" via normal word selection
+    {
+        var sel = s.selectWordOrIPv6(s.pages.pin(.{ .active = .{
+            .x = 0,
+            .y = 0,
+        } }).?, boundary_codepoints).?;
+        defer sel.deinit(&s);
+        try testing.expectEqual(point.Point{ .screen = .{
+            .x = 0,
+            .y = 0,
+        } }, s.pages.pointFromPin(.screen, sel.start()).?);
+        try testing.expectEqual(point.Point{ .screen = .{
+            .x = 2,
+            .y = 0,
+        } }, s.pages.pointFromPin(.screen, sel.end()).?);
+    }
+}
+
+test "Screen: selectWordOrIPv6 not IPv6 timestamp" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, .{ .cols = 20, .rows = 10, .max_scrollback = 0 });
+    defer s.deinit();
+    try s.testWriteString("12:34:56");
+
+    const boundary_codepoints = &[_]u21{
+        0, ' ', '\t', '\'', '"', '│', '`', '|', ':', ';',
+        ',', '(', ')', '[', ']', '{', '}', '<', '>', '$',
+    };
+
+    // Click on '1' - should select "12" via normal word selection
+    {
+        var sel = s.selectWordOrIPv6(s.pages.pin(.{ .active = .{
+            .x = 0,
+            .y = 0,
+        } }).?, boundary_codepoints).?;
+        defer sel.deinit(&s);
+        try testing.expectEqual(point.Point{ .screen = .{
+            .x = 0,
+            .y = 0,
+        } }, s.pages.pointFromPin(.screen, sel.start()).?);
+        try testing.expectEqual(point.Point{ .screen = .{
+            .x = 1,
+            .y = 0,
+        } }, s.pages.pointFromPin(.screen, sel.end()).?);
+    }
+}
+
+test "Screen: selectWordOrIPv6 bracketed" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, .{ .cols = 20, .rows = 10, .max_scrollback = 0 });
+    defer s.deinit();
+    try s.testWriteString("[2001:db8::1]");
+
+    const boundary_codepoints = &[_]u21{
+        0, ' ', '\t', '\'', '"', '│', '`', '|', ':', ';',
+        ',', '(', ')', '[', ']', '{', '}', '<', '>', '$',
+    };
+
+    // Click inside the address - should select just the IPv6 part
+    {
+        var sel = s.selectWordOrIPv6(s.pages.pin(.{ .active = .{
+            .x = 3,
+            .y = 0,
+        } }).?, boundary_codepoints).?;
+        defer sel.deinit(&s);
+        try testing.expectEqual(point.Point{ .screen = .{
+            .x = 1,
+            .y = 0,
+        } }, s.pages.pointFromPin(.screen, sel.start()).?);
+        try testing.expectEqual(point.Point{ .screen = .{
+            .x = 11,
+            .y = 0,
+        } }, s.pages.pointFromPin(.screen, sel.end()).?);
+    }
+}
+
+test "Screen: selectWordOrIPv6 click on colon" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, .{ .cols = 20, .rows = 10, .max_scrollback = 0 });
+    defer s.deinit();
+    try s.testWriteString("2001:db8::1");
+
+    const boundary_codepoints = &[_]u21{
+        0, ' ', '\t', '\'', '"', '│', '`', '|', ':', ';',
+        ',', '(', ')', '[', ']', '{', '}', '<', '>', '$',
+    };
+
+    // Click on the first ':' at x=4
+    {
+        var sel = s.selectWordOrIPv6(s.pages.pin(.{ .active = .{
+            .x = 4,
+            .y = 0,
+        } }).?, boundary_codepoints).?;
+        defer sel.deinit(&s);
+        try testing.expectEqual(point.Point{ .screen = .{
+            .x = 0,
+            .y = 0,
+        } }, s.pages.pointFromPin(.screen, sel.start()).?);
+        try testing.expectEqual(point.Point{ .screen = .{
+            .x = 10,
+            .y = 0,
+        } }, s.pages.pointFromPin(.screen, sel.end()).?);
+    }
+}
+
+test "Screen: selectWordOrIPv6 not IPv6 MAC address" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var s = try init(alloc, .{ .cols = 30, .rows = 10, .max_scrollback = 0 });
+    defer s.deinit();
+    try s.testWriteString("aa:bb:cc:dd:ee:ff");
+
+    const boundary_codepoints = &[_]u21{
+        0, ' ', '\t', '\'', '"', '│', '`', '|', ':', ';',
+        ',', '(', ')', '[', ']', '{', '}', '<', '>', '$',
+    };
+
+    // MAC has 5 colons (not 7, no ::), should fall through to word selection
+    {
+        var sel = s.selectWordOrIPv6(s.pages.pin(.{ .active = .{
+            .x = 0,
+            .y = 0,
+        } }).?, boundary_codepoints).?;
+        defer sel.deinit(&s);
+        try testing.expectEqual(point.Point{ .screen = .{
+            .x = 0,
+            .y = 0,
+        } }, s.pages.pointFromPin(.screen, sel.start()).?);
+        try testing.expectEqual(point.Point{ .screen = .{
+            .x = 1,
+            .y = 0,
+        } }, s.pages.pointFromPin(.screen, sel.end()).?);
     }
 }
 

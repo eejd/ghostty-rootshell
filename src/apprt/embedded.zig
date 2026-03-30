@@ -2510,7 +2510,7 @@ pub const CAPI = struct {
                     if (comptime std.debug.runtime_safety) unreachable;
                     return false;
                 };
-                break :sel surface.io.terminal.screens.active.selectWord(
+                break :sel surface.io.terminal.screens.active.selectWordOrIPv6(
                     pin,
                     surface.config.selection_word_chars,
                 ) orelse return false;

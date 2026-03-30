@@ -4159,7 +4159,7 @@ pub fn mouseButtonCallback(
                         // Ignore any errors, likely regex errors.
                     }
 
-                    break :sel self.io.terminal.screens.active.selectWord(pin.*, self.config.selection_word_chars);
+                    break :sel self.io.terminal.screens.active.selectWordOrIPv6(pin.*, self.config.selection_word_chars);
                 };
                 if (sel_) |sel| {
                     try self.io.terminal.screens.active.select(sel);
@@ -4246,7 +4246,7 @@ pub fn mouseButtonCallback(
                 if (link_sel) |sel| {
                     try self.setSelection(sel);
                 } else {
-                    const sel = screen.selectWord(
+                    const sel = screen.selectWordOrIPv6(
                         pin,
                         self.config.selection_word_chars,
                     ) orelse break :sel;
@@ -4949,7 +4949,7 @@ pub fn mousePressureCallback(
         // This should always be set in this state but we don't want
         // to handle state inconsistency here.
         const pin = self.mouse.left_click_pin orelse break :select;
-        const sel = self.io.terminal.screens.active.selectWord(
+        const sel = self.io.terminal.screens.active.selectWordOrIPv6(
             pin.*,
             self.config.selection_word_chars,
         ) orelse break :select;
