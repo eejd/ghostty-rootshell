@@ -33,6 +33,7 @@ typedef SSIZE_T ssize_t;
 // visibility so they remain accessible when the library is built with
 // -fvisibility=hidden. For static library builds, define GHOSTTY_STATIC
 // before including this header to make this a no-op.
+#ifndef GHOSTTY_EXPORT
 #if defined(GHOSTTY_STATIC)
   #define GHOSTTY_EXPORT
 #elif defined(_WIN32) || defined(_WIN64)
@@ -45,6 +46,7 @@ typedef SSIZE_T ssize_t;
   #define GHOSTTY_EXPORT __attribute__((visibility("default")))
 #else
   #define GHOSTTY_EXPORT
+#endif
 #endif
 
 //-------------------------------------------------------------------
