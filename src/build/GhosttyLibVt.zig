@@ -44,6 +44,10 @@ pub fn initWasm(
     // Allow exported symbols to actually be exported.
     exe.rdynamic = true;
 
+    // Export the indirect function table so that embedders (e.g. JS in
+    // a browser) can insert callback entries for terminal effects.
+    exe.export_table = true;
+
     // There is no entrypoint for this wasm module.
     exe.entry = .disabled;
 

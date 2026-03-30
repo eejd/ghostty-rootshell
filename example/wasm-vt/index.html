@@ -147,12 +147,14 @@
             effectsLog.push({ label, data });
         }
 
-        // Patch a WASM binary to: (1) make the function table growable by
-        // removing its max limit, and (2) export it as "tbl" so JS can add
-        // effect callback entries. Zig's WASM linker sets a fixed max on
-        // the table and does not export it by default.
-        function patchWasmForEffects(buffer) {
-            let bytes = new Uint8Array(buffer);
+        // Patch the WASM binary to make the function table growable by
+        // removing its max limit. The build already exports the table
+        // (via --export-table), but Zig's linker doesn't support
+        // --growable-table, so the table has a fixed max that prevents
+        // Table.grow() from JS. This patches the table section (id=4)
+        // to use flag=0 (no max), allowing JS to add callback entries.
+        function patchTableGrowable(buffer) {
+            const bytes = new Uint8Array(buffer);
 
             function readLEB128(arr, offset) {
                 let result = 0, shift = 0, bytesRead = 0;
@@ -177,22 +179,7 @@
                 return out;
             }
 
-            // Rebuild a section from parts: [before_section | id | new_size | new_payload | after_section]
-            function rebuildSection(buf, sectionPos, sectionStart, oldSectionSize, newPayload) {
-                const newSize = encodeLEB128(newPayload.length);
-                const afterStart = sectionStart + oldSectionSize;
-                const result = new Uint8Array(sectionPos + 1 + newSize.length + newPayload.length + (buf.length - afterStart));
-                result.set(buf.subarray(0, sectionPos));
-                let w = sectionPos;
-                result[w++] = buf[sectionPos]; // section id
-                for (const b of newSize) result[w++] = b;
-                for (const b of newPayload) result[w++] = b;
-                result.set(buf.subarray(afterStart), w);
-                return result;
-            }
-
-            // Pass 1: Patch table section (id=4) to remove max limit so the table is growable.
-            let pos = 8;
+            let pos = 8; // skip magic + version
             while (pos < bytes.length) {
                 const sectionId = bytes[pos];
                 const { value: sectionSize, bytesRead: sizeLen } = readLEB128(bytes, pos + 1);
@@ -202,58 +189,38 @@
                     let tpos = sectionStart + countLen;
                     const elemType = bytes[tpos++]; // 0x70 = funcref
                     const flags = bytes[tpos];
-                    if (flags & 1) {
-                        // Has max — rebuild without it: flag=0, keep only min
-                        const { value: min, bytesRead: minLen } = readLEB128(bytes, tpos + 1);
-                        const { value: max, bytesRead: maxLen } = readLEB128(bytes, tpos + 1 + minLen);
-                        const afterLimits = tpos + 1 + minLen + maxLen;
-                        const newPayload = [
-                            ...encodeLEB128(tableCount),
-                            elemType,
-                            0x00, // flags: no max
-                            ...encodeLEB128(min),
-                            ...bytes.slice(afterLimits, sectionStart + sectionSize),
-                        ];
-                        bytes = rebuildSection(bytes, pos, sectionStart, sectionSize, new Uint8Array(newPayload));
-                    }
-                    break;
-                }
-                pos = sectionStart + sectionSize;
-            }
-
-            // Pass 2: Add table export to export section (id=7) if not already present.
-            const mod = new WebAssembly.Module(bytes.buffer);
-            if (WebAssembly.Module.exports(mod).some(e => e.kind === 'table')) {
-                return bytes.buffer;
-            }
-            const exportEntry = [0x03, 0x74, 0x62, 0x6c, 0x01, 0x00]; // name="tbl", kind=table, index=0
-            pos = 8;
-            while (pos < bytes.length) {
-                const sectionId = bytes[pos];
-                const { value: sectionSize, bytesRead: sizeLen } = readLEB128(bytes, pos + 1);
-                const sectionStart = pos + 1 + sizeLen;
-                if (sectionId === 7) {
-                    const { value: count, bytesRead: countLen } = readLEB128(bytes, sectionStart);
-                    const restStart = sectionStart + countLen;
-                    const restLen = sectionSize - countLen;
+                    if (!(flags & 1)) return buffer; // already no max
+                    // Has max — rebuild section without it
+                    const { value: min, bytesRead: minLen } = readLEB128(bytes, tpos + 1);
+                    const { bytesRead: maxLen } = readLEB128(bytes, tpos + 1 + minLen);
+                    const afterLimits = tpos + 1 + minLen + maxLen;
                     const newPayload = new Uint8Array([
-                        ...encodeLEB128(count + 1),
-                        ...bytes.slice(restStart, restStart + restLen),
-                        ...exportEntry,
+                        ...encodeLEB128(tableCount),
+                        elemType,
+                        0x00, // flags: no max
+                        ...encodeLEB128(min),
+                        ...bytes.slice(afterLimits, sectionStart + sectionSize),
                     ]);
-                    bytes = rebuildSection(bytes, pos, sectionStart, sectionSize, newPayload);
-                    break;
+                    const newSize = encodeLEB128(newPayload.length);
+                    const afterSection = sectionStart + sectionSize;
+                    const result = new Uint8Array(pos + 1 + newSize.length + newPayload.length + (bytes.length - afterSection));
+                    result.set(bytes.subarray(0, pos));
+                    let w = pos;
+                    result[w++] = 4; // section id
+                    for (const b of newSize) result[w++] = b;
+                    for (const b of newPayload) result[w++] = b;
+                    result.set(bytes.subarray(afterSection), w);
+                    return result.buffer;
                 }
                 pos = sectionStart + sectionSize;
             }
-
-            return bytes.buffer;
+            return buffer;
         }
 
         async function loadWasm() {
             try {
                 const response = await fetch('../../zig-out/bin/ghostty-vt.wasm');
-                const wasmBytes = patchWasmForEffects(await response.arrayBuffer());
+                const wasmBytes = patchTableGrowable(await response.arrayBuffer());
 
                 const wasmModule = await WebAssembly.instantiate(wasmBytes, {
                     env: {
@@ -331,7 +298,7 @@
         // Returns the table index (i.e. the function pointer value in WASM).
         let effectTableIndices = [];
         function addToWasmTable(func) {
-            const table = wasmInstance.exports.tbl || wasmInstance.exports.__indirect_function_table;
+            const table = wasmInstance.exports.__indirect_function_table;
             const idx = table.length;
             table.grow(1);
             table.set(idx, func);
