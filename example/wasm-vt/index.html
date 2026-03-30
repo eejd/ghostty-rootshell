@@ -147,80 +147,10 @@
             effectsLog.push({ label, data });
         }
 
-        // Patch the WASM binary to make the function table growable by
-        // removing its max limit. The build already exports the table
-        // (via --export-table), but Zig's linker doesn't support
-        // --growable-table, so the table has a fixed max that prevents
-        // Table.grow() from JS. This patches the table section (id=4)
-        // to use flag=0 (no max), allowing JS to add callback entries.
-        function patchTableGrowable(buffer) {
-            const bytes = new Uint8Array(buffer);
-
-            function readLEB128(arr, offset) {
-                let result = 0, shift = 0, bytesRead = 0;
-                while (true) {
-                    const byte = arr[offset + bytesRead];
-                    result |= (byte & 0x7f) << shift;
-                    bytesRead++;
-                    if ((byte & 0x80) === 0) break;
-                    shift += 7;
-                }
-                return { value: result, bytesRead };
-            }
-
-            function encodeLEB128(value) {
-                const out = [];
-                do {
-                    let b = value & 0x7f;
-                    value >>>= 7;
-                    if (value !== 0) b |= 0x80;
-                    out.push(b);
-                } while (value !== 0);
-                return out;
-            }
-
-            let pos = 8; // skip magic + version
-            while (pos < bytes.length) {
-                const sectionId = bytes[pos];
-                const { value: sectionSize, bytesRead: sizeLen } = readLEB128(bytes, pos + 1);
-                const sectionStart = pos + 1 + sizeLen;
-                if (sectionId === 4) {
-                    const { value: tableCount, bytesRead: countLen } = readLEB128(bytes, sectionStart);
-                    let tpos = sectionStart + countLen;
-                    const elemType = bytes[tpos++]; // 0x70 = funcref
-                    const flags = bytes[tpos];
-                    if (!(flags & 1)) return buffer; // already no max
-                    // Has max — rebuild section without it
-                    const { value: min, bytesRead: minLen } = readLEB128(bytes, tpos + 1);
-                    const { bytesRead: maxLen } = readLEB128(bytes, tpos + 1 + minLen);
-                    const afterLimits = tpos + 1 + minLen + maxLen;
-                    const newPayload = new Uint8Array([
-                        ...encodeLEB128(tableCount),
-                        elemType,
-                        0x00, // flags: no max
-                        ...encodeLEB128(min),
-                        ...bytes.slice(afterLimits, sectionStart + sectionSize),
-                    ]);
-                    const newSize = encodeLEB128(newPayload.length);
-                    const afterSection = sectionStart + sectionSize;
-                    const result = new Uint8Array(pos + 1 + newSize.length + newPayload.length + (bytes.length - afterSection));
-                    result.set(bytes.subarray(0, pos));
-                    let w = pos;
-                    result[w++] = 4; // section id
-                    for (const b of newSize) result[w++] = b;
-                    for (const b of newPayload) result[w++] = b;
-                    result.set(bytes.subarray(afterSection), w);
-                    return result.buffer;
-                }
-                pos = sectionStart + sectionSize;
-            }
-            return buffer;
-        }
-
         async function loadWasm() {
             try {
                 const response = await fetch('../../zig-out/bin/ghostty-vt.wasm');
-                const wasmBytes = patchTableGrowable(await response.arrayBuffer());
+                const wasmBytes = await response.arrayBuffer();
 
                 const wasmModule = await WebAssembly.instantiate(wasmBytes, {
                     env: {

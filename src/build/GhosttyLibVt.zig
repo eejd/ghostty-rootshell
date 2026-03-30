@@ -9,8 +9,8 @@ const GhosttyZig = @import("GhosttyZig.zig");
 /// The step that generates the file.
 step: *std.Build.Step,
 
-/// The artifact result
-artifact: *std.Build.Step.InstallArtifact,
+/// The install step for the library output.
+artifact: *std.Build.Step,
 
 /// The kind of library
 kind: Kind,
@@ -51,11 +51,32 @@ pub fn initWasm(
     // There is no entrypoint for this wasm module.
     exe.entry = .disabled;
 
+    // Zig's WASM linker doesn't support --growable-table, so the table
+    // has a fixed max equal to its initial size. Post-process with wabt
+    // tools (wasm2wat → sed → wat2wasm) to remove the max limit, making
+    // the table growable from JS via Table.grow().
+    const wasm2wat = b.addSystemCommand(&.{"wasm2wat"});
+    wasm2wat.addFileArg(exe.getEmittedBin());
+
+    const awk = b.addSystemCommand(&.{
+        "awk",
+        // Remove the table max from "(table (;0;) MIN MAX funcref)"
+        // so that it becomes "(table (;0;) MIN funcref)", making the
+        // table growable from JS.
+        "/\\(table \\(;[0-9]+;\\) [0-9]+ [0-9]+ funcref\\)/ { sub(/ [0-9]+ funcref\\)/, \" funcref)\") } 1",
+    });
+    awk.addFileArg(wasm2wat.captureStdOut());
+
+    const wat2wasm = b.addSystemCommand(&.{ "wat2wasm", "--enable-all" });
+    wat2wasm.addFileArg(awk.captureStdOut());
+    wat2wasm.addArgs(&.{"-o"});
+    const output = wat2wasm.addOutputFileArg("ghostty-vt.wasm");
+
     return .{
-        .step = &exe.step,
-        .artifact = b.addInstallArtifact(exe, .{}),
+        .step = &wat2wasm.step,
+        .artifact = &b.addInstallFileWithDir(output, .bin, "ghostty-vt.wasm").step,
         .kind = .wasm,
-        .output = exe.getEmittedBin(),
+        .output = output,
         .dsym = null,
         .pkg_config = null,
     };
@@ -168,7 +189,7 @@ fn initLib(
 
     return .{
         .step = &lib.step,
-        .artifact = b.addInstallArtifact(lib, .{}),
+        .artifact = &b.addInstallArtifact(lib, .{}).step,
         .kind = kind,
         .output = lib.getEmittedBin(),
         .dsym = dsymutil,
@@ -181,7 +202,7 @@ pub fn install(
     step: *std.Build.Step,
 ) void {
     const b = step.owner;
-    step.dependOn(&self.artifact.step);
+    step.dependOn(self.artifact);
     if (self.pkg_config) |pkg_config| {
         step.dependOn(&b.addInstallFileWithDir(
             pkg_config,
