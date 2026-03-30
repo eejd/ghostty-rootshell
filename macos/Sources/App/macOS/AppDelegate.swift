@@ -154,12 +154,7 @@ class AppDelegate: NSObject,
     /// The custom app icon image that is currently in use.
     @Published private(set) var appIcon: NSImage?
 
-    /// Ghostty menu items indexed by their normalized shortcut. This avoids traversing
-    /// the entire menu tree on every key equivalent event.
-    ///
-    /// We store a weak reference so this cache can never be the owner of menu items.
-    /// If multiple items map to the same shortcut, the most recent one wins.
-    private var menuItemsByShortcut: [MenuShortcutKey: Weak<NSMenuItem>] = [:]
+    @MainActor private lazy var menuShortcutManager = Ghostty.MenuShortcutManager()
 
     override init() {
 #if DEBUG
@@ -784,7 +779,9 @@ class AppDelegate: NSObject,
         }
 
         // Config could change keybindings, so update everything that depends on that
-        syncMenuShortcuts(config)
+        DispatchQueue.main.async {
+            self.syncMenuShortcuts(config)
+        }
         TerminalController.all.forEach { $0.relabelTabs() }
 
         // Update our badge since config can change what we show.
@@ -1144,11 +1141,10 @@ extension AppDelegate {
     }
 
     /// Sync all of our menu item keyboard shortcuts with the Ghostty configuration.
-    private func syncMenuShortcuts(_ config: Ghostty.Config) {
+    @MainActor private func syncMenuShortcuts(_ config: Ghostty.Config) {
         guard ghostty.readiness == .ready else { return }
 
-        // Reset our shortcut index since we're about to rebuild all menu bindings.
-        menuItemsByShortcut.removeAll(keepingCapacity: true)
+        menuShortcutManager.reset()
 
         syncMenuShortcut(config, action: "check_for_updates", menuItem: self.menuCheckForUpdates)
         syncMenuShortcut(config, action: "open_config", menuItem: self.menuOpenConfig)
@@ -1215,12 +1211,41 @@ extension AppDelegate {
         reloadDockMenu()
     }
 
+    @MainActor private func syncMenuShortcut(_ config: Ghostty.Config, action: String, menuItem: NSMenuItem?) {
+        menuShortcutManager.syncMenuShortcut(config, action: action, menuItem: menuItem)
+    }
+
+    @MainActor func performGhosttyBindingMenuKeyEquivalent(with event: NSEvent) -> Bool {
+        menuShortcutManager.performGhosttyBindingMenuKeyEquivalent(with: event)
+    }
+}
+
+extension Ghostty {
+    /// The manager that's responsible for updating shortcuts of Ghostty's app menu
+    @MainActor
+    class MenuShortcutManager {
+
+        /// Ghostty menu items indexed by their normalized shortcut. This avoids traversing
+        /// the entire menu tree on every key equivalent event.
+        ///
+        /// We store a weak reference so this cache can never be the owner of menu items.
+        /// If multiple items map to the same shortcut, the most recent one wins.
+        private var menuItemsByShortcut: [MenuShortcutKey: Weak<NSMenuItem>] = [:]
+    }
+}
+
+extension Ghostty.MenuShortcutManager {
+    func reset() {
+        // Reset our shortcut index since we're about to rebuild all menu bindings.
+        menuItemsByShortcut.removeAll(keepingCapacity: true)
+    }
+
     /// Syncs a single menu shortcut for the given action. The action string is the same
     /// action string used for the Ghostty configuration.
-    private func syncMenuShortcut(_ config: Ghostty.Config, action: String, menuItem: NSMenuItem?) {
+    func syncMenuShortcut(_ config: Ghostty.Config, action: String?, menuItem: NSMenuItem?) {
         guard let menu = menuItem else { return }
 
-        guard let shortcut = config.keyboardShortcut(for: action) else {
+        guard let action, let shortcut = config.keyboardShortcut(for: action) else {
             // No shortcut, clear the menu item
             menu.keyEquivalent = ""
             menu.keyEquivalentModifierMask = []
@@ -1235,7 +1260,9 @@ extension AppDelegate {
         // Build a direct lookup for key-equivalent dispatch so we don't need to
         // linearly walk the full menu hierarchy at event time.
         guard let key = MenuShortcutKey(
-            keyEquivalent: keyEquivalent,
+            // We don't want to check missing `shift` for Ghostty configured shortcuts,
+            // because we know it's there when it needs to be
+            keyEquivalent: keyEquivalent.lowercased(),
             modifiers: modifierMask
         ) else {
             return
@@ -1286,7 +1313,9 @@ extension AppDelegate {
         parentMenu.performActionForItem(at: index)
         return true
     }
+}
 
+extension Ghostty.MenuShortcutManager {
     /// Hashable key for a menu shortcut match, normalized for quick lookup.
     struct MenuShortcutKey: Hashable {
         private static let shortcutModifiers: NSEvent.ModifierFlags = [.shift, .control, .option, .command]

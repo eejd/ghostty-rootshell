@@ -4,7 +4,7 @@ import Testing
 
 @Suite
 struct NormalizedMenuShortcutKeyTests {
-    typealias Key = AppDelegate.MenuShortcutKey
+    typealias Key = Ghostty.MenuShortcutManager.MenuShortcutKey
 
     // MARK: - Init from keyEquivalent + modifiers
 
