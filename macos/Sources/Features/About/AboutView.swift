@@ -12,20 +12,15 @@ struct AboutView: View {
     private var version: String? { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String }
 
     private enum VersionConfig {
-        /// Stable semver release (e.g. "1.3.1") with a link to release notes.
-        case stable(url: URL?)
-        /// Tip build: CI sets CFBundleShortVersionString to the raw short commit hash,
-        /// identical to GhosttyCommit. Show "Tip Release" text instead to avoid
-        /// duplicating the commit row.
+        case stable(version: String, url: URL?)
         case tip
-        /// Local dev build or unknown format.
         case other(String)
 
         init(version: String?, docsURL: URL?) {
             guard let version else { self = .other(""); return }
             if version.range(of: #"^\d+\.\d+\.\d+$"#, options: .regularExpression) != nil {
                 let slug = version.replacingOccurrences(of: ".", with: "-")
-                self = .stable(url: docsURL?.appendingPathComponent("install/release-notes/\(slug)"))
+                self = .stable(version: version, url: docsURL?.appendingPathComponent("install/release-notes/\(slug)"))
                 return
             }
             if version.range(of: #"^[0-9a-f]{7,40}$"#, options: .regularExpression) != nil {
@@ -89,8 +84,8 @@ struct AboutView: View {
 
                 VStack(spacing: 2) {
                     switch versionConfig {
-                    case .stable(let url):
-                        PropertyRow(label: "Version", text: version ?? "", url: url)
+                    case .stable(let version, let url):
+                        PropertyRow(label: "Version", text: version, url: url)
                     case .tip:
                         PropertyRow(label: "Version", text: "Tip Release")
                     case .other(let v) where !v.isEmpty:
