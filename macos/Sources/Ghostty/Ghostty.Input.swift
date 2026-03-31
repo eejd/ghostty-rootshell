@@ -89,7 +89,7 @@ extension Ghostty {
         GHOSTTY_KEY_ARROW_RIGHT: .rightArrow,
         GHOSTTY_KEY_HOME: .home,
         GHOSTTY_KEY_END: .end,
-        GHOSTTY_KEY_DELETE: .delete,
+        GHOSTTY_KEY_DELETE: .deleteForward,
         GHOSTTY_KEY_PAGE_UP: .pageUp,
         GHOSTTY_KEY_PAGE_DOWN: .pageDown,
         GHOSTTY_KEY_ESCAPE: .escape,
