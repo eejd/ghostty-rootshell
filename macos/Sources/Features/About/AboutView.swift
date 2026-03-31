@@ -15,9 +15,10 @@ struct AboutView: View {
         case stable(version: String, url: URL?)
         case tip
         case other(String)
+        case none
 
         init(version: String?, docsURL: URL?) {
-            guard let version else { self = .other(""); return }
+            guard let version else { self = .none; return }
             if version.range(of: #"^\d+\.\d+\.\d+$"#, options: .regularExpression) != nil {
                 let slug = version.replacingOccurrences(of: ".", with: "-")
                 self = .stable(version: version, url: docsURL?.appendingPathComponent("install/release-notes/\(slug)"))
@@ -88,9 +89,9 @@ struct AboutView: View {
                         PropertyRow(label: "Version", text: version, url: url)
                     case .tip:
                         PropertyRow(label: "Version", text: "Tip Release")
-                    case .other(let v) where !v.isEmpty:
+                    case .other(let v):
                         PropertyRow(label: "Version", text: v)
-                    default:
+                    case .none:
                         EmptyView()
                     }
                     if let build {
