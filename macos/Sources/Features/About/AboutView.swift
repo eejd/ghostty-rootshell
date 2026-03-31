@@ -20,19 +20,23 @@ struct AboutView: View {
         case tip
         /// Local dev build or unknown format.
         case other(String)
+
+        init(version: String?, docsURL: URL?) {
+            guard let version else { self = .other(""); return }
+            if version.range(of: #"^\d+\.\d+\.\d+$"#, options: .regularExpression) != nil {
+                let slug = version.replacingOccurrences(of: ".", with: "-")
+                self = .stable(url: docsURL?.appendingPathComponent("install/release-notes/\(slug)"))
+                return
+            }
+            if version.range(of: #"^[0-9a-f]{7,40}$"#, options: .regularExpression) != nil {
+                self = .tip
+                return
+            }
+            self = .other(version)
+        }
     }
 
-    private var versionConfig: VersionConfig {
-        guard let version else { return .other("") }
-        if version.range(of: #"^\d+\.\d+\.\d+$"#, options: .regularExpression) != nil {
-            let slug = version.replacingOccurrences(of: ".", with: "-")
-            return .stable(url: docsURL?.appendingPathComponent("install/release-notes/\(slug)"))
-        }
-        if version.range(of: #"^[0-9a-f]{7,40}$"#, options: .regularExpression) != nil {
-            return .tip
-        }
-        return .other(version)
-    }
+    private var versionConfig: VersionConfig { VersionConfig(version: version, docsURL: docsURL) }
 
     private var copyright: String? { Bundle.main.infoDictionary?["NSHumanReadableCopyright"] as? String }
 
