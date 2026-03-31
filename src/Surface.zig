@@ -3282,7 +3282,11 @@ pub fn focusCallback(self: *Surface, focused: bool) !void {
     crash.sentry.thread_state = self.crashThreadState();
     defer crash.sentry.thread_state = null;
 
-    // If our focus state is the same we do nothing.
+    // Always update the app focused surface, otherwise we miss
+    // the first surface created.
+    if (focused) self.app.focusSurface(self);
+
+    // If our focus state is unchanged we do nothing else.
     if (self.focused == focused) return;
     self.focused = focused;
 
@@ -3291,10 +3295,7 @@ pub fn focusCallback(self: *Surface, focused: bool) !void {
         .focus = focused,
     }, .{ .forever = {} });
 
-    if (focused) {
-        // Notify our app if we gained focus.
-        self.app.focusSurface(self);
-    } else unfocused: {
+    if (!focused) unfocused: {
         // If we lost focus and we have a keypress, then we want to send a key
         // release event for it. Depending on the apprt, this CAN result in
         // duplicate key release events, but that is better than not sending
