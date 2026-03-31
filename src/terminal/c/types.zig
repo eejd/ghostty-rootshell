@@ -6,6 +6,10 @@
 //! build structs without hardcoding byte offsets.
 const std = @import("std");
 const lib = @import("../lib.zig");
+const color = @import("../color.zig");
+const mouse_event = @import("mouse_event.zig");
+const point = @import("../point.zig");
+const size_report = @import("size_report.zig");
 
 const terminal = @import("terminal.zig");
 const formatter = @import("formatter.zig");
@@ -25,11 +29,23 @@ pub const structs: std.StaticStringMap(StructInfo) = .initComptime(.{
     .{ "GhosttyStyleColor", StructInfo.init(style_c.Color) },
     .{ "GhosttyMouseEncoderSize", StructInfo.init(mouse_encode.Size) },
     .{ "GhosttyGridRef", StructInfo.init(grid_ref.CGridRef) },
+    .{ "GhosttyColorRgb", StructInfo.init(color.RGB.C) },
+    .{ "GhosttyDeviceAttributes", StructInfo.init(terminal.DeviceAttributes) },
+    .{ "GhosttyDeviceAttributesPrimary", StructInfo.init(terminal.DeviceAttributes.Primary) },
+    .{ "GhosttyDeviceAttributesSecondary", StructInfo.init(terminal.DeviceAttributes.Secondary) },
+    .{ "GhosttyDeviceAttributesTertiary", StructInfo.init(terminal.DeviceAttributes.Tertiary) },
+    .{ "GhosttyMousePosition", StructInfo.init(mouse_event.Position) },
+    .{ "GhosttyPoint", StructInfo.init(point.Point.C) },
+    .{ "GhosttyPointCoordinate", StructInfo.init(point.Coordinate) },
+    .{ "GhosttySizeReportSize", StructInfo.init(size_report.Size) },
+    .{ "GhosttyString", StructInfo.init(lib.String) },
+    .{ "GhosttyTerminalScrollbar", StructInfo.init(terminal.TerminalScrollbar) },
+    .{ "GhosttyTerminalScrollViewport", StructInfo.init(terminal.ScrollViewport) },
 });
 
 /// The comptime-generated JSON string of all structs.
 pub const json: [:0]const u8 = json: {
-    @setEvalBranchQuota(50000);
+    @setEvalBranchQuota(100000);
     var counter: std.Io.Writer.Discarding = .init(&.{});
     jsonWriteAll(&counter.writer) catch unreachable;
 
