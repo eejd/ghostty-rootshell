@@ -1738,7 +1738,7 @@ pub const Surface = extern struct {
         defer icon.unref();
         notification.setIcon(icon.as(gio.Icon));
 
-        const pointer = glib.Variant.newUint64(@intFromPtr(core_surface));
+        const pointer = glib.Variant.newUint64(core_surface.id);
         notification.setDefaultActionAndTargetValue(
             "app.present-surface",
             pointer,
