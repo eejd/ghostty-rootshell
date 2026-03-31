@@ -10,6 +10,30 @@ struct AboutView: View {
     private var build: String? { Bundle.main.infoDictionary?["CFBundleVersion"] as? String }
     private var commit: String? { Bundle.main.infoDictionary?["GhosttyCommit"] as? String }
     private var version: String? { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String }
+
+    private enum VersionConfig {
+        /// Stable semver release (e.g. "1.3.1") with a link to release notes.
+        case stable(url: URL?)
+        /// Tip build: CI sets CFBundleShortVersionString to the raw short commit hash,
+        /// identical to GhosttyCommit. Show "Tip Release" text instead to avoid
+        /// duplicating the commit row.
+        case tip
+        /// Local dev build or unknown format.
+        case other(String)
+    }
+
+    private var versionConfig: VersionConfig {
+        guard let version else { return .other("") }
+        if version.range(of: #"^\d+\.\d+\.\d+$"#, options: .regularExpression) != nil {
+            let slug = version.replacingOccurrences(of: ".", with: "-")
+            return .stable(url: docsURL?.appendingPathComponent("install/release-notes/\(slug)"))
+        }
+        if version.range(of: #"^[0-9a-f]{7,40}$"#, options: .regularExpression) != nil {
+            return .tip
+        }
+        return .other(version)
+    }
+
     private var copyright: String? { Bundle.main.infoDictionary?["NSHumanReadableCopyright"] as? String }
 
     #if os(macOS)
@@ -60,8 +84,15 @@ struct AboutView: View {
                 .textSelection(.enabled)
 
                 VStack(spacing: 2) {
-                    if let version {
-                        PropertyRow(label: "Version", text: version)
+                    switch versionConfig {
+                    case .stable(let url):
+                        PropertyRow(label: "Version", text: version ?? "", url: url)
+                    case .tip:
+                        PropertyRow(label: "Version", text: "Tip Release")
+                    case .other(let v) where !v.isEmpty:
+                        PropertyRow(label: "Version", text: v)
+                    default:
+                        EmptyView()
                     }
                     if let build {
                         PropertyRow(label: "Build", text: build)
