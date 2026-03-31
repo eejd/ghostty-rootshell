@@ -12,27 +12,36 @@ struct AboutView: View {
     private var version: String? { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String }
 
     private enum VersionConfig {
-        case stable(version: String, url: URL?)
-        case tip
+        case stable(version: String)
+        case tip(commit: String?)
         case other(String)
         case none
 
-        init(version: String?, docsURL: URL?) {
+        init(version: String?) {
             guard let version else { self = .none; return }
             if version.range(of: #"^\d+\.\d+\.\d+$"#, options: .regularExpression) != nil {
-                let slug = version.replacingOccurrences(of: ".", with: "-")
-                self = .stable(version: version, url: docsURL?.appendingPathComponent("install/release-notes/\(slug)"))
+                self = .stable(version: version)
                 return
             }
             if version.range(of: #"^[0-9a-f]{7,40}$"#, options: .regularExpression) != nil {
-                self = .tip
+                self = .tip(commit: version)
                 return
             }
             self = .other(version)
         }
+
+        var url: URL? {
+            switch self {
+            case .stable(let version):
+                let slug = version.replacingOccurrences(of: ".", with: "-")
+                return URL(string: "https://ghostty.org/docs/install/release-notes/\(slug)")
+            default:
+                return nil
+            }
+        }
     }
 
-    private var versionConfig: VersionConfig { VersionConfig(version: version, docsURL: docsURL) }
+    private var versionConfig: VersionConfig { VersionConfig(version: version) }
 
     private var copyright: String? { Bundle.main.infoDictionary?["NSHumanReadableCopyright"] as? String }
 
@@ -85,8 +94,8 @@ struct AboutView: View {
 
                 VStack(spacing: 2) {
                     switch versionConfig {
-                    case .stable(let version, let url):
-                        PropertyRow(label: "Version", text: version, url: url)
+                    case .stable(let version):
+                        PropertyRow(label: "Version", text: version, url: versionConfig.url)
                     case .tip:
                         PropertyRow(label: "Version", text: "Tip Release")
                     case .other(let v):
