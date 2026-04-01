@@ -1736,11 +1736,11 @@ pub const Application = extern struct {
                 log.debug("new-window argument: {d} {s}", .{ i, str });
 
                 if (e_seen) {
-                    const cpy = alloc.dupeZ(u8, str) catch |err| {
+                    const duplicated = alloc.dupeZ(u8, str) catch |err| {
                         log.warn("unable to duplicate argument {d} {s}: {t}", .{ i, str, err });
                         break :overrides;
                     };
-                    args.append(alloc, cpy) catch |err| {
+                    args.append(alloc, duplicated) catch |err| {
                         log.warn("unable to append argument {d} {s}: {t}", .{ i, str, err });
                         break :overrides;
                     };
@@ -2451,7 +2451,7 @@ const Action = struct {
         };
         defer config.unref();
 
-        // Update the proper target. This will trigger a `confige_change`
+        // Update the proper target. This will trigger a `config_change`
         // apprt action which will propagate the config properly to our
         // property system.
         switch (target) {
