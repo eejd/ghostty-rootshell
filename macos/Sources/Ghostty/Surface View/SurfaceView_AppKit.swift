@@ -660,13 +660,6 @@ extension Ghostty {
                 return event
             }
 
-            guard searchState == nil else {
-                // We don't want to process events that
-                // are supposed to be handled by SearchOverlay
-                // When clicking outside, SurfaceView will become first responder automatically
-                return event
-            }
-
             // We only want to process events that are on this window.
             guard let window,
                   event.window != nil,
