@@ -29,8 +29,11 @@ extension Ghostty {
             }
 
         case GHOSTTY_TRIGGER_UNICODE:
-            guard let scalar = UnicodeScalar(trigger.key.unicode) else { return nil }
-            key = KeyEquivalent(Character(scalar))
+            guard
+                let scalar = UnicodeScalar(trigger.key.unicode),
+                let normalized = Character(scalar).lowercased().first
+            else { return nil }
+            key = KeyEquivalent(normalized)
 
         case GHOSTTY_TRIGGER_CATCH_ALL:
             // catch_all matches any key, so it can't be represented as a KeyboardShortcut
