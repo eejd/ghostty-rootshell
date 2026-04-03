@@ -1999,21 +1999,7 @@ extension Ghostty.SurfaceView: NSTextInputClient {
            let current = NSApp.currentEvent,
            lastPerformKeyEvent == current.timestamp {
             NSApp.sendEvent(current)
-            return
         }
-
-		guard let surfaceModel else { return }
-        // Process MacOS native scroll events
-        switch selector {
-        case #selector(moveToBeginningOfDocument(_:)):
-            _ = surfaceModel.perform(action: "scroll_to_top")
-        case #selector(moveToEndOfDocument(_:)):
-            _ = surfaceModel.perform(action: "scroll_to_bottom")
-        default:
-            break
-        }
-
-        print("SEL: \(selector)")
     }
 
     /// Sync the preedit state based on the markedText value to libghostty
