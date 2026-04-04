@@ -2,6 +2,14 @@ const std = @import("std");
 
 /// Options set by Zig build.zig and exposed via `terminal_options`.
 pub const Options = struct {
+    pub const Artifact = enum {
+        /// Ghostty application
+        ghostty,
+
+        /// libghostty-vt, Zig module
+        lib,
+    };
+
     /// The target artifact to build. This will gate some functionality.
     artifact: Artifact,
 
@@ -65,16 +73,9 @@ pub const Options = struct {
         opts.addOption(usize, "version_major", self.version.major);
         opts.addOption(usize, "version_minor", self.version.minor);
         opts.addOption(usize, "version_patch", self.version.patch);
+        opts.addOption(?[]const u8, "version_pre", self.version.pre);
         opts.addOption(?[]const u8, "version_build", self.version.build);
 
         m.addOptions("terminal_options", opts);
     }
-};
-
-pub const Artifact = enum {
-    /// Ghostty application
-    ghostty,
-
-    /// libghostty-vt, Zig module
-    lib,
 };

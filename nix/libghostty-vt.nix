@@ -11,7 +11,7 @@
 }:
 stdenv.mkDerivation (finalAttrs: {
   pname = "ghostty";
-  version = "0.1.0-dev";
+  version = "0.1.0-dev+${revision}-nix";
 
   # We limit source like this to try and reduce the amount of rebuilds as possible
   # thus we only provide the source that is needed for the build
@@ -51,7 +51,7 @@ stdenv.mkDerivation (finalAttrs: {
   zigBuildFlags = [
     "--system"
     "${finalAttrs.deps}"
-    "-Dversion-string=${finalAttrs.version}-${revision}-nix"
+    "-Dlib-version-string=${finalAttrs.version}"
     "-Dcpu=baseline"
     "-Doptimize=${optimize}"
     "-Dapp-runtime=none"

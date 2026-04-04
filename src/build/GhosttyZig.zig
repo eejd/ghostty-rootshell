@@ -11,6 +11,9 @@ const TerminalBuildOptions = @import("../terminal/build_options.zig").Options;
 vt: *std.Build.Module,
 vt_c: *std.Build.Module,
 
+/// The libghostty-vt version
+version: std.SemanticVersion,
+
 /// Static library paths for vendored SIMD dependencies. Populated
 /// only when the dependencies are built from source (not provided
 /// by the system via -Dsystem-integration). Used to produce a
@@ -23,7 +26,7 @@ pub fn init(
     deps: *const SharedDeps,
 ) !GhosttyZig {
     // Terminal module build options
-    var vt_options = cfg.terminalOptions();
+    var vt_options = cfg.terminalOptions(.lib);
     vt_options.artifact = .lib;
     // We presently don't allow Oniguruma in our Zig module at all.
     // We should expose this as a build option in the future so we can
@@ -54,6 +57,8 @@ pub fn init(
             },
             &simd_libs,
         ),
+
+        .version = cfg.lib_version,
 
         .simd_libs = simd_libs,
     };
