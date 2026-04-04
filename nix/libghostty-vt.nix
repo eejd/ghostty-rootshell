@@ -10,7 +10,7 @@
 }:
 stdenv.mkDerivation (finalAttrs: {
   pname = "ghostty";
-  version = "1.3.2-dev";
+  version = "0.1.0-dev";
 
   # We limit source like this to try and reduce the amount of rebuilds as possible
   # thus we only provide the source that is needed for the build
@@ -57,12 +57,29 @@ stdenv.mkDerivation (finalAttrs: {
     "-Demit-lib-vt=true"
   ];
 
+  outputs = [
+    "out"
+    "dev"
+  ];
+
+  postInstall = ''
+    mkdir -p "$dev/lib"
+    mv "$out/lib/libghostty-vt.a" "$dev/lib"
+    rm "$out/lib/libghostty-vt.so"
+    mv "$out/include" "$dev"
+    mv "$out/share" "$dev"
+
+    ln -sf "$out/lib/libghostty-vt.so.0"  "$dev/lib/libghostty-vt.so"
+  '';
+
+  postFixup = ''
+    substituteInPlace "$dev/share/pkgconfig/libghostty-vt.pc" \
+      --replace "$out" "$dev"
+  '';
+
   meta = {
     homepage = "https://ghostty.org";
     license = lib.licenses.mit;
-    platforms = [
-      "x86_64-linux"
-      "aarch64-linux"
-    ];
+    platforms = zig_0_15.meta.platforms;
   };
 })
