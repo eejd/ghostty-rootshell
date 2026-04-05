@@ -47,8 +47,23 @@ pub const Options = struct {
         opts.addOption(bool, "simd", self.simd);
         opts.addOption(bool, "slow_runtime_safety", self.slow_runtime_safety);
 
+        // Kitty graphics is almost always true. This used to be conditional on
+        // some other factors but we've since generalized the implementation
+        // to support optional PNG decoding, OS capabilities like filesystems,
+        // etc. So its safe to always enable it and just have the
+        // implementation deal with unsupported features as needed.
+        //
+        // We disable it on wasm32-freestanding because we at the least
+        // require the ability to get timestamps and there is no way to
+        // do that with freestanding targets.
+        const target = m.resolved_target.?.result;
+        opts.addOption(
+            bool,
+            "kitty_graphics",
+            !(target.cpu.arch == .wasm32 and target.os.tag == .freestanding),
+        );
+
         // These are synthesized based on other options.
-        opts.addOption(bool, "kitty_graphics", self.oniguruma);
         opts.addOption(bool, "tmux_control_mode", self.oniguruma);
 
         // Version information.

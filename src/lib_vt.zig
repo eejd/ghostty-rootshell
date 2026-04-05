@@ -19,6 +19,24 @@ const builtin = @import("builtin");
 // or are too Ghostty-internal.
 const terminal = @import("terminal/main.zig");
 
+/// System interface for the terminal package.
+///
+/// This module provides runtime-swappable function pointers for operations
+/// that depend on external implementations. Embedders can use this to
+/// provide or override default behaviors. These must be set at startup
+/// before any terminal functionality is used.
+///
+/// This lets libghostty-vt have no runtime dependencies on external
+/// libraries, while still allowing rich functionality that may require
+/// external libraries (e.g. image decoding or regular expresssions).
+///
+/// Setting these will enable various features of the terminal package.
+/// For example, setting a PNG decoder will enable support for PNG images in
+/// the Kitty Graphics Protocol.
+///
+/// Additional functionality will be added here over time as needed.
+pub const sys = terminal.sys;
+
 pub const apc = terminal.apc;
 pub const dcs = terminal.dcs;
 pub const osc = terminal.osc;

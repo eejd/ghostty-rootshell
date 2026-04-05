@@ -8,7 +8,7 @@ const posix = std.posix;
 const fastmem = @import("../../fastmem.zig");
 const command = @import("graphics_command.zig");
 const PageList = @import("../PageList.zig");
-const wuffs = @import("wuffs");
+const sys = @import("../sys.zig");
 
 const temp_dir = struct {
     const TempDir = @import("../../os/TempDir.zig");
@@ -426,13 +426,14 @@ pub const LoadingImage = struct {
     fn decodePng(self: *LoadingImage, alloc: Allocator) !void {
         assert(self.image.format == .png);
 
-        const result = wuffs.png.decode(
+        const decode_png_fn = sys.decode_png orelse
+            return error.UnsupportedFormat;
+        const result = decode_png_fn(
             alloc,
             self.data.items,
         ) catch |err| switch (err) {
-            error.WuffsError => return error.InvalidData,
+            error.InvalidData => return error.InvalidData,
             error.OutOfMemory => return error.OutOfMemory,
-            error.Overflow => return error.InvalidData,
         };
         defer alloc.free(result.data);
 
@@ -799,6 +800,8 @@ test "image load: rgb, not compressed, regular file" {
 }
 
 test "image load: png, not compressed, regular file" {
+    if (sys.decode_png == null) return error.SkipZigTest;
+
     const testing = std.testing;
     const alloc = testing.allocator;
 
