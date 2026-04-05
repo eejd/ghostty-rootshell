@@ -51,6 +51,9 @@ pub const ImageStorage = struct {
     /// Non-null if there is an in-progress loading image.
     loading: ?*LoadingImage = null,
 
+    /// The limits of what medium types are allowed for image loading.
+    image_limits: LoadingImage.Limits = .direct,
+
     /// The total bytes of image data that have been loaded and the limit.
     /// If the limit is reached, the oldest images will be evicted to make
     /// space. Unused images take priority.
@@ -89,8 +92,9 @@ pub const ImageStorage = struct {
     ) !void {
         // Special case disabling by quickly deleting all
         if (limit == 0) {
+            const image_limits = self.image_limits;
             self.deinit(alloc, s);
-            self.* = .{};
+            self.* = .{ .image_limits = image_limits };
         }
 
         // If we re lowering our limit, check if we need to evict.

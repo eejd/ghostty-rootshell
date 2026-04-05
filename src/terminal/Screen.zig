@@ -257,6 +257,12 @@ pub const Options = struct {
     /// screen. Kitty image storage is per-screen.
     kitty_image_storage_limit: usize = 320 * 1000 * 1000, // 320MB
 
+    /// The limits for what medium types are allowed for Kitty image loading.
+    kitty_image_loading_limits: if (build_options.kitty_graphics)
+        kitty.graphics.LoadingImage.Limits
+    else
+        void = if (build_options.kitty_graphics) .direct else {},
+
     /// A simple, default terminal. If you rely on specific dimensions or
     /// scrollback (or lack of) then do not use this directly. This is just
     /// for callers that need some defaults.
@@ -313,6 +319,7 @@ pub fn init(
             &result,
             opts.kitty_image_storage_limit,
         ) catch unreachable;
+        result.kitty_images.image_limits = opts.kitty_image_loading_limits;
     }
 
     return result;
