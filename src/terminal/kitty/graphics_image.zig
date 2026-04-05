@@ -571,7 +571,7 @@ test "image load with invalid RGB data" {
         .data = try alloc.dupe(u8, "AAAA"),
     };
     defer cmd.deinit(alloc);
-    var loading = try LoadingImage.init(alloc, &cmd, .all);
+    var loading = try LoadingImage.init(alloc, &cmd, .direct);
     defer loading.deinit(alloc);
 }
 
@@ -589,7 +589,7 @@ test "image load with image too wide" {
         .data = try alloc.dupe(u8, "AAAA"),
     };
     defer cmd.deinit(alloc);
-    var loading = try LoadingImage.init(alloc, &cmd, .all);
+    var loading = try LoadingImage.init(alloc, &cmd, .direct);
     defer loading.deinit(alloc);
     try testing.expectError(error.DimensionsTooLarge, loading.complete(alloc));
 }
@@ -608,7 +608,7 @@ test "image load with image too tall" {
         .data = try alloc.dupe(u8, "AAAA"),
     };
     defer cmd.deinit(alloc);
-    var loading = try LoadingImage.init(alloc, &cmd, .all);
+    var loading = try LoadingImage.init(alloc, &cmd, .direct);
     defer loading.deinit(alloc);
     try testing.expectError(error.DimensionsTooLarge, loading.complete(alloc));
 }
@@ -632,7 +632,7 @@ test "image load: rgb, zlib compressed, direct" {
         ),
     };
     defer cmd.deinit(alloc);
-    var loading = try LoadingImage.init(alloc, &cmd, .all);
+    var loading = try LoadingImage.init(alloc, &cmd, .direct);
     defer loading.deinit(alloc);
     var img = try loading.complete(alloc);
     defer img.deinit(alloc);
@@ -660,7 +660,7 @@ test "image load: rgb, not compressed, direct" {
         ),
     };
     defer cmd.deinit(alloc);
-    var loading = try LoadingImage.init(alloc, &cmd, .all);
+    var loading = try LoadingImage.init(alloc, &cmd, .direct);
     defer loading.deinit(alloc);
     var img = try loading.complete(alloc);
     defer img.deinit(alloc);
@@ -689,7 +689,7 @@ test "image load: rgb, zlib compressed, direct, chunked" {
         .data = try alloc.dupe(u8, data[0..1024]),
     };
     defer cmd.deinit(alloc);
-    var loading = try LoadingImage.init(alloc, &cmd, .all);
+    var loading = try LoadingImage.init(alloc, &cmd, .direct);
     defer loading.deinit(alloc);
 
     // Read our remaining chunks
@@ -725,7 +725,7 @@ test "image load: rgb, zlib compressed, direct, chunked with zero initial chunk"
         } },
     };
     defer cmd.deinit(alloc);
-    var loading = try LoadingImage.init(alloc, &cmd, .all);
+    var loading = try LoadingImage.init(alloc, &cmd, .direct);
     defer loading.deinit(alloc);
 
     // Read our remaining chunks
