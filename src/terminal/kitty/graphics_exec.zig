@@ -112,7 +112,7 @@ fn query(alloc: Allocator, cmd: *const Command) Response {
     };
 
     // Attempt to load the image. If we cannot, then set an appropriate error.
-    var loading = LoadingImage.init(alloc, cmd) catch |err| {
+    var loading = LoadingImage.init(alloc, cmd, .all) catch |err| {
         encodeError(&result, err);
         return result;
     };
@@ -322,7 +322,7 @@ fn loadAndAddImage(
         }
 
         break :loading loading.*;
-    } else try .init(alloc, cmd);
+    } else try .init(alloc, cmd, .all);
 
     // We only want to deinit on error. If we're chunking, then we don't
     // want to deinit at all. If we're not chunking, then we'll deinit
