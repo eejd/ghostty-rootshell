@@ -255,13 +255,11 @@ pub fn init(self: *Termio, alloc: Allocator, opts: termio.Options) !void {
                 },
                 .palette = .init(opts.config.palette),
             },
+            .kitty_image_storage_limit = opts.config.image_storage_limit,
+            .kitty_image_loading_limits = .all,
         };
     });
     errdefer term.deinit(alloc);
-
-    // Set the Kitty image settings
-    try term.setKittyGraphicsSizeLimit(alloc, opts.config.image_storage_limit);
-    term.setKittyGraphicsLoadingLimits(.all);
 
     // Set our default cursor style
     term.screens.active.cursor.cursor_style = opts.config.cursor_style;
