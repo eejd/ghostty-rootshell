@@ -1,3 +1,4 @@
+import Foundation
 import GhosttyVt
 
 // Create a terminal with a small grid
@@ -38,7 +39,8 @@ guard allocResult == GHOSTTY_SUCCESS, let buf else {
 }
 
 print("Plain text (\(len) bytes):")
-print(String(cString: buf))
+let data = Data(bytes: buf, count: len)
+print(String(data: data, encoding: .utf8) ?? "<invalid UTF-8>")
 
 ghostty_free(nil, buf, len)
 ghostty_formatter_free(formatter)
