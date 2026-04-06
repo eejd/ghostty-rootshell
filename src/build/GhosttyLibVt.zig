@@ -4,9 +4,12 @@ const std = @import("std");
 const builtin = @import("builtin");
 const assert = std.debug.assert;
 const RunStep = std.Build.Step.Run;
+const Config = @import("Config.zig");
 const GhosttyZig = @import("GhosttyZig.zig");
 const LibtoolStep = @import("LibtoolStep.zig");
+const LipoStep = @import("LipoStep.zig");
 const SharedDeps = @import("SharedDeps.zig");
+const XCFrameworkStep = @import("XCFrameworkStep.zig");
 
 /// The step that generates the file.
 step: *std.Build.Step,
@@ -97,6 +100,45 @@ pub fn initShared(
     zig: *const GhosttyZig,
 ) !GhosttyLibVt {
     return initLib(b, zig, .dynamic);
+}
+
+/// Build a macOS universal (arm64 + x86_64) static library using lipo.
+pub fn initStaticAppleUniversal(
+    b: *std.Build,
+    cfg: *const Config,
+    deps: *const SharedDeps,
+    zig: *const GhosttyZig,
+) !GhosttyLibVt {
+    const aarch64_zig = try zig.retarget(
+        b,
+        cfg,
+        deps,
+        Config.genericMacOSTarget(b, .aarch64),
+    );
+    const x86_64_zig = try zig.retarget(
+        b,
+        cfg,
+        deps,
+        Config.genericMacOSTarget(b, .x86_64),
+    );
+
+    const aarch64 = try initStatic(b, &aarch64_zig);
+    const x86_64 = try initStatic(b, &x86_64_zig);
+    const universal = LipoStep.create(b, .{
+        .name = "ghostty-vt",
+        .out_name = "libghostty-vt.a",
+        .input_a = aarch64.output,
+        .input_b = x86_64.output,
+    });
+
+    return .{
+        .step = universal.step,
+        .artifact = universal.step,
+        .kind = .static,
+        .output = universal.output,
+        .dsym = null,
+        .pkg_config = null,
+    };
 }
 
 fn initLib(
@@ -292,6 +334,23 @@ fn requiresPrivate(b: *std.Build) []const u8 {
     if (system_simdutf) return "simdutf";
     if (system_highway) return "libhwy";
     return "";
+}
+
+/// Create an XCFramework bundle from the static library.
+pub fn xcframework(
+    lib_vt: *const GhosttyLibVt,
+) *XCFrameworkStep {
+    assert(lib_vt.kind == .static);
+    const b = lib_vt.step.owner;
+    return XCFrameworkStep.create(b, .{
+        .name = "ghostty-vt",
+        .out_path = b.pathJoin(&.{ b.install_prefix, "lib/ghostty-vt.xcframework" }),
+        .libraries = &.{.{
+            .library = lib_vt.output,
+            .headers = b.path("include/ghostty"),
+            .dsym = null,
+        }},
+    });
 }
 
 pub fn install(
