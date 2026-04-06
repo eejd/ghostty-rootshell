@@ -534,6 +534,49 @@ typedef enum {
    * Input type: GhosttyColorRgb[256]*
    */
   GHOSTTY_TERMINAL_OPT_COLOR_PALETTE = 14,
+
+  /**
+   * Set the Kitty image storage limit in bytes.
+   *
+   * Applied to all initialized screens (primary and alternate).
+   * A value of zero disables the Kitty graphics protocol entirely,
+   * deleting all stored images and placements. A NULL value pointer
+   * is equivalent to zero (disables). Has no effect when Kitty graphics
+   * are disabled at build time.
+   *
+   * Input type: uint64_t*
+   */
+  GHOSTTY_TERMINAL_OPT_KITTY_IMAGE_STORAGE_LIMIT = 15,
+
+  /**
+   * Enable or disable Kitty image loading via the file medium.
+   *
+   * A NULL value pointer is a no-op. Has no effect when Kitty graphics
+   * are disabled at build time.
+   *
+   * Input type: bool*
+   */
+  GHOSTTY_TERMINAL_OPT_KITTY_IMAGE_MEDIUM_FILE = 16,
+
+  /**
+   * Enable or disable Kitty image loading via the temporary file medium.
+   *
+   * A NULL value pointer is a no-op. Has no effect when Kitty graphics
+   * are disabled at build time.
+   *
+   * Input type: bool*
+   */
+  GHOSTTY_TERMINAL_OPT_KITTY_IMAGE_MEDIUM_TEMP_FILE = 17,
+
+  /**
+   * Enable or disable Kitty image loading via the shared memory medium.
+   *
+   * A NULL value pointer is a no-op. Has no effect when Kitty graphics
+   * are disabled at build time.
+   *
+   * Input type: bool*
+   */
+  GHOSTTY_TERMINAL_OPT_KITTY_IMAGE_MEDIUM_SHARED_MEM = 18,
 } GhosttyTerminalOption;
 
 /**
@@ -756,6 +799,46 @@ typedef enum {
    * Output type: GhosttyColorRgb[256] *
    */
   GHOSTTY_TERMINAL_DATA_COLOR_PALETTE_DEFAULT = 25,
+
+  /**
+   * The Kitty image storage limit in bytes for the active screen.
+   *
+   * A value of zero means the Kitty graphics protocol is disabled.
+   * Returns GHOSTTY_NO_VALUE when Kitty graphics are disabled at build time.
+   *
+   * Output type: uint64_t *
+   */
+  GHOSTTY_TERMINAL_DATA_KITTY_IMAGE_STORAGE_LIMIT = 26,
+
+  /**
+   * Whether the file medium is enabled for Kitty image loading on the
+   * active screen.
+   *
+   * Returns GHOSTTY_NO_VALUE when Kitty graphics are disabled at build time.
+   *
+   * Output type: bool *
+   */
+  GHOSTTY_TERMINAL_DATA_KITTY_IMAGE_MEDIUM_FILE = 27,
+
+  /**
+   * Whether the temporary file medium is enabled for Kitty image loading
+   * on the active screen.
+   *
+   * Returns GHOSTTY_NO_VALUE when Kitty graphics are disabled at build time.
+   *
+   * Output type: bool *
+   */
+  GHOSTTY_TERMINAL_DATA_KITTY_IMAGE_MEDIUM_TEMP_FILE = 28,
+
+  /**
+   * Whether the shared memory medium is enabled for Kitty image loading
+   * on the active screen.
+   *
+   * Returns GHOSTTY_NO_VALUE when Kitty graphics are disabled at build time.
+   *
+   * Output type: bool *
+   */
+  GHOSTTY_TERMINAL_DATA_KITTY_IMAGE_MEDIUM_SHARED_MEM = 29,
 } GhosttyTerminalData;
 
 /**
