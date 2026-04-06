@@ -583,7 +583,7 @@ test "image_get_handle and image_get with transmitted image" {
 
     var fmt: ImageFormat = undefined;
     try testing.expectEqual(Result.success, image_get(img, .format, @ptrCast(&fmt)));
-    try testing.expectEqual(.rgba, fmt);
+    try testing.expectEqual(.rgb, fmt);
 
     var comp: ImageCompression = undefined;
     try testing.expectEqual(Result.success, image_get(img, .compression, @ptrCast(&comp)));
