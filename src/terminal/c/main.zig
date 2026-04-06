@@ -22,6 +22,7 @@ pub const row = @import("row.zig");
 pub const sgr = @import("sgr.zig");
 pub const size_report = @import("size_report.zig");
 pub const style = @import("style.zig");
+pub const sys = @import("sys.zig");
 pub const terminal = @import("terminal.zig");
 
 // The full C API, unexported.
@@ -132,6 +133,8 @@ pub const row_get = row.get;
 pub const style_default = style.default_style;
 pub const style_is_default = style.style_is_default;
 
+pub const sys_set = sys.set;
+
 pub const terminal_new = terminal.new;
 pub const terminal_free = terminal.free;
 pub const terminal_reset = terminal.reset;
@@ -173,6 +176,7 @@ test {
     _ = sgr;
     _ = size_report;
     _ = style;
+    _ = sys;
     _ = terminal;
     _ = types;
 
