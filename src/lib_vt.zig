@@ -189,6 +189,7 @@ comptime {
         @export(&c.size_report_encode, .{ .name = "ghostty_size_report_encode" });
         @export(&c.style_default, .{ .name = "ghostty_style_default" });
         @export(&c.style_is_default, .{ .name = "ghostty_style_is_default" });
+        @export(&c.sys_set, .{ .name = "ghostty_sys_set" });
         @export(&c.cell_get, .{ .name = "ghostty_cell_get" });
         @export(&c.row_get, .{ .name = "ghostty_row_get" });
         @export(&c.color_rgb_get, .{ .name = "ghostty_color_rgb_get" });
