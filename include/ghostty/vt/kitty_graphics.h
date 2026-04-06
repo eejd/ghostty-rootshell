@@ -516,6 +516,33 @@ GHOSTTY_API GhosttyResult ghostty_kitty_graphics_placement_viewport_pos(
     int32_t* out_col,
     int32_t* out_row);
 
+/**
+ * Get the resolved source rectangle for the current placement.
+ *
+ * Applies kitty protocol semantics: a width or height of 0 in the
+ * placement means "use the full image dimension", and the resulting
+ * rectangle is clamped to the actual image bounds. The returned
+ * values are in pixels and are ready to use for texture sampling.
+ *
+ * @param iterator The placement iterator positioned on a placement
+ * @param image The image handle for this placement's image
+ * @param[out] out_x Source rect x origin in pixels
+ * @param[out] out_y Source rect y origin in pixels
+ * @param[out] out_width Source rect width in pixels
+ * @param[out] out_height Source rect height in pixels
+ * @return GHOSTTY_SUCCESS on success, GHOSTTY_INVALID_VALUE if any
+ *         handle is NULL or the iterator is not positioned
+ *
+ * @ingroup kitty_graphics
+ */
+GHOSTTY_API GhosttyResult ghostty_kitty_graphics_placement_source_rect(
+    GhosttyKittyGraphicsPlacementIterator iterator,
+    GhosttyKittyGraphicsImage image,
+    uint32_t* out_x,
+    uint32_t* out_y,
+    uint32_t* out_width,
+    uint32_t* out_height);
+
 /** @} */
 
 #ifdef __cplusplus

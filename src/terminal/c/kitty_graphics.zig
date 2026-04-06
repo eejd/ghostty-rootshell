@@ -467,6 +467,35 @@ pub fn placement_viewport_pos(
     return .success;
 }
 
+pub fn placement_source_rect(
+    iter_: PlacementIterator,
+    image_: ImageHandle,
+    out_x: *u32,
+    out_y: *u32,
+    out_width: *u32,
+    out_height: *u32,
+) callconv(lib.calling_conv) Result {
+    if (comptime !build_options.kitty_graphics) return .no_value;
+
+    const image = image_ orelse return .invalid_value;
+    const iter = iter_ orelse return .invalid_value;
+    const entry = iter.entry orelse return .invalid_value;
+    const p = entry.value_ptr;
+
+    // Apply "0 = full image dimension" convention, then clamp to image bounds.
+    const x = @min(p.source_x, image.width);
+    const y = @min(p.source_y, image.height);
+    const w = @min(if (p.source_width > 0) p.source_width else image.width, image.width - x);
+    const h = @min(if (p.source_height > 0) p.source_height else image.height, image.height - y);
+
+    out_x.* = x;
+    out_y.* = y;
+    out_width.* = w;
+    out_height.* = h;
+
+    return .success;
+}
+
 test "placement_iterator new/free" {
     var iter: PlacementIterator = null;
     try testing.expectEqual(Result.success, placement_iterator_new(
@@ -1195,6 +1224,143 @@ test "placement_viewport_pos null args return invalid_value" {
     var col: i32 = undefined;
     var row: i32 = undefined;
     try testing.expectEqual(Result.invalid_value, placement_viewport_pos(null, null, null, &col, &row));
+}
+
+test "placement_source_rect defaults to full image" {
+    if (comptime !build_options.kitty_graphics) return error.SkipZigTest;
+
+    var t: terminal_c.Terminal = null;
+    try testing.expectEqual(Result.success, terminal_c.new(
+        &lib.alloc.test_allocator,
+        &t,
+        .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
+    ));
+    defer terminal_c.free(t);
+    try testing.expectEqual(Result.success, terminal_c.resize(t, 80, 24, 10, 20));
+
+    // Transmit and display a 1x2 RGB image with no source rect specified.
+    // source_width=0 and source_height=0 should resolve to full image (1x2).
+    const cmd = "\x1b_Ga=T,t=d,f=24,i=1,p=1,s=1,v=2;////////\x1b\\";
+    terminal_c.vt_write(t, cmd.ptr, cmd.len);
+
+    var graphics: KittyGraphics = undefined;
+    try testing.expectEqual(Result.success, terminal_c.get(t, .kitty_graphics, @ptrCast(&graphics)));
+    const img = image_get_handle(graphics, 1);
+    try testing.expect(img != null);
+
+    var iter: PlacementIterator = null;
+    try testing.expectEqual(Result.success, placement_iterator_new(&lib.alloc.test_allocator, &iter));
+    defer placement_iterator_free(iter);
+    try testing.expectEqual(Result.success, get(graphics, .placement_iterator, @ptrCast(&iter)));
+    try testing.expect(placement_iterator_next(iter));
+
+    var x: u32 = undefined;
+    var y: u32 = undefined;
+    var w: u32 = undefined;
+    var h: u32 = undefined;
+    try testing.expectEqual(Result.success, placement_source_rect(iter, img, &x, &y, &w, &h));
+    try testing.expectEqual(0, x);
+    try testing.expectEqual(0, y);
+    try testing.expectEqual(1, w);
+    try testing.expectEqual(2, h);
+}
+
+test "placement_source_rect with explicit source rect" {
+    if (comptime !build_options.kitty_graphics) return error.SkipZigTest;
+
+    var t: terminal_c.Terminal = null;
+    try testing.expectEqual(Result.success, terminal_c.new(
+        &lib.alloc.test_allocator,
+        &t,
+        .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
+    ));
+    defer terminal_c.free(t);
+    try testing.expectEqual(Result.success, terminal_c.resize(t, 80, 24, 10, 20));
+
+    // Transmit a 4x4 RGBA image (64 bytes = 4*4*4).
+    // Base64 of 64 zero bytes: 86 chars.
+    const transmit = "\x1b_Ga=t,t=d,f=32,i=1,s=4,v=4;" ++
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" ++
+        "\x1b\\";
+    // Display with explicit source rect: x=1, y=1, w=2, h=2.
+    const display = "\x1b_Ga=p,i=1,p=1,x=1,y=1,w=2,h=2;\x1b\\";
+    terminal_c.vt_write(t, transmit.ptr, transmit.len);
+    terminal_c.vt_write(t, display.ptr, display.len);
+
+    var graphics: KittyGraphics = undefined;
+    try testing.expectEqual(Result.success, terminal_c.get(t, .kitty_graphics, @ptrCast(&graphics)));
+    const img = image_get_handle(graphics, 1);
+    try testing.expect(img != null);
+
+    var iter: PlacementIterator = null;
+    try testing.expectEqual(Result.success, placement_iterator_new(&lib.alloc.test_allocator, &iter));
+    defer placement_iterator_free(iter);
+    try testing.expectEqual(Result.success, get(graphics, .placement_iterator, @ptrCast(&iter)));
+    try testing.expect(placement_iterator_next(iter));
+
+    var x: u32 = undefined;
+    var y: u32 = undefined;
+    var w: u32 = undefined;
+    var h: u32 = undefined;
+    try testing.expectEqual(Result.success, placement_source_rect(iter, img, &x, &y, &w, &h));
+    try testing.expectEqual(1, x);
+    try testing.expectEqual(1, y);
+    try testing.expectEqual(2, w);
+    try testing.expectEqual(2, h);
+}
+
+test "placement_source_rect clamps to image bounds" {
+    if (comptime !build_options.kitty_graphics) return error.SkipZigTest;
+
+    var t: terminal_c.Terminal = null;
+    try testing.expectEqual(Result.success, terminal_c.new(
+        &lib.alloc.test_allocator,
+        &t,
+        .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
+    ));
+    defer terminal_c.free(t);
+    try testing.expectEqual(Result.success, terminal_c.resize(t, 80, 24, 10, 20));
+
+    // Transmit a 4x4 RGBA image.
+    const transmit = "\x1b_Ga=t,t=d,f=32,i=1,s=4,v=4;" ++
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" ++
+        "\x1b\\";
+    // Display with source rect that exceeds image bounds: x=3, y=3, w=10, h=10.
+    // Should clamp to x=3, y=3, w=1, h=1.
+    const display = "\x1b_Ga=p,i=1,p=1,x=3,y=3,w=10,h=10;\x1b\\";
+    terminal_c.vt_write(t, transmit.ptr, transmit.len);
+    terminal_c.vt_write(t, display.ptr, display.len);
+
+    var graphics: KittyGraphics = undefined;
+    try testing.expectEqual(Result.success, terminal_c.get(t, .kitty_graphics, @ptrCast(&graphics)));
+    const img = image_get_handle(graphics, 1);
+    try testing.expect(img != null);
+
+    var iter: PlacementIterator = null;
+    try testing.expectEqual(Result.success, placement_iterator_new(&lib.alloc.test_allocator, &iter));
+    defer placement_iterator_free(iter);
+    try testing.expectEqual(Result.success, get(graphics, .placement_iterator, @ptrCast(&iter)));
+    try testing.expect(placement_iterator_next(iter));
+
+    var x: u32 = undefined;
+    var y: u32 = undefined;
+    var w: u32 = undefined;
+    var h: u32 = undefined;
+    try testing.expectEqual(Result.success, placement_source_rect(iter, img, &x, &y, &w, &h));
+    try testing.expectEqual(3, x);
+    try testing.expectEqual(3, y);
+    try testing.expectEqual(1, w);
+    try testing.expectEqual(1, h);
+}
+
+test "placement_source_rect null args return invalid_value" {
+    if (comptime !build_options.kitty_graphics) return error.SkipZigTest;
+
+    var x: u32 = undefined;
+    var y: u32 = undefined;
+    var w: u32 = undefined;
+    var h: u32 = undefined;
+    try testing.expectEqual(Result.invalid_value, placement_source_rect(null, null, &x, &y, &w, &h));
 }
 
 test "image_get on null returns invalid_value" {
