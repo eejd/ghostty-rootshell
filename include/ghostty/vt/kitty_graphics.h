@@ -139,6 +139,38 @@ typedef enum {
 } GhosttyKittyGraphicsPlacementData;
 
 /**
+ * Z-layer classification for kitty graphics placements.
+ *
+ * Based on the kitty protocol z-index conventions:
+ * - BELOW_BG:   z < INT32_MIN/2  (drawn below cell background)
+ * - BELOW_TEXT:  INT32_MIN/2 <= z < 0  (above background, below text)
+ * - ABOVE_TEXT:  z >= 0  (above text)
+ * - ALL:         no filtering (current behavior)
+ *
+ * @ingroup kitty_graphics
+ */
+typedef enum {
+  GHOSTTY_KITTY_PLACEMENT_LAYER_ALL = 0,
+  GHOSTTY_KITTY_PLACEMENT_LAYER_BELOW_BG = 1,
+  GHOSTTY_KITTY_PLACEMENT_LAYER_BELOW_TEXT = 2,
+  GHOSTTY_KITTY_PLACEMENT_LAYER_ABOVE_TEXT = 3,
+} GhosttyKittyPlacementLayer;
+
+/**
+ * Settable options for ghostty_kitty_graphics_placement_iterator_set().
+ *
+ * @ingroup kitty_graphics
+ */
+typedef enum {
+  /**
+   * Set the z-layer filter for the iterator.
+   *
+   * Input type: GhosttyKittyPlacementLayer *
+   */
+  GHOSTTY_KITTY_GRAPHICS_PLACEMENT_ITERATOR_OPTION_LAYER = 0,
+} GhosttyKittyGraphicsPlacementIteratorOption;
+
+/**
  * Pixel format of a Kitty graphics image.
  *
  * @ingroup kitty_graphics
@@ -311,7 +343,34 @@ GHOSTTY_API void ghostty_kitty_graphics_placement_iterator_free(
     GhosttyKittyGraphicsPlacementIterator iterator);
 
 /**
+ * Set an option on a placement iterator.
+ *
+ * Use GHOSTTY_KITTY_GRAPHICS_PLACEMENT_ITERATOR_OPTION_LAYER with a
+ * GhosttyKittyPlacementLayer value to filter placements by z-layer.
+ * The filter is applied during iteration: ghostty_kitty_graphics_placement_next()
+ * will skip placements that do not match the configured layer.
+ *
+ * The default layer is GHOSTTY_KITTY_PLACEMENT_LAYER_ALL (no filtering).
+ *
+ * @param iterator The iterator handle (NULL returns GHOSTTY_INVALID_VALUE)
+ * @param option The option to set
+ * @param value Pointer to the value (type depends on option; NULL returns
+ *              GHOSTTY_INVALID_VALUE)
+ * @return GHOSTTY_SUCCESS on success
+ *
+ * @ingroup kitty_graphics
+ */
+GHOSTTY_API GhosttyResult ghostty_kitty_graphics_placement_iterator_set(
+    GhosttyKittyGraphicsPlacementIterator iterator,
+    GhosttyKittyGraphicsPlacementIteratorOption option,
+    const void* value);
+
+/**
  * Advance the placement iterator to the next placement.
+ *
+ * If a layer filter has been set via
+ * ghostty_kitty_graphics_placement_iterator_set(), only placements
+ * matching that layer are returned.
  *
  * @param iterator The iterator handle (may be NULL)
  * @return true if advanced to the next placement, false if at the end
@@ -414,6 +473,75 @@ GHOSTTY_API GhosttyResult ghostty_kitty_graphics_placement_grid_size(
     GhosttyTerminal terminal,
     uint32_t* out_cols,
     uint32_t* out_rows);
+
+/**
+ * Get the viewport-relative grid position of the current placement.
+ *
+ * Converts the placement's internal pin to viewport-relative column and
+ * row coordinates. The returned coordinates represent the top-left
+ * corner of the placement in the viewport's grid coordinate space.
+ *
+ * The row value can be negative when the placement's origin has
+ * scrolled above the top of the viewport. For example, a 4-row
+ * image that has scrolled up by 2 rows returns row=-2, meaning
+ * its top 2 rows are above the visible area but its bottom 2 rows
+ * are still on screen. Embedders should use these coordinates
+ * directly when computing the destination rectangle for rendering;
+ * the embedder is responsible for clipping the portion of the image
+ * that falls outside the viewport.
+ *
+ * Returns GHOSTTY_SUCCESS for any placement that is at least
+ * partially visible in the viewport. Returns GHOSTTY_NO_VALUE when
+ * the placement is completely outside the viewport (its bottom edge
+ * is above the viewport or its top edge is at or below the last
+ * viewport row), or when the placement is a virtual (unicode
+ * placeholder) placement.
+ *
+ * @param iterator The placement iterator positioned on a placement
+ * @param image The image handle for this placement's image
+ * @param terminal The terminal handle
+ * @param[out] out_col On success, receives the viewport-relative column
+ * @param[out] out_row On success, receives the viewport-relative row
+ *             (may be negative for partially visible placements)
+ * @return GHOSTTY_SUCCESS on success, GHOSTTY_NO_VALUE if fully
+ *         off-screen or virtual, GHOSTTY_INVALID_VALUE if any handle
+ *         is NULL or the iterator is not positioned
+ *
+ * @ingroup kitty_graphics
+ */
+GHOSTTY_API GhosttyResult ghostty_kitty_graphics_placement_viewport_pos(
+    GhosttyKittyGraphicsPlacementIterator iterator,
+    GhosttyKittyGraphicsImage image,
+    GhosttyTerminal terminal,
+    int32_t* out_col,
+    int32_t* out_row);
+
+/**
+ * Get the resolved source rectangle for the current placement.
+ *
+ * Applies kitty protocol semantics: a width or height of 0 in the
+ * placement means "use the full image dimension", and the resulting
+ * rectangle is clamped to the actual image bounds. The returned
+ * values are in pixels and are ready to use for texture sampling.
+ *
+ * @param iterator The placement iterator positioned on a placement
+ * @param image The image handle for this placement's image
+ * @param[out] out_x Source rect x origin in pixels
+ * @param[out] out_y Source rect y origin in pixels
+ * @param[out] out_width Source rect width in pixels
+ * @param[out] out_height Source rect height in pixels
+ * @return GHOSTTY_SUCCESS on success, GHOSTTY_INVALID_VALUE if any
+ *         handle is NULL or the iterator is not positioned
+ *
+ * @ingroup kitty_graphics
+ */
+GHOSTTY_API GhosttyResult ghostty_kitty_graphics_placement_source_rect(
+    GhosttyKittyGraphicsPlacementIterator iterator,
+    GhosttyKittyGraphicsImage image,
+    uint32_t* out_x,
+    uint32_t* out_y,
+    uint32_t* out_width,
+    uint32_t* out_height);
 
 /** @} */
 

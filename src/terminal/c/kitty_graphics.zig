@@ -42,6 +42,7 @@ const PlacementIteratorWrapper = if (build_options.kitty_graphics)
         alloc: std.mem.Allocator,
         inner: PlacementMap.Iterator = undefined,
         entry: ?PlacementMap.Entry = null,
+        layer_filter: PlacementLayer = .all,
     }
 else
     void;
@@ -124,11 +125,40 @@ fn getTyped(
             it.* = .{
                 .alloc = it.alloc,
                 .inner = storage.placements.iterator(),
+                .layer_filter = it.layer_filter,
             };
         },
     }
     return .success;
 }
+
+/// C: GhosttyKittyPlacementLayer
+pub const PlacementLayer = enum(c_int) {
+    all = 0,
+    below_bg = 1,
+    below_text = 2,
+    above_text = 3,
+
+    fn matches(self: PlacementLayer, z: i32) bool {
+        return switch (self) {
+            .all => true,
+            .below_bg => z < std.math.minInt(i32) / 2,
+            .below_text => z >= std.math.minInt(i32) / 2 and z < 0,
+            .above_text => z >= 0,
+        };
+    }
+};
+
+/// C: GhosttyKittyGraphicsPlacementIteratorOption
+pub const PlacementIteratorOption = enum(c_int) {
+    layer = 0,
+
+    pub fn InType(comptime self: PlacementIteratorOption) type {
+        return switch (self) {
+            .layer => PlacementLayer,
+        };
+    }
+};
 
 /// C: GhosttyKittyImageFormat
 pub const ImageFormat = kitty_cmd.Transmission.Format;
@@ -233,12 +263,51 @@ pub fn placement_iterator_free(iter_: PlacementIterator) callconv(lib.calling_co
     iter.alloc.destroy(iter);
 }
 
+pub fn placement_iterator_set(
+    iter_: PlacementIterator,
+    option: PlacementIteratorOption,
+    value: ?*const anyopaque,
+) callconv(lib.calling_conv) Result {
+    if (comptime !build_options.kitty_graphics) return .no_value;
+
+    if (comptime std.debug.runtime_safety) {
+        _ = std.meta.intToEnum(PlacementIteratorOption, @intFromEnum(option)) catch {
+            return .invalid_value;
+        };
+    }
+
+    return switch (option) {
+        inline else => |comptime_option| placementIteratorSetTyped(
+            iter_,
+            comptime_option,
+            @ptrCast(@alignCast(value orelse return .invalid_value)),
+        ),
+    };
+}
+
+fn placementIteratorSetTyped(
+    iter_: PlacementIterator,
+    comptime option: PlacementIteratorOption,
+    value: *const option.InType(),
+) Result {
+    const iter = iter_ orelse return .invalid_value;
+    switch (option) {
+        .layer => iter.layer_filter = value.*,
+    }
+    return .success;
+}
+
 pub fn placement_iterator_next(iter_: PlacementIterator) callconv(lib.calling_conv) bool {
     if (comptime !build_options.kitty_graphics) return false;
 
     const iter = iter_ orelse return false;
-    iter.entry = iter.inner.next() orelse return false;
-    return true;
+    while (iter.inner.next()) |entry| {
+        if (iter.layer_filter.matches(entry.value_ptr.z)) {
+            iter.entry = entry;
+            return true;
+        }
+    }
+    return false;
 }
 
 pub fn placement_get(
@@ -349,6 +418,81 @@ pub fn placement_grid_size(
 
     out_cols.* = s.cols;
     out_rows.* = s.rows;
+
+    return .success;
+}
+
+pub fn placement_viewport_pos(
+    iter_: PlacementIterator,
+    image_: ImageHandle,
+    terminal_: terminal_c.Terminal,
+    out_col: *i32,
+    out_row: *i32,
+) callconv(lib.calling_conv) Result {
+    if (comptime !build_options.kitty_graphics) return .no_value;
+
+    const wrapper = terminal_ orelse return .invalid_value;
+    const image = image_ orelse return .invalid_value;
+    const iter = iter_ orelse return .invalid_value;
+    const entry = iter.entry orelse return .invalid_value;
+    const pin = switch (entry.value_ptr.location) {
+        .pin => |p| p,
+        .virtual => return .no_value,
+    };
+
+    const pages = &wrapper.terminal.screens.active.pages;
+
+    // Get screen-absolute coordinates for both the pin and the
+    // viewport origin, then subtract to get viewport-relative
+    // coordinates that can be negative for partially visible
+    // placements above the viewport.
+    const pin_screen = pages.pointFromPin(.screen, pin.*) orelse return .no_value;
+    const vp_tl = pages.getTopLeft(.viewport);
+    const vp_screen = pages.pointFromPin(.screen, vp_tl) orelse return .no_value;
+
+    const vp_row: i32 = @as(i32, @intCast(pin_screen.screen.y)) -
+        @as(i32, @intCast(vp_screen.screen.y));
+    const vp_col: i32 = @intCast(pin_screen.screen.x);
+
+    // Check if the placement is fully off-screen. A placement is
+    // invisible if its bottom edge is above the viewport or its
+    // top edge is at or below the viewport's last row.
+    const grid_size = entry.value_ptr.gridSize(image.*, wrapper.terminal);
+    const rows_i32: i32 = @intCast(grid_size.rows);
+    const term_rows: i32 = @intCast(wrapper.terminal.rows);
+    if (vp_row + rows_i32 <= 0 or vp_row >= term_rows) return .no_value;
+
+    out_col.* = vp_col;
+    out_row.* = vp_row;
+
+    return .success;
+}
+
+pub fn placement_source_rect(
+    iter_: PlacementIterator,
+    image_: ImageHandle,
+    out_x: *u32,
+    out_y: *u32,
+    out_width: *u32,
+    out_height: *u32,
+) callconv(lib.calling_conv) Result {
+    if (comptime !build_options.kitty_graphics) return .no_value;
+
+    const image = image_ orelse return .invalid_value;
+    const iter = iter_ orelse return .invalid_value;
+    const entry = iter.entry orelse return .invalid_value;
+    const p = entry.value_ptr;
+
+    // Apply "0 = full image dimension" convention, then clamp to image bounds.
+    const x = @min(p.source_x, image.width);
+    const y = @min(p.source_y, image.height);
+    const w = @min(if (p.source_width > 0) p.source_width else image.width, image.width - x);
+    const h = @min(if (p.source_height > 0) p.source_height else image.height, image.height - y);
+
+    out_x.* = x;
+    out_y.* = y;
+    out_width.* = w;
+    out_height.* = h;
 
     return .success;
 }
@@ -535,6 +679,96 @@ test "placement_iterator with multiple placements" {
     try testing.expectEqual(2, count);
     try testing.expect(seen_p1);
     try testing.expect(seen_p2);
+}
+
+test "placement_iterator_set layer filter" {
+    if (comptime !build_options.kitty_graphics) return error.SkipZigTest;
+
+    var t: terminal_c.Terminal = null;
+    try testing.expectEqual(Result.success, terminal_c.new(
+        &lib.alloc.test_allocator,
+        &t,
+        .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
+    ));
+    defer terminal_c.free(t);
+
+    // Transmit image 1.
+    const transmit = "\x1b_Ga=t,t=d,f=24,i=1,s=1,v=2;////////\x1b\\";
+    terminal_c.vt_write(t, transmit.ptr, transmit.len);
+
+    // Display with z=5 (above text), z=-1 (below text), z=-1073741825 (below bg).
+    // INT32_MIN/2 = -1073741824, so -1073741825 < INT32_MIN/2.
+    const d1 = "\x1b_Ga=p,i=1,p=1,z=5;\x1b\\";
+    const d2 = "\x1b_Ga=p,i=1,p=2,z=-1;\x1b\\";
+    const d3 = "\x1b_Ga=p,i=1,p=3,z=-1073741825;\x1b\\";
+    terminal_c.vt_write(t, d1.ptr, d1.len);
+    terminal_c.vt_write(t, d2.ptr, d2.len);
+    terminal_c.vt_write(t, d3.ptr, d3.len);
+
+    var graphics: KittyGraphics = undefined;
+    try testing.expectEqual(Result.success, terminal_c.get(
+        t,
+        .kitty_graphics,
+        @ptrCast(&graphics),
+    ));
+
+    var iter: PlacementIterator = null;
+    try testing.expectEqual(Result.success, placement_iterator_new(
+        &lib.alloc.test_allocator,
+        &iter,
+    ));
+    defer placement_iterator_free(iter);
+
+    // Filter: above_text (z >= 0) — should yield only p=1.
+    var layer = PlacementLayer.above_text;
+    try testing.expectEqual(Result.success, placement_iterator_set(iter, .layer, @ptrCast(&layer)));
+    try testing.expectEqual(Result.success, get(graphics, .placement_iterator, @ptrCast(&iter)));
+
+    var count: u32 = 0;
+    while (placement_iterator_next(iter)) {
+        var z: i32 = undefined;
+        try testing.expectEqual(Result.success, placement_get(iter, .z, @ptrCast(&z)));
+        try testing.expect(z >= 0);
+        count += 1;
+    }
+    try testing.expectEqual(1, count);
+
+    // Filter: below_text (INT32_MIN/2 <= z < 0) — should yield only p=2.
+    layer = .below_text;
+    try testing.expectEqual(Result.success, placement_iterator_set(iter, .layer, @ptrCast(&layer)));
+    try testing.expectEqual(Result.success, get(graphics, .placement_iterator, @ptrCast(&iter)));
+
+    count = 0;
+    while (placement_iterator_next(iter)) {
+        var z: i32 = undefined;
+        try testing.expectEqual(Result.success, placement_get(iter, .z, @ptrCast(&z)));
+        try testing.expect(z >= std.math.minInt(i32) / 2 and z < 0);
+        count += 1;
+    }
+    try testing.expectEqual(1, count);
+
+    // Filter: below_bg (z < INT32_MIN/2) — should yield only p=3.
+    layer = .below_bg;
+    try testing.expectEqual(Result.success, placement_iterator_set(iter, .layer, @ptrCast(&layer)));
+    try testing.expectEqual(Result.success, get(graphics, .placement_iterator, @ptrCast(&iter)));
+
+    count = 0;
+    while (placement_iterator_next(iter)) {
+        var z: i32 = undefined;
+        try testing.expectEqual(Result.success, placement_get(iter, .z, @ptrCast(&z)));
+        try testing.expect(z < std.math.minInt(i32) / 2);
+        count += 1;
+    }
+    try testing.expectEqual(1, count);
+
+    // Filter: all — should yield all 3.
+    layer = .all;
+    try testing.expectEqual(Result.success, placement_iterator_set(iter, .layer, @ptrCast(&layer)));
+    try testing.expectEqual(Result.success, get(graphics, .placement_iterator, @ptrCast(&iter)));
+
+    count = 0;
+    while (placement_iterator_next(iter)) count += 1;
+    try testing.expectEqual(3, count);
 }
 
 test "image_get_handle returns null for missing id" {
@@ -776,6 +1010,361 @@ test "placement_grid_size null args return invalid_value" {
     var cols: u32 = undefined;
     var rows: u32 = undefined;
     try testing.expectEqual(Result.invalid_value, placement_grid_size(null, null, null, &cols, &rows));
+}
+
+test "placement_viewport_pos with transmit and display" {
+    if (comptime !build_options.kitty_graphics) return error.SkipZigTest;
+
+    var t: terminal_c.Terminal = null;
+    try testing.expectEqual(Result.success, terminal_c.new(
+        &lib.alloc.test_allocator,
+        &t,
+        .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
+    ));
+    defer terminal_c.free(t);
+
+    try testing.expectEqual(Result.success, terminal_c.resize(t, 80, 24, 10, 20));
+
+    // Transmit and display at cursor (0,0).
+    const cmd = "\x1b_Ga=T,t=d,f=24,i=1,p=1,s=1,v=2,c=10,r=1;////////\x1b\\";
+    terminal_c.vt_write(t, cmd.ptr, cmd.len);
+
+    var graphics: KittyGraphics = undefined;
+    try testing.expectEqual(Result.success, terminal_c.get(
+        t,
+        .kitty_graphics,
+        @ptrCast(&graphics),
+    ));
+
+    const img = image_get_handle(graphics, 1);
+    try testing.expect(img != null);
+
+    var iter: PlacementIterator = null;
+    try testing.expectEqual(Result.success, placement_iterator_new(
+        &lib.alloc.test_allocator,
+        &iter,
+    ));
+    defer placement_iterator_free(iter);
+
+    try testing.expectEqual(Result.success, get(graphics, .placement_iterator, @ptrCast(&iter)));
+    try testing.expect(placement_iterator_next(iter));
+
+    var col: i32 = undefined;
+    var row: i32 = undefined;
+    try testing.expectEqual(Result.success, placement_viewport_pos(iter, img, t, &col, &row));
+
+    try testing.expectEqual(0, col);
+    try testing.expectEqual(0, row);
+}
+
+test "placement_viewport_pos fully off-screen above" {
+    if (comptime !build_options.kitty_graphics) return error.SkipZigTest;
+
+    var t: terminal_c.Terminal = null;
+    try testing.expectEqual(Result.success, terminal_c.new(
+        &lib.alloc.test_allocator,
+        &t,
+        .{ .cols = 80, .rows = 5, .max_scrollback = 100 },
+    ));
+    defer terminal_c.free(t);
+    try testing.expectEqual(Result.success, terminal_c.resize(t, 80, 5, 10, 20));
+
+    // Transmit image, then display at cursor (0,0) spanning 1 row.
+    const transmit = "\x1b_Ga=t,t=d,f=24,i=1,s=1,v=2;////////\x1b\\";
+    const display = "\x1b_Ga=p,i=1,p=1,c=1,r=1;\x1b\\";
+    terminal_c.vt_write(t, transmit.ptr, transmit.len);
+    terminal_c.vt_write(t, display.ptr, display.len);
+
+    // Scroll the image completely off: 10 newlines in a 5-row terminal
+    // scrolls by 5+ rows, so a 1-row image at row 0 is fully gone.
+    const scroll = "\n\n\n\n\n\n\n\n\n\n";
+    terminal_c.vt_write(t, scroll.ptr, scroll.len);
+
+    var graphics: KittyGraphics = undefined;
+    try testing.expectEqual(Result.success, terminal_c.get(t, .kitty_graphics, @ptrCast(&graphics)));
+    const img = image_get_handle(graphics, 1);
+    try testing.expect(img != null);
+
+    var iter: PlacementIterator = null;
+    try testing.expectEqual(Result.success, placement_iterator_new(&lib.alloc.test_allocator, &iter));
+    defer placement_iterator_free(iter);
+    try testing.expectEqual(Result.success, get(graphics, .placement_iterator, @ptrCast(&iter)));
+    try testing.expect(placement_iterator_next(iter));
+
+    var col: i32 = undefined;
+    var row: i32 = undefined;
+    try testing.expectEqual(Result.no_value, placement_viewport_pos(iter, img, t, &col, &row));
+}
+
+test "placement_viewport_pos top off-screen" {
+    if (comptime !build_options.kitty_graphics) return error.SkipZigTest;
+
+    var t: terminal_c.Terminal = null;
+    try testing.expectEqual(Result.success, terminal_c.new(
+        &lib.alloc.test_allocator,
+        &t,
+        .{ .cols = 80, .rows = 5, .max_scrollback = 100 },
+    ));
+    defer terminal_c.free(t);
+    try testing.expectEqual(Result.success, terminal_c.resize(t, 80, 5, 10, 20));
+
+    // Transmit image, display at cursor (0,0) spanning 4 rows.
+    // C=1 prevents cursor movement after display.
+    const transmit = "\x1b_Ga=t,t=d,f=24,i=1,s=1,v=2;////////\x1b\\";
+    const display = "\x1b_Ga=p,i=1,p=1,c=1,r=4,C=1;\x1b\\";
+    terminal_c.vt_write(t, transmit.ptr, transmit.len);
+    terminal_c.vt_write(t, display.ptr, display.len);
+
+    // Scroll by 2: cursor starts at row 0, 4 newlines to reach bottom,
+    // then 2 more to scroll by 2. Image top-left moves to vp_row=-2,
+    // but bottom rows -2+4=2 > 0 so it's still partially visible.
+    const scroll = "\n\n\n\n\n\n";
+    terminal_c.vt_write(t, scroll.ptr, scroll.len);
+
+    var graphics: KittyGraphics = undefined;
+    try testing.expectEqual(Result.success, terminal_c.get(t, .kitty_graphics, @ptrCast(&graphics)));
+    const img = image_get_handle(graphics, 1);
+    try testing.expect(img != null);
+
+    var iter: PlacementIterator = null;
+    try testing.expectEqual(Result.success, placement_iterator_new(&lib.alloc.test_allocator, &iter));
+    defer placement_iterator_free(iter);
+    try testing.expectEqual(Result.success, get(graphics, .placement_iterator, @ptrCast(&iter)));
+    try testing.expect(placement_iterator_next(iter));
+
+    var col: i32 = undefined;
+    var row: i32 = undefined;
+    try testing.expectEqual(Result.success, placement_viewport_pos(iter, img, t, &col, &row));
+    try testing.expectEqual(0, col);
+    try testing.expectEqual(-2, row);
+}
+
+test "placement_viewport_pos bottom off-screen" {
+    if (comptime !build_options.kitty_graphics) return error.SkipZigTest;
+
+    var t: terminal_c.Terminal = null;
+    try testing.expectEqual(Result.success, terminal_c.new(
+        &lib.alloc.test_allocator,
+        &t,
+        .{ .cols = 80, .rows = 5, .max_scrollback = 0 },
+    ));
+    defer terminal_c.free(t);
+    try testing.expectEqual(Result.success, terminal_c.resize(t, 80, 5, 10, 20));
+
+    // Transmit image, move cursor to row 3 (1-based: row 4), display spanning 4 rows.
+    // C=1 prevents cursor movement after display.
+    // Image occupies rows 3-6 but viewport only has rows 0-4, so bottom is clipped.
+    const transmit = "\x1b_Ga=t,t=d,f=24,i=1,s=1,v=2;////////\x1b\\";
+    const cursor = "\x1b[4;1H";
+    const display = "\x1b_Ga=p,i=1,p=1,c=1,r=4,C=1;\x1b\\";
+    terminal_c.vt_write(t, transmit.ptr, transmit.len);
+    terminal_c.vt_write(t, cursor.ptr, cursor.len);
+    terminal_c.vt_write(t, display.ptr, display.len);
+
+    var graphics: KittyGraphics = undefined;
+    try testing.expectEqual(Result.success, terminal_c.get(t, .kitty_graphics, @ptrCast(&graphics)));
+    const img = image_get_handle(graphics, 1);
+    try testing.expect(img != null);
+
+    var iter: PlacementIterator = null;
+    try testing.expectEqual(Result.success, placement_iterator_new(&lib.alloc.test_allocator, &iter));
+    defer placement_iterator_free(iter);
+    try testing.expectEqual(Result.success, get(graphics, .placement_iterator, @ptrCast(&iter)));
+    try testing.expect(placement_iterator_next(iter));
+
+    var col: i32 = undefined;
+    var row: i32 = undefined;
+    try testing.expectEqual(Result.success, placement_viewport_pos(iter, img, t, &col, &row));
+    try testing.expectEqual(0, col);
+    try testing.expectEqual(3, row);
+}
+
+test "placement_viewport_pos top and bottom off-screen" {
+    if (comptime !build_options.kitty_graphics) return error.SkipZigTest;
+
+    var t: terminal_c.Terminal = null;
+    try testing.expectEqual(Result.success, terminal_c.new(
+        &lib.alloc.test_allocator,
+        &t,
+        .{ .cols = 80, .rows = 5, .max_scrollback = 100 },
+    ));
+    defer terminal_c.free(t);
+    try testing.expectEqual(Result.success, terminal_c.resize(t, 80, 5, 10, 20));
+
+    // Transmit image, display at cursor (0,0) spanning 10 rows.
+    // C=1 prevents cursor movement after display.
+    // After scrolling by 3, image occupies vp rows -3..6, viewport is 0..4,
+    // so both top and bottom are clipped but center is visible.
+    const transmit = "\x1b_Ga=t,t=d,f=24,i=1,s=1,v=2;////////\x1b\\";
+    const display = "\x1b_Ga=p,i=1,p=1,c=1,r=10,C=1;\x1b\\";
+    terminal_c.vt_write(t, transmit.ptr, transmit.len);
+    terminal_c.vt_write(t, display.ptr, display.len);
+
+    // Scroll by 3: 4 newlines to reach bottom + 3 more to scroll.
+    const scroll = "\n\n\n\n\n\n\n";
+    terminal_c.vt_write(t, scroll.ptr, scroll.len);
+
+    var graphics: KittyGraphics = undefined;
+    try testing.expectEqual(Result.success, terminal_c.get(t, .kitty_graphics, @ptrCast(&graphics)));
+    const img = image_get_handle(graphics, 1);
+    try testing.expect(img != null);
+
+    var iter: PlacementIterator = null;
+    try testing.expectEqual(Result.success, placement_iterator_new(&lib.alloc.test_allocator, &iter));
+    defer placement_iterator_free(iter);
+    try testing.expectEqual(Result.success, get(graphics, .placement_iterator, @ptrCast(&iter)));
+    try testing.expect(placement_iterator_next(iter));
+
+    var col: i32 = undefined;
+    var row: i32 = undefined;
+    try testing.expectEqual(Result.success, placement_viewport_pos(iter, img, t, &col, &row));
+    try testing.expectEqual(0, col);
+    try testing.expectEqual(-3, row);
+}
+
+test "placement_viewport_pos null args return invalid_value" {
+    if (comptime !build_options.kitty_graphics) return error.SkipZigTest;
+
+    var col: i32 = undefined;
+    var row: i32 = undefined;
+    try testing.expectEqual(Result.invalid_value, placement_viewport_pos(null, null, null, &col, &row));
+}
+
+test "placement_source_rect defaults to full image" {
+    if (comptime !build_options.kitty_graphics) return error.SkipZigTest;
+
+    var t: terminal_c.Terminal = null;
+    try testing.expectEqual(Result.success, terminal_c.new(
+        &lib.alloc.test_allocator,
+        &t,
+        .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
+    ));
+    defer terminal_c.free(t);
+    try testing.expectEqual(Result.success, terminal_c.resize(t, 80, 24, 10, 20));
+
+    // Transmit and display a 1x2 RGB image with no source rect specified.
+    // source_width=0 and source_height=0 should resolve to full image (1x2).
+    const cmd = "\x1b_Ga=T,t=d,f=24,i=1,p=1,s=1,v=2;////////\x1b\\";
+    terminal_c.vt_write(t, cmd.ptr, cmd.len);
+
+    var graphics: KittyGraphics = undefined;
+    try testing.expectEqual(Result.success, terminal_c.get(t, .kitty_graphics, @ptrCast(&graphics)));
+    const img = image_get_handle(graphics, 1);
+    try testing.expect(img != null);
+
+    var iter: PlacementIterator = null;
+    try testing.expectEqual(Result.success, placement_iterator_new(&lib.alloc.test_allocator, &iter));
+    defer placement_iterator_free(iter);
+    try testing.expectEqual(Result.success, get(graphics, .placement_iterator, @ptrCast(&iter)));
+    try testing.expect(placement_iterator_next(iter));
+
+    var x: u32 = undefined;
+    var y: u32 = undefined;
+    var w: u32 = undefined;
+    var h: u32 = undefined;
+    try testing.expectEqual(Result.success, placement_source_rect(iter, img, &x, &y, &w, &h));
+    try testing.expectEqual(0, x);
+    try testing.expectEqual(0, y);
+    try testing.expectEqual(1, w);
+    try testing.expectEqual(2, h);
+}
+
+test "placement_source_rect with explicit source rect" {
+    if (comptime !build_options.kitty_graphics) return error.SkipZigTest;
+
+    var t: terminal_c.Terminal = null;
+    try testing.expectEqual(Result.success, terminal_c.new(
+        &lib.alloc.test_allocator,
+        &t,
+        .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
+    ));
+    defer terminal_c.free(t);
+    try testing.expectEqual(Result.success, terminal_c.resize(t, 80, 24, 10, 20));
+
+    // Transmit a 4x4 RGBA image (64 bytes = 4*4*4).
+    // Base64 of 64 zero bytes: 88 chars (21 full groups + AA== padding).
+    const transmit = "\x1b_Ga=t,t=d,f=32,i=1,s=4,v=4;" ++
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==" ++
+        "\x1b\\";
+    // Display with explicit source rect: x=1, y=1, w=2, h=2.
+    const display = "\x1b_Ga=p,i=1,p=1,x=1,y=1,w=2,h=2;\x1b\\";
+    terminal_c.vt_write(t, transmit.ptr, transmit.len);
+    terminal_c.vt_write(t, display.ptr, display.len);
+
+    var graphics: KittyGraphics = undefined;
+    try testing.expectEqual(Result.success, terminal_c.get(t, .kitty_graphics, @ptrCast(&graphics)));
+    const img = image_get_handle(graphics, 1);
+    try testing.expect(img != null);
+
+    var iter: PlacementIterator = null;
+    try testing.expectEqual(Result.success, placement_iterator_new(&lib.alloc.test_allocator, &iter));
+    defer placement_iterator_free(iter);
+    try testing.expectEqual(Result.success, get(graphics, .placement_iterator, @ptrCast(&iter)));
+    try testing.expect(placement_iterator_next(iter));
+
+    var x: u32 = undefined;
+    var y: u32 = undefined;
+    var w: u32 = undefined;
+    var h: u32 = undefined;
+    try testing.expectEqual(Result.success, placement_source_rect(iter, img, &x, &y, &w, &h));
+    try testing.expectEqual(1, x);
+    try testing.expectEqual(1, y);
+    try testing.expectEqual(2, w);
+    try testing.expectEqual(2, h);
+}
+
+test "placement_source_rect clamps to image bounds" {
+    if (comptime !build_options.kitty_graphics) return error.SkipZigTest;
+
+    var t: terminal_c.Terminal = null;
+    try testing.expectEqual(Result.success, terminal_c.new(
+        &lib.alloc.test_allocator,
+        &t,
+        .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
+    ));
+    defer terminal_c.free(t);
+    try testing.expectEqual(Result.success, terminal_c.resize(t, 80, 24, 10, 20));
+
+    // Transmit a 4x4 RGBA image (64 bytes = 4*4*4).
+    const transmit = "\x1b_Ga=t,t=d,f=32,i=1,s=4,v=4;" ++
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==" ++
+        "\x1b\\";
+    // Display with source rect that exceeds image bounds: x=3, y=3, w=10, h=10.
+    // Should clamp to x=3, y=3, w=1, h=1.
+    const display = "\x1b_Ga=p,i=1,p=1,x=3,y=3,w=10,h=10;\x1b\\";
+    terminal_c.vt_write(t, transmit.ptr, transmit.len);
+    terminal_c.vt_write(t, display.ptr, display.len);
+
+    var graphics: KittyGraphics = undefined;
+    try testing.expectEqual(Result.success, terminal_c.get(t, .kitty_graphics, @ptrCast(&graphics)));
+    const img = image_get_handle(graphics, 1);
+    try testing.expect(img != null);
+
+    var iter: PlacementIterator = null;
+    try testing.expectEqual(Result.success, placement_iterator_new(&lib.alloc.test_allocator, &iter));
+    defer placement_iterator_free(iter);
+    try testing.expectEqual(Result.success, get(graphics, .placement_iterator, @ptrCast(&iter)));
+    try testing.expect(placement_iterator_next(iter));
+
+    var x: u32 = undefined;
+    var y: u32 = undefined;
+    var w: u32 = undefined;
+    var h: u32 = undefined;
+    try testing.expectEqual(Result.success, placement_source_rect(iter, img, &x, &y, &w, &h));
+    try testing.expectEqual(3, x);
+    try testing.expectEqual(3, y);
+    try testing.expectEqual(1, w);
+    try testing.expectEqual(1, h);
+}
+
+test "placement_source_rect null args return invalid_value" {
+    if (comptime !build_options.kitty_graphics) return error.SkipZigTest;
+
+    var x: u32 = undefined;
+    var y: u32 = undefined;
+    var w: u32 = undefined;
+    var h: u32 = undefined;
+    try testing.expectEqual(Result.invalid_value, placement_source_rect(null, null, &x, &y, &w, &h));
 }
 
 test "image_get on null returns invalid_value" {
