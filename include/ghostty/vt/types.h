@@ -48,6 +48,105 @@ typedef enum {
     GHOSTTY_NO_VALUE = -4,
 } GhosttyResult;
 
+/* ---- Opaque handles ---- */
+
+/**
+ * Opaque handle to a terminal instance.
+ *
+ * @ingroup terminal
+ */
+typedef struct GhosttyTerminalImpl* GhosttyTerminal;
+
+/**
+ * Opaque handle to a Kitty graphics image storage.
+ *
+ * Obtained via ghostty_terminal_get() with
+ * GHOSTTY_TERMINAL_DATA_KITTY_GRAPHICS. The pointer is borrowed from
+ * the terminal and remains valid until the next mutating terminal call
+ * (e.g. ghostty_terminal_vt_write() or ghostty_terminal_reset()).
+ *
+ * @ingroup kitty_graphics
+ */
+typedef struct GhosttyKittyGraphicsImpl* GhosttyKittyGraphics;
+
+/**
+ * Opaque handle to a Kitty graphics image.
+ *
+ * Obtained via ghostty_kitty_graphics_image() with an image ID. The
+ * pointer is borrowed from the storage and remains valid until the next
+ * mutating terminal call.
+ *
+ * @ingroup kitty_graphics
+ */
+typedef const struct GhosttyKittyGraphicsImageImpl* GhosttyKittyGraphicsImage;
+
+/**
+ * Opaque handle to a Kitty graphics placement iterator.
+ *
+ * @ingroup kitty_graphics
+ */
+typedef struct GhosttyKittyGraphicsPlacementIteratorImpl* GhosttyKittyGraphicsPlacementIterator;
+
+/**
+ * Opaque handle to a render state instance.
+ *
+ * @ingroup render
+ */
+typedef struct GhosttyRenderStateImpl* GhosttyRenderState;
+
+/**
+ * Opaque handle to a render-state row iterator.
+ *
+ * @ingroup render
+ */
+typedef struct GhosttyRenderStateRowIteratorImpl* GhosttyRenderStateRowIterator;
+
+/**
+ * Opaque handle to render-state row cells.
+ *
+ * @ingroup render
+ */
+typedef struct GhosttyRenderStateRowCellsImpl* GhosttyRenderStateRowCells;
+
+/**
+ * Opaque handle to an SGR parser instance.
+ *
+ * This handle represents an SGR (Select Graphic Rendition) parser that can
+ * be used to parse SGR sequences and extract individual text attributes.
+ *
+ * @ingroup sgr
+ */
+typedef struct GhosttySgrParserImpl* GhosttySgrParser;
+
+/**
+ * Opaque handle to a formatter instance.
+ *
+ * @ingroup formatter
+ */
+typedef struct GhosttyFormatterImpl* GhosttyFormatter;
+
+/**
+ * Opaque handle to an OSC parser instance.
+ *
+ * This handle represents an OSC (Operating System Command) parser that can
+ * be used to parse the contents of OSC sequences.
+ *
+ * @ingroup osc
+ */
+typedef struct GhosttyOscParserImpl* GhosttyOscParser;
+
+/**
+ * Opaque handle to a single OSC command.
+ *
+ * This handle represents a parsed OSC (Operating System Command) command.
+ * The command can be queried for its type and associated data.
+ *
+ * @ingroup osc
+ */
+typedef struct GhosttyOscCommandImpl* GhosttyOscCommand;
+
+/* ---- Common value types ---- */
+
 /**
  * A borrowed byte string (pointer + length).
  *

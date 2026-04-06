@@ -82,27 +82,6 @@ extern "C" {
  */
 
 /**
- * Opaque handle to a render state instance.
- *
- * @ingroup render
- */
-typedef struct GhosttyRenderStateImpl* GhosttyRenderState;
-
-/**
- * Opaque handle to a render-state row iterator.
- *
- * @ingroup render
- */
-typedef struct GhosttyRenderStateRowIteratorImpl* GhosttyRenderStateRowIterator;
-
-/**
- * Opaque handle to render-state row cells.
- *
- * @ingroup render
- */
-typedef struct GhosttyRenderStateRowCellsImpl* GhosttyRenderStateRowCells;
-
-/**
  * Dirty state of a render state after update.
  *
  * @ingroup render

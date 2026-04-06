@@ -16,6 +16,7 @@ pub const kitty_graphics_placement_iterator_new = kitty_graphics.placement_itera
 pub const kitty_graphics_placement_iterator_free = kitty_graphics.placement_iterator_free;
 pub const kitty_graphics_placement_next = kitty_graphics.placement_iterator_next;
 pub const kitty_graphics_placement_get = kitty_graphics.placement_get;
+pub const kitty_graphics_placement_rect = kitty_graphics.placement_rect;
 pub const types = @import("types.zig");
 pub const modes = @import("modes.zig");
 pub const osc = @import("osc.zig");

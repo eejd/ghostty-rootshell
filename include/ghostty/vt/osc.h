@@ -13,26 +13,6 @@
 #include <ghostty/vt/types.h>
 #include <ghostty/vt/allocator.h>
 
-/**
- * Opaque handle to an OSC parser instance.
- * 
- * This handle represents an OSC (Operating System Command) parser that can
- * be used to parse the contents of OSC sequences.
- *
- * @ingroup osc
- */
-typedef struct GhosttyOscParserImpl *GhosttyOscParser;
-
-/**
- * Opaque handle to a single OSC command.
- * 
- * This handle represents a parsed OSC (Operating System Command) command.
- * The command can be queried for its type and associated data.
- *
- * @ingroup osc
- */
-typedef struct GhosttyOscCommandImpl *GhosttyOscCommand;
-
 /** @defgroup osc OSC Parser
  *
  * OSC (Operating System Command) sequence parser and command handling.

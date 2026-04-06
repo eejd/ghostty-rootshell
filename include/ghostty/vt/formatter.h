@@ -108,13 +108,6 @@ typedef struct {
 } GhosttyFormatterTerminalExtra;
 
 /**
- * Opaque handle to a formatter instance.
- *
- * @ingroup formatter
- */
-typedef struct GhosttyFormatterImpl* GhosttyFormatter;
-
-/**
  * Options for creating a terminal formatter.
  *
  * @ingroup formatter

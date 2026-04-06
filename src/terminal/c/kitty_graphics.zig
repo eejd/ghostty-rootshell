@@ -1,10 +1,14 @@
 const std = @import("std");
+const testing = std.testing;
 const build_options = @import("terminal_options");
 const lib = @import("../lib.zig");
 const CAllocator = lib.alloc.Allocator;
 const kitty_storage = @import("../kitty/graphics_storage.zig");
 const kitty_cmd = @import("../kitty/graphics_command.zig");
 const Image = @import("../kitty/graphics_image.zig").Image;
+const grid_ref = @import("grid_ref.zig");
+const selection_c = @import("selection.zig");
+const terminal_c = @import("terminal.zig");
 const Result = @import("result.zig").Result;
 
 /// C: GhosttyKittyGraphics
@@ -267,8 +271,31 @@ fn placementGetTyped(
     return .success;
 }
 
-const testing = std.testing;
-const terminal_c = @import("terminal.zig");
+pub fn placement_rect(
+    iter_: PlacementIterator,
+    image_: ImageHandle,
+    terminal_: terminal_c.Terminal,
+    out: *selection_c.CSelection,
+) callconv(lib.calling_conv) Result {
+    if (comptime !build_options.kitty_graphics) return .no_value;
+
+    const wrapper = terminal_ orelse return .invalid_value;
+    const image = image_ orelse return .invalid_value;
+    const iter = iter_ orelse return .invalid_value;
+    const entry = iter.entry orelse return .invalid_value;
+    const r = entry.value_ptr.rect(
+        image.*,
+        wrapper.terminal,
+    ) orelse return .no_value;
+
+    out.* = .{
+        .start = grid_ref.CGridRef.fromPin(r.top_left),
+        .end = grid_ref.CGridRef.fromPin(r.bottom_right),
+        .rectangle = true,
+    };
+
+    return .success;
+}
 
 test "placement_iterator new/free" {
     var iter: PlacementIterator = null;
@@ -523,6 +550,67 @@ test "image_get_handle and image_get with transmitted image" {
     var data_len: usize = undefined;
     try testing.expectEqual(Result.success, image_get(img, .data_len, @ptrCast(&data_len)));
     try testing.expect(data_len > 0);
+}
+
+test "placement_rect with transmit and display" {
+    if (comptime !build_options.kitty_graphics) return error.SkipZigTest;
+
+    var t: terminal_c.Terminal = null;
+    try testing.expectEqual(Result.success, terminal_c.new(
+        &lib.alloc.test_allocator,
+        &t,
+        .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
+    ));
+    defer terminal_c.free(t);
+
+    // Set cell size so grid calculations are deterministic.
+    // 80 cols * 10px = 800px, 24 rows * 20px = 480px.
+    try testing.expectEqual(Result.success, terminal_c.resize(t, 80, 24, 10, 20));
+
+    // Transmit and display a 1x2 RGB image at cursor (0,0).
+    // c=10,r=1 => 10 columns, 1 row.
+    const cmd = "\x1b_Ga=T,t=d,f=24,i=1,p=1,s=1,v=2,c=10,r=1;////////\x1b\\";
+    terminal_c.vt_write(t, cmd.ptr, cmd.len);
+
+    var graphics: KittyGraphics = undefined;
+    try testing.expectEqual(Result.success, terminal_c.get(
+        t,
+        .kitty_graphics,
+        @ptrCast(&graphics),
+    ));
+
+    const img = image_get_handle(graphics, 1);
+    try testing.expect(img != null);
+
+    var iter: PlacementIterator = null;
+    try testing.expectEqual(Result.success, placement_iterator_new(
+        &lib.alloc.test_allocator,
+        &iter,
+    ));
+    defer placement_iterator_free(iter);
+
+    try testing.expectEqual(Result.success, get(graphics, .placement_iterator, @ptrCast(&iter)));
+    try testing.expect(placement_iterator_next(iter));
+
+    var sel: selection_c.CSelection = undefined;
+    try testing.expectEqual(Result.success, placement_rect(iter, img, t, &sel));
+
+    // Placement starts at cursor origin (0,0).
+    try testing.expectEqual(0, sel.start.x);
+    try testing.expectEqual(0, sel.start.y);
+
+    // 10 columns wide, 1 row tall => bottom-right is (9, 0).
+    try testing.expectEqual(9, sel.end.x);
+    try testing.expectEqual(0, sel.end.y);
+
+    try testing.expect(sel.rectangle);
+}
+
+test "placement_rect null args return invalid_value" {
+    if (comptime !build_options.kitty_graphics) return error.SkipZigTest;
+
+    var sel: selection_c.CSelection = undefined;
+    try testing.expectEqual(Result.invalid_value, placement_rect(null, null, null, &sel));
 }
 
 test "image_get on null returns invalid_value" {

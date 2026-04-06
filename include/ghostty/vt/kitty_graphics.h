@@ -10,6 +10,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <ghostty/vt/allocator.h>
+#include <ghostty/vt/selection.h>
 #include <ghostty/vt/types.h>
 
 #ifdef __cplusplus
@@ -23,36 +24,6 @@ extern "C" {
  *
  * @{
  */
-
-/**
- * Opaque handle to a Kitty graphics image storage.
- *
- * Obtained via ghostty_terminal_get() with
- * GHOSTTY_TERMINAL_DATA_KITTY_GRAPHICS. The pointer is borrowed from
- * the terminal and remains valid until the next mutating terminal call
- * (e.g. ghostty_terminal_vt_write() or ghostty_terminal_reset()).
- *
- * @ingroup kitty_graphics
- */
-typedef struct GhosttyKittyGraphicsImpl* GhosttyKittyGraphics;
-
-/**
- * Opaque handle to a Kitty graphics image.
- *
- * Obtained via ghostty_kitty_graphics_image() with an image ID. The
- * pointer is borrowed from the storage and remains valid until the next
- * mutating terminal call.
- *
- * @ingroup kitty_graphics
- */
-typedef const struct GhosttyKittyGraphicsImageImpl* GhosttyKittyGraphicsImage;
-
-/**
- * Opaque handle to a Kitty graphics placement iterator.
- *
- * @ingroup kitty_graphics
- */
-typedef struct GhosttyKittyGraphicsPlacementIteratorImpl* GhosttyKittyGraphicsPlacementIterator;
 
 /**
  * Queryable data kinds for ghostty_kitty_graphics_get().
@@ -368,6 +339,30 @@ GHOSTTY_API GhosttyResult ghostty_kitty_graphics_placement_get(
     GhosttyKittyGraphicsPlacementIterator iterator,
     GhosttyKittyGraphicsPlacementData data,
     void* out);
+
+/**
+ * Compute the grid rectangle occupied by the current placement.
+ *
+ * Uses the placement's pin, the image dimensions, and the terminal's
+ * cell/pixel geometry to calculate the bounding rectangle. Virtual
+ * placements (unicode placeholders) return GHOSTTY_NO_VALUE.
+ *
+ * @param terminal The terminal handle
+ * @param image The image handle for this placement's image
+ * @param iterator The placement iterator positioned on a placement
+ * @param[out] out_selection On success, receives the bounding rectangle
+ *             as a selection with rectangle=true
+ * @return GHOSTTY_SUCCESS on success, GHOSTTY_INVALID_VALUE if any handle
+ *         is NULL or the iterator is not positioned, GHOSTTY_NO_VALUE for
+ *         virtual placements or when Kitty graphics are disabled
+ *
+ * @ingroup kitty_graphics
+ */
+GHOSTTY_API GhosttyResult ghostty_kitty_graphics_placement_rect(
+    GhosttyKittyGraphicsPlacementIterator iterator,
+    GhosttyKittyGraphicsImage image,
+    GhosttyTerminal terminal,
+    GhosttySelection* out_selection);
 
 /** @} */
 

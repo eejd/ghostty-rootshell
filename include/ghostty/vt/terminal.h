@@ -156,13 +156,6 @@ extern "C" {
  */
 
 /**
- * Opaque handle to a terminal instance.
- *
- * @ingroup terminal
- */
-typedef struct GhosttyTerminalImpl* GhosttyTerminal;
-
-/**
  * Terminal initialization options.
  *
  * @ingroup terminal
