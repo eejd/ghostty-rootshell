@@ -108,12 +108,20 @@ typedef enum {
   GHOSTTY_BUILD_INFO_VERSION_PATCH = 8,
 
   /**
+   * The pre metadata string (e.g. "alpha", "beta", "dev"). Has zero length if
+   * no pre metadata is present.
+   *
+   * Output type: GhosttyString *
+   */
+  GHOSTTY_BUILD_INFO_VERSION_PRE = 9,
+
+  /**
    * The build metadata string (e.g. commit hash). Has zero length if
    * no build metadata is present.
    *
    * Output type: GhosttyString *
    */
-  GHOSTTY_BUILD_INFO_VERSION_BUILD = 9,
+  GHOSTTY_BUILD_INFO_VERSION_BUILD = 10,
 } GhosttyBuildInfo;
 
 /**
