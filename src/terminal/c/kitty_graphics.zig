@@ -24,18 +24,27 @@ else
     ?*const anyopaque;
 
 /// C: GhosttyKittyGraphicsPlacementIterator
-pub const PlacementIterator = ?*PlacementIteratorWrapper;
+pub const PlacementIterator = if (build_options.kitty_graphics)
+    ?*PlacementIteratorWrapper
+else
+    ?*anyopaque;
 
-const PlacementMap = std.AutoHashMapUnmanaged(
-    kitty_storage.ImageStorage.PlacementKey,
-    kitty_storage.ImageStorage.Placement,
-);
+const PlacementMap = if (build_options.kitty_graphics)
+    std.AutoHashMapUnmanaged(
+        kitty_storage.ImageStorage.PlacementKey,
+        kitty_storage.ImageStorage.Placement,
+    )
+else
+    void;
 
-const PlacementIteratorWrapper = struct {
-    alloc: std.mem.Allocator,
-    inner: PlacementMap.Iterator = undefined,
-    entry: ?PlacementMap.Entry = null,
-};
+const PlacementIteratorWrapper = if (build_options.kitty_graphics)
+    struct {
+        alloc: std.mem.Allocator,
+        inner: PlacementMap.Iterator = undefined,
+        entry: ?PlacementMap.Entry = null,
+    }
+else
+    void;
 
 /// C: GhosttyKittyGraphicsData
 pub const Data = enum(c_int) {
@@ -204,6 +213,10 @@ pub fn placement_iterator_new(
     alloc_: ?*const CAllocator,
     out: *PlacementIterator,
 ) callconv(lib.calling_conv) Result {
+    if (comptime !build_options.kitty_graphics) {
+        out.* = null;
+        return .no_value;
+    }
     const alloc = lib.alloc.default(alloc_);
     const ptr = alloc.create(PlacementIteratorWrapper) catch {
         out.* = null;
@@ -215,6 +228,7 @@ pub fn placement_iterator_new(
 }
 
 pub fn placement_iterator_free(iter_: PlacementIterator) callconv(lib.calling_conv) void {
+    if (comptime !build_options.kitty_graphics) return;
     const iter = iter_ orelse return;
     iter.alloc.destroy(iter);
 }
