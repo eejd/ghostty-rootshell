@@ -255,7 +255,10 @@ pub const Options = struct {
 
     /// The total storage limit for Kitty images in bytes for this
     /// screen. Kitty image storage is per-screen.
-    kitty_image_storage_limit: usize = 320 * 1000 * 1000, // 320MB
+    kitty_image_storage_limit: usize = switch (build_options.artifact) {
+        .ghostty => 320 * 1000 * 1000, // 320MB
+        .lib => 10 * 1000 * 1000, // 10MB
+    },
 
     /// The limits for what medium types are allowed for Kitty image loading.
     kitty_image_loading_limits: if (build_options.kitty_graphics)
