@@ -2,13 +2,14 @@ const std = @import("std");
 const build_options = @import("terminal_options");
 const lib = @import("../lib.zig");
 const CAllocator = lib.alloc.Allocator;
-const kitty_gfx = @import("../kitty/graphics_storage.zig");
+const kitty_storage = @import("../kitty/graphics_storage.zig");
+const kitty_cmd = @import("../kitty/graphics_command.zig");
 const Image = @import("../kitty/graphics_image.zig").Image;
 const Result = @import("result.zig").Result;
 
 /// C: GhosttyKittyGraphics
 pub const KittyGraphics = if (build_options.kitty_graphics)
-    *kitty_gfx.ImageStorage
+    *kitty_storage.ImageStorage
 else
     *anyopaque;
 
@@ -22,8 +23,8 @@ else
 pub const PlacementIterator = ?*PlacementIteratorWrapper;
 
 const PlacementMap = std.AutoHashMapUnmanaged(
-    kitty_gfx.ImageStorage.PlacementKey,
-    kitty_gfx.ImageStorage.Placement,
+    kitty_storage.ImageStorage.PlacementKey,
+    kitty_storage.ImageStorage.Placement,
 );
 
 const PlacementIteratorWrapper = struct {
@@ -117,19 +118,10 @@ fn getTyped(
 }
 
 /// C: GhosttyKittyImageFormat
-pub const ImageFormat = enum(c_int) {
-    rgb = 0,
-    rgba = 1,
-    png = 2,
-    gray_alpha = 3,
-    gray = 4,
-};
+pub const ImageFormat = kitty_cmd.Transmission.Format;
 
 /// C: GhosttyKittyImageCompression
-pub const ImageCompression = enum(c_int) {
-    none = 0,
-    zlib_deflate = 1,
-};
+pub const ImageCompression = kitty_cmd.Transmission.Compression;
 
 /// C: GhosttyKittyGraphicsImageData
 pub const ImageData = enum(c_int) {
@@ -195,17 +187,8 @@ fn imageGetTyped(
         .number => out.* = image.number,
         .width => out.* = image.width,
         .height => out.* = image.height,
-        .format => out.* = switch (image.format) {
-            .rgb => .rgb,
-            .rgba => .rgba,
-            .png => .png,
-            .gray_alpha => .gray_alpha,
-            .gray => .gray,
-        },
-        .compression => out.* = switch (image.compression) {
-            .none => .none,
-            .zlib_deflate => .zlib_deflate,
-        },
+        .format => out.* = image.format,
+        .compression => out.* = image.compression,
         .data_ptr => out.* = image.data.ptr,
         .data_len => out.* = image.data.len,
     }
@@ -306,7 +289,8 @@ test "placement_iterator next on empty storage" {
 
     var t: terminal_c.Terminal = null;
     try testing.expectEqual(Result.success, terminal_c.new(
-        &lib.alloc.test_allocator, &t,
+        &lib.alloc.test_allocator,
+        &t,
         .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
     ));
     defer terminal_c.free(t);
@@ -334,7 +318,8 @@ test "placement_iterator get before next returns invalid" {
 
     var t: terminal_c.Terminal = null;
     try testing.expectEqual(Result.success, terminal_c.new(
-        &lib.alloc.test_allocator, &t,
+        &lib.alloc.test_allocator,
+        &t,
         .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
     ));
     defer terminal_c.free(t);
@@ -364,7 +349,8 @@ test "placement_iterator with transmit and display" {
 
     var t: terminal_c.Terminal = null;
     try testing.expectEqual(Result.success, terminal_c.new(
-        &lib.alloc.test_allocator, &t,
+        &lib.alloc.test_allocator,
+        &t,
         .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
     ));
     defer terminal_c.free(t);
@@ -416,7 +402,8 @@ test "placement_iterator with multiple placements" {
 
     var t: terminal_c.Terminal = null;
     try testing.expectEqual(Result.success, terminal_c.new(
-        &lib.alloc.test_allocator, &t,
+        &lib.alloc.test_allocator,
+        &t,
         .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
     ));
     defer terminal_c.free(t);
@@ -472,7 +459,8 @@ test "image_get_handle returns null for missing id" {
 
     var t: terminal_c.Terminal = null;
     try testing.expectEqual(Result.success, terminal_c.new(
-        &lib.alloc.test_allocator, &t,
+        &lib.alloc.test_allocator,
+        &t,
         .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
     ));
     defer terminal_c.free(t);
@@ -492,7 +480,8 @@ test "image_get_handle and image_get with transmitted image" {
 
     var t: terminal_c.Terminal = null;
     try testing.expectEqual(Result.success, terminal_c.new(
-        &lib.alloc.test_allocator, &t,
+        &lib.alloc.test_allocator,
+        &t,
         .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
     ));
     defer terminal_c.free(t);
