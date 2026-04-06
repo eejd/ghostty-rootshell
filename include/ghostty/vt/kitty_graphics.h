@@ -364,6 +364,57 @@ GHOSTTY_API GhosttyResult ghostty_kitty_graphics_placement_rect(
     GhosttyTerminal terminal,
     GhosttySelection* out_selection);
 
+/**
+ * Compute the rendered pixel size of the current placement.
+ *
+ * Takes into account the placement's source rectangle, specified
+ * columns/rows, and aspect ratio to calculate the final rendered
+ * pixel dimensions.
+ *
+ * @param iterator The placement iterator positioned on a placement
+ * @param image The image handle for this placement's image
+ * @param terminal The terminal handle
+ * @param[out] out_width On success, receives the width in pixels
+ * @param[out] out_height On success, receives the height in pixels
+ * @return GHOSTTY_SUCCESS on success, GHOSTTY_INVALID_VALUE if any handle
+ *         is NULL or the iterator is not positioned, GHOSTTY_NO_VALUE when
+ *         Kitty graphics are disabled
+ *
+ * @ingroup kitty_graphics
+ */
+GHOSTTY_API GhosttyResult ghostty_kitty_graphics_placement_pixel_size(
+    GhosttyKittyGraphicsPlacementIterator iterator,
+    GhosttyKittyGraphicsImage image,
+    GhosttyTerminal terminal,
+    uint32_t* out_width,
+    uint32_t* out_height);
+
+/**
+ * Compute the grid cell size of the current placement.
+ *
+ * Returns the number of columns and rows that the placement occupies
+ * in the terminal grid. If the placement specifies explicit columns
+ * and rows, those are returned directly; otherwise they are calculated
+ * from the pixel size and cell dimensions.
+ *
+ * @param iterator The placement iterator positioned on a placement
+ * @param image The image handle for this placement's image
+ * @param terminal The terminal handle
+ * @param[out] out_cols On success, receives the number of columns
+ * @param[out] out_rows On success, receives the number of rows
+ * @return GHOSTTY_SUCCESS on success, GHOSTTY_INVALID_VALUE if any handle
+ *         is NULL or the iterator is not positioned, GHOSTTY_NO_VALUE when
+ *         Kitty graphics are disabled
+ *
+ * @ingroup kitty_graphics
+ */
+GHOSTTY_API GhosttyResult ghostty_kitty_graphics_placement_grid_size(
+    GhosttyKittyGraphicsPlacementIterator iterator,
+    GhosttyKittyGraphicsImage image,
+    GhosttyTerminal terminal,
+    uint32_t* out_cols,
+    uint32_t* out_rows);
+
 /** @} */
 
 #ifdef __cplusplus

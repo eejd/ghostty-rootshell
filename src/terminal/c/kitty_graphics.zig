@@ -297,6 +297,48 @@ pub fn placement_rect(
     return .success;
 }
 
+pub fn placement_pixel_size(
+    iter_: PlacementIterator,
+    image_: ImageHandle,
+    terminal_: terminal_c.Terminal,
+    out_width: *u32,
+    out_height: *u32,
+) callconv(lib.calling_conv) Result {
+    if (comptime !build_options.kitty_graphics) return .no_value;
+
+    const wrapper = terminal_ orelse return .invalid_value;
+    const image = image_ orelse return .invalid_value;
+    const iter = iter_ orelse return .invalid_value;
+    const entry = iter.entry orelse return .invalid_value;
+    const s = entry.value_ptr.pixelSize(image.*, wrapper.terminal);
+
+    out_width.* = s.width;
+    out_height.* = s.height;
+
+    return .success;
+}
+
+pub fn placement_grid_size(
+    iter_: PlacementIterator,
+    image_: ImageHandle,
+    terminal_: terminal_c.Terminal,
+    out_cols: *u32,
+    out_rows: *u32,
+) callconv(lib.calling_conv) Result {
+    if (comptime !build_options.kitty_graphics) return .no_value;
+
+    const wrapper = terminal_ orelse return .invalid_value;
+    const image = image_ orelse return .invalid_value;
+    const iter = iter_ orelse return .invalid_value;
+    const entry = iter.entry orelse return .invalid_value;
+    const s = entry.value_ptr.gridSize(image.*, wrapper.terminal);
+
+    out_cols.* = s.cols;
+    out_rows.* = s.rows;
+
+    return .success;
+}
+
 test "placement_iterator new/free" {
     var iter: PlacementIterator = null;
     try testing.expectEqual(Result.success, placement_iterator_new(
@@ -611,6 +653,115 @@ test "placement_rect null args return invalid_value" {
 
     var sel: selection_c.CSelection = undefined;
     try testing.expectEqual(Result.invalid_value, placement_rect(null, null, null, &sel));
+}
+
+test "placement_pixel_size with transmit and display" {
+    if (comptime !build_options.kitty_graphics) return error.SkipZigTest;
+
+    var t: terminal_c.Terminal = null;
+    try testing.expectEqual(Result.success, terminal_c.new(
+        &lib.alloc.test_allocator,
+        &t,
+        .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
+    ));
+    defer terminal_c.free(t);
+
+    // 80 cols * 10px = 800px, 24 rows * 20px = 480px.
+    try testing.expectEqual(Result.success, terminal_c.resize(t, 80, 24, 10, 20));
+
+    // Transmit and display a 1x2 RGB image with c=10,r=1.
+    // 10 cols * 10px = 100px width, 1 row * 20px = 20px height.
+    const cmd = "\x1b_Ga=T,t=d,f=24,i=1,p=1,s=1,v=2,c=10,r=1;////////\x1b\\";
+    terminal_c.vt_write(t, cmd.ptr, cmd.len);
+
+    var graphics: KittyGraphics = undefined;
+    try testing.expectEqual(Result.success, terminal_c.get(
+        t,
+        .kitty_graphics,
+        @ptrCast(&graphics),
+    ));
+
+    const img = image_get_handle(graphics, 1);
+    try testing.expect(img != null);
+
+    var iter: PlacementIterator = null;
+    try testing.expectEqual(Result.success, placement_iterator_new(
+        &lib.alloc.test_allocator,
+        &iter,
+    ));
+    defer placement_iterator_free(iter);
+
+    try testing.expectEqual(Result.success, get(graphics, .placement_iterator, @ptrCast(&iter)));
+    try testing.expect(placement_iterator_next(iter));
+
+    var w: u32 = undefined;
+    var h: u32 = undefined;
+    try testing.expectEqual(Result.success, placement_pixel_size(iter, img, t, &w, &h));
+
+    try testing.expectEqual(100, w);
+    try testing.expectEqual(20, h);
+}
+
+test "placement_pixel_size null args return invalid_value" {
+    if (comptime !build_options.kitty_graphics) return error.SkipZigTest;
+
+    var w: u32 = undefined;
+    var h: u32 = undefined;
+    try testing.expectEqual(Result.invalid_value, placement_pixel_size(null, null, null, &w, &h));
+}
+
+test "placement_grid_size with transmit and display" {
+    if (comptime !build_options.kitty_graphics) return error.SkipZigTest;
+
+    var t: terminal_c.Terminal = null;
+    try testing.expectEqual(Result.success, terminal_c.new(
+        &lib.alloc.test_allocator,
+        &t,
+        .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
+    ));
+    defer terminal_c.free(t);
+
+    // 80 cols * 10px = 800px, 24 rows * 20px = 480px.
+    try testing.expectEqual(Result.success, terminal_c.resize(t, 80, 24, 10, 20));
+
+    // Transmit and display a 1x2 RGB image with c=10,r=1.
+    const cmd = "\x1b_Ga=T,t=d,f=24,i=1,p=1,s=1,v=2,c=10,r=1;////////\x1b\\";
+    terminal_c.vt_write(t, cmd.ptr, cmd.len);
+
+    var graphics: KittyGraphics = undefined;
+    try testing.expectEqual(Result.success, terminal_c.get(
+        t,
+        .kitty_graphics,
+        @ptrCast(&graphics),
+    ));
+
+    const img = image_get_handle(graphics, 1);
+    try testing.expect(img != null);
+
+    var iter: PlacementIterator = null;
+    try testing.expectEqual(Result.success, placement_iterator_new(
+        &lib.alloc.test_allocator,
+        &iter,
+    ));
+    defer placement_iterator_free(iter);
+
+    try testing.expectEqual(Result.success, get(graphics, .placement_iterator, @ptrCast(&iter)));
+    try testing.expect(placement_iterator_next(iter));
+
+    var cols: u32 = undefined;
+    var rows: u32 = undefined;
+    try testing.expectEqual(Result.success, placement_grid_size(iter, img, t, &cols, &rows));
+
+    try testing.expectEqual(10, cols);
+    try testing.expectEqual(1, rows);
+}
+
+test "placement_grid_size null args return invalid_value" {
+    if (comptime !build_options.kitty_graphics) return error.SkipZigTest;
+
+    var cols: u32 = undefined;
+    var rows: u32 = undefined;
+    try testing.expectEqual(Result.invalid_value, placement_grid_size(null, null, null, &cols, &rows));
 }
 
 test "image_get on null returns invalid_value" {
