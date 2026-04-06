@@ -40,7 +40,7 @@ pub fn initWasm(
     const exe = b.addExecutable(.{
         .name = "ghostty-vt",
         .root_module = zig.vt_c,
-        .version = std.SemanticVersion{ .major = 0, .minor = 1, .patch = 0 },
+        .version = zig.version,
     });
 
     // Allow exported symbols to actually be exported.
@@ -113,7 +113,7 @@ fn initLib(
         .name = if (kind == .static) "ghostty-vt-static" else "ghostty-vt",
         .linkage = linkage,
         .root_module = zig.vt_c,
-        .version = std.SemanticVersion{ .major = 0, .minor = 1, .patch = 0 },
+        .version = zig.version,
     });
     lib.installHeadersDirectory(
         b.path("include/ghostty"),
@@ -184,12 +184,12 @@ fn initLib(
             \\Name: libghostty-vt
             \\URL: https://github.com/ghostty-org/ghostty
             \\Description: Ghostty VT library
-            \\Version: 0.1.0
+            \\Version: {f}
             \\Cflags: -I${{includedir}}
             \\Libs: -L${{libdir}} -lghostty-vt
             \\Libs.private: {s}
             \\Requires.private: {s}
-        , .{ b.install_prefix, libsPrivate(zig), requiresPrivate(b) }));
+        , .{ b.install_prefix, zig.version, libsPrivate(zig), requiresPrivate(b) }));
     };
 
     // For static libraries with vendored SIMD dependencies, combine

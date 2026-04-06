@@ -7,7 +7,7 @@ const buildpkg = @import("src/build/main.zig");
 const app_zon_version = @import("build.zig.zon").version;
 
 /// Libghostty version. We use a separate version from the app.
-const lib_version = "0.1.0";
+const lib_version = "0.1.0-dev";
 
 /// Minimum required zig version.
 const minimum_zig_version = @import("build.zig.zon").minimum_zig_version;
@@ -37,6 +37,7 @@ pub fn build(b: *std.Build) !void {
     const config = try buildpkg.Config.init(
         b,
         file_version orelse app_zon_version,
+        lib_version,
     );
     const test_filters = b.option(
         [][]const u8,

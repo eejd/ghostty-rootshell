@@ -133,7 +133,7 @@ pub fn add(
     step.root_module.addOptions("build_options", self.options);
 
     // Every exe needs the terminal options
-    self.config.terminalOptions().add(b, step.root_module);
+    self.config.terminalOptions(.ghostty).add(b, step.root_module);
 
     // C imports for locale constants and functions
     {
