@@ -3,6 +3,7 @@ const build_options = @import("terminal_options");
 const lib = @import("../lib.zig");
 const CAllocator = lib.alloc.Allocator;
 const kitty_gfx = @import("../kitty/graphics_storage.zig");
+const Image = @import("../kitty/graphics_image.zig").Image;
 const Result = @import("result.zig").Result;
 
 /// C: GhosttyKittyGraphics
@@ -10,6 +11,12 @@ pub const KittyGraphics = if (build_options.kitty_graphics)
     *kitty_gfx.ImageStorage
 else
     *anyopaque;
+
+/// C: GhosttyKittyGraphicsImage
+pub const ImageHandle = if (build_options.kitty_graphics)
+    ?*const Image
+else
+    ?*const anyopaque;
 
 /// C: GhosttyKittyGraphicsPlacementIterator
 pub const PlacementIterator = ?*PlacementIteratorWrapper;
@@ -106,6 +113,103 @@ fn getTyped(
             };
         },
     }
+    return .success;
+}
+
+/// C: GhosttyKittyImageFormat
+pub const ImageFormat = enum(c_int) {
+    rgb = 0,
+    rgba = 1,
+    png = 2,
+    gray_alpha = 3,
+    gray = 4,
+};
+
+/// C: GhosttyKittyImageCompression
+pub const ImageCompression = enum(c_int) {
+    none = 0,
+    zlib_deflate = 1,
+};
+
+/// C: GhosttyKittyGraphicsImageData
+pub const ImageData = enum(c_int) {
+    invalid = 0,
+    id = 1,
+    number = 2,
+    width = 3,
+    height = 4,
+    format = 5,
+    compression = 6,
+    data_ptr = 7,
+    data_len = 8,
+
+    pub fn OutType(comptime self: ImageData) type {
+        return switch (self) {
+            .invalid => void,
+            .id, .number, .width, .height => u32,
+            .format => ImageFormat,
+            .compression => ImageCompression,
+            .data_ptr => [*]const u8,
+            .data_len => usize,
+        };
+    }
+};
+
+pub fn image_get_handle(
+    graphics_: KittyGraphics,
+    image_id: u32,
+) callconv(lib.calling_conv) ImageHandle {
+    if (comptime !build_options.kitty_graphics) return null;
+
+    const storage = graphics_;
+    return storage.images.getPtr(image_id);
+}
+
+pub fn image_get(
+    image_: ImageHandle,
+    data: ImageData,
+    out: ?*anyopaque,
+) callconv(lib.calling_conv) Result {
+    if (comptime !build_options.kitty_graphics) return .no_value;
+
+    return switch (data) {
+        .invalid => .invalid_value,
+        inline else => |comptime_data| imageGetTyped(
+            image_,
+            comptime_data,
+            @ptrCast(@alignCast(out)),
+        ),
+    };
+}
+
+fn imageGetTyped(
+    image_: ImageHandle,
+    comptime data: ImageData,
+    out: *data.OutType(),
+) Result {
+    const image = image_ orelse return .invalid_value;
+
+    switch (data) {
+        .invalid => return .invalid_value,
+        .id => out.* = image.id,
+        .number => out.* = image.number,
+        .width => out.* = image.width,
+        .height => out.* = image.height,
+        .format => out.* = switch (image.format) {
+            .rgb => .rgb,
+            .rgba => .rgba,
+            .png => .png,
+            .gray_alpha => .gray_alpha,
+            .gray => .gray,
+        },
+        .compression => out.* = switch (image.compression) {
+            .none => .none,
+            .zlib_deflate => .zlib_deflate,
+        },
+        .data_ptr => out.* = image.data.ptr,
+        .data_len => out.* = image.data.len,
+    }
+
     return .success;
 }
 
@@ -361,4 +465,80 @@ test "placement_iterator with multiple placements" {
     try testing.expectEqual(2, count);
     try testing.expect(seen_p1);
     try testing.expect(seen_p2);
+}
+
+test "image_get_handle returns null for missing id" {
+    if (comptime !build_options.kitty_graphics) return error.SkipZigTest;
+
+    var t: terminal_c.Terminal = null;
+    try testing.expectEqual(Result.success, terminal_c.new(
+        &lib.alloc.test_allocator, &t,
+        .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
+    ));
+    defer terminal_c.free(t);
+
+    var graphics: KittyGraphics = undefined;
+    try testing.expectEqual(Result.success, terminal_c.get(
+        t,
+        .kitty_graphics,
+        @ptrCast(&graphics),
+    ));
+
+    try testing.expectEqual(@as(ImageHandle, null), image_get_handle(graphics, 999));
+}
+
+test "image_get_handle and image_get with transmitted image" {
+    if (comptime !build_options.kitty_graphics) return error.SkipZigTest;
+
+    var t: terminal_c.Terminal = null;
+    try testing.expectEqual(Result.success, terminal_c.new(
+        &lib.alloc.test_allocator, &t,
+        .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
+    ));
+    defer terminal_c.free(t);
+
+    // Transmit a 1x2 RGB image with image_id=1.
+    const cmd = "\x1b_Ga=T,t=d,f=24,i=1,p=1,s=1,v=2;////////\x1b\\";
+    terminal_c.vt_write(t, cmd.ptr, cmd.len);
+
+    var graphics: KittyGraphics = undefined;
+    try testing.expectEqual(Result.success, terminal_c.get(
+        t,
+        .kitty_graphics,
+        @ptrCast(&graphics),
+    ));
+
+    const img = image_get_handle(graphics, 1);
+    try testing.expect(img != null);
+
+    var id: u32 = undefined;
+    try testing.expectEqual(Result.success, image_get(img, .id, @ptrCast(&id)));
+    try testing.expectEqual(1, id);
+
+    var w: u32 = undefined;
+    try testing.expectEqual(Result.success, image_get(img, .width, @ptrCast(&w)));
+    try testing.expectEqual(1, w);
+
+    var h: u32 = undefined;
+    try testing.expectEqual(Result.success, image_get(img, .height, @ptrCast(&h)));
+    try testing.expectEqual(2, h);
+
+    var fmt: ImageFormat = undefined;
+    try testing.expectEqual(Result.success, image_get(img, .format, @ptrCast(&fmt)));
+    try testing.expectEqual(.rgba, fmt);
+
+    var comp: ImageCompression = undefined;
+    try testing.expectEqual(Result.success, image_get(img, .compression, @ptrCast(&comp)));
+    try testing.expectEqual(.none, comp);
+
+    var data_len: usize = undefined;
+    try testing.expectEqual(Result.success, image_get(img, .data_len, @ptrCast(&data_len)));
+    try testing.expect(data_len > 0);
+}
+
+test "image_get on null returns invalid_value" {
+    if (comptime !build_options.kitty_graphics) return error.SkipZigTest;
+
+    var id: u32 = undefined;
+    try testing.expectEqual(Result.invalid_value, image_get(null, .id, @ptrCast(&id)));
 }

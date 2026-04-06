@@ -37,6 +37,17 @@ extern "C" {
 typedef struct GhosttyKittyGraphicsImpl* GhosttyKittyGraphics;
 
 /**
+ * Opaque handle to a Kitty graphics image.
+ *
+ * Obtained via ghostty_kitty_graphics_image() with an image ID. The
+ * pointer is borrowed from the storage and remains valid until the next
+ * mutating terminal call.
+ *
+ * @ingroup kitty_graphics
+ */
+typedef const struct GhosttyKittyGraphicsImageImpl* GhosttyKittyGraphicsImage;
+
+/**
  * Opaque handle to a Kitty graphics placement iterator.
  *
  * @ingroup kitty_graphics
@@ -157,6 +168,96 @@ typedef enum {
 } GhosttyKittyGraphicsPlacementData;
 
 /**
+ * Pixel format of a Kitty graphics image.
+ *
+ * @ingroup kitty_graphics
+ */
+typedef enum {
+  GHOSTTY_KITTY_IMAGE_FORMAT_RGB = 0,
+  GHOSTTY_KITTY_IMAGE_FORMAT_RGBA = 1,
+  GHOSTTY_KITTY_IMAGE_FORMAT_PNG = 2,
+  GHOSTTY_KITTY_IMAGE_FORMAT_GRAY_ALPHA = 3,
+  GHOSTTY_KITTY_IMAGE_FORMAT_GRAY = 4,
+} GhosttyKittyImageFormat;
+
+/**
+ * Compression of a Kitty graphics image.
+ *
+ * @ingroup kitty_graphics
+ */
+typedef enum {
+  GHOSTTY_KITTY_IMAGE_COMPRESSION_NONE = 0,
+  GHOSTTY_KITTY_IMAGE_COMPRESSION_ZLIB_DEFLATE = 1,
+} GhosttyKittyImageCompression;
+
+/**
+ * Queryable data kinds for ghostty_kitty_image_get().
+ *
+ * @ingroup kitty_graphics
+ */
+typedef enum {
+  /** Invalid / sentinel value. */
+  GHOSTTY_KITTY_IMAGE_DATA_INVALID = 0,
+
+  /**
+   * The image ID.
+   *
+   * Output type: uint32_t *
+   */
+  GHOSTTY_KITTY_IMAGE_DATA_ID = 1,
+
+  /**
+   * The image number.
+   *
+   * Output type: uint32_t *
+   */
+  GHOSTTY_KITTY_IMAGE_DATA_NUMBER = 2,
+
+  /**
+   * Image width in pixels.
+   *
+   * Output type: uint32_t *
+   */
+  GHOSTTY_KITTY_IMAGE_DATA_WIDTH = 3,
+
+  /**
+   * Image height in pixels.
+   *
+   * Output type: uint32_t *
+   */
+  GHOSTTY_KITTY_IMAGE_DATA_HEIGHT = 4,
+
+  /**
+   * Pixel format of the image.
+   *
+   * Output type: GhosttyKittyImageFormat *
+   */
+  GHOSTTY_KITTY_IMAGE_DATA_FORMAT = 5,
+
+  /**
+   * Compression of the image.
+   *
+   * Output type: GhosttyKittyImageCompression *
+   */
+  GHOSTTY_KITTY_IMAGE_DATA_COMPRESSION = 6,
+
+  /**
+   * Borrowed pointer to the raw pixel data. Valid as long as the
+   * underlying terminal is not mutated.
+   *
+   * Output type: const uint8_t **
+   */
+  GHOSTTY_KITTY_IMAGE_DATA_DATA_PTR = 7,
+
+  /**
+   * Length of the raw pixel data in bytes.
+   *
+   * Output type: size_t *
+   */
+  GHOSTTY_KITTY_IMAGE_DATA_DATA_LEN = 8,
+} GhosttyKittyGraphicsImageData;
+
+/**
  * Get data from a kitty graphics storage instance.
  *
  * The output pointer must be of the appropriate type for the requested
@@ -174,6 +275,40 @@ typedef enum {
 GHOSTTY_API GhosttyResult ghostty_kitty_graphics_get(
     GhosttyKittyGraphics graphics,
     GhosttyKittyGraphicsData data,
+    void* out);
+
+/**
+ * Look up a Kitty graphics image by its image ID.
+ *
+ * Returns NULL if no image with the given ID exists or if Kitty graphics
+ * are disabled at build time.
+ *
+ * @param graphics The kitty graphics handle
+ * @param image_id The image ID to look up
+ * @return An opaque image handle, or NULL if not found
+ *
+ * @ingroup kitty_graphics
+ */
+GHOSTTY_API GhosttyKittyGraphicsImage ghostty_kitty_graphics_image(
+    GhosttyKittyGraphics graphics,
+    uint32_t image_id);
+
+/**
+ * Get data from a Kitty graphics image.
+ *
+ * The output pointer must be of the appropriate type for the requested
+ * data kind.
+ *
+ * @param image The image handle (NULL returns GHOSTTY_INVALID_VALUE)
+ * @param data The data kind to query
+ * @param[out] out Pointer to receive the queried value
+ * @return GHOSTTY_SUCCESS on success
+ *
+ * @ingroup kitty_graphics
+ */
+GHOSTTY_API GhosttyResult ghostty_kitty_image_get(
+    GhosttyKittyGraphicsImage image,
+    GhosttyKittyGraphicsImageData data,
     void* out);
 
 /**

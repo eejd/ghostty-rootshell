@@ -234,6 +234,8 @@ comptime {
         @export(&c.terminal_get, .{ .name = "ghostty_terminal_get" });
         @export(&c.terminal_grid_ref, .{ .name = "ghostty_terminal_grid_ref" });
         @export(&c.kitty_graphics_get, .{ .name = "ghostty_kitty_graphics_get" });
+        @export(&c.kitty_graphics_image, .{ .name = "ghostty_kitty_graphics_image" });
+        @export(&c.kitty_image_get, .{ .name = "ghostty_kitty_image_get" });
         @export(&c.kitty_graphics_placement_iterator_new, .{ .name = "ghostty_kitty_graphics_placement_iterator_new" });
         @export(&c.kitty_graphics_placement_iterator_free, .{ .name = "ghostty_kitty_graphics_placement_iterator_free" });
         @export(&c.kitty_graphics_placement_next, .{ .name = "ghostty_kitty_graphics_placement_next" });
