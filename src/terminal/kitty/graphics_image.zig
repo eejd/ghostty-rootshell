@@ -202,8 +202,8 @@ pub const LoadingImage = struct {
             .png => stat_size,
 
             // For these formats we have a size we must have.
-            .gray, .gray_alpha, .rgb, .rgba => |f| size: {
-                const bpp = f.bpp();
+            .gray, .gray_alpha, .rgb, .rgba => size: {
+                const bpp = command.Transmission.formatBpp(self.image.format);
                 break :size self.image.width * self.image.height * bpp;
             },
         };
@@ -390,7 +390,7 @@ pub const LoadingImage = struct {
         if (img.width > max_dimension or img.height > max_dimension) return error.DimensionsTooLarge;
 
         // Data length must be what we expect
-        const bpp = img.format.bpp();
+        const bpp = command.Transmission.formatBpp(img.format);
         const expected_len = img.width * img.height * bpp;
         const actual_len = self.data.items.len;
         if (actual_len != expected_len) {

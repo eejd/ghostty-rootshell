@@ -48,16 +48,6 @@ extern "C" {
 #endif
 
 /**
- * Opaque handle to an SGR parser instance.
- *
- * This handle represents an SGR (Select Graphic Rendition) parser that can
- * be used to parse SGR sequences and extract individual text attributes.
- *
- * @ingroup sgr
- */
-typedef struct GhosttySgrParserImpl* GhosttySgrParser;
-
-/**
  * SGR attribute tags.
  *
  * These values identify the type of an SGR attribute in a tagged union.

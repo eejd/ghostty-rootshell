@@ -8,6 +8,17 @@ pub const color = @import("color.zig");
 pub const focus = @import("focus.zig");
 pub const formatter = @import("formatter.zig");
 pub const grid_ref = @import("grid_ref.zig");
+pub const kitty_graphics = @import("kitty_graphics.zig");
+pub const kitty_graphics_get = kitty_graphics.get;
+pub const kitty_graphics_image = kitty_graphics.image_get_handle;
+pub const kitty_graphics_image_get = kitty_graphics.image_get;
+pub const kitty_graphics_placement_iterator_new = kitty_graphics.placement_iterator_new;
+pub const kitty_graphics_placement_iterator_free = kitty_graphics.placement_iterator_free;
+pub const kitty_graphics_placement_next = kitty_graphics.placement_iterator_next;
+pub const kitty_graphics_placement_get = kitty_graphics.placement_get;
+pub const kitty_graphics_placement_rect = kitty_graphics.placement_rect;
+pub const kitty_graphics_placement_pixel_size = kitty_graphics.placement_pixel_size;
+pub const kitty_graphics_placement_grid_size = kitty_graphics.placement_grid_size;
 pub const types = @import("types.zig");
 pub const modes = @import("modes.zig");
 pub const osc = @import("osc.zig");
@@ -146,6 +157,7 @@ pub const terminal_mode_get = terminal.mode_get;
 pub const terminal_mode_set = terminal.mode_set;
 pub const terminal_get = terminal.get;
 pub const terminal_grid_ref = terminal.grid_ref;
+pub const terminal_point_from_grid_ref = terminal.point_from_grid_ref;
 
 pub const type_json = types.get_json;
 
@@ -161,6 +173,7 @@ test {
     _ = cell;
     _ = color;
     _ = grid_ref;
+    _ = kitty_graphics;
     _ = row;
     _ = focus;
     _ = formatter;

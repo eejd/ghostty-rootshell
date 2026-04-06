@@ -82,6 +82,9 @@ int main() {
     return 1;
   }
 
+  /* Set cell pixel dimensions so kitty graphics can compute grid sizes. */
+  ghostty_terminal_resize(terminal, 80, 24, 8, 16);
+
   /* Set a storage limit to enable Kitty graphics. */
   uint64_t storage_limit = 64 * 1024 * 1024;  /* 64 MiB */
   ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_KITTY_IMAGE_STORAGE_LIMIT,
@@ -112,6 +115,83 @@ int main() {
                             strlen(kitty_cmd));
 
   printf("PNG decode calls: %d\n", decode_count);
+
+  /* Query the kitty graphics storage to verify the image was stored. */
+  GhosttyKittyGraphics graphics = NULL;
+  if (ghostty_terminal_get(terminal, GHOSTTY_TERMINAL_DATA_KITTY_GRAPHICS,
+                           &graphics) != GHOSTTY_SUCCESS || !graphics) {
+    fprintf(stderr, "Failed to get kitty graphics storage\n");
+    return 1;
+  }
+  printf("\nKitty graphics storage is available.\n");
+
+  /* Iterate placements to find the image ID. */
+  GhosttyKittyGraphicsPlacementIterator iter = NULL;
+  if (ghostty_kitty_graphics_placement_iterator_new(NULL, &iter) != GHOSTTY_SUCCESS) {
+    fprintf(stderr, "Failed to create placement iterator\n");
+    return 1;
+  }
+  if (ghostty_kitty_graphics_get(graphics,
+          GHOSTTY_KITTY_GRAPHICS_DATA_PLACEMENT_ITERATOR, &iter) != GHOSTTY_SUCCESS) {
+    fprintf(stderr, "Failed to get placement iterator\n");
+    return 1;
+  }
+
+  int placement_count = 0;
+  while (ghostty_kitty_graphics_placement_next(iter)) {
+    placement_count++;
+    uint32_t image_id = 0;
+    uint32_t placement_id = 0;
+    bool is_virtual = false;
+    int32_t z = 0;
+
+    ghostty_kitty_graphics_placement_get(iter,
+        GHOSTTY_KITTY_GRAPHICS_PLACEMENT_DATA_IMAGE_ID, &image_id);
+    ghostty_kitty_graphics_placement_get(iter,
+        GHOSTTY_KITTY_GRAPHICS_PLACEMENT_DATA_PLACEMENT_ID, &placement_id);
+    ghostty_kitty_graphics_placement_get(iter,
+        GHOSTTY_KITTY_GRAPHICS_PLACEMENT_DATA_IS_VIRTUAL, &is_virtual);
+    ghostty_kitty_graphics_placement_get(iter,
+        GHOSTTY_KITTY_GRAPHICS_PLACEMENT_DATA_Z, &z);
+
+    printf("  placement #%d: image_id=%u placement_id=%u virtual=%s z=%d\n",
+           placement_count, image_id, placement_id,
+           is_virtual ? "true" : "false", z);
+
+    /* Look up the image and print its properties. */
+    GhosttyKittyGraphicsImage image =
+        ghostty_kitty_graphics_image(graphics, image_id);
+    if (!image) {
+      fprintf(stderr, "Failed to look up image %u\n", image_id);
+      return 1;
+    }
+
+    uint32_t width = 0, height = 0, number = 0;
+    GhosttyKittyImageFormat format = 0;
+    size_t data_len = 0;
+
+    ghostty_kitty_graphics_image_get(image, GHOSTTY_KITTY_IMAGE_DATA_NUMBER, &number);
+    ghostty_kitty_graphics_image_get(image, GHOSTTY_KITTY_IMAGE_DATA_WIDTH, &width);
+    ghostty_kitty_graphics_image_get(image, GHOSTTY_KITTY_IMAGE_DATA_HEIGHT, &height);
+    ghostty_kitty_graphics_image_get(image, GHOSTTY_KITTY_IMAGE_DATA_FORMAT, &format);
+    ghostty_kitty_graphics_image_get(image, GHOSTTY_KITTY_IMAGE_DATA_DATA_LEN, &data_len);
+
+    printf("    image: number=%u size=%ux%u format=%d data_len=%zu\n",
+           number, width, height, format, data_len);
+
+    /* Compute the rendered pixel size and grid size. */
+    uint32_t px_w = 0, px_h = 0, cols = 0, rows = 0;
+    if (ghostty_kitty_graphics_placement_pixel_size(iter, image, terminal,
+            &px_w, &px_h) == GHOSTTY_SUCCESS) {
+      printf("    rendered pixel size: %ux%u\n", px_w, px_h);
+    }
+    if (ghostty_kitty_graphics_placement_grid_size(iter, image, terminal,
+            &cols, &rows) == GHOSTTY_SUCCESS) {
+      printf("    grid size: %u cols x %u rows\n", cols, rows);
+    }
+  }
+  printf("Total placements: %d\n", placement_count);
+  ghostty_kitty_graphics_placement_iterator_free(iter);
 
   /* Clean up. */
   ghostty_terminal_free(terminal);

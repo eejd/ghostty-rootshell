@@ -125,6 +125,7 @@ extern "C" {
 #include <ghostty/vt/style.h>
 #include <ghostty/vt/sys.h>
 #include <ghostty/vt/key.h>
+#include <ghostty/vt/kitty_graphics.h>
 #include <ghostty/vt/modes.h>
 #include <ghostty/vt/mouse.h>
 #include <ghostty/vt/paste.h>
