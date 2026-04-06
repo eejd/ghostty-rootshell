@@ -474,6 +474,48 @@ GHOSTTY_API GhosttyResult ghostty_kitty_graphics_placement_grid_size(
     uint32_t* out_cols,
     uint32_t* out_rows);
 
+/**
+ * Get the viewport-relative grid position of the current placement.
+ *
+ * Converts the placement's internal pin to viewport-relative column and
+ * row coordinates. The returned coordinates represent the top-left
+ * corner of the placement in the viewport's grid coordinate space.
+ *
+ * The row value can be negative when the placement's origin has
+ * scrolled above the top of the viewport. For example, a 4-row
+ * image that has scrolled up by 2 rows returns row=-2, meaning
+ * its top 2 rows are above the visible area but its bottom 2 rows
+ * are still on screen. Embedders should use these coordinates
+ * directly when computing the destination rectangle for rendering;
+ * the embedder is responsible for clipping the portion of the image
+ * that falls outside the viewport.
+ *
+ * Returns GHOSTTY_SUCCESS for any placement that is at least
+ * partially visible in the viewport. Returns GHOSTTY_NO_VALUE when
+ * the placement is completely outside the viewport (its bottom edge
+ * is above the viewport or its top edge is at or below the last
+ * viewport row), or when the placement is a virtual (unicode
+ * placeholder) placement.
+ *
+ * @param iterator The placement iterator positioned on a placement
+ * @param image The image handle for this placement's image
+ * @param terminal The terminal handle
+ * @param[out] out_col On success, receives the viewport-relative column
+ * @param[out] out_row On success, receives the viewport-relative row
+ *             (may be negative for partially visible placements)
+ * @return GHOSTTY_SUCCESS on success, GHOSTTY_NO_VALUE if fully
+ *         off-screen or virtual, GHOSTTY_INVALID_VALUE if any handle
+ *         is NULL or the iterator is not positioned
+ *
+ * @ingroup kitty_graphics
+ */
+GHOSTTY_API GhosttyResult ghostty_kitty_graphics_placement_viewport_pos(
+    GhosttyKittyGraphicsPlacementIterator iterator,
+    GhosttyKittyGraphicsImage image,
+    GhosttyTerminal terminal,
+    int32_t* out_col,
+    int32_t* out_row);
+
 /** @} */
 
 #ifdef __cplusplus
