@@ -125,6 +125,7 @@ fn getTyped(
             it.* = .{
                 .alloc = it.alloc,
                 .inner = storage.placements.iterator(),
+                .layer_filter = it.layer_filter,
             };
         },
     }
@@ -1108,8 +1109,9 @@ test "placement_viewport_pos top off-screen" {
     try testing.expectEqual(Result.success, terminal_c.resize(t, 80, 5, 10, 20));
 
     // Transmit image, display at cursor (0,0) spanning 4 rows.
+    // C=1 prevents cursor movement after display.
     const transmit = "\x1b_Ga=t,t=d,f=24,i=1,s=1,v=2;////////\x1b\\";
-    const display = "\x1b_Ga=p,i=1,p=1,c=1,r=4;\x1b\\";
+    const display = "\x1b_Ga=p,i=1,p=1,c=1,r=4,C=1;\x1b\\";
     terminal_c.vt_write(t, transmit.ptr, transmit.len);
     terminal_c.vt_write(t, display.ptr, display.len);
 
@@ -1150,10 +1152,11 @@ test "placement_viewport_pos bottom off-screen" {
     try testing.expectEqual(Result.success, terminal_c.resize(t, 80, 5, 10, 20));
 
     // Transmit image, move cursor to row 3 (1-based: row 4), display spanning 4 rows.
+    // C=1 prevents cursor movement after display.
     // Image occupies rows 3-6 but viewport only has rows 0-4, so bottom is clipped.
     const transmit = "\x1b_Ga=t,t=d,f=24,i=1,s=1,v=2;////////\x1b\\";
     const cursor = "\x1b[4;1H";
-    const display = "\x1b_Ga=p,i=1,p=1,c=1,r=4;\x1b\\";
+    const display = "\x1b_Ga=p,i=1,p=1,c=1,r=4,C=1;\x1b\\";
     terminal_c.vt_write(t, transmit.ptr, transmit.len);
     terminal_c.vt_write(t, cursor.ptr, cursor.len);
     terminal_c.vt_write(t, display.ptr, display.len);
@@ -1189,10 +1192,11 @@ test "placement_viewport_pos top and bottom off-screen" {
     try testing.expectEqual(Result.success, terminal_c.resize(t, 80, 5, 10, 20));
 
     // Transmit image, display at cursor (0,0) spanning 10 rows.
+    // C=1 prevents cursor movement after display.
     // After scrolling by 3, image occupies vp rows -3..6, viewport is 0..4,
     // so both top and bottom are clipped but center is visible.
     const transmit = "\x1b_Ga=t,t=d,f=24,i=1,s=1,v=2;////////\x1b\\";
-    const display = "\x1b_Ga=p,i=1,p=1,c=1,r=10;\x1b\\";
+    const display = "\x1b_Ga=p,i=1,p=1,c=1,r=10,C=1;\x1b\\";
     terminal_c.vt_write(t, transmit.ptr, transmit.len);
     terminal_c.vt_write(t, display.ptr, display.len);
 
@@ -1278,9 +1282,9 @@ test "placement_source_rect with explicit source rect" {
     try testing.expectEqual(Result.success, terminal_c.resize(t, 80, 24, 10, 20));
 
     // Transmit a 4x4 RGBA image (64 bytes = 4*4*4).
-    // Base64 of 64 zero bytes: 86 chars.
+    // Base64 of 64 zero bytes: 88 chars (21 full groups + AA== padding).
     const transmit = "\x1b_Ga=t,t=d,f=32,i=1,s=4,v=4;" ++
-        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" ++
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==" ++
         "\x1b\\";
     // Display with explicit source rect: x=1, y=1, w=2, h=2.
     const display = "\x1b_Ga=p,i=1,p=1,x=1,y=1,w=2,h=2;\x1b\\";
@@ -1321,9 +1325,9 @@ test "placement_source_rect clamps to image bounds" {
     defer terminal_c.free(t);
     try testing.expectEqual(Result.success, terminal_c.resize(t, 80, 24, 10, 20));
 
-    // Transmit a 4x4 RGBA image.
+    // Transmit a 4x4 RGBA image (64 bytes = 4*4*4).
     const transmit = "\x1b_Ga=t,t=d,f=32,i=1,s=4,v=4;" ++
-        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" ++
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==" ++
         "\x1b\\";
     // Display with source rect that exceeds image bounds: x=3, y=3, w=10, h=10.
     // Should clamp to x=3, y=3, w=1, h=1.
