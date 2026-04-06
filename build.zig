@@ -156,13 +156,13 @@ pub fn build(b: *std.Build) !void {
     // Only when building on macOS (not cross-compiling) since
     // xcodebuild is required.
     if (builtin.os.tag.isDarwin() and config.target.result.os.tag.isDarwin()) {
-        const universal = try buildpkg.GhosttyLibVt.initStaticAppleUniversal(
+        const apple_libs = try buildpkg.GhosttyLibVt.initStaticAppleUniversal(
             b,
             &config,
             &deps,
             &mod,
         );
-        const xcframework = universal.xcframework();
+        const xcframework = buildpkg.GhosttyLibVt.xcframework(&apple_libs, b);
         b.getInstallStep().dependOn(xcframework.step);
     }
 
