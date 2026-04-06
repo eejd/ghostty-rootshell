@@ -233,6 +233,7 @@ comptime {
         @export(&c.terminal_mode_set, .{ .name = "ghostty_terminal_mode_set" });
         @export(&c.terminal_get, .{ .name = "ghostty_terminal_get" });
         @export(&c.terminal_grid_ref, .{ .name = "ghostty_terminal_grid_ref" });
+        @export(&c.terminal_point_from_grid_ref, .{ .name = "ghostty_terminal_point_from_grid_ref" });
         @export(&c.kitty_graphics_get, .{ .name = "ghostty_kitty_graphics_get" });
         @export(&c.kitty_graphics_image, .{ .name = "ghostty_kitty_graphics_image" });
         @export(&c.kitty_graphics_image_get, .{ .name = "ghostty_kitty_graphics_image_get" });

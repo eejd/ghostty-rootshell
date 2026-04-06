@@ -1064,6 +1064,39 @@ GHOSTTY_API GhosttyResult ghostty_terminal_grid_ref(GhosttyTerminal terminal,
                                         GhosttyPoint point,
                                         GhosttyGridRef *out_ref);
 
+/**
+ * Convert a grid reference back to a point in the given coordinate system.
+ *
+ * This is the inverse of ghostty_terminal_grid_ref(): given a grid reference,
+ * it returns the x/y coordinates in the requested coordinate system (active,
+ * viewport, screen, or history).
+ *
+ * The grid reference must have been obtained from the same terminal instance.
+ * Like all grid references, it is only valid until the next mutating terminal
+ * call.
+ *
+ * Not every grid reference is representable in every coordinate system. For
+ * example, a cell in scrollback history cannot be expressed in active
+ * coordinates, and a cell that has scrolled off the visible area cannot be
+ * expressed in viewport coordinates. In these cases, the function returns
+ * GHOSTTY_NO_VALUE.
+ *
+ * @param terminal The terminal handle (NULL returns GHOSTTY_INVALID_VALUE)
+ * @param ref Pointer to the grid reference to convert
+ * @param tag The target coordinate system
+ * @param[out] out On success, set to the coordinate in the requested system (may be NULL)
+ * @return GHOSTTY_SUCCESS on success, GHOSTTY_INVALID_VALUE if the terminal
+ *         or ref is NULL/invalid, GHOSTTY_NO_VALUE if the ref falls outside
+ *         the requested coordinate system
+ *
+ * @ingroup terminal
+ */
+GHOSTTY_API GhosttyResult ghostty_terminal_point_from_grid_ref(
+    GhosttyTerminal terminal,
+    const GhosttyGridRef *ref,
+    GhosttyPointTag tag,
+    GhosttyPointCoordinate *out);
+
 /** @} */
 
 #ifdef __cplusplus

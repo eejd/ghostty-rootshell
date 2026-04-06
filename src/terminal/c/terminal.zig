@@ -697,6 +697,20 @@ pub fn grid_ref(
     return .success;
 }
 
+pub fn point_from_grid_ref(
+    terminal_: Terminal,
+    ref: *const grid_ref_c.CGridRef,
+    tag: point.Tag,
+    out: ?*point.Coordinate,
+) callconv(lib.calling_conv) Result {
+    const t: *ZigTerminal = (terminal_ orelse return .invalid_value).terminal;
+    const p = ref.toPin() orelse return .invalid_value;
+    const pt = t.screens.active.pages.pointFromPin(tag, p) orelse
+        return .no_value;
+    if (out) |o| o.* = pt.coord();
+    return .success;
+}
+
 pub fn free(terminal_: Terminal) callconv(lib.calling_conv) void {
     const wrapper = terminal_ orelse return;
     const t = wrapper.terminal;
@@ -1259,6 +1273,102 @@ test "grid_ref null terminal" {
         .tag = .active,
         .value = .{ .active = .{ .x = 0, .y = 0 } },
     }, &out_ref));
+}
+
+test "point_from_grid_ref roundtrip active" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib.alloc.test_allocator,
+        &t,
+        .{ .cols = 80, .rows = 24, .max_scrollback = 10_000 },
+    ));
+    defer free(t);
+
+    vt_write(t, "Hello", 5);
+
+    // Get a grid ref at (2, 0) in active coords
+    var ref: grid_ref_c.CGridRef = .{};
+    try testing.expectEqual(Result.success, grid_ref(t, .{
+        .tag = .active,
+        .value = .{ .active = .{ .x = 2, .y = 0 } },
+    }, &ref));
+
+    // Convert back to active coords
+    var coord: point.Coordinate = undefined;
+    try testing.expectEqual(Result.success, point_from_grid_ref(t, &ref, .active, &coord));
+    try testing.expectEqual(@as(size.CellCountInt, 2), coord.x);
+    try testing.expectEqual(@as(u32, 0), coord.y);
+}
+
+test "point_from_grid_ref roundtrip viewport" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib.alloc.test_allocator,
+        &t,
+        .{ .cols = 80, .rows = 24, .max_scrollback = 10_000 },
+    ));
+    defer free(t);
+
+    vt_write(t, "Hello", 5);
+
+    var ref: grid_ref_c.CGridRef = .{};
+    try testing.expectEqual(Result.success, grid_ref(t, .{
+        .tag = .viewport,
+        .value = .{ .viewport = .{ .x = 0, .y = 0 } },
+    }, &ref));
+
+    var coord: point.Coordinate = undefined;
+    try testing.expectEqual(Result.success, point_from_grid_ref(t, &ref, .viewport, &coord));
+    try testing.expectEqual(@as(size.CellCountInt, 0), coord.x);
+    try testing.expectEqual(@as(u32, 0), coord.y);
+}
+
+test "point_from_grid_ref history ref to active returns no_value" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib.alloc.test_allocator,
+        &t,
+        .{ .cols = 80, .rows = 4, .max_scrollback = 10_000 },
+    ));
+    defer free(t);
+
+    // Write enough lines to push content into scrollback
+    for (0..10) |_| {
+        vt_write(t, "line\n", 5);
+    }
+
+    // Get a ref to the first line (now in scrollback)
+    var ref: grid_ref_c.CGridRef = .{};
+    try testing.expectEqual(Result.success, grid_ref(t, .{
+        .tag = .screen,
+        .value = .{ .screen = .{ .x = 0, .y = 0 } },
+    }, &ref));
+
+    // Should succeed for screen coords
+    var coord: point.Coordinate = undefined;
+    try testing.expectEqual(Result.success, point_from_grid_ref(t, &ref, .screen, &coord));
+    try testing.expectEqual(@as(u32, 0), coord.y);
+
+    // Should fail for active coords (it's in scrollback)
+    try testing.expectEqual(Result.no_value, point_from_grid_ref(t, &ref, .active, &coord));
+}
+
+test "point_from_grid_ref null terminal" {
+    var ref: grid_ref_c.CGridRef = .{};
+    try testing.expectEqual(Result.invalid_value, point_from_grid_ref(null, &ref, .active, null));
+}
+
+test "point_from_grid_ref null node" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib.alloc.test_allocator,
+        &t,
+        .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
+    ));
+    defer free(t);
+
+    const ref: grid_ref_c.CGridRef = .{};
+    try testing.expectEqual(Result.invalid_value, point_from_grid_ref(t, &ref, .active, null));
 }
 
 test "set write_pty callback" {
