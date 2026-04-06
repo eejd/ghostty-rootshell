@@ -7,6 +7,11 @@
 #ifndef GHOSTTY_VT_KITTY_GRAPHICS_H
 #define GHOSTTY_VT_KITTY_GRAPHICS_H
 
+#include <stdbool.h>
+#include <stdint.h>
+#include <ghostty/vt/allocator.h>
+#include <ghostty/vt/types.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -14,7 +19,7 @@ extern "C" {
 /** @defgroup kitty_graphics Kitty Graphics
  *
  * Opaque handle to the Kitty graphics image storage associated with a
- * terminal screen.
+ * terminal screen, and an iterator for inspecting placements.
  *
  * @{
  */
@@ -30,6 +35,204 @@ extern "C" {
  * @ingroup kitty_graphics
  */
 typedef struct GhosttyKittyGraphicsImpl* GhosttyKittyGraphics;
+
+/**
+ * Opaque handle to a Kitty graphics placement iterator.
+ *
+ * @ingroup kitty_graphics
+ */
+typedef struct GhosttyKittyGraphicsPlacementIteratorImpl* GhosttyKittyGraphicsPlacementIterator;
+
+/**
+ * Queryable data kinds for ghostty_kitty_graphics_get().
+ *
+ * @ingroup kitty_graphics
+ */
+typedef enum {
+  /** Invalid / sentinel value. */
+  GHOSTTY_KITTY_GRAPHICS_DATA_INVALID = 0,
+
+  /**
+   * Populate a pre-allocated placement iterator with placement data from
+   * the storage. Iterator data is only valid as long as the underlying
+   * terminal is not mutated.
+   *
+   * Output type: GhosttyKittyGraphicsPlacementIterator *
+   */
+  GHOSTTY_KITTY_GRAPHICS_DATA_PLACEMENT_ITERATOR = 1,
+} GhosttyKittyGraphicsData;
+
+/**
+ * Queryable data kinds for ghostty_kitty_graphics_placement_get().
+ *
+ * @ingroup kitty_graphics
+ */
+typedef enum {
+  /** Invalid / sentinel value. */
+  GHOSTTY_KITTY_GRAPHICS_PLACEMENT_DATA_INVALID = 0,
+
+  /**
+   * The image ID this placement belongs to.
+   *
+   * Output type: uint32_t *
+   */
+  GHOSTTY_KITTY_GRAPHICS_PLACEMENT_DATA_IMAGE_ID = 1,
+
+  /**
+   * The placement ID.
+   *
+   * Output type: uint32_t *
+   */
+  GHOSTTY_KITTY_GRAPHICS_PLACEMENT_DATA_PLACEMENT_ID = 2,
+
+  /**
+   * Whether this is a virtual placement (unicode placeholder).
+   *
+   * Output type: bool *
+   */
+  GHOSTTY_KITTY_GRAPHICS_PLACEMENT_DATA_IS_VIRTUAL = 3,
+
+  /**
+   * Pixel offset from the left edge of the cell.
+   *
+   * Output type: uint32_t *
+   */
+  GHOSTTY_KITTY_GRAPHICS_PLACEMENT_DATA_X_OFFSET = 4,
+
+  /**
+   * Pixel offset from the top edge of the cell.
+   *
+   * Output type: uint32_t *
+   */
+  GHOSTTY_KITTY_GRAPHICS_PLACEMENT_DATA_Y_OFFSET = 5,
+
+  /**
+   * Source rectangle x origin in pixels.
+   *
+   * Output type: uint32_t *
+   */
+  GHOSTTY_KITTY_GRAPHICS_PLACEMENT_DATA_SOURCE_X = 6,
+
+  /**
+   * Source rectangle y origin in pixels.
+   *
+   * Output type: uint32_t *
+   */
+  GHOSTTY_KITTY_GRAPHICS_PLACEMENT_DATA_SOURCE_Y = 7,
+
+  /**
+   * Source rectangle width in pixels (0 = full image width).
+   *
+   * Output type: uint32_t *
+   */
+  GHOSTTY_KITTY_GRAPHICS_PLACEMENT_DATA_SOURCE_WIDTH = 8,
+
+  /**
+   * Source rectangle height in pixels (0 = full image height).
+   *
+   * Output type: uint32_t *
+   */
+  GHOSTTY_KITTY_GRAPHICS_PLACEMENT_DATA_SOURCE_HEIGHT = 9,
+
+  /**
+   * Number of columns this placement occupies.
+   *
+   * Output type: uint32_t *
+   */
+  GHOSTTY_KITTY_GRAPHICS_PLACEMENT_DATA_COLUMNS = 10,
+
+  /**
+   * Number of rows this placement occupies.
+   *
+   * Output type: uint32_t *
+   */
+  GHOSTTY_KITTY_GRAPHICS_PLACEMENT_DATA_ROWS = 11,
+
+  /**
+   * Z-index for this placement.
+   *
+   * Output type: int32_t *
+   */
+  GHOSTTY_KITTY_GRAPHICS_PLACEMENT_DATA_Z = 12,
+} GhosttyKittyGraphicsPlacementData;
+
+/**
+ * Get data from a kitty graphics storage instance.
+ *
+ * The output pointer must be of the appropriate type for the requested
+ * data kind.
+ *
+ * Returns GHOSTTY_NO_VALUE when Kitty graphics are disabled at build time.
+ *
+ * @param graphics The kitty graphics handle
+ * @param data The type of data to extract
+ * @param[out] out Pointer to store the extracted data
+ * @return GHOSTTY_SUCCESS on success
+ *
+ * @ingroup kitty_graphics
+ */
+GHOSTTY_API GhosttyResult ghostty_kitty_graphics_get(
+    GhosttyKittyGraphics graphics,
+    GhosttyKittyGraphicsData data,
+    void* out);
+
+/**
+ * Create a new placement iterator instance.
+ *
+ * All fields except the allocator are left undefined until populated
+ * via ghostty_kitty_graphics_get() with
+ * GHOSTTY_KITTY_GRAPHICS_DATA_PLACEMENT_ITERATOR.
+ *
+ * @param allocator Pointer to allocator, or NULL to use the default allocator
+ * @param[out] out_iterator On success, receives the created iterator handle
+ * @return GHOSTTY_SUCCESS on success, GHOSTTY_OUT_OF_MEMORY on allocation
+ *         failure
+ *
+ * @ingroup kitty_graphics
+ */
+GHOSTTY_API GhosttyResult ghostty_kitty_graphics_placement_iterator_new(
+    const GhosttyAllocator* allocator,
+    GhosttyKittyGraphicsPlacementIterator* out_iterator);
+
+/**
+ * Free a placement iterator.
+ *
+ * @param iterator The iterator handle to free (may be NULL)
+ *
+ * @ingroup kitty_graphics
+ */
+GHOSTTY_API void ghostty_kitty_graphics_placement_iterator_free(
+    GhosttyKittyGraphicsPlacementIterator iterator);
+
+/**
+ * Advance the placement iterator to the next placement.
+ *
+ * @param iterator The iterator handle (may be NULL)
+ * @return true if advanced to the next placement, false if at the end
+ *
+ * @ingroup kitty_graphics
+ */
+GHOSTTY_API bool ghostty_kitty_graphics_placement_next(
+    GhosttyKittyGraphicsPlacementIterator iterator);
+
+/**
+ * Get data from the current placement in a placement iterator.
+ *
+ * Call ghostty_kitty_graphics_placement_next() at least once before
+ * calling this function.
+ *
+ * @param iterator The iterator handle (NULL returns GHOSTTY_INVALID_VALUE)
+ * @param data The data kind to query
+ * @param[out] out Pointer to receive the queried value
+ * @return GHOSTTY_SUCCESS on success, GHOSTTY_INVALID_VALUE if the
+ *         iterator is NULL or not positioned on a placement
+ *
+ * @ingroup kitty_graphics
+ */
+GHOSTTY_API GhosttyResult ghostty_kitty_graphics_placement_get(
+    GhosttyKittyGraphicsPlacementIterator iterator,
+    GhosttyKittyGraphicsPlacementData data,
+    void* out);
 
 /** @} */
 
