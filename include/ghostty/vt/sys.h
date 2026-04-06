@@ -28,6 +28,14 @@
  * an implementation. Passing NULL as the value clears the implementation
  * and disables the corresponding feature.
  *
+ * ## Example
+ *
+ * ### Defining a PNG decode callback
+ * @snippet c-vt-kitty-graphics/src/main.c kitty-graphics-decode-png
+ *
+ * ### Installing the callback and sending a PNG image
+ * @snippet c-vt-kitty-graphics/src/main.c kitty-graphics-main
+ *
  * @{
  */
 
