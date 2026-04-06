@@ -8,6 +8,7 @@ pub const color = @import("color.zig");
 pub const focus = @import("focus.zig");
 pub const formatter = @import("formatter.zig");
 pub const grid_ref = @import("grid_ref.zig");
+pub const kitty_graphics = @import("kitty_graphics.zig");
 pub const types = @import("types.zig");
 pub const modes = @import("modes.zig");
 pub const osc = @import("osc.zig");
@@ -161,6 +162,7 @@ test {
     _ = cell;
     _ = color;
     _ = grid_ref;
+    _ = kitty_graphics;
     _ = row;
     _ = focus;
     _ = formatter;

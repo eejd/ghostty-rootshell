@@ -16,6 +16,7 @@
 #include <ghostty/vt/modes.h>
 #include <ghostty/vt/size_report.h>
 #include <ghostty/vt/grid_ref.h>
+#include <ghostty/vt/kitty_graphics.h>
 #include <ghostty/vt/screen.h>
 #include <ghostty/vt/point.h>
 #include <ghostty/vt/style.h>
@@ -839,6 +840,19 @@ typedef enum {
    * Output type: bool *
    */
   GHOSTTY_TERMINAL_DATA_KITTY_IMAGE_MEDIUM_SHARED_MEM = 29,
+
+  /**
+   * The Kitty graphics image storage for the active screen.
+   *
+   * Returns a borrowed pointer to the image storage. The pointer is valid
+   * until the next mutating terminal call (e.g. ghostty_terminal_vt_write()
+   * or ghostty_terminal_reset()).
+   *
+   * Returns GHOSTTY_NO_VALUE when Kitty graphics are disabled at build time.
+   *
+   * Output type: GhosttyKittyGraphics *
+   */
+  GHOSTTY_TERMINAL_DATA_KITTY_GRAPHICS = 30,
 } GhosttyTerminalData;
 
 /**

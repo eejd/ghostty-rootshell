@@ -8,6 +8,7 @@ const Stream = @import("../stream_terminal.zig").Stream;
 const ScreenSet = @import("../ScreenSet.zig");
 const PageList = @import("../PageList.zig");
 const kitty = @import("../kitty/key.zig");
+const kitty_gfx_c = @import("kitty_graphics.zig");
 const modes = @import("../modes.zig");
 const point = @import("../point.zig");
 const size = @import("../size.zig");
@@ -515,6 +516,9 @@ pub fn mode_set(
     return .success;
 }
 
+/// C: GhosttyKittyGraphics
+pub const KittyGraphics = kitty_gfx_c.KittyGraphics;
+
 /// C: GhosttyTerminalScreen
 pub const TerminalScreen = ScreenSet.Key;
 
@@ -553,6 +557,7 @@ pub const TerminalData = enum(c_int) {
     kitty_image_medium_file = 27,
     kitty_image_medium_temp_file = 28,
     kitty_image_medium_shared_mem = 29,
+    kitty_graphics = 30,
 
     /// Output type expected for querying the data of the given kind.
     pub fn OutType(comptime self: TerminalData) type {
@@ -580,6 +585,7 @@ pub const TerminalData = enum(c_int) {
             .kitty_image_medium_temp_file,
             .kitty_image_medium_shared_mem,
             => bool,
+            .kitty_graphics => KittyGraphics,
         };
     }
 };
@@ -663,6 +669,10 @@ fn getTyped(
         .kitty_image_medium_shared_mem => {
             if (comptime !build_options.kitty_graphics) return .no_value;
             out.* = t.screens.active.kitty_images.image_limits.shared_memory;
+        },
+        .kitty_graphics => {
+            if (comptime !build_options.kitty_graphics) return .no_value;
+            out.* = &t.screens.active.kitty_images;
         },
     }
 
