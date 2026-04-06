@@ -1,7 +1,9 @@
 /**
  * @file kitty_graphics.h
  *
- * Kitty graphics protocol image storage.
+ * Kitty graphics protocol 
+ *
+ * See @ref kitty_graphics for a full usage guide.
  */
 
 #ifndef GHOSTTY_VT_KITTY_GRAPHICS_H
@@ -19,8 +21,83 @@ extern "C" {
 
 /** @defgroup kitty_graphics Kitty Graphics
  *
- * Opaque handle to the Kitty graphics image storage associated with a
- * terminal screen, and an iterator for inspecting placements.
+ * API for inspecting images and placements stored via the
+ * [Kitty graphics protocol](https://sw.kovidgoyal.net/kitty/graphics-protocol/).
+ *
+ * The central object is @ref GhosttyKittyGraphics, an opaque handle to
+ * the image storage associated with a terminal's active screen. From it
+ * you can iterate over placements and look up individual images.
+ *
+ * ## Obtaining a KittyGraphics Handle
+ *
+ * A @ref GhosttyKittyGraphics handle is obtained from a terminal via
+ * ghostty_terminal_get() with @ref GHOSTTY_TERMINAL_DATA_KITTY_GRAPHICS.
+ * The handle is borrowed from the terminal and remains valid until the
+ * next mutating terminal call (e.g. ghostty_terminal_vt_write() or
+ * ghostty_terminal_reset()).
+ *
+ * Before images can be stored, Kitty graphics must be enabled on the
+ * terminal by setting a non-zero storage limit with
+ * @ref GHOSTTY_TERMINAL_OPT_KITTY_IMAGE_STORAGE_LIMIT, and a PNG
+ * decoder callback must be installed via ghostty_sys_set() with
+ * @ref GHOSTTY_SYS_OPT_DECODE_PNG.
+ *
+ * @snippet c-vt-kitty-graphics/src/main.c kitty-graphics-decode-png
+ *
+ * ## Iterating Placements
+ *
+ * Placements are inspected through a @ref GhosttyKittyGraphicsPlacementIterator.
+ * The typical workflow is:
+ *
+ *   1. Create an iterator with ghostty_kitty_graphics_placement_iterator_new().
+ *   2. Populate it from the storage with ghostty_kitty_graphics_get() using
+ *      @ref GHOSTTY_KITTY_GRAPHICS_DATA_PLACEMENT_ITERATOR.
+ *   3. Optionally filter by z-layer with
+ *      ghostty_kitty_graphics_placement_iterator_set().
+ *   4. Advance with ghostty_kitty_graphics_placement_next() and read
+ *      per-placement data with ghostty_kitty_graphics_placement_get().
+ *   5. For each placement, look up its image with
+ *      ghostty_kitty_graphics_image() to access pixel data and dimensions.
+ *   6. Free the iterator with ghostty_kitty_graphics_placement_iterator_free().
+ *
+ * ## Looking Up Images
+ *
+ * Given an image ID (obtained from a placement via
+ * @ref GHOSTTY_KITTY_GRAPHICS_PLACEMENT_DATA_IMAGE_ID), call
+ * ghostty_kitty_graphics_image() to get a @ref GhosttyKittyGraphicsImage
+ * handle. From this handle, ghostty_kitty_graphics_image_get() provides
+ * the image dimensions, pixel format, compression, and a borrowed pointer
+ * to the raw pixel data.
+ *
+ * ## Rendering Helpers
+ *
+ * Several functions assist with rendering a placement:
+ *
+ * - ghostty_kitty_graphics_placement_pixel_size() — rendered pixel
+ *   dimensions accounting for source rect and aspect ratio.
+ * - ghostty_kitty_graphics_placement_grid_size() — number of grid
+ *   columns and rows the placement occupies.
+ * - ghostty_kitty_graphics_placement_viewport_pos() — viewport-relative
+ *   grid position (may be negative for partially scrolled placements).
+ * - ghostty_kitty_graphics_placement_source_rect() — resolved source
+ *   rectangle in pixels, clamped to image bounds.
+ * - ghostty_kitty_graphics_placement_rect() — bounding rectangle as a
+ *   @ref GhosttySelection.
+ *
+ * ## Lifetime and Thread Safety
+ *
+ * All handles borrowed from the terminal (GhosttyKittyGraphics,
+ * GhosttyKittyGraphicsImage) are invalidated by any mutating terminal
+ * call. The placement iterator is independently owned and must be freed
+ * by the caller, but the data it yields is only valid while the
+ * underlying terminal is not mutated.
+ *
+ * ## Example
+ *
+ * The following example creates a terminal, sends a Kitty graphics
+ * image, then iterates placements and prints image metadata:
+ *
+ * @snippet c-vt-kitty-graphics/src/main.c kitty-graphics-main
  *
  * @{
  */
