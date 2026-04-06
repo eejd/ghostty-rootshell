@@ -139,6 +139,38 @@ typedef enum {
 } GhosttyKittyGraphicsPlacementData;
 
 /**
+ * Z-layer classification for kitty graphics placements.
+ *
+ * Based on the kitty protocol z-index conventions:
+ * - BELOW_BG:   z < INT32_MIN/2  (drawn below cell background)
+ * - BELOW_TEXT:  INT32_MIN/2 <= z < 0  (above background, below text)
+ * - ABOVE_TEXT:  z >= 0  (above text)
+ * - ALL:         no filtering (current behavior)
+ *
+ * @ingroup kitty_graphics
+ */
+typedef enum {
+  GHOSTTY_KITTY_PLACEMENT_LAYER_ALL = 0,
+  GHOSTTY_KITTY_PLACEMENT_LAYER_BELOW_BG = 1,
+  GHOSTTY_KITTY_PLACEMENT_LAYER_BELOW_TEXT = 2,
+  GHOSTTY_KITTY_PLACEMENT_LAYER_ABOVE_TEXT = 3,
+} GhosttyKittyPlacementLayer;
+
+/**
+ * Settable options for ghostty_kitty_graphics_placement_iterator_set().
+ *
+ * @ingroup kitty_graphics
+ */
+typedef enum {
+  /**
+   * Set the z-layer filter for the iterator.
+   *
+   * Input type: GhosttyKittyPlacementLayer *
+   */
+  GHOSTTY_KITTY_GRAPHICS_PLACEMENT_ITERATOR_OPTION_LAYER = 0,
+} GhosttyKittyGraphicsPlacementIteratorOption;
+
+/**
  * Pixel format of a Kitty graphics image.
  *
  * @ingroup kitty_graphics
@@ -311,7 +343,34 @@ GHOSTTY_API void ghostty_kitty_graphics_placement_iterator_free(
     GhosttyKittyGraphicsPlacementIterator iterator);
 
 /**
+ * Set an option on a placement iterator.
+ *
+ * Use GHOSTTY_KITTY_GRAPHICS_PLACEMENT_ITERATOR_OPTION_LAYER with a
+ * GhosttyKittyPlacementLayer value to filter placements by z-layer.
+ * The filter is applied during iteration: ghostty_kitty_graphics_placement_next()
+ * will skip placements that do not match the configured layer.
+ *
+ * The default layer is GHOSTTY_KITTY_PLACEMENT_LAYER_ALL (no filtering).
+ *
+ * @param iterator The iterator handle (NULL returns GHOSTTY_INVALID_VALUE)
+ * @param option The option to set
+ * @param value Pointer to the value (type depends on option; NULL returns
+ *              GHOSTTY_INVALID_VALUE)
+ * @return GHOSTTY_SUCCESS on success
+ *
+ * @ingroup kitty_graphics
+ */
+GHOSTTY_API GhosttyResult ghostty_kitty_graphics_placement_iterator_set(
+    GhosttyKittyGraphicsPlacementIterator iterator,
+    GhosttyKittyGraphicsPlacementIteratorOption option,
+    const void* value);
+
+/**
  * Advance the placement iterator to the next placement.
+ *
+ * If a layer filter has been set via
+ * ghostty_kitty_graphics_placement_iterator_set(), only placements
+ * matching that layer are returned.
  *
  * @param iterator The iterator handle (may be NULL)
  * @return true if advanced to the next placement, false if at the end

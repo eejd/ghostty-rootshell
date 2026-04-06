@@ -42,6 +42,7 @@ const PlacementIteratorWrapper = if (build_options.kitty_graphics)
         alloc: std.mem.Allocator,
         inner: PlacementMap.Iterator = undefined,
         entry: ?PlacementMap.Entry = null,
+        layer_filter: PlacementLayer = .all,
     }
 else
     void;
@@ -129,6 +130,34 @@ fn getTyped(
     }
     return .success;
 }
+
+/// C: GhosttyKittyPlacementLayer
+pub const PlacementLayer = enum(c_int) {
+    all = 0,
+    below_bg = 1,
+    below_text = 2,
+    above_text = 3,
+
+    fn matches(self: PlacementLayer, z: i32) bool {
+        return switch (self) {
+            .all => true,
+            .below_bg => z < std.math.minInt(i32) / 2,
+            .below_text => z >= std.math.minInt(i32) / 2 and z < 0,
+            .above_text => z >= 0,
+        };
+    }
+};
+
+/// C: GhosttyKittyGraphicsPlacementIteratorOption
+pub const PlacementIteratorOption = enum(c_int) {
+    layer = 0,
+
+    pub fn InType(comptime self: PlacementIteratorOption) type {
+        return switch (self) {
+            .layer => PlacementLayer,
+        };
+    }
+};
 
 /// C: GhosttyKittyImageFormat
 pub const ImageFormat = kitty_cmd.Transmission.Format;
@@ -233,12 +262,51 @@ pub fn placement_iterator_free(iter_: PlacementIterator) callconv(lib.calling_co
     iter.alloc.destroy(iter);
 }
 
+pub fn placement_iterator_set(
+    iter_: PlacementIterator,
+    option: PlacementIteratorOption,
+    value: ?*const anyopaque,
+) callconv(lib.calling_conv) Result {
+    if (comptime !build_options.kitty_graphics) return .no_value;
+
+    if (comptime std.debug.runtime_safety) {
+        _ = std.meta.intToEnum(PlacementIteratorOption, @intFromEnum(option)) catch {
+            return .invalid_value;
+        };
+    }
+
+    return switch (option) {
+        inline else => |comptime_option| placementIteratorSetTyped(
+            iter_,
+            comptime_option,
+            @ptrCast(@alignCast(value orelse return .invalid_value)),
+        ),
+    };
+}
+
+fn placementIteratorSetTyped(
+    iter_: PlacementIterator,
+    comptime option: PlacementIteratorOption,
+    value: *const option.InType(),
+) Result {
+    const iter = iter_ orelse return .invalid_value;
+    switch (option) {
+        .layer => iter.layer_filter = value.*,
+    }
+    return .success;
+}
+
 pub fn placement_iterator_next(iter_: PlacementIterator) callconv(lib.calling_conv) bool {
     if (comptime !build_options.kitty_graphics) return false;
 
     const iter = iter_ orelse return false;
-    iter.entry = iter.inner.next() orelse return false;
-    return true;
+    while (iter.inner.next()) |entry| {
+        if (iter.layer_filter.matches(entry.value_ptr.z)) {
+            iter.entry = entry;
+            return true;
+        }
+    }
+    return false;
 }
 
 pub fn placement_get(
@@ -535,6 +603,96 @@ test "placement_iterator with multiple placements" {
     try testing.expectEqual(2, count);
     try testing.expect(seen_p1);
     try testing.expect(seen_p2);
+}
+
+test "placement_iterator_set layer filter" {
+    if (comptime !build_options.kitty_graphics) return error.SkipZigTest;
+
+    var t: terminal_c.Terminal = null;
+    try testing.expectEqual(Result.success, terminal_c.new(
+        &lib.alloc.test_allocator,
+        &t,
+        .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
+    ));
+    defer terminal_c.free(t);
+
+    // Transmit image 1.
+    const transmit = "\x1b_Ga=t,t=d,f=24,i=1,s=1,v=2;////////\x1b\\";
+    terminal_c.vt_write(t, transmit.ptr, transmit.len);
+
+    // Display with z=5 (above text), z=-1 (below text), z=-1073741825 (below bg).
+    // INT32_MIN/2 = -1073741824, so -1073741825 < INT32_MIN/2.
+    const d1 = "\x1b_Ga=p,i=1,p=1,z=5;\x1b\\";
+    const d2 = "\x1b_Ga=p,i=1,p=2,z=-1;\x1b\\";
+    const d3 = "\x1b_Ga=p,i=1,p=3,z=-1073741825;\x1b\\";
+    terminal_c.vt_write(t, d1.ptr, d1.len);
+    terminal_c.vt_write(t, d2.ptr, d2.len);
+    terminal_c.vt_write(t, d3.ptr, d3.len);
+
+    var graphics: KittyGraphics = undefined;
+    try testing.expectEqual(Result.success, terminal_c.get(
+        t,
+        .kitty_graphics,
+        @ptrCast(&graphics),
+    ));
+
+    var iter: PlacementIterator = null;
+    try testing.expectEqual(Result.success, placement_iterator_new(
+        &lib.alloc.test_allocator,
+        &iter,
+    ));
+    defer placement_iterator_free(iter);
+
+    // Filter: above_text (z >= 0) — should yield only p=1.
+    var layer = PlacementLayer.above_text;
+    try testing.expectEqual(Result.success, placement_iterator_set(iter, .layer, @ptrCast(&layer)));
+    try testing.expectEqual(Result.success, get(graphics, .placement_iterator, @ptrCast(&iter)));
+
+    var count: u32 = 0;
+    while (placement_iterator_next(iter)) {
+        var z: i32 = undefined;
+        try testing.expectEqual(Result.success, placement_get(iter, .z, @ptrCast(&z)));
+        try testing.expect(z >= 0);
+        count += 1;
+    }
+    try testing.expectEqual(1, count);
+
+    // Filter: below_text (INT32_MIN/2 <= z < 0) — should yield only p=2.
+    layer = .below_text;
+    try testing.expectEqual(Result.success, placement_iterator_set(iter, .layer, @ptrCast(&layer)));
+    try testing.expectEqual(Result.success, get(graphics, .placement_iterator, @ptrCast(&iter)));
+
+    count = 0;
+    while (placement_iterator_next(iter)) {
+        var z: i32 = undefined;
+        try testing.expectEqual(Result.success, placement_get(iter, .z, @ptrCast(&z)));
+        try testing.expect(z >= std.math.minInt(i32) / 2 and z < 0);
+        count += 1;
+    }
+    try testing.expectEqual(1, count);
+
+    // Filter: below_bg (z < INT32_MIN/2) — should yield only p=3.
+    layer = .below_bg;
+    try testing.expectEqual(Result.success, placement_iterator_set(iter, .layer, @ptrCast(&layer)));
+    try testing.expectEqual(Result.success, get(graphics, .placement_iterator, @ptrCast(&iter)));
+
+    count = 0;
+    while (placement_iterator_next(iter)) {
+        var z: i32 = undefined;
+        try testing.expectEqual(Result.success, placement_get(iter, .z, @ptrCast(&z)));
+        try testing.expect(z < std.math.minInt(i32) / 2);
+        count += 1;
+    }
+    try testing.expectEqual(1, count);
+
+    // Filter: all — should yield all 3.
+    layer = .all;
+    try testing.expectEqual(Result.success, placement_iterator_set(iter, .layer, @ptrCast(&layer)));
+    try testing.expectEqual(Result.success, get(graphics, .placement_iterator, @ptrCast(&iter)));
+
+    count = 0;
+    while (placement_iterator_next(iter)) count += 1;
+    try testing.expectEqual(3, count);
 }
 
 test "image_get_handle returns null for missing id" {

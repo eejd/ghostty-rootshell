@@ -14,6 +14,7 @@ pub const kitty_graphics_image = kitty_graphics.image_get_handle;
 pub const kitty_graphics_image_get = kitty_graphics.image_get;
 pub const kitty_graphics_placement_iterator_new = kitty_graphics.placement_iterator_new;
 pub const kitty_graphics_placement_iterator_free = kitty_graphics.placement_iterator_free;
+pub const kitty_graphics_placement_iterator_set = kitty_graphics.placement_iterator_set;
 pub const kitty_graphics_placement_next = kitty_graphics.placement_iterator_next;
 pub const kitty_graphics_placement_get = kitty_graphics.placement_get;
 pub const kitty_graphics_placement_rect = kitty_graphics.placement_rect;
