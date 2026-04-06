@@ -342,12 +342,30 @@ pub fn xcframework(
 ) *XCFrameworkStep {
     assert(lib_vt.kind == .static);
     const b = lib_vt.step.owner;
+
+    // Generate a headers directory with a module map for Swift PM.
+    // We can't use include/ directly because it contains a module map
+    // for GhosttyKit (the macOS app library).
+    const wf = b.addWriteFiles();
+    _ = wf.addCopyDirectory(
+        b.path("include/ghostty"),
+        "ghostty",
+        .{ .include_extensions = &.{".h"} },
+    );
+    _ = wf.add("module.modulemap",
+        \\module GhosttyVt {
+        \\    umbrella header "ghostty/vt.h"
+        \\    export *
+        \\}
+        \\
+    );
+
     return XCFrameworkStep.create(b, .{
         .name = "ghostty-vt",
         .out_path = b.pathJoin(&.{ b.install_prefix, "lib/ghostty-vt.xcframework" }),
         .libraries = &.{.{
             .library = lib_vt.output,
-            .headers = b.path("include/ghostty"),
+            .headers = wf.getDirectory(),
             .dsym = null,
         }},
     });
