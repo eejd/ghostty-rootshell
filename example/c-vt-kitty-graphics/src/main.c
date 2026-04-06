@@ -170,11 +170,11 @@ int main() {
     GhosttyKittyImageFormat format = 0;
     size_t data_len = 0;
 
-    ghostty_kitty_image_get(image, GHOSTTY_KITTY_IMAGE_DATA_NUMBER, &number);
-    ghostty_kitty_image_get(image, GHOSTTY_KITTY_IMAGE_DATA_WIDTH, &width);
-    ghostty_kitty_image_get(image, GHOSTTY_KITTY_IMAGE_DATA_HEIGHT, &height);
-    ghostty_kitty_image_get(image, GHOSTTY_KITTY_IMAGE_DATA_FORMAT, &format);
-    ghostty_kitty_image_get(image, GHOSTTY_KITTY_IMAGE_DATA_DATA_LEN, &data_len);
+    ghostty_kitty_graphics_image_get(image, GHOSTTY_KITTY_IMAGE_DATA_NUMBER, &number);
+    ghostty_kitty_graphics_image_get(image, GHOSTTY_KITTY_IMAGE_DATA_WIDTH, &width);
+    ghostty_kitty_graphics_image_get(image, GHOSTTY_KITTY_IMAGE_DATA_HEIGHT, &height);
+    ghostty_kitty_graphics_image_get(image, GHOSTTY_KITTY_IMAGE_DATA_FORMAT, &format);
+    ghostty_kitty_graphics_image_get(image, GHOSTTY_KITTY_IMAGE_DATA_DATA_LEN, &data_len);
 
     printf("    image: number=%u size=%ux%u format=%d data_len=%zu\n",
            number, width, height, format, data_len);

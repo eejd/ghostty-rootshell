@@ -162,7 +162,7 @@ typedef enum {
 } GhosttyKittyImageCompression;
 
 /**
- * Queryable data kinds for ghostty_kitty_image_get().
+ * Queryable data kinds for ghostty_kitty_graphics_image_get().
  *
  * @ingroup kitty_graphics
  */
@@ -277,7 +277,7 @@ GHOSTTY_API GhosttyKittyGraphicsImage ghostty_kitty_graphics_image(
  *
  * @ingroup kitty_graphics
  */
-GHOSTTY_API GhosttyResult ghostty_kitty_image_get(
+GHOSTTY_API GhosttyResult ghostty_kitty_graphics_image_get(
     GhosttyKittyGraphicsImage image,
     GhosttyKittyGraphicsImageData data,
     void* out);
