@@ -14,7 +14,7 @@
   simd ? true,
 }:
 stdenv.mkDerivation (finalAttrs: {
-  pname = "ghostty";
+  pname = "libghostty-vt";
   version = "0.1.0-dev+${revision}-nix";
 
   # We limit source like this to try and reduce the amount of rebuilds as possible
