@@ -7,6 +7,7 @@
 #ifndef GHOSTTY_VT_TYPES_H
 #define GHOSTTY_VT_TYPES_H
 
+#include <limits.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -33,6 +34,26 @@
 #endif
 
 /**
+ * Sentinel value for enum definitions to force max int width sizing.
+ *
+ * Pre-C23, the C standard allows compilers to choose any integer type
+ * that can represent all enum values (C11 §6.7.2.2), so small enums
+ * could be backed by char or short. Adding this value as the last
+ * entry in every enum forces the compiler to use at an `int`
+ * type, ensuring ABI stability across compilers and platforms.
+ *
+ * We use INT_MAX rather than a fixed constant like 0xFFFFFFFF because
+ * enum constants must have type int (which is signed). Values above
+ * INT_MAX overflow signed int and are a constraint violation in
+ * standard C; compilers that accept them interpret them as negative
+ * values via two's complement, which can collide with legitimate
+ * negative enum values. Using INT_MAX also ensures the enum matches
+ * the target's int size, which is important because the Zig side
+ * backs these enums with c_int for ABI compatibility.
+ */
+#define GHOSTTY_ENUM_MAX_VALUE INT_MAX
+
+/**
  * Result codes for libghostty-vt operations.
  */
 typedef enum {
@@ -46,6 +67,7 @@ typedef enum {
     GHOSTTY_OUT_OF_SPACE = -3,
     /** The requested value has no value */
     GHOSTTY_NO_VALUE = -4,
+    GHOSTTY_RESULT_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
 } GhosttyResult;
 
 /* ---- Opaque handles ---- */

@@ -106,6 +106,7 @@ typedef enum {
      * Input type: GhosttySysDecodePngFn (function pointer, or NULL)
      */
     GHOSTTY_SYS_OPT_DECODE_PNG = 1,
+    GHOSTTY_SYS_OPT_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
 } GhosttySysOption;
 
 /**

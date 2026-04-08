@@ -35,6 +35,7 @@ typedef enum {
     GHOSTTY_KEY_ACTION_PRESS = 1,
     /** Key is being repeated (held down) */
     GHOSTTY_KEY_ACTION_REPEAT = 2,
+    GHOSTTY_KEY_ACTION_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
 } GhosttyKeyAction;
 
 /**
@@ -296,6 +297,7 @@ typedef enum {
     GHOSTTY_KEY_COPY,
     GHOSTTY_KEY_CUT,
     GHOSTTY_KEY_PASTE,
+    GHOSTTY_KEY_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
 } GhosttyKey;
 
 /**

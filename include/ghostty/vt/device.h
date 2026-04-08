@@ -74,6 +74,7 @@ extern "C" {
 typedef enum {
     GHOSTTY_COLOR_SCHEME_LIGHT = 0,
     GHOSTTY_COLOR_SCHEME_DARK = 1,
+    GHOSTTY_COLOR_SCHEME_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
 } GhosttyColorScheme;
 
 /**

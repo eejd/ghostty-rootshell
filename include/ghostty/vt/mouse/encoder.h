@@ -45,6 +45,7 @@ typedef enum {
 
   /** Any-event tracking mode. */
   GHOSTTY_MOUSE_TRACKING_ANY = 4,
+  GHOSTTY_MOUSE_TRACKING_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
 } GhosttyMouseTrackingMode;
 
 /**
@@ -58,6 +59,7 @@ typedef enum {
   GHOSTTY_MOUSE_FORMAT_SGR = 2,
   GHOSTTY_MOUSE_FORMAT_URXVT = 3,
   GHOSTTY_MOUSE_FORMAT_SGR_PIXELS = 4,
+  GHOSTTY_MOUSE_FORMAT_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
 } GhosttyMouseFormat;
 
 /**
@@ -120,6 +122,7 @@ typedef enum {
 
   /** Whether to enable motion deduplication by last cell (value: bool). */
   GHOSTTY_MOUSE_ENCODER_OPT_TRACK_LAST_CELL = 4,
+  GHOSTTY_MOUSE_ENCODER_OPT_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
 } GhosttyMouseEncoderOption;
 
 /**

@@ -63,6 +63,7 @@ typedef enum {
   GHOSTTY_OSC_COMMAND_CONEMU_XTERM_EMULATION = 20,
   GHOSTTY_OSC_COMMAND_CONEMU_COMMENT = 21,
   GHOSTTY_OSC_COMMAND_KITTY_TEXT_SIZING = 22,
+  GHOSTTY_OSC_COMMAND_TYPE_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
 } GhosttyOscCommandType;
 
 /**
@@ -88,6 +89,7 @@ typedef enum {
    * the same parser instance. Memory is owned by the parser.
    */
   GHOSTTY_OSC_DATA_CHANGE_WINDOW_TITLE_STR = 1,
+  GHOSTTY_OSC_DATA_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
 } GhosttyOscCommandData;
 
 /**

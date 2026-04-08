@@ -54,7 +54,8 @@ typedef enum {
 
   /** Scrollback history only (before active area). */
   GHOSTTY_POINT_TAG_HISTORY = 3,
-} GhosttyPointTag;
+  GHOSTTY_POINT_TAG_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
+  } GhosttyPointTag;
 
 /**
  * Point value union.

@@ -73,6 +73,7 @@ typedef enum {
     GHOSTTY_OPTION_AS_ALT_LEFT = 2,
     /** Only right option key is treated as alt */
     GHOSTTY_OPTION_AS_ALT_RIGHT = 3,
+    GHOSTTY_OPTION_AS_ALT_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
 } GhosttyOptionAsAlt;
 
 /**
@@ -104,6 +105,7 @@ typedef enum {
     
     /** macOS option-as-alt setting (value: GhosttyOptionAsAlt) */
     GHOSTTY_KEY_ENCODER_OPT_MACOS_OPTION_AS_ALT = 6,
+    GHOSTTY_KEY_ENCODER_OPT_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
 } GhosttyKeyEncoderOption;
 
 /**

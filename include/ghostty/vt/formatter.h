@@ -46,6 +46,7 @@ typedef enum {
 
   /** HTML with inline styles. */
   GHOSTTY_FORMATTER_FORMAT_HTML,
+  GHOSTTY_FORMATTER_FORMAT_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
 } GhosttyFormatterFormat;
 
 /**

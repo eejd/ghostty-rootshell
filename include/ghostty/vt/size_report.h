@@ -49,6 +49,7 @@ typedef enum {
     GHOSTTY_SIZE_REPORT_CSI_16_T = 2,
     /** XTWINOPS text area size in characters: ESC [ 8 ; rows ; cols t */
     GHOSTTY_SIZE_REPORT_CSI_18_T = 3,
+    GHOSTTY_SIZE_REPORT_STYLE_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
 } GhosttySizeReportStyle;
 
 /**

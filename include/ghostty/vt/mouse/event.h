@@ -36,6 +36,7 @@ typedef enum {
 
   /** Mouse moved. */
   GHOSTTY_MOUSE_ACTION_MOTION = 2,
+  GHOSTTY_MOUSE_ACTION_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
 } GhosttyMouseAction;
 
 /**
@@ -56,6 +57,7 @@ typedef enum {
   GHOSTTY_MOUSE_BUTTON_NINE = 9,
   GHOSTTY_MOUSE_BUTTON_TEN = 10,
   GHOSTTY_MOUSE_BUTTON_ELEVEN = 11,
+  GHOSTTY_MOUSE_BUTTON_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
 } GhosttyMouseButton;
 
 /**

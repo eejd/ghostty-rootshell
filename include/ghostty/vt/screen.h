@@ -69,6 +69,7 @@ typedef enum {
 
   /** No text; background color as RGB. */
   GHOSTTY_CELL_CONTENT_BG_COLOR_RGB = 3,
+  GHOSTTY_CELL_CONTENT_TAG_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
 } GhosttyCellContentTag;
 
 /**
@@ -90,6 +91,7 @@ typedef enum {
 
   /** Spacer at end of soft-wrapped line for a wide character. */
   GHOSTTY_CELL_WIDE_SPACER_HEAD = 3,
+  GHOSTTY_CELL_WIDE_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
 } GhosttyCellWide;
 
 /**
@@ -109,6 +111,7 @@ typedef enum {
 
   /** Content that is part of a shell prompt. */
   GHOSTTY_CELL_SEMANTIC_PROMPT = 2,
+  GHOSTTY_CELL_SEMANTIC_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
 } GhosttyCellSemanticContent;
 
 /**
@@ -201,6 +204,7 @@ typedef enum {
    * Output type: GhosttyColorRgb *
    */
   GHOSTTY_CELL_DATA_COLOR_RGB = 11,
+  GHOSTTY_CELL_DATA_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
 } GhosttyCellData;
 
 /**
@@ -220,6 +224,7 @@ typedef enum {
 
   /** Prompt cells exist and this is a continuation line. */
   GHOSTTY_ROW_SEMANTIC_PROMPT_CONTINUATION = 2,
+  GHOSTTY_ROW_SEMANTIC_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
 } GhosttyRowSemanticPrompt;
 
 /**
@@ -289,6 +294,7 @@ typedef enum {
    * Output type: bool *
    */
   GHOSTTY_ROW_DATA_DIRTY = 8,
+  GHOSTTY_ROW_DATA_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
 } GhosttyRowData;
 
 /**

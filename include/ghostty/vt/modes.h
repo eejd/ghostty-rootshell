@@ -157,6 +157,7 @@ typedef enum {
     GHOSTTY_MODE_REPORT_PERMANENTLY_SET = 3,
     /** Mode is permanently reset */
     GHOSTTY_MODE_REPORT_PERMANENTLY_RESET = 4,
+    GHOSTTY_MODE_REPORT_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
 } GhosttyModeReportState;
 
 /**
