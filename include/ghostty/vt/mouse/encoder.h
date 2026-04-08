@@ -30,7 +30,7 @@ typedef struct GhosttyMouseEncoderImpl *GhosttyMouseEncoder;
  *
  * @ingroup mouse
  */
-typedef enum {
+typedef enum GHOSTTY_ENUM_TYPED {
   /** Mouse reporting disabled. */
   GHOSTTY_MOUSE_TRACKING_NONE = 0,
 
@@ -53,7 +53,7 @@ typedef enum {
  *
  * @ingroup mouse
  */
-typedef enum {
+typedef enum GHOSTTY_ENUM_TYPED {
   GHOSTTY_MOUSE_FORMAT_X10 = 0,
   GHOSTTY_MOUSE_FORMAT_UTF8 = 1,
   GHOSTTY_MOUSE_FORMAT_SGR = 2,
@@ -107,7 +107,7 @@ typedef struct {
  *
  * @ingroup mouse
  */
-typedef enum {
+typedef enum GHOSTTY_ENUM_TYPED {
   /** Mouse tracking mode (value: GhosttyMouseTrackingMode). */
   GHOSTTY_MOUSE_ENCODER_OPT_EVENT = 0,
 

@@ -35,7 +35,7 @@ extern "C" {
 /**
  * Focus event types for focus reporting mode (mode 1004).
  */
-typedef enum {
+typedef enum GHOSTTY_ENUM_TYPED {
     /** Terminal window gained focus */
     GHOSTTY_FOCUS_GAINED = 0,
     /** Terminal window lost focus */

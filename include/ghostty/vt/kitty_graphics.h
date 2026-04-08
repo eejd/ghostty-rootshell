@@ -107,7 +107,7 @@ extern "C" {
  *
  * @ingroup kitty_graphics
  */
-typedef enum {
+typedef enum GHOSTTY_ENUM_TYPED {
   /** Invalid / sentinel value. */
   GHOSTTY_KITTY_GRAPHICS_DATA_INVALID = 0,
 
@@ -127,7 +127,7 @@ typedef enum {
  *
  * @ingroup kitty_graphics
  */
-typedef enum {
+typedef enum GHOSTTY_ENUM_TYPED {
   /** Invalid / sentinel value. */
   GHOSTTY_KITTY_GRAPHICS_PLACEMENT_DATA_INVALID = 0,
 
@@ -228,7 +228,7 @@ typedef enum {
  *
  * @ingroup kitty_graphics
  */
-typedef enum {
+typedef enum GHOSTTY_ENUM_TYPED {
   GHOSTTY_KITTY_PLACEMENT_LAYER_ALL = 0,
   GHOSTTY_KITTY_PLACEMENT_LAYER_BELOW_BG = 1,
   GHOSTTY_KITTY_PLACEMENT_LAYER_BELOW_TEXT = 2,
@@ -241,7 +241,7 @@ typedef enum {
  *
  * @ingroup kitty_graphics
  */
-typedef enum {
+typedef enum GHOSTTY_ENUM_TYPED {
   /**
    * Set the z-layer filter for the iterator.
    *
@@ -256,7 +256,7 @@ typedef enum {
  *
  * @ingroup kitty_graphics
  */
-typedef enum {
+typedef enum GHOSTTY_ENUM_TYPED {
   GHOSTTY_KITTY_IMAGE_FORMAT_RGB = 0,
   GHOSTTY_KITTY_IMAGE_FORMAT_RGBA = 1,
   GHOSTTY_KITTY_IMAGE_FORMAT_PNG = 2,
@@ -270,7 +270,7 @@ typedef enum {
  *
  * @ingroup kitty_graphics
  */
-typedef enum {
+typedef enum GHOSTTY_ENUM_TYPED {
   GHOSTTY_KITTY_IMAGE_COMPRESSION_NONE = 0,
   GHOSTTY_KITTY_IMAGE_COMPRESSION_ZLIB_DEFLATE = 1,
   GHOSTTY_KITTY_IMAGE_COMPRESSION_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
@@ -281,7 +281,7 @@ typedef enum {
  *
  * @ingroup kitty_graphics
  */
-typedef enum {
+typedef enum GHOSTTY_ENUM_TYPED {
   /** Invalid / sentinel value. */
   GHOSTTY_KITTY_IMAGE_DATA_INVALID = 0,
 

@@ -86,7 +86,7 @@ extern "C" {
  *
  * @ingroup render
  */
-typedef enum {
+typedef enum GHOSTTY_ENUM_TYPED {
   /** Not dirty at all; rendering can be skipped. */
   GHOSTTY_RENDER_STATE_DIRTY_FALSE = 0,
 
@@ -103,7 +103,7 @@ typedef enum {
  *
  * @ingroup render
  */
-typedef enum {
+typedef enum GHOSTTY_ENUM_TYPED {
   /** Bar cursor (DECSCUSR 5, 6). */
   GHOSTTY_RENDER_STATE_CURSOR_VISUAL_STYLE_BAR = 0,
 
@@ -123,7 +123,7 @@ typedef enum {
  *
  * @ingroup render
  */
-typedef enum {
+typedef enum GHOSTTY_ENUM_TYPED {
   /** Invalid / sentinel value. */
   GHOSTTY_RENDER_STATE_DATA_INVALID = 0,
 
@@ -195,7 +195,7 @@ typedef enum {
  *
  * @ingroup render
  */
-typedef enum {
+typedef enum GHOSTTY_ENUM_TYPED {
   /** Set dirty state (GhosttyRenderStateDirty). */
   GHOSTTY_RENDER_STATE_OPTION_DIRTY = 0,
   GHOSTTY_RENDER_STATE_OPTION_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
@@ -206,7 +206,7 @@ typedef enum {
  *
  * @ingroup render
  */
-typedef enum {
+typedef enum GHOSTTY_ENUM_TYPED {
   /** Invalid / sentinel value. */
   GHOSTTY_RENDER_STATE_ROW_DATA_INVALID = 0,
 
@@ -229,7 +229,7 @@ typedef enum {
  *
  * @ingroup render
  */
-typedef enum {
+typedef enum GHOSTTY_ENUM_TYPED {
   /** Set dirty state for the current row (bool). */
   GHOSTTY_RENDER_STATE_ROW_OPTION_DIRTY = 0,
   GHOSTTY_RENDER_STATE_ROW_OPTION_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
@@ -481,7 +481,7 @@ GHOSTTY_API GhosttyResult ghostty_render_state_row_cells_new(
  *
  * @ingroup render
  */
-typedef enum {
+typedef enum GHOSTTY_ENUM_TYPED {
   /** Invalid / sentinel value. */
   GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_INVALID = 0,
 

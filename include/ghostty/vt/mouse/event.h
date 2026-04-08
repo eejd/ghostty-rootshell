@@ -27,7 +27,7 @@ typedef struct GhosttyMouseEventImpl *GhosttyMouseEvent;
  *
  * @ingroup mouse
  */
-typedef enum {
+typedef enum GHOSTTY_ENUM_TYPED {
   /** Mouse button was pressed. */
   GHOSTTY_MOUSE_ACTION_PRESS = 0,
 
@@ -44,7 +44,7 @@ typedef enum {
  *
  * @ingroup mouse
  */
-typedef enum {
+typedef enum GHOSTTY_ENUM_TYPED {
   GHOSTTY_MOUSE_BUTTON_UNKNOWN = 0,
   GHOSTTY_MOUSE_BUTTON_LEFT = 1,
   GHOSTTY_MOUSE_BUTTON_RIGHT = 2,

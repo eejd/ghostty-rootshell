@@ -28,7 +28,7 @@ typedef struct GhosttyKeyEventImpl *GhosttyKeyEvent;
  *
  * @ingroup key
  */
-typedef enum {
+typedef enum GHOSTTY_ENUM_TYPED {
     /** Key was released */
     GHOSTTY_KEY_ACTION_RELEASE = 0,
     /** Key was pressed */
@@ -104,7 +104,7 @@ typedef uint16_t GhosttyMods;
  *
  * @ingroup key
  */
-typedef enum {
+typedef enum GHOSTTY_ENUM_TYPED {
     GHOSTTY_KEY_UNIDENTIFIED = 0,
 
     // Writing System Keys (W3C § 3.1.1)

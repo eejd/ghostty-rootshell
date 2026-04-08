@@ -146,7 +146,7 @@ static inline bool ghostty_mode_ansi(GhosttyMode mode) {
  * These correspond to the Ps2 parameter in a DECRPM response
  * sequence (CSI ? Ps1 ; Ps2 $ y).
  */
-typedef enum {
+typedef enum GHOSTTY_ENUM_TYPED {
     /** Mode is not recognized */
     GHOSTTY_MODE_REPORT_NOT_RECOGNIZED = 0,
     /** Mode is set (enabled) */

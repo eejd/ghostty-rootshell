@@ -39,7 +39,7 @@
  *
  * @ingroup osc
  */
-typedef enum {
+typedef enum GHOSTTY_ENUM_TYPED {
   GHOSTTY_OSC_COMMAND_INVALID = 0,
   GHOSTTY_OSC_COMMAND_CHANGE_WINDOW_TITLE = 1,
   GHOSTTY_OSC_COMMAND_CHANGE_WINDOW_ICON = 2,
@@ -74,7 +74,7 @@ typedef enum {
  *
  * @ingroup osc
  */
-typedef enum {
+typedef enum GHOSTTY_ENUM_TYPED {
   /** Invalid data type. Never results in any data extraction. */
   GHOSTTY_OSC_DATA_INVALID = 0,
   

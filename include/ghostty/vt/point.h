@@ -42,7 +42,7 @@ typedef struct {
  *
  * @ingroup point
  */
-typedef enum {
+typedef enum GHOSTTY_ENUM_TYPED {
   /** Active area where the cursor can move. */
   GHOSTTY_POINT_TAG_ACTIVE = 0,
 

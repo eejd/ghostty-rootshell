@@ -88,7 +88,7 @@ typedef bool (*GhosttySysDecodePngFn)(
 /**
  * System option identifiers for ghostty_sys_set().
  */
-typedef enum {
+typedef enum GHOSTTY_ENUM_TYPED {
     /**
      * Set the userdata pointer passed to all sys callbacks.
      *

@@ -34,29 +34,44 @@
 #endif
 
 /**
- * Sentinel value for enum definitions to force max int width sizing.
+ * Enum int-sizing helpers.
  *
- * Pre-C23, the C standard allows compilers to choose any integer type
- * that can represent all enum values (C11 §6.7.2.2), so small enums
- * could be backed by char or short. Adding this value as the last
- * entry in every enum forces the compiler to use at an `int`
- * type, ensuring ABI stability across compilers and platforms.
+ * The Zig side backs all C enums with c_int, so the C declarations
+ * must use int as their underlying type to maintain ABI compatibility.
  *
- * We use INT_MAX rather than a fixed constant like 0xFFFFFFFF because
- * enum constants must have type int (which is signed). Values above
- * INT_MAX overflow signed int and are a constraint violation in
- * standard C; compilers that accept them interpret them as negative
- * values via two's complement, which can collide with legitimate
- * negative enum values. Using INT_MAX also ensures the enum matches
- * the target's int size, which is important because the Zig side
- * backs these enums with c_int for ABI compatibility.
+ * C23 (detected via __STDC_VERSION__ >= 202311L) supports explicit
+ * enum underlying types with `enum : int { ... }`. For pre-C23
+ * compilers, which are free to choose any type that can represent
+ * all values (C11 §6.7.2.2), we add an INT_MAX sentinel as the last
+ * entry to force the compiler to use int.
+ *
+ * INT_MAX is used rather than a fixed constant like 0xFFFFFFFF
+ * because enum constants must have type int (which is signed).
+ * Values above INT_MAX overflow signed int and are a constraint
+ * violation in standard C; compilers that accept them interpret them
+ * as negative values via two's complement, which can collide with
+ * legitimate negative enum values.
+ *
+ * Usage:
+ * @code
+ * typedef enum GHOSTTY_ENUM_TYPED {
+ *     FOO_A = 0,
+ *     FOO_B = 1,
+ *     FOO_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
+ * } Foo;
+ * @endcode
  */
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 202311L
+#define GHOSTTY_ENUM_TYPED : int
+#else
+#define GHOSTTY_ENUM_TYPED
+#endif
 #define GHOSTTY_ENUM_MAX_VALUE INT_MAX
 
 /**
  * Result codes for libghostty-vt operations.
  */
-typedef enum {
+typedef enum GHOSTTY_ENUM_TYPED {
     /** Operation completed successfully */
     GHOSTTY_SUCCESS = 0,
     /** Operation failed due to failed allocation */

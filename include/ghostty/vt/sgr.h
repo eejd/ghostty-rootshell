@@ -55,7 +55,7 @@ extern "C" {
  *
  * @ingroup sgr
  */
-typedef enum {
+typedef enum GHOSTTY_ENUM_TYPED {
   GHOSTTY_SGR_ATTR_UNSET = 0,
   GHOSTTY_SGR_ATTR_UNKNOWN = 1,
   GHOSTTY_SGR_ATTR_BOLD = 2,
@@ -95,7 +95,7 @@ typedef enum {
  *
  * @ingroup sgr
  */
-typedef enum {
+typedef enum GHOSTTY_ENUM_TYPED {
   GHOSTTY_SGR_UNDERLINE_NONE = 0,
   GHOSTTY_SGR_UNDERLINE_SINGLE = 1,
   GHOSTTY_SGR_UNDERLINE_DOUBLE = 2,

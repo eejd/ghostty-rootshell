@@ -64,7 +64,7 @@ typedef uint8_t GhosttyKittyKeyFlags;
  *
  * @ingroup key
  */
-typedef enum {
+typedef enum GHOSTTY_ENUM_TYPED {
     /** Option key is not treated as alt */
     GHOSTTY_OPTION_AS_ALT_FALSE = 0,
     /** Option key is treated as alt */
@@ -84,7 +84,7 @@ typedef enum {
  *
  * @ingroup key
  */
-typedef enum {
+typedef enum GHOSTTY_ENUM_TYPED {
     /** Terminal DEC mode 1: cursor key application mode (value: bool) */
     GHOSTTY_KEY_ENCODER_OPT_CURSOR_KEY_APPLICATION = 0,
     

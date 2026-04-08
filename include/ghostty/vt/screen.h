@@ -57,7 +57,7 @@ typedef uint64_t GhosttyRow;
  *
  * @ingroup screen
  */
-typedef enum {
+typedef enum GHOSTTY_ENUM_TYPED {
   /** A single codepoint (may be zero for empty). */
   GHOSTTY_CELL_CONTENT_CODEPOINT = 0,
 
@@ -79,7 +79,7 @@ typedef enum {
  *
  * @ingroup screen
  */
-typedef enum {
+typedef enum GHOSTTY_ENUM_TYPED {
   /** Not a wide character, cell width 1. */
   GHOSTTY_CELL_WIDE_NARROW = 0,
 
@@ -102,7 +102,7 @@ typedef enum {
  *
  * @ingroup screen
  */
-typedef enum {
+typedef enum GHOSTTY_ENUM_TYPED {
   /** Regular output content, such as command output. */
   GHOSTTY_CELL_SEMANTIC_OUTPUT = 0,
 
@@ -122,7 +122,7 @@ typedef enum {
  *
  * @ingroup screen
  */
-typedef enum {
+typedef enum GHOSTTY_ENUM_TYPED {
   /** Invalid data type. Never results in any data extraction. */
   GHOSTTY_CELL_DATA_INVALID = 0,
 
@@ -215,7 +215,7 @@ typedef enum {
  *
  * @ingroup screen
  */
-typedef enum {
+typedef enum GHOSTTY_ENUM_TYPED {
   /** No prompt cells in this row. */
   GHOSTTY_ROW_SEMANTIC_NONE = 0,
 
@@ -235,7 +235,7 @@ typedef enum {
  *
  * @ingroup screen
  */
-typedef enum {
+typedef enum GHOSTTY_ENUM_TYPED {
   /** Invalid data type. Never results in any data extraction. */
   GHOSTTY_ROW_DATA_INVALID = 0,
 

@@ -46,7 +46,7 @@ typedef uint16_t GhosttyStyleId;
  *
  * @ingroup style
  */
-typedef enum {
+typedef enum GHOSTTY_ENUM_TYPED {
   GHOSTTY_STYLE_COLOR_NONE = 0,
   GHOSTTY_STYLE_COLOR_PALETTE = 1,
   GHOSTTY_STYLE_COLOR_RGB = 2,

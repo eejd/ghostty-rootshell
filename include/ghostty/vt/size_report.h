@@ -40,7 +40,7 @@ extern "C" {
  *
  * Determines the output format for the terminal size report.
  */
-typedef enum {
+typedef enum GHOSTTY_ENUM_TYPED {
     /** In-band size report (mode 2048): ESC [ 48 ; rows ; cols ; height ; width t */
     GHOSTTY_SIZE_REPORT_MODE_2048 = 0,
     /** XTWINOPS text area size in pixels: ESC [ 4 ; height ; width t */

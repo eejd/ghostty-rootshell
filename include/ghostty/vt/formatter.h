@@ -37,7 +37,7 @@ extern "C" {
  *
  * @ingroup formatter
  */
-typedef enum {
+typedef enum GHOSTTY_ENUM_TYPED {
   /** Plain text (no escape sequences). */
   GHOSTTY_FORMATTER_FORMAT_PLAIN,
 

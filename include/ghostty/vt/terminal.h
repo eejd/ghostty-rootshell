@@ -180,7 +180,7 @@ typedef struct {
  *
  * @ingroup terminal
  */
-typedef enum {
+typedef enum GHOSTTY_ENUM_TYPED {
   /** Scroll to the top of the scrollback. */
   GHOSTTY_SCROLL_VIEWPORT_TOP,
 
@@ -222,7 +222,7 @@ typedef struct {
  *
  * @ingroup terminal
  */
-typedef enum {
+typedef enum GHOSTTY_ENUM_TYPED {
   /** The primary (normal) screen. */
   GHOSTTY_TERMINAL_SCREEN_PRIMARY = 0,
 
@@ -396,7 +396,7 @@ typedef GhosttyString (*GhosttyTerminalXtversionFn)(GhosttyTerminal terminal,
  *
  * @ingroup terminal
  */
-typedef enum {
+typedef enum GHOSTTY_ENUM_TYPED {
   /**
    * Opaque userdata pointer passed to all callbacks.
    *
@@ -584,7 +584,7 @@ typedef enum {
  *
  * @ingroup terminal
  */
-typedef enum {
+typedef enum GHOSTTY_ENUM_TYPED {
   /** Invalid data type. Never results in any data extraction. */
   GHOSTTY_TERMINAL_DATA_INVALID = 0,
 
