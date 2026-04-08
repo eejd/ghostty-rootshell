@@ -4,9 +4,12 @@ const std = @import("std");
 const builtin = @import("builtin");
 const assert = std.debug.assert;
 const RunStep = std.Build.Step.Run;
+const Config = @import("Config.zig");
 const GhosttyZig = @import("GhosttyZig.zig");
 const LibtoolStep = @import("LibtoolStep.zig");
+const LipoStep = @import("LipoStep.zig");
 const SharedDeps = @import("SharedDeps.zig");
+const XCFrameworkStep = @import("XCFrameworkStep.zig");
 
 /// The step that generates the file.
 step: *std.Build.Step,
@@ -40,7 +43,7 @@ pub fn initWasm(
     const exe = b.addExecutable(.{
         .name = "ghostty-vt",
         .root_module = zig.vt_c,
-        .version = std.SemanticVersion{ .major = 0, .minor = 1, .patch = 0 },
+        .version = zig.version,
     });
 
     // Allow exported symbols to actually be exported.
@@ -99,6 +102,93 @@ pub fn initShared(
     return initLib(b, zig, .dynamic);
 }
 
+/// Apple platform targets for xcframework slices.
+pub const ApplePlatform = enum {
+    macos_universal,
+    ios,
+    ios_simulator,
+    // tvOS, watchOS, and visionOS are not yet supported by Zig's
+    // standard library (missing PATH_MAX, mcontext fields, etc.).
+
+    /// Platforms that have device + simulator pairs, gated on SDK detection.
+    const sdk_platforms = [_]struct {
+        os_tag: std.Target.Os.Tag,
+        device: ApplePlatform,
+        simulator: ApplePlatform,
+    }{
+        .{ .os_tag = .ios, .device = .ios, .simulator = .ios_simulator },
+    };
+};
+
+/// Static libraries for each Apple platform, keyed by `ApplePlatform`.
+pub const AppleLibs = std.EnumMap(ApplePlatform, GhosttyLibVt);
+
+/// Build static libraries for all available Apple platforms.
+/// Always builds a macOS universal (arm64 + x86_64) fat binary.
+/// Additional platforms are included if their SDK is detected.
+pub fn initStaticAppleUniversal(
+    b: *std.Build,
+    cfg: *const Config,
+    deps: *const SharedDeps,
+    zig: *const GhosttyZig,
+) !AppleLibs {
+    var result: AppleLibs = .{};
+
+    // macOS universal (arm64 + x86_64)
+    const aarch64_zig = try zig.retarget(
+        b,
+        cfg,
+        deps,
+        Config.genericMacOSTarget(b, .aarch64),
+    );
+    const x86_64_zig = try zig.retarget(
+        b,
+        cfg,
+        deps,
+        Config.genericMacOSTarget(b, .x86_64),
+    );
+    const aarch64 = try initStatic(b, &aarch64_zig);
+    const x86_64 = try initStatic(b, &x86_64_zig);
+    const universal = LipoStep.create(b, .{
+        .name = "ghostty-vt",
+        .out_name = "libghostty-vt.a",
+        .input_a = aarch64.output,
+        .input_b = x86_64.output,
+    });
+    result.put(.macos_universal, .{
+        .step = universal.step,
+        .artifact = universal.step,
+        .kind = .static,
+        .output = universal.output,
+        .dsym = null,
+        .pkg_config = null,
+    });
+
+    // Additional Apple platforms, each gated on SDK availability.
+    for (ApplePlatform.sdk_platforms) |p| {
+        const target_query: std.Target.Query = .{
+            .cpu_arch = .aarch64,
+            .os_tag = p.os_tag,
+            .os_version_min = Config.osVersionMin(p.os_tag),
+        };
+        if (detectAppleSDK(b.resolveTargetQuery(target_query).result)) {
+            const dev_zig = try zig.retarget(b, cfg, deps, b.resolveTargetQuery(target_query));
+            result.put(p.device, try initStatic(b, &dev_zig));
+
+            const sim_zig = try zig.retarget(b, cfg, deps, b.resolveTargetQuery(.{
+                .cpu_arch = .aarch64,
+                .os_tag = p.os_tag,
+                .os_version_min = Config.osVersionMin(p.os_tag),
+                .abi = .simulator,
+                .cpu_model = .{ .explicit = &std.Target.aarch64.cpu.apple_a17 },
+            }));
+            result.put(p.simulator, try initStatic(b, &sim_zig));
+        }
+    }
+
+    return result;
+}
+
 fn initLib(
     b: *std.Build,
     zig: *const GhosttyZig,
@@ -113,7 +203,7 @@ fn initLib(
         .name = if (kind == .static) "ghostty-vt-static" else "ghostty-vt",
         .linkage = linkage,
         .root_module = zig.vt_c,
-        .version = std.SemanticVersion{ .major = 0, .minor = 1, .patch = 0 },
+        .version = zig.version,
     });
     lib.installHeadersDirectory(
         b.path("include/ghostty"),
@@ -184,12 +274,12 @@ fn initLib(
             \\Name: libghostty-vt
             \\URL: https://github.com/ghostty-org/ghostty
             \\Description: Ghostty VT library
-            \\Version: 0.1.0
+            \\Version: {f}
             \\Cflags: -I${{includedir}}
             \\Libs: -L${{libdir}} -lghostty-vt
             \\Libs.private: {s}
             \\Requires.private: {s}
-        , .{ b.install_prefix, libsPrivate(zig), requiresPrivate(b) }));
+        , .{ b.install_prefix, zig.version, libsPrivate(zig), requiresPrivate(b) }));
     };
 
     // For static libraries with vendored SIMD dependencies, combine
@@ -292,6 +382,59 @@ fn requiresPrivate(b: *std.Build) []const u8 {
     if (system_simdutf) return "simdutf";
     if (system_highway) return "libhwy";
     return "";
+}
+
+/// Create an XCFramework bundle from Apple platform static libraries.
+pub fn xcframework(
+    apple_libs: *const AppleLibs,
+    b: *std.Build,
+) *XCFrameworkStep {
+    // Generate a headers directory with a module map for Swift PM.
+    // We can't use include/ directly because it contains a module map
+    // for GhosttyKit (the macOS app library).
+    const wf = b.addWriteFiles();
+    _ = wf.addCopyDirectory(
+        b.path("include/ghostty"),
+        "ghostty",
+        .{ .include_extensions = &.{".h"} },
+    );
+    _ = wf.add("module.modulemap",
+        \\module GhosttyVt {
+        \\    umbrella header "ghostty/vt.h"
+        \\    export *
+        \\}
+        \\
+    );
+    const headers = wf.getDirectory();
+
+    var libraries: [AppleLibs.len]XCFrameworkStep.Library = undefined;
+    var lib_count: usize = 0;
+    for (std.enums.values(ApplePlatform)) |platform| {
+        if (apple_libs.get(platform)) |lib| {
+            libraries[lib_count] = .{
+                .library = lib.output,
+                .headers = headers,
+                .dsym = null,
+            };
+            lib_count += 1;
+        }
+    }
+
+    return XCFrameworkStep.create(b, .{
+        .name = "ghostty-vt",
+        .out_path = b.pathJoin(&.{ b.install_prefix, "lib/ghostty-vt.xcframework" }),
+        .libraries = libraries[0..lib_count],
+    });
+}
+
+/// Returns true if the Apple SDK for the given target is installed.
+fn detectAppleSDK(target: std.Target) bool {
+    _ = std.zig.LibCInstallation.findNative(.{
+        .allocator = std.heap.page_allocator,
+        .target = &target,
+        .verbose = false,
+    }) catch return false;
+    return true;
 }
 
 pub fn install(

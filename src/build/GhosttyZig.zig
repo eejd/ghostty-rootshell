@@ -11,6 +11,9 @@ const TerminalBuildOptions = @import("../terminal/build_options.zig").Options;
 vt: *std.Build.Module,
 vt_c: *std.Build.Module,
 
+/// The libghostty-vt version
+version: std.SemanticVersion,
+
 /// Static library paths for vendored SIMD dependencies. Populated
 /// only when the dependencies are built from source (not provided
 /// by the system via -Dsystem-integration). Used to produce a
@@ -22,8 +25,46 @@ pub fn init(
     cfg: *const Config,
     deps: *const SharedDeps,
 ) !GhosttyZig {
+    return initInner(b, cfg, deps, "ghostty-vt", "ghostty-vt-c");
+}
+
+/// Create a new GhosttyZig with modules retargeted to a different
+/// architecture. Used to produce universal (fat) binaries on macOS.
+pub fn retarget(
+    self: *const GhosttyZig,
+    b: *std.Build,
+    cfg: *const Config,
+    deps: *const SharedDeps,
+    target: std.Build.ResolvedTarget,
+) !GhosttyZig {
+    _ = self;
+    const retargeted_config = try b.allocator.create(Config);
+    retargeted_config.* = cfg.*;
+    retargeted_config.target = target;
+
+    const retargeted_deps = try b.allocator.create(SharedDeps);
+    retargeted_deps.* = try deps.retarget(b, target);
+
+    // Use unique module names to avoid collisions with the original target.
+    const arch_name = @tagName(target.result.cpu.arch);
+    return initInner(
+        b,
+        retargeted_config,
+        retargeted_deps,
+        b.fmt("ghostty-vt-{s}", .{arch_name}),
+        b.fmt("ghostty-vt-c-{s}", .{arch_name}),
+    );
+}
+
+fn initInner(
+    b: *std.Build,
+    cfg: *const Config,
+    deps: *const SharedDeps,
+    vt_name: []const u8,
+    vt_c_name: []const u8,
+) !GhosttyZig {
     // Terminal module build options
-    var vt_options = cfg.terminalOptions();
+    var vt_options = cfg.terminalOptions(.lib);
     vt_options.artifact = .lib;
     // We presently don't allow Oniguruma in our Zig module at all.
     // We should expose this as a build option in the future so we can
@@ -34,7 +75,7 @@ pub fn init(
 
     return .{
         .vt = try initVt(
-            "ghostty-vt",
+            vt_name,
             b,
             cfg,
             deps,
@@ -43,7 +84,7 @@ pub fn init(
         ),
 
         .vt_c = try initVt(
-            "ghostty-vt-c",
+            vt_c_name,
             b,
             cfg,
             deps,
@@ -54,6 +95,8 @@ pub fn init(
             },
             &simd_libs,
         ),
+
+        .version = cfg.lib_version,
 
         .simd_libs = simd_libs,
     };

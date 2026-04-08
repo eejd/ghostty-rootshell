@@ -621,8 +621,13 @@ extension Ghostty {
         }
 
         func updateOSView(_ scrollView: SurfaceScrollView, context: Context) {
-            // Nothing to do: SwiftUI automatically updates the frame size, and
-            // SurfaceScrollView handles the rest in response to that
+            // SwiftUI may defer frame updates under system load (e.g., memory
+            // pressure, heavy I/O) or when external window managers trigger rapid
+            // layout changes. When that happens, the scroll view's bounds can
+            // fall out of sync with the size reported by GeometryReader, causing
+            // the surface to render at stale dimensions.
+            guard scrollView.bounds.size != size else { return }
+            scrollView.needsLayout = true
         }
         #else
         func makeOSView(context: Context) -> SurfaceView {
