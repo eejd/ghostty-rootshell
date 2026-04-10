@@ -80,6 +80,8 @@ stdenv.mkDerivation (finalAttrs: {
   postFixup = ''
     substituteInPlace "$dev/share/pkgconfig/libghostty-vt.pc" \
       --replace-fail "$out" "$dev"
+    substituteInPlace "$dev/share/pkgconfig/libghostty-vt-static.pc" \
+      --replace-fail "$out" "$dev"
   '';
 
   passthru.tests = {
@@ -105,6 +107,17 @@ stdenv.mkDerivation (finalAttrs: {
     pkg-config = testers.hasPkgConfigModules {
       package = finalAttrs.finalPackage.dev;
     };
+    pkg-config-libs =
+      runCommand "pkg-config-libs" {
+        nativeBuildInputs = [pkg-config];
+      } ''
+        export PKG_CONFIG_PATH="${finalAttrs.finalPackage.dev}/share/pkgconfig"
+
+        pkg-config --libs --static libghostty-vt | grep -q -- '-lghostty-vt'
+        pkg-config --libs --static libghostty-vt-static | grep -q -- '${finalAttrs.finalPackage.dev}/lib/libghostty-vt.a'
+
+        touch "$out"
+      '';
     build-with-shared = stdenv.mkDerivation {
       name = "build-with-shared";
       src = ./test-src;
@@ -154,10 +167,7 @@ stdenv.mkDerivation (finalAttrs: {
         runHook preBuildHooks
 
         cc -o test test_libghostty_vt.c \
-          ''$(pkg-config --cflags libghostty-vt) \
-          ${finalAttrs.finalPackage.dev}/lib/libghostty-vt.a \
-          ''$(pkg-config --libs-only-l --static libghostty-vt | sed 's/-lghostty-vt//') \
-          -Wl,-rpath,"${finalAttrs.finalPackage}/lib"
+          ''$(pkg-config --cflags --libs --static libghostty-vt-static)
 
         runHook postBuildHooks
       '';
@@ -227,6 +237,9 @@ stdenv.mkDerivation (finalAttrs: {
     homepage = "https://ghostty.org";
     license = lib.licenses.mit;
     platforms = zig_0_15.meta.platforms;
-    pkgConfigModules = ["libghostty-vt"];
+    pkgConfigModules = [
+      "libghostty-vt"
+      "libghostty-vt-static"
+    ];
   };
 })

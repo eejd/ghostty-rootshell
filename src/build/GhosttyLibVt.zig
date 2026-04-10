@@ -24,6 +24,7 @@ kind: Kind,
 output: std.Build.LazyPath,
 dsym: ?std.Build.LazyPath,
 pkg_config: ?std.Build.LazyPath,
+pkg_config_static: ?std.Build.LazyPath,
 
 /// The kind of library being built. This is similar to LinkMode but
 /// also includes wasm which is an executable, not a library.
@@ -85,6 +86,7 @@ pub fn initWasm(
         .output = output,
         .dsym = null,
         .pkg_config = null,
+        .pkg_config_static = null,
     };
 }
 
@@ -162,6 +164,7 @@ pub fn initStaticAppleUniversal(
         .output = universal.output,
         .dsym = null,
         .pkg_config = null,
+        .pkg_config_static = null,
     });
 
     // Additional Apple platforms, each gated on SDK availability.
@@ -264,23 +267,15 @@ fn initLib(
     };
 
     // pkg-config
-    const pc: std.Build.LazyPath = pc: {
-        const wf = b.addWriteFiles();
-        break :pc wf.add("libghostty-vt.pc", b.fmt(
-            \\prefix={s}
-            \\includedir=${{prefix}}/include
-            \\libdir=${{prefix}}/lib
-            \\
-            \\Name: libghostty-vt
-            \\URL: https://github.com/ghostty-org/ghostty
-            \\Description: Ghostty VT library
-            \\Version: {f}
-            \\Cflags: -I${{includedir}}
-            \\Libs: -L${{libdir}} -lghostty-vt
-            \\Libs.private: {s}
-            \\Requires.private: {s}
-        , .{ b.install_prefix, zig.version, libsPrivate(zig), requiresPrivate(b) }));
-    };
+    //
+    // pkg-config's --static only expands Libs.private / Requires.private;
+    // it doesn't change -lghostty-vt into an archive-only reference when
+    // both shared and static libraries are installed. Install a dedicated
+    // static module so consumers can request the archive explicitly.
+    const pcs: ?PkgConfigFiles = if (kind == .shared)
+        pkgConfigFiles(b, zig, target.result.os.tag)
+    else
+        null;
 
     // For static libraries with vendored SIMD dependencies, combine
     // all archives into a single fat archive so consumers only need
@@ -302,7 +297,8 @@ fn initLib(
             .kind = kind,
             .output = combined.output,
             .dsym = dsymutil,
-            .pkg_config = pc,
+            .pkg_config = if (pcs) |v| v.shared else null,
+            .pkg_config_static = if (pcs) |v| v.static else null,
         };
     }
 
@@ -312,7 +308,8 @@ fn initLib(
         .kind = kind,
         .output = lib.getEmittedBin(),
         .dsym = dsymutil,
-        .pkg_config = pc,
+        .pkg_config = if (pcs) |v| v.shared else null,
+        .pkg_config_static = if (pcs) |v| v.static else null,
     };
 }
 
@@ -368,6 +365,65 @@ fn libsPrivate(
     zig: *const GhosttyZig,
 ) []const u8 {
     return if (zig.vt_c.link_libcpp orelse false) "-lc++" else "";
+}
+
+const PkgConfigFiles = struct {
+    shared: std.Build.LazyPath,
+    static: std.Build.LazyPath,
+};
+
+fn pkgConfigFiles(
+    b: *std.Build,
+    zig: *const GhosttyZig,
+    os_tag: std.Target.Os.Tag,
+) PkgConfigFiles {
+    const wf = b.addWriteFiles();
+    const libs_private = libsPrivate(zig);
+    const requires_private = requiresPrivate(b);
+
+    return .{
+        .shared = wf.add("libghostty-vt.pc", b.fmt(
+            \\prefix={s}
+            \\includedir=${{prefix}}/include
+            \\libdir=${{prefix}}/lib
+            \\
+            \\Name: libghostty-vt
+            \\URL: https://github.com/ghostty-org/ghostty
+            \\Description: Ghostty VT library
+            \\Version: {f}
+            \\Cflags: -I${{includedir}}
+            \\Libs: -L${{libdir}} -lghostty-vt
+            \\Libs.private: {s}
+            \\Requires.private: {s}
+        , .{ b.install_prefix, zig.version, libs_private, requires_private })),
+        .static = wf.add("libghostty-vt-static.pc", b.fmt(
+            \\prefix={s}
+            \\includedir=${{prefix}}/include
+            \\libdir=${{prefix}}/lib
+            \\
+            \\Name: libghostty-vt-static
+            \\URL: https://github.com/ghostty-org/ghostty
+            \\Description: Ghostty VT library (static)
+            \\Version: {f}
+            \\Cflags: -I${{includedir}}
+            \\Libs: ${{libdir}}/{s}
+            \\Libs.private: {s}
+            \\Requires.private: {s}
+        , .{
+            b.install_prefix,
+            zig.version,
+            staticLibraryName(os_tag),
+            libs_private,
+            requires_private,
+        })),
+    };
+}
+
+fn staticLibraryName(os_tag: std.Target.Os.Tag) []const u8 {
+    return if (os_tag == .windows)
+        "ghostty-vt-static.lib"
+    else
+        "libghostty-vt.a";
 }
 
 /// Returns the Requires.private value for the pkg-config file.
@@ -448,6 +504,13 @@ pub fn install(
             pkg_config,
             .prefix,
             "share/pkgconfig/libghostty-vt.pc",
+        ).step);
+    }
+    if (self.pkg_config_static) |pkg_config_static| {
+        step.dependOn(&b.addInstallFileWithDir(
+            pkg_config_static,
+            .prefix,
+            "share/pkgconfig/libghostty-vt-static.pc",
         ).step);
     }
 }
