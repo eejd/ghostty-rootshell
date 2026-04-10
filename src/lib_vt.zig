@@ -189,6 +189,7 @@ comptime {
         @export(&c.size_report_encode, .{ .name = "ghostty_size_report_encode" });
         @export(&c.style_default, .{ .name = "ghostty_style_default" });
         @export(&c.style_is_default, .{ .name = "ghostty_style_is_default" });
+        @export(&c.sys_log_stderr, .{ .name = "ghostty_sys_log_stderr" });
         @export(&c.sys_set, .{ .name = "ghostty_sys_set" });
         @export(&c.cell_get, .{ .name = "ghostty_cell_get" });
         @export(&c.row_get, .{ .name = "ghostty_row_get" });
@@ -290,9 +291,12 @@ pub const std_options: std.Options = options: {
         .logFn = @import("os/wasm/log.zig").log,
     };
 
-    // For everything else we currently use defaults. Longer term I'm
-    // SURE this isn't right (e.g. we definitely want to customize the log
-    // function for the C lib at least).
+    // For C ABI builds, use a custom log function that dispatches to an
+    // embedder-provided callback (or silently discards when none is set).
+    if (terminal.options.c_abi) break :options .{
+        .logFn = @import("terminal/c/sys.zig").logFn,
+    };
+
     break :options .{};
 };
 

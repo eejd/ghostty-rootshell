@@ -147,6 +147,7 @@ pub const row_get = row.get;
 pub const style_default = style.default_style;
 pub const style_is_default = style.style_is_default;
 
+pub const sys_log_stderr = sys.logStderr;
 pub const sys_set = sys.set;
 
 pub const terminal_new = terminal.new;
