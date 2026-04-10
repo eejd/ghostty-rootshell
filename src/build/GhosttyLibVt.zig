@@ -279,10 +279,9 @@ fn initLib(
 
     // For static libraries with vendored SIMD dependencies, combine
     // all archives into a single fat archive so consumers only need
-    // to link one file. Skip on Windows where ar/libtool aren't available.
+    // to link one file.
     if (kind == .static and
-        zig.simd_libs.items.len > 0 and
-        target.result.os.tag != .windows)
+        zig.simd_libs.items.len > 0)
     {
         var sources: SharedDeps.LazyPathList = .empty;
         try sources.append(b.allocator, lib.getEmittedBin());
@@ -329,26 +328,17 @@ fn combineArchives(
         return .{ .step = libtool.step, .output = libtool.output };
     }
 
-    // On non-Darwin, use an MRI script with ar -M to combine archives
-    // directly without extracting. This avoids issues with ar x
-    // producing full-path member names and read-only permissions.
-    const run = RunStep.create(b, "combine-archives ghostty-vt");
-    run.addArgs(&.{
-        "/bin/sh", "-c",
-        \\set -e
-        \\out="$1"; shift
-        \\script="CREATE $out"
-        \\for a in "$@"; do
-        \\  script="$script
-        \\ADDLIB $a"
-        \\done
-        \\script="$script
-        \\SAVE
-        \\END"
-        \\echo "$script" | ar -M
-        ,
-        "_",
+    // On non-Darwin, use a build tool that generates an MRI script and
+    // pipes it to `zig ar -M`. This works on all platforms including
+    // Windows (the previous /bin/sh approach did not).
+    const tool = b.addExecutable(.{
+        .name = "combine_archives",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/build/combine_archives.zig"),
+            .target = b.graph.host,
+        }),
     });
+    const run = b.addRunArtifact(tool);
     const output = run.addOutputFileArg("libghostty-vt.a");
     for (sources) |source| run.addFileArg(source);
 
