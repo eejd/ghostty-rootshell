@@ -155,8 +155,8 @@ pub fn initShared(
     // pkg-config
     //
     // pkg-config's --static only expands Libs.private / Requires.private;
-    // it doesn't change -lghostty into an archive-only reference when
-    // both shared and static libraries are installed. Install a dedicated
+    // it doesn't rewrite Libs: into an archive-only reference when both
+    // shared and static libraries are installed. Install a dedicated
     // static module so consumers can request the archive explicitly.
     const pcs = pkgConfigFiles(b, deps);
 
@@ -184,7 +184,7 @@ pub fn initMacOSUniversal(
 
     const universal = LipoStep.create(b, .{
         .name = "ghostty",
-        .out_name = "libghostty.a",
+        .out_name = "ghostty-internal.a",
         .input_a = aarch64.output,
         .input_b = x86_64.output,
     });
@@ -255,10 +255,10 @@ fn pkgConfigFiles(
             \\Description: Ghostty internal library (not for external use)
             \\Version: {f}
             \\Cflags: -I${{includedir}}
-            \\Libs: -L${{libdir}} -lghostty
+            \\Libs: ${{libdir}}/{s}
             \\Libs.private:
             \\Requires.private:
-        , .{ b.install_prefix, deps.config.version })),
+        , .{ b.install_prefix, deps.config.version, sharedLibraryName(os_tag) })),
         .static = wf.add("ghostty-internal-static.pc", b.fmt(
             \\prefix={s}
             \\includedir=${{prefix}}/include
@@ -276,9 +276,16 @@ fn pkgConfigFiles(
     };
 }
 
+fn sharedLibraryName(os_tag: std.Target.Os.Tag) []const u8 {
+    return if (os_tag == .windows)
+        "ghostty-internal.dll"
+    else
+        "ghostty-internal.so";
+}
+
 fn staticLibraryName(os_tag: std.Target.Os.Tag) []const u8 {
     return if (os_tag == .windows)
-        "ghostty-static.lib"
+        "ghostty-internal-static.lib"
     else
-        "libghostty.a";
+        "ghostty-internal.a";
 }
