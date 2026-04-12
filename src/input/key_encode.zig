@@ -662,10 +662,9 @@ fn pcStyleFunctionKey(
             continue;
         }
 
-        decbkm: {
-            if (!backarrow_key_mode) break :decbkm;
-            return entry.sequence_decbkm orelse break :decbkm;
-        }
+        if (backarrow_key_mode)
+            if (entry.sequence_decbkm) |sequence|
+                return sequence;
 
         return entry.sequence;
     }
