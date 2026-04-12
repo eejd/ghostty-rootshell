@@ -7,11 +7,7 @@ import GhosttyKit
 
 extension Ghostty {
     /// The NSView implementation for a terminal surface.
-    class SurfaceView: OSView, ObservableObject, Codable, Identifiable {
-        typealias ID = UUID
-
-        /// Unique ID per surface
-        let id: UUID
+    class SurfaceView: OSSurfaceView, Codable, Identifiable {
 
         // The current title of the surface as defined by the pty. This can be
         // changed with escape codes. This is public because the callbacks go
@@ -255,7 +251,6 @@ extension Ghostty {
 
         init(_ app: ghostty_app_t, baseConfig: SurfaceConfiguration? = nil, uuid: UUID? = nil) {
             self.markedText = NSMutableAttributedString()
-            self.id = uuid ?? .init()
 
             // Our initial config always is our application wide config.
             if let appDelegate = NSApplication.shared.delegate as? AppDelegate {
@@ -273,7 +268,7 @@ extension Ghostty {
             // Initialize with some default frame size. The important thing is that this
             // is non-zero so that our layer bounds are non-zero so that our renderer
             // can do SOMETHING.
-            super.init(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+            super.init(id: uuid, frame: NSRect(x: 0, y: 0, width: 800, height: 600))
 
             // Our cache of screen data
             cachedScreenContents = .init(duration: .milliseconds(500)) { [weak self] in

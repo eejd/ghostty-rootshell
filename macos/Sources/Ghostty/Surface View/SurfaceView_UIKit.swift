@@ -3,12 +3,7 @@ import GhosttyKit
 
 extension Ghostty {
     /// The UIView implementation for a terminal surface.
-    class SurfaceView: UIView, ObservableObject {
-        typealias ID = UUID
-
-        /// Unique ID per surface
-        let id: UUID
-
+    class SurfaceView: OSSurfaceView {
         // The current title of the surface as defined by the pty. This can be
         // changed with escape codes. This is public because the callbacks go
         // to the app level and it is set from there.
@@ -65,12 +60,11 @@ extension Ghostty {
         private(set) var surface: ghostty_surface_t?
 
         init(_ app: ghostty_app_t, baseConfig: SurfaceConfiguration? = nil, uuid: UUID? = nil) {
-            self.id = uuid ?? .init()
 
             // Initialize with some default frame size. The important thing is that this
             // is non-zero so that our layer bounds are non-zero so that our renderer
             // can do SOMETHING.
-            super.init(frame: CGRect(x: 0, y: 0, width: 800, height: 600))
+            super.init(id: uuid, frame: CGRect(x: 0, y: 0, width: 800, height: 600))
 
             // Setup our surface. This will also initialize all the terminal IO.
             let surface_cfg = baseConfig ?? SurfaceConfiguration()
