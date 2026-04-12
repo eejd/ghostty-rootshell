@@ -137,6 +137,12 @@ extension Ghostty {
                     if let url = surfaceView.hoverUrl {
                         URLHoverBanner(url: url)
                     }
+
+                    // Show a bar to indicate a child process has exited.
+                    if let msg = surfaceView.childExitedMessage {
+                        ChildExitedMessageBar(msg: msg)
+                            .font(.system(size: min(surfaceView.cellSize.height * 0.8, 30)))
+                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
 
