@@ -38,6 +38,10 @@ extension Ghostty {
         // on supported platforms.
         @Published var focusInstant: ContinuousClock.Instant?
 
+        // Returns sizing information for the surface. This is the raw C
+        // structure because I'm lazy.
+        @Published var surfaceSize: ghostty_surface_size_s?
+
         init(id: UUID?, frame: CGRect) {
             self.id = id ?? UUID()
             super.init(frame: frame)

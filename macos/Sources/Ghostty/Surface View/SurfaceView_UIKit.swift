@@ -20,13 +20,6 @@ extension Ghostty {
         /// True when the surface should show a highlight effect (e.g., when presented via goto_split).
         @Published private(set) var highlighted: Bool = false
 
-        // Returns sizing information for the surface. This is the raw C
-        // structure because I'm lazy.
-        var surfaceSize: ghostty_surface_size_s? {
-            guard let surface = self.surface else { return nil }
-            return ghostty_surface_size(surface)
-        }
-
         private(set) var surface: ghostty_surface_t?
 
         init(_ app: ghostty_app_t, baseConfig: SurfaceConfiguration? = nil, uuid: UUID? = nil) {
