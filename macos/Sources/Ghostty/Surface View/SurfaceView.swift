@@ -47,9 +47,6 @@ extension Ghostty {
         // Maintain whether our window has focus (is key) or not
         @State private var windowFocus: Bool = true
 
-        // True if we're hovering over the left URL view, so we can show it on the right.
-        @State private var isHoveringURLLeft: Bool = false
-
         #if canImport(AppKit)
         // Observe SecureInput to detect when its enabled
         @ObservedObject private var secureInput = SecureInput.shared
@@ -135,49 +132,13 @@ extension Ghostty {
                 )
 #endif
 
-                // If we have a URL from hovering a link, we show that.
-                if let url = surfaceView.hoverUrl {
-                    let padding: CGFloat = 5
-                    let cornerRadius: CGFloat = 9
-                    ZStack {
-                        HStack {
-                            Spacer()
-                            VStack(alignment: .leading) {
-                                Spacer()
-
-                                Text(verbatim: url)
-                                    .padding(.init(top: padding, leading: padding, bottom: padding, trailing: padding))
-                                    .background(
-                                        UnevenRoundedRectangle(cornerRadii: .init(topLeading: cornerRadius))
-                                            .fill(.background)
-                                    )
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-                                    .opacity(isHoveringURLLeft ? 1 : 0)
-                            }
-                        }
-
-                        HStack {
-                            VStack(alignment: .leading) {
-                                Spacer()
-
-                                Text(verbatim: url)
-                                    .padding(.init(top: padding, leading: padding, bottom: padding, trailing: padding))
-                                    .background(
-                                        UnevenRoundedRectangle(cornerRadii: .init(topTrailing: cornerRadius))
-                                            .fill(.background)
-                                    )
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-                                    .opacity(isHoveringURLLeft ? 0 : 1)
-                                    .onHover(perform: { hovering in
-                                        isHoveringURLLeft = hovering
-                                    })
-                            }
-                            Spacer()
-                        }
+                VStack(spacing: 0) {
+                    // If we have a URL from hovering a link, we show that.
+                    if let url = surfaceView.hoverUrl {
+                        URLHoverBanner(url: url)
                     }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
 
                 #if canImport(AppKit)
                 // If we have secure input enabled and we're the focused surface and window
@@ -242,7 +203,6 @@ extension Ghostty {
                 SurfaceGrabHandle(surfaceView: surfaceView)
                 #endif
             }
-
         }
     }
 
