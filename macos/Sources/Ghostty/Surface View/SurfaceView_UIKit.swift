@@ -9,9 +9,6 @@ extension Ghostty {
         // to the app level and it is set from there.
         @Published var title: String = "👻"
 
-        // The hovered URL
-        @Published var hoverUrl: String?
-
         // The progress report (if any)
         @Published var progressReport: Action.ProgressReport?
 

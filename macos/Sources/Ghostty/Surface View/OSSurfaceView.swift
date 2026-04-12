@@ -25,6 +25,9 @@ extension Ghostty {
         // Any error while initializing the surface.
         @Published var error: Error?
 
+        // The hovered URL string
+        @Published var hoverUrl: String?
+
         init(id: UUID?, frame: CGRect) {
             self.id = id ?? UUID()
             super.init(frame: frame)

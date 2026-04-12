@@ -21,9 +21,6 @@ extension Ghostty {
             }
         }
 
-        // The hovered URL string
-        @Published var hoverUrl: String?
-
         // The progress report (if any)
         @Published var progressReport: Action.ProgressReport? {
             didSet {
