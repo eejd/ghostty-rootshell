@@ -39,9 +39,6 @@ extension Ghostty {
         // The currently active key sequence. The sequence is not active if this is empty.
         @Published var keySequence: [KeyboardShortcut] = []
 
-        // The currently active key tables. Empty if no tables are active.
-        @Published var keyTables: [String] = []
-
         // The current search state. When non-nil, the search overlay should be shown.
         @Published var searchState: SearchState? {
             didSet {

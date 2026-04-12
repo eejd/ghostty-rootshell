@@ -31,6 +31,9 @@ extension Ghostty {
         // The progress report (if any)
         @Published var progressReport: Action.ProgressReport?
 
+        // The currently active key tables. Empty if no tables are active.
+        @Published var keyTables: [String] = []
+
         init(id: UUID?, frame: CGRect) {
             self.id = id ?? UUID()
             super.init(frame: frame)
