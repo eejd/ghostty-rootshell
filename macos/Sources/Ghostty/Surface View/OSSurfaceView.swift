@@ -42,13 +42,36 @@ extension Ghostty {
         // structure because I'm lazy.
         @Published var surfaceSize: ghostty_surface_size_s?
 
+        /// True when the surface is in readonly mode.
+        @Published private(set) var readonly: Bool = false
+
         init(id: UUID?, frame: CGRect) {
             self.id = id ?? UUID()
             super.init(frame: frame)
+
+            // Before we initialize the surface we want to register our notifications
+            // so there is no window where we can't receive them.
+            let center = NotificationCenter.default
+            center.addObserver(
+                self,
+                selector: #selector(ghosttyDidChangeReadonly(_:)),
+                name: .ghosttyDidChangeReadonly,
+                object: self,
+            )
         }
 
         required init?(coder: NSCoder) {
             fatalError("init(coder:) is not supported for this view")
+        }
+
+        deinit {
+            NotificationCenter.default
+                .removeObserver(self)
+        }
+
+        @objc private func ghosttyDidChangeReadonly(_ notification: Foundation.Notification) {
+            guard let value = notification.userInfo?[Foundation.Notification.Name.ReadonlyKey] as? Bool else { return }
+            readonly = value
         }
     }
 }

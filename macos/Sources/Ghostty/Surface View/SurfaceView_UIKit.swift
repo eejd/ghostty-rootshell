@@ -14,9 +14,6 @@ extension Ghostty {
         // The current search state. When non-nil, the search overlay should be shown.
         @Published var searchState: SearchState?
 
-        /// True when the surface is in readonly mode.
-        @Published private(set) var readonly: Bool = false
-
         /// True when the surface should show a highlight effect (e.g., when presented via goto_split).
         @Published private(set) var highlighted: Bool = false
 

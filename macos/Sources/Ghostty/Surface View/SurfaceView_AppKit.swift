@@ -99,9 +99,6 @@ extension Ghostty {
         /// True when the bell is active. This is set inactive on focus or event.
         @Published private(set) var bell: Bool = false
 
-        /// True when the surface is in readonly mode.
-        @Published private(set) var readonly: Bool = false
-
         /// True when the surface should show a highlight effect (e.g., when presented via goto_split).
         @Published private(set) var highlighted: Bool = false
 
@@ -323,11 +320,6 @@ extension Ghostty {
                 self,
                 selector: #selector(ghosttyBellDidRing(_:)),
                 name: .ghosttyBellDidRing,
-                object: self)
-            center.addObserver(
-                self,
-                selector: #selector(ghosttyDidChangeReadonly(_:)),
-                name: .ghosttyDidChangeReadonly,
                 object: self)
             center.addObserver(
                 self,
@@ -745,11 +737,6 @@ extension Ghostty {
         @objc private func ghosttyBellDidRing(_ notification: SwiftUI.Notification) {
             // Bell state goes to true
             bell = true
-        }
-
-        @objc private func ghosttyDidChangeReadonly(_ notification: SwiftUI.Notification) {
-            guard let value = notification.userInfo?[SwiftUI.Notification.Name.ReadonlyKey] as? Bool else { return }
-            readonly = value
         }
 
         @objc private func windowDidChangeScreen(notification: SwiftUI.Notification) {
