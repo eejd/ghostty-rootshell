@@ -14,7 +14,11 @@ extension Ghostty {
         // The current search state. When non-nil, the search overlay should be shown.
         @Published var searchState: SearchState?
 
-        private(set) var surface: ghostty_surface_t?
+        private(set) var _surface: ghostty_surface_t?
+
+        override var surface: ghostty_surface_t? {
+            _surface
+        }
 
         init(_ app: ghostty_app_t, baseConfig: SurfaceConfiguration? = nil, uuid: UUID? = nil) {
 
@@ -32,7 +36,7 @@ extension Ghostty {
                 // TODO
                 return
             }
-            self.surface = surface
+            self._surface = surface
         }
 
         required init?(coder: NSCoder) {

@@ -164,7 +164,7 @@ extension Ghostty {
         private(set) var surfaceModel: Ghostty.Surface?
 
         /// Returns the underlying C value for the surface. See "note" on surfaceModel.
-        var surface: ghostty_surface_t? {
+        override var surface: ghostty_surface_t? {
             surfaceModel?.unsafeCValue
         }
         /// Current scrollbar state, cached here for persistence across rebuilds

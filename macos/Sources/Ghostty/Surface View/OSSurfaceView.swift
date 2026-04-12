@@ -48,6 +48,10 @@ extension Ghostty {
         /// True when the surface should show a highlight effect (e.g., when presented via goto_split).
         @Published private(set) var highlighted: Bool = false
 
+        var surface: ghostty_surface_t? {
+            nil
+        }
+
         init(id: UUID?, frame: CGRect) {
             self.id = id ?? UUID()
             super.init(frame: frame)
