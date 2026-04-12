@@ -21,10 +21,6 @@ extension Ghostty {
             }
         }
 
-        // The current pwd of the surface as defined by the pty. This can be
-        // changed with escape codes.
-        @Published var pwd: String?
-
         // The cell size of this surface. This is set by the core when the
         // surface is first created and any time the cell size changes (i.e.
         // when the font size changes). This is used to allow windows to be

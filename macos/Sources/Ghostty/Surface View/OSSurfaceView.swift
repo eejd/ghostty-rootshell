@@ -8,6 +8,10 @@ extension Ghostty {
         /// Unique ID per surface
         let id: UUID
 
+        // The current pwd of the surface as defined by the pty. This can be
+        // changed with escape codes.
+        @Published var pwd: String?
+
         init(id: UUID?, frame: CGRect) {
             self.id = id ?? UUID()
             super.init(frame: frame)
