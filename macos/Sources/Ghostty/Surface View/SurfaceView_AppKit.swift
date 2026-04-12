@@ -40,7 +40,7 @@ extension Ghostty {
         @Published var keySequence: [KeyboardShortcut] = []
 
         // The current search state. When non-nil, the search overlay should be shown.
-        @Published var searchState: SearchState? {
+        override var searchState: SearchState? {
             didSet {
                 if let searchState {
                     // I'm not a Combine expert so if there is a better way to do this I'm

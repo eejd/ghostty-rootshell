@@ -34,6 +34,9 @@ extension Ghostty {
         // The currently active key tables. Empty if no tables are active.
         @Published var keyTables: [String] = []
 
+        // The current search state. When non-nil, the search overlay should be shown.
+        @Published var searchState: SearchState?
+
         // The time this surface last became focused. This is a ContinuousClock.Instant
         // on supported platforms.
         @Published var focusInstant: ContinuousClock.Instant?
@@ -91,3 +94,40 @@ extension Ghostty {
     }
 }
 
+// MARK: Search State
+
+extension Ghostty.OSSurfaceView {
+    class SearchState: ObservableObject {
+        @Published var needle: String = ""
+        @Published var selected: UInt?
+        @Published var total: UInt?
+
+        init(from startSearch: Ghostty.Action.StartSearch) {
+            self.needle = startSearch.needle ?? ""
+        }
+    }
+
+    func navigateSearchToNext() -> Bool {
+        guard let surface = self.surface else { return false }
+        let action = "navigate_search:next"
+        if !ghostty_surface_binding_action(surface, action, UInt(action.lengthOfBytes(using: .utf8))) {
+#if canImport(AppKit)
+            AppDelegate.logger.warning("action failed action=\(action)")
+#endif
+            return false
+        }
+        return true
+    }
+
+    func navigateSearchToPrevious() -> Bool {
+        guard let surface = self.surface else { return false }
+        let action = "navigate_search:previous"
+        if !ghostty_surface_binding_action(surface, action, UInt(action.lengthOfBytes(using: .utf8))) {
+#if canImport(AppKit)
+            AppDelegate.logger.warning("action failed action=\(action)")
+#endif
+            return false
+        }
+        return true
+    }
+}

@@ -11,9 +11,6 @@ extension Ghostty {
         /// True when the bell is active. This is set inactive on focus or event.
         @Published var bell: Bool = false
 
-        // The current search state. When non-nil, the search overlay should be shown.
-        @Published var searchState: SearchState?
-
         private(set) var _surface: ghostty_surface_t?
 
         override var surface: ghostty_surface_t? {
