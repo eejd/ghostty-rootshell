@@ -91,6 +91,12 @@ extension Ghostty {
                 self?.highlighted = false
             }
         }
+
+        // MARK: - Placeholders
+
+        func focusDidChange(_ focused: Bool) {}
+
+        func sizeDidChange(_ size: CGSize) {}
     }
 }
 

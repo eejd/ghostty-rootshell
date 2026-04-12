@@ -45,7 +45,7 @@ extension Ghostty {
             ghostty_surface_free(surface)
         }
 
-        func focusDidChange(_ focused: Bool) {
+        override func focusDidChange(_ focused: Bool) {
             guard let surface = self.surface else { return }
             ghostty_surface_set_focus(surface, focused)
 
@@ -55,7 +55,7 @@ extension Ghostty {
             }
         }
 
-        func sizeDidChange(_ size: CGSize) {
+        override func sizeDidChange(_ size: CGSize) {
             guard let surface = self.surface else { return }
 
             // Ghostty wants to know the actual framebuffer size... It is very important

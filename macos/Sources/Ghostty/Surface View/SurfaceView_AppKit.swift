@@ -389,7 +389,7 @@ extension Ghostty {
             progressReportTimer?.invalidate()
         }
 
-        func focusDidChange(_ focused: Bool) {
+        override func focusDidChange(_ focused: Bool) {
             guard let surface = self.surface else { return }
             guard self.focused != focused else { return }
             self.focused = focused
@@ -426,7 +426,7 @@ extension Ghostty {
             }
         }
 
-        func sizeDidChange(_ size: CGSize) {
+        override func sizeDidChange(_ size: CGSize) {
             // Ghostty wants to know the actual framebuffer size... It is very important
             // here that we use "size" and NOT the view frame. If we're in the middle of
             // an animation (i.e. a fullscreen animation), the frame will not yet be updated.
