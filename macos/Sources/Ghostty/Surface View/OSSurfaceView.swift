@@ -18,6 +18,13 @@ extension Ghostty {
         // resized in discrete steps of a single cell.
         @Published var cellSize: CGSize = .zero
 
+        // The health state of the surface. This currently only reflects the
+        // renderer health. In the future we may want to make this an enum.
+        @Published var healthy: Bool = true
+
+        // Any error while initializing the surface.
+        @Published var error: Error?
+
         init(id: UUID?, frame: CGRect) {
             self.id = id ?? UUID()
             super.init(frame: frame)

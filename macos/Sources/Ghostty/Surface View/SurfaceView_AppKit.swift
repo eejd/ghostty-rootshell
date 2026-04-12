@@ -21,13 +21,6 @@ extension Ghostty {
             }
         }
 
-        // The health state of the surface. This currently only reflects the
-        // renderer health. In the future we may want to make this an enum.
-        @Published var healthy: Bool = true
-
-        // Any error while initializing the surface.
-        @Published var error: Error?
-
         // The hovered URL string
         @Published var hoverUrl: String?
 

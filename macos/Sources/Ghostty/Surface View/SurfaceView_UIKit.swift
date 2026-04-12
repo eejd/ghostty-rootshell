@@ -9,13 +9,6 @@ extension Ghostty {
         // to the app level and it is set from there.
         @Published var title: String = "👻"
 
-        // The health state of the surface. This currently only reflects the
-        // renderer health. In the future we may want to make this an enum.
-        @Published var healthy: Bool = true
-
-        // Any error while initializing the surface.
-        @Published var error: Error?
-
         // The hovered URL
         @Published var hoverUrl: String?
 
