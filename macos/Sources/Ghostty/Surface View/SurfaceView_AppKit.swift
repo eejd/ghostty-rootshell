@@ -8,10 +8,8 @@ import GhosttyKit
 extension Ghostty {
     /// The NSView implementation for a terminal surface.
     class SurfaceView: OSSurfaceView, Codable, Identifiable {
-
         // The current title of the surface as defined by the pty. This can be
-        // changed with escape codes. This is public because the callbacks go
-        // to the app level and it is set from there.
+        // changed with escape codes.
         @Published private(set) var title: String = "" {
             didSet {
                 if !title.isEmpty {

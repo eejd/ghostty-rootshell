@@ -5,9 +5,8 @@ extension Ghostty {
     /// The UIView implementation for a terminal surface.
     class SurfaceView: OSSurfaceView {
         // The current title of the surface as defined by the pty. This can be
-        // changed with escape codes. This is public because the callbacks go
-        // to the app level and it is set from there.
-        @Published var title: String = "👻"
+        // changed with escape codes.
+        @Published private(set) var title: String = "👻"
 
         // The progress report (if any)
         @Published var progressReport: Action.ProgressReport?
