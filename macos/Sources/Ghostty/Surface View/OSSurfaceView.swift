@@ -45,6 +45,9 @@ extension Ghostty {
         /// True when the surface is in readonly mode.
         @Published private(set) var readonly: Bool = false
 
+        /// True when the surface should show a highlight effect (e.g., when presented via goto_split).
+        @Published private(set) var highlighted: Bool = false
+
         init(id: UUID?, frame: CGRect) {
             self.id = id ?? UUID()
             super.init(frame: frame)
@@ -72,6 +75,14 @@ extension Ghostty {
         @objc private func ghosttyDidChangeReadonly(_ notification: Foundation.Notification) {
             guard let value = notification.userInfo?[Foundation.Notification.Name.ReadonlyKey] as? Bool else { return }
             readonly = value
+        }
+
+        /// Triggers a brief highlight animation on this surface.
+        func highlight() {
+            highlighted = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                self?.highlighted = false
+            }
         }
     }
 }
