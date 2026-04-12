@@ -20,7 +20,7 @@ extension Ghostty {
         }
 
         // The progress report (if any)
-        @Published var progressReport: Action.ProgressReport? {
+        override var progressReport: Action.ProgressReport? {
             didSet {
                 // Cancel any existing timer
                 progressReportTimer?.invalidate()

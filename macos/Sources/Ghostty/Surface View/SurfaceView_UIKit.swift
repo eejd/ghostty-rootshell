@@ -8,9 +8,6 @@ extension Ghostty {
         // changed with escape codes.
         @Published private(set) var title: String = "👻"
 
-        // The progress report (if any)
-        @Published var progressReport: Action.ProgressReport?
-
         // The time this surface last became focused. This is a ContinuousClock.Instant
         // on supported platforms.
         @Published var focusInstant: ContinuousClock.Instant?
