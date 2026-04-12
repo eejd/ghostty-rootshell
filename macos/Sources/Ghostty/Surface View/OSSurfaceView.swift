@@ -34,6 +34,10 @@ extension Ghostty {
         // The currently active key tables. Empty if no tables are active.
         @Published var keyTables: [String] = []
 
+        // The time this surface last became focused. This is a ContinuousClock.Instant
+        // on supported platforms.
+        @Published var focusInstant: ContinuousClock.Instant?
+
         init(id: UUID?, frame: CGRect) {
             self.id = id ?? UUID()
             super.init(frame: frame)

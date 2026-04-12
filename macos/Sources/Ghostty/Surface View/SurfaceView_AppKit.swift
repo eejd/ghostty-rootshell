@@ -76,10 +76,6 @@ extension Ghostty {
         // Cancellable for search state needle changes
         private var searchNeedleCancellable: AnyCancellable?
 
-        // The time this surface last became focused. This is a ContinuousClock.Instant
-        // on supported platforms.
-        @Published var focusInstant: ContinuousClock.Instant?
-
         // Returns sizing information for the surface. This is the raw C
         // structure because I'm lazy.
         @Published var surfaceSize: ghostty_surface_size_s?

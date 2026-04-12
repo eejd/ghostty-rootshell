@@ -8,10 +8,6 @@ extension Ghostty {
         // changed with escape codes.
         @Published private(set) var title: String = "👻"
 
-        // The time this surface last became focused. This is a ContinuousClock.Instant
-        // on supported platforms.
-        @Published var focusInstant: ContinuousClock.Instant?
-
         /// True when the bell is active. This is set inactive on focus or event.
         @Published var bell: Bool = false
 
