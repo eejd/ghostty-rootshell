@@ -23,23 +23,10 @@ extension Ghostty {
         func syncMenuShortcut(_ config: Ghostty.Config, action: String?, menuItem: NSMenuItem?) {
             guard let menu = menuItem else { return }
 
-            guard
-                let action, let shortcut = config.keyboardShortcut(for: action),
-                // Build a direct lookup for key-equivalent dispatch so we don't need to
-                // linearly walk the full menu hierarchy at event time.
-                let key = MenuShortcutKey(shortcut)
-            else {
-                // No shortcut, clear the menu item
+            if !updateMenuShortcut(config, action: action, menuItem: menu) {
                 menu.keyEquivalent = ""
                 menu.keyEquivalentModifierMask = []
-                return
             }
-
-            menu.keyEquivalent = key.keyEquivalent
-            menu.keyEquivalentModifierMask = key.modifierFlags
-
-            // Later registrations intentionally override earlier ones for the same key.
-            menuItemsByShortcut[key] = .init(menu)
         }
 
         /// Attempts to perform a menu key equivalent only for menu items that represent
@@ -83,6 +70,31 @@ extension Ghostty {
             parentMenu.performActionForItem(at: index)
             return true
         }
+    }
+}
+
+private extension Ghostty.MenuShortcutManager {
+    /// Syncs a single menu shortcut for the given action. The action string is the same
+    /// action string used for the Ghostty configuration.
+    ///
+    /// - Returns: Whether the menu item is updated and saved in ``menuItemsByShortcut``
+    func updateMenuShortcut(_ config: Ghostty.Config, action: String?, menuItem menu: NSMenuItem) -> Bool {
+        guard
+            let action,
+            let shortcut = config.keyboardShortcut(for: action),
+            // Build a direct lookup for key-equivalent dispatch so we don't need to
+            // linearly walk the full menu hierarchy at event time.
+            let key = MenuShortcutKey(shortcut)
+        else {
+            return false
+        }
+
+        menu.keyEquivalent = key.keyEquivalent
+        menu.keyEquivalentModifierMask = key.modifierFlags
+
+        // Later registrations intentionally override earlier ones for the same key.
+        menuItemsByShortcut[key] = .init(menu)
+        return true
     }
 }
 
