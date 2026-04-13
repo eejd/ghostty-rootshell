@@ -460,15 +460,31 @@ private struct ShortcutSymbolsView: View {
 }
 
 extension String {
-    /// Returns the character indices that match `query`
+    /// Returns the character indices that match `query`, trying a substring match first,
+    /// then falling back to initials matching (first letter of each word).
     /// - Returns: `nil` if neither matches.
     func matchedIndices(for query: String) -> [String.Index]? {
         guard !query.isEmpty else { return nil }
 
+        // Prefer substring match.
         if let range = self.range(of: query, options: .caseInsensitive) {
             return Array(self[range].indices)
         }
 
-        return nil
+        // Fall back to initials match.
+        let words = self.split(whereSeparator: \.isWhitespace)
+        var queryIndex = query.startIndex
+        var matched: [String.Index] = []
+
+        for word in words {
+            guard queryIndex < query.endIndex else { break }
+
+            if word.first?.lowercased() == query[queryIndex].lowercased() {
+                matched.append(word.startIndex)
+                queryIndex = query.index(after: queryIndex)
+            }
+        }
+
+        return queryIndex == query.endIndex ? matched : nil
     }
 }
