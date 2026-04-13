@@ -61,9 +61,13 @@ struct CommandPaletteView: View {
     @Binding var isPresented: Bool
     var backgroundColor: Color = Color(nsColor: .windowBackgroundColor)
     var options: [CommandOption]
-    @State private var query = ""
+    @State private var rawQuery = ""
     @State private var selectedIndex: UInt?
     @State private var hoveredOptionID: UUID?
+
+    var query: String {
+        rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
     // The options that we should show, taking into account any filtering from
     // the query. Options with matching leadingColor are ranked higher.
@@ -104,7 +108,7 @@ struct CommandPaletteView: View {
         }
 
         VStack(alignment: .leading, spacing: 0) {
-            CommandPaletteQuery(query: $query) { event in
+            CommandPaletteQuery(query: $rawQuery) { event in
                 switch event {
                 case .exit:
                     isPresented = false
@@ -182,7 +186,7 @@ struct CommandPaletteView: View {
                 // This is optional, since most of the time
                 // there will be a delay before the next use.
                 // To keep behavior the same as before, we reset it.
-                query = ""
+                rawQuery = ""
             }
         }
     }
