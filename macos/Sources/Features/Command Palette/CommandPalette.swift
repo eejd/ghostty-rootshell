@@ -73,8 +73,8 @@ struct CommandPaletteView: View {
         } else {
             // Filter by title/subtitle match OR color match
             let filtered = options.filter {
-                $0.title.localizedCaseInsensitiveContains(query) ||
-                ($0.subtitle?.localizedCaseInsensitiveContains(query) ?? false) ||
+                $0.title.matchedIndices(for: query) != nil ||
+                ($0.subtitle?.matchedIndices(for: query) != nil) ||
                 colorMatchScore(for: $0.leadingColor, query: query) > 0
             }
 
@@ -151,6 +151,7 @@ struct CommandPaletteView: View {
 
             CommandTable(
                 options: filteredOptions,
+                query: query,
                 selectedIndex: $selectedIndex,
                 hoveredOptionID: $hoveredOptionID) { option in
                     isPresented = false
@@ -281,6 +282,7 @@ private struct CommandPaletteQuery: View {
 
 private struct CommandTable: View {
     var options: [CommandOption]
+    var query: String
     @Binding var selectedIndex: UInt?
     @Binding var hoveredOptionID: UUID?
     var action: (CommandOption) -> Void
@@ -297,6 +299,7 @@ private struct CommandTable: View {
                         ForEach(Array(options.enumerated()), id: \.1.id) { index, option in
                             CommandRow(
                                 option: option,
+                                query: query,
                                 isSelected: {
                                     if let selected = selectedIndex {
                                         return selected == index ||
@@ -329,9 +332,52 @@ private struct CommandTable: View {
 /// A single row in the command palette.
 private struct CommandRow: View {
     let option: CommandOption
+    var query: String
     var isSelected: Bool
     @Binding var hoveredID: UUID?
     var action: () -> Void
+
+    private var highlightedTitle: Text {
+        guard !query.isEmpty,
+              let indices = option.title.matchedIndices(for: query) else {
+            return Text(option.title)
+                .fontWeight(option.emphasis ? .medium : .regular)
+        }
+
+        var attributed = AttributedString(option.title)
+        attributed[attributed.startIndex...].font = .body
+            .weight(option.emphasis ? .medium : .regular)
+
+        for idx in indices {
+            let offset = option.title.distance(from: option.title.startIndex, to: idx)
+            let attrStart = attributed.index(attributed.startIndex, offsetByCharacters: offset)
+            let attrEnd = attributed.index(attrStart, offsetByCharacters: 1)
+            attributed[attrStart..<attrEnd].font = .body.bold()
+            attributed[attrStart..<attrEnd].foregroundColor = Color.accentColor
+        }
+
+        return Text(attributed)
+    }
+
+    private func highlightedSubtitle(_ subtitle: String) -> Text {
+        guard !query.isEmpty,
+              option.title.matchedIndices(for: query) == nil,
+              let indices = subtitle.matchedIndices(for: query) else {
+            return Text(subtitle)
+        }
+
+        var attributed = AttributedString(subtitle)
+
+        for idx in indices {
+            let offset = subtitle.distance(from: subtitle.startIndex, to: idx)
+            let attrStart = attributed.index(attributed.startIndex, offsetByCharacters: offset)
+            let attrEnd = attributed.index(attrStart, offsetByCharacters: 1)
+            attributed[attrStart..<attrEnd].font = .caption.bold()
+            attributed[attrStart..<attrEnd].foregroundColor = Color.accentColor
+        }
+
+        return Text(attributed)
+    }
 
     var body: some View {
         Button(action: action) {
@@ -349,11 +395,10 @@ private struct CommandRow: View {
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(option.title)
-                        .fontWeight(option.emphasis ? .medium : .regular)
+                    highlightedTitle
 
                     if let subtitle = option.subtitle {
-                        Text(subtitle)
+                        highlightedSubtitle(subtitle)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -411,5 +456,19 @@ private struct ShortcutSymbolsView: View {
                     .frame(minWidth: 13)
             }
         }
+    }
+}
+
+extension String {
+    /// Returns the character indices that match `query`
+    /// - Returns: `nil` if neither matches.
+    func matchedIndices(for query: String) -> [String.Index]? {
+        guard !query.isEmpty else { return nil }
+
+        if let range = self.range(of: query, options: .caseInsensitive) {
+            return Array(self[range].indices)
+        }
+
+        return nil
     }
 }
