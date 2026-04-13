@@ -132,16 +132,16 @@
       "locked": {
         "lastModified": 1776048155,
         "narHash": "sha256-aRhvYX6QFGdRVgyWeItzpMFw/43IuEFKTd5fO0B96fo=",
-        "ref": "0.16",
+        "owner": "jcollie",
+        "repo": "zon2nix",
         "rev": "7d1743d10d3dd417a4d3496abe8320e560173141",
-        "revCount": 492,
-        "type": "git",
-        "url": "https://codeberg.org/jcollie/zon2nix"
+        "type": "github"
       },
       "original": {
+        "owner": "jcollie",
         "ref": "0.16",
-        "type": "git",
-        "url": "https://codeberg.org/jcollie/zon2nix"
+        "repo": "zon2nix",
+        "type": "github"
       }
     }
   },
