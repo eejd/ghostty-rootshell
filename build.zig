@@ -155,7 +155,7 @@ pub fn build(b: *std.Build) !void {
     // libghostty-vt xcframework (Apple only, universal binary).
     // Only when building on macOS (not cross-compiling) since
     // xcodebuild is required.
-    if (builtin.os.tag.isDarwin() and config.target.result.os.tag.isDarwin()) {
+    if (config.emit_xcframework and builtin.os.tag.isDarwin() and config.target.result.os.tag.isDarwin()) {
         const apple_libs = try buildpkg.GhosttyLibVt.initStaticAppleUniversal(
             b,
             &config,
