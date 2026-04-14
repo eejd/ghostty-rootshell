@@ -164,6 +164,7 @@
 # Localization
 /po/README_TRANSLATORS.md @ghostty-org/localization
 /po/com.mitchellh.ghostty.pot @ghostty-org/localization
+/po/be.po @ghostty-org/be_BY
 /po/bg.po @ghostty-org/bg_BG
 /po/ca.po @ghostty-org/ca_ES
 /po/de.po @ghostty-org/de_DE
