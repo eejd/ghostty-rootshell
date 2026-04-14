@@ -44,7 +44,7 @@ msgstr "Запомніць выбар для гэтага падзелу"
 
 #: src/apprt/gtk/ui/1.4/clipboard-confirmation-dialog.blp:93
 msgid "Reload configuration to show this prompt again"
-msgstr "Перазагрузіць налады, каб паказаць гэты запыт зноў"
+msgstr "Перазагрузіць канфігурацыю, каб паказаць гэты запыт зноў"
 
 #: src/apprt/gtk/ui/1.2/close-confirmation-dialog.blp:7
 #: src/apprt/gtk/ui/1.5/title-dialog.blp:8
@@ -67,7 +67,7 @@ msgid ""
 "and either reload your configuration or ignore these errors."
 msgstr ""
 "Знойдзена адна або некалькі канфігурацыйных памылак. Прагледзьце памылкі ніжэй "
-"і альбо перазагрузіце налады, альбо ігнаруйце гэтыя памылкі."
+"і альбо перазагрузіце канфігурацыю, альбо ігнаруйце гэтыя памылкі."
 
 #: src/apprt/gtk/ui/1.2/config-errors-dialog.blp:10
 msgid "Ignore"
@@ -76,7 +76,7 @@ msgstr "Ігнараваць"
 #: src/apprt/gtk/ui/1.2/config-errors-dialog.blp:11
 #: src/apprt/gtk/ui/1.2/surface.blp:366 src/apprt/gtk/ui/1.5/window.blp:300
 msgid "Reload Configuration"
-msgstr "Перазагрузіць налады"
+msgstr "Перазагрузіць канфігурацыю"
 
 #: src/apprt/gtk/ui/1.2/debug-warning.blp:7
 #: src/apprt/gtk/ui/1.3/debug-warning.blp:6
@@ -207,7 +207,7 @@ msgstr "Налады"
 
 #: src/apprt/gtk/ui/1.2/surface.blp:361 src/apprt/gtk/ui/1.5/window.blp:295
 msgid "Open Configuration"
-msgstr "Адкрыць налады"
+msgstr "Адкрыць канфігурацыю"
 
 #: src/apprt/gtk/ui/1.5/title-dialog.blp:5
 msgid "Leave blank to restore the default title."
@@ -339,7 +339,7 @@ msgstr "Змяніць назву ўкладкі"
 
 #: src/apprt/gtk/class/window.zig:1007
 msgid "Reloaded the configuration"
-msgstr "Налады перазагружаны"
+msgstr "Канфігурацыя перазагружана"
 
 #: src/apprt/gtk/class/window.zig:1566
 msgid "Copied to clipboard"
