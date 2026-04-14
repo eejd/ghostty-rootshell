@@ -95,11 +95,11 @@ msgstr "Знайсці…"
 
 #: src/apprt/gtk/ui/1.2/search-overlay.blp:64
 msgid "Previous Match"
-msgstr "Папярэдні супадзень"
+msgstr "Папярэдняе супадзенне"
 
 #: src/apprt/gtk/ui/1.2/search-overlay.blp:74
 msgid "Next Match"
-msgstr "Наступны супадзень"
+msgstr "Наступнае супадзенне"
 
 #: src/apprt/gtk/ui/1.2/surface.blp:6
 msgid "Oh, no."
