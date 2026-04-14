@@ -116,7 +116,7 @@ msgid ""
 "application."
 msgstr ""
 "Гэты тэрмінал знаходзіцца ў рэжыме толькі для чытання. Вы ўсё яшчэ можаце "
-"праглядаць, выбіраць і гартаць змест, але ніякія падзеі ўводу не будуць "
+"праглядаць, выбіраць і пракручваць змест, але ніякія падзеі ўводу не будуць "
 "адпраўлены ў запушчаную праграму."
 
 #: src/apprt/gtk/ui/1.2/surface.blp:107
@@ -145,7 +145,7 @@ msgstr "Скінуць"
 
 #: src/apprt/gtk/ui/1.2/surface.blp:289 src/apprt/gtk/ui/1.5/window.blp:242
 msgid "Split"
-msgstr "Падзел"
+msgstr "Падзяліць"
 
 #: src/apprt/gtk/ui/1.2/surface.blp:292 src/apprt/gtk/ui/1.5/window.blp:245
 msgid "Change Title…"
