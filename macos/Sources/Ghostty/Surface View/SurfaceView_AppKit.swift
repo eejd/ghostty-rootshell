@@ -1125,6 +1125,32 @@ extension Ghostty {
             // we control the preedit state only through the preedit API.
             syncPreedit(clearIfNeeded: markedTextBefore)
 
+            // Korean IMEs on macOS may commit preedit text via insertText
+            // while handling an arrow key. Send that committed text separately
+            // before replaying arrow movement, except for plain left-arrow
+            // where AppKit already leaves the caret in place.
+            if markedTextBefore,
+               markedText.length == 0,
+               let list = keyTextAccumulator,
+               list.count > 0,
+               let preeditCommitArrow = preeditCommitArrowKey(translationEvent) {
+                for text in list {
+                    _ = committedPreeditTextAction(action, text: text)
+                }
+
+                let isPlainLeftArrow = preeditCommitArrow == .arrowLeft &&
+                    event.modifierFlags.isDisjoint(with: [.shift, .control, .option, .command])
+                if !isPlainLeftArrow {
+                    _ = keyAction(
+                        action,
+                        event: event,
+                        translationEvent: translationEvent,
+                        composing: false
+                    )
+                }
+                return
+            }
+
             if let list = keyTextAccumulator, list.count > 0 {
                 // If we have text, then we've composed a character, send that down.
                 // These never have "composing" set to true because these are the
@@ -1381,6 +1407,37 @@ extension Ghostty {
                     return ghostty_surface_key(surface, key_ev)
                 }
             } else {
+                return ghostty_surface_key(surface, key_ev)
+            }
+        }
+
+        private func preeditCommitArrowKey(_ event: NSEvent) -> Ghostty.Input.Key? {
+            guard let key = Ghostty.Input.Key(keyCode: event.keyCode) else { return nil }
+            switch key {
+            case .arrowDown, .arrowLeft, .arrowRight, .arrowUp:
+                return key
+            default:
+                return nil
+            }
+        }
+
+        private func committedPreeditTextAction(
+            _ action: ghostty_input_action_e,
+            text: String
+        ) -> Bool {
+            guard let surface = self.surface else { return false }
+
+            var key_ev = ghostty_input_key_s()
+            key_ev.action = action
+            key_ev.keycode = 0
+            key_ev.text = nil
+            key_ev.composing = false
+            key_ev.mods = GHOSTTY_MODS_NONE
+            key_ev.consumed_mods = GHOSTTY_MODS_NONE
+            key_ev.unshifted_codepoint = 0
+
+            return text.withCString { ptr in
+                key_ev.text = ptr
                 return ghostty_surface_key(surface, key_ev)
             }
         }
