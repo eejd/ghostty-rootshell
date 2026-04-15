@@ -346,11 +346,8 @@ fn combineArchives(
 }
 
 /// Returns the Libs.private value for the pkg-config file.
-/// This includes the C++ standard library needed by SIMD code.
-///
-/// Zig compiles C++ code with LLVM's libc++ (not GNU libstdc++),
-/// so consumers linking the static library need a libc++-compatible
-/// toolchain: `zig cc`, `clang`, or GCC with `-lc++` installed.
+/// Vendored C++ dependencies are built in no-libcxx mode so consumers
+/// don't need libc++.  System-provided simdutf still requires it.
 fn libsPrivate(
     zig: *const GhosttyZig,
 ) []const u8 {
