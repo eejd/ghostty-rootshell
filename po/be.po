@@ -83,7 +83,7 @@ msgstr "Перазагрузіць канфігурацыю"
 msgid ""
 "⚠️ You're running a debug build of Ghostty! Performance will be degraded."
 msgstr ""
-"⚠️ Вы запускаеце адладачны зборнік Ghostty! Прадукцыйнасць будзе зніжана."
+"⚠️ Вы запускаеце адладачную зборку Ghostty! Прадукцыйнасць будзе зніжана."
 
 #: src/apprt/gtk/ui/1.5/inspector-window.blp:5
 msgid "Ghostty: Terminal Inspector"
@@ -103,7 +103,7 @@ msgstr "Наступнае супадзенне"
 
 #: src/apprt/gtk/ui/1.2/surface.blp:6
 msgid "Oh, no."
-msgstr "О, не."
+msgstr "Ой."
 
 #: src/apprt/gtk/ui/1.2/surface.blp:7
 msgid "Unable to acquire an OpenGL context for rendering."
@@ -116,7 +116,7 @@ msgid ""
 "application."
 msgstr ""
 "Гэты тэрмінал знаходзіцца ў рэжыме толькі для чытання. Вы ўсё яшчэ можаце "
-"праглядаць, выбіраць і пракручваць змест, але ніякія падзеі ўводу не будуць "
+"праглядаць, вылучаць і пракручваць змест, але ніякія падзеі ўводу не будуць "
 "адпраўлены ў запушчаную праграму."
 
 #: src/apprt/gtk/ui/1.2/surface.blp:107
