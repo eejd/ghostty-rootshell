@@ -172,6 +172,10 @@ pub const Handler = struct {
             .apc_put,
             => {},
 
+            // iTerm2 inline image protocol requires allocation and is not
+            // supported by the readonly stream.
+            .iterm2_image => {},
+
             // Have no terminal-modifying effect
             .bell,
             .enquiry,

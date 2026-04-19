@@ -160,6 +160,40 @@ pub const Command = union(Key) {
     /// https://uapi-group.org/specifications/specs/osc_context/
     context_signal: parsers.context_signal.Command,
 
+    /// OSC 1337 iTerm2 inline image protocol.
+    /// https://iterm2.com/documentation-images.html
+    ///
+    /// This is one of four distinct events emitted by the OSC 1337 parser
+    /// for image transfer: a legacy one-shot transfer, or the three events
+    /// of a chunked multipart transfer (start, chunk, end).
+    ///
+    /// For `oneshot` and `start`, `meta_args` is the semicolon-separated
+    /// argument list that followed the `File=` / `MultipartFile=` key
+    /// (e.g. "inline=1;size=4096;preserveAspectRatio=1"). For `oneshot`
+    /// and `chunk`, `data` is the base64-encoded image payload. Slices
+    /// point into the OSC parser buffer and are valid only until the next
+    /// parser reset; the dispatcher must consume them synchronously.
+    iterm2_image: Iterm2Image,
+
+    pub const Iterm2Image = union(enum) {
+        oneshot: struct {
+            meta_args: [:0]const u8,
+            data: [:0]const u8,
+        },
+        start: struct {
+            meta_args: [:0]const u8,
+        },
+        chunk: struct {
+            data: [:0]const u8,
+        },
+        end,
+
+        pub const C = void;
+        pub fn cval(_: Iterm2Image) C {
+            return {};
+        }
+    };
+
     pub const SemanticPrompt = parsers.semantic_prompt.Command;
 
     pub const KittyClipboardProtocol = parsers.kitty_clipboard_protocol.OSC;
@@ -193,6 +227,7 @@ pub const Command = union(Key) {
             "kitty_text_sizing",
             "kitty_clipboard_protocol",
             "context_signal",
+            "iterm2_image",
         },
     );
 
@@ -286,6 +321,12 @@ pub const Terminator = enum {
     }
 };
 
+/// Hard upper bound on the total payload size accepted by the allocating
+/// OSC writer. Matches Kitty's per-image cap. Reached by legitimate
+/// large image transfers (iTerm2 `File=` / `FilePart=`), clipboard pastes,
+/// etc. Anything larger is rejected to prevent memory-exhaustion attacks.
+pub const max_allocating_osc: usize = 400 * 1024 * 1024;
+
 pub const Parser = struct {
     /// Maximum size of a "normal" OSC.
     pub const MAX_BUF = 2048;
@@ -309,6 +350,15 @@ pub const Parser = struct {
 
     /// The command that is the result of parsing.
     command: Command,
+
+    /// When true, the next `=` seen in the writer's buffer should trigger
+    /// a classification pass: if the OSC 1337 key is a known large-payload
+    /// key (File / FilePart / MultipartFile), promote the writer from fixed
+    /// to allocating; otherwise leave it on the fixed buffer. This keeps
+    /// non-image OSC 1337 sequences capped at MAX_BUF and prevents a
+    /// memory-exhaustion vector via e.g. `Custom=<huge>` or
+    /// `SetBadgeFormat=<huge>`.
+    osc_1337_classify_pending: bool = false,
 
     pub const State = enum {
         start,
@@ -372,6 +422,7 @@ pub const Parser = struct {
             .allocating = null,
             .writer = null,
             .command = .invalid,
+            .osc_1337_classify_pending = false,
 
             // Keeping all our undefined values together so we can
             // visually easily duplicate them in the Valgrind check below.
@@ -418,6 +469,7 @@ pub const Parser = struct {
             .hyperlink_end,
             .hyperlink_start,
             .invalid,
+            .iterm2_image,
             .mouse_shape,
             .report_pwd,
             .semantic_prompt,
@@ -433,6 +485,7 @@ pub const Parser = struct {
         self.allocating = null;
         self.writer = null;
         self.command = .invalid;
+        self.osc_1337_classify_pending = false;
 
         if (std.valgrind.runningOnValgrind() > 0) {
             // Initialize our undefined fields so Valgrind can catch it.
@@ -454,6 +507,46 @@ pub const Parser = struct {
     inline fn writeToFixed(self: *Parser) void {
         self.fixed = .fixed(&self.buffer);
         self.writer = &self.fixed.?;
+    }
+
+    /// OSC 1337 keys that are permitted to carry large payloads (iTerm2
+    /// inline image transfer). For any other key, we leave the writer on
+    /// the fixed 2 KB buffer so that non-image sequences can't be used to
+    /// grow the heap arbitrarily.
+    fn isIterm2LargeKey(key: []const u8) bool {
+        return std.ascii.eqlIgnoreCase(key, "File") or
+            std.ascii.eqlIgnoreCase(key, "FilePart") or
+            std.ascii.eqlIgnoreCase(key, "MultipartFile");
+    }
+
+    /// Called once the first `=` of an OSC 1337 payload has been buffered.
+    /// Inspects the key name and, if it is a large-payload image key,
+    /// promotes the writer from the fixed buffer to an allocating writer
+    /// so the full base64 payload can be captured. The key bytes already
+    /// written to the fixed buffer are copied into the allocating writer
+    /// before the swap so the parser sees a continuous stream.
+    fn classify1337Key(self: *Parser) void {
+        const fixed_writer = &(self.fixed orelse return);
+        // Everything buffered so far, including the trailing '='.
+        const buffered = fixed_writer.buffered();
+        // The key name is everything before the trailing '='.
+        if (buffered.len == 0) return;
+        const key = buffered[0 .. buffered.len - 1];
+
+        if (!isIterm2LargeKey(key)) return;
+        const alloc = self.alloc orelse return;
+
+        var allocating: std.Io.Writer.Allocating =
+            std.Io.Writer.Allocating.initCapacity(alloc, 4096) catch return;
+        // Copy the bytes we've already accumulated into the fixed buffer.
+        allocating.writer.writeAll(buffered) catch {
+            allocating.deinit();
+            return;
+        };
+
+        self.allocating = allocating;
+        self.writer = &self.allocating.?.writer;
+        self.fixed = null;
     }
 
     /// Set up an allocating Writer to collect the rest of the OSC data. If we
@@ -491,6 +584,23 @@ pub const Parser = struct {
                 // state to invalid so that we discard any further input.
                 error.WriteFailed => self.state = .invalid,
             };
+
+            // If this byte just completed the OSC 1337 key (the first '='),
+            // classify it and promote to an allocating writer for
+            // large-payload image keys.
+            if (self.osc_1337_classify_pending and c == '=') {
+                self.osc_1337_classify_pending = false;
+                self.classify1337Key();
+            }
+
+            // Enforce an upper bound on the allocating writer's payload size
+            // (currently only used by OSC 52, 5522, and promoted OSC 1337 image
+            // transfers). Exceeding the cap invalidates the sequence.
+            if (self.allocating) |*a| {
+                if (a.writer.end > max_allocating_osc) {
+                    self.state = .invalid;
+                }
+            }
             return;
         }
 
@@ -659,7 +769,16 @@ pub const Parser = struct {
 
             .@"1337",
             => switch (c) {
-                ';' => self.writeToFixed(),
+                // Start with the fixed 2 KB buffer. If the OSC 1337 key turns
+                // out to be an image transfer key (File / FilePart /
+                // MultipartFile) we promote the writer to an allocating one
+                // once the key is identified (see `next()`). Non-image keys
+                // stay capped at 2 KB to avoid memory-exhaustion attacks via
+                // keys like `Custom=` or `SetBadgeFormat=`.
+                ';' => {
+                    self.writeToFixed();
+                    self.osc_1337_classify_pending = self.alloc != null;
+                },
                 else => self.state = .invalid,
             },
 

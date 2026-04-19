@@ -154,6 +154,66 @@ pub fn parse(parser: *Parser, _: ?u8) ?*Command {
             return &parser.command;
         },
 
+        .File => {
+            // Legacy one-shot: File=[meta_args]:<base64 payload>
+            const value = value_ orelse {
+                parser.command = .invalid;
+                return null;
+            };
+
+            // Split on the FIRST ':' — metadata may contain '=' and ';'
+            // but never ':' in its values.
+            const colon = std.mem.indexOfScalar(u8, value, ':') orelse {
+                // No data portion — treat as invalid.
+                parser.command = .invalid;
+                return null;
+            };
+
+            // Overwrite the ':' with a null byte to get a null-terminated
+            // metadata slice pointing into the parser buffer.
+            value[colon] = 0;
+            const meta_args = value[0..colon :0];
+            const b64_data = value[colon + 1 .. value.len :0];
+
+            parser.command = .{
+                .iterm2_image = .{
+                    .oneshot = .{
+                        .meta_args = meta_args,
+                        .data = b64_data,
+                    },
+                },
+            };
+            return &parser.command;
+        },
+
+        .MultipartFile => {
+            const meta_args = value_ orelse "";
+            parser.command = .{
+                .iterm2_image = .{
+                    .start = .{ .meta_args = meta_args },
+                },
+            };
+            return &parser.command;
+        },
+
+        .FilePart => {
+            const chunk = value_ orelse {
+                parser.command = .invalid;
+                return null;
+            };
+            parser.command = .{
+                .iterm2_image = .{
+                    .chunk = .{ .data = chunk },
+                },
+            };
+            return &parser.command;
+        },
+
+        .FileEnd => {
+            parser.command = .{ .iterm2_image = .end };
+            return &parser.command;
+        },
+
         .AddAnnotation,
         .AddHiddenAnnotation,
         .Block,
@@ -165,11 +225,7 @@ pub fn parse(parser: *Parser, _: ?u8) ?*Command {
         .Custom,
         .Disinter,
         .EndCopy,
-        .File,
-        .FileEnd,
-        .FilePart,
         .HighlightCursorLine,
-        .MultipartFile,
         .OpenURL,
         .PopKeyLabels,
         .PushKeyLabels,

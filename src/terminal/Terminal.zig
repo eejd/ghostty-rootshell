@@ -2642,6 +2642,84 @@ pub fn kittyGraphics(
     return kitty.graphics.execute(alloc, self, cmd);
 }
 
+/// Execute an iTerm2 OSC 1337 inline image event. This handles all four
+/// variants of the protocol: a legacy one-shot transfer (`File=meta:b64`)
+/// and the three events of a chunked transfer (`MultipartFile=meta`,
+/// `FilePart=b64`, `FileEnd`). Internally this decodes the payload and
+/// routes it into the existing Kitty graphics pipeline.
+///
+/// Returns silently on any error so that the terminal remains in a good
+/// state; errors are logged at warn level.
+pub fn iterm2Image(
+    self: *Terminal,
+    alloc: Allocator,
+    event: @import("osc.zig").Command.Iterm2Image,
+) void {
+    if (comptime !build_options.kitty_graphics) return;
+
+    const iterm2 = @import("iterm2/images.zig");
+    const iterm2_log = std.log.scoped(.iterm2_image);
+
+    const storage = &self.screens.active.kitty_images;
+    if (!storage.enabled()) return;
+
+    switch (event) {
+        .oneshot => |v| {
+            const meta = iterm2.Meta.parse(v.meta_args);
+            iterm2.dispatch(alloc, self, meta, v.data) catch |err| {
+                iterm2_log.warn("iterm2 oneshot dispatch failed: {}", .{err});
+            };
+        },
+
+        .start => |v| {
+            // Discard any in-progress transfer (protocol error — client
+            // started a new transfer without ending the previous one).
+            if (storage.iterm2_loading) |loading| {
+                loading.destroy(alloc);
+                storage.iterm2_loading = null;
+            }
+            const meta = iterm2.Meta.parse(v.meta_args);
+            // Don't buffer chunks we're going to throw away. iTerm2 `inline=0`
+            // is a download-to-disk mode we don't implement; accumulating the
+            // base64 payload for a sequence that will never render is a
+            // memory-exhaustion vector. Leave `iterm2_loading` null so that
+            // subsequent FilePart chunks are silently dropped and FileEnd
+            // is a no-op.
+            if (!meta.inline_) {
+                iterm2_log.debug("iterm2 MultipartFile inline=0 ignored", .{});
+                return;
+            }
+            storage.iterm2_loading = iterm2.Loading.create(alloc, meta) catch |err| {
+                iterm2_log.warn("iterm2 loading init failed: {}", .{err});
+                return;
+            };
+        },
+
+        .chunk => |v| {
+            const loading = storage.iterm2_loading orelse {
+                // FilePart without a preceding MultipartFile — ignore.
+                return;
+            };
+            loading.appendChunk(alloc, v.data) catch |err| {
+                iterm2_log.warn("iterm2 chunk append failed: {}", .{err});
+                loading.destroy(alloc);
+                storage.iterm2_loading = null;
+            };
+        },
+
+        .end => {
+            const loading = storage.iterm2_loading orelse return;
+            defer {
+                loading.destroy(alloc);
+                storage.iterm2_loading = null;
+            }
+            iterm2.dispatch(alloc, self, loading.meta, loading.data.items) catch |err| {
+                iterm2_log.warn("iterm2 end dispatch failed: {}", .{err});
+            };
+        },
+    }
+}
+
 /// Set a style attribute.
 pub fn setAttribute(self: *Terminal, attr: sgr.Attribute) !void {
     try self.screens.active.setAttribute(attr);

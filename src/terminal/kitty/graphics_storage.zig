@@ -13,6 +13,7 @@ const LoadingImage = @import("graphics_image.zig").LoadingImage;
 const Image = @import("graphics_image.zig").Image;
 const Rect = @import("graphics_image.zig").Rect;
 const Command = command.Command;
+const Iterm2Loading = @import("../iterm2/images.zig").Loading;
 
 const log = std.log.scoped(.kitty_gfx);
 
@@ -51,6 +52,10 @@ pub const ImageStorage = struct {
     /// Non-null if there is an in-progress loading image.
     loading: ?*LoadingImage = null,
 
+    /// Non-null if there is an in-progress iTerm2 OSC 1337 MultipartFile
+    /// transfer (FilePart chunks arriving between MultipartFile and FileEnd).
+    iterm2_loading: ?*Iterm2Loading = null,
+
     /// The total bytes of image data that have been loaded and the limit.
     /// If the limit is reached, the oldest images will be evicted to make
     /// space. Unused images take priority.
@@ -63,6 +68,7 @@ pub const ImageStorage = struct {
         s: *terminal.Screen,
     ) void {
         if (self.loading) |loading| loading.destroy(alloc);
+        if (self.iterm2_loading) |loading| loading.destroy(alloc);
 
         var it = self.images.iterator();
         while (it.next()) |kv| kv.value_ptr.deinit(alloc);
