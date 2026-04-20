@@ -4007,12 +4007,19 @@ pub fn mouseButtonCallback(
         }
     }
 
-    // Middle-click pastes from our selection clipboard
+    // Middle-click paste source follows copy-on-select: when copy-on-select
+    // targets the selection clipboard, middle-click reads from it; when
+    // copy-on-select targets the system clipboard, middle-click reads from
+    // that instead. Falls back to the standard clipboard on platforms that
+    // do not support the selection clipboard.
     if (button == .middle and action == .press) {
-        const clipboard: apprt.Clipboard = if (self.rt_surface.supportsClipboard(.selection))
-            .selection
-        else
-            .standard;
+        const clipboard: apprt.Clipboard = switch (self.config.copy_on_select) {
+            .clipboard => .standard,
+            .true, .false => if (self.rt_surface.supportsClipboard(.selection))
+                .selection
+            else
+                .standard,
+        };
         _ = try self.startClipboardRequest(clipboard, .{ .paste = {} });
     }
 

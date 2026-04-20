@@ -2404,8 +2404,11 @@ keybind: Keybinds = .{},
 /// The value `clipboard` will always copy text to the selection clipboard
 /// as well as the system clipboard.
 ///
-/// Middle-click paste will always use the selection clipboard. Middle-click
-/// paste is always enabled even if this is `false`.
+/// Middle-click paste is always enabled even if this is `false`. The
+/// clipboard it pastes from follows this setting: with `true` (or `false`)
+/// it reads from the selection clipboard (falling back to the system
+/// clipboard on platforms without a selection clipboard); with `clipboard`
+/// it reads from the system clipboard.
 ///
 /// The default value is true on Linux and macOS.
 @"copy-on-select": CopyOnSelect = switch (builtin.os.tag) {
