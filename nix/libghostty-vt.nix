@@ -59,9 +59,6 @@ stdenv.mkDerivation (finalAttrs: {
     "-Dapp-runtime=none"
     "-Demit-lib-vt=true"
     "-Dsimd=${lib.boolToString simd}"
-    # Install headers directly into the `dev` output
-    "--prefix-include-dir"
-    "${placeholder "dev"}/include"
   ];
   zigCheckFlags = finalAttrs.zigBuildFlags ++ ["test-lib-vt"];
 

@@ -371,8 +371,8 @@ fn pkgConfigFiles(
     return .{
         .shared = wf.add("libghostty-vt.pc", b.fmt(
             \\prefix={s}
-            \\includedir={s}
-            \\libdir={s}
+            \\includedir=${{prefix}}/include
+            \\libdir=${{prefix}}/lib
             \\
             \\Name: libghostty-vt
             \\URL: https://github.com/ghostty-org/ghostty
@@ -382,18 +382,11 @@ fn pkgConfigFiles(
             \\Libs: -L${{libdir}} -lghostty-vt
             \\Libs.private: {s}
             \\Requires.private: {s}
-        , .{
-            b.install_prefix,
-            b.h_dir,
-            b.lib_dir,
-            zig.version,
-            libs_private,
-            requires_private,
-        })),
+        , .{ b.install_prefix, zig.version, libs_private, requires_private })),
         .static = wf.add("libghostty-vt-static.pc", b.fmt(
             \\prefix={s}
-            \\includedir={s}
-            \\libdir={s}
+            \\includedir=${{prefix}}/include
+            \\libdir=${{prefix}}/lib
             \\
             \\Name: libghostty-vt-static
             \\URL: https://github.com/ghostty-org/ghostty
@@ -405,8 +398,6 @@ fn pkgConfigFiles(
             \\Requires.private: {s}
         , .{
             b.install_prefix,
-            b.h_dir,
-            b.lib_dir,
             zig.version,
             staticLibraryName(os_tag),
             libs_private,
