@@ -54,6 +54,140 @@ pub const Glyf = struct {
             yMax: sfnt.int16 align(1),
         };
 
+        /// The bit flags that describe the point data in simple glyph entries.
+        ///
+        /// Doc strings for each field are copied with minimal modification
+        /// from the opentype spec. Field names are altered to be clearer and
+        /// more succinct, and mentions of those field names in doc strings
+        /// have been similarly modified to match the ones in the struct.
+        ///
+        /// The relationship between the <x|y>_short and <x|y>_repeat_or_sign
+        /// fields is important, and poorly explained in prose, so instead of
+        /// that, here's a table that should make it easier to understand.
+        ///
+        ///          x_short > | false            | true             |
+        /// x_repeat_or_sign V |------------------|------------------|
+        ///                    | The x-coordinate | The x-coordinate |
+        ///              false | of this point is | of this point is |
+        ///                    | a signed 16-bit  | an unsigned byte |
+        ///                    | value added to   | value treated as |
+        ///                    | the *Coordinates | negative, added  |
+        ///                    | array.           | to the array of  |
+        ///                    |                  | xCoordinates.    |
+        /// -------------------|------------------|------------------|
+        ///                    | The x-coordinate | The x-coordinate |
+        ///               true | of this point is | of this point is |
+        ///                    | the same as the  | an unsigned byte |
+        ///                    | previous point;  | value treated as |
+        ///                    | nothing added to | positive, added  |
+        ///                    | the xCoordinates | to the array of  |
+        ///                    | array.           | xCoordinates.    |
+        /// -------------------|------------------|------------------|
+        ///
+        /// References:
+        /// - https://learn.microsoft.com/en-us/typography/opentype/spec/glyf#simple-glyph-description
+        pub const SimpleFlags = packed struct(u8) {
+            /// If set, the point is on the curve; otherwise, it is off the curve.
+            on_curve: bool,
+
+            /// If set, the corresponding x-coordinate is 1 byte long,
+            /// and the sign is determined by the x_repeat_or_sign flag.
+            ///
+            /// If not set, its interpretation depends on the x_repeat_or_sign
+            /// flag: If that other flag is set, the x-coordinate is the same
+            /// as the previous x-coordinate, and no element is added to the
+            /// xCoordinates array. If both flags are not set, the corresponding
+            /// element in the xCoordinates array is two bytes and interpreted
+            /// as a signed integer.
+            ///
+            /// See the description of the x_repeat_or_sign flag for additional
+            /// information.
+            x_short: bool,
+
+            /// If set, the corresponding y-coordinate is 1 byte long,
+            /// and the sign is determined by the y_repeat_or_sign flag.
+            ///
+            /// If not set, its interpretation depends on the y_repeat_or_sign
+            /// flag: If that other flag is set, the y-coordinate is the same
+            /// as the previous y-coordinate, and no element is added to the
+            /// yCoordinates array. If both flags are not set, the corresponding
+            /// element in the yCoordinates array is two bytes and interpreted
+            /// as a signed integer.
+            ///
+            /// See the description of the y_repeat_or_sign flag for additional
+            /// information.
+            y_short: bool,
+
+            /// If set, the next byte (read as unsigned) specifies the number
+            /// of additional times this flag byte is to be repeated in the
+            /// logical flags array — that is, the number of additional logical
+            /// flag entries inserted after this entry. (In the expanded logical
+            /// array, this bit is ignored.) In this way, the number of flags
+            /// listed can be smaller than the number of points in the glyph
+            /// description.
+            repeat: bool,
+
+            /// This flag has two meanings, depending on how the x_short flag
+            /// is set. If x_short is set, this bit describes the sign of the
+            /// value, with 1 equaling positive and 0 negative. If x_short is
+            /// not set and this bit is set, then the current x-coordinate is
+            /// the same as the previous x-coordinate. If x_short is not set
+            /// and this bit is also not set, the current x-coordinate is a
+            /// signed 16-bit delta vector.
+            x_repeat_or_sign: bool,
+
+            /// This flag has two meanings, depending on how the y_short flag
+            /// is set. If y_short is set, this bit describes the sign of the
+            /// value, with 1 equaling positive and 0 negative. If y_short is
+            /// not set and this bit is set, then the current y-coordinate is
+            /// the same as the previous y-coordinate. If y_short is not set
+            /// and this bit is also not set, the current y-coordinate is a
+            /// signed 16-bit delta vector.
+            y_repeat_or_sign: bool,
+
+            /// If set, contours in the glyph description could overlap.
+            ///
+            /// Use of this flag is not required — that is, contours may
+            /// overlap without having this flag set. When used, it must
+            /// be set on the first flag byte for the glyph.
+            overlap: bool,
+
+            /// Bit 7 is reserved: set to zero.
+            reserved: bool,
+
+            /// Determine the size (in bytes) of the corresponding
+            /// value in the `xCoordinates` array for this flagset.
+            ///
+            /// See doc comments on the struct for an explanation.
+            pub inline fn xBytes(self: SimpleFlags) u2 {
+                return if (self.x_short)
+                    // short, 1 byte
+                    1
+                else if (self.x_repeat_or_sign)
+                    // repeat, 0 bytes
+                    0
+                else
+                    // otherwise, 16-bit, 2 bytes.
+                    2;
+            }
+
+            /// Determine the size (in bytes) of the corresponding
+            /// value in the `yCoordinates` array for this flagset.
+            ///
+            /// See doc comments on the struct for an explanation.
+            pub inline fn yBytes(self: SimpleFlags) u2 {
+                return if (self.y_short)
+                    // short, 1 byte
+                    1
+                else if (self.y_repeat_or_sign)
+                    // repeat, 0 bytes
+                    0
+                else
+                    // otherwise, 16-bit, 2 bytes.
+                    2;
+            }
+        };
+
         pub const Type = enum {
             /// A glyph made of standard contours.
             simple,
@@ -171,36 +305,13 @@ pub const Glyf = struct {
                     var x_coords_len: usize = 0;
                     var y_coords_len: usize = 0;
                     while (i <= max_point_index) : (i += 1) {
-                        const flag = try reader.readByte();
+                        const flag: SimpleFlags = @bitCast(try reader.readByte());
 
-                        // 0x02 X_SHORT_VECTOR
-                        //
-                        // Bit 1: If set, the corresponding x-coordinate
-                        // is 1 byte long, and the sign is determined by
-                        // the X_IS_SAME_OR_POSITIVE_X_SHORT_VECTOR flag.
-                        //
-                        // If not set, its interpretation depends on the
-                        // X_IS_SAME_OR_POSITIVE_X_SHORT_VECTOR flag:
-                        //
-                        // If that other flag is set, the x-coordinate is the
-                        // same as the previous x-coordinate, and no element
-                        // is added to the xCoordinates array.
-                        //
-                        // If both flags are not set, the corresponding
-                        // element in the xCoordinates array is two bytes
-                        // and interpreted as a signed integer.
-                        x_coords_len +=
-                            if (flag & 0x02 != 0) 1 else
-                            // 0x10 X_IS_SAME_OR_POSITIVE_X_SHORT_VECTOR
-                            if (flag & 0x10 != 0) 0 else 2;
-
-                        // 0x04 Y_SHORT_VECTOR
-                        //
-                        // See X_SHORT_VECTOR logic above for explanation.
-                        y_coords_len +=
-                            if (flag & 0x04 != 0) 1 else
-                            // 0x20 Y_IS_SAME_OR_POSITIVE_Y_SHORT_VECTOR
-                            if (flag & 0x20 != 0) 0 else 2;
+                        // Determine how many bytes the x and y coordinates will
+                        // be represented with in the corresponding arrays, add
+                        // them to our tallies.
+                        x_coords_len += flag.xBytes();
+                        y_coords_len += flag.yBytes();
 
                         // 0x08 REPEAT_FLAG
                         // Bit 3: If set, the next byte (read as unsigned)
@@ -208,8 +319,16 @@ pub const Glyf = struct {
                         // byte is to be repeated in the logical flags array
                         // — that is, the number of additional logical flag
                         // entries inserted after this entry.
-                        if (flag & 0x08 != 0) {
-                            i += try reader.readByte();
+                        if (flag.repeat) {
+                            // The flag is repeated a certain number of times,
+                            // which means that the point count is increased by
+                            // that count, and the x_coords_len and y_coords_len
+                            // must be increased by the correct number of bytes
+                            // as well.
+                            const repeat_count: usize = try reader.readByte();
+                            i += repeat_count;
+                            x_coords_len += repeat_count * flag.xBytes();
+                            y_coords_len += repeat_count * flag.yBytes();
 
                             // If the repeat count pushes our logical point
                             // number beyond the max point index which we
