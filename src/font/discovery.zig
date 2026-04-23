@@ -919,6 +919,7 @@ pub const Windows = struct {
             .state = .system,
             .dir = null,
             .iter = null,
+            .system_path = null,
             .user_path = null,
         };
     }
@@ -941,14 +942,14 @@ pub const Windows = struct {
         state: State,
         dir: ?std.fs.Dir,
         iter: ?std.fs.Dir.Iterator,
+        system_path: ?[:0]const u8,
         user_path: ?[:0]const u8,
 
         const State = enum { system, user, done };
 
-        const system_fonts_dir = "C:\\Windows\\Fonts";
-
         pub fn deinit(self: *DiscoverIterator) void {
             if (self.dir) |*d| d.close();
+            if (self.system_path) |p| self.alloc.free(p);
             if (self.user_path) |p| self.alloc.free(p);
             self.* = undefined;
         }
@@ -959,8 +960,13 @@ pub const Windows = struct {
                 if (self.iter == null) {
                     switch (self.state) {
                         .system => {
+                            const path = self.systemFontsPath() orelse {
+                                self.state = .user;
+                                continue;
+                            };
+                            self.system_path = path;
                             self.dir = std.fs.openDirAbsoluteZ(
-                                system_fonts_dir,
+                                path,
                                 .{ .iterate = true },
                             ) catch {
                                 self.state = .user;
@@ -1007,6 +1013,24 @@ pub const Windows = struct {
             }
         }
 
+        /// Build the system fonts directory from %SYSTEMROOT%. Returns null
+        /// if SYSTEMROOT is unset, which shouldn't happen on a healthy
+        /// Windows install but we just skip the directory rather than
+        /// falling back to a hardcoded drive letter.
+        fn systemFontsPath(self: *DiscoverIterator) ?[:0]const u8 {
+            const systemroot = std.process.getEnvVarOwned(
+                self.alloc,
+                "SYSTEMROOT",
+            ) catch return null;
+            defer self.alloc.free(systemroot);
+            return std.fmt.allocPrintSentinel(
+                self.alloc,
+                "{s}\\Fonts",
+                .{systemroot},
+                0,
+            ) catch null;
+        }
+
         fn userFontsPath(self: *DiscoverIterator) ?[:0]const u8 {
             const local_appdata = std.process.getEnvVarOwned(
                 self.alloc,
@@ -1026,7 +1050,7 @@ pub const Windows = struct {
             name: []const u8,
         ) !?DeferredFace {
             const dir_path = switch (self.state) {
-                .system => system_fonts_dir,
+                .system => self.system_path.?,
                 .user => self.user_path.?,
                 .done => return null,
             };
