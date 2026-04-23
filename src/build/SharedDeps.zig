@@ -836,10 +836,11 @@ pub fn addSimd(
             "-DSIMDUTF_NO_LIBCXX",
         );
 
-        // Disable ubsan for MSVC to avoid undefined references to
-        // __ubsan_handle_* symbols that require a runtime we don't link
-        // and bundle. Hopefully we can fix this one day since ubsan is nice!
-        if (target.result.abi == .msvc) try flags.appendSlice(b.allocator, &.{
+        // Disable ubsan for Windows C/C++ objects to avoid undefined
+        // __ubsan_handle_* references. The Zig libraries on Windows don't
+        // currently bundle a matching UBSan runtime for these objects in
+        // our build configurations (this affects both MSVC and GNU ABIs).
+        if (target.result.os.tag == .windows) try flags.appendSlice(b.allocator, &.{
             "-fno-sanitize=undefined",
             "-fno-sanitize-trap=undefined",
         });
