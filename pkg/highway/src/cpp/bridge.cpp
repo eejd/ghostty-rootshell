@@ -2,10 +2,7 @@
 #include <hwy/base.h>
 #include <hwy/targets.h>
 
-#include <stdarg.h>
 #include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
 
 namespace hwy {
 namespace {
@@ -16,16 +13,6 @@ namespace {
 // that targets.cc/per_target.cc expect and keep the package free of libc++.
 WarnFunc g_warn_func = nullptr;
 AbortFunc g_abort_func = nullptr;
-
-// Mirror the upstream behavior closely enough for Highway's internal callers:
-// format into a fixed buffer, fall back to a generic error if formatting fails,
-// and then dispatch to either the registered hook or stderr.
-void format_message(const char* format, va_list args, char* buffer, size_t size) {
-  const int written = vsnprintf(buffer, size, format, args);
-  if (written < 0) {
-    snprintf(buffer, size, "%s", "failed to format highway message");
-  }
-}
 
 }  // namespace
 
@@ -48,34 +35,17 @@ AbortFunc SetAbortFunc(AbortFunc func) {
 }
 
 void Warn(const char* file, int line, const char* format, ...) {
-  char message[1024];
-  va_list args;
-  va_start(args, format);
-  format_message(format, args, message, sizeof(message));
-  va_end(args);
-
-  if (WarnFunc func = g_warn_func) {
-    func(file, line, message);
-    return;
+  if (WarnFunc func = __atomic_load_n(&g_warn_func, __ATOMIC_SEQ_CST)) {
+    func(file, line, format);
   }
-
-  fprintf(stderr, "%s:%d: %s\n", file, line, message);
 }
 
 HWY_NORETURN void Abort(const char* file, int line, const char* format, ...) {
-  char message[1024];
-  va_list args;
-  va_start(args, format);
-  format_message(format, args, message, sizeof(message));
-  va_end(args);
-
-  if (AbortFunc func = g_abort_func) {
-    func(file, line, message);
-  } else {
-    fprintf(stderr, "%s:%d: %s\n", file, line, message);
+  if (AbortFunc func = __atomic_load_n(&g_abort_func, __ATOMIC_SEQ_CST)) {
+    func(file, line, format);
   }
 
-  abort();
+  __builtin_trap();
 }
 
 }  // namespace hwy

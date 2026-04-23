@@ -7,7 +7,7 @@ pub fn build(b: *std.Build) !void {
     const upstream_ = b.lazyDependency("highway", .{});
 
     const module = b.addModule("highway", .{
-        .root_source_file = b.path("main.zig"),
+        .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -15,6 +15,7 @@ pub fn build(b: *std.Build) !void {
     const lib = b.addLibrary(.{
         .name = "highway",
         .root_module = b.createModule(.{
+            .root_source_file = b.path("src/runtime_darwin.zig"),
             .target = target,
             .optimize = optimize,
         }),
@@ -24,11 +25,6 @@ pub fn build(b: *std.Build) !void {
     if (upstream_) |upstream| {
         lib.addIncludePath(upstream.path(""));
         module.addIncludePath(upstream.path(""));
-    }
-
-    if (target.result.os.tag.isDarwin()) {
-        const apple_sdk = @import("apple_sdk");
-        try apple_sdk.addPaths(b, lib);
     }
 
     if (target.result.abi.isAndroid()) {
@@ -93,12 +89,20 @@ pub fn build(b: *std.Build) !void {
         });
     }
 
-    lib.addCSourceFiles(.{ .flags = flags.items, .files = &.{"bridge.cpp"} });
+    lib.addCSourceFiles(.{ .flags = flags.items, .files = &.{"src/cpp/bridge.cpp"} });
+    if (target.result.os.tag.isDarwin()) {
+        lib.addCSourceFiles(.{ .flags = flags.items, .files = &.{"src/cpp/targets_darwin.cpp"} });
+    }
+
     if (upstream_) |upstream| {
         lib.addCSourceFiles(.{
             .root = upstream.path(""),
             .flags = flags.items,
-            .files = &.{
+            .files = if (target.result.os.tag.isDarwin()) &.{
+                // Darwin uses a local targets_darwin.cpp shim so the package doesn't
+                // need Apple SDK headers for target detection.
+                "hwy/per_target.cc",
+            } else &.{
                 // These provide the runtime target selection used by
                 // HWY_DYNAMIC_DISPATCH. The benchmark, timer, print, and
                 // aligned allocator support files are unused by Ghostty.
@@ -119,7 +123,7 @@ pub fn build(b: *std.Build) !void {
         const test_exe = b.addTest(.{
             .name = "test",
             .root_module = b.createModule(.{
-                .root_source_file = b.path("main.zig"),
+                .root_source_file = b.path("src/main.zig"),
                 .target = target,
                 .optimize = optimize,
             }),
