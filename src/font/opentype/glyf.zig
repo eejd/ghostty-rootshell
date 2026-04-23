@@ -255,6 +255,24 @@ pub const Glyf = struct {
                 // https://learn.microsoft.com/en-us/typography/opentype/spec/glyf#simple-glyph-description
                 .simple => {
                     const num_contours: usize = @intCast(self.header.numberOfContours);
+
+                    // From the spec:
+                    //
+                    // > If a glyph has zero contours, no additional glyph
+                    // > data beyond the header is required. A glyph with
+                    // > zero contours may have additional data, however;
+                    // > in particular, it may have instructions that
+                    // > operate on phantom points.
+                    //
+                    // If our number of contours is 0, and there's less than
+                    // two bytes in the remaining data, then we just return
+                    // the size of the header as our size. The reason for
+                    // two bytes is because that's the minimum size of the
+                    // extra data, since `instructionLength` is 16 bits.
+                    if (num_contours == 0 and self.data.len < 2) {
+                        return @sizeOf(Header);
+                    }
+
                     // uint16 endPtsOfContours[numberOfContours]
                     //
                     // Array of point indices for the last point
@@ -550,4 +568,18 @@ test "glyf: reject too many points" {
     @as([]u8, @constCast(glyph_nul.data))[107] |= 0x08;
     @as([]u8, @constCast(glyph_nul.data))[108] = 0xFF;
     try testing.expectError(Glyf.Entry.SizeError.TooManyPoints, glyph_nul.size());
+}
+
+test "glyf: zero-contour glyph can be header-only" {
+    const testing = std.testing;
+
+    const header: Glyf.Entry.Header = .{
+        .numberOfContours = 0,
+        .xMin = 0,
+        .yMin = 0,
+        .xMax = 0,
+        .yMax = 0,
+    };
+    const glyph = try Glyf.Entry.init(std.mem.asBytes(&header));
+    try testing.expectEqual(@sizeOf(Glyf.Entry.Header), try glyph.size());
 }
