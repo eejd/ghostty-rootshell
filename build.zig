@@ -154,14 +154,8 @@ pub fn build(b: *std.Build) !void {
 
     // libghostty-vt xcframework (Apple only, universal binary).
     // Only when building on macOS (not cross-compiling) since
-    // optional: requires full xcodebuild. keep lib-vt usable on command-line tools
-    const emit_lib_vt_xcframework = b.option(
-        bool,
-        "emit-lib-vt-xcframework",
-        "Emit libghostty-vt XCFramework (requires xcodebuild/full Xcode).",
-    ) orelse false;
-
-    if (config.emit_lib_vt and emit_lib_vt_xcframework and builtin.os.tag.isDarwin() and config.target.result.os.tag.isDarwin()) {
+    // xcodebuild is required.
+    if (config.emit_lib_vt and config.emit_xcframework and builtin.os.tag.isDarwin() and config.target.result.os.tag.isDarwin()) {
         const apple_libs = try buildpkg.GhosttyLibVt.initStaticAppleUniversal(
             b,
             &config,
@@ -206,8 +200,9 @@ pub fn build(b: *std.Build) !void {
     }
 
     // macOS only artifacts. These will error if they're initialized for
-    // other targets.
-    if (config.target.result.os.tag.isDarwin() and
+    // other targets. In lib-vt mode emit_xcframework controls the lib-vt
+    // xcframework above, not this one.
+    if (!config.emit_lib_vt and config.target.result.os.tag.isDarwin() and
         (config.emit_xcframework or config.emit_macos_app))
     {
         // Ghostty xcframework
