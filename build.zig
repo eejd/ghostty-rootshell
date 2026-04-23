@@ -160,7 +160,7 @@ pub fn build(b: *std.Build) !void {
         "emit-lib-vt-xcframework",
         "Emit libghostty-vt XCFramework (requires xcodebuild/full Xcode).",
     ) orelse false;
-    
+
     if (config.emit_lib_vt and emit_lib_vt_xcframework and builtin.os.tag.isDarwin() and config.target.result.os.tag.isDarwin()) {
         const apple_libs = try buildpkg.GhosttyLibVt.initStaticAppleUniversal(
             b,
