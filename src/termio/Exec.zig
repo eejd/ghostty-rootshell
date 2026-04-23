@@ -1775,3 +1775,84 @@ test "execCommand: direct command, config freed" {
     try testing.expectEqualStrings(result[0], "foo");
     try testing.expectEqualStrings(result[1], "bar baz");
 }
+
+test "execCommand windows: bare cmd.exe resolves via COMSPEC" {
+    if (comptime builtin.os.tag != .windows) return error.SkipZigTest;
+
+    const testing = std.testing;
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const result = try execCommand(alloc, .{ .shell = "cmd.exe" }, struct {
+        fn get(_: Allocator) !PasswdEntry {
+            return .{};
+        }
+    });
+
+    try testing.expectEqual(1, result.len);
+
+    // Expect COMSPEC if available, otherwise the documented fallback.
+    const expected = std.process.getEnvVarOwned(alloc, "COMSPEC") catch
+        try alloc.dupe(u8, "C:\\Windows\\System32\\cmd.exe");
+    try testing.expectEqualStrings(expected, result[0]);
+}
+
+test "execCommand windows: bare non-cmd shell is passed through" {
+    if (comptime builtin.os.tag != .windows) return error.SkipZigTest;
+
+    const testing = std.testing;
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const result = try execCommand(alloc, .{ .shell = "pwsh.exe" }, struct {
+        fn get(_: Allocator) !PasswdEntry {
+            return .{};
+        }
+    });
+
+    try testing.expectEqual(1, result.len);
+    try testing.expectEqualStrings("pwsh.exe", result[0]);
+}
+
+test "execCommand windows: shell with args is split on whitespace" {
+    if (comptime builtin.os.tag != .windows) return error.SkipZigTest;
+
+    const testing = std.testing;
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const result = try execCommand(alloc, .{ .shell = "wsl ~" }, struct {
+        fn get(_: Allocator) !PasswdEntry {
+            return .{};
+        }
+    });
+
+    try testing.expectEqual(2, result.len);
+    try testing.expectEqualStrings("wsl", result[0]);
+    try testing.expectEqualStrings("~", result[1]);
+}
+
+test "execCommand windows: direct command is passed through unchanged" {
+    if (comptime builtin.os.tag != .windows) return error.SkipZigTest;
+
+    const testing = std.testing;
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const result = try execCommand(alloc, .{ .direct = &.{
+        "C:\\tools\\foo.exe",
+        "arg with spaces",
+    } }, struct {
+        fn get(_: Allocator) !PasswdEntry {
+            return .{};
+        }
+    });
+
+    try testing.expectEqual(2, result.len);
+    try testing.expectEqualStrings("C:\\tools\\foo.exe", result[0]);
+    try testing.expectEqualStrings("arg with spaces", result[1]);
+}
