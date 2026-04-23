@@ -1649,7 +1649,8 @@ extension Ghostty {
                 // We handle this when the window is visible and timetime_ms is greater than 0,
                 // which will rule out exit codes on launch
                 guard surfaceView.window != nil, v.timetime_ms > 0 else { return false }
-                surfaceView.setChildExitedMessage(.init(v))
+                guard let config = (NSApplication.shared.delegate as? AppDelegate)?.ghostty.config else { return false }
+                surfaceView.setChildExitedMessage(.init(v, threshold: config.abnormalCommandExitRuntime))
                 return true
             default:
                 return false
