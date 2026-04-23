@@ -247,7 +247,8 @@ pub const Descriptor = struct {
 pub const Fontconfig = struct {
     fc_config: *fontconfig.Config,
 
-    pub fn init() Fontconfig {
+    pub fn init(lib: Library) Fontconfig {
+        _ = lib;
         // safe to call multiple times and concurrently
         _ = fontconfig.init();
         return .{ .fc_config = fontconfig.initLoadConfigAndFonts() };
@@ -338,7 +339,8 @@ pub const Fontconfig = struct {
 };
 
 pub const CoreText = struct {
-    pub fn init() CoreText {
+    pub fn init(lib: Library) CoreText {
+        _ = lib;
         // Required for the "interface" but does nothing for CoreText.
         return .{};
     }
@@ -1162,7 +1164,10 @@ test "fontconfig" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var fc = Fontconfig.init();
+    var lib = try Library.init(alloc);
+    defer lib.deinit();
+
+    var fc = Fontconfig.init(lib);
     defer fc.deinit();
     var it = try fc.discover(alloc, .{ .family = "monospace", .size = 12 });
     defer it.deinit();
@@ -1174,7 +1179,10 @@ test "fontconfig codepoint" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var fc = Fontconfig.init();
+    var lib = try Library.init(alloc);
+    defer lib.deinit();
+
+    var fc = Fontconfig.init(lib);
     defer fc.deinit();
     var it = try fc.discover(alloc, .{ .codepoint = 'A', .size = 12 });
     defer it.deinit();
@@ -1196,7 +1204,10 @@ test "coretext" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var ct = CoreText.init();
+    var lib = try Library.init(alloc);
+    defer lib.deinit();
+
+    var ct = CoreText.init(lib);
     defer ct.deinit();
     var it = try ct.discover(alloc, .{ .family = "Monaco", .size = 12 });
     defer it.deinit();
@@ -1214,7 +1225,10 @@ test "coretext codepoint" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var ct = CoreText.init();
+    var lib = try Library.init(alloc);
+    defer lib.deinit();
+
+    var ct = CoreText.init(lib);
     defer ct.deinit();
     var it = try ct.discover(alloc, .{ .codepoint = 'A', .size = 12 });
     defer it.deinit();
@@ -1243,7 +1257,10 @@ test "coretext sorting" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var ct = CoreText.init();
+    var lib = try Library.init(alloc);
+    defer lib.deinit();
+
+    var ct = CoreText.init(lib);
     defer ct.deinit();
 
     // We try to get a Regular, Italic, Bold, & Bold Italic version of SF Pro,
@@ -1308,4 +1325,25 @@ test "coretext sorting" {
         const name = try res.name(&buf);
         try testing.expectEqualStrings("SF Pro Bold Italic", name);
     }
+}
+
+test "windows" {
+    if (options.backend != .freetype_windows) return error.SkipZigTest;
+
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var lib = try Library.init(alloc);
+    defer lib.deinit();
+
+    var win = Windows.init(lib);
+    defer win.deinit();
+
+    // Arial ships on every stock Windows install.
+    var it = try win.discover(alloc, .{ .family = "Arial", .size = 12 });
+    defer it.deinit();
+
+    var face = (try it.next()) orelse return error.TestFontNotFound;
+    defer face.deinit();
+    try testing.expect(face.hasCodepoint('A', null));
 }
