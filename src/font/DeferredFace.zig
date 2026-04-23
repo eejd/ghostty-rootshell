@@ -478,7 +478,7 @@ test "fontconfig" {
 
     // Get a deferred face from fontconfig
     var def = def: {
-        var fc = discovery.Fontconfig.init();
+        var fc = discovery.Fontconfig.init(lib);
         defer fc.deinit();
         var it = try fc.discover(alloc, .{ .family = "monospace", .size = 12 });
         defer it.deinit();
@@ -510,7 +510,7 @@ test "coretext" {
 
     // Get a deferred face from fontconfig
     var def = def: {
-        var fc = discovery.CoreText.init();
+        var fc = discovery.CoreText.init(lib);
         var it = try fc.discover(alloc, .{ .family = "Monaco", .size = 12 });
         defer it.deinit();
         break :def (try it.next()).?;
