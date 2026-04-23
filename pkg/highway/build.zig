@@ -15,7 +15,7 @@ pub fn build(b: *std.Build) !void {
     const lib = b.addLibrary(.{
         .name = "highway",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/runtime_darwin.zig"),
+            .root_source_file = b.path("src/runtime_detect.zig"),
             .target = target,
             .optimize = optimize,
         }),
@@ -89,25 +89,17 @@ pub fn build(b: *std.Build) !void {
         });
     }
 
-    lib.addCSourceFiles(.{ .flags = flags.items, .files = &.{"src/cpp/bridge.cpp"} });
-    if (target.result.os.tag.isDarwin()) {
-        lib.addCSourceFiles(.{ .flags = flags.items, .files = &.{"src/cpp/targets_darwin.cpp"} });
-    }
+    lib.addCSourceFiles(.{ .flags = flags.items, .files = &.{
+        "src/cpp/bridge.cpp",
+        "src/cpp/targets.cpp",
+    } });
 
     if (upstream_) |upstream| {
         lib.addCSourceFiles(.{
             .root = upstream.path(""),
             .flags = flags.items,
-            .files = if (target.result.os.tag.isDarwin()) &.{
-                // Darwin uses a local targets_darwin.cpp shim so the package doesn't
-                // need Apple SDK headers for target detection.
+            .files = &.{
                 "hwy/per_target.cc",
-            } else &.{
-                // These provide the runtime target selection used by
-                // HWY_DYNAMIC_DISPATCH. The benchmark, timer, print, and
-                // aligned allocator support files are unused by Ghostty.
-                "hwy/per_target.cc",
-                "hwy/targets.cc",
             },
         });
         lib.installHeadersDirectory(

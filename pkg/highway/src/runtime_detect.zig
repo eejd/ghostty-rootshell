@@ -15,6 +15,10 @@ pub export fn ghostty_hwy_detect_targets() callconv(.c) i64 {
     return switch (builtin.cpu.arch) {
         .x86_64, .x86 => detectX86(cpu),
         .aarch64, .aarch64_be => detectAarch64(cpu),
+        .powerpc, .powerpc64, .powerpc64le => detectPpc(cpu),
+        .s390x => detectS390x(cpu),
+        .riscv32, .riscv64 => detectRiscv(cpu),
+        .loongarch32, .loongarch64 => detectLoongArch(cpu),
         else => 0,
     };
 }
@@ -107,9 +111,10 @@ fn detectX86(cpu: Target.Cpu) i64 {
         }
     }
 
-    // Darwin lazily saves AVX512 context on first use, so the XCR0 check
-    // is handled by Zig's feature detection (which hardcodes has_avx512_save
-    // to true on Darwin, matching LLVM's approach).
+    // On Darwin the kernel lazily saves AVX512 context on first use, so no
+    // explicit XCR0 check is required. On Linux, Zig's feature detection
+    // reads the kernel-provided auxiliary vector (getauxval) which already
+    // reflects OS-level XSAVE support.
 
     return @bitCast(t);
 }
@@ -127,6 +132,103 @@ fn detectAarch64(cpu: Target.Cpu) i64 {
             cpu.has(.aarch64, .bf16))
         {
             t.neon_bf16 = true;
+        }
+    }
+
+    if (cpu.has(.aarch64, .sve)) {
+        const vec_bytes = sveVectorBytes();
+
+        if (vec_bytes >= 32) {
+            t.sve = true;
+            if (vec_bytes == 32) {
+                t.sve_256 = true;
+            }
+        }
+
+        if (cpu.has(.aarch64, .sve2) and cpu.has(.aarch64, .sve2_aes)) {
+            if (vec_bytes >= 32) {
+                t.sve2 = true;
+            } else if (vec_bytes == 16) {
+                t.sve2_128 = true;
+            }
+        }
+    }
+
+    return @bitCast(t);
+}
+
+fn sveVectorBytes() usize {
+    if (comptime builtin.os.tag == .linux) {
+        // PR_SVE_GET_VL returns the SVE vector length in the lower 16 bits.
+        const PR_SVE_GET_VL = 51;
+        const ret = std.os.linux.prctl(PR_SVE_GET_VL, 0, 0, 0, 0);
+        const signed: isize = @bitCast(ret);
+        if (signed >= 0) {
+            return ret & 0xFFFF;
+        }
+    }
+    // Non-Linux or prctl failed: assume 128-bit (NEON-width, conservative).
+    return 16;
+}
+
+fn detectPpc(cpu: Target.Cpu) i64 {
+    var t: HwyTargets = .{};
+
+    if (cpu.has(.powerpc, .altivec) and
+        cpu.has(.powerpc, .vsx) and
+        cpu.has(.powerpc, .power8_vector) and
+        cpu.has(.powerpc, .crypto))
+    {
+        t.ppc8 = true;
+
+        if (cpu.has(.powerpc, .power9_vector)) {
+            t.ppc9 = true;
+
+            if (cpu.has(.powerpc, .power10_vector) and
+                cpu.has(.powerpc, .mma))
+            {
+                t.ppc10 = true;
+            }
+        }
+    }
+
+    return @bitCast(t);
+}
+
+fn detectS390x(cpu: Target.Cpu) i64 {
+    var t: HwyTargets = .{};
+
+    if (cpu.has(.s390x, .vector)) {
+        if (cpu.has(.s390x, .vector_enhancements_1)) {
+            t.z14 = true;
+
+            if (cpu.has(.s390x, .vector_enhancements_2)) {
+                t.z15 = true;
+            }
+        }
+    }
+
+    return @bitCast(t);
+}
+
+fn detectRiscv(cpu: Target.Cpu) i64 {
+    var t: HwyTargets = .{};
+
+    if (cpu.has(.riscv, .v)) {
+        t.rvv = true;
+    }
+
+    return @bitCast(t);
+}
+
+fn detectLoongArch(cpu: Target.Cpu) i64 {
+    var t: HwyTargets = .{};
+
+    if (cpu.has(.loongarch, .lsx)) {
+        t.lsx = true;
+
+        if (cpu.has(.loongarch, .lasx)) {
+            t.lasx = true;
         }
     }
 
