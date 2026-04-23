@@ -4,6 +4,7 @@ const ArenaAllocator = std.heap.ArenaAllocator;
 const Action = @import("ghostty.zig").Action;
 const args = @import("args.zig");
 const font = @import("../font/main.zig");
+const discovery = @import("../font/discovery.zig");
 
 const log = std.log.scoped(.list_fonts);
 
@@ -100,8 +101,18 @@ fn runArgs(alloc_gpa: Allocator, argsIter: anytype) !u8 {
     var families: std.ArrayList([]const u8) = .empty;
     var map: std.StringHashMap(std.ArrayListUnmanaged([]const u8)) = .init(alloc);
 
-    // Look up all available fonts
-    var disco = font.Discover.init();
+    // Look up all available fonts. The Windows backend needs a FreeType
+    // library handle so it can open candidate font files while scanning
+    // the system/user font directories.
+    var font_lib = if (comptime font.Discover == discovery.Windows)
+        try font.Library.init(alloc)
+    else {};
+    defer if (comptime font.Discover == discovery.Windows) font_lib.deinit();
+
+    var disco = if (comptime font.Discover == discovery.Windows)
+        font.Discover.init(font_lib)
+    else
+        font.Discover.init();
     defer disco.deinit();
     var disco_it = try disco.discover(alloc, .{
         .family = config.family,
