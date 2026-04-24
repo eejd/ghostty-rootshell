@@ -83,8 +83,9 @@ pub fn build(b: *std.Build) !void {
         "-fno-sanitize-trap=undefined",
     });
 
-    if (target.result.os.tag == .freebsd or target.result.abi == .musl) {
+    if (target.result.os.tag == .freebsd or target.result.os.tag == .linux) {
         try flags.append(b.allocator, "-fPIC");
+        lib.root_module.pic = true;
     }
 
     if (target.result.os.tag != .windows) {
