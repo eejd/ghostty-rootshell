@@ -21,7 +21,7 @@ pub fn build(b: *std.Build) !void {
         }),
         .linkage = .static,
     });
-    lib.linkLibC();
+    lib.addIncludePath(b.path("src/cpp"));
     if (upstream_) |upstream| {
         lib.addIncludePath(upstream.path(""));
         module.addIncludePath(upstream.path(""));
@@ -90,18 +90,12 @@ pub fn build(b: *std.Build) !void {
     }
 
     lib.addCSourceFiles(.{ .flags = flags.items, .files = &.{
-        "src/cpp/bridge.cpp",
+        "src/cpp/abort.cc",
+        "src/cpp/per_target.cc",
         "src/cpp/targets.cpp",
     } });
 
     if (upstream_) |upstream| {
-        lib.addCSourceFiles(.{
-            .root = upstream.path(""),
-            .flags = flags.items,
-            .files = &.{
-                "hwy/per_target.cc",
-            },
-        });
         lib.installHeadersDirectory(
             upstream.path("hwy"),
             "hwy",

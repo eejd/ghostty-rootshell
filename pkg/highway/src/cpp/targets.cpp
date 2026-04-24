@@ -1,35 +1,49 @@
-#include <hwy/base.h>
-#include <hwy/detect_targets.h>
-#include <hwy/highway.h>
-#include <hwy/targets.h>
+// Vendored from google/highway hwy/targets.cc at commit:
+// 66486a10623fa0d72fe91260f96c892e41aceb06
+//
+// Local modifications:
+// - Dropped upstream CPU feature probing and platform-specific detection code
+//   in favor of Ghostty's Zig-provided ghostty_hwy_detect_targets().
+// - Removed the HWY_WARN baseline-mismatch diagnostic path so this file does
+//   not depend on libc-backed formatting/logging.
+// - Kept only the chosen-target bookkeeping and runtime dispatch state that
+//   Highway's HWY_DYNAMIC_DISPATCH machinery needs.
+// - Added hwy_supported_targets() as a small C shim for Zig to query the final
+//   supported target mask.
+//
+// Why:
+// - Ghostty wants a minimal vendored Highway runtime that avoids direct libc
+//   usage and lets Zig own target detection policy.
+// - Narrowing this file to dispatch state makes the local fork easier to audit
+//   and maintain than carrying upstream's full platform detection surface.
+
+#include "hwy/targets.h"
 
 namespace hwy {
 
 extern "C" int64_t ghostty_hwy_detect_targets();
 
+// Vendored from Highway's hwy/targets.cc. Ghostty provides target detection in
+// Zig, so this TU only retains the runtime dispatch/chosen-target state.
 static int64_t DetectTargets() {
   int64_t bits = HWY_SCALAR | HWY_EMU128;
 
-#if (HWY_ARCH_X86 || HWY_ARCH_ARM) && HWY_HAVE_RUNTIME_DISPATCH
+#if (HWY_ARCH_X86 || HWY_ARCH_ARM || HWY_ARCH_PPC || HWY_ARCH_S390X || \
+     HWY_ARCH_RISCV || HWY_ARCH_LOONGARCH) && \
+    HWY_HAVE_RUNTIME_DISPATCH
   bits |= ghostty_hwy_detect_targets();
 #else
   bits |= HWY_ENABLED_BASELINE;
 #endif
 
-  if ((bits & HWY_ENABLED_BASELINE) != HWY_ENABLED_BASELINE) {
-    const uint64_t bits_u = static_cast<uint64_t>(bits);
-    const uint64_t enabled = static_cast<uint64_t>(HWY_ENABLED_BASELINE);
-    HWY_WARN("CPU supports 0x%08x%08x, software requires 0x%08x%08x\n",
-             static_cast<uint32_t>(bits_u >> 32),
-             static_cast<uint32_t>(bits_u & 0xFFFFFFFF),
-             static_cast<uint32_t>(enabled >> 32),
-             static_cast<uint32_t>(enabled & 0xFFFFFFFF));
-  }
-
   return bits;
 }
 
+// When running tests, this value can be set to the mocked supported targets
+// mask. Only written to from a single thread before the test starts.
 static int64_t supported_targets_for_test_ = 0;
+
+// Mask of targets disabled at runtime with DisableTargets.
 static int64_t supported_mask_ = LimitsMax<int64_t>();
 
 HWY_DLLEXPORT void DisableTargets(int64_t disabled_targets) {
@@ -59,3 +73,7 @@ HWY_DLLEXPORT ChosenTarget& GetChosenTarget() {
 }
 
 }  // namespace hwy
+
+extern "C" int64_t hwy_supported_targets() {
+  return hwy::SupportedTargets();
+}
