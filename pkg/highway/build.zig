@@ -21,6 +21,11 @@ pub fn build(b: *std.Build) !void {
         }),
         .linkage = .static,
     });
+
+    // Our highway package is free of libc at runtime (uses no symbols)
+    // but does require libc headers at compile time.
+    lib.linkLibC();
+
     lib.addIncludePath(b.path("src/cpp"));
     if (upstream_) |upstream| {
         lib.addIncludePath(upstream.path(""));
