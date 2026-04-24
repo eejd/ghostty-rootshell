@@ -15,7 +15,7 @@ pub fn build(b: *std.Build) !void {
     const lib = b.addLibrary(.{
         .name = "highway",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/runtime_detect.zig"),
+            .root_source_file = b.path("src/detect.zig"),
             .target = target,
             .optimize = optimize,
         }),
