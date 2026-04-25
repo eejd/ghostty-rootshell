@@ -86,17 +86,17 @@ const b64_encoder = std.base64.url_safe_no_pad.Encoder;
 pub const RandomBasenameError = error{BufferTooSmall};
 
 /// Length of the basename produced by `randomBasename`.
-pub const RANDOM_BASENAME_LEN = b64_encoder.calcSize(random_basename_bytes);
+pub const random_basename_len = b64_encoder.calcSize(random_basename_bytes);
 
 /// Write a random filesystem-safe base64 basename of length
-/// `RANDOM_BASENAME_LEN` into `buf` and return a slice over the
+/// `random_basename_len` into `buf` and return a slice over the
 /// written bytes. Returns `error.BufferTooSmall` if `buf` is too
 /// short.
 pub fn randomBasename(buf: []u8) RandomBasenameError![]const u8 {
-    if (buf.len < RANDOM_BASENAME_LEN) return error.BufferTooSmall;
+    if (buf.len < random_basename_len) return error.BufferTooSmall;
     var rand_buf: [random_basename_bytes]u8 = undefined;
     std.crypto.random.bytes(&rand_buf);
-    return b64_encoder.encode(buf[0..RANDOM_BASENAME_LEN], &rand_buf);
+    return b64_encoder.encode(buf[0..random_basename_len], &rand_buf);
 }
 
 /// Return a freshly-allocated path of the form `{TMPDIR}/{prefix}{random}`.
@@ -111,7 +111,7 @@ pub fn randomTmpPath(
 ) std.mem.Allocator.Error![]u8 {
     const tmp_dir = allocTmpDir(allocator) orelse "/tmp";
     defer freeTmpDir(allocator, tmp_dir);
-    var name_buf: [RANDOM_BASENAME_LEN]u8 = undefined;
+    var name_buf: [random_basename_len]u8 = undefined;
     const basename = randomBasename(&name_buf) catch unreachable;
     return std.fmt.allocPrint(
         allocator,
@@ -123,14 +123,14 @@ pub fn randomTmpPath(
 test randomBasename {
     const testing = std.testing;
 
-    var buf: [RANDOM_BASENAME_LEN]u8 = undefined;
+    var buf: [random_basename_len]u8 = undefined;
     const name = try randomBasename(&buf);
-    try testing.expectEqual(RANDOM_BASENAME_LEN, name.len);
+    try testing.expectEqual(random_basename_len, name.len);
     for (name) |c| {
         const ok = std.ascii.isAlphanumeric(c) or c == '-' or c == '_';
         try testing.expect(ok);
     }
 
-    var small: [RANDOM_BASENAME_LEN - 1]u8 = undefined;
+    var small: [random_basename_len - 1]u8 = undefined;
     try testing.expectError(error.BufferTooSmall, randomBasename(&small));
 }
