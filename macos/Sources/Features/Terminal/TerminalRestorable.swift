@@ -4,11 +4,17 @@ protocol TerminalRestorable: Codable {
     static var selfKey: String { get }
     static var versionKey: String { get }
     static var version: Int { get }
+    /// Minimum version that can be decoded safely
+    static var minimumVersion: Int { get }
     init(copy other: Self)
 
     /// Returns a base configuration to use when restoring terminal surfaces.
     /// Override this to provide custom environment variables or other configuration.
     var baseConfig: Ghostty.SurfaceConfiguration? { get }
+}
+
+extension TerminalRestorable {
+    static var minimumVersion: Int { version }
 }
 
 extension TerminalRestorable {
@@ -22,11 +28,14 @@ extension TerminalRestorable {
         // If the version doesn't match then we can't decode. In the future we can perform
         // version upgrading or something but for now we only have one version so we
         // don't bother.
-        guard aDecoder.decodeInteger(forKey: Self.versionKey) == Self.version else {
+        let current = aDecoder.decodeInteger(forKey: Self.versionKey)
+        guard current >= Self.minimumVersion else {
+            AppDelegate.logger.error("error restoring terminal: version not supported: expected=\(Self.minimumVersion, privacy: .public), got=\(current, privacy: .public)")
             return nil
         }
 
         guard let v = aDecoder.decodeObject(of: CodableBridge<Self>.self, forKey: Self.selfKey) else {
+            AppDelegate.logger.error("error restoring terminal: decode failed")
             return nil
         }
 
@@ -40,8 +49,9 @@ extension TerminalRestorable {
 }
 
 /// The state stored for terminal window restoration.
-class TerminalRestorableState: TerminalRestorable {
-    class var version: Int { 7 }
+final class TerminalRestorableState: TerminalRestorable {
+    static var version: Int { 7 }
+    static var minimumVersion: Int { 5 }
 
     let focusedSurface: String?
     let surfaceTree: SplitTree<Ghostty.SurfaceView>
@@ -99,6 +109,7 @@ class TerminalWindowRestoration: NSObject, NSWindowRestoration {
         // because window restoration is only ever invoked on app start so we
         // don't have to deal with config reloads.
         if appDelegate.ghostty.config.windowSaveState == "never" {
+            AppDelegate.logger.warning("skip restoration: window-save-state=never")
             completionHandler(nil, nil)
             return
         }
