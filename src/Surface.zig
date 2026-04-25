@@ -4302,7 +4302,9 @@ fn linkAtPin(
     const line = screen.selectLine(.{
         .pin = mouse_pin,
         .whitespace = null,
-        .semantic_prompt_boundary = false,
+        // Respect semantic prompt boundaries so link/path matching doesn't
+        // merge shell prompt content with the text beside it.
+        .semantic_prompt_boundary = true,
     }) orelse return null;
 
     var strmap: terminal.StringMap = undefined;
