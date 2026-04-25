@@ -21,6 +21,12 @@ extension TerminalRestorable {
     static var selfKey: String { "state" }
     static var versionKey: String { "version" }
 
+    private var debugDescription: String {
+        withUnsafePointer(to: self) { ptr in
+            "<\(ptr)>[version: \(Self.version)]"
+        }
+    }
+
     /// Default implementation returns nil (no custom base config).
     var baseConfig: Ghostty.SurfaceConfiguration? { nil }
 
@@ -45,6 +51,8 @@ extension TerminalRestorable {
     func encode(with coder: NSCoder) {
         coder.encode(Self.version, forKey: Self.versionKey)
         coder.encode(CodableBridge(self), forKey: Self.selfKey)
+
+        AppDelegate.logger.debug("saved terminal state: \(debugDescription)")
     }
 }
 
