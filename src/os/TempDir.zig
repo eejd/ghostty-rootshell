@@ -16,15 +16,15 @@ parent: Dir,
 
 /// Name buffer that name points into. Generally do not use. To get the
 /// name call the name() function.
-name_buf: [file.RANDOM_BASENAME_LEN:0]u8,
+name_buf: [file.random_basename_len:0]u8,
 
 /// Create the temporary directory.
 pub fn init() !TempDir {
     // Note: the tmp_path_buf sentinel is important because it ensures
-    // we actually always have RANDOM_BASENAME_LEN+1 bytes of available
+    // we actually always have random_basename_len+1 bytes of available
     // space. We need that so we can set the sentinel in the case we use
     // all the possible length.
-    var tmp_path_buf: [file.RANDOM_BASENAME_LEN:0]u8 = undefined;
+    var tmp_path_buf: [file.random_basename_len:0]u8 = undefined;
 
     const dir = dir: {
         const cwd = std.fs.cwd();
