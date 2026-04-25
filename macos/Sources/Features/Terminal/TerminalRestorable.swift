@@ -46,14 +46,14 @@ class TerminalRestorableState: TerminalRestorable {
     let focusedSurface: String?
     let surfaceTree: SplitTree<Ghostty.SurfaceView>
     let effectiveFullscreenMode: FullscreenMode?
-    let tabColor: TerminalTabColor
+    let tabColor: TerminalTabColor?
     let titleOverride: String?
 
     init(from controller: TerminalController) {
         self.focusedSurface = controller.focusedSurface?.id.uuidString
         self.surfaceTree = controller.surfaceTree
         self.effectiveFullscreenMode = controller.fullscreenStyle?.fullscreenMode
-        self.tabColor = (controller.window as? TerminalWindow)?.tabColor ?? .none
+        self.tabColor = (controller.window as? TerminalWindow)?.tabColor
         self.titleOverride = controller.titleOverride
     }
 
@@ -121,8 +121,10 @@ class TerminalWindowRestoration: NSObject, NSWindowRestoration {
             return
         }
 
-        // Restore our tab color
-        (window as? TerminalWindow)?.tabColor = state.tabColor
+        // Restore our tab color and avoid unnecessary `invalidateRestorableState` calls
+        if let tabColor = state.tabColor {
+            (window as? TerminalWindow)?.tabColor = tabColor
+        }
 
         // Restore the tab title override
         c.titleOverride = state.titleOverride
