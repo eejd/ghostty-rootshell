@@ -53,26 +53,49 @@ final class TerminalRestorableState: TerminalRestorable {
     static var version: Int { 7 }
     static var minimumVersion: Int { 5 }
 
-    let focusedSurface: String?
-    let surfaceTree: SplitTree<Ghostty.SurfaceView>
-    let effectiveFullscreenMode: FullscreenMode?
-    let tabColor: TerminalTabColor?
-    let titleOverride: String?
+    var focusedSurface: String? {
+        internalState.focusedSurface
+    }
+    var surfaceTree: SplitTree<Ghostty.SurfaceView> {
+        internalState.surfaceTree
+    }
+    var effectiveFullscreenMode: FullscreenMode? {
+        internalState.effectiveFullscreenMode
+    }
+    var tabColor: TerminalTabColor? {
+        internalState.tabColor
+    }
+    var titleOverride: String? {
+        internalState.titleOverride
+    }
+
+    /// Internal State we use to perform unit tests
+    ///
+    /// Since we can't really change the type of `TerminalRestorableState`
+    /// due to `CodableBridge<TerminalRestorableState>` supporting secure coding,
+    /// we use an internal type to perform migration and tests
+    private let internalState: InternalState<Ghostty.SurfaceView>
 
     init(from controller: TerminalController) {
-        self.focusedSurface = controller.focusedSurface?.id.uuidString
-        self.surfaceTree = controller.surfaceTree
-        self.effectiveFullscreenMode = controller.fullscreenStyle?.fullscreenMode
-        self.tabColor = (controller.window as? TerminalWindow)?.tabColor
-        self.titleOverride = controller.titleOverride
+        internalState = .init(from: controller)
     }
 
     required init(copy other: TerminalRestorableState) {
-        self.surfaceTree = other.surfaceTree
-        self.focusedSurface = other.focusedSurface
-        self.effectiveFullscreenMode = other.effectiveFullscreenMode
-        self.tabColor = other.tabColor
-        self.titleOverride = other.titleOverride
+        self.internalState = other.internalState
+    }
+
+    /// This is just wrapper around internalState
+    ///
+    /// - Important: If you intend to add more things, go to `InternalState`.
+    init(from decoder: any Decoder) throws {
+        self.internalState = try InternalState<Ghostty.SurfaceView>(from: decoder)
+    }
+
+    /// This is just wrapper around internalState
+    ///
+    /// - Important: If you intend to add more things, go to `InternalState`.
+    func encode(to encoder: any Encoder) throws {
+        try internalState.encode(to: encoder)
     }
 }
 
