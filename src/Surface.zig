@@ -4295,7 +4295,9 @@ fn linkAtPin(
     const line = screen.selectLine(.{
         .pin = mouse_pin,
         .whitespace = null,
-        .semantic_prompt_boundary = false,
+        // Respect semantic prompt boundaries so link/path matching doesn't
+        // merge shell prompt content with the text beside it.
+        .semantic_prompt_boundary = true,
     }) orelse return null;
 
     var strmap: terminal.StringMap = undefined;
@@ -6657,4 +6659,61 @@ test "Surface: rectangle selection logic" {
         9, 2, // expected end
         true, //rectangle selection
     );
+}
+
+test "Surface: link selection line respects prompt boundary" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var screen = try terminal.Screen.init(alloc, .{
+        .cols = 20,
+        .rows = 5,
+        .max_scrollback = 0,
+    });
+    defer screen.deinit();
+
+    screen.cursorSetSemanticContent(.{ .prompt = .initial });
+    try screen.testWriteString("/tmp $ ");
+    screen.cursorSetSemanticContent(.{ .input = .clear_explicit });
+    try screen.testWriteString("locale");
+
+    {
+        var sel = screen.selectLine(.{
+            .pin = screen.pages.pin(.{ .active = .{
+                .x = 1,
+                .y = 0,
+            } }).?,
+            .whitespace = null,
+            .semantic_prompt_boundary = true,
+        }).?;
+        defer sel.deinit(&screen);
+
+        const contents = try screen.selectionString(alloc, .{
+            .sel = sel,
+            .trim = false,
+        });
+        defer alloc.free(contents);
+
+        try testing.expectEqualStrings("/tmp $ ", contents);
+    }
+
+    {
+        var sel = screen.selectLine(.{
+            .pin = screen.pages.pin(.{ .active = .{
+                .x = 8,
+                .y = 0,
+            } }).?,
+            .whitespace = null,
+            .semantic_prompt_boundary = true,
+        }).?;
+        defer sel.deinit(&screen);
+
+        const contents = try screen.selectionString(alloc, .{
+            .sel = sel,
+            .trim = false,
+        });
+        defer alloc.free(contents);
+
+        try testing.expectEqualStrings("locale", contents);
+    }
 }
