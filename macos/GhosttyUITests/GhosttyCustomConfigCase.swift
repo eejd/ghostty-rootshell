@@ -23,10 +23,6 @@ class GhosttyCustomConfigCase: XCTestCase {
         }
     }
 
-    override class var runsForEachTargetApplicationUIConfiguration: Bool {
-        true
-    }
-
     static let defaultsSuiteName: String = "GHOSTTY_UI_TESTS"
 
     var configFile: URL?
