@@ -57,7 +57,7 @@ pub fn init(alloc: Allocator, opts: Options) !Pipe {
     errdefer posix.close(input_fds[1]);
 
     const master_fd = input_fds[0]; // Read end
-    const slave_fd = input_fds[1];  // Write end
+    const slave_fd = input_fds[1]; // Write end
 
     // Create response pipe (Ghostty → Swift)
     const response_fds = try posix.pipe();
@@ -236,15 +236,49 @@ pub fn queueWrite(
 
     if (data.len == 0) return;
 
-    // Write terminal responses to the response pipe for Swift to read
+    // Write terminal responses to the response pipe for Swift to read.
+    //
+    // Bracketed paste can be a large write on this path. The fd is
+    // non-blocking, so the pipe may fill between Swift read-source drains. We
+    // must wait for writable and continue instead of returning WouldBlock; if
+    // the paste end marker is not delivered, Swift keeps buffering the paste
+    // indefinitely waiting for ESC[201~.
+    try self.writeAllToResponsePipe(data);
+
+    // Handle linefeed if requested
+    if (linefeed) {
+        try self.writeAllToResponsePipe("\n");
+    }
+}
+
+fn writeAllToResponsePipe(self: *Pipe, data: []const u8) !void {
     var total_written: usize = 0;
+    var pollfds: [1]posix.pollfd = .{.{
+        .fd = self.response_write_fd,
+        .events = posix.POLL.OUT,
+        .revents = undefined,
+    }};
+
     while (total_written < data.len) {
         const remaining = data[total_written..];
-        const written = posix.write(self.response_write_fd, remaining) catch |err| {
-            // For non-blocking FD, WouldBlock means pipe buffer is full
-            // Log and return - data may be lost but better than blocking
-            log.warn("failed to write to response pipe: {}", .{err});
-            return err;
+        const written = posix.write(self.response_write_fd, remaining) catch |err| switch (err) {
+            error.WouldBlock => {
+                _ = posix.poll(&pollfds, -1) catch |poll_err| {
+                    log.warn("response pipe poll failed: {}", .{poll_err});
+                    return poll_err;
+                };
+
+                if (pollfds[0].revents & (posix.POLL.HUP | posix.POLL.ERR | posix.POLL.NVAL) != 0) {
+                    log.warn("response pipe closed while waiting for writable", .{});
+                    return error.BrokenPipe;
+                }
+
+                continue;
+            },
+            else => {
+                log.warn("failed to write to response pipe: {}", .{err});
+                return err;
+            },
         };
 
         if (written == 0) {
@@ -254,16 +288,6 @@ pub fn queueWrite(
 
         total_written += written;
     }
-
-    // Handle linefeed if requested
-    if (linefeed) {
-        _ = posix.write(self.response_write_fd, "\n") catch |err| {
-            log.err("failed to write linefeed to response pipe: {}", .{err});
-            return err;
-        };
-    }
-
-    log.debug("wrote {} bytes to response pipe: {s}", .{ data.len, data[0..@min(data.len, 50)] });
 }
 
 /// Handle abnormal child exit
