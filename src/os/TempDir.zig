@@ -28,7 +28,7 @@ pub fn init() !TempDir {
 
     const dir = dir: {
         const cwd = std.fs.cwd();
-        const tmp_dir = file.allocTmpDir(std.heap.page_allocator) orelse break :dir cwd;
+        const tmp_dir = try file.allocTmpDir(std.heap.page_allocator);
         defer file.freeTmpDir(std.heap.page_allocator, tmp_dir);
         break :dir try cwd.openDir(tmp_dir, .{});
     };
