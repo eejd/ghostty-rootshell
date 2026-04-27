@@ -3438,8 +3438,7 @@ pub fn scrollCallback(
                     @min(yoff, -1);
 
                 break :yoff_adjusted yoff_max * cell_size * self.config.mouse_scroll_multiplier.discrete;
-            }
-            else {
+            } else {
                 break :yoff_adjusted yoff * cell_size * self.config.mouse_scroll_multiplier.discrete;
             }
         };
