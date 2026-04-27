@@ -12,7 +12,7 @@
   #, glxinfo # unused
   ncurses,
   nodejs,
-  nodePackages,
+  prettier,
   oniguruma,
   parallel,
   pkg-config,
@@ -109,7 +109,7 @@ in
         nodejs
 
         # Linting
-        nodePackages.prettier
+        prettier
         alejandra
         pinact
         typos
