@@ -364,7 +364,6 @@ typedef enum {
 } ghostty_input_trigger_tag_e;
 
 typedef union {
-  ghostty_input_key_e translated;
   ghostty_input_key_e physical;
   uint32_t unicode;
   // catch_all has no payload
