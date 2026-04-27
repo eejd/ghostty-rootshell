@@ -3424,19 +3424,23 @@ pub fn scrollCallback(
         const yoff_adjusted: f64 = if (scroll_mods.precision)
             yoff * self.config.mouse_scroll_multiplier.precision
         else yoff_adjusted: {
-            // Round out the yoff to an absolute minimum of 1. macos tries to
-            // simulate precision scrolling with non precision events by
-            // ramping up the magnitude of the offsets as it detects faster
-            // scrolling. Single click (very slow) scrolls are reported with a
-            // magnitude of 0.1 which would normally require a few clicks
-            // before we register an actual scroll event (depending on cell
-            // height and the mouse_scroll_multiplier setting).
-            const yoff_max: f64 = if (yoff > 0)
-                @max(yoff, 1)
-            else
-                @min(yoff, -1);
+            if (comptime builtin.target.os.tag.isDarwin()) {
+                // Round out the yoff to an absolute minimum of 1. macos tries to
+                // simulate precision scrolling with non precision events by
+                // ramping up the magnitude of the offsets as it detects faster
+                // scrolling. Single click (very slow) scrolls are reported with a
+                // magnitude of 0.1 which would normally require a few clicks
+                // before we register an actual scroll event (depending on cell
+                // height and the mouse_scroll_multiplier setting).
+                const yoff_max: f64 = if (yoff > 0)
+                    @max(yoff, 1)
+                else
+                    @min(yoff, -1);
 
-            break :yoff_adjusted yoff_max * cell_size * self.config.mouse_scroll_multiplier.discrete;
+                break :yoff_adjusted yoff_max * cell_size * self.config.mouse_scroll_multiplier.discrete;
+            } else {
+                break :yoff_adjusted yoff * cell_size * self.config.mouse_scroll_multiplier.discrete;
+            }
         };
 
         // Add our previously saved pending amount to the offset to get the
