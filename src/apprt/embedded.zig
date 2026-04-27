@@ -1340,9 +1340,22 @@ pub const CAPI = struct {
                 ),
             };
 
-            // Clamp our point to the screen bounds.
+            // Clamp our point to the bounds for its coordinate space.
+            // "screen" spans the full scrollback + active rows, not just the
+            // visible viewport height. iOS touch selection handles use screen
+            // coordinates so one fixed endpoint can remain offscreen while the
+            // dragged endpoint autoscrolls through the viewport.
             const clamped_x = @min(self.x, screen.pages.cols -| 1);
-            const clamped_y = @min(self.y, screen.pages.rows -| 1);
+            const max_y: u32 = switch (tag) {
+                .active, .viewport => @intCast(screen.pages.rows -| 1),
+                .screen => std.math.cast(u32, screen.pages.total_rows -| 1) orelse
+                    std.math.maxInt(u32),
+                .history => std.math.cast(
+                    u32,
+                    (screen.pages.total_rows -| screen.pages.rows) -| 1,
+                ) orelse std.math.maxInt(u32),
+            };
+            const clamped_y = @min(self.y, max_y);
 
             return switch (self.coord_tag) {
                 // Exact coordinates require a specific pin.
