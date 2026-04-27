@@ -389,6 +389,11 @@ extension Ghostty {
             progressReportTimer?.invalidate()
         }
 
+        override func endSearch() {
+            Ghostty.moveFocus(to: self)
+            super.endSearch()
+        }
+
         override func focusDidChange(_ focused: Bool) {
             guard let surface = self.surface else { return }
             guard self.focused != focused else { return }

@@ -645,7 +645,7 @@ extension Ghostty {
                 startSearch(app, target: target, v: action.action.start_search)
 
             case GHOSTTY_ACTION_END_SEARCH:
-                endSearch(app, target: target)
+                return endSearch(app, target: target)
 
             case GHOSTTY_ACTION_SEARCH_TOTAL:
                 searchTotal(app, target: target, v: action.action.search_total)
@@ -2078,22 +2078,23 @@ extension Ghostty {
 
         private static func endSearch(
             _ app: ghostty_app_t,
-            target: ghostty_target_s) {
+            target: ghostty_target_s) -> Bool {
             switch target.tag {
             case GHOSTTY_TARGET_APP:
                 Ghostty.logger.warning("end_search does nothing with an app target")
-                return
+                return false
 
             case GHOSTTY_TARGET_SURFACE:
-                guard let surface = target.target.surface else { return }
-                guard let surfaceView = self.surfaceView(from: surface) else { return }
+                guard let surface = target.target.surface else { return false }
+                guard let surfaceView = self.surfaceView(from: surface) else { return false }
 
                 DispatchQueue.main.async {
-                    surfaceView.searchState = nil
+                    surfaceView.endSearch()
                 }
-
+                return true
             default:
                 assertionFailure()
+                return false
             }
         }
 

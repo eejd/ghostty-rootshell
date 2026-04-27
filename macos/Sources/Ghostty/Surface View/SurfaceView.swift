@@ -164,10 +164,7 @@ extension Ghostty {
                         surfaceView: surfaceView,
                         searchState: searchState,
                         onClose: {
-#if canImport(AppKit)
-                            Ghostty.moveFocus(to: surfaceView)
-#endif
-                            surfaceView.searchState = nil
+                            surfaceView.endSearch()
                         }
                     )
                 }
