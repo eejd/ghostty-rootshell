@@ -2121,6 +2121,14 @@ extension Ghostty.SurfaceView: NSMenuItemValidation {
             item.state = readonly ? .on : .off
             return true
 
+        case #selector(copy(_:)):
+            // We only enable copy menu item when there're actual selected text
+            if let text = self.accessibilitySelectedText(), text.count > 0 {
+                return true
+            } else {
+                return false
+            }
+
         default:
             return true
         }
