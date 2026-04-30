@@ -1130,6 +1130,14 @@ extension Ghostty {
             // we control the preedit state only through the preedit API.
             syncPreedit(clearIfNeeded: markedTextBefore)
 
+            // We're composing if we have preedit (the obvious case). But we're also
+            // composing if we don't have preedit and we had marked text before,
+            // because this input probably just reset the preedit state. It shouldn't
+            // be encoded. Example: Japanese begin composing, then press backspace
+            // or ctrl+h. This should only cancel the composing state but not
+            // actually delete the prior input characters (prior to the composing).
+            let composing = markedText.length > 0 || markedTextBefore
+
             // Korean IMEs on macOS may commit preedit text via insertText
             // while handling an arrow key. Send that committed text separately
             // before replaying arrow movement, except for plain left-arrow
@@ -1157,10 +1165,20 @@ extension Ghostty {
             }
 
             if let list = keyTextAccumulator, list.count > 0 {
-                // If we have text, then we've composed a character, send that down.
-                // These never have "composing" set to true because these are the
-                // result of a composition.
+                // Accumulated text from interpretKeyEvents (committed by the IME).
                 for text in list {
+                    // Drop bare control characters the IME accumulated while
+                    // composing so they don't leak through to the terminal.
+                    if Ghostty.SurfaceView.shouldSuppressComposingControlInput(
+                        text,
+                        composing: composing
+                    ) {
+                        continue
+                    }
+
+                    // We've composed a character; send it down. keyAction's
+                    // default composing=false applies because this is the
+                    // committed result of a composition, not in-progress preedit.
                     _ = keyAction(
                         action,
                         event: event,
@@ -1169,20 +1187,22 @@ extension Ghostty {
                     )
                 }
             } else {
+                // Raw control characters (e.g. ctrl+h) arriving during
+                // composition belong to the IME, not the terminal.
+                if Ghostty.SurfaceView.shouldSuppressComposingControlInput(
+                    event.characters,
+                    composing: composing
+                ) {
+                    return
+                }
+
                 // We have no accumulated text so this is a normal key event.
                 _ = keyAction(
                     action,
                     event: event,
                     translationEvent: translationEvent,
                     text: translationEvent.ghosttyCharacters,
-
-                    // We're composing if we have preedit (the obvious case). But we're also
-                    // composing if we don't have preedit and we had marked text before,
-                    // because this input probably just reset the preedit state. It shouldn't
-                    // be encoded. Example: Japanese begin composing, the press backspace.
-                    // This should only cancel the composing state but not actually delete
-                    // the prior input characters (prior to the composing).
-                    composing: markedText.length > 0 || markedTextBefore
+                    composing: composing
                 )
             }
         }
@@ -2024,6 +2044,22 @@ extension Ghostty.SurfaceView: NSTextInputClient {
             // in a preedit state so we can clear it.
             ghostty_surface_preedit(surface, nil, 0)
         }
+    }
+
+    /// True when `text` is a single C0 control character (U+0000-U+001F)
+    /// arriving while the IME is composing. Such input belongs to the IME
+    /// and must not be forwarded to the terminal.
+    static func shouldSuppressComposingControlInput(
+        _ text: String?,
+        composing: Bool
+    ) -> Bool {
+        guard composing, let text else { return false }
+        let scalars = text.unicodeScalars
+        guard let scalar = scalars.first,
+              scalars.index(after: scalars.startIndex) == scalars.endIndex else {
+            return false
+        }
+        return scalar.value < 0x20
     }
 }
 
