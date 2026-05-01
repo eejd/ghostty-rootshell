@@ -6,6 +6,32 @@ const font = @import("../font/main.zig");
 const renderer = @import("../renderer.zig");
 const terminal = @import("../terminal/main.zig");
 
+/// Refcounted handle for the synchronous "drain to idle" rendezvous
+/// between the apprt main thread and the renderer thread. Heap-allocated
+/// so it can outlive the wait if the wait times out (in which case the
+/// renderer thread may still process the message later and signal the
+/// event — accessing stack memory in that case would be a use-after-free).
+///
+/// Refcount of 2 at creation: one ref for the main thread (released after
+/// the timed wait completes, regardless of timeout outcome) and one ref
+/// for the renderer thread (released after it signals the event). Whichever
+/// side decrements last frees the handle.
+pub const DrainHandle = struct {
+    event: std.Thread.ResetEvent = .{},
+    refcount: std.atomic.Value(u32) = std.atomic.Value(u32).init(2),
+
+    pub fn create(alloc: std.mem.Allocator) !*DrainHandle {
+        const self = try alloc.create(DrainHandle);
+        self.* = .{};
+        return self;
+    }
+
+    pub fn release(self: *DrainHandle, alloc: std.mem.Allocator) void {
+        const prev = self.refcount.fetchSub(1, .acq_rel);
+        if (prev == 1) alloc.destroy(self);
+    }
+};
+
 /// The messages that can be sent to a renderer thread.
 pub const Message = union(enum) {
     /// Purposely crash the renderer. This is used for testing and debugging.
@@ -23,15 +49,19 @@ pub const Message = union(enum) {
     visible: bool,
 
     /// Synchronous "drain to idle" ack. The renderer thread signals the
-    /// referenced ResetEvent once it processes this message — meaning all
-    /// previously-queued messages (including a paired `visible: false`)
+    /// referenced handle's event once it processes this message — meaning
+    /// all previously-queued messages (including a paired `visible: false`)
     /// have been handled and any in-flight `drainMailbox` callback has
     /// completed before this point on the renderer thread. Used by the
     /// iOS backgrounding path to confirm the renderer is paused before
     /// allowing iOS to suspend the app, closing a race where the renderer
     /// could still be mid-Metal-commit when iOS captures its scene
     /// snapshot.
-    drain_to_idle: *std.Thread.ResetEvent,
+    ///
+    /// The handle is refcounted so it survives a timeout on the apprt
+    /// side: the renderer thread eventually signals + releases its ref
+    /// even if the apprt has already given up waiting.
+    drain_to_idle: *DrainHandle,
 
     /// Reset the cursor blink by immediately showing the cursor then
     /// restarting the timer.

@@ -120,19 +120,22 @@ pub const IOSDisplayLink = struct {
     /// inconsistent state across iOS background/foreground transitions —
     /// suspect cause of the "one frame per touch" wedge users hit on
     /// scene resume.
+    ///
+    /// Off-main calls dispatch async (not sync). dispatch_sync would
+    /// deadlock with apprt code that's waiting on the renderer thread —
+    /// e.g. the iOS background path's drainRendererToIdle blocks on a
+    /// renderer-signaled event while the renderer is processing the
+    /// visibility change that triggered our start/stop call. async lets
+    /// the renderer thread continue, the main thread will run the
+    /// addToRunLoop/invalidate block as soon as it's free.
     pub fn start(self: *IOSDisplayLink) Error!void {
         const NSThread = objc.getClass("NSThread") orelse return error.ObjCFailed;
         if (NSThread.msgSend(bool, "isMainThread", .{})) {
             return self.startOnMain();
         }
 
-        // Off main: hop synchronously to main. dispatch_sync is safe here
-        // because IOSDisplayLink is not held under any lock by the renderer
-        // thread, and the main thread cannot be waiting on the renderer
-        // thread to make progress in a way that would deadlock with this
-        // call.
         var block = StartStopBlock.init(.{ .self = self }, &startCallback);
-        macos.dispatch.dispatch_sync(
+        macos.dispatch.dispatch_async(
             @ptrCast(macos.dispatch.queue.getMain()),
             @ptrCast(&block),
         );
@@ -142,7 +145,8 @@ pub const IOSDisplayLink = struct {
     /// Note: After calling invalidate() on a CADisplayLink, it cannot be reused.
     /// A new display link will be created on the next start() call.
     ///
-    /// Safe to call from any thread (see `start()` for rationale).
+    /// Safe to call from any thread (see `start()` for rationale, including
+    /// why we use dispatch_async rather than dispatch_sync).
     pub fn stop(self: *IOSDisplayLink) Error!void {
         const NSThread = objc.getClass("NSThread") orelse return error.ObjCFailed;
         if (NSThread.msgSend(bool, "isMainThread", .{})) {
@@ -151,7 +155,7 @@ pub const IOSDisplayLink = struct {
         }
 
         var block = StartStopBlock.init(.{ .self = self }, &stopCallback);
-        macos.dispatch.dispatch_sync(
+        macos.dispatch.dispatch_async(
             @ptrCast(macos.dispatch.queue.getMain()),
             @ptrCast(&block),
         );

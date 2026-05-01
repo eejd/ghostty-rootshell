@@ -24,6 +24,7 @@ pub const Thread = @import("renderer/Thread.zig");
 pub const State = @import("renderer/State.zig");
 pub const CursorStyle = cursor.Style;
 pub const Message = message.Message;
+pub const DrainHandle = message.DrainHandle;
 pub const Size = size.Size;
 pub const Coordinate = size.Coordinate;
 pub const CellSize = size.CellSize;

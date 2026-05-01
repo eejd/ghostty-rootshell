@@ -3308,17 +3308,29 @@ pub fn occlusionCallback(self: *Surface, visible: bool) !void {
 /// of this wait is bounded by the longest in-flight drawFrame plus
 /// renderer mailbox processing, typically a few milliseconds.
 pub fn drainRendererToIdle(self: *Surface, timeout_ns: u64) bool {
-    var event: std.Thread.ResetEvent = .{};
+    // Heap-allocate the rendezvous handle so it survives a timeout. If the
+    // wait below times out and we return, the renderer thread may still
+    // process the drain_to_idle message later and signal the event — using
+    // a stack-allocated event would be a use-after-free in that case. The
+    // handle is refcounted (2 = main + renderer) so the last-decrementing
+    // side frees it.
+    const alloc = self.alloc;
+    const handle = rendererpkg.DrainHandle.create(alloc) catch {
+        // Allocation failure: skip the wait entirely. Backgrounding will
+        // still proceed; we just lose the renderer-paused guarantee.
+        return false;
+    };
+    defer handle.release(alloc);
 
     // visible=false pauses the renderer; the IOSDisplayLink for this
     // surface stops as part of renderer.setVisible(false). Both messages
-    // are pushed before we wake the renderer, so they're processed atomically
-    // within a single drainMailbox iteration.
+    // are pushed before we wake the renderer, so they're processed
+    // atomically within a single drainMailbox iteration.
     _ = self.renderer_thread.mailbox.push(.{
         .visible = false,
     }, .{ .forever = {} });
     _ = self.renderer_thread.mailbox.push(.{
-        .drain_to_idle = &event,
+        .drain_to_idle = handle,
     }, .{ .forever = {} });
 
     // Wake the renderer thread. queueRender returns an error only if the
@@ -3327,7 +3339,7 @@ pub fn drainRendererToIdle(self: *Surface, timeout_ns: u64) bool {
     // pin Swift forever.
     self.queueRender() catch {};
 
-    event.timedWait(timeout_ns) catch |err| switch (err) {
+    handle.event.timedWait(timeout_ns) catch |err| switch (err) {
         error.Timeout => return false,
     };
     return true;

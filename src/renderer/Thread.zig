@@ -361,8 +361,13 @@ fn drainMailbox(self: *Thread) !void {
             // Synchronous ack for "renderer is paused, iOS may suspend".
             // Signaled after any preceding messages (notably visible=false)
             // have been processed on this thread. Documented in
-            // `renderer/message.zig`.
-            .drain_to_idle => |event| event.set(),
+            // `renderer/message.zig`. Always release our refcount on the
+            // handle, even if signaling somehow becomes a no-op, so the
+            // apprt-side timeout path can't leak the handle.
+            .drain_to_idle => |handle| {
+                handle.event.set();
+                handle.release(self.alloc);
+            },
 
             .visible => |v| visible: {
                 // If our state didn't change we do nothing.
