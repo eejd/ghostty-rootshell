@@ -1078,6 +1078,13 @@ void ghostty_surface_draw(ghostty_surface_t);
 void ghostty_surface_set_content_scale(ghostty_surface_t, double, double);
 void ghostty_surface_set_focus(ghostty_surface_t, bool);
 void ghostty_surface_set_occlusion(ghostty_surface_t, bool);
+
+// Synchronously pause this surface's renderer before iOS suspends the app.
+// Intended to be called from the apprt's main-thread scene-will-resign-active
+// hook so the renderer is confirmed paused (no further drawFrame, IOSDisplayLink
+// stopped) before iOS captures the scene snapshot. Returns true if the renderer
+// was paused within `timeout_ns` nanoseconds, false on timeout (best-effort).
+bool ghostty_surface_drain_renderer_to_idle(ghostty_surface_t, uint64_t timeout_ns);
 void ghostty_surface_set_size(ghostty_surface_t, uint32_t, uint32_t);
 ghostty_surface_size_s ghostty_surface_size(ghostty_surface_t);
 void ghostty_surface_set_color_scheme(ghostty_surface_t,

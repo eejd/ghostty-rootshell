@@ -1761,6 +1761,18 @@ pub const CAPI = struct {
         surface.occlusionCallback(visible);
     }
 
+    /// Synchronously pause the surface's renderer before iOS suspends the
+    /// app. Intended to be called from the apprt's main-thread scene
+    /// transition hooks. Returns true if the renderer was confirmed paused
+    /// within `timeout_ns` nanoseconds, false on timeout. See
+    /// `Surface.drainRendererToIdle` for full rationale.
+    export fn ghostty_surface_drain_renderer_to_idle(
+        surface: *Surface,
+        timeout_ns: u64,
+    ) bool {
+        return surface.core_surface.drainRendererToIdle(timeout_ns);
+    }
+
     /// Set a callback that will be called after each frame is rendered.
     /// The callback receives the IOSurface pointer, width, and height.
     /// Used for visionOS curved display to capture rendered frames.

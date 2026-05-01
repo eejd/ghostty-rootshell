@@ -358,6 +358,12 @@ fn drainMailbox(self: *Thread) !void {
         switch (message) {
             .crash => @panic("crash request, crashing intentionally"),
 
+            // Synchronous ack for "renderer is paused, iOS may suspend".
+            // Signaled after any preceding messages (notably visible=false)
+            // have been processed on this thread. Documented in
+            // `renderer/message.zig`.
+            .drain_to_idle => |event| event.set(),
+
             .visible => |v| visible: {
                 // If our state didn't change we do nothing.
                 if (self.flags.visible == v) break :visible;

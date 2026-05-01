@@ -3289,6 +3289,50 @@ pub fn occlusionCallback(self: *Surface, visible: bool) !void {
     try self.queueRender();
 }
 
+/// Synchronously pause this surface's rendering pipeline before iOS
+/// suspends the app. Combines:
+///
+///   1. Pushing `visible: false` to the renderer thread (so subsequent
+///      drawFrame calls become no-ops and the IOSDisplayLink is stopped).
+///   2. Pushing a `drain_to_idle` ack the renderer signals after both
+///      messages have been processed by `drainMailbox`.
+///   3. Waiting on that ack with a timeout.
+///
+/// Returns true if the renderer was confirmed paused within the timeout,
+/// false if the wait timed out (in which case iOS may still suspend with
+/// renderer work outstanding — try-best-effort, do not block scene-update
+/// indefinitely).
+///
+/// Intended to be called from the main thread by the apprt during its
+/// scene-will-resign-active / scene-did-enter-background hooks. The cost
+/// of this wait is bounded by the longest in-flight drawFrame plus
+/// renderer mailbox processing, typically a few milliseconds.
+pub fn drainRendererToIdle(self: *Surface, timeout_ns: u64) bool {
+    var event: std.Thread.ResetEvent = .{};
+
+    // visible=false pauses the renderer; the IOSDisplayLink for this
+    // surface stops as part of renderer.setVisible(false). Both messages
+    // are pushed before we wake the renderer, so they're processed atomically
+    // within a single drainMailbox iteration.
+    _ = self.renderer_thread.mailbox.push(.{
+        .visible = false,
+    }, .{ .forever = {} });
+    _ = self.renderer_thread.mailbox.push(.{
+        .drain_to_idle = &event,
+    }, .{ .forever = {} });
+
+    // Wake the renderer thread. queueRender returns an error only if the
+    // wakeup async is in a bad state; in practice this can't fail at
+    // runtime, but if it does we still try to wait briefly so we don't
+    // pin Swift forever.
+    self.queueRender() catch {};
+
+    event.timedWait(timeout_ns) catch |err| switch (err) {
+        error.Timeout => return false,
+    };
+    return true;
+}
+
 pub fn focusCallback(self: *Surface, focused: bool) !void {
     // Crash metadata in case we crash in here
     crash.sentry.thread_state = self.crashThreadState();

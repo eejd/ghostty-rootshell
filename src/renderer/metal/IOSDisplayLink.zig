@@ -14,6 +14,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const objc = @import("objc");
+const macos = @import("macos");
 
 const log = std.log.scoped(.ios_display_link);
 
@@ -111,7 +112,54 @@ pub const IOSDisplayLink = struct {
     }
 
     /// Start the display link.
+    ///
+    /// Safe to call from any thread: `addToRunLoop:forMode:` and the
+    /// CADisplayLink creation are routed onto the main thread because
+    /// CADisplayLink and NSRunLoop are not thread-safe. Calling them from
+    /// the renderer thread (as we used to) leaves the display link in an
+    /// inconsistent state across iOS background/foreground transitions —
+    /// suspect cause of the "one frame per touch" wedge users hit on
+    /// scene resume.
     pub fn start(self: *IOSDisplayLink) Error!void {
+        const NSThread = objc.getClass("NSThread") orelse return error.ObjCFailed;
+        if (NSThread.msgSend(bool, "isMainThread", .{})) {
+            return self.startOnMain();
+        }
+
+        // Off main: hop synchronously to main. dispatch_sync is safe here
+        // because IOSDisplayLink is not held under any lock by the renderer
+        // thread, and the main thread cannot be waiting on the renderer
+        // thread to make progress in a way that would deadlock with this
+        // call.
+        var block = StartStopBlock.init(.{ .self = self }, &startCallback);
+        macos.dispatch.dispatch_sync(
+            @ptrCast(macos.dispatch.queue.getMain()),
+            @ptrCast(&block),
+        );
+    }
+
+    /// Stop the display link.
+    /// Note: After calling invalidate() on a CADisplayLink, it cannot be reused.
+    /// A new display link will be created on the next start() call.
+    ///
+    /// Safe to call from any thread (see `start()` for rationale).
+    pub fn stop(self: *IOSDisplayLink) Error!void {
+        const NSThread = objc.getClass("NSThread") orelse return error.ObjCFailed;
+        if (NSThread.msgSend(bool, "isMainThread", .{})) {
+            self.stopOnMain();
+            return;
+        }
+
+        var block = StartStopBlock.init(.{ .self = self }, &stopCallback);
+        macos.dispatch.dispatch_sync(
+            @ptrCast(macos.dispatch.queue.getMain()),
+            @ptrCast(&block),
+        );
+    }
+
+    /// Main-thread implementation of `start()`. Caller must guarantee
+    /// they're on the main thread.
+    fn startOnMain(self: *IOSDisplayLink) Error!void {
         if (self.running) return;
 
         // Create the CADisplayLink if we haven't already
@@ -145,10 +193,9 @@ pub const IOSDisplayLink = struct {
         log.debug("CADisplayLink started", .{});
     }
 
-    /// Stop the display link.
-    /// Note: After calling invalidate() on a CADisplayLink, it cannot be reused.
-    /// A new display link will be created on the next start() call.
-    pub fn stop(self: *IOSDisplayLink) Error!void {
+    /// Main-thread implementation of `stop()`. Caller must guarantee
+    /// they're on the main thread.
+    fn stopOnMain(self: *IOSDisplayLink) void {
         if (!self.running) return;
 
         if (self.link) |link| {
@@ -159,6 +206,20 @@ pub const IOSDisplayLink = struct {
 
         self.running = false;
         log.debug("CADisplayLink stopped", .{});
+    }
+
+    const StartStopBlock = objc.Block(struct {
+        self: *IOSDisplayLink,
+    }, .{}, void);
+
+    fn startCallback(block: *const StartStopBlock.Context) callconv(.c) void {
+        block.self.startOnMain() catch |err| {
+            log.warn("CADisplayLink startOnMain failed err={}", .{err});
+        };
+    }
+
+    fn stopCallback(block: *const StartStopBlock.Context) callconv(.c) void {
+        block.self.stopOnMain();
     }
 
     /// Check if the display link is running.

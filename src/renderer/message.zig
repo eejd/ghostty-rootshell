@@ -22,6 +22,17 @@ pub const Message = union(enum) {
     /// and still have focus.
     visible: bool,
 
+    /// Synchronous "drain to idle" ack. The renderer thread signals the
+    /// referenced ResetEvent once it processes this message — meaning all
+    /// previously-queued messages (including a paired `visible: false`)
+    /// have been handled and any in-flight `drainMailbox` callback has
+    /// completed before this point on the renderer thread. Used by the
+    /// iOS backgrounding path to confirm the renderer is paused before
+    /// allowing iOS to suspend the app, closing a race where the renderer
+    /// could still be mid-Metal-commit when iOS captures its scene
+    /// snapshot.
+    drain_to_idle: *std.Thread.ResetEvent,
+
     /// Reset the cursor blink by immediately showing the cursor then
     /// restarting the timer.
     reset_cursor_blink,
