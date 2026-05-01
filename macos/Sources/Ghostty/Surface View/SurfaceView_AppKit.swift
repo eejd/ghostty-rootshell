@@ -1138,22 +1138,25 @@ extension Ghostty {
             // actually delete the prior input characters (prior to the composing).
             let composing = markedText.length > 0 || markedTextBefore
 
-            // Korean IMEs on macOS may commit preedit text via insertText
-            // while handling an arrow key. Send that committed text separately
-            // before replaying arrow movement, except for plain left-arrow
-            // where AppKit already leaves the caret in place.
+            // The input method may commit all or part of the preedit text via
+            // insertText while handling a key that should not itself be
+            // encoded. Send that committed text separately, then only replay
+            // keys that should still affect the terminal after committing.
             if markedTextBefore,
-               markedText.length == 0,
                let list = keyTextAccumulator,
-               list.count > 0,
-               let preeditCommitArrow = preeditCommitArrowKey(translationEvent) {
+               list.count > 0 {
                 for text in list {
+                    if Ghostty.SurfaceView.shouldSuppressComposingControlInput(
+                        text,
+                        composing: composing
+                    ) {
+                        continue
+                    }
+
                     _ = committedPreeditTextAction(action, text: text)
                 }
 
-                let isPlainLeftArrow = preeditCommitArrow == .arrowLeft &&
-                    event.modifierFlags.isDisjoint(with: [.shift, .control, .option, .command])
-                if !isPlainLeftArrow {
+                if shouldReplayCommittedPreeditKey(translationEvent) {
                     _ = keyAction(
                         action,
                         event: event,
@@ -1436,13 +1439,17 @@ extension Ghostty {
             }
         }
 
-        private func preeditCommitArrowKey(_ event: NSEvent) -> Ghostty.Input.Key? {
-            guard let key = Ghostty.Input.Key(keyCode: event.keyCode) else { return nil }
+        private func shouldReplayCommittedPreeditKey(_ event: NSEvent) -> Bool {
+            guard let key = Ghostty.Input.Key(keyCode: event.keyCode) else { return false }
             switch key {
-            case .arrowDown, .arrowLeft, .arrowRight, .arrowUp:
-                return key
+            case .arrowDown, .arrowRight, .arrowUp:
+                return true
+            case .arrowLeft:
+                // Don't replay plain left-arrow because AppKit already leaves
+                // the caret in place after Korean IMEs commit preedit text.
+                return !event.modifierFlags.isDisjoint(with: [.shift, .control, .option, .command])
             default:
-                return nil
+                return false
             }
         }
 
