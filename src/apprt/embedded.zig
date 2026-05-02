@@ -1932,16 +1932,54 @@ pub const CAPI = struct {
     /// soft-wrapped lines are joined and re-wrap naturally at any terminal width.
     /// Palette colors are emitted as indices (38;5;N) so they adapt to theme changes.
     /// Returns null if the screen is empty. Caller must free with ghostty_surface_free_dump.
+    ///
+    /// Lock discipline: this function clones the screen and copies the palette
+    /// under `renderer_state.mutex` (a fast, bounded operation), then releases
+    /// the lock and runs the expensive formatter on the clone. The renderer
+    /// thread is therefore only blocked for the duration of the snapshot, not
+    /// for the multi-megabyte format. Critical for the iOS background-save
+    /// path where holding the mutex through a large dump was stalling the
+    /// renderer thread (which couldn't drain its mailbox or commit frames),
+    /// in turn starving scene-update ACK and tripping the watchdog.
     export fn ghostty_surface_dump_primary_screen(
         surface: *Surface,
         out_len: *usize,
     ) ?[*]const u8 {
         const core_surface = &surface.core_surface;
-        core_surface.renderer_state.mutex.lock();
-        defer core_surface.renderer_state.mutex.unlock();
 
-        const screen = core_surface.io.terminal.screens.get(.primary) orelse return null;
-        _ = screen.pages.getBottomRight(.screen) orelse return null;
+        // Phase 1: snapshot under the lock. Clone the entire primary screen
+        // (pages + cursor) and copy the palette, both into independent
+        // memory we own. After this block the live terminal can mutate
+        // freely; we work only with the clone.
+        var palette_copy: terminal.color.Palette = undefined;
+        var cloned_screen: terminal.Screen = blk: {
+            core_surface.renderer_state.mutex.lock();
+            defer core_surface.renderer_state.mutex.unlock();
+
+            const live_screen = core_surface.io.terminal.screens.get(.primary) orelse return null;
+            // Bail early if the screen has no written content — matches the
+            // pre-refactor behavior so we don't allocate a clone for an
+            // empty screen.
+            _ = live_screen.pages.getBottomRight(.screen) orelse return null;
+
+            // Palette is [256]RGB, copy is a single value-type assignment.
+            palette_copy = core_surface.io.terminal.colors.palette.current;
+
+            // Clone everything from the top of scrollback to the end of
+            // active. `bot: null` means "to the end of written content"
+            // which Screen.clone interprets as the full pagelist.
+            const cloned = live_screen.clone(
+                global.alloc,
+                .{ .screen = .{ .x = 0, .y = 0 } },
+                null,
+            ) catch return null;
+            break :blk cloned;
+        };
+        defer cloned_screen.deinit();
+
+        // Phase 2: format the clone. No lock held; the renderer thread is
+        // free to draw and process its mailbox while we run.
+        const screen = &cloned_screen;
 
         const tl_active = screen.pages.getTopLeft(.active);
         const br_active = screen.pages.getBottomRight(.active) orelse return null;
@@ -1969,10 +2007,10 @@ pub const CAPI = struct {
             .emit = .vt,
             .unwrap = true,
             .trim = false,
-            .palette = &core_surface.io.terminal.colors.palette.current,
+            .palette = &palette_copy,
         };
 
-        // Phase 1: Dump scrollback (everything above the adjusted active
+        // Phase 2a: Dump scrollback (everything above the adjusted active
         // boundary). We check if there's a row above the boundary; if so,
         // scrollback exists and we dump it separately.
         const has_scrollback = adjusted_tl_active.up(1) != null;
@@ -2004,7 +2042,7 @@ pub const CAPI = struct {
             }
         }
 
-        // Phase 2: Emit active area on a clean viewport.
+        // Phase 2b: Emit active area on a clean viewport.
         // Reset SGR state and home cursor before writing active content.
         aw.writer.writeAll("\x1b[0m\x1b[H") catch {
             aw.deinit();
@@ -2031,7 +2069,8 @@ pub const CAPI = struct {
 
         // Position cursor within the active area. Adjust for any rows
         // that were moved from the active area into the scrollback pass
-        // due to wrap continuation boundary adjustment.
+        // due to wrap continuation boundary adjustment. The cloned screen
+        // carries a snapshot of the live cursor.
         const cursor = screen.cursor;
         const cursor_y: usize = cursor.y;
         const adjusted_y = if (cursor_y >= boundary_offset)
@@ -2062,17 +2101,42 @@ pub const CAPI = struct {
     /// has ever switched to it) or if it is empty. Uses unwrap=false to
     /// preserve TUI layout (cursor-addressed apps like vim, htop, etc.).
     /// Caller must free with ghostty_surface_free_dump.
+    ///
+    /// Lock discipline: matches ghostty_surface_dump_primary_screen — clone
+    /// the screen + copy the palette under the renderer mutex (bounded
+    /// memcpy), then run the formatter on the clone with no lock held.
+    /// Keeps the renderer thread free to draw / drain its mailbox while
+    /// large viewports (vim, htop, etc.) format.
     export fn ghostty_surface_dump_alternate_screen(
         surface: *Surface,
         out_len: *usize,
     ) ?[*]const u8 {
         const core_surface = &surface.core_surface;
-        core_surface.renderer_state.mutex.lock();
-        defer core_surface.renderer_state.mutex.unlock();
 
-        const screen = core_surface.io.terminal.screens.get(.alternate) orelse return null;
-        const br_active = screen.pages.getBottomRight(.active) orelse return null;
+        // Phase 1: snapshot under the lock.
+        var palette_copy: terminal.color.Palette = undefined;
+        var cloned_screen: terminal.Screen = blk: {
+            core_surface.renderer_state.mutex.lock();
+            defer core_surface.renderer_state.mutex.unlock();
+
+            const live_screen = core_surface.io.terminal.screens.get(.alternate) orelse return null;
+            _ = live_screen.pages.getBottomRight(.active) orelse return null;
+
+            palette_copy = core_surface.io.terminal.colors.palette.current;
+
+            const cloned = live_screen.clone(
+                global.alloc,
+                .{ .screen = .{ .x = 0, .y = 0 } },
+                null,
+            ) catch return null;
+            break :blk cloned;
+        };
+        defer cloned_screen.deinit();
+
+        // Phase 2: format the clone with no lock held.
+        const screen = &cloned_screen;
         const tl_active = screen.pages.getTopLeft(.active);
+        const br_active = screen.pages.getBottomRight(.active) orelse return null;
 
         var aw: std.Io.Writer.Allocating = .init(global.alloc);
 
@@ -2080,7 +2144,7 @@ pub const CAPI = struct {
             .emit = .vt,
             .unwrap = false,
             .trim = false,
-            .palette = &core_surface.io.terminal.colors.palette.current,
+            .palette = &palette_copy,
         };
 
         // Home cursor, then emit the active viewport.
