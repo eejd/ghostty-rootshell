@@ -820,6 +820,15 @@ pub fn deinit(self: *Surface) void {
         self.io_thr.join();
     }
 
+    // On iOS/visionOS, synchronously invalidate the CADisplayLink before
+    // we destroy the renderer thread's wakeup mach port. The display link
+    // ticks on the main run loop and notifies `thr.draw_now` via a raw
+    // pointer; if a queued tick fires after `Thread.deinit` destroys the
+    // port, the kernel may have recycled the port name (typically to a
+    // libdispatch-guarded port) and the next mach_msg send raises
+    // `EXC_GUARD INVALID_OPTIONS`. No-op on other platforms.
+    self.renderer.preThreadDeinit();
+
     // We need to deinit AFTER everything is stopped, since there are
     // shared values between the two threads.
     self.renderer_thread.deinit();

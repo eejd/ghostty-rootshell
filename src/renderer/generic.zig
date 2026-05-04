@@ -819,6 +819,23 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             return result;
         }
 
+        /// Pre-thread-deinit hook. Called from `Surface.deinit` AFTER the
+        /// renderer thread has joined but BEFORE `renderer_thread.deinit()`
+        /// destroys shared resources, in particular the wakeup mach port
+        /// that the iOS CADisplayLink callback notifies via a raw pointer.
+        ///
+        /// On iOS/visionOS this synchronously invalidates the CADisplayLink
+        /// so no more ticks can fire, closing the use-after-free race window
+        /// where a queued main-thread tick would call `notify()` on a port
+        /// the renderer thread has already destroyed (recycled by libdispatch
+        /// → `EXC_GUARD INVALID_OPTIONS`). On other platforms it's a no-op.
+        pub fn preThreadDeinit(self: *Self) void {
+            if (comptime !(builtin.os.tag == .ios or builtin.os.tag == .visionos)) return;
+            if (comptime DisplayLink == void) return;
+            const display_link = self.display_link orelse return;
+            display_link.invalidateSync();
+        }
+
         pub fn deinit(self: *Self) void {
             if (self.overlay) |*overlay| overlay.deinit(self.alloc);
             self.terminal_state.deinit(self.alloc);

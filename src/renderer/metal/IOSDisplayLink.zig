@@ -161,6 +161,56 @@ pub const IOSDisplayLink = struct {
         );
     }
 
+    /// Synchronously invalidate the display link and clear the callback
+    /// userdata pointer. After this returns, no more `tick:` callbacks can
+    /// fire and any in-flight tick that has already resolved the target
+    /// object will early-return at the callback null-check.
+    ///
+    /// This is the safe teardown path: call it from `Surface.deinit` after
+    /// the renderer thread has joined but BEFORE `Thread.deinit` destroys
+    /// the wakeup mach port. The async stop() path used by setVisible/
+    /// setFocus/loopExit cannot guarantee this ordering: ticks can fire
+    /// between port destruction and the queued invalidate, dereferencing
+    /// a recycled (potentially guarded) port name.
+    ///
+    /// Unlike stop(), this uses dispatch_sync. That's safe at deinit time
+    /// because the renderer thread has already joined and there's no
+    /// `drainRendererToIdle` blocker on the main thread (see stop() for
+    /// the deadlock case this would otherwise create). Caller must not be
+    /// holding any lock the main thread might be waiting on.
+    pub fn invalidateSync(self: *IOSDisplayLink) void {
+        const NSThread = objc.getClass("NSThread") orelse {
+            log.warn("NSThread class not found; skipping invalidateSync", .{});
+            return;
+        };
+        if (NSThread.msgSend(bool, "isMainThread", .{})) {
+            self.invalidateOnMain();
+            return;
+        }
+
+        var block = StartStopBlock.init(.{ .self = self }, &invalidateCallback);
+        macos.dispatch.dispatch_sync(
+            @ptrCast(macos.dispatch.queue.getMain()),
+            @ptrCast(&block),
+        );
+    }
+
+    /// Main-thread implementation of `invalidateSync()`. Caller must
+    /// guarantee they're on the main thread.
+    fn invalidateOnMain(self: *IOSDisplayLink) void {
+        // Clear callback ivars first so any in-flight tick that has
+        // already resolved the target id but not yet read these will
+        // null-check and early-return at the `if (callback_fn) |cb|`
+        // gate in the tick method.
+        const null_obj = objc.Object.fromId(@as(?*anyopaque, null));
+        self.target.setInstanceVariable("callback_fn", null_obj);
+        self.target.setInstanceVariable("callback_ctx", null_obj);
+
+        // Then stop and invalidate. CADisplayLink.invalidate detaches
+        // synchronously from the run loop, so no more ticks can fire.
+        self.stopOnMain();
+    }
+
     /// Main-thread implementation of `start()`. Caller must guarantee
     /// they're on the main thread.
     fn startOnMain(self: *IOSDisplayLink) Error!void {
@@ -224,6 +274,10 @@ pub const IOSDisplayLink = struct {
 
     fn stopCallback(block: *const StartStopBlock.Context) callconv(.c) void {
         block.self.stopOnMain();
+    }
+
+    fn invalidateCallback(block: *const StartStopBlock.Context) callconv(.c) void {
+        block.self.invalidateOnMain();
     }
 
     /// Check if the display link is running.
