@@ -2005,8 +2005,11 @@ pub const CAPI = struct {
         }
 
         // Phase 2: Emit active area on a clean viewport.
-        // Reset SGR state and home cursor before writing active content.
-        aw.writer.writeAll("\x1b[0m\x1b[H") catch {
+        // Reset SGR, home the cursor, then clear from home before writing
+        // active content. The earlier scrollback replay may leave wider
+        // historical rows in the viewport; clearing here prevents shorter
+        // active rows (for example prompts) from drawing over stale cells.
+        aw.writer.writeAll("\x1b[0m\x1b[H\x1b[J") catch {
             aw.deinit();
             return null;
         };
