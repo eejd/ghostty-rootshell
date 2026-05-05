@@ -189,10 +189,16 @@ pub fn loopExit(self: *Metal) void {
 }
 
 fn displayCallback(renderer: *Renderer) align(8) void {
-    // On iOS/visionOS (including Mac Catalyst), the IOSDisplayLink handles
-    // vsync-synchronized rendering via the draw_now callback in the renderer
-    // thread. Skip the layer's display callback to avoid double-rendering.
-    if (comptime builtin.os.tag != .macos) {
+    // macOS and Mac Catalyst use the layer's display callback for
+    // synchronously-rendered, correctly-sized frames during window resize.
+    // Without this, Core Animation can commit a layout pass with new layer
+    // bounds before the renderer (driven by IOSDisplayLink at vsync cadence)
+    // has produced a matching IOSurface, leaving the layer with stale or
+    // empty contents — visible as a white tear on aggressive resize.
+    //
+    // Pure iOS/visionOS still skip this path: window-style resize is rare
+    // there, and IOSDisplayLink-driven rendering is sufficient.
+    if (comptime builtin.os.tag != .macos and builtin.abi != .macabi) {
         return;
     }
 
