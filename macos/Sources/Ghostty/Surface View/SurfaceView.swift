@@ -1,6 +1,7 @@
 import SwiftUI
 import UserNotifications
 import GhosttyKit
+import System
 
 extension Ghostty {
     /// Render a terminal for the active app in the environment.
@@ -611,8 +612,20 @@ extension Ghostty {
         /// Explicit font size to use in points
         var fontSize: Float32?
 
+        private var normalizedWorkingDirectory: String?
         /// Explicit working directory to set
-        var workingDirectory: String?
+        var workingDirectory: String? {
+            get { normalizedWorkingDirectory }
+            set {
+                guard let newValue else {
+                    normalizedWorkingDirectory = nil
+                    return
+                }
+                // We use FilePath to normalize separators by removing redundant intermediary separators
+                // and stripping any trailing separators.
+                normalizedWorkingDirectory = FilePath(newValue).string
+            }
+        }
 
         /// Explicit command to set
         var command: String?
