@@ -132,7 +132,7 @@ msgstr "Itsatsi"
 
 #: src/apprt/gtk/ui/1.2/surface.blp:270
 msgid "Notify on Next Command Finish"
-msgstr "Jakinarazi hurrengo komandoa amiatzean"
+msgstr "Jakinarazi hurrengo komandoa amaitzean"
 
 #: src/apprt/gtk/ui/1.2/surface.blp:277 src/apprt/gtk/ui/1.5/window.blp:273
 msgid "Clear"
@@ -253,7 +253,7 @@ msgid ""
 "An application is attempting to write to the clipboard. The current "
 "clipboard contents are shown below."
 msgstr ""
-"Aplikazio bat arbelean idatzi nahian dabil. Hau da arbelaren gaur egungo "
+"Aplikazio bat arbelean idatzi nahian dabil. Hau da arbelaren uneko "
 "edukia."
 
 #: src/apprt/gtk/class/clipboard_confirmation_dialog.zig:202
