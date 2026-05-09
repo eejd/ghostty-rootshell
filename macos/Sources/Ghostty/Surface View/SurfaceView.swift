@@ -612,20 +612,13 @@ extension Ghostty {
         /// Explicit font size to use in points
         var fontSize: Float32?
 
-        private var normalizedWorkingDirectory: String?
-        /// Explicit working directory to set
+        /// Explicit working directory. This is normalized on assignment to
+        /// remove any redundant and trailing path separators.
         var workingDirectory: String? {
             get { normalizedWorkingDirectory }
-            set {
-                guard let newValue else {
-                    normalizedWorkingDirectory = nil
-                    return
-                }
-                // We use FilePath to normalize separators by removing redundant intermediary separators
-                // and stripping any trailing separators.
-                normalizedWorkingDirectory = FilePath(newValue).string
-            }
+            set { normalizedWorkingDirectory = newValue.map { FilePath($0).string } }
         }
+        private var normalizedWorkingDirectory: String?
 
         /// Explicit command to set
         var command: String?
