@@ -1102,11 +1102,14 @@ const SplitTreeSplit = extern struct {
         /// Assumed to be correct.
         handle: Surface.Tree.Node.Handle,
 
-        /// Source to handle repositioning the split when its size changes.
-        idle_max_pos: ?c_uint = null,
-        /// Source to write back the updated split ratio to the split tree
-        /// when the user manually drags the divider.
-        idle_drag: ?c_uint = null,
+        /// Source to handle repositioning the split when properties change.
+        idle: ?c_uint = null,
+
+        /// Whether the max-position/position property of the gtk.Paned widget
+        /// changed. We use these to distinguish between a resize and the user
+        /// manually moving the split divider. See the "on-idle" function.
+        max_changed: bool = false,
+        pos_changed: bool = false,
 
         // Template bindings
         paned: *gtk.Paned,
@@ -1147,13 +1150,37 @@ const SplitTreeSplit = extern struct {
         gtk.Widget.initTemplate(self.as(gtk.Widget));
     }
 
-    fn onIdleMaxPos(ud: ?*anyopaque) callconv(.c) c_int {
+    // We need to keep the split ratios from the tree datastructure and
+    // widget tree in sync. Using the max-position and position properties
+    // of the gtk.Paned widget, we can distinguish a resize from a manual
+    // update (e.g. the user dragging the divider).If max-position changes,
+    // we always have a widget resize. Usually position will change as well
+    // but it might not if the size change is small enough. If only position
+    // changes, we have a manual human update.
+    //
+    // This is a hack, it relies on the timing of property notifcations.
+    // From looking at the GTK source code, it should not be possible that we
+    // erroneously interpret a position change from a resize as a manual update.
+    // When a gtk.Paned is resized, internally the gtk_paned_calc_position function
+    // will change both max-position and position and synchronously call our
+    // propMaxPosition and propPosition functions. I.e. when the widget is resized,
+    // it should not be possible for onIdle to run before we have been notified of
+    // both property changes.
+    fn onIdle(ud: ?*anyopaque) callconv(.c) c_int {
         const self: *Self = @ptrCast(@alignCast(ud orelse return 0));
         const priv = self.private();
         const paned = priv.paned;
 
-        // Our idle source is always over.
-        priv.idle_max_pos = null;
+        // Clear source and fields at the end. Otherwise if setPosition is called
+        // below, propPosition is triggered and would add another idle callback
+        // before this one is finished.
+        defer priv.idle = null;
+        defer priv.max_changed = false;
+        defer priv.pos_changed = false;
+
+        if (!priv.max_changed and !priv.pos_changed) {
+            return 0;
+        }
 
         // Get our split. This is the most dangerous part of this entire
         // widget. We assume that this widget is always a child of a
@@ -1166,105 +1193,7 @@ const SplitTreeSplit = extern struct {
         const tree = split_tree.getTree() orelse return 0;
         const split: *const Surface.Tree.Split = &tree.nodes[priv.handle.idx()].split;
 
-        const pos, const max = positions: {
-            const p = self.getPanedPositions();
-            break :positions .{ p.pos, p.max };
-        };
-
-        // If our max is zero then we can't do any math. I don't know
-        // if this is possible but I suspect it can be if you make a nested
-        // split completely minimized.
-        if (max == 0) return 0;
-
-        // Determine our current ratio.
-        const current_ratio: f64 = ratio: {
-            const pos_f64: f64 = @floatFromInt(pos);
-            const max_f64: f64 = @floatFromInt(max);
-            break :ratio pos_f64 / max_f64;
-        };
-        const desired_ratio: f64 = @floatCast(split.ratio);
-
-        // If our ratio is close enough to our desired ratio, then
-        // we ignore the update. This is to avoid constant split updates
-        // for lossy floating point math.
-        if (std.math.approxEqAbs(
-            f64,
-            current_ratio,
-            desired_ratio,
-            0.001,
-        )) {
-            return 0;
-        }
-
-        // Note that if max is small, it might not be possible to accurately
-        // set the desired ratio. E.g. with max=2 you can only set ratios
-        // of 0, 0.5 and 1.
-        const desired_pos: c_int = desired_pos: {
-            const max_f64: f64 = @floatFromInt(max);
-            break :desired_pos @intFromFloat(@round(max_f64 * desired_ratio));
-        };
-        paned.setPosition(desired_pos);
-        return 0;
-    }
-
-    fn onIdleDrag(ud: ?*anyopaque) callconv(.c) c_int {
-        const self: *Self = @ptrCast(@alignCast(ud orelse return 0));
-        const priv = self.private();
-
-        // Our idle source is always over.
-        priv.idle_drag = null;
-
-        const split_tree = ext.getAncestor(
-            SplitTree,
-            self.as(gtk.Widget),
-        ) orelse return 0;
-        const tree = split_tree.getTree() orelse return 0;
-        const split: *const Surface.Tree.Split = &tree.nodes[priv.handle.idx()].split;
-
-        const pos, const max = positions: {
-            const p = self.getPanedPositions();
-            break :positions .{ p.pos, p.max };
-        };
-
-        if (max == 0) return 0;
-
-        // Determine our current ratio.
-        const current_ratio: f64 = ratio: {
-            const pos_f64: f64 = @floatFromInt(pos);
-            const max_f64: f64 = @floatFromInt(max);
-            break :ratio pos_f64 / max_f64;
-        };
-        const old_ratio: f64 = @floatCast(split.ratio);
-
-        // If our ratio is close enough to the old ratio, then
-        // we ignore the update.
-        if (std.math.approxEqAbs(
-            f64,
-            current_ratio,
-            old_ratio,
-            0.001,
-        )) {
-            return 0;
-        }
-
-        // Write our update back to the tree.
-        tree.resizeInPlace(priv.handle, @floatCast(current_ratio));
-
-        return 0;
-    }
-
-    const PanedPositions = struct {
-        pos: c_int,
-        min: c_int,
-        max: c_int,
-    };
-
-    // Returns the current, min, and max positions of the gtk.Paned
-    // this widget wraps.
-    fn getPanedPositions(self: *Self) PanedPositions {
-        const priv = self.private();
-        const paned = priv.paned;
-
+        // Current, min, and max positions as pixels.
         const pos = paned.getPosition();
         const min = min: {
             var val = gobject.ext.Value.new(c_int);
@@ -1291,11 +1220,47 @@ const SplitTreeSplit = extern struct {
         // be non-zero, so let's add an assert to ensure that.
         assert(min == 0);
 
-        return .{
-            .pos = pos,
-            .min = min,
-            .max = max,
+        // If our max is zero then we can't do any math. I don't know
+        // if this is possible but I suspect it can be if you make a nested
+        // split completely minimized.
+        if (max == 0) return 0;
+
+        // Determine our current ratio.
+        const current_ratio: f64 = ratio: {
+            const pos_f64: f64 = @floatFromInt(pos);
+            const max_f64: f64 = @floatFromInt(max);
+            break :ratio pos_f64 / max_f64;
         };
+        const desired_ratio: f64 = @floatCast(split.ratio);
+
+        // If our ratio is close enough to our desired ratio, then
+        // we ignore the update. This is to avoid constant split updates
+        // for lossy floating point math.
+        if (std.math.approxEqAbs(
+            f64,
+            current_ratio,
+            desired_ratio,
+            0.001,
+        )) {
+            return 0;
+        }
+
+        if (priv.max_changed) {
+            // Widget got resized, update position to match desired ratio.
+            // Note that if max-position is small, it might not be possible
+            // to accurately set the desired ratio. E.g. with max-position=2
+            // you can only have ratios 0, 0.5 and 1.
+            const desired_pos: c_int = desired_pos: {
+                const max_f64: f64 = @floatFromInt(max);
+                break :desired_pos @intFromFloat(@round(max_f64 * desired_ratio));
+            };
+            paned.setPosition(desired_pos);
+        } else {
+            // If only position changed, this is a manual human update and
+            // we need to write our update back to the tree.
+            tree.resizeInPlace(priv.handle, @floatCast(current_ratio));
+        }
+        return 0;
     }
 
     //---------------------------------------------------------------
@@ -1307,21 +1272,22 @@ const SplitTreeSplit = extern struct {
         self: *Self,
     ) callconv(.c) void {
         const priv = self.private();
-        if (priv.idle_max_pos == null) priv.idle_max_pos = glib.idleAdd(
-            onIdleMaxPos,
+        priv.max_changed = true;
+        if (priv.idle == null) priv.idle = glib.idleAdd(
+            onIdle,
             self,
         );
     }
 
-    fn onDragEnd(
-        _: *gtk.GestureDrag,
-        _: f64,
-        _: f64,
+    fn propPosition(
+        _: *gtk.Paned,
+        _: *gobject.ParamSpec,
         self: *Self,
     ) callconv(.c) void {
         const priv = self.private();
-        if (priv.idle_drag == null) priv.idle_drag = glib.idleAdd(
-            onIdleDrag,
+        priv.pos_changed = true;
+        if (priv.idle == null) priv.idle = glib.idleAdd(
+            onIdle,
             self,
         );
     }
@@ -1331,17 +1297,11 @@ const SplitTreeSplit = extern struct {
 
     fn dispose(self: *Self) callconv(.c) void {
         const priv = self.private();
-        if (priv.idle_max_pos) |v| {
+        if (priv.idle) |v| {
             if (glib.Source.remove(v) == 0) {
-                log.warn("unable to remove idle_max_pos source", .{});
+                log.warn("unable to remove idle source", .{});
             }
-            priv.idle_max_pos = null;
-        }
-        if (priv.idle_drag) |v| {
-            if (glib.Source.remove(v) == 0) {
-                log.warn("unable to remove idle_drag source", .{});
-            }
-            priv.idle_drag = null;
+            priv.idle = null;
         }
 
         gtk.Widget.disposeTemplate(
@@ -1388,7 +1348,7 @@ const SplitTreeSplit = extern struct {
 
             // Template Callbacks
             class.bindTemplateCallback("notify_max_position", &propMaxPosition);
-            class.bindTemplateCallback("on_drag_end", &onDragEnd);
+            class.bindTemplateCallback("notify_position", &propPosition);
 
             // Virtual methods
             gobject.Object.virtual_methods.dispose.implement(class, &dispose);
