@@ -969,6 +969,7 @@ pub const SplitTree = extern struct {
                 defer left.deinit();
                 const right = self.buildTree(tree, s.right);
                 defer right.deinit();
+
                 break :split .initNew(SplitTreeSplit.new(
                     current,
                     &s,
