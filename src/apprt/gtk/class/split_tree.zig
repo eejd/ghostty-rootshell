@@ -158,10 +158,11 @@ pub const SplitTree = extern struct {
         /// used to debounce updates.
         rebuild_source: ?c_uint = null,
 
-        // The source that we use to restore focus. With enough splits, some
-        // surfaces are initially allocated a width/height of 0 which causes
-        // them to get unmapped and lose focus. We can reliably restore focus
-        // to the last focused surface only once it is mapped again.
+        /// The source that we use to restore focus. With enough nested
+        /// splits, some surfaces might initially be allocated a width or
+        /// height of 0 which causes them to get unmapped and lose focus.
+        /// We can reliably restore focus to the last focused surface only
+        /// once it is mapped again.
         restore_focus_source: ?c_uint = null,
 
         /// Used to store state about a pending surface close for the
@@ -792,9 +793,10 @@ pub const SplitTree = extern struct {
     ) callconv(.c) void {
         if (!surface.getMapped()) return;
 
-        // We could add the idle callback only if this is actually the last focused
-        // surface. But we can avoid that check because usually all the surfaces get
-        // mapped at once, so the idle callback will run only once anyway.
+        // We could add the idle callback only if this is actually the last
+        // focused surface. But we can avoid that check because usually all
+        // the surfaces get mapped at once, so the idle callback will run
+        // only once anyway.
         const priv = self.private();
         if (priv.restore_focus_source == null) priv.restore_focus_source = glib.idleAdd(
             onRestoreFocus,
@@ -891,10 +893,10 @@ pub const SplitTree = extern struct {
         const priv = self.private();
         priv.restore_focus_source = null;
 
-        // If we have a last-focused surface and it is mapped, restore focus to it.
-        // Depending on the available size, the surface might already have focus
-        // because it never got unmapped. In that case grabbing focus will have no
-        // effect.
+        // If we have a last-focused surface and it is mapped, restore focus
+        // to it. Depending on the available size, the surface might already
+        // have focus because it never got unmapped. In that case grabbing
+        // focus will have no effect.
         if (priv.last_focused.get()) |v| {
             defer v.unref();
             if (v.getMapped()) {
@@ -1159,21 +1161,21 @@ const SplitTreeSplit = extern struct {
     // changes, we have a manual human update.
     //
     // This is a hack, it relies on the timing of property notifcations.
-    // From looking at the GTK source code, it should not be possible that we
-    // erroneously interpret a position change from a resize as a manual update.
-    // When a gtk.Paned is resized, internally the gtk_paned_calc_position function
-    // will change both max-position and position and synchronously call our
-    // propMaxPosition and propPosition functions. I.e. when the widget is resized,
-    // it should not be possible for onIdle to run before we have been notified of
-    // both property changes.
+    // From looking at the GTK source code, it should not be possible that
+    // we interpret a position change from a resize as a manual update.
+    // When a gtk.Paned is resized, internally the gtk_paned_calc_position
+    // function will change both max-position and position and synchronously
+    // call our propMaxPosition and propPosition functions. I.e. when the
+    // widget is resized, it should not be possible for onIdle to run before
+    // we have been notified of both property changes.
     fn onIdle(ud: ?*anyopaque) callconv(.c) c_int {
         const self: *Self = @ptrCast(@alignCast(ud orelse return 0));
         const priv = self.private();
         const paned = priv.paned;
 
-        // Clear source and fields at the end. Otherwise if setPosition is called
-        // below, propPosition is triggered and would add another idle callback
-        // before this one is finished.
+        // Clear source and fields at the end. Otherwise if setPosition is
+        // called below, propPosition is triggered and would add another
+        // idle callback before this one is finished.
         defer priv.idle = null;
         defer priv.max_changed = false;
         defer priv.pos_changed = false;
