@@ -115,13 +115,39 @@ extension Ghostty {
 // MARK: Search State
 
 extension Ghostty.OSSurfaceView {
-    class SearchState: ObservableObject {
+    @MainActor class SearchState: ObservableObject {
+        /// The pasteboard used to persist the search needle.
+        ///
+        /// The `.find` pasteboard lets us sync our needle across the system and other find bars.
+        private let pasteboard: OSPasteboard
+
         @Published var needle: String = ""
         @Published var selected: UInt?
         @Published var total: UInt?
 
-        init(from startSearch: Ghostty.Action.StartSearch) {
-            self.needle = startSearch.needle ?? ""
+        init(
+            from startSearch: Ghostty.Action.StartSearch,
+            pasteboard: OSPasteboard = OSPasteboard(name: .find)
+        ) {
+            self.pasteboard = pasteboard
+            if let needle = startSearch.needle, !needle.isEmpty {
+                self.needle = needle
+                writePasteboardNeedle()
+            } else {
+                readPasteboardNeedle()
+            }
+        }
+
+        func readPasteboardNeedle() {
+            let pasteboardNeedle = pasteboard.string(forType: .string)
+            if let pasteboardNeedle, pasteboardNeedle != needle {
+                needle = pasteboardNeedle
+            }
+        }
+
+        func writePasteboardNeedle() {
+            pasteboard.clearContents()
+            pasteboard.setString(needle, forType: .string)
         }
     }
 

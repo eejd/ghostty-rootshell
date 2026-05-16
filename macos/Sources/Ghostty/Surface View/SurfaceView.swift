@@ -401,6 +401,18 @@ extension Ghostty {
                                 .padding(.trailing, 8)
                         }
                     }
+                    .onChange(of: searchState.needle) { _ in
+                        searchState.writePasteboardNeedle()
+                    }
+                    .onReceive(
+                        NotificationCenter.default.publisher(
+                            for: OSApplication.didBecomeActiveNotification
+                        )
+                    ) { _ in
+                        // When the app becomes active, we want to check for external changes
+                        // to our synced needle.
+                        searchState.readPasteboardNeedle()
+                    }
 #if canImport(AppKit)
                     .onExitCommand {
                         if searchState.needle.isEmpty {
