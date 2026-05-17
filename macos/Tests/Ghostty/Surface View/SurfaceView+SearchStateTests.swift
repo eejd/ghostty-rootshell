@@ -84,4 +84,16 @@ import Testing
         sut.readPasteboardNeedle()
         #expect(sut.needle == "pb")
     }
+
+    @Test func readPasteboardNeedle_setsNeedleSelectionRange() {
+        let sut = SearchState(
+            from: StartSearch(c: .init(needle: nil)),
+            pasteboard: pasteboard
+        )
+        sut.needle = "sut"
+        sut.readPasteboardNeedle()
+
+        let expected = "pb".startIndex..<"pb".endIndex
+        #expect(sut.needleSelection == expected)
+    }
 }

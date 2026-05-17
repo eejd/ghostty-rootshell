@@ -1,5 +1,6 @@
 import Foundation
 import GhosttyKit
+import SwiftUI
 
 extension Ghostty {
     class OSSurfaceView: OSView, ObservableObject {
@@ -125,6 +126,9 @@ extension Ghostty.OSSurfaceView {
         @Published var selected: UInt?
         @Published var total: UInt?
 
+        /// The range of the needle's text selection in the find bar.
+        @Published var needleSelection: Range<String.Index>?
+
         init(
             from startSearch: Ghostty.Action.StartSearch,
             pasteboard: OSPasteboard = OSPasteboard(name: .find)
@@ -142,6 +146,7 @@ extension Ghostty.OSSurfaceView {
             let pasteboardNeedle = pasteboard.string(forType: .string)
             if let pasteboardNeedle, pasteboardNeedle != needle {
                 needle = pasteboardNeedle
+                needleSelection = needle.startIndex..<needle.endIndex
             }
         }
 

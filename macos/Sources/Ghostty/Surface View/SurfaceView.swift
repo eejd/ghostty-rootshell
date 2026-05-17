@@ -377,7 +377,11 @@ extension Ghostty {
         var body: some View {
             GeometryReader { geo in
                 HStack(spacing: 4) {
-                    TextField("Search", text: $searchState.needle)
+                    BackportSelectionTextField(
+                        "Search",
+                        text: $searchState.needle,
+                        selection: $searchState.needleSelection
+                    )
                     .textFieldStyle(.plain)
                     .frame(width: 180)
                     .padding(.leading, 8)
