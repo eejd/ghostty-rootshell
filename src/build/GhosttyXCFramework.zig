@@ -114,8 +114,20 @@ pub fn init(
             .step = universal.step,
             .output = universal.output,
             .dsym = null, // Universal binaries can't have dSYMs
+            .pkg_config = null,
+            .pkg_config_static = null,
         };
     };
+
+    // Generate a headers directory with only ghostty.h and the module
+    // map. We can't use include/ directly because it also contains the
+    // libghostty-vt headers under include/ghostty/, which would trigger
+    // "umbrella header does not include header" warnings from Clang's
+    // module system.
+    const wf = b.addWriteFiles();
+    _ = wf.addCopyFile(b.path("include/ghostty.h"), "ghostty.h");
+    _ = wf.addCopyFile(b.path("include/module.modulemap"), "module.modulemap");
+    const headers = wf.getDirectory();
 
     // The xcframework wraps our ghostty library so that we can link
     // it to the final app built with Swift.
@@ -126,39 +138,39 @@ pub fn init(
             .universal => &.{
                 .{
                     .library = macos_universal.output,
-                    .headers = b.path("include"),
+                    .headers = headers,
                     .dsym = macos_universal.dsym,
                 },
                 .{
                     .library = ios.output,
-                    .headers = b.path("include"),
+                    .headers = headers,
                     .dsym = ios.dsym,
                 },
                 .{
                     .library = ios_sim.output,
-                    .headers = b.path("include"),
+                    .headers = headers,
                     .dsym = ios_sim.dsym,
                 },
                 .{
                     .library = visionos.output,
-                    .headers = b.path("include"),
+                    .headers = headers,
                     .dsym = visionos.dsym,
                 },
                 .{
                     .library = visionos_sim.output,
-                    .headers = b.path("include"),
+                    .headers = headers,
                     .dsym = visionos_sim.dsym,
                 },
                 .{
                     .library = catalyst_universal.output,
-                    .headers = b.path("include"),
+                    .headers = headers,
                     .dsym = catalyst_universal.dsym,
                 },
             },
 
             .native => &.{.{
                 .library = macos_native.output,
-                .headers = b.path("include"),
+                .headers = headers,
                 .dsym = macos_native.dsym,
             }},
         },

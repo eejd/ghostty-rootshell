@@ -26,6 +26,12 @@ protocol TabTitleEditorDelegate: AnyObject {
         _ editor: TabTitleEditor,
         performFallbackRenameFor targetWindow: NSWindow
     )
+
+    /// Called after inline editing finishes (whether committed or cancelled).
+    /// Use this to restore focus to the appropriate responder.
+    func tabTitleEditor(
+        _ editor: TabTitleEditor,
+        didFinishEditing targetWindow: NSWindow)
 }
 
 /// Handles inline tab title editing for native AppKit window tabs.
@@ -34,40 +40,70 @@ final class TabTitleEditor: NSObject, NSTextFieldDelegate {
     private weak var hostWindow: NSWindow?
     /// Delegate that provides and commits title data for target tab windows.
     private weak var delegate: TabTitleEditorDelegate?
+    /// Local event monitor so fullscreen titlebar-window clicks can also trigger rename.
+    private var eventMonitor: Any?
 
     /// Active inline editor view, if editing is in progress.
     private weak var inlineTitleEditor: NSTextField?
     /// Tab window currently being edited.
     private weak var inlineTitleTargetWindow: NSWindow?
-    /// Original hidden state for title labels that are temporarily hidden while editing.
-    private var hiddenLabels: [(label: NSTextField, wasHidden: Bool)] = []
-    /// Original button title state restored once editing finishes.
-    private var buttonState: (button: NSButton, title: String, attributedTitle: NSAttributedString?)?
+    /// Original state of the tab bar.
+    private var previousTabState: TabUIState?
     /// Deferred begin-editing work used to avoid visual flicker on double-click.
     private var pendingEditWorkItem: DispatchWorkItem?
 
     /// Creates a coordinator bound to a host window and rename delegate.
     init(hostWindow: NSWindow, delegate: TabTitleEditorDelegate) {
+        super.init()
+
         self.hostWindow = hostWindow
         self.delegate = delegate
+
+        // This is needed so that fullscreen clicks can register since they won't
+        // event on the NSWindow. We may want to tighten this up in the future by
+        // only doing this if we're fullscreen.
+        self.eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown]) { [weak self] event in
+            guard let self else { return event }
+            return handleMouseDown(event) ? nil : event
+        }
     }
 
-    /// Handles double-click events from the host window and begins inline edit if possible. If this
-    /// returns true then the double click was handled by the coordinator.
-    func handleDoubleClick(_ event: NSEvent) -> Bool {
-        // We only want double-clicks
-        guard event.type == .leftMouseDown, event.clickCount == 2 else { return false }
+    deinit {
+        if let eventMonitor {
+            NSEvent.removeMonitor(eventMonitor)
+        }
+    }
+
+    /// Handles leftMouseDown events from the host window and begins inline edit if possible. If this
+    /// returns true then the event was handled by the coordinator.
+    func handleMouseDown(_ event: NSEvent) -> Bool {
+        guard event.type == .leftMouseDown else { return false }
 
         // If we don't have a host window to look up the click, we do nothing.
         guard let hostWindow else { return false }
 
+        // In native fullscreen, AppKit can route titlebar clicks through a detached
+        // NSToolbarFullScreenWindow. Only allow clicks from the host window or its
+        // fullscreen tab bar window so rename handling stays scoped to this tab strip.
+        let sourceWindow = event.window ?? hostWindow
+        guard sourceWindow === hostWindow || sourceWindow === hostWindow.tabBarView?.window
+        else { return false }
+
         // Find the tab window that is being clicked.
-        let locationInScreen = hostWindow.convertPoint(toScreen: event.locationInWindow)
+        let locationInScreen = sourceWindow.convertPoint(toScreen: event.locationInWindow)
         guard let tabIndex = hostWindow.tabIndex(atScreenPoint: locationInScreen),
               let targetWindow = hostWindow.tabbedWindows?[safe: tabIndex],
               delegate?.tabTitleEditor(self, canRenameTabFor: targetWindow) == true
         else { return false }
 
+        guard !isMouseEventWithinEditor(event) else {
+            // If the click lies within the editor,
+            // we should forward the event to the editor
+            inlineTitleEditor?.mouseDown(with: event)
+            return true
+        }
+        // We only want double-clicks to enable editing
+        guard event.clickCount == 2 else { return false }
         // We need to start editing in a separate event loop tick, so set that up.
         pendingEditWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self, weak targetWindow] in
@@ -83,6 +119,19 @@ final class TabTitleEditor: NSObject, NSTextFieldDelegate {
         pendingEditWorkItem = workItem
         DispatchQueue.main.async(execute: workItem)
         return true
+    }
+
+    /// Handles rightMouseDown events from the host window.
+    ///
+    /// If this returns true then the event was handled by the coordinator.
+    func handleRightMouseDown(_ event: NSEvent) -> Bool {
+        guard event.type == .rightMouseDown else { return false }
+        if isMouseEventWithinEditor(event) {
+            inlineTitleEditor?.rightMouseDown(with: event)
+            return true
+        } else {
+            return false
+        }
     }
 
     /// Begins editing the given target tab window title. Returns true if we're able to start the
@@ -104,16 +153,13 @@ final class TabTitleEditor: NSObject, NSTextFieldDelegate {
         pendingEditWorkItem = nil
         finishEditing(commit: true)
 
-        // Build the editor using title text and style derived from the tab's existing label.
-        let titleLabels = tabButton
-            .descendants(withClassName: "NSTextField")
-            .compactMap { $0 as? NSTextField }
-        let editedTitle = delegate?.tabTitleEditor(self, titleFor: targetWindow) ?? targetWindow.title
-        let sourceLabel = sourceTabTitleLabel(from: titleLabels, matching: editedTitle)
-        let editorFrame = tabTitleEditorFrame(for: tabButton, sourceLabel: sourceLabel)
-        guard editorFrame.width >= 20, editorFrame.height >= 14 else { return false }
+        let tabState = TabUIState(tabButton: tabButton)
 
-        let editor = NSTextField(frame: editorFrame)
+        // Build the editor using title text and style derived from the tab's existing label.
+        let editedTitle = delegate?.tabTitleEditor(self, titleFor: targetWindow) ?? targetWindow.title
+        let sourceLabel = sourceTabTitleLabel(from: tabState.labels.map(\.label), matching: editedTitle)
+
+        let editor = NSTextField(frame: .zero)
         editor.delegate = self
         editor.stringValue = editedTitle
         editor.alignment = sourceLabel?.alignment ?? .center
@@ -136,31 +182,33 @@ final class TabTitleEditor: NSObject, NSTextFieldDelegate {
 
         inlineTitleEditor = editor
         inlineTitleTargetWindow = targetWindow
-
+        previousTabState = tabState
         // Temporarily hide native title label views while editing so only the text field is visible.
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        hiddenLabels = titleLabels.map { ($0, $0.isHidden) }
-        for label in titleLabels {
-            label.isHidden = true
-        }
-        if let tabButton = tabButton as? NSButton {
-            buttonState = (tabButton, tabButton.title, tabButton.attributedTitle)
-            tabButton.title = ""
-            tabButton.attributedTitle = NSAttributedString(string: "")
-        } else {
-            buttonState = nil
-        }
+        tabState.hide()
+
         tabButton.layoutSubtreeIfNeeded()
         tabButton.displayIfNeeded()
         tabButton.addSubview(editor)
+        editor.translatesAutoresizingMaskIntoConstraints = false
+        let horizontalInset: CGFloat = 6
+        let editorHeight = sourceLabel?.bounds.height ?? tabButton.bounds.height
+        NSLayoutConstraint.activate([
+            editor.centerYAnchor.constraint(equalTo: tabButton.centerYAnchor),
+            editor.leadingAnchor.constraint(equalTo: tabButton.leadingAnchor, constant: horizontalInset),
+            editor.trailingAnchor.constraint(equalTo: tabButton.trailingAnchor, constant: -horizontalInset),
+            editor.heightAnchor.constraint(equalToConstant: editorHeight),
+        ])
         CATransaction.commit()
 
         // Focus after insertion so AppKit has created the field editor for this text field.
         DispatchQueue.main.async { [weak hostWindow, weak editor] in
-            guard let hostWindow, let editor else { return }
+            guard let editor else { return }
+            let responderWindow = editor.window ?? hostWindow
+            guard let responderWindow else { return }
             editor.isHidden = false
-            hostWindow.makeFirstResponder(editor)
+            responderWindow.makeFirstResponder(editor)
             if let fieldEditor = editor.currentEditor() as? NSTextView,
                let editorFont = editor.font {
                 fieldEditor.font = editorFont
@@ -191,48 +239,28 @@ final class TabTitleEditor: NSObject, NSTextFieldDelegate {
         inlineTitleTargetWindow = nil
 
         // Make sure the window grabs focus again
-        if let hostWindow {
-            if let currentEditor = editor.currentEditor(), hostWindow.firstResponder === currentEditor {
-                hostWindow.makeFirstResponder(nil)
-            } else if hostWindow.firstResponder === editor {
-                hostWindow.makeFirstResponder(nil)
+        if let responderWindow = editor.window ?? hostWindow {
+            if let currentEditor = editor.currentEditor(), responderWindow.firstResponder === currentEditor {
+                responderWindow.makeFirstResponder(nil)
+            } else if responderWindow.firstResponder === editor {
+                responderWindow.makeFirstResponder(nil)
             }
         }
 
         editor.removeFromSuperview()
 
-        // Restore original tab title presentation.
-        for (label, wasHidden) in hiddenLabels {
-            label.isHidden = wasHidden
-        }
-        hiddenLabels.removeAll()
-
-        if let buttonState {
-            buttonState.button.title = buttonState.title
-            buttonState.button.attributedTitle = buttonState.attributedTitle ?? NSAttributedString(string: buttonState.title)
-        }
-        self.buttonState = nil
+        previousTabState?.restore()
+        previousTabState = nil
 
         // Delegate owns title persistence semantics (including empty-title handling).
-        guard commit, let targetWindow else { return }
-        delegate?.tabTitleEditor(self, didCommitTitle: editedTitle, for: targetWindow)
-    }
+        guard let targetWindow else { return }
 
-    /// Chooses an editor frame that aligns with the tab title within the tab button.
-    private func tabTitleEditorFrame(for tabButton: NSView, sourceLabel: NSTextField?) -> NSRect {
-        let bounds = tabButton.bounds
-        let horizontalInset: CGFloat = 6
-        var frame = bounds.insetBy(dx: horizontalInset, dy: 0)
-
-        if let sourceLabel {
-            let labelFrame = tabButton.convert(sourceLabel.bounds, from: sourceLabel)
-            /// The `labelFrame.minY` value changes unexpectedly after the first use,
-            /// I don't know exactly why, but `tabButton.bounds` appears stable enough to calculate the correct position reliably.
-            frame.origin.y = bounds.midY - labelFrame.height * 0.5
-            frame.size.height = labelFrame.height
+        if commit {
+            delegate?.tabTitleEditor(self, didCommitTitle: editedTitle, for: targetWindow)
         }
 
-        return frame.integral
+        // Notify delegate that editing is done so it can restore focus.
+        delegate?.tabTitleEditor(self, didFinishEditing: targetWindow)
     }
 
     /// Selects the best title label candidate from private tab button subviews.
@@ -334,5 +362,67 @@ final class TabTitleEditor: NSObject, NSTextFieldDelegate {
 
         // Blur/end-edit commits, matching standard NSTextField behavior.
         finishEditing(commit: true)
+    }
+}
+
+private extension TabTitleEditor {
+    func isMouseEventWithinEditor(_ event: NSEvent) -> Bool {
+        guard let editor = inlineTitleEditor?.currentEditor() else {
+            return false
+        }
+        return editor.convert(editor.bounds, to: nil).contains(event.locationInWindow)
+    }
+}
+
+private extension TabTitleEditor {
+    struct TabUIState {
+        /// Original hidden state for title labels that are temporarily hidden while editing.
+        let labels: [(label: NSTextField, wasHidden: Bool)]
+        /// Original hidden state for buttons that are temporarily hidden while editing.
+        let buttons: [(button: NSButton, wasHidden: Bool)]
+        /// Original button title state restored once editing finishes.
+        let titleButton: (button: NSButton, title: String, attributedTitle: NSAttributedString?)?
+
+        init(tabButton: NSView) {
+            labels = tabButton
+                .descendants(withClassName: "NSTextField")
+                .compactMap { $0 as? NSTextField }
+                .map { ($0, $0.isHidden) }
+            buttons = tabButton
+                .descendants(withClassName: "NSButton")
+                .compactMap { $0 as? NSButton }
+                .map { ($0, $0.isHidden) }
+            if let button = tabButton as? NSButton {
+                titleButton = (button, button.title, button.attributedTitle)
+            } else {
+                titleButton = nil
+            }
+        }
+
+        func hide() {
+            for (label, _) in labels {
+                label.isHidden = true
+            }
+            for (btn, _) in buttons {
+                btn.isHidden = true
+            }
+            titleButton?.button.title = ""
+            titleButton?.button.attributedTitle = NSAttributedString(string: "")
+        }
+
+        func restore() {
+            for (label, wasHidden) in labels {
+                label.isHidden = wasHidden
+            }
+            for (btn, wasHidden) in buttons {
+                btn.isHidden = wasHidden
+            }
+            if let titleButton {
+                titleButton.button.title = titleButton.title
+                if let attributedTitle = titleButton.attributedTitle {
+                    titleButton.button.attributedTitle = attributedTitle
+                }
+            }
+        }
     }
 }

@@ -347,6 +347,29 @@ pub const Action = union(enum) {
     reset,
 
     /// Copy the selected text to the clipboard.
+    ///
+    /// Valid values:
+    ///
+    ///   - `plain`
+    ///
+    ///     Copy the selection as plain text only.
+    ///
+    ///   - `vt`
+    ///
+    ///     Copy the selection as plain text, preserving terminal escape
+    ///     sequences (such as colors and styles).
+    ///
+    ///   - `html`
+    ///
+    ///     Copy the selection as HTML, preserving colors and styles as
+    ///     HTML markup.
+    ///
+    ///   - `mixed` (default)
+    ///
+    ///     Place multiple representations on the clipboard at once
+    ///     (e.g. plain text and HTML), each tagged with its content type
+    ///     so the receiving OS or application can pick the most appropriate
+    ///     representation when pasting.
     copy_to_clipboard: CopyToClipboard,
 
     /// Paste the contents of the default clipboard.
@@ -398,6 +421,8 @@ pub const Action = union(enum) {
 
     /// Navigate the search results. If there is no active search, this
     /// is not performed.
+    ///
+    /// Valid values: `previous`, `next`.
     navigate_search: NavigateSearch,
 
     /// Start a search if it isn't started already. This doesn't set any
@@ -577,6 +602,16 @@ pub const Action = union(enum) {
     /// and persists across focus changes within the tab.
     prompt_tab_title,
 
+    /// Set the title for the current focused surface.
+    ///
+    /// If the title is empty, the surface title is reset to an empty title.
+    set_surface_title: []const u8,
+
+    /// Set the title for the current focused tab.
+    ///
+    /// If the title is empty, the tab title override is cleared.
+    set_tab_title: []const u8,
+
     /// Create a new split in the specified direction.
     ///
     /// Valid arguments:
@@ -671,10 +706,21 @@ pub const Action = union(enum) {
     /// of the `confirm-close-surface` configuration setting.
     close_surface,
 
-    /// Close the current tab and all splits therein, close all other tabs, or
-    /// close every tab to the right of the current one depending on the mode.
+    /// Close the specified tabs and all splits therein.
     ///
-    /// If the mode is not specified, defaults to closing the current tab.
+    /// Valid values:
+    ///
+    ///   - `this` (default)
+    ///
+    ///     Close the current tab and all splits within it.
+    ///
+    ///   - `other`
+    ///
+    ///     Close every tab in the current window except the current tab.
+    ///
+    ///   - `right`
+    ///
+    ///     Close every tab to the right of the current tab.
     ///
     /// This might trigger a close confirmation popup, depending on the value
     /// of the `confirm-close-surface` configuration setting.
@@ -1324,6 +1370,8 @@ pub const Action = union(enum) {
             .set_font_size,
             .prompt_surface_title,
             .prompt_tab_title,
+            .set_surface_title,
+            .set_tab_title,
             .clear_screen,
             .select_all,
             .scroll_to_top,
@@ -2603,9 +2651,8 @@ pub const Set = struct {
     /// Get an entry for the given key event. This will attempt to find
     /// a binding using multiple parts of the event in the following order:
     ///
-    ///   1. Translated key (event.key)
-    ///   2. Physical key (event.physical_key)
-    ///   3. Unshifted Unicode codepoint (event.unshifted_codepoint)
+    ///   1. Physical key (event.physical_key)
+    ///   2. Unshifted Unicode codepoint (event.unshifted_codepoint)
     ///
     pub fn getEvent(self: *const Set, event: KeyEvent) ?Entry {
         var trigger: Trigger = .{
@@ -3291,6 +3338,16 @@ test "parse: action with string" {
         const binding = try parseSingle("a=esc:A");
         try testing.expect(binding.action == .esc);
         try testing.expectEqualStrings("A", binding.action.esc);
+    }
+    {
+        const binding = try parseSingle("a=set_surface_title:surface");
+        try testing.expect(binding.action == .set_surface_title);
+        try testing.expectEqualStrings("surface", binding.action.set_surface_title);
+    }
+    {
+        const binding = try parseSingle("a=set_tab_title:tab");
+        try testing.expect(binding.action == .set_tab_title);
+        try testing.expectEqualStrings("tab", binding.action.set_tab_title);
     }
 }
 
@@ -4555,6 +4612,18 @@ test "action: format" {
     defer buf.deinit();
     try a.format(&buf.writer);
     try testing.expectEqualStrings("text:\\xf0\\x9f\\x91\\xbb", buf.written());
+}
+
+test "action: format set title" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    const a: Action = .{ .set_tab_title = "foo bar" };
+
+    var buf: std.Io.Writer.Allocating = .init(alloc);
+    defer buf.deinit();
+    try a.format(&buf.writer);
+    try testing.expectEqualStrings("set_tab_title:foo bar", buf.written());
 }
 
 test "set: appendChain with no parent returns error" {

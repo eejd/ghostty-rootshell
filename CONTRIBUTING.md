@@ -47,6 +47,13 @@ on a system of trust, and AI has unfortunately made it so we can no
 longer trust-by-default because it makes it too trivial to generate
 plausible-looking but actually low-quality contributions.
 
+## Contributors Prior to the Vouch System
+
+If you contributed to Ghostty prior to the introduction
+of the vouch system and wish to continue contributing, you were not
+automatically added to the [list of vouched users](.github/VOUCHED.td). You will need to follow the same
+process as a first-time contributor to be vouched.
+
 ## Denouncement System
 
 If you repeatedly break the rules of this document or repeatedly
@@ -169,11 +176,6 @@ Once a discussion reaches a point where a well-understood, actionable
 item is identified, it is moved to the issue tracker. **This pattern
 makes it easier for maintainers or contributors to find issues to work on
 since _every issue_ is ready to be worked on.**
-
-If you are experiencing a bug and have clear steps to reproduce it, please
-open an issue. If you are experiencing a bug but you are not sure how to
-reproduce it or aren't sure if it's a bug, please open a discussion.
-If you have an idea for a feature, please open a discussion.
 
 ### Pull Requests Implement an Issue
 
