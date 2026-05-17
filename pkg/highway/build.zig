@@ -37,6 +37,14 @@ pub fn build(b: *std.Build) !void {
         try android_ndk.addPaths(b, lib);
     }
 
+    // Darwin targets (including Mac Catalyst — x86_64-ios-macabi etc.) need
+    // explicit SDK paths so Zig can find system headers like `stdlib.h` via
+    // `xcrun`. Without this, `lib.linkLibC()` succeeds on the host's macOS
+    // SDK but fails on macabi/iOS/visionOS targets.
+    if (target.result.os.tag.isDarwin()) {
+        try @import("apple_sdk").addPaths(b, lib);
+    }
+
     var flags: std.ArrayList([]const u8) = .empty;
     defer flags.deinit(b.allocator);
     try flags.appendSlice(b.allocator, &.{
