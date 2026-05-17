@@ -36,7 +36,7 @@ pub const Options = struct {
 ///   * `--class=<class>`: If set, connect to a custom instance of Ghostty.
 ///     The class must be a valid GTK application ID.
 ///
-/// Available since: 1.3.0
+/// Available since: 1.4.0
 pub fn run(alloc: Allocator) !u8 {
     var buf: [256]u8 = undefined;
     var stderr_writer = std.fs.File.stderr().writer(&buf);
