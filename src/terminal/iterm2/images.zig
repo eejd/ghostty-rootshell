@@ -20,7 +20,6 @@ const Allocator = std.mem.Allocator;
 
 const assert = @import("../../quirks.zig").inlineAssert;
 const simd = @import("../../simd/main.zig");
-const wuffs = @import("wuffs");
 
 const kitty_command = @import("../kitty/graphics_command.zig");
 const kitty_exec = @import("../kitty/graphics_exec.zig");
@@ -219,6 +218,13 @@ fn dispatchDecoded(
         return;
     }
     if (isJpeg(payload)) {
+        // JPEG decoding requires wuffs, which isn't bundled in libghostty-vt
+        // (.lib artifact). Drop the payload silently — PNG remains supported.
+        if (comptime build_options.artifact == .lib) {
+            alloc.free(owned_buf);
+            log.warn("iTerm2 JPEG dropped: libghostty-vt does not bundle a JPEG decoder", .{});
+            return error.UnsupportedFormat;
+        }
         defer alloc.free(owned_buf);
         try dispatchJpeg(alloc, terminal, meta, payload);
         return;
@@ -303,6 +309,7 @@ fn dispatchJpeg(
     meta: Meta,
     jpeg_bytes: []const u8,
 ) !void {
+    const wuffs = @import("wuffs");
     const decoded = wuffs.jpeg.decode(alloc, jpeg_bytes) catch |err| switch (err) {
         error.WuffsError => return error.InvalidData,
         error.OutOfMemory => return error.OutOfMemory,

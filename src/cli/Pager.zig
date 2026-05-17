@@ -7,8 +7,18 @@
 //! If stdout is not a TTY, writes go directly to stdout.
 const Pager = @This();
 const std = @import("std");
+const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
 const internal_os = @import("../os/main.zig");
+
+/// True on platforms whose stdlib supports spawning child processes. On
+/// targets like visionOS / pure-iOS this is false and Pager is a passthrough
+/// to stdout.
+const can_spawn = switch (builtin.os.tag) {
+    .visionos, .watchos, .tvos => false,
+    .ios => builtin.abi == .macabi,
+    else => true,
+};
 
 /// The pager child process, if one was spawned.
 child: ?std.process.Child = null,
@@ -50,6 +60,8 @@ pub fn deinit(self: *Pager) void {
 }
 
 fn initPager(alloc: Allocator) ?std.process.Child {
+    if (comptime !can_spawn) return null;
+
     const stdout_file: std.fs.File = .stdout();
     if (!stdout_file.isTty()) return null;
 

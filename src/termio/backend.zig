@@ -134,6 +134,7 @@ pub const Backend = union(Kind) {
     pub fn getProcessInfo(self: *Backend, comptime info: ProcessInfo) ?ProcessInfo.Type(info) {
         return switch (self.*) {
             .exec => |*exec| exec.getProcessInfo(info),
+            .pipe => null,
         };
     }
 };

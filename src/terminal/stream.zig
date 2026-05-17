@@ -2050,7 +2050,7 @@ pub fn Stream(comptime H: type) type {
                 },
 
                 .iterm2_image => |v| {
-                    try self.handler.vt(.iterm2_image, v);
+                    self.handler.vt(.iterm2_image, v);
                 },
 
                 .conemu_sleep,

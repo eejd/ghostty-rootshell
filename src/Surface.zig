@@ -673,7 +673,7 @@ pub fn init(
         const backend: termio.backend.Backend = if (use_external_io) blk: {
             // Explicitly requested pipe-based I/O
             var io_pipe = try termio.Pipe.init(alloc, .{
-                .cwd = config.@"working-directory",
+                .cwd = if (config.@"working-directory") |wd| wd.value() else null,
             });
             errdefer io_pipe.deinit();
             break :blk .{ .pipe = io_pipe };
@@ -681,7 +681,7 @@ pub fn init(
             builtin.os.tag == .visionos) blk: {
             // iOS (non-Catalyst) and visionOS: auto-fallback to pipes (no PTY support)
             var io_pipe = try termio.Pipe.init(alloc, .{
-                .cwd = config.@"working-directory",
+                .cwd = if (config.@"working-directory") |wd| wd.value() else null,
             });
             errdefer io_pipe.deinit();
             break :blk .{ .pipe = io_pipe };
