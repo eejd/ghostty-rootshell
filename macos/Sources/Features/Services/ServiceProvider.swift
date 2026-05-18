@@ -52,6 +52,11 @@ class ServiceProvider: NSObject {
             }
         )
 
+        guard !directoryURLs.isEmpty else {
+            error.pointee = Self.errorNoString
+            return
+        }
+
         for url in directoryURLs {
             var config = Ghostty.SurfaceConfiguration()
             config.workingDirectory = url.path(percentEncoded: false)
