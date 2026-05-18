@@ -131,7 +131,7 @@ extension Ghostty.OSSurfaceView {
 
         init(
             from startSearch: Ghostty.Action.StartSearch,
-            pasteboard: OSPasteboard = OSPasteboard(name: .find)
+            pasteboard: OSPasteboard = OSPasteboard.find
         ) {
             self.pasteboard = pasteboard
             if let needle = startSearch.needle, !needle.isEmpty {
@@ -143,7 +143,7 @@ extension Ghostty.OSSurfaceView {
         }
 
         func readPasteboardNeedle() {
-            let pasteboardNeedle = pasteboard.string(forType: .string)
+            let pasteboardNeedle = pasteboard.string
             if let pasteboardNeedle, pasteboardNeedle != needle {
                 needle = pasteboardNeedle
                 needleSelection = needle.startIndex..<needle.endIndex
@@ -151,8 +151,7 @@ extension Ghostty.OSSurfaceView {
         }
 
         func writePasteboardNeedle() {
-            pasteboard.clearContents()
-            pasteboard.setString(needle, forType: .string)
+            pasteboard.string = needle
         }
     }
 

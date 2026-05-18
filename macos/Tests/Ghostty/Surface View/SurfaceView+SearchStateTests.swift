@@ -8,9 +8,7 @@ import Testing
     typealias StartSearch = Ghostty.Action.StartSearch
 
     /// A unique pasteboard for each test case prevents flakiness.
-    let pasteboard = OSPasteboard(
-        name: OSPasteboard.Name(rawValue: UUID().uuidString)
-    )
+    let pasteboard = OSPasteboard.withUniqueName()
 
     init() {
         pasteboard.setString("pb", forType: .string)
