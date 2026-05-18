@@ -42,7 +42,13 @@ class ServiceProvider: NSObject {
         // to their directories because that's the only thing we can open.
         let directoryURLs = Set(
             pathURLs.map { url -> URL in
-                url.hasDirectoryPath ? url : url.deletingLastPathComponent()
+                /// We check file system resources here because
+                /// NSURL doesn't append `/` when reading string contents from pasteboard
+                ///     ```
+                ///     NSURL(pasteboardPropertyList: "/System/Library".propertyList(), ofType: .fileURL)?.hasDirectoryPath
+                ///     ```
+                let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? url.hasDirectoryPath
+                return isDirectory ? url : url.deletingLastPathComponent()
             }
         )
 
