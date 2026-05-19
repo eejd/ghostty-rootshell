@@ -316,19 +316,18 @@ class BaseTerminalController: NSWindowController,
         savedFrame = .init(window: window.frame, screen: screen.visibleFrame)
     }
 
-    func confirmClose(
+    func confirmCloseAsync(
         messageText: String,
         informativeText: String,
-        completion: @escaping () -> Void
-    ) {
+        confirmButtonTitle: String = "Close",
+    ) async -> NSApplication.ModalResponse? {
         // If we already have an alert, we need to wait for that one.
-        guard alert == nil else { return }
+        guard alert == nil else { return nil }
 
         // If there is no window to attach the modal then we assume success
         // since we'll never be able to show the modal.
         guard let window else {
-            completion()
-            return
+            return .OK
         }
 
         // If we need confirmation by any, show one confirmation for all windows
@@ -336,22 +335,35 @@ class BaseTerminalController: NSWindowController,
         let alert = NSAlert()
         alert.messageText = messageText
         alert.informativeText = informativeText
-        alert.addButton(withTitle: "Close")
+        alert.addButton(withTitle: confirmButtonTitle)
         alert.addButton(withTitle: "Cancel")
         alert.alertStyle = .warning
-        alert.beginSheetModal(for: window) { response in
-            let alertWindow = alert.window
-            self.alert = nil
-            if response == .alertFirstButtonReturn {
-            // This is important so that we avoid losing focus when Stage
-            // Manager is used (#8336)
-                alertWindow.orderOut(nil)
-                completion()
-        }
-    }
-
         // Store our alert so we only ever show one.
         self.alert = alert
+        defer {
+            // This is important so that we avoid losing focus when Stage
+            // Manager is used (#8336)
+            alert.window.orderOut(nil)
+            self.alert = nil
+        }
+        return await alert.beginSheetModal(for: window)
+    }
+
+    func confirmClose(
+        messageText: String,
+        informativeText: String,
+        confirmButtonTitle: String = "Close",
+        completion: @escaping () -> Void
+    ) {
+        Task {
+            guard let response = await confirmCloseAsync(messageText: messageText, informativeText: informativeText, confirmButtonTitle: confirmButtonTitle) else {
+                completion()
+                return
+            }
+            if [.alertFirstButtonReturn, .OK].contains(response) {
+                completion()
+            }
+        }
     }
 
     /// Prompt the user to change the tab/window title.
