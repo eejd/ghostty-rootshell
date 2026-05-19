@@ -343,12 +343,12 @@ class BaseTerminalController: NSWindowController,
             let alertWindow = alert.window
             self.alert = nil
             if response == .alertFirstButtonReturn {
-                // This is important so that we avoid losing focus when Stage
-                // Manager is used (#8336)
+            // This is important so that we avoid losing focus when Stage
+            // Manager is used (#8336)
                 alertWindow.orderOut(nil)
                 completion()
-            }
         }
+    }
 
         // Store our alert so we only ever show one.
         self.alert = alert
@@ -1183,10 +1183,8 @@ class BaseTerminalController: NSWindowController,
 
     // MARK: NSWindowDelegate
 
-    // This is called when performClose is called on a window (NOT when close()
-    // is called directly). performClose is called primarily when UI elements such
-    // as the "red X" are pressed.
-    func windowShouldClose(_ sender: NSWindow) -> Bool {
+    /// Check whether window should be closed without showing an alert
+    func windowCanBeClosedWithoutConfirmation() -> Bool {
         // We must have a window. Is it even possible not to?
         guard let window = self.window else { return true }
 
@@ -1199,12 +1197,22 @@ class BaseTerminalController: NSWindowController,
         // If our surfaces don't require confirmation, close.
         if !surfaceTree.contains(where: { $0.needsConfirmQuit }) { return true }
 
+        return false
+    }
+
+    // This is called when performClose is called on a window (NOT when close()
+    // is called directly). performClose is called primarily when UI elements such
+    // as the "red X" are pressed.
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard !windowCanBeClosedWithoutConfirmation() else {
+            return true
+        }
         // We require confirmation, so show an alert as long as we aren't already.
         confirmClose(
             messageText: "Close Terminal?",
             informativeText: "The terminal still has a running process. If you close the terminal the process will be killed."
-        ) {
-            window.close()
+        ) { [weak self] in
+            self?.window?.close()
         }
 
         return false
