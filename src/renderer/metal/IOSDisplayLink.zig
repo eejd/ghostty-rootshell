@@ -78,7 +78,14 @@ pub const IOSDisplayLink = struct {
     }
 
     pub fn release(self: *IOSDisplayLink) void {
-        self.stop() catch {};
+        // Must be sync, not async stop(). An async stop() dispatches a block
+        // that captures `self` by pointer and runs on the main queue later;
+        // if we destroy `self` here before the queue drains, the block
+        // dereferences freed memory and crashes in `objc_msgSend("invalidate")`
+        // on a stale CADisplayLink. invalidateSync flushes any previously
+        // queued start/stop blocks (FIFO) before returning, so by the time we
+        // reach the release/destroy below, nothing references `self` anymore.
+        self.invalidateSync();
 
         if (self.link) |link| {
             link.release();
