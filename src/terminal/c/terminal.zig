@@ -7,6 +7,7 @@ const ZigTerminal = @import("../Terminal.zig");
 const Stream = @import("../stream_terminal.zig").Stream;
 const ScreenSet = @import("../ScreenSet.zig");
 const PageList = @import("../PageList.zig");
+const Selection = @import("../Selection.zig");
 const apc = @import("../apc.zig");
 const kitty = @import("../kitty/key.zig");
 const kitty_gfx_c = @import("kitty_graphics.zig");
@@ -661,6 +662,26 @@ pub fn get_multi(
         }
     }
     if (out_written) |w| w.* = count;
+    return .success;
+}
+
+pub fn selection_adjust(
+    terminal_: Terminal,
+    selection: ?*selection_c.CSelection,
+    adjustment: Selection.Adjustment,
+) callconv(lib.calling_conv) Result {
+    if (comptime std.debug.runtime_safety) {
+        _ = std.meta.intToEnum(Selection.Adjustment, @intFromEnum(adjustment)) catch {
+            log.warn("terminal_selection_adjust invalid adjustment value={d}", .{@intFromEnum(adjustment)});
+            return .invalid_value;
+        };
+    }
+
+    const t: *ZigTerminal = (terminal_ orelse return .invalid_value).terminal;
+    const sel_ptr = selection orelse return .invalid_value;
+    var sel = sel_ptr.toZig() orelse return .invalid_value;
+    sel.adjust(t.screens.active, adjustment);
+    sel_ptr.* = .fromZig(sel);
     return .success;
 }
 
@@ -1387,6 +1408,54 @@ test "set and get selection" {
     try testing.expectEqual(Result.success, set(t, .selection, null));
     try testing.expect(t.?.terminal.screens.active.selection == null);
     try testing.expectEqual(Result.no_value, get(t, .selection, @ptrCast(&out)));
+}
+
+test "selection_adjust mutates snapshot end" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib.alloc.test_allocator,
+        &t,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 0,
+        },
+    ));
+    defer free(t);
+
+    vt_write(t, "Hello", 5);
+
+    var start_ref: grid_ref_c.CGridRef = .{};
+    try testing.expectEqual(Result.success, grid_ref(t, .{
+        .tag = .active,
+        .value = .{ .active = .{ .x = 0, .y = 0 } },
+    }, &start_ref));
+
+    var end_ref: grid_ref_c.CGridRef = .{};
+    try testing.expectEqual(Result.success, grid_ref(t, .{
+        .tag = .active,
+        .value = .{ .active = .{ .x = 1, .y = 0 } },
+    }, &end_ref));
+
+    var sel: selection_c.CSelection = .{
+        .start = start_ref,
+        .end = end_ref,
+    };
+    try testing.expectEqual(Result.success, selection_adjust(t, &sel, .right));
+    try testing.expectEqual(@as(u16, 0), sel.start.toPin().?.x);
+    try testing.expectEqual(@as(u16, 2), sel.end.toPin().?.x);
+
+    try testing.expectEqual(Result.success, selection_adjust(t, &sel, .left));
+    try testing.expectEqual(@as(u16, 0), sel.start.toPin().?.x);
+    try testing.expectEqual(@as(u16, 1), sel.end.toPin().?.x);
+
+    sel = .{
+        .start = end_ref,
+        .end = start_ref,
+    };
+    try testing.expectEqual(Result.success, selection_adjust(t, &sel, .right));
+    try testing.expectEqual(@as(u16, 1), sel.start.toPin().?.x);
+    try testing.expectEqual(@as(u16, 1), sel.end.toPin().?.x);
 }
 
 test "grid_ref" {

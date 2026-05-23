@@ -1124,6 +1124,35 @@ GHOSTTY_API GhosttyResult ghostty_terminal_get_multi(GhosttyTerminal terminal,
                                     size_t* out_written);
 
 /**
+ * Adjust a selection snapshot using terminal selection semantics.
+ *
+ * This mutates the caller-provided GhosttySelection in place. The logical end
+ * endpoint is always moved, regardless of whether the selection is forward or
+ * reversed visually. The input selection remains a snapshot: after adjustment,
+ * call ghostty_terminal_set() with GHOSTTY_TERMINAL_OPT_SELECTION to install it
+ * as the terminal-owned selection if desired.
+ *
+ * The selection's start and end grid refs must both be valid untracked
+ * snapshots for the given terminal's currently active screen. In practice,
+ * they must come from that terminal and screen, and no mutating terminal call
+ * may have occurred since the refs were produced or reconstructed from
+ * tracked refs. Passing refs from another terminal, another screen, or stale
+ * refs violates this precondition.
+ *
+ * @param terminal The terminal handle (NULL returns GHOSTTY_INVALID_VALUE)
+ * @param selection Selection snapshot to adjust in place
+ * @param adjustment The adjustment operation to apply
+ * @return GHOSTTY_SUCCESS on success, GHOSTTY_INVALID_VALUE if the terminal,
+ *         selection, selection references, or adjustment are invalid
+ *
+ * @ingroup terminal
+ */
+GHOSTTY_API GhosttyResult ghostty_terminal_selection_adjust(
+                                    GhosttyTerminal terminal,
+                                    GhosttySelection* selection,
+                                    GhosttySelectionAdjust adjustment);
+
+/**
  * Resolve a point in the terminal grid to a grid reference.
  *
  * Resolves the given point (which can be in active, viewport, screen,

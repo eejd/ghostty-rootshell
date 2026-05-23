@@ -77,6 +77,61 @@ typedef struct {
   bool rectangle;
 } GhosttySelection;
 
+/**
+ * Operation used to adjust a selection endpoint.
+ *
+ * Adjustment mutates the selection's logical end endpoint, not whichever
+ * endpoint is visually bottom/right. This preserves keyboard and drag
+ * behavior for both forward and reversed selections.
+ *
+ * @ingroup selection
+ */
+typedef enum GHOSTTY_ENUM_TYPED {
+  /** Move left to the previous non-empty cell, wrapping upward. */
+  GHOSTTY_SELECTION_ADJUST_LEFT = 0,
+
+  /** Move right to the next non-empty cell, wrapping downward. */
+  GHOSTTY_SELECTION_ADJUST_RIGHT = 1,
+
+  /**
+   * Move up one row at the current column, or to the beginning of the
+   * line if already at the top.
+   */
+  GHOSTTY_SELECTION_ADJUST_UP = 2,
+
+  /**
+   * Move down to the next non-blank row at the current column, or to the
+   * end of the line if none exists.
+   */
+  GHOSTTY_SELECTION_ADJUST_DOWN = 3,
+
+  /** Move to the top-left cell of the screen. */
+  GHOSTTY_SELECTION_ADJUST_HOME = 4,
+
+  /** Move to the right edge of the last non-blank row on the screen. */
+  GHOSTTY_SELECTION_ADJUST_END = 5,
+
+  /**
+   * Move up by one terminal page height, or to home if that would move
+   * past the top.
+   */
+  GHOSTTY_SELECTION_ADJUST_PAGE_UP = 6,
+
+  /**
+   * Move down by one terminal page height, or to end if that would move
+   * past the bottom.
+   */
+  GHOSTTY_SELECTION_ADJUST_PAGE_DOWN = 7,
+
+  /** Move to the left edge of the current line. */
+  GHOSTTY_SELECTION_ADJUST_BEGINNING_OF_LINE = 8,
+
+  /** Move to the right edge of the current line. */
+  GHOSTTY_SELECTION_ADJUST_END_OF_LINE = 9,
+
+  GHOSTTY_SELECTION_ADJUST_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
+} GhosttySelectionAdjust;
+
 /** @} */
 
 #ifdef __cplusplus
