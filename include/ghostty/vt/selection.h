@@ -78,6 +78,31 @@ typedef struct {
 } GhosttySelection;
 
 /**
+ * Ordering of a selection's endpoints in terminal coordinates.
+ *
+ * Mirrored orders are only produced by rectangular selections whose start
+ * and end endpoints are on opposite diagonal corners that are not simple
+ * top-left-to-bottom-right or bottom-right-to-top-left orderings.
+ *
+ * @ingroup selection
+ */
+typedef enum GHOSTTY_ENUM_TYPED {
+  /** Start is before end in top-left to bottom-right order. */
+  GHOSTTY_SELECTION_ORDER_FORWARD = 0,
+
+  /** End is before start in top-left to bottom-right order. */
+  GHOSTTY_SELECTION_ORDER_REVERSE = 1,
+
+  /** Rectangular selection from top-right to bottom-left. */
+  GHOSTTY_SELECTION_ORDER_MIRRORED_FORWARD = 2,
+
+  /** Rectangular selection from bottom-left to top-right. */
+  GHOSTTY_SELECTION_ORDER_MIRRORED_REVERSE = 3,
+
+  GHOSTTY_SELECTION_ORDER_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
+} GhosttySelectionOrder;
+
+/**
  * Operation used to adjust a selection endpoint.
  *
  * Adjustment mutates the selection's logical end endpoint, not whichever

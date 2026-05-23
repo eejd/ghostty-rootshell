@@ -240,6 +240,8 @@ comptime {
         @export(&c.terminal_get, .{ .name = "ghostty_terminal_get" });
         @export(&c.terminal_get_multi, .{ .name = "ghostty_terminal_get_multi" });
         @export(&c.terminal_selection_adjust, .{ .name = "ghostty_terminal_selection_adjust" });
+        @export(&c.terminal_selection_order, .{ .name = "ghostty_terminal_selection_order" });
+        @export(&c.terminal_selection_ordered, .{ .name = "ghostty_terminal_selection_ordered" });
         @export(&c.terminal_grid_ref, .{ .name = "ghostty_terminal_grid_ref" });
         @export(&c.terminal_grid_ref_track, .{ .name = "ghostty_terminal_grid_ref_track" });
         @export(&c.terminal_point_from_grid_ref, .{ .name = "ghostty_terminal_point_from_grid_ref" });

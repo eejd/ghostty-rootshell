@@ -685,6 +685,50 @@ pub fn selection_adjust(
     return .success;
 }
 
+pub fn selection_order(
+    terminal_: Terminal,
+    selection: ?*const selection_c.CSelection,
+    out_order: ?*Selection.Order,
+) callconv(lib.calling_conv) Result {
+    const t: *ZigTerminal = (terminal_ orelse return .invalid_value).terminal;
+    const sel = (selection orelse return .invalid_value).toZig() orelse
+        return .invalid_value;
+    const out = out_order orelse return .invalid_value;
+    if (!selectionValid(t, sel)) return .invalid_value;
+
+    out.* = sel.order(t.screens.active);
+    return .success;
+}
+
+pub fn selection_ordered(
+    terminal_: Terminal,
+    selection: ?*const selection_c.CSelection,
+    desired: Selection.Order,
+    out_selection: ?*selection_c.CSelection,
+) callconv(lib.calling_conv) Result {
+    if (comptime std.debug.runtime_safety) {
+        _ = std.meta.intToEnum(Selection.Order, @intFromEnum(desired)) catch {
+            log.warn("terminal_selection_ordered invalid desired value={d}", .{@intFromEnum(desired)});
+            return .invalid_value;
+        };
+    }
+
+    const t: *ZigTerminal = (terminal_ orelse return .invalid_value).terminal;
+    const sel = (selection orelse return .invalid_value).toZig() orelse
+        return .invalid_value;
+    const out = out_selection orelse return .invalid_value;
+    if (!selectionValid(t, sel)) return .invalid_value;
+
+    out.* = .fromZig(sel.ordered(t.screens.active, desired));
+    return .success;
+}
+
+fn selectionValid(t: *ZigTerminal, sel: Selection) bool {
+    const screen = t.screens.active;
+    return screen.pages.pointFromPin(.screen, sel.start()) != null and
+        screen.pages.pointFromPin(.screen, sel.end()) != null;
+}
+
 fn getTyped(
     terminal_: Terminal,
     comptime data: TerminalData,
@@ -1456,6 +1500,77 @@ test "selection_adjust mutates snapshot end" {
     try testing.expectEqual(Result.success, selection_adjust(t, &sel, .right));
     try testing.expectEqual(@as(u16, 1), sel.start.toPin().?.x);
     try testing.expectEqual(@as(u16, 1), sel.end.toPin().?.x);
+}
+
+test "selection_order and selection_ordered" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib.alloc.test_allocator,
+        &t,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 0,
+        },
+    ));
+    defer free(t);
+
+    vt_write(t, "Hello\r\nWorld", 12);
+
+    var start_ref: grid_ref_c.CGridRef = .{};
+    try testing.expectEqual(Result.success, grid_ref(t, .{
+        .tag = .active,
+        .value = .{ .active = .{ .x = 3, .y = 0 } },
+    }, &start_ref));
+
+    var end_ref: grid_ref_c.CGridRef = .{};
+    try testing.expectEqual(Result.success, grid_ref(t, .{
+        .tag = .active,
+        .value = .{ .active = .{ .x = 1, .y = 1 } },
+    }, &end_ref));
+
+    const sel: selection_c.CSelection = .{
+        .start = start_ref,
+        .end = end_ref,
+        .rectangle = true,
+    };
+
+    var order: Selection.Order = undefined;
+    try testing.expectEqual(Result.success, selection_order(t, &sel, &order));
+    try testing.expectEqual(Selection.Order.mirrored_forward, order);
+
+    var out: selection_c.CSelection = undefined;
+    try testing.expectEqual(Result.success, selection_ordered(t, &sel, .forward, &out));
+    try testing.expectEqual(@as(u16, 1), out.start.toPin().?.x);
+    try testing.expectEqual(@as(u16, 0), out.start.toPin().?.y);
+    try testing.expectEqual(@as(u16, 3), out.end.toPin().?.x);
+    try testing.expectEqual(@as(u16, 1), out.end.toPin().?.y);
+    try testing.expect(out.rectangle);
+
+    try testing.expectEqual(Result.success, selection_ordered(t, &sel, .reverse, &out));
+    try testing.expectEqual(@as(u16, 3), out.start.toPin().?.x);
+    try testing.expectEqual(@as(u16, 1), out.start.toPin().?.y);
+    try testing.expectEqual(@as(u16, 1), out.end.toPin().?.x);
+    try testing.expectEqual(@as(u16, 0), out.end.toPin().?.y);
+    try testing.expect(out.rectangle);
+}
+
+test "selection_order invalid values" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib.alloc.test_allocator,
+        &t,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 0,
+        },
+    ));
+    defer free(t);
+
+    var order: Selection.Order = undefined;
+    try testing.expectEqual(Result.invalid_value, selection_order(null, null, &order));
+    try testing.expectEqual(Result.invalid_value, selection_order(t, null, &order));
 }
 
 test "grid_ref" {

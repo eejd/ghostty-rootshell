@@ -196,7 +196,12 @@ pub fn bottomRight(self: Selection, s: *const Screen) Pin {
 ///  operations only flip the x or y axis, not both. Depending on the y axis
 ///  direction, this is either mirrored_forward or mirrored_reverse.
 ///
-pub const Order = enum { forward, reverse, mirrored_forward, mirrored_reverse };
+pub const Order = lib.Enum(lib.target, &.{
+    "forward",
+    "reverse",
+    "mirrored_forward",
+    "mirrored_reverse",
+});
 
 pub fn order(self: Selection, s: *const Screen) Order {
     const start_pt = s.pages.pointFromPin(.screen, self.start()).?.screen;
