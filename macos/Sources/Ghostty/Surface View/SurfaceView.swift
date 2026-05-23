@@ -420,7 +420,6 @@ extension Ghostty {
                     .onSubmit {
                         _ = surfaceView.navigateSearchToNext()
                     }
-                    }
 #if canImport(AppKit)
                     .onExitCommand {
                         if searchState.needle.isEmpty {
