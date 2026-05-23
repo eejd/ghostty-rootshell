@@ -1208,6 +1208,34 @@ GHOSTTY_API GhosttyResult ghostty_terminal_selection_ordered(
                                     GhosttySelection* out_selection);
 
 /**
+ * Test whether a terminal point is inside a selection snapshot.
+ *
+ * This uses the same selection semantics as the terminal, including
+ * rectangular/block selections and linear selections spanning multiple rows.
+ *
+ * The selection's start and end grid refs must both be valid untracked
+ * snapshots for the given terminal's currently active screen. In practice,
+ * they must come from that terminal and screen, and no mutating terminal call
+ * may have occurred since the refs were produced or reconstructed from
+ * tracked refs. Passing refs from another terminal, another screen, or stale
+ * refs violates this precondition.
+ *
+ * @param terminal The terminal handle (NULL returns GHOSTTY_INVALID_VALUE)
+ * @param selection Selection snapshot to inspect
+ * @param point Point to test for containment
+ * @param[out] out_contains On success, receives whether point is inside selection
+ * @return GHOSTTY_SUCCESS on success, GHOSTTY_INVALID_VALUE if the terminal,
+ *         selection, selection references, point, or output pointer are invalid
+ *
+ * @ingroup terminal
+ */
+GHOSTTY_API GhosttyResult ghostty_terminal_selection_contains(
+                                    GhosttyTerminal terminal,
+                                    const GhosttySelection* selection,
+                                    GhosttyPoint point,
+                                    bool* out_contains);
+
+/**
  * Resolve a point in the terminal grid to a grid reference.
  *
  * Resolves the given point (which can be in active, viewport, screen,

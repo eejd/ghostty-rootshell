@@ -723,6 +723,24 @@ pub fn selection_ordered(
     return .success;
 }
 
+pub fn selection_contains(
+    terminal_: Terminal,
+    selection: ?*const selection_c.CSelection,
+    pt: point.Point.C,
+    out_contains: ?*bool,
+) callconv(lib.calling_conv) Result {
+    const t: *ZigTerminal = (terminal_ orelse return .invalid_value).terminal;
+    const sel = (selection orelse return .invalid_value).toZig() orelse
+        return .invalid_value;
+    const out = out_contains orelse return .invalid_value;
+    if (!selectionValid(t, sel)) return .invalid_value;
+
+    const screen = t.screens.active;
+    const pin = screen.pages.pin(.fromC(pt)) orelse return .invalid_value;
+    out.* = sel.contains(screen, pin);
+    return .success;
+}
+
 fn selectionValid(t: *ZigTerminal, sel: Selection) bool {
     const screen = t.screens.active;
     return screen.pages.pointFromPin(.screen, sel.start()) != null and
@@ -1553,6 +1571,64 @@ test "selection_order and selection_ordered" {
     try testing.expectEqual(@as(u16, 1), out.end.toPin().?.x);
     try testing.expectEqual(@as(u16, 0), out.end.toPin().?.y);
     try testing.expect(out.rectangle);
+}
+
+test "selection_contains" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib.alloc.test_allocator,
+        &t,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 0,
+        },
+    ));
+    defer free(t);
+
+    vt_write(t, "Hello\r\nWorld", 12);
+
+    var start_ref: grid_ref_c.CGridRef = .{};
+    try testing.expectEqual(Result.success, grid_ref(t, .{
+        .tag = .active,
+        .value = .{ .active = .{ .x = 3, .y = 0 } },
+    }, &start_ref));
+
+    var end_ref: grid_ref_c.CGridRef = .{};
+    try testing.expectEqual(Result.success, grid_ref(t, .{
+        .tag = .active,
+        .value = .{ .active = .{ .x = 1, .y = 1 } },
+    }, &end_ref));
+
+    const linear: selection_c.CSelection = .{
+        .start = start_ref,
+        .end = end_ref,
+    };
+
+    var contains: bool = undefined;
+    try testing.expectEqual(Result.success, selection_contains(t, &linear, .{
+        .tag = .active,
+        .value = .{ .active = .{ .x = 4, .y = 0 } },
+    }, &contains));
+    try testing.expect(contains);
+
+    try testing.expectEqual(Result.success, selection_contains(t, &linear, .{
+        .tag = .active,
+        .value = .{ .active = .{ .x = 2, .y = 0 } },
+    }, &contains));
+    try testing.expect(!contains);
+
+    const rectangle: selection_c.CSelection = .{
+        .start = start_ref,
+        .end = end_ref,
+        .rectangle = true,
+    };
+
+    try testing.expectEqual(Result.success, selection_contains(t, &rectangle, .{
+        .tag = .active,
+        .value = .{ .active = .{ .x = 2, .y = 0 } },
+    }, &contains));
+    try testing.expect(contains);
 }
 
 test "selection_order invalid values" {

@@ -173,6 +173,7 @@ pub const terminal_get_multi = terminal.get_multi;
 pub const terminal_selection_adjust = terminal.selection_adjust;
 pub const terminal_selection_order = terminal.selection_order;
 pub const terminal_selection_ordered = terminal.selection_ordered;
+pub const terminal_selection_contains = terminal.selection_contains;
 pub const terminal_grid_ref = terminal.grid_ref;
 pub const terminal_grid_ref_track = terminal.grid_ref_track;
 pub const terminal_point_from_grid_ref = terminal.point_from_grid_ref;
