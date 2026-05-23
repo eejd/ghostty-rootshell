@@ -3,11 +3,10 @@ const testing = std.testing;
 const build_options = @import("terminal_options");
 const lib = @import("../lib.zig");
 const CAllocator = lib.alloc.Allocator;
-const ZigTerminal = @import("../Terminal.zig");
+pub const ZigTerminal = @import("../Terminal.zig");
 const Stream = @import("../stream_terminal.zig").Stream;
 const ScreenSet = @import("../ScreenSet.zig");
 const PageList = @import("../PageList.zig");
-const Selection = @import("../Selection.zig");
 const apc = @import("../apc.zig");
 const kitty = @import("../kitty/key.zig");
 const kitty_gfx_c = @import("kitty_graphics.zig");
@@ -210,6 +209,10 @@ const Effects = struct {
 
 /// C: GhosttyTerminal
 pub const Terminal = ?*TerminalWrapper;
+
+pub fn zigTerminal(terminal_: Terminal) ?*ZigTerminal {
+    return (terminal_ orelse return null).terminal;
+}
 
 /// C: GhosttyTerminalOptions
 pub const Options = extern struct {
@@ -663,88 +666,6 @@ pub fn get_multi(
     }
     if (out_written) |w| w.* = count;
     return .success;
-}
-
-pub fn selection_adjust(
-    terminal_: Terminal,
-    selection: ?*selection_c.CSelection,
-    adjustment: Selection.Adjustment,
-) callconv(lib.calling_conv) Result {
-    if (comptime std.debug.runtime_safety) {
-        _ = std.meta.intToEnum(Selection.Adjustment, @intFromEnum(adjustment)) catch {
-            log.warn("terminal_selection_adjust invalid adjustment value={d}", .{@intFromEnum(adjustment)});
-            return .invalid_value;
-        };
-    }
-
-    const t: *ZigTerminal = (terminal_ orelse return .invalid_value).terminal;
-    const sel_ptr = selection orelse return .invalid_value;
-    var sel = sel_ptr.toZig() orelse return .invalid_value;
-    sel.adjust(t.screens.active, adjustment);
-    sel_ptr.* = .fromZig(sel);
-    return .success;
-}
-
-pub fn selection_order(
-    terminal_: Terminal,
-    selection: ?*const selection_c.CSelection,
-    out_order: ?*Selection.Order,
-) callconv(lib.calling_conv) Result {
-    const t: *ZigTerminal = (terminal_ orelse return .invalid_value).terminal;
-    const sel = (selection orelse return .invalid_value).toZig() orelse
-        return .invalid_value;
-    const out = out_order orelse return .invalid_value;
-    if (!selectionValid(t, sel)) return .invalid_value;
-
-    out.* = sel.order(t.screens.active);
-    return .success;
-}
-
-pub fn selection_ordered(
-    terminal_: Terminal,
-    selection: ?*const selection_c.CSelection,
-    desired: Selection.Order,
-    out_selection: ?*selection_c.CSelection,
-) callconv(lib.calling_conv) Result {
-    if (comptime std.debug.runtime_safety) {
-        _ = std.meta.intToEnum(Selection.Order, @intFromEnum(desired)) catch {
-            log.warn("terminal_selection_ordered invalid desired value={d}", .{@intFromEnum(desired)});
-            return .invalid_value;
-        };
-    }
-
-    const t: *ZigTerminal = (terminal_ orelse return .invalid_value).terminal;
-    const sel = (selection orelse return .invalid_value).toZig() orelse
-        return .invalid_value;
-    const out = out_selection orelse return .invalid_value;
-    if (!selectionValid(t, sel)) return .invalid_value;
-
-    out.* = .fromZig(sel.ordered(t.screens.active, desired));
-    return .success;
-}
-
-pub fn selection_contains(
-    terminal_: Terminal,
-    selection: ?*const selection_c.CSelection,
-    pt: point.Point.C,
-    out_contains: ?*bool,
-) callconv(lib.calling_conv) Result {
-    const t: *ZigTerminal = (terminal_ orelse return .invalid_value).terminal;
-    const sel = (selection orelse return .invalid_value).toZig() orelse
-        return .invalid_value;
-    const out = out_contains orelse return .invalid_value;
-    if (!selectionValid(t, sel)) return .invalid_value;
-
-    const screen = t.screens.active;
-    const pin = screen.pages.pin(.fromC(pt)) orelse return .invalid_value;
-    out.* = sel.contains(screen, pin);
-    return .success;
-}
-
-fn selectionValid(t: *ZigTerminal, sel: Selection) bool {
-    const screen = t.screens.active;
-    return screen.pages.pointFromPin(.screen, sel.start()) != null and
-        screen.pages.pointFromPin(.screen, sel.end()) != null;
 }
 
 fn getTyped(
@@ -1503,11 +1424,11 @@ test "selection_adjust mutates snapshot end" {
         .start = start_ref,
         .end = end_ref,
     };
-    try testing.expectEqual(Result.success, selection_adjust(t, &sel, .right));
+    try testing.expectEqual(Result.success, selection_c.adjust(t, &sel, .right));
     try testing.expectEqual(@as(u16, 0), sel.start.toPin().?.x);
     try testing.expectEqual(@as(u16, 2), sel.end.toPin().?.x);
 
-    try testing.expectEqual(Result.success, selection_adjust(t, &sel, .left));
+    try testing.expectEqual(Result.success, selection_c.adjust(t, &sel, .left));
     try testing.expectEqual(@as(u16, 0), sel.start.toPin().?.x);
     try testing.expectEqual(@as(u16, 1), sel.end.toPin().?.x);
 
@@ -1515,7 +1436,7 @@ test "selection_adjust mutates snapshot end" {
         .start = end_ref,
         .end = start_ref,
     };
-    try testing.expectEqual(Result.success, selection_adjust(t, &sel, .right));
+    try testing.expectEqual(Result.success, selection_c.adjust(t, &sel, .right));
     try testing.expectEqual(@as(u16, 1), sel.start.toPin().?.x);
     try testing.expectEqual(@as(u16, 1), sel.end.toPin().?.x);
 }
@@ -1553,19 +1474,19 @@ test "selection_order and selection_ordered" {
         .rectangle = true,
     };
 
-    var order: Selection.Order = undefined;
-    try testing.expectEqual(Result.success, selection_order(t, &sel, &order));
-    try testing.expectEqual(Selection.Order.mirrored_forward, order);
+    var order: selection_c.Order = undefined;
+    try testing.expectEqual(Result.success, selection_c.order(t, &sel, &order));
+    try testing.expectEqual(selection_c.Order.mirrored_forward, order);
 
     var out: selection_c.CSelection = undefined;
-    try testing.expectEqual(Result.success, selection_ordered(t, &sel, .forward, &out));
+    try testing.expectEqual(Result.success, selection_c.ordered(t, &sel, .forward, &out));
     try testing.expectEqual(@as(u16, 1), out.start.toPin().?.x);
     try testing.expectEqual(@as(u16, 0), out.start.toPin().?.y);
     try testing.expectEqual(@as(u16, 3), out.end.toPin().?.x);
     try testing.expectEqual(@as(u16, 1), out.end.toPin().?.y);
     try testing.expect(out.rectangle);
 
-    try testing.expectEqual(Result.success, selection_ordered(t, &sel, .reverse, &out));
+    try testing.expectEqual(Result.success, selection_c.ordered(t, &sel, .reverse, &out));
     try testing.expectEqual(@as(u16, 3), out.start.toPin().?.x);
     try testing.expectEqual(@as(u16, 1), out.start.toPin().?.y);
     try testing.expectEqual(@as(u16, 1), out.end.toPin().?.x);
@@ -1606,13 +1527,13 @@ test "selection_contains" {
     };
 
     var contains: bool = undefined;
-    try testing.expectEqual(Result.success, selection_contains(t, &linear, .{
+    try testing.expectEqual(Result.success, selection_c.contains(t, &linear, .{
         .tag = .active,
         .value = .{ .active = .{ .x = 4, .y = 0 } },
     }, &contains));
     try testing.expect(contains);
 
-    try testing.expectEqual(Result.success, selection_contains(t, &linear, .{
+    try testing.expectEqual(Result.success, selection_c.contains(t, &linear, .{
         .tag = .active,
         .value = .{ .active = .{ .x = 2, .y = 0 } },
     }, &contains));
@@ -1624,7 +1545,7 @@ test "selection_contains" {
         .rectangle = true,
     };
 
-    try testing.expectEqual(Result.success, selection_contains(t, &rectangle, .{
+    try testing.expectEqual(Result.success, selection_c.contains(t, &rectangle, .{
         .tag = .active,
         .value = .{ .active = .{ .x = 2, .y = 0 } },
     }, &contains));
@@ -1644,9 +1565,9 @@ test "selection_order invalid values" {
     ));
     defer free(t);
 
-    var order: Selection.Order = undefined;
-    try testing.expectEqual(Result.invalid_value, selection_order(null, null, &order));
-    try testing.expectEqual(Result.invalid_value, selection_order(t, null, &order));
+    var order: selection_c.Order = undefined;
+    try testing.expectEqual(Result.invalid_value, selection_c.order(null, null, &order));
+    try testing.expectEqual(Result.invalid_value, selection_c.order(t, null, &order));
 }
 
 test "grid_ref" {
