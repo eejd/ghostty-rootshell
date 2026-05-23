@@ -20,6 +20,7 @@ const cell_c = @import("cell.zig");
 const row_c = @import("row.zig");
 const grid_ref_c = @import("grid_ref.zig");
 const grid_ref_tracked_c = @import("grid_ref_tracked.zig");
+const selection_c = @import("selection.zig");
 const style_c = @import("style.zig");
 const color = @import("../color.zig");
 const Result = @import("result.zig").Result;
@@ -314,6 +315,7 @@ pub const Option = enum(c_int) {
     kitty_image_medium_shared_mem = 18,
     apc_max_bytes = 19,
     apc_max_bytes_kitty = 20,
+    selection = 21,
 
     /// Input type expected for setting the option.
     pub fn InType(comptime self: Option) type {
@@ -336,6 +338,7 @@ pub const Option = enum(c_int) {
             .kitty_image_medium_shared_mem,
             => ?*const bool,
             .apc_max_bytes, .apc_max_bytes_kitty => ?*const usize,
+            .selection => ?*const selection_c.CSelection,
         };
     }
 };
@@ -441,6 +444,14 @@ fn setTyped(
                 wrapper.stream.handler.apc_handler.max_bytes.put(.kitty, ptr.*);
             } else {
                 wrapper.stream.handler.apc_handler.max_bytes.remove(.kitty);
+            }
+        },
+        .selection => {
+            if (value) |ptr| {
+                const sel = ptr.toZig() orelse return .invalid_value;
+                wrapper.terminal.screens.active.select(sel) catch return .out_of_memory;
+            } else {
+                wrapper.terminal.screens.active.clearSelection();
             }
         },
     }
@@ -576,6 +587,7 @@ pub const TerminalData = enum(c_int) {
     kitty_image_medium_temp_file = 28,
     kitty_image_medium_shared_mem = 29,
     kitty_graphics = 30,
+    selection = 31,
 
     /// Output type expected for querying the data of the given kind.
     pub fn OutType(comptime self: TerminalData) type {
@@ -604,6 +616,7 @@ pub const TerminalData = enum(c_int) {
             .kitty_image_medium_shared_mem,
             => bool,
             .kitty_graphics => KittyGraphics,
+            .selection => selection_c.CSelection,
         };
     }
 };
@@ -713,6 +726,9 @@ fn getTyped(
             if (comptime !build_options.kitty_graphics) return .no_value;
             out.* = &t.screens.active.kitty_images;
         },
+        .selection => out.* = selection_c.CSelection.fromZig(
+            t.screens.active.selection orelse return .no_value,
+        ),
     }
 
     return .success;
@@ -1323,6 +1339,54 @@ test "get invalid" {
     defer free(t);
 
     try testing.expectEqual(Result.invalid_value, get(t, .invalid, null));
+}
+
+test "set and get selection" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib.alloc.test_allocator,
+        &t,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 0,
+        },
+    ));
+    defer free(t);
+
+    vt_write(t, "Hello", 5);
+
+    var start_ref: grid_ref_c.CGridRef = .{};
+    try testing.expectEqual(Result.success, grid_ref(t, .{
+        .tag = .active,
+        .value = .{ .active = .{ .x = 0, .y = 0 } },
+    }, &start_ref));
+
+    var end_ref: grid_ref_c.CGridRef = .{};
+    try testing.expectEqual(Result.success, grid_ref(t, .{
+        .tag = .active,
+        .value = .{ .active = .{ .x = 4, .y = 0 } },
+    }, &end_ref));
+
+    var out: selection_c.CSelection = undefined;
+    try testing.expectEqual(Result.no_value, get(t, .selection, @ptrCast(&out)));
+
+    const sel: selection_c.CSelection = .{
+        .start = start_ref,
+        .end = end_ref,
+        .rectangle = true,
+    };
+    try testing.expectEqual(Result.success, set(t, .selection, @ptrCast(&sel)));
+    try testing.expect(t.?.terminal.screens.active.selection.?.tracked());
+
+    try testing.expectEqual(Result.success, get(t, .selection, @ptrCast(&out)));
+    try testing.expect(out.start.toPin().?.eql(start_ref.toPin().?));
+    try testing.expect(out.end.toPin().?.eql(end_ref.toPin().?));
+    try testing.expect(out.rectangle);
+
+    try testing.expectEqual(Result.success, set(t, .selection, null));
+    try testing.expect(t.?.terminal.screens.active.selection == null);
+    try testing.expectEqual(Result.no_value, get(t, .selection, @ptrCast(&out)));
 }
 
 test "grid_ref" {

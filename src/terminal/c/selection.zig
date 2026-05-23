@@ -13,4 +13,12 @@ pub const CSelection = extern struct {
         const end_pin = self.end.toPin() orelse return null;
         return Selection.init(start_pin, end_pin, self.rectangle);
     }
+
+    pub fn fromZig(sel: Selection) CSelection {
+        return .{
+            .start = .fromPin(sel.start()),
+            .end = .fromPin(sel.end()),
+            .rectangle = sel.rectangle,
+        };
+    }
 };
