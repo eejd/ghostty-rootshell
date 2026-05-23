@@ -1552,6 +1552,97 @@ test "selection_contains" {
     try testing.expect(contains);
 }
 
+test "selection_equal and selection_validate" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib.alloc.test_allocator,
+        &t,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 0,
+        },
+    ));
+    defer free(t);
+
+    var other_t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib.alloc.test_allocator,
+        &other_t,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 0,
+        },
+    ));
+    defer free(other_t);
+
+    vt_write(t, "Hello", 5);
+    vt_write(other_t, "Hello", 5);
+
+    var start_ref: grid_ref_c.CGridRef = .{};
+    try testing.expectEqual(Result.success, grid_ref(t, .{
+        .tag = .active,
+        .value = .{ .active = .{ .x = 0, .y = 0 } },
+    }, &start_ref));
+
+    var end_ref: grid_ref_c.CGridRef = .{};
+    try testing.expectEqual(Result.success, grid_ref(t, .{
+        .tag = .active,
+        .value = .{ .active = .{ .x = 1, .y = 0 } },
+    }, &end_ref));
+
+    var other_end_ref: grid_ref_c.CGridRef = .{};
+    try testing.expectEqual(Result.success, grid_ref(t, .{
+        .tag = .active,
+        .value = .{ .active = .{ .x = 2, .y = 0 } },
+    }, &other_end_ref));
+
+    var cross_terminal_ref: grid_ref_c.CGridRef = .{};
+    try testing.expectEqual(Result.success, grid_ref(other_t, .{
+        .tag = .active,
+        .value = .{ .active = .{ .x = 1, .y = 0 } },
+    }, &cross_terminal_ref));
+
+    const sel: selection_c.CSelection = .{
+        .start = start_ref,
+        .end = end_ref,
+    };
+    const equal_sel: selection_c.CSelection = .{
+        .start = start_ref,
+        .end = end_ref,
+    };
+    const different_endpoint: selection_c.CSelection = .{
+        .start = start_ref,
+        .end = other_end_ref,
+    };
+    const different_rectangle: selection_c.CSelection = .{
+        .start = start_ref,
+        .end = end_ref,
+        .rectangle = true,
+    };
+    const cross_terminal: selection_c.CSelection = .{
+        .start = start_ref,
+        .end = cross_terminal_ref,
+    };
+
+    try testing.expectEqual(Result.success, selection_c.validate(t, &sel));
+    try testing.expectEqual(Result.invalid_value, selection_c.validate(t, &cross_terminal));
+
+    var equal: bool = undefined;
+    try testing.expectEqual(Result.success, selection_c.equal(t, &sel, &equal_sel, &equal));
+    try testing.expect(equal);
+
+    try testing.expectEqual(Result.success, selection_c.equal(t, &sel, &different_endpoint, &equal));
+    try testing.expect(!equal);
+
+    try testing.expectEqual(Result.success, selection_c.equal(t, &sel, &different_rectangle, &equal));
+    try testing.expect(!equal);
+
+    try testing.expectEqual(Result.invalid_value, selection_c.equal(t, &sel, &cross_terminal, &equal));
+    try testing.expectEqual(Result.invalid_value, selection_c.equal(t, &sel, &equal_sel, null));
+}
+
 test "selection_order invalid values" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(

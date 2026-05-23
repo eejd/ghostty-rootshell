@@ -110,6 +110,36 @@ pub fn contains(
     return .success;
 }
 
+pub fn equal(
+    terminal: terminal_c.Terminal,
+    a: ?*const CSelection,
+    b: ?*const CSelection,
+    out_equal: ?*bool,
+) callconv(lib.calling_conv) Result {
+    const t = terminal_c.zigTerminal(terminal) orelse return .invalid_value;
+    const sel_a = (a orelse return .invalid_value).toZig() orelse
+        return .invalid_value;
+    const sel_b = (b orelse return .invalid_value).toZig() orelse
+        return .invalid_value;
+    const out = out_equal orelse return .invalid_value;
+    if (!valid(t, sel_a) or !valid(t, sel_b)) return .invalid_value;
+
+    out.* = sel_a.eql(sel_b);
+    return .success;
+}
+
+pub fn validate(
+    terminal: terminal_c.Terminal,
+    selection: ?*const CSelection,
+) callconv(lib.calling_conv) Result {
+    const t = terminal_c.zigTerminal(terminal) orelse return .invalid_value;
+    const sel = (selection orelse return .invalid_value).toZig() orelse
+        return .invalid_value;
+    if (!valid(t, sel)) return .invalid_value;
+
+    return .success;
+}
+
 fn valid(t: *terminal_c.ZigTerminal, sel: Selection) bool {
     const screen = t.screens.active;
     return screen.pages.pointFromPin(.screen, sel.start()) != null and
