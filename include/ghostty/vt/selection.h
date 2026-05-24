@@ -30,6 +30,10 @@ extern "C" {
  * for the endpoints and reconstruct a GhosttySelection from fresh snapshots
  * when needed.
  *
+ * ## Examples
+ *
+ * @snippet c-vt-selection/src/main.c selection-main
+ *
  * @{
  */
 
