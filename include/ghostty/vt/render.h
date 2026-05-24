@@ -221,6 +221,9 @@ typedef enum GHOSTTY_ENUM_TYPED {
    *  valid as long as the underlying render state is not updated. 
    *  It is unsafe to use cell data after updating the render state. */
   GHOSTTY_RENDER_STATE_ROW_DATA_CELLS = 3,
+
+  /** Row-local selected cell range (GhosttyRenderStateRowSelection). */
+  GHOSTTY_RENDER_STATE_ROW_DATA_SELECTION = 4,
   GHOSTTY_RENDER_STATE_ROW_DATA_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
 } GhosttyRenderStateRowData;
 
@@ -234,6 +237,29 @@ typedef enum GHOSTTY_ENUM_TYPED {
   GHOSTTY_RENDER_STATE_ROW_OPTION_DIRTY = 0,
   GHOSTTY_RENDER_STATE_ROW_OPTION_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
 } GhosttyRenderStateRowOption;
+
+/**
+ * Row-local selection range.
+ *
+ * This struct uses the sized-struct ABI pattern. Initialize with
+ * GHOSTTY_INIT_SIZED(GhosttyRenderStateRowSelection) before querying
+ * GHOSTTY_RENDER_STATE_ROW_DATA_SELECTION.
+ *
+ * Querying GHOSTTY_RENDER_STATE_ROW_DATA_SELECTION returns GHOSTTY_NO_VALUE
+ * if the current row does not intersect the current selection.
+ *
+ * @ingroup render
+ */
+typedef struct {
+  /** Size of this struct in bytes. Must be set to sizeof(GhosttyRenderStateRowSelection). */
+  size_t size;
+
+  /** Start column of the row-local selection range, inclusive. */
+  uint16_t start_x;
+
+  /** End column of the row-local selection range, inclusive. */
+  uint16_t end_x;
+} GhosttyRenderStateRowSelection;
 
 /**
  * Render-state color information.
