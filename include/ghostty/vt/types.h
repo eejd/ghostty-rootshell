@@ -98,7 +98,9 @@ typedef struct GhosttyTerminalImpl* GhosttyTerminal;
  * Opaque handle to a tracked grid reference.
  *
  * A tracked grid reference is owned by the caller and must be freed with
- * ghostty_tracked_grid_ref_free() before the terminal that created it is freed.
+ * ghostty_tracked_grid_ref_free(). If the terminal that created it is freed
+ * first, the handle remains valid only for tracked-grid-ref APIs: it reports no
+ * value and can still be freed.
  *
  * @ingroup grid_ref
  */

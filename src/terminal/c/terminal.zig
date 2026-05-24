@@ -35,6 +35,7 @@ const TerminalWrapper = struct {
     terminal: *ZigTerminal,
     stream: Stream,
     effects: Effects = .{},
+    tracked_grid_refs: std.AutoArrayHashMapUnmanaged(*grid_ref_tracked_c.TrackedGridRef, void) = .{},
 };
 
 /// C callback state for terminal effects. Trampolines are always
@@ -758,6 +759,18 @@ pub fn grid_ref_track(
         .pin = tracked_pin,
     };
 
+    // Store the tracked ref in the terminal so that when we free
+    // the terminal the tracked ref can be detached safely.
+    wrapper.tracked_grid_refs.putNoClobber(
+        alloc,
+        ref,
+        {},
+    ) catch {
+        list.untrackPin(tracked_pin);
+        alloc.destroy(ref);
+        return .out_of_memory;
+    };
+
     out.* = ref;
     return .success;
 }
@@ -779,9 +792,11 @@ pub fn point_from_grid_ref(
 pub fn free(terminal_: Terminal) callconv(lib.calling_conv) void {
     const wrapper = terminal_ orelse return;
     const t = wrapper.terminal;
-
-    wrapper.stream.deinit();
     const alloc = t.gpa();
+
+    for (wrapper.tracked_grid_refs.keys()) |ref| ref.terminal = null;
+    wrapper.tracked_grid_refs.deinit(alloc);
+    wrapper.stream.deinit();
     t.deinit(alloc);
     alloc.destroy(t);
     alloc.destroy(wrapper);
