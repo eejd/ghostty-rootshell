@@ -178,7 +178,8 @@ typedef enum GHOSTTY_ENUM_TYPED {
  * @param selection Selection snapshot to adjust in place
  * @param adjustment The adjustment operation to apply
  * @return GHOSTTY_SUCCESS on success, GHOSTTY_INVALID_VALUE if the terminal,
- *         selection, selection references, or adjustment are invalid
+ *         selection, or adjustment are invalid. Selection reference validity
+ *         is a precondition and is not checked.
  *
  * @ingroup selection
  */
@@ -201,7 +202,8 @@ GHOSTTY_API GhosttyResult ghostty_terminal_selection_adjust(
  * @param selection Selection snapshot to inspect
  * @param[out] out_order On success, receives the selection order
  * @return GHOSTTY_SUCCESS on success, GHOSTTY_INVALID_VALUE if the terminal,
- *         selection, selection references, or output pointer are invalid
+ *         selection, or output pointer are invalid. Selection reference
+ *         validity is a precondition and is not checked.
  *
  * @ingroup selection
  */
@@ -231,8 +233,8 @@ GHOSTTY_API GhosttyResult ghostty_terminal_selection_order(
  * @param desired Desired endpoint order
  * @param[out] out_selection On success, receives the ordered selection
  * @return GHOSTTY_SUCCESS on success, GHOSTTY_INVALID_VALUE if the terminal,
- *         selection, selection references, desired order, or output pointer
- *         are invalid
+ *         selection, desired order, or output pointer are invalid. Selection
+ *         reference validity is a precondition and is not checked.
  *
  * @ingroup selection
  */
@@ -260,7 +262,8 @@ GHOSTTY_API GhosttyResult ghostty_terminal_selection_ordered(
  * @param point Point to test for containment
  * @param[out] out_contains On success, receives whether point is inside selection
  * @return GHOSTTY_SUCCESS on success, GHOSTTY_INVALID_VALUE if the terminal,
- *         selection, selection references, point, or output pointer are invalid
+ *         selection, point, or output pointer are invalid. Selection reference
+ *         validity is a precondition and is not checked.
  *
  * @ingroup selection
  */
@@ -281,15 +284,16 @@ GHOSTTY_API GhosttyResult ghostty_terminal_selection_contains(
  * for the given terminal's currently active screen. In practice, they must
  * come from that terminal and screen, and no mutating terminal call may have
  * occurred since the refs were produced or reconstructed from tracked refs.
- * Passing refs from another terminal, another screen, or stale refs returns
- * GHOSTTY_INVALID_VALUE.
+ * Passing refs from another terminal, another screen, or stale refs violates
+ * this precondition.
  *
  * @param terminal The terminal handle (NULL returns GHOSTTY_INVALID_VALUE)
  * @param a First selection snapshot to compare
  * @param b Second selection snapshot to compare
  * @param[out] out_equal On success, receives whether the selections are equal
  * @return GHOSTTY_SUCCESS on success, GHOSTTY_INVALID_VALUE if the terminal,
- *         selections, selection references, or output pointer are invalid
+ *         selections, or output pointer are invalid. Selection reference
+ *         validity is a precondition and is not checked.
  *
  * @ingroup selection
  */
@@ -298,24 +302,6 @@ GHOSTTY_API GhosttyResult ghostty_terminal_selection_equal(
                                     const GhosttySelection* a,
                                     const GhosttySelection* b,
                                     bool* out_equal);
-
-/**
- * Validate that a selection snapshot is representable for a terminal.
- *
- * A valid selection has both endpoint grid refs resolved in the terminal's
- * currently active screen/page list. Malformed refs, stale refs, refs from
- * another terminal, or refs from an inactive screen return GHOSTTY_INVALID_VALUE.
- *
- * @param terminal The terminal handle (NULL returns GHOSTTY_INVALID_VALUE)
- * @param selection Selection snapshot to validate
- * @return GHOSTTY_SUCCESS if the selection is valid for the terminal's active
- *         screen/page list, otherwise GHOSTTY_INVALID_VALUE
- *
- * @ingroup selection
- */
-GHOSTTY_API GhosttyResult ghostty_terminal_selection_validate(
-                                    GhosttyTerminal terminal,
-                                    const GhosttySelection* selection);
 
 /** @} */
 

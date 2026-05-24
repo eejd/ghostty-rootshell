@@ -175,7 +175,6 @@ pub const terminal_selection_order = selection.order;
 pub const terminal_selection_ordered = selection.ordered;
 pub const terminal_selection_contains = selection.contains;
 pub const terminal_selection_equal = selection.equal;
-pub const terminal_selection_validate = selection.validate;
 pub const terminal_grid_ref = terminal.grid_ref;
 pub const terminal_grid_ref_track = terminal.grid_ref_track;
 pub const terminal_point_from_grid_ref = terminal.point_from_grid_ref;

@@ -1552,7 +1552,7 @@ test "selection_contains" {
     try testing.expect(contains);
 }
 
-test "selection_equal and selection_validate" {
+test "selection_equal" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
         &lib.alloc.test_allocator,
@@ -1626,9 +1626,6 @@ test "selection_equal and selection_validate" {
         .end = cross_terminal_ref,
     };
 
-    try testing.expectEqual(Result.success, selection_c.validate(t, &sel));
-    try testing.expectEqual(Result.invalid_value, selection_c.validate(t, &cross_terminal));
-
     var equal: bool = undefined;
     try testing.expectEqual(Result.success, selection_c.equal(t, &sel, &equal_sel, &equal));
     try testing.expect(equal);
@@ -1639,7 +1636,8 @@ test "selection_equal and selection_validate" {
     try testing.expectEqual(Result.success, selection_c.equal(t, &sel, &different_rectangle, &equal));
     try testing.expect(!equal);
 
-    try testing.expectEqual(Result.invalid_value, selection_c.equal(t, &sel, &cross_terminal, &equal));
+    try testing.expectEqual(Result.success, selection_c.equal(t, &sel, &cross_terminal, &equal));
+    try testing.expect(!equal);
     try testing.expectEqual(Result.invalid_value, selection_c.equal(t, &sel, &equal_sel, null));
 }
 
