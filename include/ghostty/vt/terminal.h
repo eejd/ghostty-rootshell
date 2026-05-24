@@ -1167,8 +1167,9 @@ GHOSTTY_API GhosttyResult ghostty_terminal_grid_ref(GhosttyTerminal terminal,
  * If the point is outside the requested coordinate space, this returns
  * GHOSTTY_INVALID_VALUE and writes NULL to out_ref.
  *
- * The returned handle must be freed with ghostty_tracked_grid_ref_free() before
- * the terminal is freed.
+ * The returned handle must be freed with ghostty_tracked_grid_ref_free(). If
+ * the terminal is freed first, the handle remains valid only for
+ * tracked-grid-ref APIs: it reports no value and can still be freed.
  *
  * @param terminal Terminal instance.
  * @param point Point to track.
