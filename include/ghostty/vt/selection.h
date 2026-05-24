@@ -9,6 +9,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <ghostty/vt/grid_ref.h>
 #include <ghostty/vt/point.h>
 
@@ -77,6 +78,57 @@ typedef struct {
    */
   bool rectangle;
 } GhosttySelection;
+
+/**
+ * Options for deriving a word selection from a terminal grid reference.
+ *
+ * This is a sized struct. Use GHOSTTY_INIT_SIZED() to initialize it.
+ * If boundary_codepoints is NULL and boundary_codepoints_len is 0, Ghostty's
+ * default word-boundary codepoints are used. If boundary_codepoints_len is
+ * non-zero, boundary_codepoints must not be NULL.
+ *
+ * @ingroup selection
+ */
+typedef struct {
+  /** Size of this struct in bytes. Must be set to sizeof(GhosttyTerminalSelectWordOptions). */
+  size_t size;
+
+  /** Grid reference under which to derive the word selection. */
+  GhosttyGridRef ref;
+
+  /** Optional word-boundary codepoints as uint32_t scalar values. */
+  const uint32_t* boundary_codepoints;
+
+  /** Number of entries in boundary_codepoints. */
+  size_t boundary_codepoints_len;
+} GhosttyTerminalSelectWordOptions;
+
+/**
+ * Options for deriving a line selection from a terminal grid reference.
+ *
+ * This is a sized struct. Use GHOSTTY_INIT_SIZED() to initialize it.
+ * If whitespace is NULL and whitespace_len is 0, Ghostty's default line-trim
+ * whitespace codepoints are used. If whitespace_len is non-zero, whitespace
+ * must not be NULL.
+ *
+ * @ingroup selection
+ */
+typedef struct {
+  /** Size of this struct in bytes. Must be set to sizeof(GhosttyTerminalSelectLineOptions). */
+  size_t size;
+
+  /** Grid reference under which to derive the line selection. */
+  GhosttyGridRef ref;
+
+  /** Optional codepoints to trim from the start and end of the line. */
+  const uint32_t* whitespace;
+
+  /** Number of entries in whitespace. */
+  size_t whitespace_len;
+
+  /** Whether semantic prompt state changes should bound the line selection. */
+  bool semantic_prompt_boundary;
+} GhosttyTerminalSelectLineOptions;
 
 /**
  * Ordering of a selection's endpoints in terminal coordinates.
@@ -157,6 +209,86 @@ typedef enum GHOSTTY_ENUM_TYPED {
 
   GHOSTTY_SELECTION_ADJUST_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
 } GhosttySelectionAdjust;
+
+/**
+ * Derive a word selection snapshot from a terminal grid reference.
+ *
+ * The returned selection is not installed as the terminal's current
+ * selection. It is a snapshot with the same lifetime rules as GhosttySelection.
+ *
+ * @param terminal The terminal handle (NULL returns GHOSTTY_INVALID_VALUE)
+ * @param options Word-selection options
+ * @param[out] out_selection On success, receives the derived selection
+ * @return GHOSTTY_SUCCESS on success, GHOSTTY_NO_VALUE if the valid ref has
+ *         no selectable word content, or GHOSTTY_INVALID_VALUE if the
+ *         terminal, options, ref, codepoint pointer, or output pointer are
+ *         invalid.
+ *
+ * @ingroup selection
+ */
+GHOSTTY_API GhosttyResult ghostty_terminal_select_word(
+                                    GhosttyTerminal terminal,
+                                    const GhosttyTerminalSelectWordOptions* options,
+                                    GhosttySelection* out_selection);
+
+/**
+ * Derive a line selection snapshot from a terminal grid reference.
+ *
+ * The returned selection is not installed as the terminal's current
+ * selection. It is a snapshot with the same lifetime rules as GhosttySelection.
+ *
+ * @param terminal The terminal handle (NULL returns GHOSTTY_INVALID_VALUE)
+ * @param options Line-selection options
+ * @param[out] out_selection On success, receives the derived selection
+ * @return GHOSTTY_SUCCESS on success, GHOSTTY_NO_VALUE if the valid ref has
+ *         no selectable line content, or GHOSTTY_INVALID_VALUE if the
+ *         terminal, options, ref, codepoint pointer, or output pointer are
+ *         invalid.
+ *
+ * @ingroup selection
+ */
+GHOSTTY_API GhosttyResult ghostty_terminal_select_line(
+                                    GhosttyTerminal terminal,
+                                    const GhosttyTerminalSelectLineOptions* options,
+                                    GhosttySelection* out_selection);
+
+/**
+ * Derive a selection snapshot covering all selectable terminal content.
+ *
+ * The returned selection is not installed as the terminal's current
+ * selection. It is a snapshot with the same lifetime rules as GhosttySelection.
+ *
+ * @param terminal The terminal handle (NULL returns GHOSTTY_INVALID_VALUE)
+ * @param[out] out_selection On success, receives the derived selection
+ * @return GHOSTTY_SUCCESS on success, GHOSTTY_NO_VALUE if there is no
+ *         selectable content, or GHOSTTY_INVALID_VALUE if the terminal or
+ *         output pointer is invalid.
+ *
+ * @ingroup selection
+ */
+GHOSTTY_API GhosttyResult ghostty_terminal_select_all(
+                                    GhosttyTerminal terminal,
+                                    GhosttySelection* out_selection);
+
+/**
+ * Derive a command-output selection snapshot from a terminal grid reference.
+ *
+ * The returned selection is not installed as the terminal's current
+ * selection. It is a snapshot with the same lifetime rules as GhosttySelection.
+ *
+ * @param terminal The terminal handle (NULL returns GHOSTTY_INVALID_VALUE)
+ * @param ref Grid reference within command output to select
+ * @param[out] out_selection On success, receives the derived selection
+ * @return GHOSTTY_SUCCESS on success, GHOSTTY_NO_VALUE if the valid ref is
+ *         not selectable command output, or GHOSTTY_INVALID_VALUE if the
+ *         terminal, ref, or output pointer is invalid.
+ *
+ * @ingroup selection
+ */
+GHOSTTY_API GhosttyResult ghostty_terminal_select_output(
+                                    GhosttyTerminal terminal,
+                                    GhosttyGridRef ref,
+                                    GhosttySelection* out_selection);
 
 /**
  * Adjust a selection snapshot using terminal selection semantics.

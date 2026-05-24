@@ -1393,6 +1393,72 @@ test "set and get selection" {
     try testing.expectEqual(Result.no_value, get(t, .selection, @ptrCast(&out)));
 }
 
+test "selection derivation helpers" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib.alloc.test_allocator,
+        &t,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 0,
+        },
+    ));
+    defer free(t);
+
+    vt_write(t, "  Hello  \r\nWorld", 16);
+
+    var out: selection_c.CSelection = undefined;
+
+    var word_ref: grid_ref_c.CGridRef = .{};
+    try testing.expectEqual(Result.success, grid_ref(t, .{
+        .tag = .active,
+        .value = .{ .active = .{ .x = 3, .y = 0 } },
+    }, &word_ref));
+
+    var empty_ref: grid_ref_c.CGridRef = .{};
+    try testing.expectEqual(Result.success, grid_ref(t, .{
+        .tag = .active,
+        .value = .{ .active = .{ .x = 20, .y = 0 } },
+    }, &empty_ref));
+
+    var line_ref: grid_ref_c.CGridRef = .{};
+    try testing.expectEqual(Result.success, grid_ref(t, .{
+        .tag = .active,
+        .value = .{ .active = .{ .x = 0, .y = 0 } },
+    }, &line_ref));
+
+    var word_opts: selection_c.SelectWordOptions = .{
+        .ref = word_ref,
+    };
+    try testing.expectEqual(Result.success, selection_c.word(t, &word_opts, &out));
+    try testing.expectEqual(@as(u16, 2), out.start.toPin().?.x);
+    try testing.expectEqual(@as(u16, 6), out.end.toPin().?.x);
+
+    word_opts.ref = empty_ref;
+    try testing.expectEqual(Result.no_value, selection_c.word(t, &word_opts, &out));
+
+    var line_opts: selection_c.SelectLineOptions = .{
+        .ref = line_ref,
+    };
+    try testing.expectEqual(Result.success, selection_c.line(t, &line_opts, &out));
+    try testing.expectEqual(@as(u16, 2), out.start.toPin().?.x);
+    try testing.expectEqual(@as(u16, 6), out.end.toPin().?.x);
+
+    try testing.expectEqual(Result.success, selection_c.all(t, &out));
+    try testing.expectEqual(@as(u16, 2), out.start.toPin().?.x);
+    try testing.expectEqual(@as(u16, 0), out.start.toPin().?.y);
+    try testing.expectEqual(@as(u16, 4), out.end.toPin().?.x);
+    try testing.expectEqual(@as(u16, 1), out.end.toPin().?.y);
+
+    try testing.expectEqual(Result.no_value, selection_c.output(t, line_ref, &out));
+
+    line_opts.size = @sizeOf(usize) - 1;
+    try testing.expectEqual(Result.invalid_value, selection_c.line(t, &line_opts, &out));
+    try testing.expectEqual(Result.invalid_value, selection_c.word(t, null, &out));
+    try testing.expectEqual(Result.invalid_value, selection_c.word(t, &word_opts, null));
+}
+
 test "selection_adjust mutates snapshot end" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
