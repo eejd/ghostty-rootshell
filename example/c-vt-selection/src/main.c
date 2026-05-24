@@ -76,6 +76,40 @@ int main() {
   assert(result == GHOSTTY_SUCCESS);
   print_selection(terminal, "word", &selection);
 
+  //! [selection-word-between]
+  // Double-click-and-drag style selection. Suppose the user double-clicks
+  // "git" and drags to "status". The pointer may pass over whitespace, so
+  // select the nearest word between the original click and current drag point
+  // in both directions, then combine the outer word bounds.
+  GhosttyGridRef click_ref = ref_at(terminal, 2, 0); // the "git" in "git status"
+  GhosttyGridRef drag_ref = ref_at(terminal, 6, 0);  // the "status" in "git status"
+
+  GhosttyTerminalSelectWordBetweenOptions start_word_opts =
+      GHOSTTY_INIT_SIZED(GhosttyTerminalSelectWordBetweenOptions);
+  start_word_opts.start = click_ref;
+  start_word_opts.end = drag_ref;
+
+  GhosttySelection start_word = GHOSTTY_INIT_SIZED(GhosttySelection);
+  result = ghostty_terminal_select_word_between(
+      terminal, &start_word_opts, &start_word);
+  assert(result == GHOSTTY_SUCCESS);
+
+  GhosttyTerminalSelectWordBetweenOptions end_word_opts =
+      GHOSTTY_INIT_SIZED(GhosttyTerminalSelectWordBetweenOptions);
+  end_word_opts.start = drag_ref;
+  end_word_opts.end = click_ref;
+
+  GhosttySelection end_word = GHOSTTY_INIT_SIZED(GhosttySelection);
+  result = ghostty_terminal_select_word_between(
+      terminal, &end_word_opts, &end_word);
+  assert(result == GHOSTTY_SUCCESS);
+
+  GhosttySelection drag_selection = GHOSTTY_INIT_SIZED(GhosttySelection);
+  drag_selection.start = start_word.start;
+  drag_selection.end = end_word.end;
+  print_selection(terminal, "double-click drag", &drag_selection);
+  //! [selection-word-between]
+
   // Triple-click style line selection. With semantic prompt boundaries enabled,
   // this selects only the input area rather than the leading "$ " prompt.
   GhosttyTerminalSelectLineOptions line = GHOSTTY_INIT_SIZED(GhosttyTerminalSelectLineOptions);

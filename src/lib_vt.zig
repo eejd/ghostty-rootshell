@@ -240,6 +240,7 @@ comptime {
         @export(&c.terminal_get, .{ .name = "ghostty_terminal_get" });
         @export(&c.terminal_get_multi, .{ .name = "ghostty_terminal_get_multi" });
         @export(&c.terminal_select_word, .{ .name = "ghostty_terminal_select_word" });
+        @export(&c.terminal_select_word_between, .{ .name = "ghostty_terminal_select_word_between" });
         @export(&c.terminal_select_line, .{ .name = "ghostty_terminal_select_line" });
         @export(&c.terminal_select_all, .{ .name = "ghostty_terminal_select_all" });
         @export(&c.terminal_select_output, .{ .name = "ghostty_terminal_select_output" });

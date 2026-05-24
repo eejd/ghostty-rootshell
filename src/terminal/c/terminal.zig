@@ -1438,6 +1438,28 @@ test "selection derivation helpers" {
     word_opts.ref = empty_ref;
     try testing.expectEqual(Result.no_value, selection_c.word(t, &word_opts, &out));
 
+    var between_start_ref: grid_ref_c.CGridRef = .{};
+    try testing.expectEqual(Result.success, grid_ref(t, .{
+        .tag = .active,
+        .value = .{ .active = .{ .x = 20, .y = 1 } },
+    }, &between_start_ref));
+
+    var between_end_ref: grid_ref_c.CGridRef = .{};
+    try testing.expectEqual(Result.success, grid_ref(t, .{
+        .tag = .active,
+        .value = .{ .active = .{ .x = 0, .y = 1 } },
+    }, &between_end_ref));
+
+    var word_between_opts: selection_c.SelectWordBetweenOptions = .{
+        .start = between_start_ref,
+        .end = between_end_ref,
+    };
+    try testing.expectEqual(Result.success, selection_c.word_between(t, &word_between_opts, &out));
+    try testing.expectEqual(@as(u16, 0), out.start.toPin().?.x);
+    try testing.expectEqual(@as(u16, 1), out.start.toPin().?.y);
+    try testing.expectEqual(@as(u16, 4), out.end.toPin().?.x);
+    try testing.expectEqual(@as(u16, 1), out.end.toPin().?.y);
+
     var line_opts: selection_c.SelectLineOptions = .{
         .ref = line_ref,
     };
@@ -1457,6 +1479,8 @@ test "selection derivation helpers" {
     try testing.expectEqual(Result.invalid_value, selection_c.line(t, &line_opts, &out));
     try testing.expectEqual(Result.invalid_value, selection_c.word(t, null, &out));
     try testing.expectEqual(Result.invalid_value, selection_c.word(t, &word_opts, null));
+    try testing.expectEqual(Result.invalid_value, selection_c.word_between(t, null, &out));
+    try testing.expectEqual(Result.invalid_value, selection_c.word_between(t, &word_between_opts, null));
 }
 
 test "selection_adjust mutates snapshot end" {

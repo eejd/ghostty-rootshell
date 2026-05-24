@@ -43,6 +43,15 @@ pub const SelectWordOptions = extern struct {
     boundary_codepoints_len: usize = 0,
 };
 
+/// C: GhosttyTerminalSelectWordBetweenOptions
+pub const SelectWordBetweenOptions = extern struct {
+    size: usize = @sizeOf(SelectWordBetweenOptions),
+    start: grid_ref.CGridRef,
+    end: grid_ref.CGridRef,
+    boundary_codepoints: ?[*]const u32 = null,
+    boundary_codepoints_len: usize = 0,
+};
+
 /// C: GhosttyTerminalSelectLineOptions
 pub const SelectLineOptions = extern struct {
     size: usize = @sizeOf(SelectLineOptions),
@@ -71,6 +80,33 @@ pub fn word(
     const pin = opts.ref.toPin() orelse return .invalid_value;
     out.* = .fromZig(screen.selectWord(
         pin,
+        boundary_codepoints orelse &selection_codepoints.default_word_boundaries,
+    ) orelse
+        return .no_value);
+    return .success;
+}
+
+pub fn word_between(
+    terminal: terminal_c.Terminal,
+    options: ?*const SelectWordBetweenOptions,
+    out_selection: ?*CSelection,
+) callconv(lib.calling_conv) Result {
+    const t = terminal_c.zigTerminal(terminal) orelse return .invalid_value;
+    const opts = options orelse return .invalid_value;
+    if (opts.size < @sizeOf(SelectWordBetweenOptions)) return .invalid_value;
+    const out = out_selection orelse return .invalid_value;
+
+    const boundary_codepoints = codepointSlice(
+        opts.boundary_codepoints,
+        opts.boundary_codepoints_len,
+    ) catch return .invalid_value;
+
+    const screen = t.screens.active;
+    const start = opts.start.toPin() orelse return .invalid_value;
+    const end = opts.end.toPin() orelse return .invalid_value;
+    out.* = .fromZig(screen.selectWordBetween(
+        start,
+        end,
         boundary_codepoints orelse &selection_codepoints.default_word_boundaries,
     ) orelse
         return .no_value);

@@ -108,6 +108,33 @@ typedef struct {
 } GhosttyTerminalSelectWordOptions;
 
 /**
+ * Options for deriving the nearest word selection between two grid references.
+ *
+ * This is a sized struct. Use GHOSTTY_INIT_SIZED() to initialize it.
+ * If boundary_codepoints is NULL and boundary_codepoints_len is 0, Ghostty's
+ * default word-boundary codepoints are used. If boundary_codepoints_len is
+ * non-zero, boundary_codepoints must not be NULL.
+ *
+ * @ingroup selection
+ */
+typedef struct {
+  /** Size of this struct in bytes. Must be set to sizeof(GhosttyTerminalSelectWordBetweenOptions). */
+  size_t size;
+
+  /** Starting grid reference for the inclusive search range. */
+  GhosttyGridRef start;
+
+  /** Ending grid reference for the inclusive search range. */
+  GhosttyGridRef end;
+
+  /** Optional word-boundary codepoints as uint32_t scalar values. */
+  const uint32_t* boundary_codepoints;
+
+  /** Number of entries in boundary_codepoints. */
+  size_t boundary_codepoints_len;
+} GhosttyTerminalSelectWordBetweenOptions;
+
+/**
  * Options for deriving a line selection from a terminal grid reference.
  *
  * This is a sized struct. Use GHOSTTY_INIT_SIZED() to initialize it.
@@ -233,6 +260,40 @@ typedef enum GHOSTTY_ENUM_TYPED {
 GHOSTTY_API GhosttyResult ghostty_terminal_select_word(
                                     GhosttyTerminal terminal,
                                     const GhosttyTerminalSelectWordOptions* options,
+                                    GhosttySelection* out_selection);
+
+/**
+ * Derive the nearest word selection snapshot between two terminal grid refs.
+ *
+ * Starting at options->start, this searches toward options->end (inclusive)
+ * and returns the first selectable word found using Ghostty's word-selection
+ * rules.
+ *
+ * This is useful for implementing double-click-and-drag selection in a UI. If
+ * a user double-clicks one word and drags across spaces or punctuation toward
+ * another word, selecting only the word directly under the current pointer can
+ * flicker or collapse when the pointer is between words. Instead, ask for the
+ * nearest word between the original click and the drag point, ask again in the
+ * reverse direction, and combine the two word bounds into the drag selection.
+ *
+ * @snippet c-vt-selection/src/main.c selection-word-between
+ *
+ * The returned selection is not installed as the terminal's current
+ * selection. It is a snapshot with the same lifetime rules as GhosttySelection.
+ *
+ * @param terminal The terminal handle (NULL returns GHOSTTY_INVALID_VALUE)
+ * @param options Word-between-selection options
+ * @param[out] out_selection On success, receives the derived selection
+ * @return GHOSTTY_SUCCESS on success, GHOSTTY_NO_VALUE if there is no
+ *         selectable word content between the valid refs, or
+ *         GHOSTTY_INVALID_VALUE if the terminal, options, refs, codepoint
+ *         pointer, or output pointer are invalid.
+ *
+ * @ingroup selection
+ */
+GHOSTTY_API GhosttyResult ghostty_terminal_select_word_between(
+                                    GhosttyTerminal terminal,
+                                    const GhosttyTerminalSelectWordBetweenOptions* options,
                                     GhosttySelection* out_selection);
 
 /**

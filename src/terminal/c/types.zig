@@ -31,6 +31,7 @@ pub const structs: std.StaticStringMap(StructInfo) = structs: {
         .{ "GhosttyFormatterTerminalOptions", StructInfo.init(formatter.TerminalOptions) },
         .{ "GhosttySelection", StructInfo.init(selection.CSelection) },
         .{ "GhosttyTerminalSelectWordOptions", StructInfo.init(selection.SelectWordOptions) },
+        .{ "GhosttyTerminalSelectWordBetweenOptions", StructInfo.init(selection.SelectWordBetweenOptions) },
         .{ "GhosttyTerminalSelectLineOptions", StructInfo.init(selection.SelectLineOptions) },
         .{ "GhosttyFormatterTerminalExtra", StructInfo.init(formatter.TerminalOptions.Extra) },
         .{ "GhosttyFormatterScreenExtra", StructInfo.init(formatter.ScreenOptions.Extra) },
