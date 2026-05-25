@@ -44,9 +44,38 @@ pub fn fromResource(path: [:0]const u8) ?*gtk.MediaFile {
     return gtk.MediaFile.newForResource(path);
 }
 
-pub fn playMediaFile(media_file: *gtk.MediaFile, volume: f64, required: bool) void {
-    // If the audio file is marked as required, we'll emit an error if
-    // there was a problem playing it. Otherwise there will be silence.
+/// Get-or-create a reusable bell MediaFile targeting `path`.
+///
+/// `current` is the surface's currently-cached MediaFile (or null). If it
+/// already targets `path` it is returned unchanged; otherwise it is unref'd and
+/// a fresh MediaFile is built for `path`. Returns null (after freeing `current`)
+/// if `path` is inaccessible, leaving the caller's slot empty.
+///
+/// Reusing one MediaFile per surface is what prevents the GStreamer pipeline
+/// leak: `gtk.MediaFile.newForFilename` spins up a full pipeline (and, via the
+/// GTK4 GStreamer backend's GL sink, gstglcontext/gldisplay-event threads) that
+/// is never torn down on the happy path, so allocating one per bell leaked a
+/// pipeline + its threads on every ring. See the caller in surface.zig.
+pub fn bellMediaFile(
+    current: ?*gtk.MediaFile,
+    path: [:0]const u8,
+    required: bool,
+) ?*gtk.MediaFile {
+    if (current) |media_file| {
+        if (isForPath(media_file, path)) return media_file;
+        media_file.unref();
+    }
+
+    const media_file = fromFilename(path) orelse return null;
+
+    // If the audio file is marked as required, we'll emit an error if there
+    // was a problem playing it. Otherwise there will be silence. We connect
+    // this once, here, because the MediaFile is reused across bells.
+    //
+    // NOTE: we intentionally do NOT connect notify::ended to unref. The
+    // MediaFile is owned by the surface and replayed via `seek(0)` for every
+    // bell; unref'ing on `ended` is precisely what previously discarded (and
+    // leaked) a pipeline per ring.
     if (required) {
         _ = gobject.Object.signals.notify.connect(
             media_file,
@@ -57,19 +86,25 @@ pub fn playMediaFile(media_file: *gtk.MediaFile, volume: f64, required: bool) vo
         );
     }
 
-    // Watch for the "ended" signal so that we can clean up after
-    // ourselves.
-    _ = gobject.Object.signals.notify.connect(
-        media_file,
-        ?*anyopaque,
-        mediaFileEnded,
-        null,
-        .{ .detail = "ended" },
-    );
+    return media_file;
+}
 
+/// (Re)play `media_file` at `volume`. `seek(0)` rewinds first so that a
+/// previously-ended stream plays again; without it playback only ever happens
+/// once (see #8957). Safe on a freshly-created stream as well.
+pub fn playBell(media_file: *gtk.MediaFile, volume: f64) void {
     const media_stream = media_file.as(gtk.MediaStream);
     media_stream.setVolume(volume);
+    media_stream.seek(0);
     media_stream.play();
+}
+
+/// Whether `media_file` was created for `path`.
+fn isForPath(media_file: *gtk.MediaFile, path: [:0]const u8) bool {
+    const file = media_file.getFile() orelse return false;
+    const cur = file.getPath() orelse return false;
+    defer glib.free(cur);
+    return std.mem.eql(u8, std.mem.span(cur), path);
 }
 
 fn mediaFileError(
@@ -91,12 +126,4 @@ fn mediaFileError(
         err.f_code,
         err.f_message orelse "",
     });
-}
-
-fn mediaFileEnded(
-    media_file: *gtk.MediaFile,
-    _: *gobject.ParamSpec,
-    _: ?*anyopaque,
-) callconv(.c) void {
-    media_file.unref();
 }
