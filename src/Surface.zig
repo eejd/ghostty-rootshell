@@ -224,23 +224,8 @@ const Mouse = struct {
     /// pressed or release.
     mods: input.Mods = .{},
 
-    /// The point at which the left mouse click happened. This is in screen
-    /// coordinates so that scrolling preserves the location.
-    left_click_pin: ?*terminal.Pin = null,
-    left_click_screen: terminal.ScreenSet.Key = .primary,
-    left_click_screen_generation: usize = 0,
-
-    /// The starting xpos/ypos of the left click. Note that if scrolling occurs,
-    /// these will point to different "cells", but the xpos/ypos will stay
-    /// stable during scrolling relative to the surface.
-    left_click_xpos: f64 = 0,
-    left_click_ypos: f64 = 0,
-
-    /// The count of clicks to count double and triple clicks and so on.
-    /// The left click time was the last time the left click was done. This
-    /// is always set on the first left click.
-    left_click_count: u8 = 0,
-    left_click_time: std.time.Instant = undefined,
+    /// Gesture state for text selection.
+    selection_gesture: terminal.SelectionGesture = .init,
 
     /// The last x/y sent for mouse reports.
     event_point: ?terminal.point.Coordinate = null,
@@ -263,19 +248,13 @@ const Mouse = struct {
     /// only process link hover events when the mouse actually moves cells.
     link_point: ?terminal.point.Coordinate = null,
 
-    /// Return the PageList that owns the left-click pin, or null if the screen
-    /// has been removed/reinitialized since the pin was tracked.
-    fn leftClickPageList(self: *const Mouse, screens: *const terminal.ScreenSet) ?*terminal.PageList {
-        if (screens.generation(self.left_click_screen) != self.left_click_screen_generation) return null;
-        const screen = screens.get(self.left_click_screen) orelse return null;
-        return &screen.pages;
-    }
-
     /// Return the left-click pin only if it still belongs to the active screen.
     fn activeLeftClickPin(self: *const Mouse, screens: *const terminal.ScreenSet) ?*terminal.Pin {
-        const pin = self.left_click_pin orelse return null;
-        if (self.left_click_screen != screens.active_key) return null;
-        _ = self.leftClickPageList(screens) orelse return null;
+        const gesture = &self.selection_gesture;
+        const pin = gesture.left_click_pin orelse return null;
+        if (gesture.left_click_screen != screens.active_key) return null;
+        if (screens.generation(gesture.left_click_screen) != gesture.left_click_screen_generation) return null;
+        _ = screens.get(gesture.left_click_screen) orelse return null;
         return pin;
     }
 };
@@ -839,6 +818,7 @@ pub fn deinit(self: *Surface) void {
     self.renderer_thread.deinit();
     self.renderer.deinit();
     self.io_thread.deinit();
+    self.mouse.selection_gesture.deinit(&self.io.terminal);
     self.io.deinit();
 
     if (self.inspector) |v| {
@@ -1198,7 +1178,7 @@ fn selectionScrollTick(self: *Surface) !void {
 
     // If we don't have a left mouse button down then we
     // don't do anything.
-    if (self.mouse.left_click_count == 0) return;
+    if (self.mouse.selection_gesture.left_click_count == 0) return;
 
     const pos = try self.rt_surface.getCursorPos();
     const pos_vp = self.posToViewport(pos.x, pos.y);
@@ -3781,7 +3761,7 @@ pub fn mouseButtonCallback(
         // We could do all the conditionals in one but I find it more
         // readable as a human to break this one up.
         if (mods.shift and
-            self.mouse.left_click_count > 0 and
+            self.mouse.selection_gesture.left_click_count > 0 and
             !shift_capture)
         extend_selection: {
             // We split this conditional out on its own because this is the
@@ -3792,7 +3772,9 @@ pub fn mouseButtonCallback(
             // If we are within the interval that the click would register
             // an increment then we do not extend the selection.
             if (std.time.Instant.now()) |now| {
-                const since = now.since(self.mouse.left_click_time);
+                const click_time = self.mouse.selection_gesture.left_click_time orelse
+                    break :extend_selection;
+                const since = now.since(click_time);
                 if (since <= self.config.mouse_interval) {
                     // Click interval very short, we may be increasing
                     // click counts so we don't extend the selection.
@@ -3880,7 +3862,7 @@ pub fn mouseButtonCallback(
             // We also set the left click count to 0 so that if mouse reporting
             // is disabled in the middle of press (before release) we don't
             // suddenly start selecting text.
-            self.mouse.left_click_count = 0;
+            self.mouse.selection_gesture.reset(self.renderer_state.terminal);
 
             const pos = try self.rt_surface.getCursorPos();
 
@@ -3927,60 +3909,27 @@ pub fn mouseButtonCallback(
                 break :click;
             };
 
-            break :pin try screen.pages.trackPin(pin);
+            break :pin pin;
         };
-        errdefer screen.pages.untrackPin(pin);
 
-        // If we move our cursor too much between clicks then we reset
-        // the multi-click state.
-        if (self.mouse.left_click_count > 0) {
-            const max_distance: f64 = @floatFromInt(self.size.cell.width);
-            const distance = @sqrt(
-                std.math.pow(f64, pos.x - self.mouse.left_click_xpos, 2) +
-                    std.math.pow(f64, pos.y - self.mouse.left_click_ypos, 2),
-            );
-
-            if (distance > max_distance) self.mouse.left_click_count = 0;
-        }
-
-        if (self.mouse.left_click_pin) |prev| {
-            if (self.mouse.leftClickPageList(&t.screens)) |pages| pages.untrackPin(prev);
-            self.mouse.left_click_pin = null;
-        }
-
-        // Store it
-        self.mouse.left_click_pin = pin;
-        self.mouse.left_click_screen = t.screens.active_key;
-        self.mouse.left_click_screen_generation = t.screens.generation(t.screens.active_key);
-        self.mouse.left_click_xpos = pos.x;
-        self.mouse.left_click_ypos = pos.y;
-
-        // Setup our click counter and timer
-        if (std.time.Instant.now()) |now| {
-            // If we have mouse clicks, then we check if the time elapsed
-            // is less than and our interval and if so, increase the count.
-            if (self.mouse.left_click_count > 0) {
-                const since = now.since(self.mouse.left_click_time);
-                if (since > self.config.mouse_interval) {
-                    self.mouse.left_click_count = 0;
-                }
-            }
-
-            self.mouse.left_click_time = now;
-            self.mouse.left_click_count += 1;
-
-            // We only support up to triple-clicks.
-            if (self.mouse.left_click_count > 3) self.mouse.left_click_count = 1;
-        } else |err| {
-            self.mouse.left_click_count = 1;
+        const time = std.time.Instant.now() catch |err| time: {
             log.err("error reading time, mouse multi-click won't work err={}", .{err});
-        }
+            break :time null;
+        };
+        try self.mouse.selection_gesture.press(t, .{
+            .time = time,
+            .pin = pin,
+            .xpos = pos.x,
+            .ypos = pos.y,
+            .max_distance = @floatFromInt(self.size.cell.width),
+            .repeat_interval = self.config.mouse_interval,
+        });
 
         // In all cases below, we set the selection directly rather than use
         // `setSelection` because we want to avoid copying the selection
         // to the selection clipboard. For left mouse clicks we only set
         // the clipboard on release.
-        switch (self.mouse.left_click_count) {
+        switch (self.mouse.selection_gesture.left_click_count) {
             // Single click
             1 => {
                 // If we have a selection, clear it. This always happens.
@@ -3996,7 +3945,7 @@ pub fn mouseButtonCallback(
                 const sel_ = sel: {
                     // Try link detection without requiring modifier keys
                     if (self.linkAtPin(
-                        pin.*,
+                        pin,
                         null,
                     )) |result_| {
                         if (result_) |result| {
@@ -4006,7 +3955,7 @@ pub fn mouseButtonCallback(
                         // Ignore any errors, likely regex errors.
                     }
 
-                    break :sel self.io.terminal.screens.active.selectWord(pin.*, self.config.selection_word_chars);
+                    break :sel self.io.terminal.screens.active.selectWord(pin, self.config.selection_word_chars);
                 };
                 if (sel_) |sel| {
                     try self.io.terminal.screens.active.select(sel);
@@ -4017,9 +3966,9 @@ pub fn mouseButtonCallback(
             // Triple click, select the line under our mouse
             3 => {
                 const sel_ = if (mods.ctrlOrSuper())
-                    self.io.terminal.screens.active.selectOutput(pin.*)
+                    self.io.terminal.screens.active.selectOutput(pin)
                 else
-                    self.io.terminal.screens.active.selectLine(.{ .pin = pin.* });
+                    self.io.terminal.screens.active.selectLine(.{ .pin = pin });
                 if (sel_) |sel| {
                     try self.io.terminal.screens.active.select(sel);
                     try self.queueRender();
@@ -4645,7 +4594,7 @@ pub fn cursorPosCallback(
         // In this scenario, we mark the click state because we need that to
         // properly make some mouse reports, but we don't keep track of the
         // count because we don't want to handle selection.
-        if (self.mouse.left_click_count == 0) break :select;
+        if (self.mouse.selection_gesture.left_click_count == 0) break :select;
 
         // If our left-click pin no longer belongs to the active screen then we
         // don't process this. We don't invalidate our pin or mouse state
@@ -4689,7 +4638,7 @@ pub fn cursorPosCallback(
         };
 
         // Handle dragging depending on click count
-        switch (self.mouse.left_click_count) {
+        switch (self.mouse.selection_gesture.left_click_count) {
             1 => try self.dragLeftClickSingle(pin, pos.x),
             2 => try self.dragLeftClickDouble(pin),
             3 => try self.dragLeftClickTriple(pin),
@@ -4791,7 +4740,7 @@ fn dragLeftClickSingle(
     try self.io.terminal.screens.active.select(mouseSelection(
         click_pin,
         drag_pin,
-        @intFromFloat(@max(0.0, self.mouse.left_click_xpos)),
+        @intFromFloat(@max(0.0, self.mouse.selection_gesture.left_click_xpos)),
         @intFromFloat(@max(0.0, drag_x)),
         self.mouse.mods,
         self.size,
