@@ -597,6 +597,16 @@ typedef enum GHOSTTY_ENUM_TYPED {
    *  color, in which case the caller should use whatever default foreground
    *  color it wants (e.g. the terminal foreground). */
   GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_FG_COLOR = 6,
+
+  /** Whether the cell is contained within the current selection (bool).
+   *  This returns true when the cell's column is within the current row's
+   *  row-local selection range, and false otherwise. Rendering policy for
+   *  selected cells (colors, inversion, etc.) is left to the caller.
+   *
+   *  Renderers that can draw cells in spans may be more efficient querying
+   *  GHOSTTY_RENDER_STATE_ROW_DATA_SELECTION once per row and applying that
+   *  range directly, avoiding one C API call per cell for selection state. */
+  GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_SELECTED = 7,
   GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
 } GhosttyRenderStateRowCellsData;
 

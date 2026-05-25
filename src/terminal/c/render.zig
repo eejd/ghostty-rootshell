@@ -45,6 +45,7 @@ const RowCellsWrapper = struct {
     raws: []const page.Cell,
     graphemes: []const []const u21,
     styles: []const Style,
+    selection: ?[2]size.CellCountInt,
 
     /// The color palette, needed to resolve palette-indexed background colors.
     palette: *const colorpkg.Palette,
@@ -427,6 +428,7 @@ pub fn row_cells_new(
         .raws = undefined,
         .graphemes = undefined,
         .styles = undefined,
+        .selection = undefined,
         .palette = undefined,
     };
     result.* = ptr;
@@ -463,6 +465,7 @@ pub const RowCellsData = enum(c_int) {
     graphemes_buf = 4,
     bg_color = 5,
     fg_color = 6,
+    selected = 7,
 
     /// Output type expected for querying the data of the given kind.
     pub fn OutType(comptime self: RowCellsData) type {
@@ -473,6 +476,7 @@ pub const RowCellsData = enum(c_int) {
             .graphemes_len => u32,
             .graphemes_buf => u32,
             .bg_color, .fg_color => colorpkg.RGB.C,
+            .selected => bool,
         };
     }
 };
@@ -563,6 +567,10 @@ fn rowCellsGetTyped(
             const fg = s.fg(.{ .default = .{}, .palette = cells.palette });
             out.* = fg.cval();
         },
+        .selected => out.* = if (cells.selection) |sel|
+            x >= sel[0] and x <= sel[1]
+        else
+            false,
     }
 
     return .success;
@@ -663,6 +671,7 @@ fn rowGetTyped(
                 .raws = cell_data.items(.raw),
                 .graphemes = cell_data.items(.grapheme),
                 .styles = cell_data.items(.style),
+                .selection = it.selection[y],
                 .palette = it.palette,
             };
         },
@@ -1099,6 +1108,89 @@ test "render: row get selection" {
     try testing.expect(row_iterator_next(it));
     sel = .{};
     try testing.expectEqual(Result.no_value, row_get(it, .selection, @ptrCast(&sel)));
+}
+
+test "render: row cells get selected" {
+    var terminal: terminal_c.Terminal = null;
+    try testing.expectEqual(Result.success, terminal_c.new(
+        &lib.alloc.test_allocator,
+        &terminal,
+        .{
+            .cols = 10,
+            .rows = 3,
+            .max_scrollback = 10_000,
+        },
+    ));
+    defer terminal_c.free(terminal);
+
+    const t = terminal.?.terminal;
+    const screen = t.screens.active;
+    try screen.select(.init(
+        screen.pages.pin(.{ .active = .{ .x = 2, .y = 1 } }).?,
+        screen.pages.pin(.{ .active = .{ .x = 4, .y = 1 } }).?,
+        false,
+    ));
+
+    var state: RenderState = null;
+    try testing.expectEqual(Result.success, new(
+        &lib.alloc.test_allocator,
+        &state,
+    ));
+    defer free(state);
+
+    try testing.expectEqual(Result.success, update(state, terminal));
+
+    var it: RowIterator = null;
+    try testing.expectEqual(Result.success, row_iterator_new(
+        &lib.alloc.test_allocator,
+        &it,
+    ));
+    defer row_iterator_free(it);
+
+    var cells: RowCells = null;
+    try testing.expectEqual(Result.success, row_cells_new(
+        &lib.alloc.test_allocator,
+        &cells,
+    ));
+    defer row_cells_free(cells);
+
+    try testing.expectEqual(Result.success, get(state, .row_iterator, @ptrCast(&it)));
+
+    try testing.expect(row_iterator_next(it));
+    try testing.expectEqual(Result.success, row_get(it, .cells, @ptrCast(&cells)));
+
+    var selected: bool = true;
+    try testing.expectEqual(Result.success, row_cells_select(cells, 0));
+    try testing.expectEqual(Result.success, row_cells_get(cells, .selected, @ptrCast(&selected)));
+    try testing.expect(!selected);
+
+    try testing.expect(row_iterator_next(it));
+    try testing.expectEqual(Result.success, row_get(it, .cells, @ptrCast(&cells)));
+
+    try testing.expectEqual(Result.success, row_cells_select(cells, 1));
+    try testing.expectEqual(Result.success, row_cells_get(cells, .selected, @ptrCast(&selected)));
+    try testing.expect(!selected);
+
+    try testing.expectEqual(Result.success, row_cells_select(cells, 2));
+    try testing.expectEqual(Result.success, row_cells_get(cells, .selected, @ptrCast(&selected)));
+    try testing.expect(selected);
+
+    try testing.expectEqual(Result.success, row_cells_select(cells, 4));
+    try testing.expectEqual(Result.success, row_cells_get(cells, .selected, @ptrCast(&selected)));
+    try testing.expect(selected);
+
+    try testing.expectEqual(Result.success, row_cells_select(cells, 5));
+    try testing.expectEqual(Result.success, row_cells_get(cells, .selected, @ptrCast(&selected)));
+    try testing.expect(!selected);
+
+    try testing.expectEqual(Result.success, row_cells_select(cells, 3));
+    selected = false;
+    var written: usize = 0;
+    const keys = [_]RowCellsData{.selected};
+    var values = [_]?*anyopaque{@ptrCast(&selected)};
+    try testing.expectEqual(Result.success, row_cells_get_multi(cells, keys.len, &keys, &values, &written));
+    try testing.expectEqual(keys.len, written);
+    try testing.expect(selected);
 }
 
 test "render: row iterator next" {
