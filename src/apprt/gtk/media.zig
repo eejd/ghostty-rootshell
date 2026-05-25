@@ -127,3 +127,31 @@ fn mediaFileError(
         err.f_message orelse "",
     });
 }
+
+test "bellMediaFile reuses one MediaFile per path" {
+    // Regression guard for the audio-bell thread leak: each bell must replay a
+    // single cached MediaFile, not allocate a fresh GStreamer pipeline (which
+    // leaked gstglcontext/gldisplay-event threads) per ring. We assert the
+    // reuse contract of bellMediaFile directly; this needs no display and no
+    // playback (MediaFile is lazy), only that the path comparison drives reuse.
+    const testing = std.testing;
+
+    // The files need not exist: MediaFile only records the path until played.
+    const path_a: [:0]const u8 = "/tmp/ghostty-bell-test-a.oga";
+    const path_b: [:0]const u8 = "/tmp/ghostty-bell-test-b.oga";
+
+    var current = bellMediaFile(null, path_a, false) orelse return error.SkipZigTest;
+    const first = current;
+    try testing.expect(isForPath(current, path_a));
+
+    // Same path => identical object (the leak regression is rebuilding here).
+    current = bellMediaFile(current, path_a, false).?;
+    try testing.expectEqual(first, current);
+
+    // Changed path => rebuilt object targeting the new path (old one freed).
+    current = bellMediaFile(current, path_b, false) orelse return error.SkipZigTest;
+    try testing.expect(isForPath(current, path_b));
+    try testing.expect(!isForPath(current, path_a));
+
+    current.unref();
+}
