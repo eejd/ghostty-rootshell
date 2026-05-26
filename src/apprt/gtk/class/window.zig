@@ -220,6 +220,9 @@ pub const Window = extern struct {
         /// behaves slightly differently under certain scenarios.
         quick_terminal: bool = false,
 
+        /// Timeout source to react to this window becoming (in)active.
+        timeout: ?c_uint = null,
+
         /// The window decoration override. If this is not set then we'll
         /// inherit whatever the config has. This allows overriding the
         /// config on a per-window basis.
@@ -855,6 +858,35 @@ pub const Window = extern struct {
         }
     }
 
+    fn onTimeout(ud: ?*anyopaque) callconv(.c) c_int {
+        const self: *Self = @ptrCast(@alignCast(ud orelse return 0));
+        const priv = self.private();
+        priv.timeout = null;
+
+        // Hide quick-terminal if set to autohide
+        if (self.isQuickTerminal()) {
+            if (self.getConfig()) |cfg| {
+                if (cfg.get().@"quick-terminal-autohide" and
+                    self.as(gtk.Window).isActive() == 0 and
+                    self.as(gtk.Widget).isVisible() == 1)
+                {
+                    self.toggleVisibility();
+                }
+            }
+        }
+
+        // Don't change urgency if we're not the active window.
+        if (self.as(gtk.Window).isActive() == 0) return 0;
+
+        self.winproto().setUrgent(false) catch |err| {
+            log.warn(
+                "winproto failed to reset urgency={}",
+                .{err},
+            );
+        };
+        return 0;
+    }
+
     //---------------------------------------------------------------
     // Properties
 
@@ -1076,27 +1108,17 @@ pub const Window = extern struct {
         _: *gobject.ParamSpec,
         self: *Self,
     ) callconv(.c) void {
-        // Hide quick-terminal if set to autohide
-        if (self.isQuickTerminal()) {
-            if (self.getConfig()) |cfg| {
-                if (cfg.get().@"quick-terminal-autohide" and
-                    self.as(gtk.Window).isActive() == 0 and
-                    self.as(gtk.Widget).isVisible() == 1)
-                {
-                    self.toggleVisibility();
-                }
-            }
-        }
+        const priv = self.private();
 
-        // Don't change urgency if we're not the active window.
-        if (self.as(gtk.Window).isActive() == 0) return;
-
-        self.winproto().setUrgent(false) catch |err| {
-            log.warn(
-                "winproto failed to reset urgency={}",
-                .{err},
-            );
-        };
+        // Use a timeout callback to wait for focus state to settle,
+        // because depending on the windowing backend the window might
+        // become inactive and immediately active again. This happens
+        // e.g. on Wayland when opening a context menu.
+        if (priv.timeout == null) priv.timeout = glib.timeoutAdd(
+            100,
+            onTimeout,
+            self,
+        );
     }
 
     fn propGdkSurfaceDims(
