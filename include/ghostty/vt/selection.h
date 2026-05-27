@@ -32,9 +32,19 @@ extern "C" {
  * for the endpoints and reconstruct a GhosttySelection from fresh snapshots
  * when needed.
  *
+ * Selection gestures provide a reusable state machine for turning UI pointer
+ * interactions into selection snapshots. A caller creates one
+ * GhosttySelectionGesture per active gesture stream, reuses typed
+ * GhosttySelectionGestureEvent objects for synthetic press, drag, release,
+ * autoscroll tick, and deep-press events, and applies each event with
+ * ghostty_selection_gesture_event(). The returned GhosttySelection is a
+ * snapshot; the embedder decides whether to render it, format/copy it, or
+ * install it as the terminal's active selection.
+ *
  * ## Examples
  *
  * @snippet c-vt-selection/src/main.c selection-main
+ * @snippet c-vt-selection-gesture/src/main.c selection-gesture-main
  *
  * @{
  */
