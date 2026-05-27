@@ -4456,9 +4456,11 @@ pub fn mousePressureCallback(
     // Update our pressure stage.
     self.mouse.pressure_stage = stage;
 
-    // If our left mouse button is pressed and we're entering a deep
-    // click then we want to start a selection. We treat this as a
-    // word selection since that is typical macOS behavior.
+    // A deep press is pressure-sensitive pointer input, such as macOS force
+    // click / deep click on a trackpad, that occurs while the left mouse
+    // button is already down. Treat it as the platform text-selection
+    // affordance: select the pressed word, then consume the active gesture so
+    // further cursor motion doesn't drag the selection.
     const left_idx = @intFromEnum(input.MouseButton.left);
     if (self.mouse.click_state[left_idx] == .press and
         stage == .deep)
@@ -4466,14 +4468,21 @@ pub fn mousePressureCallback(
         self.renderer_state.mutex.lock();
         defer self.renderer_state.mutex.unlock();
 
-        // This should always be set in this state but we don't want
-        // to handle state inconsistency here.
-        const pin = self.mouse.activeLeftClickPin(&self.io.terminal.screens) orelse break :select;
-        const sel = self.io.terminal.screens.active.selectWord(
-            pin.*,
-            self.config.selection_word_chars,
-        ) orelse break :select;
-        try self.io.terminal.screens.active.select(sel);
+        const sel = self.mouse.selection_gesture.deepPress(
+            self.renderer_state.terminal,
+            .{ .word_boundary_codepoints = self.config.selection_word_chars },
+        );
+
+        // Deep press consumes the active drag gesture, so stop any pending
+        // selection autoscroll timer that may have been started by the drag.
+        if (self.selection_scroll_active) {
+            self.queueIo(
+                .{ .selection_scroll = false },
+                .locked,
+            );
+        }
+
+        try self.io.terminal.screens.active.select(sel orelse break :select);
         try self.queueRender();
     }
 }

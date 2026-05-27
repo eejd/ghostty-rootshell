@@ -243,6 +243,10 @@ pub fn drag(
 /// Record a selection autoscroll tick for the active left-click drag gesture.
 /// This scrolls the viewport in the active autoscroll direction and then
 /// continues the drag at the provided position.
+///
+/// This always scrolls the viewport by exactly one row in the current
+/// autoscroll direction. If you want to scroll by more, increase your
+/// tick rate.
 pub fn autoscrollTick(
     self: *SelectionGesture,
     t: *Terminal,
@@ -269,6 +273,46 @@ pub fn autoscrollTick(
 
     t.scrollViewport(.{ .delta = delta });
     return self.drag(t, d);
+}
+
+/// A pressure-based activation during an existing left-click gesture.
+///
+/// This is the terminal gesture model for platform features such as macOS
+/// force click / deep click on pressure-sensitive trackpads. It is not a
+/// distinct mouse button and it is not part of the normal single/double/triple
+/// click count sequence; it can only occur after a left press is already
+/// active.
+pub const DeepPress = struct {
+    /// The codepoints that delimit words for the word selection produced by
+    /// the deep press.
+    word_boundary_codepoints: []const u21,
+};
+
+/// Record a deep press event for the active left-click gesture.
+///
+/// A deep press is a force/pressure activation while the primary pointer is
+/// already down. Ghostty treats it like the platform text-selection affordance:
+/// select the word under the original press, then consume the gesture so
+/// further cursor movement while the button remains pressed does not drag or
+/// autoscroll the selection.
+pub fn deepPress(
+    self: *SelectionGesture,
+    t: *Terminal,
+    p: DeepPress,
+) ?Selection {
+    const click_pin = self.validatedLeftClickPin(&t.screens) orelse return null;
+    const sel = t.screens.active.selectWord(
+        click_pin.*,
+        p.word_boundary_codepoints,
+    );
+
+    self.left_click_count = 0;
+    self.left_click_time = null;
+    self.left_click_dragged = true;
+    self.left_drag_autoscroll = .none;
+    self.untrackPin(t);
+
+    return sel;
 }
 
 pub const Release = struct {
@@ -1191,6 +1235,38 @@ test "SelectionGesture autoscroll tick stops with invalidated click" {
     try testing.expectEqual(null, gesture.autoscrollTick(&t, testDrag(&t, 2, 1, 20, 1)));
     try testing.expectEqual(.none, gesture.left_drag_autoscroll);
     try testing.expectEqual(@as(u3, 0), gesture.left_click_count);
+}
+
+test "SelectionGesture deep press selects word and consumes drag" {
+    var t = try Terminal.init(testing.allocator, .{ .cols = 20, .rows = 5 });
+    defer t.deinit(testing.allocator);
+    try t.printString("alpha beta");
+
+    var gesture: SelectionGesture = .init;
+    defer gesture.deinit(&t);
+
+    try gesture.press(&t, testPress(&t, 1, 0, try std.time.Instant.now()));
+    _ = gesture.drag(&t, testDrag(&t, 1, 0, 10, 1));
+    try testing.expectEqual(.up, gesture.left_drag_autoscroll);
+
+    const sel = gesture.deepPress(&t, .{
+        .word_boundary_codepoints = &.{ ' ' },
+    }).?;
+
+    try testing.expectEqualDeep(Selection.init(
+        testPin(&t, 0, 0),
+        testPin(&t, 4, 0),
+        false,
+    ), sel);
+    try testing.expectEqual(@as(u3, 0), gesture.left_click_count);
+    try testing.expectEqual(@as(?std.time.Instant, null), gesture.left_click_time);
+    try testing.expectEqual(true, gesture.left_click_dragged);
+    try testing.expectEqual(.none, gesture.left_drag_autoscroll);
+    try testing.expect(gesture.left_click_pin == null);
+
+    try testing.expectEqual(null, gesture.drag(&t, testDrag(&t, 7, 0, 70, 50)));
+    gesture.release(&t, .{ .pin = testPin(&t, 7, 0) });
+    try testing.expectEqual(true, gesture.left_click_dragged);
 }
 
 test "SelectionGesture drag with invalidated click returns null" {
