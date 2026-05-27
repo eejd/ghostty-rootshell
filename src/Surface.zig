@@ -3815,6 +3815,30 @@ pub fn mouseButtonCallback(
         self.renderer_state.mutex.lock();
         defer self.renderer_state.mutex.unlock();
 
+        // The selection gesture tracks whether a press became a drag by
+        // comparing the release cell to the original press cell. Resolve the
+        // release position and pin before notifying the gesture so later
+        // release handling can query that state.
+        const release_pos: ?apprt.CursorPos = self.rt_surface.getCursorPos() catch |err| pos: {
+            log.warn("error reading cursor position for mouse release err={}", .{err});
+            break :pos null;
+        };
+
+        // If we can't map the release position to a cell, pass null so the
+        // gesture can conservatively treat the release as having moved away
+        // from the pressed cell.
+        const release_pin: ?terminal.Pin = if (release_pos) |pos| pin: {
+            const release_vp = self.posToViewport(pos.x, pos.y);
+            break :pin self.io.terminal.screens.active.pages.pin(.{ .viewport = .{
+                .x = release_vp.x,
+                .y = release_vp.y,
+            } });
+        } else null;
+        self.mouse.selection_gesture.release(
+            self.renderer_state.terminal,
+            .{ .pin = release_pin },
+        );
+
         // Stop selection scrolling when releasing the left mouse button
         // but only when selection scrolling is active.
         if (self.selection_scroll_active) {
@@ -3823,7 +3847,6 @@ pub fn mouseButtonCallback(
                 .locked,
             );
         }
-        self.mouse.selection_gesture.left_drag_autoscroll = .none;
 
         // The selection clipboard is only updated for left-click drag when
         // the left button is released. This is to avoid the clipboard
@@ -3842,10 +3865,10 @@ pub fn mouseButtonCallback(
         // Handle link clicking. We want to do this before we do mouse
         // reporting or any other mouse handling because a successfully
         // clicked link will swallow the event.
-        if (self.mouse.over_link) {
+        if (self.mouse.over_link and !self.mouse.selection_gesture.left_click_dragged) {
             // We are holding the renderer lock, but this should just be
             // a cached value.
-            const pos = try self.rt_surface.getCursorPos();
+            const pos = release_pos orelse try self.rt_surface.getCursorPos();
             if (self.processLinks(pos)) |processed| {
                 if (processed) return true;
             } else |err| {
@@ -4139,11 +4162,12 @@ fn maybePromptClick(self: *Surface) !bool {
     // prompt clicks because we can't move if we're not in a prompt!
     if (!t.cursorIsAtPrompt()) return false;
 
-    // If we have a selection currently, then releasing the mouse
-    // completes the selection and we don't do prompt moving. I don't
-    // love this logic, I think it should be generalized to "if the
-    // mouse release was on a different cell than the mouse press" but
-    // our mouse state at the time of writing this doesn't support that.
+    // If the left click moved away from its pressed cell then releasing the
+    // mouse completes the drag gesture and we don't do prompt moving.
+    if (self.mouse.selection_gesture.left_click_dragged) return false;
+
+    // If we have a selection currently, then releasing the mouse completes
+    // the selection and we don't do prompt moving.
     if (screen.selection != null) return false;
 
     // Get the pin for our mouse click.

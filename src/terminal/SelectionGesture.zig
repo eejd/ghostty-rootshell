@@ -32,6 +32,12 @@ left_click_time: ?std.time.Instant,
 left_click_xpos: f64,
 left_click_ypos: f64,
 
+/// True once the active left-click gesture has moved away from the initially
+/// pressed cell. This is reset on every press that starts or continues a
+/// multi-click sequence, and is left available for callers to inspect while
+/// handling the corresponding release.
+left_click_dragged: bool,
+
 /// The current autoscroll state for the active left-click drag gesture.
 left_drag_autoscroll: Autoscroll,
 
@@ -61,6 +67,7 @@ pub const init: SelectionGesture = .{
     .left_click_screen_generation = 0,
     .left_click_xpos = 0,
     .left_click_ypos = 0,
+    .left_click_dragged = false,
     .left_drag_autoscroll = .none,
 };
 
@@ -77,6 +84,7 @@ pub fn deinit(self: *SelectionGesture, t: *Terminal) void {
 pub fn reset(self: *SelectionGesture, t: *Terminal) void {
     self.left_click_count = 0;
     self.left_click_time = null;
+    self.left_click_dragged = false;
     self.left_drag_autoscroll = .none;
     self.untrackPin(t);
 }
@@ -193,6 +201,7 @@ pub fn drag(
     // screen changed out from under us then we aren't actually
     // clicking anymore.
     const click_pin = self.validatedLeftClickPin(&t.screens) orelse return null;
+    if (!d.pin.eql(click_pin.*)) self.left_click_dragged = true;
 
     // Determine if we should autoscroll. If our drag position is above
     // the top, we go up. If its below the bottom we go down. Easy.
@@ -232,6 +241,34 @@ pub fn drag(
     };
 }
 
+pub const Release = struct {
+    /// The cell where the release occurred, if the release position mapped to
+    /// a valid cell. This is used synchronously to update gesture state and is
+    /// not tracked.
+    pin: ?Pin,
+};
+
+/// Record a release event for the active left-click gesture.
+pub fn release(
+    self: *SelectionGesture,
+    t: *Terminal,
+    r: Release,
+) void {
+    if (self.left_click_count == 0) {
+        assert(self.left_drag_autoscroll == .none);
+        return;
+    }
+
+    if (r.pin) |release_pin| {
+        if (self.validatedLeftClickPin(&t.screens)) |click_pin| {
+            if (!release_pin.eql(click_pin.*)) self.left_click_dragged = true;
+        }
+    } else {
+        self.left_click_dragged = true;
+    }
+    self.left_drag_autoscroll = .none;
+}
+
 fn pressInitial(
     self: *SelectionGesture,
     t: *Terminal,
@@ -256,6 +293,7 @@ fn pressInitial(
     self.left_click_xpos = p.xpos;
     self.left_click_ypos = p.ypos;
     self.left_click_time = p.time;
+    self.left_click_dragged = false;
     self.left_drag_autoscroll = .none;
 }
 
@@ -298,6 +336,7 @@ fn pressRepeat(
     }
 
     self.left_click_time = time;
+    self.left_click_dragged = false;
     self.left_drag_autoscroll = .none;
     self.left_click_count = @min(
         self.left_click_count + 1,
@@ -988,6 +1027,7 @@ test "SelectionGesture press records initial click" {
     try testing.expectEqual(time, gesture.left_click_time.?);
     try testing.expectEqual(@as(f64, 1), gesture.left_click_xpos);
     try testing.expectEqual(@as(f64, 2), gesture.left_click_ypos);
+    try testing.expectEqual(false, gesture.left_click_dragged);
 }
 
 test "SelectionGesture drag returns selection and records autoscroll" {
@@ -1003,6 +1043,7 @@ test "SelectionGesture drag returns selection and records autoscroll" {
 
     const sel = gesture.drag(&t, testDrag(&t, 3, 1, 39, 50)).?;
     try testing.expectEqual(.none, gesture.left_drag_autoscroll);
+    try testing.expectEqual(true, gesture.left_click_dragged);
 
     try testing.expectEqualDeep(Selection.init(
         t.screens.active.pages.pin(.{ .active = .{ .x = 1, .y = 1 } }).?,
@@ -1015,6 +1056,27 @@ test "SelectionGesture drag returns selection and records autoscroll" {
 
     _ = gesture.drag(&t, testDrag(&t, 3, 1, 39, 100));
     try testing.expectEqual(.down, gesture.left_drag_autoscroll);
+}
+
+test "SelectionGesture release clears autoscroll and records drag" {
+    var t = try Terminal.init(testing.allocator, .{ .cols = 5, .rows = 5 });
+    defer t.deinit(testing.allocator);
+
+    var gesture: SelectionGesture = .init;
+    defer gesture.deinit(&t);
+
+    try gesture.press(&t, testPress(&t, 1, 1, try std.time.Instant.now()));
+    try testing.expectEqual(false, gesture.left_click_dragged);
+
+    _ = gesture.drag(&t, testDrag(&t, 1, 1, 10, 1));
+    try testing.expectEqual(.up, gesture.left_drag_autoscroll);
+    try testing.expectEqual(false, gesture.left_click_dragged);
+
+    gesture.release(&t, .{
+        .pin = testPin(&t, 2, 1),
+    });
+    try testing.expectEqual(.none, gesture.left_drag_autoscroll);
+    try testing.expectEqual(true, gesture.left_click_dragged);
 }
 
 test "SelectionGesture drag without press returns null" {
