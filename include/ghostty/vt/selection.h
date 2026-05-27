@@ -40,6 +40,17 @@ extern "C" {
  */
 
 /**
+ * Opaque handle to state for interpreting terminal selection gestures.
+ *
+ * The gesture owns only the state required to interpret pointer events. Calls
+ * that use a gesture are not concurrency-safe and must be serialized with
+ * terminal mutations.
+ *
+ * @ingroup selection
+ */
+typedef struct GhosttySelectionGestureImpl* GhosttySelectionGesture;
+
+/**
  * A snapshot selection range defined by two grid references.
  *
  * Both endpoints are inclusive. The endpoints preserve selection direction
@@ -282,6 +293,189 @@ typedef enum GHOSTTY_ENUM_TYPED {
 
   GHOSTTY_SELECTION_ADJUST_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
 } GhosttySelectionAdjust;
+
+/**
+ * Selection behavior chosen for a gesture's click sequence.
+ *
+ * @ingroup selection
+ */
+typedef enum GHOSTTY_ENUM_TYPED {
+  /** Cell-granular drag selection. */
+  GHOSTTY_SELECTION_GESTURE_BEHAVIOR_CELL = 0,
+
+  /** Word selection on press and word-granular drag selection. */
+  GHOSTTY_SELECTION_GESTURE_BEHAVIOR_WORD = 1,
+
+  /** Line selection on press and line-granular drag selection. */
+  GHOSTTY_SELECTION_GESTURE_BEHAVIOR_LINE = 2,
+
+  /** Semantic command output selection on press and drag. */
+  GHOSTTY_SELECTION_GESTURE_BEHAVIOR_OUTPUT = 3,
+
+  GHOSTTY_SELECTION_GESTURE_BEHAVIOR_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
+} GhosttySelectionGestureBehavior;
+
+/**
+ * Current autoscroll direction for an active selection drag gesture.
+ *
+ * @ingroup selection
+ */
+typedef enum GHOSTTY_ENUM_TYPED {
+  /** No selection autoscroll is requested. */
+  GHOSTTY_SELECTION_GESTURE_AUTOSCROLL_NONE = 0,
+
+  /** Selection dragging should autoscroll the viewport upward. */
+  GHOSTTY_SELECTION_GESTURE_AUTOSCROLL_UP = 1,
+
+  /** Selection dragging should autoscroll the viewport downward. */
+  GHOSTTY_SELECTION_GESTURE_AUTOSCROLL_DOWN = 2,
+
+  GHOSTTY_SELECTION_GESTURE_AUTOSCROLL_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
+} GhosttySelectionGestureAutoscroll;
+
+/**
+ * Data fields readable from a selection gesture with
+ * ghostty_selection_gesture_get().
+ *
+ * @ingroup selection
+ */
+typedef enum GHOSTTY_ENUM_TYPED {
+  /** Current click count: uint8_t*. 0 means inactive. */
+  GHOSTTY_SELECTION_GESTURE_DATA_CLICK_COUNT = 0,
+
+  /** Whether the current/last left-click gesture has dragged: bool*. */
+  GHOSTTY_SELECTION_GESTURE_DATA_DRAGGED = 1,
+
+  /** Current autoscroll request: GhosttySelectionGestureAutoscroll*. */
+  GHOSTTY_SELECTION_GESTURE_DATA_AUTOSCROLL = 2,
+
+  /** Current gesture behavior: GhosttySelectionGestureBehavior*. */
+  GHOSTTY_SELECTION_GESTURE_DATA_BEHAVIOR = 3,
+
+  /**
+   * Current left-click anchor: GhosttyGridRef*.
+   *
+   * Returns GHOSTTY_NO_VALUE if there is no valid active anchor. On success,
+   * writes an untracked GhosttyGridRef snapshot with normal GhosttyGridRef
+   * lifetime rules.
+   */
+  GHOSTTY_SELECTION_GESTURE_DATA_ANCHOR = 4,
+
+  GHOSTTY_SELECTION_GESTURE_DATA_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
+} GhosttySelectionGestureData;
+
+/**
+ * Create a selection gesture object.
+ *
+ * The gesture stores mutable state for terminal text selection gestures. The
+ * gesture is not bound to a terminal at creation time; terminal-dependent APIs
+ * take the terminal explicitly.
+ *
+ * @param allocator Allocator, or NULL for the default allocator
+ * @param out_gesture Receives the created gesture handle
+ * @return GHOSTTY_SUCCESS on success, GHOSTTY_INVALID_VALUE if out_gesture is
+ *         NULL, or GHOSTTY_OUT_OF_MEMORY if allocation fails
+ *
+ * @ingroup selection
+ */
+GHOSTTY_API GhosttyResult ghostty_selection_gesture_new(
+                                    const GhosttyAllocator* allocator,
+                                    GhosttySelectionGesture* out_gesture);
+
+/**
+ * Free a selection gesture object.
+ *
+ * This releases any tracked terminal references owned by the gesture using the
+ * provided terminal, then frees the gesture object. Passing NULL for gesture is
+ * allowed and is a no-op.
+ *
+ * If the terminal is still alive, pass the terminal most recently used with the
+ * gesture so any tracked terminal references can be released correctly. If the
+ * terminal has already been freed, pass NULL for terminal; the terminal's page
+ * storage has already released the underlying tracked references, so the
+ * gesture wrapper can be safely discarded without touching the stale terminal
+ * state.
+ *
+ * @param gesture Selection gesture handle to free
+ * @param terminal Terminal used to release tracked gesture state, or NULL if
+ *                 the terminal has already been freed
+ *
+ * @ingroup selection
+ */
+GHOSTTY_API void ghostty_selection_gesture_free(
+                                    GhosttySelectionGesture gesture,
+                                    GhosttyTerminal terminal);
+
+/**
+ * Reset any active selection gesture state.
+ *
+ * This cancels the active click sequence and releases any tracked terminal
+ * references owned by the gesture without freeing the gesture object.
+ * Passing NULL is allowed and is a no-op.
+ *
+ * @param gesture Selection gesture handle to reset
+ * @param terminal Terminal used to release tracked gesture state
+ *
+ * @ingroup selection
+ */
+GHOSTTY_API void ghostty_selection_gesture_reset(
+                                    GhosttySelectionGesture gesture,
+                                    GhosttyTerminal terminal);
+
+/**
+ * Read data from a selection gesture.
+ *
+ * The type of value depends on data and is documented by
+ * GhosttySelectionGestureData. For GHOSTTY_SELECTION_GESTURE_DATA_ANCHOR,
+ * the returned GhosttyGridRef is an untracked snapshot with normal grid-ref
+ * lifetime rules.
+ *
+ * @param gesture Selection gesture handle (NULL returns GHOSTTY_INVALID_VALUE)
+ * @param terminal Terminal used to validate terminal-backed gesture state
+ * @param data Data field to read
+ * @param value Output pointer whose type depends on data
+ * @return GHOSTTY_SUCCESS on success, GHOSTTY_NO_VALUE if the requested data
+ *         has no value, or GHOSTTY_INVALID_VALUE if gesture, terminal, data, or
+ *         value is invalid
+ *
+ * @ingroup selection
+ */
+GHOSTTY_API GhosttyResult ghostty_selection_gesture_get(
+                                    GhosttySelectionGesture gesture,
+                                    GhosttyTerminal terminal,
+                                    GhosttySelectionGestureData data,
+                                    void* value);
+
+/**
+ * Read multiple data fields from a selection gesture in a single call.
+ *
+ * This is an optimization over calling ghostty_selection_gesture_get() multiple
+ * times. Each entry in values must point to storage of the type documented by
+ * the corresponding GhosttySelectionGestureData key.
+ *
+ * If any individual read fails, the function returns that error and writes the
+ * index of the failing key to out_written when out_written is non-NULL. On
+ * success, out_written receives count when non-NULL.
+ *
+ * @param gesture Selection gesture handle (NULL returns GHOSTTY_INVALID_VALUE)
+ * @param terminal Terminal used to validate terminal-backed gesture state
+ * @param count Number of data fields to read
+ * @param keys Data fields to read (must not be NULL)
+ * @param values Output pointers corresponding to keys (must not be NULL)
+ * @param out_written Optional number of fields read, or failing index on error
+ * @return GHOSTTY_SUCCESS on success, GHOSTTY_NO_VALUE if a requested data
+ *         field has no value, or GHOSTTY_INVALID_VALUE if gesture, terminal,
+ *         keys, values, or a value pointer is invalid
+ *
+ * @ingroup selection
+ */
+GHOSTTY_API GhosttyResult ghostty_selection_gesture_get_multi(
+                                    GhosttySelectionGesture gesture,
+                                    GhosttyTerminal terminal,
+                                    size_t count,
+                                    const GhosttySelectionGestureData* keys,
+                                    void** values,
+                                    size_t* out_written);
 
 /**
  * Derive a word selection snapshot from a terminal grid reference.

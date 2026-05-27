@@ -251,6 +251,11 @@ comptime {
         @export(&c.terminal_selection_ordered, .{ .name = "ghostty_terminal_selection_ordered" });
         @export(&c.terminal_selection_contains, .{ .name = "ghostty_terminal_selection_contains" });
         @export(&c.terminal_selection_equal, .{ .name = "ghostty_terminal_selection_equal" });
+        @export(&c.selection_gesture_new, .{ .name = "ghostty_selection_gesture_new" });
+        @export(&c.selection_gesture_free, .{ .name = "ghostty_selection_gesture_free" });
+        @export(&c.selection_gesture_reset, .{ .name = "ghostty_selection_gesture_reset" });
+        @export(&c.selection_gesture_get, .{ .name = "ghostty_selection_gesture_get" });
+        @export(&c.selection_gesture_get_multi, .{ .name = "ghostty_selection_gesture_get_multi" });
         @export(&c.terminal_grid_ref, .{ .name = "ghostty_terminal_grid_ref" });
         @export(&c.terminal_grid_ref_track, .{ .name = "ghostty_terminal_grid_ref_track" });
         @export(&c.terminal_point_from_grid_ref, .{ .name = "ghostty_terminal_point_from_grid_ref" });
