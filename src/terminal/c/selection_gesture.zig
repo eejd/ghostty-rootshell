@@ -6,6 +6,7 @@ const CAllocator = lib.alloc.Allocator;
 const SelectionGesture = @import("../SelectionGesture.zig");
 const selection_codepoints = @import("../selection_codepoints.zig");
 const grid_ref = @import("grid_ref.zig");
+const point = @import("../point.zig");
 const selection_c = @import("selection.zig");
 const terminal_c = @import("terminal.zig");
 const types = @import("types.zig");
@@ -30,6 +31,7 @@ const EventWrapper = struct {
         press: SelectionGesture.Press,
         release: SelectionGesture.Release,
         drag: SelectionGesture.Drag,
+        autoscroll_tick: SelectionGesture.AutoscrollTick,
     },
 
     // Press.pin has no safe sentinel value: PageList.Pin contains a non-null
@@ -45,11 +47,18 @@ const EventWrapper = struct {
     drag_pin_set: bool = false,
     drag_geometry_set: bool = false,
 
-    // Backing storage for Press/Drag.word_boundary_codepoints. The C API
-    // receives codepoints as borrowed uint32_t values, but SelectionGesture
-    // stores a []const u21 slice. We copy/convert into event-owned storage so
-    // the real payload can safely point at it until the event is changed or
-    // freed.
+    // AutoscrollTick.viewport and AutoscrollTick.geometry are required by
+    // SelectionGesture.autoscrollTick but have no meaningful zero/sentinel
+    // value. Track whether the C caller set them so dispatch can reject
+    // incomplete tick events instead of using placeholder data.
+    autoscroll_tick_viewport_set: bool = false,
+    autoscroll_tick_geometry_set: bool = false,
+
+    // Backing storage for Press/Drag/AutoscrollTick.word_boundary_codepoints.
+    // The C API receives codepoints as borrowed uint32_t values, but
+    // SelectionGesture stores a []const u21 slice. We copy/convert into
+    // event-owned storage so the real payload can safely point at it until the
+    // event is changed or freed.
     word_boundary_codepoints: ?[]u21 = null,
 
     // Backing storage for Press.behaviors. The C API sets behaviors as a value
@@ -63,6 +72,7 @@ const EventWrapper = struct {
             .press => .{ .press = self.defaultPress() },
             .release => .{ .release = self.defaultRelease() },
             .drag => .{ .drag = self.defaultDrag() },
+            .autoscroll_tick => .{ .autoscroll_tick = self.defaultAutoscrollTick() },
         };
     }
 
@@ -88,6 +98,18 @@ const EventWrapper = struct {
         _ = self;
         return .{
             .pin = undefined,
+            .xpos = 0,
+            .ypos = 0,
+            .rectangle = false,
+            .word_boundary_codepoints = &selection_codepoints.default_word_boundaries,
+            .geometry = undefined,
+        };
+    }
+
+    fn defaultAutoscrollTick(self: *EventWrapper) SelectionGesture.AutoscrollTick {
+        _ = self;
+        return .{
+            .viewport = undefined,
             .xpos = 0,
             .ypos = 0,
             .rectangle = false,
@@ -140,6 +162,7 @@ pub const EventType = enum(c_int) {
     press = 0,
     release = 1,
     drag = 2,
+    autoscroll_tick = 3,
 };
 
 /// C: GhosttySelectionGestureEventOption
@@ -153,6 +176,7 @@ pub const EventOption = enum(c_int) {
     behaviors = 6,
     rectangle = 7,
     geometry = 8,
+    viewport = 9,
 
     pub fn Type(comptime self: EventOption) type {
         return switch (self) {
@@ -165,6 +189,7 @@ pub const EventOption = enum(c_int) {
             .behaviors => Behaviors,
             .rectangle => bool,
             .geometry => Geometry,
+            .viewport => point.Coordinate,
         };
     }
 };
@@ -290,6 +315,15 @@ pub fn handle_event(
             } else if (sel == null) return .no_value;
             return .success;
         },
+        .autoscroll_tick => |tick| {
+            if (!event_wrapper.autoscroll_tick_viewport_set) return .invalid_value;
+            if (!event_wrapper.autoscroll_tick_geometry_set) return .invalid_value;
+            const sel = wrapper.gesture.autoscrollTick(t, tick);
+            if (out_selection) |out| {
+                out.* = selection_c.CSelection.fromZig(sel orelse return .no_value);
+            } else if (sel == null) return .no_value;
+            return .success;
+        },
     };
 }
 
@@ -394,6 +428,7 @@ fn eventSetTyped(
         .press => |*press| pressSetTyped(event, press, option, value),
         .release => |*release| releaseSetTyped(release, option, value),
         .drag => |*drag| dragSetTyped(event, drag, option, value),
+        .autoscroll_tick => |*tick| autoscrollTickSetTyped(event, tick, option, value),
     };
 }
 
@@ -423,6 +458,7 @@ fn pressSetTyped(
             },
             .rectangle,
             .geometry,
+            .viewport,
             => return .invalid_value,
         }
         return .success;
@@ -454,6 +490,7 @@ fn pressSetTyped(
         },
         .rectangle,
         .geometry,
+        .viewport,
         => return .invalid_value,
     }
 
@@ -482,6 +519,7 @@ fn releaseSetTyped(
         .behaviors,
         .rectangle,
         .geometry,
+        .viewport,
         => return .invalid_value,
     }
 
@@ -507,6 +545,7 @@ fn dragSetTyped(
             ),
             .rectangle => drag.rectangle = false,
             .geometry => event.drag_geometry_set = false,
+            .viewport => return .invalid_value,
 
             .repeat_distance,
             .time_ns,
@@ -536,7 +575,69 @@ fn dragSetTyped(
             drag.geometry = v.toZig() orelse return .invalid_value;
             event.drag_geometry_set = true;
         },
+        .viewport => return .invalid_value,
 
+        .repeat_distance,
+        .time_ns,
+        .repeat_interval_ns,
+        .behaviors,
+        => return .invalid_value,
+    }
+
+    return .success;
+}
+
+fn autoscrollTickSetTyped(
+    event: *EventWrapper,
+    tick: *SelectionGesture.AutoscrollTick,
+    comptime option: EventOption,
+    value: ?*const option.Type(),
+) Result {
+    const v = value orelse {
+        switch (option) {
+            .viewport => event.autoscroll_tick_viewport_set = false,
+            .position => {
+                tick.xpos = 0;
+                tick.ypos = 0;
+            },
+            .word_boundary_codepoints => clearWordBoundaryCodepoints(
+                event,
+                &tick.word_boundary_codepoints,
+            ),
+            .rectangle => tick.rectangle = false,
+            .geometry => event.autoscroll_tick_geometry_set = false,
+
+            .ref,
+            .repeat_distance,
+            .time_ns,
+            .repeat_interval_ns,
+            .behaviors,
+            => return .invalid_value,
+        }
+        return .success;
+    };
+
+    switch (option) {
+        .viewport => {
+            tick.viewport = v.*;
+            event.autoscroll_tick_viewport_set = true;
+        },
+        .position => {
+            tick.xpos = v.x;
+            tick.ypos = v.y;
+        },
+        .word_boundary_codepoints => return trySetWordBoundaryCodepoints(
+            event,
+            &tick.word_boundary_codepoints,
+            v,
+        ),
+        .rectangle => tick.rectangle = v.*,
+        .geometry => {
+            tick.geometry = v.toZig() orelse return .invalid_value;
+            event.autoscroll_tick_geometry_set = true;
+        },
+
+        .ref,
         .repeat_distance,
         .time_ns,
         .repeat_interval_ns,
@@ -1105,6 +1206,128 @@ test "selection gesture drag requires ref and geometry" {
         .screen_height = 20,
     };
     try testing.expectEqual(Result.invalid_value, event_set(drag_event, .geometry, &invalid_geometry));
+}
+
+test "selection gesture event applies autoscroll tick" {
+    var terminal: terminal_c.Terminal = null;
+    try testing.expectEqual(Result.success, terminal_c.new(
+        &lib.alloc.test_allocator,
+        &terminal,
+        .{ .cols = 5, .rows = 2, .max_scrollback = 10_000 },
+    ));
+    defer terminal_c.free(terminal);
+
+    terminal_c.vt_write(terminal, "abcde\r\nfghij", 12);
+
+    var gesture: Gesture = null;
+    try testing.expectEqual(Result.success, new(
+        &lib.alloc.test_allocator,
+        &gesture,
+    ));
+    defer free(gesture, terminal);
+
+    var press_event: Event = null;
+    try testing.expectEqual(Result.success, event_new(
+        &lib.alloc.test_allocator,
+        &press_event,
+        .press,
+    ));
+    defer event_free(press_event);
+
+    var drag_event: Event = null;
+    try testing.expectEqual(Result.success, event_new(
+        &lib.alloc.test_allocator,
+        &drag_event,
+        .drag,
+    ));
+    defer event_free(drag_event);
+
+    var tick_event: Event = null;
+    try testing.expectEqual(Result.success, event_new(
+        &lib.alloc.test_allocator,
+        &tick_event,
+        .autoscroll_tick,
+    ));
+    defer event_free(tick_event);
+
+    const geometry: Geometry = .{
+        .columns = 5,
+        .cell_width = 10,
+        .padding_left = 0,
+        .screen_height = 20,
+    };
+
+    var press_ref: grid_ref.CGridRef = undefined;
+    try testing.expectEqual(Result.success, terminal_c.grid_ref(terminal, .{
+        .tag = .active,
+        .value = .{ .active = .{ .x = 1, .y = 0 } },
+    }, &press_ref));
+    try testing.expectEqual(Result.success, event_set(press_event, .ref, &press_ref));
+    const press_pos: types.SurfacePosition = .{ .x = 10, .y = 10 };
+    try testing.expectEqual(Result.success, event_set(press_event, .position, &press_pos));
+    try testing.expectEqual(Result.no_value, handle_event(gesture, terminal, press_event, null));
+
+    var drag_ref: grid_ref.CGridRef = undefined;
+    try testing.expectEqual(Result.success, terminal_c.grid_ref(terminal, .{
+        .tag = .active,
+        .value = .{ .active = .{ .x = 3, .y = 1 } },
+    }, &drag_ref));
+    try testing.expectEqual(Result.success, event_set(drag_event, .ref, &drag_ref));
+    const drag_pos: types.SurfacePosition = .{ .x = 36, .y = 20 };
+    try testing.expectEqual(Result.success, event_set(drag_event, .position, &drag_pos));
+    try testing.expectEqual(Result.success, event_set(drag_event, .geometry, &geometry));
+    var sel: selection_c.CSelection = undefined;
+    try testing.expectEqual(Result.success, handle_event(gesture, terminal, drag_event, &sel));
+
+    var autoscroll: Autoscroll = .none;
+    try testing.expectEqual(Result.success, get(gesture, terminal, .autoscroll, &autoscroll));
+    try testing.expectEqual(Autoscroll.down, autoscroll);
+
+    const viewport: point.Coordinate = .{ .x = 3, .y = 1 };
+    try testing.expectEqual(Result.success, event_set(tick_event, .viewport, &viewport));
+    try testing.expectEqual(Result.success, event_set(tick_event, .position, &drag_pos));
+    try testing.expectEqual(Result.success, event_set(tick_event, .geometry, &geometry));
+
+    try testing.expectEqual(Result.success, handle_event(gesture, terminal, tick_event, &sel));
+}
+
+test "selection gesture autoscroll tick requires viewport and geometry" {
+    var terminal: terminal_c.Terminal = null;
+    try testing.expectEqual(Result.success, terminal_c.new(
+        &lib.alloc.test_allocator,
+        &terminal,
+        .{ .cols = 5, .rows = 2, .max_scrollback = 10_000 },
+    ));
+    defer terminal_c.free(terminal);
+
+    var gesture: Gesture = null;
+    try testing.expectEqual(Result.success, new(
+        &lib.alloc.test_allocator,
+        &gesture,
+    ));
+    defer free(gesture, terminal);
+
+    var tick_event: Event = null;
+    try testing.expectEqual(Result.success, event_new(
+        &lib.alloc.test_allocator,
+        &tick_event,
+        .autoscroll_tick,
+    ));
+    defer event_free(tick_event);
+
+    var sel: selection_c.CSelection = undefined;
+    try testing.expectEqual(Result.invalid_value, handle_event(gesture, terminal, tick_event, &sel));
+
+    const viewport: point.Coordinate = .{ .x = 1, .y = 0 };
+    try testing.expectEqual(Result.success, event_set(tick_event, .viewport, &viewport));
+    try testing.expectEqual(Result.invalid_value, handle_event(gesture, terminal, tick_event, &sel));
+
+    var ref: grid_ref.CGridRef = undefined;
+    try testing.expectEqual(Result.success, terminal_c.grid_ref(terminal, .{
+        .tag = .active,
+        .value = .{ .active = .{ .x = 1, .y = 0 } },
+    }, &ref));
+    try testing.expectEqual(Result.invalid_value, event_set(tick_event, .ref, &ref));
 }
 
 test "selection gesture free null" {

@@ -427,6 +427,9 @@ typedef enum GHOSTTY_ENUM_TYPED {
   /** Drag event for ghostty_selection_gesture_drag(). */
   GHOSTTY_SELECTION_GESTURE_EVENT_TYPE_DRAG = 2,
 
+  /** Autoscroll tick event for ghostty_selection_gesture_autoscroll_tick(). */
+  GHOSTTY_SELECTION_GESTURE_EVENT_TYPE_AUTOSCROLL_TICK = 3,
+
   GHOSTTY_SELECTION_GESTURE_EVENT_TYPE_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
 } GhosttySelectionGestureEventType;
 
@@ -447,7 +450,11 @@ typedef enum GHOSTTY_ENUM_TYPED {
    */
   GHOSTTY_SELECTION_GESTURE_EVENT_OPT_REF = 0,
 
-  /** Surface-space pointer position: GhosttySurfacePosition*. Valid for PRESS and DRAG. */
+  /**
+   * Surface-space pointer position: GhosttySurfacePosition*.
+   *
+   * Valid for PRESS, DRAG, and AUTOSCROLL_TICK.
+   */
   GHOSTTY_SELECTION_GESTURE_EVENT_OPT_POSITION = 1,
 
   /** Maximum repeat-click distance in pixels: double*. */
@@ -468,8 +475,9 @@ typedef enum GHOSTTY_ENUM_TYPED {
    * Word-boundary codepoints: GhosttyCodepoints*.
    *
    * The codepoints are copied into event-owned storage when set. If unset,
-   * operations that need word boundaries use Ghostty's defaults. Valid for
-   * PRESS and DRAG.
+   * operations that need word boundaries use Ghostty's defaults.
+   *
+   * Valid for PRESS, DRAG, and AUTOSCROLL_TICK.
    */
   GHOSTTY_SELECTION_GESTURE_EVENT_OPT_WORD_BOUNDARY_CODEPOINTS = 5,
 
@@ -480,11 +488,14 @@ typedef enum GHOSTTY_ENUM_TYPED {
    */
   GHOSTTY_SELECTION_GESTURE_EVENT_OPT_BEHAVIORS = 6,
 
-  /** Whether a drag event should produce a rectangular selection: bool*. */
+  /** Whether a drag or autoscroll tick should produce a rectangular selection: bool*. */
   GHOSTTY_SELECTION_GESTURE_EVENT_OPT_RECTANGLE = 7,
 
-  /** Drag display geometry: GhosttySelectionGestureGeometry*. Required for DRAG. */
+  /** Drag display geometry: GhosttySelectionGestureGeometry*. Required for DRAG and AUTOSCROLL_TICK. */
   GHOSTTY_SELECTION_GESTURE_EVENT_OPT_GEOMETRY = 8,
+
+  /** Viewport coordinate for an autoscroll tick: GhosttyPointCoordinate*. Required for AUTOSCROLL_TICK. */
+  GHOSTTY_SELECTION_GESTURE_EVENT_OPT_VIEWPORT = 9,
 
   GHOSTTY_SELECTION_GESTURE_EVENT_OPT_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
 } GhosttySelectionGestureEventOption;
@@ -553,6 +564,12 @@ GHOSTTY_API GhosttyResult ghostty_selection_gesture_event_set(
  *
  * For GHOSTTY_SELECTION_GESTURE_EVENT_TYPE_DRAG,
  * GHOSTTY_SELECTION_GESTURE_EVENT_OPT_REF and
+ * GHOSTTY_SELECTION_GESTURE_EVENT_OPT_GEOMETRY are required. Position,
+ * rectangle, and word-boundary codepoints are optional and use initialized
+ * defaults when unset or cleared.
+ *
+ * For GHOSTTY_SELECTION_GESTURE_EVENT_TYPE_AUTOSCROLL_TICK,
+ * GHOSTTY_SELECTION_GESTURE_EVENT_OPT_VIEWPORT and
  * GHOSTTY_SELECTION_GESTURE_EVENT_OPT_GEOMETRY are required. Position,
  * rectangle, and word-boundary codepoints are optional and use initialized
  * defaults when unset or cleared.
