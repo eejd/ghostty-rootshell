@@ -1189,18 +1189,8 @@ fn selectionScrollTick(self: *Surface) !void {
     defer self.renderer_state.mutex.unlock();
     const t: *terminal.Terminal = self.renderer_state.terminal;
 
-    const pin = t.screens.active.pages.pin(.{
-        .viewport = .{
-            .x = pos_vp.x,
-            .y = pos_vp.y,
-        },
-    }) orelse {
-        if (comptime std.debug.runtime_safety) unreachable;
-        return;
-    };
-
     const selection = self.mouse.selection_gesture.autoscrollTick(t, .{
-        .pin = pin,
+        .viewport = pos_vp,
         .xpos = pos.x,
         .ypos = pos.y,
         .rectangle = SurfaceMouse.isRectangleSelectState(self.mouse.mods),

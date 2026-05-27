@@ -76,6 +76,7 @@ const Screen = @import("Screen.zig");
 const ScreenSet = @import("ScreenSet.zig");
 const Selection = @import("Selection.zig");
 const Terminal = @import("Terminal.zig");
+const point = @import("point.zig");
 
 /// The tracked pin of the initial left click along with the screen
 /// that the pin is part of.
@@ -366,7 +367,7 @@ pub fn drag(
     else
         .none;
 
-    return switch (self.left_click_behavior) {
+    const selection = switch (self.left_click_behavior) {
         .cell => dragSelection(
             click_pin.*,
             d.pin,
@@ -395,14 +396,44 @@ pub fn drag(
             d.pin,
         ),
     };
+
+    // Same-cell cell selections can still become real selections when the drag
+    // crosses the within-cell threshold. Treat those as drags so callers don't
+    // also process click-only actions such as opening links.
+    if (self.left_click_behavior == .cell and selection != null) {
+        self.left_click_dragged = true;
+    }
+
+    return selection;
 }
+
+pub const AutoscrollTick = struct {
+    /// The viewport cell where the current drag position is. This is resolved
+    /// after the viewport is scrolled so the selection tracks the newly visible
+    /// row under the pointer.
+    viewport: point.Coordinate,
+
+    /// The x/y value of the drag relative to the surface with (0,0) being
+    /// top-left.
+    xpos: f64,
+    ypos: f64,
+
+    /// True if the current drag should produce a rectangular selection.
+    rectangle: bool,
+
+    /// The codepoints that delimit words for double-click drag selection.
+    word_boundary_codepoints: []const u21,
+
+    /// Geometry required for selection threshold and autoscroll calculations.
+    geometry: Drag.Geometry,
+};
 
 /// Record a selection autoscroll tick for the active left-click drag gesture.
 ///
 /// This scrolls the viewport in the active autoscroll direction and then
-/// continues the drag at the provided position. The caller should pass the same
-/// sort of `Drag` payload it would pass to `drag`, usually using the current
-/// pointer position at the time the timer fires.
+/// continues the drag at the provided viewport position. The viewport position
+/// is resolved to a pin after scrolling so the drag applies to the row now under
+/// the pointer.
 ///
 /// This always scrolls the viewport by exactly one row in the current
 /// autoscroll direction. If you want to scroll by more, increase your
@@ -415,7 +446,7 @@ pub fn drag(
 pub fn autoscrollTick(
     self: *SelectionGesture,
     t: *Terminal,
-    d: Drag,
+    tick: AutoscrollTick,
 ) ?Selection {
     if (self.left_click_count == 0) {
         assert(self.left_drag_autoscroll == .none);
@@ -437,7 +468,16 @@ pub fn autoscrollTick(
     };
 
     t.scrollViewport(.{ .delta = delta });
-    return self.drag(t, d);
+
+    const pin = t.screens.active.pages.pin(.{ .viewport = tick.viewport }) orelse return null;
+    return self.drag(t, .{
+        .pin = pin,
+        .xpos = tick.xpos,
+        .ypos = tick.ypos,
+        .rectangle = tick.rectangle,
+        .word_boundary_codepoints = tick.word_boundary_codepoints,
+        .geometry = tick.geometry,
+    });
 }
 
 /// A pressure-based activation during an existing left-click gesture.
@@ -518,6 +558,11 @@ pub fn release(
     if (r.pin) |release_pin| {
         if (self.validatedLeftClickPin(&t.screens)) |click_pin| {
             if (!release_pin.eql(click_pin.*)) self.left_click_dragged = true;
+        } else {
+            // If the original anchor is no longer valid, conservatively treat
+            // this as a drag/cancelled click so callers don't perform click-only
+            // actions on a different or recycled screen.
+            self.left_click_dragged = true;
         }
     } else {
         self.left_click_dragged = true;
@@ -875,6 +920,26 @@ fn testDrag(t: *Terminal, x: u16, y: u32, xpos: f64, ypos: f64) Drag {
             .x = x,
             .y = y,
         } }).?,
+        .xpos = xpos,
+        .ypos = ypos,
+        .rectangle = false,
+        .word_boundary_codepoints = &.{},
+        .geometry = .{
+            .columns = 5,
+            .cell_width = 10,
+            .padding_left = 0,
+            .screen_height = 100,
+        },
+    };
+}
+
+fn testAutoscrollTick(
+    viewport: point.Coordinate,
+    xpos: f64,
+    ypos: f64,
+) AutoscrollTick {
+    return .{
+        .viewport = viewport,
         .xpos = xpos,
         .ypos = ypos,
         .rectangle = false,
@@ -1467,6 +1532,48 @@ test "SelectionGesture release clears autoscroll and records drag" {
     try testing.expectEqual(true, gesture.left_click_dragged);
 }
 
+test "SelectionGesture release with invalidated click records drag" {
+    var t = try Terminal.init(testing.allocator, .{ .cols = 5, .rows = 5 });
+    defer t.deinit(testing.allocator);
+
+    var gesture: SelectionGesture = .init;
+    defer gesture.deinit(&t);
+
+    _ = try gesture.press(&t, testPress(&t, 1, 1, try std.time.Instant.now()));
+    try testing.expectEqual(false, gesture.left_click_dragged);
+
+    _ = try t.screens.getInit(testing.allocator, .alternate, .{
+        .cols = t.cols,
+        .rows = t.rows,
+    });
+    t.screens.switchTo(.alternate);
+
+    gesture.release(&t, .{ .pin = testPin(&t, 1, 1) });
+    try testing.expectEqual(true, gesture.left_click_dragged);
+    try testing.expectEqual(.none, gesture.left_drag_autoscroll);
+}
+
+test "SelectionGesture same-cell threshold selection records drag" {
+    var t = try Terminal.init(testing.allocator, .{ .cols = 5, .rows = 5 });
+    defer t.deinit(testing.allocator);
+
+    var gesture: SelectionGesture = .init;
+    defer gesture.deinit(&t);
+
+    var press_event = testPress(&t, 1, 1, try std.time.Instant.now());
+    press_event.xpos = 10;
+    _ = try gesture.press(&t, press_event);
+    try testing.expectEqual(false, gesture.left_click_dragged);
+
+    const sel = gesture.drag(&t, testDrag(&t, 1, 1, 19, 50)).?;
+    try testing.expectEqual(true, gesture.left_click_dragged);
+    try testing.expectEqualDeep(Selection.init(
+        testPin(&t, 1, 1),
+        testPin(&t, 1, 1),
+        false,
+    ), sel);
+}
+
 test "SelectionGesture drag without press returns null" {
     var t = try Terminal.init(testing.allocator, .{ .cols = 5, .rows = 5 });
     defer t.deinit(testing.allocator);
@@ -1516,12 +1623,41 @@ test "SelectionGesture autoscroll tick scrolls and continues drag" {
     _ = gesture.drag(&t, testDrag(&t, 3, 1, 39, 100));
     try testing.expectEqual(.down, gesture.left_drag_autoscroll);
 
-    const sel = gesture.autoscrollTick(&t, testDrag(&t, 3, 2, 39, 100)).?;
+    const sel = gesture.autoscrollTick(&t, testAutoscrollTick(.{ .x = 3, .y = 2 }, 39, 100)).?;
     try testing.expectEqual(.down, gesture.left_drag_autoscroll);
     try testing.expectEqual(true, gesture.left_click_dragged);
     try testing.expectEqualDeep(Selection.init(
         testPin(&t, 1, 1),
         testPin(&t, 3, 2),
+        false,
+    ), sel);
+}
+
+test "SelectionGesture autoscroll tick resolves drag pin after scrolling" {
+    var t = try Terminal.init(testing.allocator, .{ .cols = 5, .rows = 3, .max_scrollback = 10 });
+    defer t.deinit(testing.allocator);
+    try t.printString("1111\n2222\n3333\n4444\n5555");
+    t.scrollViewport(.{ .delta = -2 });
+
+    var gesture: SelectionGesture = .init;
+    defer gesture.deinit(&t);
+
+    var press_event = testPress(&t, 1, 1, try std.time.Instant.now());
+    press_event.xpos = 10;
+    _ = try gesture.press(&t, press_event);
+
+    _ = gesture.drag(&t, testDrag(&t, 3, 2, 39, 100));
+    try testing.expectEqual(.down, gesture.left_drag_autoscroll);
+
+    const viewport: point.Coordinate = .{ .x = 3, .y = 2 };
+    const pre_scroll_pin = t.screens.active.pages.pin(.{ .viewport = viewport }).?;
+    const sel = gesture.autoscrollTick(&t, testAutoscrollTick(viewport, 39, 100)).?;
+    const post_scroll_pin = t.screens.active.pages.pin(.{ .viewport = viewport }).?;
+
+    try testing.expect(!pre_scroll_pin.eql(post_scroll_pin));
+    try testing.expectEqualDeep(Selection.init(
+        testPin(&t, 1, 1),
+        post_scroll_pin,
         false,
     ), sel);
 }
@@ -1546,7 +1682,7 @@ test "SelectionGesture autoscroll tick stops with invalidated click" {
     });
     t.screens.switchTo(.alternate);
 
-    try testing.expectEqual(null, gesture.autoscrollTick(&t, testDrag(&t, 2, 1, 20, 1)));
+    try testing.expectEqual(null, gesture.autoscrollTick(&t, testAutoscrollTick(.{ .x = 2, .y = 1 }, 20, 1)));
     try testing.expectEqual(.none, gesture.left_drag_autoscroll);
     try testing.expectEqual(@as(u3, 0), gesture.left_click_count);
 }
