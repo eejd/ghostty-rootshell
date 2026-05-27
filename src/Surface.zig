@@ -1171,15 +1171,15 @@ fn selectionScrollTick(self: *Surface) !void {
     // If we're no longer active then we don't do anything.
     if (!self.selection_scroll_active) return;
 
-    // If we don't have a left mouse button down then we
-    // don't do anything.
-    if (self.mouse.selection_gesture.left_click_count == 0) return;
-
-    const delta: isize = switch (self.mouse.selection_gesture.left_drag_autoscroll) {
-        .none => return,
-        .up => -1,
-        .down => 1,
-    };
+    // If our gesture doesn't want autoscrolling then disable it.
+    const was_autoscrolling = self.mouse.selection_gesture.left_drag_autoscroll != .none;
+    if (!was_autoscrolling) {
+        self.queueIo(
+            .{ .selection_scroll = false },
+            .unlocked,
+        );
+        return;
+    }
 
     const pos = try self.rt_surface.getCursorPos();
     const pos_vp = self.posToViewport(pos.x, pos.y);
@@ -1189,20 +1189,6 @@ fn selectionScrollTick(self: *Surface) !void {
     defer self.renderer_state.mutex.unlock();
     const t: *terminal.Terminal = self.renderer_state.terminal;
 
-    // If our left-click pin no longer belongs to the active screen, we stop
-    // our selection scroll.
-    if (self.mouse.activeLeftClickPin(&t.screens) == null) {
-        self.queueIo(
-            .{ .selection_scroll = false },
-            .locked,
-        );
-        return;
-    }
-
-    // Scroll the viewport as required
-    t.scrollViewport(.{ .delta = delta });
-
-    // Next, trigger our drag behavior
     const pin = t.screens.active.pages.pin(.{
         .viewport = .{
             .x = pos_vp.x,
@@ -1212,7 +1198,8 @@ fn selectionScrollTick(self: *Surface) !void {
         if (comptime std.debug.runtime_safety) unreachable;
         return;
     };
-    if (self.mouse.selection_gesture.drag(t, .{
+
+    const selection = self.mouse.selection_gesture.autoscrollTick(t, .{
         .pin = pin,
         .xpos = pos.x,
         .ypos = pos.y,
@@ -1224,14 +1211,23 @@ fn selectionScrollTick(self: *Surface) !void {
             .padding_left = self.size.padding.left,
             .screen_height = self.size.screen.height,
         },
-    })) |sel| {
-        try self.io.terminal.screens.active.select(sel);
-    } else {
-        try self.io.terminal.screens.active.select(null);
+    });
+
+    // If we're no longer autoscrolling for whatever reason, disable it.
+    if (self.mouse.selection_gesture.left_drag_autoscroll == .none) {
+        self.queueIo(
+            .{ .selection_scroll = false },
+            .locked,
+        );
     }
+
+    // If our left click was invalidated, ignore the result. This isn't
+    // strictly necessary but its a nice to have.
+    if (self.mouse.selection_gesture.left_click_count == 0) return;
 
     // We modified our viewport and selection so we need to queue
     // a render.
+    try self.io.terminal.screens.active.select(selection);
     try self.queueRender();
 }
 
