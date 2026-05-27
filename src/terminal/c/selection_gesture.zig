@@ -28,6 +28,7 @@ const EventWrapper = struct {
     alloc: std.mem.Allocator,
     event: union(EventType) {
         press: SelectionGesture.Press,
+        release: SelectionGesture.Release,
     },
 
     // Press.pin has no safe sentinel value: PageList.Pin contains a non-null
@@ -51,6 +52,7 @@ const EventWrapper = struct {
     fn init(self: *EventWrapper, event_type: EventType) void {
         self.event = switch (event_type) {
             .press => .{ .press = self.defaultPress() },
+            .release => .{ .release = self.defaultRelease() },
         };
     }
 
@@ -65,6 +67,11 @@ const EventWrapper = struct {
             .word_boundary_codepoints = &selection_codepoints.default_word_boundaries,
             .behaviors = &self.behaviors,
         };
+    }
+
+    fn defaultRelease(self: *EventWrapper) SelectionGesture.Release {
+        _ = self;
+        return .{ .pin = null };
     }
 
     fn deinit(self: *EventWrapper) void {
@@ -109,6 +116,7 @@ pub const Data = enum(c_int) {
 /// C: GhosttySelectionGestureEventType
 pub const EventType = enum(c_int) {
     press = 0,
+    release = 1,
 };
 
 /// C: GhosttySelectionGestureEventOption
@@ -222,6 +230,10 @@ pub fn handle_event(
             } else if (sel == null) return .no_value;
             return .success;
         },
+        .release => |release| {
+            wrapper.gesture.release(t, release);
+            return .no_value;
+        },
     };
 }
 
@@ -324,6 +336,7 @@ fn eventSetTyped(
     const event = event_ orelse return .invalid_value;
     return switch (event.event) {
         .press => |*press| pressSetTyped(event, press, option, value),
+        .release => |*release| releaseSetTyped(release, option, value),
     };
 }
 
@@ -387,6 +400,32 @@ fn pressSetTyped(
             event.behaviors = .{ v.single_click, v.double_click, v.triple_click };
             press.behaviors = &event.behaviors;
         },
+    }
+
+    return .success;
+}
+
+fn releaseSetTyped(
+    release: *SelectionGesture.Release,
+    comptime option: EventOption,
+    value: ?*const option.Type(),
+) Result {
+    switch (option) {
+        .ref => {
+            const v = value orelse {
+                release.pin = null;
+                return .success;
+            };
+            release.pin = v.toPin() orelse return .invalid_value;
+        },
+
+        .position,
+        .repeat_distance,
+        .time_ns,
+        .repeat_interval_ns,
+        .word_boundary_codepoints,
+        .behaviors,
+        => return .invalid_value,
     }
 
     return .success;
@@ -714,6 +753,104 @@ test "selection gesture event null output still reports no selection" {
     try testing.expectEqual(Result.success, event_set(press_event, .ref, &ref));
 
     try testing.expectEqual(Result.no_value, handle_event(gesture, terminal, press_event, null));
+}
+
+test "selection gesture event applies release" {
+    var terminal: terminal_c.Terminal = null;
+    try testing.expectEqual(Result.success, terminal_c.new(
+        &lib.alloc.test_allocator,
+        &terminal,
+        .{ .cols = 5, .rows = 2, .max_scrollback = 10_000 },
+    ));
+    defer terminal_c.free(terminal);
+
+    var gesture: Gesture = null;
+    try testing.expectEqual(Result.success, new(
+        &lib.alloc.test_allocator,
+        &gesture,
+    ));
+    defer free(gesture, terminal);
+
+    var press_event: Event = null;
+    try testing.expectEqual(Result.success, event_new(
+        &lib.alloc.test_allocator,
+        &press_event,
+        .press,
+    ));
+    defer event_free(press_event);
+
+    var release_event: Event = null;
+    try testing.expectEqual(Result.success, event_new(
+        &lib.alloc.test_allocator,
+        &release_event,
+        .release,
+    ));
+    defer event_free(release_event);
+
+    var ref: grid_ref.CGridRef = undefined;
+    try testing.expectEqual(Result.success, terminal_c.grid_ref(terminal, .{
+        .tag = .active,
+        .value = .{ .active = .{ .x = 1, .y = 0 } },
+    }, &ref));
+    try testing.expectEqual(Result.success, event_set(press_event, .ref, &ref));
+    try testing.expectEqual(Result.success, event_set(release_event, .ref, &ref));
+
+    try testing.expectEqual(Result.no_value, handle_event(gesture, terminal, press_event, null));
+    try testing.expectEqual(Result.no_value, handle_event(gesture, terminal, release_event, null));
+
+    var dragged = true;
+    try testing.expectEqual(Result.success, get(gesture, terminal, .dragged, &dragged));
+    try testing.expect(!dragged);
+
+    const pos: types.SurfacePosition = .{ .x = 0, .y = 0 };
+    try testing.expectEqual(Result.invalid_value, event_set(release_event, .position, &pos));
+}
+
+test "selection gesture release without ref marks dragged" {
+    var terminal: terminal_c.Terminal = null;
+    try testing.expectEqual(Result.success, terminal_c.new(
+        &lib.alloc.test_allocator,
+        &terminal,
+        .{ .cols = 5, .rows = 2, .max_scrollback = 10_000 },
+    ));
+    defer terminal_c.free(terminal);
+
+    var gesture: Gesture = null;
+    try testing.expectEqual(Result.success, new(
+        &lib.alloc.test_allocator,
+        &gesture,
+    ));
+    defer free(gesture, terminal);
+
+    var press_event: Event = null;
+    try testing.expectEqual(Result.success, event_new(
+        &lib.alloc.test_allocator,
+        &press_event,
+        .press,
+    ));
+    defer event_free(press_event);
+
+    var release_event: Event = null;
+    try testing.expectEqual(Result.success, event_new(
+        &lib.alloc.test_allocator,
+        &release_event,
+        .release,
+    ));
+    defer event_free(release_event);
+
+    var ref: grid_ref.CGridRef = undefined;
+    try testing.expectEqual(Result.success, terminal_c.grid_ref(terminal, .{
+        .tag = .active,
+        .value = .{ .active = .{ .x = 1, .y = 0 } },
+    }, &ref));
+    try testing.expectEqual(Result.success, event_set(press_event, .ref, &ref));
+
+    try testing.expectEqual(Result.no_value, handle_event(gesture, terminal, press_event, null));
+    try testing.expectEqual(Result.no_value, handle_event(gesture, terminal, release_event, null));
+
+    var dragged = false;
+    try testing.expectEqual(Result.success, get(gesture, terminal, .dragged, &dragged));
+    try testing.expect(dragged);
 }
 
 test "selection gesture free null" {

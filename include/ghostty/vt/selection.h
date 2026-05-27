@@ -402,6 +402,9 @@ typedef enum GHOSTTY_ENUM_TYPED {
   /** Press event for ghostty_selection_gesture_press(). */
   GHOSTTY_SELECTION_GESTURE_EVENT_TYPE_PRESS = 0,
 
+  /** Release event for ghostty_selection_gesture_release(). */
+  GHOSTTY_SELECTION_GESTURE_EVENT_TYPE_RELEASE = 1,
+
   GHOSTTY_SELECTION_GESTURE_EVENT_TYPE_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
 } GhosttySelectionGestureEventType;
 
@@ -414,7 +417,12 @@ typedef enum GHOSTTY_ENUM_TYPED {
  * @ingroup selection
  */
 typedef enum GHOSTTY_ENUM_TYPED {
-  /** Grid reference under the pointer: GhosttyGridRef*. */
+  /**
+   * Grid reference under the pointer: GhosttyGridRef*.
+   *
+   * Required for PRESS events. Optional for RELEASE events; when unset or
+   * cleared, release records that the pointer did not map to a valid cell.
+   */
   GHOSTTY_SELECTION_GESTURE_EVENT_OPT_REF = 0,
 
   /** Surface-space pointer position: GhosttySurfacePosition*. */
@@ -507,6 +515,12 @@ GHOSTTY_API GhosttyResult ghostty_selection_gesture_event_set(
  * For GHOSTTY_SELECTION_GESTURE_EVENT_TYPE_PRESS, the event must have
  * GHOSTTY_SELECTION_GESTURE_EVENT_OPT_REF set before calling this function.
  * All other press options use their initialized defaults when unset or cleared.
+ *
+ * For GHOSTTY_SELECTION_GESTURE_EVENT_TYPE_RELEASE, only
+ * GHOSTTY_SELECTION_GESTURE_EVENT_OPT_REF is valid. It is optional; if unset or
+ * cleared, release records that the pointer did not map to a valid cell. Release
+ * events update gesture state but do not produce a selection, so this function
+ * returns GHOSTTY_NO_VALUE after applying them.
  *
  * The returned selection is not installed as the terminal's current selection.
  * It is a snapshot with the same lifetime rules as GhosttySelection.
