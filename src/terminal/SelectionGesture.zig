@@ -1,6 +1,65 @@
-/// SelectionGesture manages gesture-based selection logic (mouse press, drag,
-/// etc.). Callers setup initial state, make calls for various external
-/// events, and react to the requested effects.
+/// SelectionGesture manages gesture-based terminal text selection for one
+/// pointer stream: press, drag, release, autoscroll, and pressure/deep-press
+/// selection.
+///
+/// This type owns only the state required to interpret a gesture. It does not
+/// modify the terminal selection directly, except for scrolling the viewport
+/// during `autoscrollTick`. The caller feeds platform events into this type and
+/// applies the returned `Selection` to the active screen when appropriate.
+///
+/// A typical single-click drag flow looks like this:
+///
+/// ```zig
+/// try gesture.press(terminal, .{ ... });
+/// if (gesture.drag(terminal, .{ ... })) |selection| {
+///     try terminal.screens.active.select(selection);
+/// }
+/// gesture.release(terminal, .{ ... });
+/// ```
+///
+/// Double- and triple-click gestures use the same event flow. Repeated presses
+/// inside `Press.repeat_interval` and within `Press.max_distance` increment the
+/// internal click count up to three. A drag after a double-click expands by word;
+/// a drag after a triple-click expands by line. A new press that is too late,
+/// too far away, or on another active screen starts a new single-click gesture.
+///
+/// # Resetting and lifetime
+///
+/// `release` ends the active drag/autoscroll phase but intentionally preserves
+/// enough state for a subsequent press to become a double- or triple-click.
+/// Call `reset` when the gesture is cancelled rather than released normally, or
+/// when another subsystem takes ownership of pointer input. Examples include
+/// enabling mouse reporting for an application, losing pointer/button state,
+/// destroying the surface, switching to a mode that must not continue text
+/// selection, or otherwise abandoning the current click sequence. Call `deinit`
+/// once before discarding the gesture object so any tracked click pin is
+/// released.
+///
+/// # Terminal and screen changes
+///
+/// The initial press pin is tracked in the active screen's `PageList`, so normal
+/// terminal output and viewport scrolling can move rows without making the
+/// gesture immediately stale. Selection results are computed against the current
+/// terminal contents at the time of each call. For example, a double-click drag
+/// selects word boundaries from the screen as it exists during `drag`, not from a
+/// snapshot captured at `press`.
+///
+/// The tracked pin is tied to both a `ScreenSet.Key` and that screen's
+/// generation. If the active screen changes, or a screen is removed/recycled,
+/// `validatedLeftClickPin` returns null and drag-style operations stop producing
+/// selections. `autoscrollTick` treats this as cancellation and calls `reset` so
+/// callers can stop their timers. This avoids exposing pins from inactive or
+/// freed screens, but it does not make a historical snapshot of terminal data.
+///
+/// # Concurrency
+///
+/// SelectionGesture is not concurrency safe. It has mutable gesture state and
+/// mutates/tracks pins inside the terminal page list without taking locks. The
+/// caller must serialize all calls that touch the same gesture and terminal,
+/// typically by holding the same terminal/renderer mutex used for other screen
+/// mutations. Do not call `press`, `drag`, `release`, `reset`, `deinit`, or
+/// `autoscrollTick` concurrently with each other or with unrelated terminal
+/// mutations unless the caller provides that synchronization.
 const SelectionGesture = @This();
 
 const std = @import("std");
@@ -80,6 +139,17 @@ pub fn deinit(self: *SelectionGesture, t: *Terminal) void {
 }
 
 /// Reset any active gesture state and untrack the tracked click pin.
+///
+/// Use this for cancellation/abandonment, not for the ordinary left-button
+/// release path. `release` deliberately keeps the last press time/count so a
+/// following press can become a double- or triple-click; `reset` clears that
+/// sequence and makes the next press a fresh single click.
+///
+/// Examples of reset-worthy events are: mouse reporting taking over, pointer
+/// capture being lost, a surface/window being torn down, or another interaction
+/// mode deciding that text selection must stop immediately. If the active screen
+/// was already removed or recycled, this safely drops the stale reference without
+/// trying to untrack a pin from the wrong screen generation.
 pub fn reset(self: *SelectionGesture, t: *Terminal) void {
     self.left_click_count = 0;
     self.left_click_time = null;
@@ -88,9 +158,16 @@ pub fn reset(self: *SelectionGesture, t: *Terminal) void {
     self.untrackPin(t);
 }
 
-/// Return the tracked left-click pin only if it still belongs to the active
-/// screen instance. This validates both the screen key and generation so a pin
-/// from a removed, recycled, or inactive screen is never exposed to callers.
+/// Return the tracked left-click pin only if it still belongs to the current
+/// active screen instance.
+///
+/// This validates both the screen key and generation so a pin from a removed,
+/// recycled, or inactive screen is never exposed to callers. A null result means
+/// callers should treat the in-progress gesture as temporarily or permanently
+/// unable to produce a selection. For a normal drag this usually means "do
+/// nothing for this event"; for autoscroll it is treated as cancellation because
+/// a timer should not continue firing for a gesture that no longer has a valid
+/// anchor.
 pub fn validatedLeftClickPin(
     self: *const SelectionGesture,
     screens: *const ScreenSet,
@@ -109,6 +186,10 @@ pub const Press = struct {
     time: ?std.time.Instant,
 
     /// The cell where the click was.
+    ///
+    /// `press` stores a tracked copy of this pin. The caller does not need to
+    /// keep `p.pin` alive after the call returns, but the pin must belong to the
+    /// terminal's active screen when passed in.
     pin: Pin,
 
     /// The x/y value of the click relative to the surface with (0,0) being
@@ -128,6 +209,20 @@ pub const Press = struct {
 };
 
 /// Record a press event.
+///
+/// If this press continues the existing click sequence, the click count is
+/// incremented up to three and the original anchor pin is kept. Otherwise, the
+/// previous gesture state is cleared and this press becomes the new anchor.
+///
+/// Examples:
+///
+/// * first press: `left_click_count == 1`, later drags select by cell;
+/// * second nearby press within the repeat interval: `left_click_count == 2`,
+///   later drags select by word;
+/// * third nearby press within the repeat interval: `left_click_count == 3`,
+///   later drags select by line;
+/// * press after the interval, too far away, or after a screen generation
+///   change: starts over at `left_click_count == 1`.
 pub fn press(
     self: *SelectionGesture,
     t: *Terminal,
@@ -184,6 +279,23 @@ pub const Drag = struct {
 };
 
 /// Record a drag event and return the current untracked drag selection.
+///
+/// The returned selection is untracked and represents the best selection for the
+/// terminal contents at the time of this call. The caller is responsible for
+/// applying it to the screen, usually with `Screen.select`, and for arranging any
+/// copy-on-select behavior. A null result means either there is no active
+/// selection gesture, the original press is no longer valid for the active
+/// screen, or the drag has not crossed the threshold required to select a cell.
+///
+/// This method also updates `left_click_dragged` and `left_drag_autoscroll`.
+/// If `left_drag_autoscroll` becomes `.up` or `.down`, the caller should start or
+/// keep a timer that calls `autoscrollTick` while the button remains pressed. If
+/// it becomes `.none`, the caller should stop that timer.
+///
+/// Normal terminal output and viewport movement between drag events are allowed:
+/// the tracked press pin follows the page list, and the drag pin is used only
+/// synchronously. Content-sensitive selections such as word and line selection
+/// are recalculated from the current active screen every time.
 pub fn drag(
     self: *SelectionGesture,
     t: *Terminal,
@@ -241,12 +353,20 @@ pub fn drag(
 }
 
 /// Record a selection autoscroll tick for the active left-click drag gesture.
+///
 /// This scrolls the viewport in the active autoscroll direction and then
-/// continues the drag at the provided position.
+/// continues the drag at the provided position. The caller should pass the same
+/// sort of `Drag` payload it would pass to `drag`, usually using the current
+/// pointer position at the time the timer fires.
 ///
 /// This always scrolls the viewport by exactly one row in the current
 /// autoscroll direction. If you want to scroll by more, increase your
 /// tick rate.
+///
+/// If the original press pin no longer belongs to the active screen, this calls
+/// `reset` and returns null. That is a signal for the caller to stop its
+/// autoscroll timer and leave any existing terminal selection alone unless some
+/// other event says otherwise.
 pub fn autoscrollTick(
     self: *SelectionGesture,
     t: *Terminal,
@@ -295,6 +415,11 @@ pub const DeepPress = struct {
 /// select the word under the original press, then consume the gesture so
 /// further cursor movement while the button remains pressed does not drag or
 /// autoscroll the selection.
+///
+/// After a successful deep press, the click sequence is cleared and the tracked
+/// pin is untracked. The returned selection should be applied by the caller. A
+/// null result means there was no valid active left-click anchor, commonly
+/// because the screen changed or the gesture had already been cancelled.
 pub fn deepPress(
     self: *SelectionGesture,
     t: *Terminal,
@@ -323,6 +448,17 @@ pub const Release = struct {
 };
 
 /// Record a release event for the active left-click gesture.
+///
+/// This stops autoscroll and updates `left_click_dragged`, but it does not clear
+/// the click count or time. Keeping that state is what lets the next nearby press
+/// become a double- or triple-click. Call `reset` instead if the release should
+/// cancel the click sequence entirely.
+///
+/// Pass the release pin when the pointer position maps to a valid terminal cell.
+/// If it does not, pass null; the gesture then conservatively records that the
+/// pointer moved away from the original pressed cell. This is useful for callers
+/// that use `left_click_dragged` after release to decide whether a click should
+/// activate links or other hit targets.
 pub fn release(
     self: *SelectionGesture,
     t: *Terminal,
