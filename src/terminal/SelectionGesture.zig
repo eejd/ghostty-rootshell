@@ -20,12 +20,12 @@
 ///
 /// Double- and triple-click gestures use the same event flow. Repeated presses
 /// inside `Press.repeat_interval` and within `Press.max_distance` increment the
-/// internal click count up to three. A single press returns null to clear any
-/// existing selection, a double-click returns a word selection, and a
-/// triple-click returns a line selection. A drag after a double-click expands by
-/// word; a drag after a triple-click expands by line. A new press that is too
-/// late, too far away, or on another active screen starts a new single-click
-/// gesture.
+/// internal click count up to three. `Press.behaviors` maps single-, double-,
+/// and triple-clicks to behavior. By default, a single press returns null to
+/// clear any existing selection, a double-click returns a word selection, and a
+/// triple-click returns a line selection. Drags use the behavior selected by the
+/// corresponding press. A new press that is too late, too far away, or on
+/// another active screen starts a new single-click gesture.
 ///
 /// # Resetting and lifetime
 ///
@@ -89,6 +89,9 @@ left_click_screen_generation: usize,
 left_click_count: u3,
 left_click_time: ?std.time.Instant,
 
+/// The selection behavior chosen for the active left-click gesture.
+left_click_behavior: Behavior,
+
 /// The starting xpos/ypos of the left click. Note that if scrolling occurs,
 /// these will point to different cells, but the xpos/ypos will stay
 /// stable during scrolling relative to the surface.
@@ -116,6 +119,28 @@ left_drag_autoscroll: Autoscroll,
 /// wants to drag the viewport.
 pub const Autoscroll = enum { none, up, down };
 
+/// The selection behavior for a click and subsequent drag.
+pub const Behavior = enum {
+    /// Cell-granular drag selection. Press returns null to clear selection.
+    cell,
+
+    /// Word selection on press and word-granular drag selection.
+    word,
+
+    /// Line selection on press and line-granular drag selection.
+    line,
+
+    /// Semantic command output selection on press and drag.
+    output,
+};
+
+/// Standard terminal selection behavior for single-, double-, and triple-clicks.
+///
+/// A single click uses cell behavior, which returns null on press so callers can
+/// clear any existing selection and then drag by cell. A double-click selects and
+/// drags by word. A triple-click selects and drags by line.
+pub const default_behaviors: [3]Behavior = .{ .cell, .word, .line };
+
 /// Distance from the top or bottom surface edge, in pixels, where dragging
 /// should request autoscroll. This preserves the historical 1px buffer used
 /// so fullscreen-edge drags can still trigger autoscroll.
@@ -125,6 +150,7 @@ pub const init: SelectionGesture = .{
     .left_click_pin = null,
     .left_click_count = 0,
     .left_click_time = null,
+    .left_click_behavior = .cell,
     .left_click_screen = .primary,
     .left_click_screen_generation = 0,
     .left_click_xpos = 0,
@@ -157,6 +183,7 @@ pub fn deinit(self: *SelectionGesture, t: *Terminal) void {
 pub fn reset(self: *SelectionGesture, t: *Terminal) void {
     self.left_click_count = 0;
     self.left_click_time = null;
+    self.left_click_behavior = .cell;
     self.left_click_dragged = false;
     self.left_drag_autoscroll = .none;
     self.untrackPin(t);
@@ -213,6 +240,9 @@ pub const Press = struct {
 
     /// The codepoints that delimit words for double-click selection.
     word_boundary_codepoints: []const u21,
+
+    /// Selection behaviors for single-, double-, and triple-clicks.
+    behaviors: *const [3]Behavior = &default_behaviors,
 };
 
 /// Record a press event and return the standard selection for this click.
@@ -227,11 +257,11 @@ pub const Press = struct {
 ///
 /// Examples:
 ///
-/// * first press: `left_click_count == 1`, returns null to clear selection;
+/// * first press: `left_click_count == 1`, defaults to cell behavior;
 /// * second nearby press within the repeat interval: `left_click_count == 2`,
-///   returns a word selection and later drags select by word;
+///   defaults to word behavior;
 /// * third nearby press within the repeat interval: `left_click_count == 3`,
-///   returns a line selection and later drags select by line;
+///   defaults to line behavior;
 /// * press after the interval, too far away, or after a screen generation
 ///   change: starts over at `left_click_count == 1` and returns null.
 pub fn press(
@@ -336,10 +366,8 @@ pub fn drag(
     else
         .none;
 
-    return switch (self.left_click_count) {
-        0 => unreachable, // handled above
-
-        1 => dragSelection(
+    return switch (self.left_click_behavior) {
+        .cell => dragSelection(
             click_pin.*,
             d.pin,
             @intFromFloat(@max(0, self.left_click_xpos)),
@@ -348,19 +376,24 @@ pub fn drag(
             d.geometry,
         ),
 
-        2 => dragSelectionWord(
+        .word => dragSelectionWord(
             t.screens.active,
             click_pin.*,
             d.pin,
             d.word_boundary_codepoints,
         ),
 
-        3 => dragSelectionLine(
+        .line => dragSelectionLine(
             t.screens.active,
             click_pin.*,
             d.pin,
         ),
-        else => unreachable,
+
+        .output => dragSelectionOutput(
+            t.screens.active,
+            click_pin.*,
+            d.pin,
+        ),
     };
 }
 
@@ -445,6 +478,7 @@ pub fn deepPress(
 
     self.left_click_count = 0;
     self.left_click_time = null;
+    self.left_click_behavior = .cell;
     self.left_click_dragged = true;
     self.left_drag_autoscroll = .none;
     self.untrackPin(t);
@@ -512,6 +546,7 @@ fn pressInitial(
     }
     errdefer comptime unreachable;
     self.left_click_count = 1;
+    self.left_click_behavior = p.behaviors[0];
     self.left_click_xpos = p.xpos;
     self.left_click_ypos = p.ypos;
     self.left_click_time = p.time;
@@ -526,6 +561,7 @@ fn pressRepeat(
 ) error{PressRequiresReset}!void {
     errdefer {
         self.left_click_count = 0;
+        self.left_click_behavior = .cell;
         self.untrackPin(t);
     }
 
@@ -564,6 +600,7 @@ fn pressRepeat(
         self.left_click_count + 1,
         3, // We only support triple clicks max
     );
+    self.left_click_behavior = p.behaviors[self.left_click_count - 1];
 }
 
 fn pressSelection(
@@ -571,12 +608,11 @@ fn pressSelection(
     screen: *Screen,
     p: Press,
 ) ?Selection {
-    return switch (self.left_click_count) {
-        0 => unreachable,
-        1 => null,
-        2 => screen.selectWord(p.pin, p.word_boundary_codepoints),
-        3 => screen.selectLine(.{ .pin = p.pin }),
-        else => unreachable,
+    return switch (self.left_click_behavior) {
+        .cell => null,
+        .word => screen.selectWord(p.pin, p.word_boundary_codepoints),
+        .line => screen.selectLine(.{ .pin = p.pin }),
+        .output => screen.selectOutput(p.pin),
     };
 }
 
@@ -780,6 +816,26 @@ fn dragSelectionLine(
         sel.startPtr().* = line.start();
     } else {
         sel.endPtr().* = line.end();
+    }
+    return sel;
+}
+
+/// Calculates the appropriate semantic-output-wise selection for an output
+/// drag. This expands from the output block under the click point to the output
+/// block under the current drag point. If the drag point is not output, keep the
+/// original output selection.
+fn dragSelectionOutput(
+    screen: *Screen,
+    click_pin: Pin,
+    drag_pin: Pin,
+) ?Selection {
+    var sel = screen.selectOutput(click_pin) orelse return null;
+    const current = screen.selectOutput(drag_pin) orelse return sel;
+
+    if (drag_pin.before(click_pin)) {
+        sel.startPtr().* = current.start();
+    } else {
+        sel.endPtr().* = current.end();
     }
     return sel;
 }
@@ -1292,6 +1348,74 @@ test "SelectionGesture press returns standard click selections" {
         testPin(&t, 9, 0),
         false,
     ), (try gesture.press(&t, event)).?);
+}
+
+test "SelectionGesture press behaviors choose press and drag behavior" {
+    var t = try Terminal.init(testing.allocator, .{ .cols = 20, .rows = 5 });
+    defer t.deinit(testing.allocator);
+    try t.printString("alpha beta\none two\nthree four");
+
+    var gesture: SelectionGesture = .init;
+    defer gesture.deinit(&t);
+
+    const time = try std.time.Instant.now();
+    var event = testPress(&t, 1, 0, time);
+    event.behaviors = &.{ .cell, .line, .word };
+    event.word_boundary_codepoints = &.{ ' ' };
+
+    _ = try gesture.press(&t, event);
+    try testing.expectEqual(.cell, gesture.left_click_behavior);
+
+    const double_click = (try gesture.press(&t, event)).?;
+    try testing.expectEqual(.line, gesture.left_click_behavior);
+    try testing.expectEqualDeep(Selection.init(
+        testPin(&t, 0, 0),
+        testPin(&t, 9, 0),
+        false,
+    ), double_click);
+
+    const line_drag = gesture.drag(&t, testDrag(&t, 2, 2, 20, 50)).?;
+    try testing.expectEqualDeep(Selection.init(
+        testPin(&t, 0, 0),
+        testPin(&t, 9, 2),
+        false,
+    ), line_drag);
+}
+
+test "SelectionGesture output behavior selects and drags semantic output" {
+    var t = try Terminal.init(testing.allocator, .{ .cols = 10, .rows = 6 });
+    defer t.deinit(testing.allocator);
+
+    const screen = t.screens.active;
+    screen.cursorSetSemanticContent(.output);
+    try screen.testWriteString("out1\n");
+    screen.cursorSetSemanticContent(.{ .prompt = .initial });
+    try screen.testWriteString("$ ");
+    screen.cursorSetSemanticContent(.{ .input = .clear_explicit });
+    try screen.testWriteString("cmd\n");
+    screen.cursorSetSemanticContent(.output);
+    try screen.testWriteString("out2");
+
+    var gesture: SelectionGesture = .init;
+    defer gesture.deinit(&t);
+
+    var event = testPress(&t, 1, 0, try std.time.Instant.now());
+    event.behaviors = &.{ .output, .word, .line };
+
+    const press_selection = (try gesture.press(&t, event)).?;
+    try testing.expectEqual(.output, gesture.left_click_behavior);
+    try testing.expectEqualDeep(Selection.init(
+        testPin(&t, 0, 0),
+        testPin(&t, 3, 0),
+        false,
+    ), press_selection);
+
+    const output_drag = gesture.drag(&t, testDrag(&t, 1, 2, 10, 50)).?;
+    try testing.expectEqualDeep(Selection.init(
+        testPin(&t, 0, 0),
+        testPin(&t, 3, 2),
+        false,
+    ), output_drag);
 }
 
 test "SelectionGesture drag returns selection and records autoscroll" {

@@ -3961,6 +3961,11 @@ pub fn mouseButtonCallback(
             .max_distance = @floatFromInt(self.size.cell.width),
             .repeat_interval = self.config.mouse_interval,
             .word_boundary_codepoints = self.config.selection_word_chars,
+            .behaviors = &.{
+                .cell,
+                .word,
+                if (mods.ctrlOrSuper()) .output else .line,
+            },
         });
 
         // The gesture owns the standard single/double/triple-click selection
@@ -3984,12 +3989,7 @@ pub fn mouseButtonCallback(
                 }
             },
 
-            // Cmd/Ctrl triple-click selects semantic command output instead of
-            // the standard line selection returned by the gesture.
-            3 => {
-                if (mods.ctrlOrSuper()) press_selection =
-                    self.io.terminal.screens.active.selectOutput(pin);
-            },
+            3 => {},
 
             // We should be bounded by 1 to 3
             else => unreachable,
