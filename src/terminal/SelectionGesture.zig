@@ -153,6 +153,9 @@ pub const Drag = struct {
     /// True if the current drag should produce a rectangular selection.
     rectangle: bool,
 
+    /// The codepoints that delimit words for double-click drag selection.
+    word_boundary_codepoints: []const u21,
+
     /// Geometry required for selection threshold and autoscroll calculations.
     geometry: Geometry,
 
@@ -189,8 +192,7 @@ pub fn drag(
     // Get our click pin. We get a validated pin because if our
     // screen changed out from under us then we aren't actually
     // clicking anymore.
-    const click_pin = self.validatedLeftClickPin(&t.screens) orelse
-        return null;
+    const click_pin = self.validatedLeftClickPin(&t.screens) orelse return null;
 
     // Determine if we should autoscroll. If our drag position is above
     // the top, we go up. If its below the bottom we go down. Easy.
@@ -202,14 +204,32 @@ pub fn drag(
     else
         .none;
 
-    return dragSelection(
-        click_pin.*,
-        d.pin,
-        @intFromFloat(@max(0, self.left_click_xpos)),
-        @intFromFloat(@max(0, d.xpos)),
-        d.rectangle,
-        d.geometry,
-    );
+    return switch (self.left_click_count) {
+        0 => unreachable, // handled above
+
+        1 => dragSelection(
+            click_pin.*,
+            d.pin,
+            @intFromFloat(@max(0, self.left_click_xpos)),
+            @intFromFloat(@max(0, d.xpos)),
+            d.rectangle,
+            d.geometry,
+        ),
+
+        2 => dragSelectionWord(
+            t.screens.active,
+            click_pin.*,
+            d.pin,
+            d.word_boundary_codepoints,
+        ),
+
+        3 => dragSelectionLine(
+            t.screens.active,
+            click_pin.*,
+            d.pin,
+        ),
+        else => unreachable,
+    };
 }
 
 fn pressInitial(
@@ -427,6 +447,68 @@ fn dragSelection(
     );
 }
 
+/// Calculates the appropriate word-wise selection for a double-click drag.
+fn dragSelectionWord(
+    screen: *Screen,
+    click_pin: Pin,
+    drag_pin: Pin,
+    boundary_codepoints: []const u21,
+) ?Selection {
+    // Get the word closest to our starting click.
+    const word_start = screen.selectWordBetween(
+        click_pin,
+        drag_pin,
+        boundary_codepoints,
+    ) orelse return null;
+
+    // Get the word closest to our current point.
+    const word_current = screen.selectWordBetween(
+        drag_pin,
+        click_pin,
+        boundary_codepoints,
+    ) orelse return null;
+
+    // If our current mouse position is before the starting position,
+    // then the selection start is the word nearest our current position.
+    return if (drag_pin.before(click_pin))
+        .init(
+            word_current.start(),
+            word_start.end(),
+            false,
+        )
+    else
+        .init(
+            word_start.start(),
+            word_current.end(),
+            false,
+        );
+}
+
+/// Calculates the appropriate line-wise selection for a triple-click drag.
+fn dragSelectionLine(
+    screen: *Screen,
+    click_pin: Pin,
+    drag_pin: Pin,
+) ?Selection {
+    // Get the line selection under our current drag point. If there isn't a
+    // line, do nothing.
+    const line = screen.selectLine(.{ .pin = drag_pin }) orelse return null;
+
+    // Get the selection under our click point. We first try to trim
+    // whitespace if we've selected a word. But if no word exists then
+    // we select the blank line.
+    const sel_ = screen.selectLine(.{ .pin = click_pin }) orelse
+        screen.selectLine(.{ .pin = click_pin, .whitespace = null });
+
+    var sel = sel_ orelse return null;
+    if (drag_pin.before(click_pin)) {
+        sel.startPtr().* = line.start();
+    } else {
+        sel.endPtr().* = line.end();
+    }
+    return sel;
+}
+
 fn untrackPin(self: *SelectionGesture, t: *Terminal) void {
     // Can't untrack unless we have a pin.
     const pin = self.left_click_pin orelse return;
@@ -464,6 +546,7 @@ fn testDrag(t: *Terminal, x: u16, y: u32, xpos: f64, ypos: f64) Drag {
         .xpos = xpos,
         .ypos = ypos,
         .rectangle = false,
+        .word_boundary_codepoints = &.{},
         .geometry = .{
             .columns = 5,
             .cell_width = 10,
@@ -471,6 +554,13 @@ fn testDrag(t: *Terminal, x: u16, y: u32, xpos: f64, ypos: f64) Drag {
             .screen_height = 100,
         },
     };
+}
+
+fn testPin(t: *Terminal, x: u16, y: u32) Pin {
+    return t.screens.active.pages.pin(.{ .active = .{
+        .x = x,
+        .y = y,
+    } }).?;
 }
 
 /// Utility function for the unit tests for drag selection logic.
@@ -925,6 +1015,178 @@ test "SelectionGesture drag returns selection and records autoscroll" {
 
     _ = gesture.drag(&t, testDrag(&t, 3, 1, 39, 100));
     try testing.expectEqual(.down, gesture.left_drag_autoscroll);
+}
+
+test "SelectionGesture drag without press returns null" {
+    var t = try Terminal.init(testing.allocator, .{ .cols = 5, .rows = 5 });
+    defer t.deinit(testing.allocator);
+
+    var gesture: SelectionGesture = .init;
+    defer gesture.deinit(&t);
+
+    try testing.expectEqual(null, gesture.drag(&t, testDrag(&t, 1, 1, 10, 50)));
+    try testing.expectEqual(.none, gesture.left_drag_autoscroll);
+}
+
+test "SelectionGesture drag autoscroll edge boundaries" {
+    var t = try Terminal.init(testing.allocator, .{ .cols = 5, .rows = 5 });
+    defer t.deinit(testing.allocator);
+
+    var gesture: SelectionGesture = .init;
+    defer gesture.deinit(&t);
+
+    var press_event = testPress(&t, 1, 1, try std.time.Instant.now());
+    press_event.xpos = 10;
+    try gesture.press(&t, press_event);
+
+    _ = gesture.drag(&t, testDrag(&t, 2, 1, 20, 1));
+    try testing.expectEqual(.up, gesture.left_drag_autoscroll);
+
+    _ = gesture.drag(&t, testDrag(&t, 2, 1, 20, 1.1));
+    try testing.expectEqual(.none, gesture.left_drag_autoscroll);
+
+    _ = gesture.drag(&t, testDrag(&t, 2, 1, 20, 99));
+    try testing.expectEqual(.none, gesture.left_drag_autoscroll);
+
+    _ = gesture.drag(&t, testDrag(&t, 2, 1, 20, 99.1));
+    try testing.expectEqual(.down, gesture.left_drag_autoscroll);
+}
+
+test "SelectionGesture drag with invalidated click returns null" {
+    var t = try Terminal.init(testing.allocator, .{ .cols = 5, .rows = 5 });
+    defer t.deinit(testing.allocator);
+
+    var gesture: SelectionGesture = .init;
+    defer gesture.deinit(&t);
+
+    var press_event = testPress(&t, 1, 1, try std.time.Instant.now());
+    press_event.xpos = 10;
+    try gesture.press(&t, press_event);
+
+    _ = gesture.drag(&t, testDrag(&t, 2, 1, 20, 1));
+    try testing.expectEqual(.up, gesture.left_drag_autoscroll);
+
+    _ = try t.screens.getInit(testing.allocator, .alternate, .{
+        .cols = t.cols,
+        .rows = t.rows,
+    });
+    t.screens.switchTo(.alternate);
+
+    try testing.expectEqual(null, gesture.drag(&t, testDrag(&t, 2, 1, 20, 50)));
+    try testing.expectEqual(.up, gesture.left_drag_autoscroll);
+}
+
+test "SelectionGesture double-click drag selects by word" {
+    var t = try Terminal.init(testing.allocator, .{ .cols = 20, .rows = 5 });
+    defer t.deinit(testing.allocator);
+    try t.printString("alpha beta gamma");
+
+    var gesture: SelectionGesture = .init;
+    defer gesture.deinit(&t);
+
+    const time = try std.time.Instant.now();
+    try gesture.press(&t, testPress(&t, 1, 0, time));
+    try gesture.press(&t, testPress(&t, 1, 0, time));
+
+    var drag_event = testDrag(&t, 7, 0, 70, 50);
+    drag_event.word_boundary_codepoints = &.{ ' ' };
+    const sel = gesture.drag(&t, drag_event).?;
+
+    try testing.expectEqualDeep(Selection.init(
+        testPin(&t, 0, 0),
+        testPin(&t, 9, 0),
+        false,
+    ), sel);
+}
+
+test "SelectionGesture double-click drag selects by word backwards" {
+    var t = try Terminal.init(testing.allocator, .{ .cols = 20, .rows = 5 });
+    defer t.deinit(testing.allocator);
+    try t.printString("alpha beta gamma");
+
+    var gesture: SelectionGesture = .init;
+    defer gesture.deinit(&t);
+
+    const time = try std.time.Instant.now();
+    try gesture.press(&t, testPress(&t, 7, 0, time));
+    try gesture.press(&t, testPress(&t, 7, 0, time));
+
+    var drag_event = testDrag(&t, 1, 0, 10, 50);
+    drag_event.word_boundary_codepoints = &.{ ' ' };
+    const sel = gesture.drag(&t, drag_event).?;
+
+    try testing.expectEqualDeep(Selection.init(
+        testPin(&t, 0, 0),
+        testPin(&t, 9, 0),
+        false,
+    ), sel);
+}
+
+test "SelectionGesture double-click drag on empty cell selects nearest word" {
+    var t = try Terminal.init(testing.allocator, .{ .cols = 20, .rows = 5 });
+    defer t.deinit(testing.allocator);
+    try t.printString("alpha beta");
+
+    var gesture: SelectionGesture = .init;
+    defer gesture.deinit(&t);
+
+    const time = try std.time.Instant.now();
+    try gesture.press(&t, testPress(&t, 1, 0, time));
+    try gesture.press(&t, testPress(&t, 1, 0, time));
+
+    var drag_event = testDrag(&t, 15, 0, 150, 50);
+    drag_event.word_boundary_codepoints = &.{ ' ' };
+    const sel = gesture.drag(&t, drag_event).?;
+
+    try testing.expectEqualDeep(Selection.init(
+        testPin(&t, 0, 0),
+        testPin(&t, 9, 0),
+        false,
+    ), sel);
+}
+
+test "SelectionGesture triple-click drag selects by line" {
+    var t = try Terminal.init(testing.allocator, .{ .cols = 20, .rows = 5 });
+    defer t.deinit(testing.allocator);
+    try t.printString("alpha beta\none two\nthree four");
+
+    var gesture: SelectionGesture = .init;
+    defer gesture.deinit(&t);
+
+    const time = try std.time.Instant.now();
+    try gesture.press(&t, testPress(&t, 1, 0, time));
+    try gesture.press(&t, testPress(&t, 1, 0, time));
+    try gesture.press(&t, testPress(&t, 1, 0, time));
+
+    const sel = gesture.drag(&t, testDrag(&t, 2, 2, 20, 50)).?;
+
+    try testing.expectEqualDeep(Selection.init(
+        testPin(&t, 0, 0),
+        testPin(&t, 9, 2),
+        false,
+    ), sel);
+}
+
+test "SelectionGesture triple-click drag selects by line backwards" {
+    var t = try Terminal.init(testing.allocator, .{ .cols = 20, .rows = 5 });
+    defer t.deinit(testing.allocator);
+    try t.printString("alpha beta\none two\nthree four");
+
+    var gesture: SelectionGesture = .init;
+    defer gesture.deinit(&t);
+
+    const time = try std.time.Instant.now();
+    try gesture.press(&t, testPress(&t, 2, 2, time));
+    try gesture.press(&t, testPress(&t, 2, 2, time));
+    try gesture.press(&t, testPress(&t, 2, 2, time));
+
+    const sel = gesture.drag(&t, testDrag(&t, 1, 0, 10, 50)).?;
+
+    try testing.expectEqualDeep(Selection.init(
+        testPin(&t, 0, 0),
+        testPin(&t, 9, 2),
+        false,
+    ), sel);
 }
 
 test "SelectionGesture repeat increments click count" {

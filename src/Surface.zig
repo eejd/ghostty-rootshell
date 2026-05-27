@@ -1217,6 +1217,7 @@ fn selectionScrollTick(self: *Surface) !void {
         .xpos = pos.x,
         .ypos = pos.y,
         .rectangle = SurfaceMouse.isRectangleSelectState(self.mouse.mods),
+        .word_boundary_codepoints = self.config.selection_word_chars,
         .geometry = .{
             .columns = @intCast(self.size.grid().columns),
             .cell_width = self.size.cell.width,
@@ -4625,11 +4626,13 @@ pub fn cursorPosCallback(
             return;
         };
 
+        // Perform our drag behavior in our gesture handler.
         const drag_selection = self.mouse.selection_gesture.drag(t, .{
             .pin = pin,
             .xpos = pos.x,
             .ypos = pos.y,
             .rectangle = SurfaceMouse.isRectangleSelectState(self.mouse.mods),
+            .word_boundary_codepoints = self.config.selection_word_chars,
             .geometry = .{
                 .columns = @intCast(self.size.grid().columns),
                 .cell_width = self.size.cell.width,
@@ -4638,6 +4641,7 @@ pub fn cursorPosCallback(
             },
         });
 
+        // Update our autoscroll timer based on the gesture state
         switch (self.mouse.selection_gesture.left_drag_autoscroll) {
             .none => if (self.selection_scroll_active) {
                 self.queueIo(
@@ -4653,93 +4657,9 @@ pub fn cursorPosCallback(
             },
         }
 
-        // Handle dragging depending on click count
-        switch (self.mouse.selection_gesture.left_click_count) {
-            1 => try self.io.terminal.screens.active.select(drag_selection),
-            2 => try self.dragLeftClickDouble(pin),
-            3 => try self.dragLeftClickTriple(pin),
-            0 => unreachable, // handled above
-            else => unreachable,
-        }
-
-        return;
+        // Update our selection based on the gesture state
+        try self.io.terminal.screens.active.select(drag_selection);
     }
-}
-
-/// Double-click dragging moves the selection one "word" at a time.
-fn dragLeftClickDouble(
-    self: *Surface,
-    drag_pin: terminal.Pin,
-) !void {
-    const screen: *terminal.Screen = self.io.terminal.screens.active;
-    const click_pin = (self.mouse.activeLeftClickPin(&self.io.terminal.screens) orelse return).*;
-
-    // Get the word closest to our starting click.
-    const word_start = screen.selectWordBetween(
-        click_pin,
-        drag_pin,
-        self.config.selection_word_chars,
-    ) orelse {
-        try self.setSelection(null);
-        return;
-    };
-
-    // Get the word closest to our current point.
-    const word_current = screen.selectWordBetween(
-        drag_pin,
-        click_pin,
-        self.config.selection_word_chars,
-    ) orelse {
-        try self.setSelection(null);
-        return;
-    };
-
-    // If our current mouse position is before the starting position,
-    // then the selection start is the word nearest our current position.
-    if (drag_pin.before(click_pin)) {
-        try self.io.terminal.screens.active.select(.init(
-            word_current.start(),
-            word_start.end(),
-            false,
-        ));
-    } else {
-        try self.io.terminal.screens.active.select(.init(
-            word_start.start(),
-            word_current.end(),
-            false,
-        ));
-    }
-}
-
-/// Triple-click dragging moves the selection one "line" at a time.
-fn dragLeftClickTriple(
-    self: *Surface,
-    drag_pin: terminal.Pin,
-) !void {
-    const screen: *terminal.Screen = self.io.terminal.screens.active;
-    const click_pin: terminal.Pin = pin: {
-        const set: *terminal.ScreenSet = &self.io.terminal.screens;
-        const tracked = self.mouse.activeLeftClickPin(set) orelse return;
-        break :pin tracked.*;
-    };
-
-    // Get the line selection under our current drag point. If there isn't a
-    // line, do nothing.
-    const line = screen.selectLine(.{ .pin = drag_pin }) orelse return;
-
-    // Get the selection under our click point. We first try to trim
-    // whitespace if we've selected a word. But if no word exists then
-    // we select the blank line.
-    const sel_ = screen.selectLine(.{ .pin = click_pin }) orelse
-        screen.selectLine(.{ .pin = click_pin, .whitespace = null });
-
-    var sel = sel_ orelse return;
-    if (drag_pin.before(click_pin)) {
-        sel.startPtr().* = line.start();
-    } else {
-        sel.endPtr().* = line.end();
-    }
-    try self.io.terminal.screens.active.select(sel);
 }
 
 /// Call to notify Ghostty that the color scheme for the terminal has
