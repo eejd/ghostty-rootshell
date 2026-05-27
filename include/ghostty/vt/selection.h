@@ -418,17 +418,20 @@ typedef enum GHOSTTY_ENUM_TYPED {
  * @ingroup selection
  */
 typedef enum GHOSTTY_ENUM_TYPED {
-  /** Press event for ghostty_selection_gesture_press(). */
+  /** Press event for ghostty_selection_gesture_event(). */
   GHOSTTY_SELECTION_GESTURE_EVENT_TYPE_PRESS = 0,
 
-  /** Release event for ghostty_selection_gesture_release(). */
+  /** Release event for ghostty_selection_gesture_event(). */
   GHOSTTY_SELECTION_GESTURE_EVENT_TYPE_RELEASE = 1,
 
-  /** Drag event for ghostty_selection_gesture_drag(). */
+  /** Drag event for ghostty_selection_gesture_event(). */
   GHOSTTY_SELECTION_GESTURE_EVENT_TYPE_DRAG = 2,
 
-  /** Autoscroll tick event for ghostty_selection_gesture_autoscroll_tick(). */
+  /** Autoscroll tick event for ghostty_selection_gesture_event(). */
   GHOSTTY_SELECTION_GESTURE_EVENT_TYPE_AUTOSCROLL_TICK = 3,
+
+  /** Deep press event for ghostty_selection_gesture_event(). */
+  GHOSTTY_SELECTION_GESTURE_EVENT_TYPE_DEEP_PRESS = 4,
 
   GHOSTTY_SELECTION_GESTURE_EVENT_TYPE_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
 } GhosttySelectionGestureEventType;
@@ -477,7 +480,7 @@ typedef enum GHOSTTY_ENUM_TYPED {
    * The codepoints are copied into event-owned storage when set. If unset,
    * operations that need word boundaries use Ghostty's defaults.
    *
-   * Valid for PRESS, DRAG, and AUTOSCROLL_TICK.
+   * Valid for PRESS, DRAG, AUTOSCROLL_TICK, and DEEP_PRESS.
    */
   GHOSTTY_SELECTION_GESTURE_EVENT_OPT_WORD_BOUNDARY_CODEPOINTS = 5,
 
@@ -573,6 +576,10 @@ GHOSTTY_API GhosttyResult ghostty_selection_gesture_event_set(
  * GHOSTTY_SELECTION_GESTURE_EVENT_OPT_GEOMETRY are required. Position,
  * rectangle, and word-boundary codepoints are optional and use initialized
  * defaults when unset or cleared.
+ *
+ * For GHOSTTY_SELECTION_GESTURE_EVENT_TYPE_DEEP_PRESS, only
+ * GHOSTTY_SELECTION_GESTURE_EVENT_OPT_WORD_BOUNDARY_CODEPOINTS is valid. It is
+ * optional and uses initialized defaults when unset or cleared.
  *
  * The returned selection is not installed as the terminal's current selection.
  * It is a snapshot with the same lifetime rules as GhosttySelection.

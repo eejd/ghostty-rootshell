@@ -32,6 +32,7 @@ const EventWrapper = struct {
         release: SelectionGesture.Release,
         drag: SelectionGesture.Drag,
         autoscroll_tick: SelectionGesture.AutoscrollTick,
+        deep_press: SelectionGesture.DeepPress,
     },
 
     // Press.pin has no safe sentinel value: PageList.Pin contains a non-null
@@ -73,6 +74,7 @@ const EventWrapper = struct {
             .release => .{ .release = self.defaultRelease() },
             .drag => .{ .drag = self.defaultDrag() },
             .autoscroll_tick => .{ .autoscroll_tick = self.defaultAutoscrollTick() },
+            .deep_press => .{ .deep_press = self.defaultDeepPress() },
         };
     }
 
@@ -115,6 +117,13 @@ const EventWrapper = struct {
             .rectangle = false,
             .word_boundary_codepoints = &selection_codepoints.default_word_boundaries,
             .geometry = undefined,
+        };
+    }
+
+    fn defaultDeepPress(self: *EventWrapper) SelectionGesture.DeepPress {
+        _ = self;
+        return .{
+            .word_boundary_codepoints = &selection_codepoints.default_word_boundaries,
         };
     }
 
@@ -163,6 +172,7 @@ pub const EventType = enum(c_int) {
     release = 1,
     drag = 2,
     autoscroll_tick = 3,
+    deep_press = 4,
 };
 
 /// C: GhosttySelectionGestureEventOption
@@ -324,6 +334,13 @@ pub fn handle_event(
             } else if (sel == null) return .no_value;
             return .success;
         },
+        .deep_press => |deep_press| {
+            const sel = wrapper.gesture.deepPress(t, deep_press);
+            if (out_selection) |out| {
+                out.* = selection_c.CSelection.fromZig(sel orelse return .no_value);
+            } else if (sel == null) return .no_value;
+            return .success;
+        },
     };
 }
 
@@ -429,6 +446,7 @@ fn eventSetTyped(
         .release => |*release| releaseSetTyped(release, option, value),
         .drag => |*drag| dragSetTyped(event, drag, option, value),
         .autoscroll_tick => |*tick| autoscrollTickSetTyped(event, tick, option, value),
+        .deep_press => |*deep_press| deepPressSetTyped(event, deep_press, option, value),
     };
 }
 
@@ -642,6 +660,55 @@ fn autoscrollTickSetTyped(
         .time_ns,
         .repeat_interval_ns,
         .behaviors,
+        => return .invalid_value,
+    }
+
+    return .success;
+}
+
+fn deepPressSetTyped(
+    event: *EventWrapper,
+    deep_press: *SelectionGesture.DeepPress,
+    comptime option: EventOption,
+    value: ?*const option.Type(),
+) Result {
+    const v = value orelse {
+        switch (option) {
+            .word_boundary_codepoints => clearWordBoundaryCodepoints(
+                event,
+                &deep_press.word_boundary_codepoints,
+            ),
+
+            .ref,
+            .position,
+            .repeat_distance,
+            .time_ns,
+            .repeat_interval_ns,
+            .behaviors,
+            .rectangle,
+            .geometry,
+            .viewport,
+            => return .invalid_value,
+        }
+        return .success;
+    };
+
+    switch (option) {
+        .word_boundary_codepoints => return trySetWordBoundaryCodepoints(
+            event,
+            &deep_press.word_boundary_codepoints,
+            v,
+        ),
+
+        .ref,
+        .position,
+        .repeat_distance,
+        .time_ns,
+        .repeat_interval_ns,
+        .behaviors,
+        .rectangle,
+        .geometry,
+        .viewport,
         => return .invalid_value,
     }
 
@@ -1328,6 +1395,89 @@ test "selection gesture autoscroll tick requires viewport and geometry" {
         .value = .{ .active = .{ .x = 1, .y = 0 } },
     }, &ref));
     try testing.expectEqual(Result.invalid_value, event_set(tick_event, .ref, &ref));
+}
+
+test "selection gesture event applies deep press" {
+    var terminal: terminal_c.Terminal = null;
+    try testing.expectEqual(Result.success, terminal_c.new(
+        &lib.alloc.test_allocator,
+        &terminal,
+        .{ .cols = 5, .rows = 2, .max_scrollback = 10_000 },
+    ));
+    defer terminal_c.free(terminal);
+
+    terminal_c.vt_write(terminal, "abcde", 5);
+
+    var gesture: Gesture = null;
+    try testing.expectEqual(Result.success, new(
+        &lib.alloc.test_allocator,
+        &gesture,
+    ));
+    defer free(gesture, terminal);
+
+    var press_event: Event = null;
+    try testing.expectEqual(Result.success, event_new(
+        &lib.alloc.test_allocator,
+        &press_event,
+        .press,
+    ));
+    defer event_free(press_event);
+
+    var deep_press_event: Event = null;
+    try testing.expectEqual(Result.success, event_new(
+        &lib.alloc.test_allocator,
+        &deep_press_event,
+        .deep_press,
+    ));
+    defer event_free(deep_press_event);
+
+    var ref: grid_ref.CGridRef = undefined;
+    try testing.expectEqual(Result.success, terminal_c.grid_ref(terminal, .{
+        .tag = .active,
+        .value = .{ .active = .{ .x = 2, .y = 0 } },
+    }, &ref));
+    try testing.expectEqual(Result.success, event_set(press_event, .ref, &ref));
+    try testing.expectEqual(Result.no_value, handle_event(gesture, terminal, press_event, null));
+
+    var sel: selection_c.CSelection = undefined;
+    try testing.expectEqual(Result.success, handle_event(gesture, terminal, deep_press_event, &sel));
+    try testing.expectEqual(@as(u16, 0), sel.start.toPin().?.x);
+    try testing.expectEqual(@as(u16, 4), sel.end.toPin().?.x);
+
+    var dragged = false;
+    try testing.expectEqual(Result.success, get(gesture, terminal, .dragged, &dragged));
+    try testing.expect(dragged);
+
+    const pos: types.SurfacePosition = .{ .x = 0, .y = 0 };
+    try testing.expectEqual(Result.invalid_value, event_set(deep_press_event, .position, &pos));
+}
+
+test "selection gesture deep press without active anchor returns no value" {
+    var terminal: terminal_c.Terminal = null;
+    try testing.expectEqual(Result.success, terminal_c.new(
+        &lib.alloc.test_allocator,
+        &terminal,
+        .{ .cols = 5, .rows = 2, .max_scrollback = 10_000 },
+    ));
+    defer terminal_c.free(terminal);
+
+    var gesture: Gesture = null;
+    try testing.expectEqual(Result.success, new(
+        &lib.alloc.test_allocator,
+        &gesture,
+    ));
+    defer free(gesture, terminal);
+
+    var deep_press_event: Event = null;
+    try testing.expectEqual(Result.success, event_new(
+        &lib.alloc.test_allocator,
+        &deep_press_event,
+        .deep_press,
+    ));
+    defer event_free(deep_press_event);
+
+    var sel: selection_c.CSelection = undefined;
+    try testing.expectEqual(Result.no_value, handle_event(gesture, terminal, deep_press_event, &sel));
 }
 
 test "selection gesture free null" {
