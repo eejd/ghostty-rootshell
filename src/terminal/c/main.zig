@@ -186,6 +186,7 @@ pub const terminal_selection_equal = selection.equal;
 pub const selection_gesture_new = selection_gesture.new;
 pub const selection_gesture_free = selection_gesture.free;
 pub const selection_gesture_reset = selection_gesture.reset;
+pub const selection_gesture_event = selection_gesture.handle_event;
 pub const selection_gesture_get = selection_gesture.get;
 pub const selection_gesture_get_multi = selection_gesture.get_multi;
 pub const selection_gesture_event_new = selection_gesture.event_new;

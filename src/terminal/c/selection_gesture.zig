@@ -6,6 +6,7 @@ const CAllocator = lib.alloc.Allocator;
 const SelectionGesture = @import("../SelectionGesture.zig");
 const selection_codepoints = @import("../selection_codepoints.zig");
 const grid_ref = @import("grid_ref.zig");
+const selection_c = @import("selection.zig");
 const terminal_c = @import("terminal.zig");
 const types = @import("types.zig");
 const Result = @import("result.zig").Result;
@@ -28,6 +29,12 @@ const EventWrapper = struct {
     event: union(EventType) {
         press: SelectionGesture.Press,
     },
+
+    // Press.pin has no safe sentinel value: PageList.Pin contains a non-null
+    // node pointer and is undefined until the C caller provides a GhosttyGridRef.
+    // Track that separately so event execution can reject a press whose required
+    // ref option was never set, or was later cleared.
+    press_pin_set: bool = false,
 
     // Backing storage for Press.word_boundary_codepoints. The C API receives
     // codepoints as borrowed uint32_t values, but SelectionGesture.Press stores
@@ -196,6 +203,28 @@ pub fn reset(
     wrapper.gesture.reset(t);
 }
 
+pub fn handle_event(
+    gesture_: Gesture,
+    terminal: terminal_c.Terminal,
+    event_: Event,
+    out_selection: ?*selection_c.CSelection,
+) callconv(lib.calling_conv) Result {
+    const wrapper = gesture_ orelse return .invalid_value;
+    const t = terminal_c.zigTerminal(terminal) orelse return .invalid_value;
+    const event_wrapper = event_ orelse return .invalid_value;
+
+    return switch (event_wrapper.event) {
+        .press => |press| {
+            if (!event_wrapper.press_pin_set) return .invalid_value;
+            const sel = wrapper.gesture.press(t, press) catch return .out_of_memory;
+            if (out_selection) |out| {
+                out.* = selection_c.CSelection.fromZig(sel orelse return .no_value);
+            } else if (sel == null) return .no_value;
+            return .success;
+        },
+    };
+}
+
 pub fn event_set(
     event_: Event,
     option: EventOption,
@@ -306,7 +335,7 @@ fn pressSetTyped(
 ) Result {
     const v = value orelse {
         switch (option) {
-            .ref => {},
+            .ref => event.press_pin_set = false,
             .position => {
                 press.xpos = 0;
                 press.ypos = 0;
@@ -324,7 +353,10 @@ fn pressSetTyped(
     };
 
     switch (option) {
-        .ref => press.pin = v.toPin() orelse return .invalid_value,
+        .ref => {
+            press.pin = v.toPin() orelse return .invalid_value;
+            event.press_pin_set = true;
+        },
         .position => {
             press.xpos = v.x;
             press.ypos = v.y;
@@ -573,6 +605,115 @@ test "selection gesture event behaviors" {
     try testing.expectEqual(Behavior.cell, event.?.event.press.behaviors[0]);
     try testing.expectEqual(Behavior.word, event.?.event.press.behaviors[1]);
     try testing.expectEqual(Behavior.line, event.?.event.press.behaviors[2]);
+}
+
+test "selection gesture event applies press" {
+    var terminal: terminal_c.Terminal = null;
+    try testing.expectEqual(Result.success, terminal_c.new(
+        &lib.alloc.test_allocator,
+        &terminal,
+        .{ .cols = 5, .rows = 2, .max_scrollback = 10_000 },
+    ));
+    defer terminal_c.free(terminal);
+
+    var gesture: Gesture = null;
+    try testing.expectEqual(Result.success, new(
+        &lib.alloc.test_allocator,
+        &gesture,
+    ));
+    defer free(gesture, terminal);
+
+    var press_event: Event = null;
+    try testing.expectEqual(Result.success, event_new(
+        &lib.alloc.test_allocator,
+        &press_event,
+        .press,
+    ));
+    defer event_free(press_event);
+
+    terminal_c.vt_write(terminal, "abc", 3);
+
+    var ref: grid_ref.CGridRef = undefined;
+    try testing.expectEqual(Result.success, terminal_c.grid_ref(terminal, .{
+        .tag = .active,
+        .value = .{ .active = .{ .x = 1, .y = 0 } },
+    }, &ref));
+    try testing.expectEqual(Result.success, event_set(press_event, .ref, &ref));
+    const behaviors: Behaviors = .{
+        .single_click = .word,
+        .double_click = .word,
+        .triple_click = .line,
+    };
+    try testing.expectEqual(Result.success, event_set(press_event, .behaviors, &behaviors));
+
+    var sel: selection_c.CSelection = undefined;
+    try testing.expectEqual(Result.success, handle_event(gesture, terminal, press_event, &sel));
+    try testing.expectEqual(@as(u16, 0), sel.start.toPin().?.x);
+    try testing.expectEqual(@as(u16, 2), sel.end.toPin().?.x);
+
+    try testing.expectEqual(Result.success, handle_event(gesture, terminal, press_event, null));
+}
+
+test "selection gesture event press requires ref" {
+    var terminal: terminal_c.Terminal = null;
+    try testing.expectEqual(Result.success, terminal_c.new(
+        &lib.alloc.test_allocator,
+        &terminal,
+        .{ .cols = 5, .rows = 2, .max_scrollback = 10_000 },
+    ));
+    defer terminal_c.free(terminal);
+
+    var gesture: Gesture = null;
+    try testing.expectEqual(Result.success, new(
+        &lib.alloc.test_allocator,
+        &gesture,
+    ));
+    defer free(gesture, terminal);
+
+    var press_event: Event = null;
+    try testing.expectEqual(Result.success, event_new(
+        &lib.alloc.test_allocator,
+        &press_event,
+        .press,
+    ));
+    defer event_free(press_event);
+
+    var sel: selection_c.CSelection = undefined;
+    try testing.expectEqual(Result.invalid_value, handle_event(gesture, terminal, press_event, &sel));
+}
+
+test "selection gesture event null output still reports no selection" {
+    var terminal: terminal_c.Terminal = null;
+    try testing.expectEqual(Result.success, terminal_c.new(
+        &lib.alloc.test_allocator,
+        &terminal,
+        .{ .cols = 5, .rows = 2, .max_scrollback = 10_000 },
+    ));
+    defer terminal_c.free(terminal);
+
+    var gesture: Gesture = null;
+    try testing.expectEqual(Result.success, new(
+        &lib.alloc.test_allocator,
+        &gesture,
+    ));
+    defer free(gesture, terminal);
+
+    var press_event: Event = null;
+    try testing.expectEqual(Result.success, event_new(
+        &lib.alloc.test_allocator,
+        &press_event,
+        .press,
+    ));
+    defer event_free(press_event);
+
+    var ref: grid_ref.CGridRef = undefined;
+    try testing.expectEqual(Result.success, terminal_c.grid_ref(terminal, .{
+        .tag = .active,
+        .value = .{ .active = .{ .x = 1, .y = 0 } },
+    }, &ref));
+    try testing.expectEqual(Result.success, event_set(press_event, .ref, &ref));
+
+    try testing.expectEqual(Result.no_value, handle_event(gesture, terminal, press_event, null));
 }
 
 test "selection gesture free null" {

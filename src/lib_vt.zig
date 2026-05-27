@@ -254,6 +254,7 @@ comptime {
         @export(&c.selection_gesture_new, .{ .name = "ghostty_selection_gesture_new" });
         @export(&c.selection_gesture_free, .{ .name = "ghostty_selection_gesture_free" });
         @export(&c.selection_gesture_reset, .{ .name = "ghostty_selection_gesture_reset" });
+        @export(&c.selection_gesture_event, .{ .name = "ghostty_selection_gesture_event" });
         @export(&c.selection_gesture_get, .{ .name = "ghostty_selection_gesture_get" });
         @export(&c.selection_gesture_get_multi, .{ .name = "ghostty_selection_gesture_get_multi" });
         @export(&c.selection_gesture_event_new, .{ .name = "ghostty_selection_gesture_event_new" });

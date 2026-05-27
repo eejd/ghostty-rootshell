@@ -501,6 +501,35 @@ GHOSTTY_API GhosttyResult ghostty_selection_gesture_event_set(
                                     const void* value);
 
 /**
+ * Apply a selection gesture event and return the resulting selection snapshot.
+ *
+ * This dispatches to the gesture operation matching the event's fixed type.
+ * For GHOSTTY_SELECTION_GESTURE_EVENT_TYPE_PRESS, the event must have
+ * GHOSTTY_SELECTION_GESTURE_EVENT_OPT_REF set before calling this function.
+ * All other press options use their initialized defaults when unset or cleared.
+ *
+ * The returned selection is not installed as the terminal's current selection.
+ * It is a snapshot with the same lifetime rules as GhosttySelection.
+ *
+ * @param gesture Selection gesture handle (NULL returns GHOSTTY_INVALID_VALUE)
+ * @param terminal Terminal used to interpret and update gesture state
+ * @param event Selection gesture event handle (NULL returns GHOSTTY_INVALID_VALUE)
+ * @param[out] out_selection On success, receives the resulting selection. May
+ *             be NULL to apply the event and discard the selection result.
+ * @return GHOSTTY_SUCCESS on success, GHOSTTY_NO_VALUE if the event does not
+ *         currently produce a selection, GHOSTTY_OUT_OF_MEMORY if tracking
+ *         gesture state fails, or GHOSTTY_INVALID_VALUE if gesture, terminal,
+ *         event, or required event data is invalid
+ *
+ * @ingroup selection
+ */
+GHOSTTY_API GhosttyResult ghostty_selection_gesture_event(
+                                    GhosttySelectionGesture gesture,
+                                    GhosttyTerminal terminal,
+                                    GhosttySelectionGestureEvent event,
+                                    GhosttySelection* out_selection);
+
+/**
  * Create a selection gesture object.
  *
  * The gesture stores mutable state for terminal text selection gestures. The
