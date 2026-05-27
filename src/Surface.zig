@@ -3953,67 +3953,59 @@ pub fn mouseButtonCallback(
             log.err("error reading time, mouse multi-click won't work err={}", .{err});
             break :time null;
         };
-        try self.mouse.selection_gesture.press(t, .{
+        var press_selection = try self.mouse.selection_gesture.press(t, .{
             .time = time,
             .pin = pin,
             .xpos = pos.x,
             .ypos = pos.y,
             .max_distance = @floatFromInt(self.size.cell.width),
             .repeat_interval = self.config.mouse_interval,
+            .word_boundary_codepoints = self.config.selection_word_chars,
         });
 
-        // In all cases below, we set the selection directly rather than use
-        // `setSelection` because we want to avoid copying the selection
-        // to the selection clipboard. For left mouse clicks we only set
-        // the clipboard on release.
+        // The gesture owns the standard single/double/triple-click selection
+        // behavior. Surface keeps terminal-surface-specific overrides here.
         switch (self.mouse.selection_gesture.left_click_count) {
-            // Single click
-            1 => {
-                // If we have a selection, clear it. This always happens.
-                if (self.io.terminal.screens.active.selection != null) {
-                    try self.io.terminal.screens.active.select(null);
-                    try self.queueRender();
-                }
-            },
+            1 => {},
 
-            // Double click, select the word under our mouse.
-            // First try to detect if we're clicking on a URL to select the entire URL.
+            // Double click on a URL selects the entire URL instead of the
+            // standard word selection returned by the gesture.
             2 => {
-                const sel_ = sel: {
-                    // Try link detection without requiring modifier keys
-                    if (self.linkAtPin(
-                        pin,
-                        null,
-                    )) |result_| {
-                        if (result_) |result| {
-                            break :sel result.selection;
-                        }
-                    } else |_| {
-                        // Ignore any errors, likely regex errors.
+                // Try link detection without requiring modifier keys.
+                if (self.linkAtPin(
+                    pin,
+                    null,
+                )) |result_| {
+                    if (result_) |result| {
+                        press_selection = result.selection;
                     }
-
-                    break :sel self.io.terminal.screens.active.selectWord(pin, self.config.selection_word_chars);
-                };
-                if (sel_) |sel| {
-                    try self.io.terminal.screens.active.select(sel);
-                    try self.queueRender();
+                } else |_| {
+                    // Ignore any errors, likely regex errors.
                 }
             },
 
-            // Triple click, select the line under our mouse
+            // Cmd/Ctrl triple-click selects semantic command output instead of
+            // the standard line selection returned by the gesture.
             3 => {
-                const sel_ = if (mods.ctrlOrSuper())
-                    self.io.terminal.screens.active.selectOutput(pin)
-                else
-                    self.io.terminal.screens.active.selectLine(.{ .pin = pin });
-                if (sel_) |sel| {
-                    try self.io.terminal.screens.active.select(sel);
-                    try self.queueRender();
-                }
+                if (mods.ctrlOrSuper()) press_selection =
+                    self.io.terminal.screens.active.selectOutput(pin);
             },
 
             // We should be bounded by 1 to 3
             else => unreachable,
+        }
+
+        // We set the selection directly rather than use `setSelection` because
+        // we want to avoid copying the selection to the selection clipboard.
+        // For left mouse clicks we only set the clipboard on release.
+        if (press_selection) |selection| {
+            try self.io.terminal.screens.active.select(selection);
+            try self.queueRender();
+        } else if (self.mouse.selection_gesture.left_click_count == 1 and
+            self.io.terminal.screens.active.selection != null)
+        {
+            try self.io.terminal.screens.active.select(null);
+            try self.queueRender();
         }
     }
 
