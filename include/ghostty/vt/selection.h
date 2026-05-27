@@ -51,6 +51,16 @@ extern "C" {
 typedef struct GhosttySelectionGestureImpl* GhosttySelectionGesture;
 
 /**
+ * Opaque handle to reusable input data for selection gesture operations.
+ *
+ * Event options are set with ghostty_selection_gesture_event_set(). Individual
+ * gesture operations document which options are required or optional.
+ *
+ * @ingroup selection
+ */
+typedef struct GhosttySelectionGestureEventImpl* GhosttySelectionGestureEvent;
+
+/**
  * A snapshot selection range defined by two grid references.
  *
  * Both endpoints are inclusive. The endpoints preserve selection direction
@@ -316,6 +326,22 @@ typedef enum GHOSTTY_ENUM_TYPED {
 } GhosttySelectionGestureBehavior;
 
 /**
+ * Selection behaviors for single-, double-, and triple-click gestures.
+ *
+ * @ingroup selection
+ */
+typedef struct {
+  /** Behavior for single-click selection gestures. */
+  GhosttySelectionGestureBehavior single_click;
+
+  /** Behavior for double-click selection gestures. */
+  GhosttySelectionGestureBehavior double_click;
+
+  /** Behavior for triple-click selection gestures. */
+  GhosttySelectionGestureBehavior triple_click;
+} GhosttySelectionGestureBehaviors;
+
+/**
  * Current autoscroll direction for an active selection drag gesture.
  *
  * @ingroup selection
@@ -363,6 +389,116 @@ typedef enum GHOSTTY_ENUM_TYPED {
 
   GHOSTTY_SELECTION_GESTURE_DATA_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
 } GhosttySelectionGestureData;
+
+/**
+ * Selection gesture event type.
+ *
+ * The event type is fixed when the event is created. Each event type documents
+ * which options are valid and which options are required by gesture operations.
+ *
+ * @ingroup selection
+ */
+typedef enum GHOSTTY_ENUM_TYPED {
+  /** Press event for ghostty_selection_gesture_press(). */
+  GHOSTTY_SELECTION_GESTURE_EVENT_TYPE_PRESS = 0,
+
+  GHOSTTY_SELECTION_GESTURE_EVENT_TYPE_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
+} GhosttySelectionGestureEventType;
+
+/**
+ * Options stored on a reusable selection gesture event.
+ *
+ * Passing NULL as the value to ghostty_selection_gesture_event_set() clears the
+ * corresponding option.
+ *
+ * @ingroup selection
+ */
+typedef enum GHOSTTY_ENUM_TYPED {
+  /** Grid reference under the pointer: GhosttyGridRef*. */
+  GHOSTTY_SELECTION_GESTURE_EVENT_OPT_REF = 0,
+
+  /** Surface-space pointer position: GhosttySurfacePosition*. */
+  GHOSTTY_SELECTION_GESTURE_EVENT_OPT_POSITION = 1,
+
+  /** Maximum repeat-click distance in pixels: double*. */
+  GHOSTTY_SELECTION_GESTURE_EVENT_OPT_REPEAT_DISTANCE = 2,
+
+  /**
+   * Optional monotonic event time in nanoseconds: uint64_t*.
+   *
+   * If unset, press treats the event as untimed and only single-click behavior
+   * is available.
+   */
+  GHOSTTY_SELECTION_GESTURE_EVENT_OPT_TIME_NS = 3,
+
+  /** Maximum interval between repeat clicks in nanoseconds: uint64_t*. */
+  GHOSTTY_SELECTION_GESTURE_EVENT_OPT_REPEAT_INTERVAL_NS = 4,
+
+  /**
+   * Word-boundary codepoints: GhosttyCodepoints*.
+   *
+   * The codepoints are copied into event-owned storage when set. If unset,
+   * operations that need word boundaries use Ghostty's defaults.
+   */
+  GHOSTTY_SELECTION_GESTURE_EVENT_OPT_WORD_BOUNDARY_CODEPOINTS = 5,
+
+  /**
+   * Selection behavior table: GhosttySelectionGestureBehaviors*.
+   *
+   * If unset, press uses the default behavior table: cell, word, line.
+   */
+  GHOSTTY_SELECTION_GESTURE_EVENT_OPT_BEHAVIORS = 6,
+
+  GHOSTTY_SELECTION_GESTURE_EVENT_OPT_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
+} GhosttySelectionGestureEventOption;
+
+/**
+ * Create a reusable selection gesture event object.
+ *
+ * @param allocator Allocator, or NULL for the default allocator
+ * @param out_event Receives the created event handle
+ * @param type Event type. This is fixed for the lifetime of the event.
+ * @return GHOSTTY_SUCCESS on success, GHOSTTY_INVALID_VALUE if out_event is
+ *         NULL or type is invalid, or GHOSTTY_OUT_OF_MEMORY if allocation fails
+ *
+ * @ingroup selection
+ */
+GHOSTTY_API GhosttyResult ghostty_selection_gesture_event_new(
+                                    const GhosttyAllocator* allocator,
+                                    GhosttySelectionGestureEvent* out_event,
+                                    GhosttySelectionGestureEventType type);
+
+/**
+ * Free a selection gesture event object.
+ *
+ * Passing NULL is allowed and is a no-op.
+ *
+ * @param event Selection gesture event handle to free
+ *
+ * @ingroup selection
+ */
+GHOSTTY_API void ghostty_selection_gesture_event_free(
+                                    GhosttySelectionGestureEvent event);
+
+/**
+ * Set or clear an option on a selection gesture event.
+ *
+ * The value type depends on option and is documented by
+ * GhosttySelectionGestureEventOption. Passing NULL for value clears the option.
+ *
+ * @param event Selection gesture event handle (NULL returns GHOSTTY_INVALID_VALUE)
+ * @param option Event option to set or clear
+ * @param value Pointer to the input value for option, or NULL to clear
+ * @return GHOSTTY_SUCCESS on success, GHOSTTY_OUT_OF_MEMORY if copying
+ *         event-owned data fails, or GHOSTTY_INVALID_VALUE if event, option, or
+ *         value is invalid
+ *
+ * @ingroup selection
+ */
+GHOSTTY_API GhosttyResult ghostty_selection_gesture_event_set(
+                                    GhosttySelectionGestureEvent event,
+                                    GhosttySelectionGestureEventOption option,
+                                    const void* value);
 
 /**
  * Create a selection gesture object.
