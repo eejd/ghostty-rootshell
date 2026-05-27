@@ -56,6 +56,7 @@ pub const structs: std.StaticStringMap(StructInfo) = structs: {
         .{ "GhosttyPointCoordinate", StructInfo.init(point.Coordinate) },
         .{ "GhosttyRenderStateColors", StructInfo.init(render.Colors) },
         .{ "GhosttySelectionGestureBehaviors", StructInfo.init(selection_gesture.Behaviors) },
+        .{ "GhosttySelectionGestureGeometry", StructInfo.init(selection_gesture.Geometry) },
         .{ "GhosttySizeReportSize", StructInfo.init(size_report.Size) },
         .{ "GhosttyString", StructInfo.init(lib.String) },
         .{ "GhosttySurfacePosition", StructInfo.init(SurfacePosition) },

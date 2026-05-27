@@ -29,6 +29,7 @@ const EventWrapper = struct {
     event: union(EventType) {
         press: SelectionGesture.Press,
         release: SelectionGesture.Release,
+        drag: SelectionGesture.Drag,
     },
 
     // Press.pin has no safe sentinel value: PageList.Pin contains a non-null
@@ -37,10 +38,18 @@ const EventWrapper = struct {
     // ref option was never set, or was later cleared.
     press_pin_set: bool = false,
 
-    // Backing storage for Press.word_boundary_codepoints. The C API receives
-    // codepoints as borrowed uint32_t values, but SelectionGesture.Press stores
-    // a []const u21 slice. We copy/convert into event-owned storage so the real
-    // Press payload can safely point at it until the event is changed or freed.
+    // Drag.pin and Drag.geometry are required by SelectionGesture.drag but have
+    // no meaningful zero/sentinel value. Track whether the C caller set them so
+    // dispatch can reject incomplete drag events instead of using placeholder
+    // data.
+    drag_pin_set: bool = false,
+    drag_geometry_set: bool = false,
+
+    // Backing storage for Press/Drag.word_boundary_codepoints. The C API
+    // receives codepoints as borrowed uint32_t values, but SelectionGesture
+    // stores a []const u21 slice. We copy/convert into event-owned storage so
+    // the real payload can safely point at it until the event is changed or
+    // freed.
     word_boundary_codepoints: ?[]u21 = null,
 
     // Backing storage for Press.behaviors. The C API sets behaviors as a value
@@ -53,6 +62,7 @@ const EventWrapper = struct {
         self.event = switch (event_type) {
             .press => .{ .press = self.defaultPress() },
             .release => .{ .release = self.defaultRelease() },
+            .drag => .{ .drag = self.defaultDrag() },
         };
     }
 
@@ -72,6 +82,18 @@ const EventWrapper = struct {
     fn defaultRelease(self: *EventWrapper) SelectionGesture.Release {
         _ = self;
         return .{ .pin = null };
+    }
+
+    fn defaultDrag(self: *EventWrapper) SelectionGesture.Drag {
+        _ = self;
+        return .{
+            .pin = undefined,
+            .xpos = 0,
+            .ypos = 0,
+            .rectangle = false,
+            .word_boundary_codepoints = &selection_codepoints.default_word_boundaries,
+            .geometry = undefined,
+        };
     }
 
     fn deinit(self: *EventWrapper) void {
@@ -117,6 +139,7 @@ pub const Data = enum(c_int) {
 pub const EventType = enum(c_int) {
     press = 0,
     release = 1,
+    drag = 2,
 };
 
 /// C: GhosttySelectionGestureEventOption
@@ -128,6 +151,8 @@ pub const EventOption = enum(c_int) {
     repeat_interval_ns = 4,
     word_boundary_codepoints = 5,
     behaviors = 6,
+    rectangle = 7,
+    geometry = 8,
 
     pub fn Type(comptime self: EventOption) type {
         return switch (self) {
@@ -138,6 +163,28 @@ pub const EventOption = enum(c_int) {
             .repeat_interval_ns => u64,
             .word_boundary_codepoints => types.Codepoints,
             .behaviors => Behaviors,
+            .rectangle => bool,
+            .geometry => Geometry,
+        };
+    }
+};
+
+/// C: GhosttySelectionGestureGeometry
+pub const Geometry = extern struct {
+    columns: u32,
+    cell_width: u32,
+    padding_left: u32,
+    screen_height: u32,
+
+    fn toZig(self: Geometry) ?SelectionGesture.Drag.Geometry {
+        if (self.columns == 0) return null;
+        if (self.cell_width == 0) return null;
+        if (self.screen_height == 0) return null;
+        return .{
+            .columns = self.columns,
+            .cell_width = self.cell_width,
+            .padding_left = self.padding_left,
+            .screen_height = self.screen_height,
         };
     }
 };
@@ -233,6 +280,15 @@ pub fn handle_event(
         .release => |release| {
             wrapper.gesture.release(t, release);
             return .no_value;
+        },
+        .drag => |drag| {
+            if (!event_wrapper.drag_pin_set) return .invalid_value;
+            if (!event_wrapper.drag_geometry_set) return .invalid_value;
+            const sel = wrapper.gesture.drag(t, drag);
+            if (out_selection) |out| {
+                out.* = selection_c.CSelection.fromZig(sel orelse return .no_value);
+            } else if (sel == null) return .no_value;
+            return .success;
         },
     };
 }
@@ -337,6 +393,7 @@ fn eventSetTyped(
     return switch (event.event) {
         .press => |*press| pressSetTyped(event, press, option, value),
         .release => |*release| releaseSetTyped(release, option, value),
+        .drag => |*drag| dragSetTyped(event, drag, option, value),
     };
 }
 
@@ -356,11 +413,17 @@ fn pressSetTyped(
             .repeat_distance => press.max_distance = 0,
             .time_ns => press.time = null,
             .repeat_interval_ns => press.repeat_interval = 0,
-            .word_boundary_codepoints => clearPressCodepoints(event, press),
+            .word_boundary_codepoints => clearWordBoundaryCodepoints(
+                event,
+                &press.word_boundary_codepoints,
+            ),
             .behaviors => {
                 event.behaviors = SelectionGesture.default_behaviors;
                 press.behaviors = &event.behaviors;
             },
+            .rectangle,
+            .geometry,
+            => return .invalid_value,
         }
         return .success;
     };
@@ -377,22 +440,11 @@ fn pressSetTyped(
         .repeat_distance => press.max_distance = v.*,
         .time_ns => press.time = instantFromNs(v.*),
         .repeat_interval_ns => press.repeat_interval = v.*,
-        .word_boundary_codepoints => {
-            if (v.len > 0 and v.ptr == null) return .invalid_value;
-            clearPressCodepoints(event, press);
-            const ptr = v.ptr orelse {
-                event.word_boundary_codepoints = &.{};
-                press.word_boundary_codepoints = event.word_boundary_codepoints.?;
-                return .success;
-            };
-            const copy = event.alloc.alloc(u21, v.len) catch return .out_of_memory;
-            errdefer event.alloc.free(copy);
-            for (copy, ptr[0..v.len]) |*dst, cp| {
-                dst.* = std.math.cast(u21, cp) orelse return .invalid_value;
-            }
-            event.word_boundary_codepoints = copy;
-            press.word_boundary_codepoints = copy;
-        },
+        .word_boundary_codepoints => return trySetWordBoundaryCodepoints(
+            event,
+            &press.word_boundary_codepoints,
+            v,
+        ),
         .behaviors => {
             if (!validBehavior(v.single_click) or
                 !validBehavior(v.double_click) or
@@ -400,6 +452,9 @@ fn pressSetTyped(
             event.behaviors = .{ v.single_click, v.double_click, v.triple_click };
             press.behaviors = &event.behaviors;
         },
+        .rectangle,
+        .geometry,
+        => return .invalid_value,
     }
 
     return .success;
@@ -425,18 +480,101 @@ fn releaseSetTyped(
         .repeat_interval_ns,
         .word_boundary_codepoints,
         .behaviors,
+        .rectangle,
+        .geometry,
         => return .invalid_value,
     }
 
     return .success;
 }
 
-fn clearPressCodepoints(event: *EventWrapper, press: *SelectionGesture.Press) void {
+fn dragSetTyped(
+    event: *EventWrapper,
+    drag: *SelectionGesture.Drag,
+    comptime option: EventOption,
+    value: ?*const option.Type(),
+) Result {
+    const v = value orelse {
+        switch (option) {
+            .ref => event.drag_pin_set = false,
+            .position => {
+                drag.xpos = 0;
+                drag.ypos = 0;
+            },
+            .word_boundary_codepoints => clearWordBoundaryCodepoints(
+                event,
+                &drag.word_boundary_codepoints,
+            ),
+            .rectangle => drag.rectangle = false,
+            .geometry => event.drag_geometry_set = false,
+
+            .repeat_distance,
+            .time_ns,
+            .repeat_interval_ns,
+            .behaviors,
+            => return .invalid_value,
+        }
+        return .success;
+    };
+
+    switch (option) {
+        .ref => {
+            drag.pin = v.toPin() orelse return .invalid_value;
+            event.drag_pin_set = true;
+        },
+        .position => {
+            drag.xpos = v.x;
+            drag.ypos = v.y;
+        },
+        .word_boundary_codepoints => return trySetWordBoundaryCodepoints(
+            event,
+            &drag.word_boundary_codepoints,
+            v,
+        ),
+        .rectangle => drag.rectangle = v.*,
+        .geometry => {
+            drag.geometry = v.toZig() orelse return .invalid_value;
+            event.drag_geometry_set = true;
+        },
+
+        .repeat_distance,
+        .time_ns,
+        .repeat_interval_ns,
+        .behaviors,
+        => return .invalid_value,
+    }
+
+    return .success;
+}
+
+fn trySetWordBoundaryCodepoints(
+    event: *EventWrapper,
+    target: *[]const u21,
+    value: *const types.Codepoints,
+) Result {
+    if (value.len > 0 and value.ptr == null) return .invalid_value;
+    clearWordBoundaryCodepoints(event, target);
+    const ptr = value.ptr orelse {
+        event.word_boundary_codepoints = &.{};
+        target.* = event.word_boundary_codepoints.?;
+        return .success;
+    };
+    const copy = event.alloc.alloc(u21, value.len) catch return .out_of_memory;
+    errdefer event.alloc.free(copy);
+    for (copy, ptr[0..value.len]) |*dst, cp| {
+        dst.* = std.math.cast(u21, cp) orelse return .invalid_value;
+    }
+    event.word_boundary_codepoints = copy;
+    target.* = copy;
+    return .success;
+}
+
+fn clearWordBoundaryCodepoints(event: *EventWrapper, target: *[]const u21) void {
     if (event.word_boundary_codepoints) |cps| {
         if (cps.len > 0) event.alloc.free(cps);
     }
     event.word_boundary_codepoints = null;
-    press.word_boundary_codepoints = &selection_codepoints.default_word_boundaries;
+    target.* = &selection_codepoints.default_word_boundaries;
 }
 
 fn instantFromNs(ns: u64) std.time.Instant {
@@ -851,6 +989,122 @@ test "selection gesture release without ref marks dragged" {
     var dragged = false;
     try testing.expectEqual(Result.success, get(gesture, terminal, .dragged, &dragged));
     try testing.expect(dragged);
+}
+
+test "selection gesture event applies drag" {
+    var terminal: terminal_c.Terminal = null;
+    try testing.expectEqual(Result.success, terminal_c.new(
+        &lib.alloc.test_allocator,
+        &terminal,
+        .{ .cols = 5, .rows = 2, .max_scrollback = 10_000 },
+    ));
+    defer terminal_c.free(terminal);
+
+    terminal_c.vt_write(terminal, "abcde", 5);
+
+    var gesture: Gesture = null;
+    try testing.expectEqual(Result.success, new(
+        &lib.alloc.test_allocator,
+        &gesture,
+    ));
+    defer free(gesture, terminal);
+
+    var press_event: Event = null;
+    try testing.expectEqual(Result.success, event_new(
+        &lib.alloc.test_allocator,
+        &press_event,
+        .press,
+    ));
+    defer event_free(press_event);
+
+    var drag_event: Event = null;
+    try testing.expectEqual(Result.success, event_new(
+        &lib.alloc.test_allocator,
+        &drag_event,
+        .drag,
+    ));
+    defer event_free(drag_event);
+
+    var press_ref: grid_ref.CGridRef = undefined;
+    try testing.expectEqual(Result.success, terminal_c.grid_ref(terminal, .{
+        .tag = .active,
+        .value = .{ .active = .{ .x = 1, .y = 0 } },
+    }, &press_ref));
+    try testing.expectEqual(Result.success, event_set(press_event, .ref, &press_ref));
+
+    const press_pos: types.SurfacePosition = .{ .x = 10, .y = 10 };
+    try testing.expectEqual(Result.success, event_set(press_event, .position, &press_pos));
+    try testing.expectEqual(Result.no_value, handle_event(gesture, terminal, press_event, null));
+
+    var drag_ref: grid_ref.CGridRef = undefined;
+    try testing.expectEqual(Result.success, terminal_c.grid_ref(terminal, .{
+        .tag = .active,
+        .value = .{ .active = .{ .x = 3, .y = 0 } },
+    }, &drag_ref));
+    try testing.expectEqual(Result.success, event_set(drag_event, .ref, &drag_ref));
+
+    const drag_pos: types.SurfacePosition = .{ .x = 36, .y = 10 };
+    try testing.expectEqual(Result.success, event_set(drag_event, .position, &drag_pos));
+    const geometry: Geometry = .{
+        .columns = 5,
+        .cell_width = 10,
+        .padding_left = 0,
+        .screen_height = 20,
+    };
+    try testing.expectEqual(Result.success, event_set(drag_event, .geometry, &geometry));
+
+    var sel: selection_c.CSelection = undefined;
+    try testing.expectEqual(Result.success, handle_event(gesture, terminal, drag_event, &sel));
+    try testing.expectEqual(@as(u16, 1), sel.start.toPin().?.x);
+    try testing.expectEqual(@as(u16, 3), sel.end.toPin().?.x);
+
+    var dragged = false;
+    try testing.expectEqual(Result.success, get(gesture, terminal, .dragged, &dragged));
+    try testing.expect(dragged);
+}
+
+test "selection gesture drag requires ref and geometry" {
+    var terminal: terminal_c.Terminal = null;
+    try testing.expectEqual(Result.success, terminal_c.new(
+        &lib.alloc.test_allocator,
+        &terminal,
+        .{ .cols = 5, .rows = 2, .max_scrollback = 10_000 },
+    ));
+    defer terminal_c.free(terminal);
+
+    var gesture: Gesture = null;
+    try testing.expectEqual(Result.success, new(
+        &lib.alloc.test_allocator,
+        &gesture,
+    ));
+    defer free(gesture, terminal);
+
+    var drag_event: Event = null;
+    try testing.expectEqual(Result.success, event_new(
+        &lib.alloc.test_allocator,
+        &drag_event,
+        .drag,
+    ));
+    defer event_free(drag_event);
+
+    var sel: selection_c.CSelection = undefined;
+    try testing.expectEqual(Result.invalid_value, handle_event(gesture, terminal, drag_event, &sel));
+
+    var ref: grid_ref.CGridRef = undefined;
+    try testing.expectEqual(Result.success, terminal_c.grid_ref(terminal, .{
+        .tag = .active,
+        .value = .{ .active = .{ .x = 1, .y = 0 } },
+    }, &ref));
+    try testing.expectEqual(Result.success, event_set(drag_event, .ref, &ref));
+    try testing.expectEqual(Result.invalid_value, handle_event(gesture, terminal, drag_event, &sel));
+
+    const invalid_geometry: Geometry = .{
+        .columns = 5,
+        .cell_width = 0,
+        .padding_left = 0,
+        .screen_height = 20,
+    };
+    try testing.expectEqual(Result.invalid_value, event_set(drag_event, .geometry, &invalid_geometry));
 }
 
 test "selection gesture free null" {

@@ -342,6 +342,25 @@ typedef struct {
 } GhosttySelectionGestureBehaviors;
 
 /**
+ * Display geometry used to interpret selection gesture drag events.
+ *
+ * @ingroup selection
+ */
+typedef struct {
+  /** Number of columns in the rendered terminal grid. Must be non-zero. */
+  uint32_t columns;
+
+  /** Width of one terminal cell in surface pixels. Must be non-zero. */
+  uint32_t cell_width;
+
+  /** Left padding before the terminal grid begins in surface pixels. */
+  uint32_t padding_left;
+
+  /** Height of the rendered terminal surface in surface pixels. Must be non-zero. */
+  uint32_t screen_height;
+} GhosttySelectionGestureGeometry;
+
+/**
  * Current autoscroll direction for an active selection drag gesture.
  *
  * @ingroup selection
@@ -405,6 +424,9 @@ typedef enum GHOSTTY_ENUM_TYPED {
   /** Release event for ghostty_selection_gesture_release(). */
   GHOSTTY_SELECTION_GESTURE_EVENT_TYPE_RELEASE = 1,
 
+  /** Drag event for ghostty_selection_gesture_drag(). */
+  GHOSTTY_SELECTION_GESTURE_EVENT_TYPE_DRAG = 2,
+
   GHOSTTY_SELECTION_GESTURE_EVENT_TYPE_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
 } GhosttySelectionGestureEventType;
 
@@ -420,12 +442,12 @@ typedef enum GHOSTTY_ENUM_TYPED {
   /**
    * Grid reference under the pointer: GhosttyGridRef*.
    *
-   * Required for PRESS events. Optional for RELEASE events; when unset or
-   * cleared, release records that the pointer did not map to a valid cell.
+   * Required for PRESS and DRAG events. Optional for RELEASE events; when unset
+   * or cleared, release records that the pointer did not map to a valid cell.
    */
   GHOSTTY_SELECTION_GESTURE_EVENT_OPT_REF = 0,
 
-  /** Surface-space pointer position: GhosttySurfacePosition*. */
+  /** Surface-space pointer position: GhosttySurfacePosition*. Valid for PRESS and DRAG. */
   GHOSTTY_SELECTION_GESTURE_EVENT_OPT_POSITION = 1,
 
   /** Maximum repeat-click distance in pixels: double*. */
@@ -446,7 +468,8 @@ typedef enum GHOSTTY_ENUM_TYPED {
    * Word-boundary codepoints: GhosttyCodepoints*.
    *
    * The codepoints are copied into event-owned storage when set. If unset,
-   * operations that need word boundaries use Ghostty's defaults.
+   * operations that need word boundaries use Ghostty's defaults. Valid for
+   * PRESS and DRAG.
    */
   GHOSTTY_SELECTION_GESTURE_EVENT_OPT_WORD_BOUNDARY_CODEPOINTS = 5,
 
@@ -456,6 +479,12 @@ typedef enum GHOSTTY_ENUM_TYPED {
    * If unset, press uses the default behavior table: cell, word, line.
    */
   GHOSTTY_SELECTION_GESTURE_EVENT_OPT_BEHAVIORS = 6,
+
+  /** Whether a drag event should produce a rectangular selection: bool*. */
+  GHOSTTY_SELECTION_GESTURE_EVENT_OPT_RECTANGLE = 7,
+
+  /** Drag display geometry: GhosttySelectionGestureGeometry*. Required for DRAG. */
+  GHOSTTY_SELECTION_GESTURE_EVENT_OPT_GEOMETRY = 8,
 
   GHOSTTY_SELECTION_GESTURE_EVENT_OPT_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
 } GhosttySelectionGestureEventOption;
@@ -521,6 +550,12 @@ GHOSTTY_API GhosttyResult ghostty_selection_gesture_event_set(
  * cleared, release records that the pointer did not map to a valid cell. Release
  * events update gesture state but do not produce a selection, so this function
  * returns GHOSTTY_NO_VALUE after applying them.
+ *
+ * For GHOSTTY_SELECTION_GESTURE_EVENT_TYPE_DRAG,
+ * GHOSTTY_SELECTION_GESTURE_EVENT_OPT_REF and
+ * GHOSTTY_SELECTION_GESTURE_EVENT_OPT_GEOMETRY are required. Position,
+ * rectangle, and word-boundary codepoints are optional and use initialized
+ * defaults when unset or cleared.
  *
  * The returned selection is not installed as the terminal's current selection.
  * It is a snapshot with the same lifetime rules as GhosttySelection.
