@@ -35,25 +35,18 @@ const EventWrapper = struct {
         deep_press: SelectionGesture.DeepPress,
     },
 
-    // Press.pin has no safe sentinel value: PageList.Pin contains a non-null
-    // node pointer and is undefined until the C caller provides a GhosttyGridRef.
-    // Track that separately so event execution can reject a press whose required
-    // ref option was never set, or was later cleared.
-    press_pin_set: bool = false,
-
-    // Drag.pin and Drag.geometry are required by SelectionGesture.drag but have
-    // no meaningful zero/sentinel value. Track whether the C caller set them so
-    // dispatch can reject incomplete drag events instead of using placeholder
-    // data.
-    drag_pin_set: bool = false,
-    drag_geometry_set: bool = false,
-
-    // AutoscrollTick.viewport and AutoscrollTick.geometry are required by
-    // SelectionGesture.autoscrollTick but have no meaningful zero/sentinel
-    // value. Track whether the C caller set them so dispatch can reject
-    // incomplete tick events instead of using placeholder data.
-    autoscroll_tick_viewport_set: bool = false,
-    autoscroll_tick_geometry_set: bool = false,
+    // Validation sidecar for required event fields that don't have safe
+    // sentinels in the real SelectionGesture payloads. For example, PageList.Pin
+    // contains a non-null node pointer and Geometry has no meaningful zero
+    // value. Keep these as one-bit flags so dispatch can reject incomplete C
+    // events instead of using undefined placeholder data.
+    event_validation: packed struct {
+        press_pin_set: bool = false,
+        drag_pin_set: bool = false,
+        drag_geometry_set: bool = false,
+        autoscroll_tick_viewport_set: bool = false,
+        autoscroll_tick_geometry_set: bool = false,
+    } = .{},
 
     // Backing storage for Press/Drag/AutoscrollTick.word_boundary_codepoints.
     // The C API receives codepoints as borrowed uint32_t values, but
@@ -305,7 +298,7 @@ pub fn handle_event(
 
     return switch (event_wrapper.event) {
         .press => |press| {
-            if (!event_wrapper.press_pin_set) return .invalid_value;
+            if (!event_wrapper.event_validation.press_pin_set) return .invalid_value;
             const sel = wrapper.gesture.press(t, press) catch return .out_of_memory;
             if (out_selection) |out| {
                 out.* = selection_c.CSelection.fromZig(sel orelse return .no_value);
@@ -317,8 +310,8 @@ pub fn handle_event(
             return .no_value;
         },
         .drag => |drag| {
-            if (!event_wrapper.drag_pin_set) return .invalid_value;
-            if (!event_wrapper.drag_geometry_set) return .invalid_value;
+            if (!event_wrapper.event_validation.drag_pin_set) return .invalid_value;
+            if (!event_wrapper.event_validation.drag_geometry_set) return .invalid_value;
             const sel = wrapper.gesture.drag(t, drag);
             if (out_selection) |out| {
                 out.* = selection_c.CSelection.fromZig(sel orelse return .no_value);
@@ -326,8 +319,8 @@ pub fn handle_event(
             return .success;
         },
         .autoscroll_tick => |tick| {
-            if (!event_wrapper.autoscroll_tick_viewport_set) return .invalid_value;
-            if (!event_wrapper.autoscroll_tick_geometry_set) return .invalid_value;
+            if (!event_wrapper.event_validation.autoscroll_tick_viewport_set) return .invalid_value;
+            if (!event_wrapper.event_validation.autoscroll_tick_geometry_set) return .invalid_value;
             const sel = wrapper.gesture.autoscrollTick(t, tick);
             if (out_selection) |out| {
                 out.* = selection_c.CSelection.fromZig(sel orelse return .no_value);
@@ -458,7 +451,7 @@ fn pressSetTyped(
 ) Result {
     const v = value orelse {
         switch (option) {
-            .ref => event.press_pin_set = false,
+            .ref => event.event_validation.press_pin_set = false,
             .position => {
                 press.xpos = 0;
                 press.ypos = 0;
@@ -485,7 +478,7 @@ fn pressSetTyped(
     switch (option) {
         .ref => {
             press.pin = v.toPin() orelse return .invalid_value;
-            event.press_pin_set = true;
+            event.event_validation.press_pin_set = true;
         },
         .position => {
             press.xpos = v.x;
@@ -552,7 +545,7 @@ fn dragSetTyped(
 ) Result {
     const v = value orelse {
         switch (option) {
-            .ref => event.drag_pin_set = false,
+            .ref => event.event_validation.drag_pin_set = false,
             .position => {
                 drag.xpos = 0;
                 drag.ypos = 0;
@@ -562,7 +555,7 @@ fn dragSetTyped(
                 &drag.word_boundary_codepoints,
             ),
             .rectangle => drag.rectangle = false,
-            .geometry => event.drag_geometry_set = false,
+            .geometry => event.event_validation.drag_geometry_set = false,
             .viewport => return .invalid_value,
 
             .repeat_distance,
@@ -577,7 +570,7 @@ fn dragSetTyped(
     switch (option) {
         .ref => {
             drag.pin = v.toPin() orelse return .invalid_value;
-            event.drag_pin_set = true;
+            event.event_validation.drag_pin_set = true;
         },
         .position => {
             drag.xpos = v.x;
@@ -591,7 +584,7 @@ fn dragSetTyped(
         .rectangle => drag.rectangle = v.*,
         .geometry => {
             drag.geometry = v.toZig() orelse return .invalid_value;
-            event.drag_geometry_set = true;
+            event.event_validation.drag_geometry_set = true;
         },
         .viewport => return .invalid_value,
 
@@ -613,7 +606,7 @@ fn autoscrollTickSetTyped(
 ) Result {
     const v = value orelse {
         switch (option) {
-            .viewport => event.autoscroll_tick_viewport_set = false,
+            .viewport => event.event_validation.autoscroll_tick_viewport_set = false,
             .position => {
                 tick.xpos = 0;
                 tick.ypos = 0;
@@ -623,7 +616,7 @@ fn autoscrollTickSetTyped(
                 &tick.word_boundary_codepoints,
             ),
             .rectangle => tick.rectangle = false,
-            .geometry => event.autoscroll_tick_geometry_set = false,
+            .geometry => event.event_validation.autoscroll_tick_geometry_set = false,
 
             .ref,
             .repeat_distance,
@@ -638,7 +631,7 @@ fn autoscrollTickSetTyped(
     switch (option) {
         .viewport => {
             tick.viewport = v.*;
-            event.autoscroll_tick_viewport_set = true;
+            event.event_validation.autoscroll_tick_viewport_set = true;
         },
         .position => {
             tick.xpos = v.x;
@@ -652,7 +645,7 @@ fn autoscrollTickSetTyped(
         .rectangle => tick.rectangle = v.*,
         .geometry => {
             tick.geometry = v.toZig() orelse return .invalid_value;
-            event.autoscroll_tick_geometry_set = true;
+            event.event_validation.autoscroll_tick_geometry_set = true;
         },
 
         .ref,
