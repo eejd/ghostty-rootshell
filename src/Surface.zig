@@ -3796,12 +3796,15 @@ pub fn mouseButtonCallback(
     }
 
     if (button == .left and action == .release) {
+        self.renderer_state.mutex.lock();
+        defer self.renderer_state.mutex.unlock();
+
         // Stop selection scrolling when releasing the left mouse button
         // but only when selection scrolling is active.
         if (self.selection_scroll_active) {
             self.queueIo(
                 .{ .selection_scroll = false },
-                .unlocked,
+                .locked,
             );
         }
 
@@ -3809,8 +3812,6 @@ pub fn mouseButtonCallback(
         // the left button is released. This is to avoid the clipboard
         // being updated on every mouse move which would be noisy.
         if (self.config.copy_on_select != .false) {
-            self.renderer_state.mutex.lock();
-            defer self.renderer_state.mutex.unlock();
             const prev_ = self.io.terminal.screens.active.selection;
             if (prev_) |prev| {
                 try self.setSelection(terminal.Selection.init(
@@ -3825,9 +3826,9 @@ pub fn mouseButtonCallback(
         // reporting or any other mouse handling because a successfully
         // clicked link will swallow the event.
         if (self.mouse.over_link) {
+            // We are holding the renderer lock, but this should just be
+            // a cached value.
             const pos = try self.rt_surface.getCursorPos();
-            self.renderer_state.mutex.lock();
-            defer self.renderer_state.mutex.unlock();
             if (self.processLinks(pos)) |processed| {
                 if (processed) return true;
             } else |err| {
@@ -4105,9 +4106,8 @@ pub fn mouseButtonCallback(
     return false;
 }
 
+/// Requires the renderer state mutex is held.
 fn maybePromptClick(self: *Surface) !bool {
-    self.renderer_state.mutex.lock();
-    defer self.renderer_state.mutex.unlock();
     const t: *terminal.Terminal = self.renderer_state.terminal;
     const screen: *terminal.Screen = t.screens.active;
 
