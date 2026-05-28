@@ -1237,6 +1237,13 @@ pub const Window = extern struct {
     fn dispose(self: *Self) callconv(.c) void {
         const priv = self.private();
 
+        if (priv.timeout) |v| {
+            if (glib.Source.remove(v) == 0) {
+                log.warn("unable to remove timeout source", .{});
+            }
+            priv.timeout = null;
+        }
+
         priv.command_palette.set(null);
 
         if (priv.config) |v| {
