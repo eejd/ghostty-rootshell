@@ -466,6 +466,7 @@ pub const RowCellsData = enum(c_int) {
     bg_color = 5,
     fg_color = 6,
     selected = 7,
+    has_styling = 8,
 
     /// Output type expected for querying the data of the given kind.
     pub fn OutType(comptime self: RowCellsData) type {
@@ -476,7 +477,7 @@ pub const RowCellsData = enum(c_int) {
             .graphemes_len => u32,
             .graphemes_buf => u32,
             .bg_color, .fg_color => colorpkg.RGB.C,
-            .selected => bool,
+            .selected, .has_styling => bool,
         };
     }
 };
@@ -571,6 +572,7 @@ fn rowCellsGetTyped(
             x >= sel[0] and x <= sel[1]
         else
             false,
+        .has_styling => out.* = cell.hasStyling(),
     }
 
     return .success;
@@ -1191,6 +1193,67 @@ test "render: row cells get selected" {
     try testing.expectEqual(Result.success, row_cells_get_multi(cells, keys.len, &keys, &values, &written));
     try testing.expectEqual(keys.len, written);
     try testing.expect(selected);
+}
+
+test "render: row cells get has_styling" {
+    var terminal: terminal_c.Terminal = null;
+    try testing.expectEqual(Result.success, terminal_c.new(
+        &lib.alloc.test_allocator,
+        &terminal,
+        .{
+            .cols = 10,
+            .rows = 3,
+            .max_scrollback = 10_000,
+        },
+    ));
+    defer terminal_c.free(terminal);
+
+    const input = "A\x1b[31mB";
+    terminal_c.vt_write(terminal, input, input.len);
+
+    var state: RenderState = null;
+    try testing.expectEqual(Result.success, new(
+        &lib.alloc.test_allocator,
+        &state,
+    ));
+    defer free(state);
+
+    try testing.expectEqual(Result.success, update(state, terminal));
+
+    var it: RowIterator = null;
+    try testing.expectEqual(Result.success, row_iterator_new(
+        &lib.alloc.test_allocator,
+        &it,
+    ));
+    defer row_iterator_free(it);
+
+    var cells: RowCells = null;
+    try testing.expectEqual(Result.success, row_cells_new(
+        &lib.alloc.test_allocator,
+        &cells,
+    ));
+    defer row_cells_free(cells);
+
+    try testing.expectEqual(Result.success, get(state, .row_iterator, @ptrCast(&it)));
+    try testing.expect(row_iterator_next(it));
+    try testing.expectEqual(Result.success, row_get(it, .cells, @ptrCast(&cells)));
+
+    var has_styling = true;
+    try testing.expectEqual(Result.success, row_cells_select(cells, 0));
+    try testing.expectEqual(Result.success, row_cells_get(cells, .has_styling, @ptrCast(&has_styling)));
+    try testing.expect(!has_styling);
+
+    try testing.expectEqual(Result.success, row_cells_select(cells, 1));
+    try testing.expectEqual(Result.success, row_cells_get(cells, .has_styling, @ptrCast(&has_styling)));
+    try testing.expect(has_styling);
+
+    has_styling = false;
+    var written: usize = 0;
+    const keys = [_]RowCellsData{.has_styling};
+    var values = [_]?*anyopaque{@ptrCast(&has_styling)};
+    try testing.expectEqual(Result.success, row_cells_get_multi(cells, keys.len, &keys, &values, &written));
+    try testing.expectEqual(keys.len, written);
+    try testing.expect(has_styling);
 }
 
 test "render: row iterator next" {
