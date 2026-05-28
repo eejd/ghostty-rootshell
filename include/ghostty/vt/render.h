@@ -607,6 +607,13 @@ typedef enum GHOSTTY_ENUM_TYPED {
    *  GHOSTTY_RENDER_STATE_ROW_DATA_SELECTION once per row and applying that
    *  range directly, avoiding one C API call per cell for selection state. */
   GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_SELECTED = 7,
+
+  /** Whether the cell has any explicit styling (bool).
+   *  This is equivalent to querying the raw cell's
+   *  GHOSTTY_CELL_DATA_HAS_STYLING value, but avoids materializing the raw
+   *  GhosttyCell for renderers that only need to know whether fetching the
+   *  full style is necessary. */
+  GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_HAS_STYLING = 8,
   GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
 } GhosttyRenderStateRowCellsData;
 
