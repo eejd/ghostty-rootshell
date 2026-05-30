@@ -1990,8 +1990,13 @@ pub fn dumpTextLocked(
 
         // If our top-left pin is after the viewport, then we can't possibly
         // have this text be within the viewport.
-        const viewport_rows = @as(usize, self.io.terminal.screens.active.pages.rows) +
-            smooth_extra_rows;
+        const scrollbar = self.io.terminal.screens.active.pages.scrollbar();
+        const available_rows = scrollbar.total - scrollbar.offset;
+        const viewport_rows = @min(
+            @as(usize, self.io.terminal.screens.active.pages.rows) + smooth_extra_rows,
+            available_rows,
+        );
+        if (viewport_rows == 0) break :viewport null;
         const vp_br_pin = vp_br_pin: {
             var pin = vp_tl_pin.down(viewport_rows - 1) orelse {
                 // I don't think this is possible but I don't want to crash on

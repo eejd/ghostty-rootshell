@@ -265,7 +265,8 @@ pub const RenderState = struct {
         alloc: Allocator,
         t: *Terminal,
     ) Allocator.Error!void {
-        return self.updateExtraRows(alloc, t, 0);
+        const scrollbar = t.screens.active.pages.scrollbar();
+        return self.updateExtraRows(alloc, t, scrollbar, 0);
     }
 
     /// Update the render state to the latest terminal state, including extra
@@ -276,11 +277,11 @@ pub const RenderState = struct {
         self: *RenderState,
         alloc: Allocator,
         t: *Terminal,
+        scrollbar: PageList.Scrollbar,
         extra_rows: size.CellCountInt,
     ) Allocator.Error!void {
         const s: *Screen = t.screens.active;
         const viewport_pin = s.pages.getTopLeft(.viewport);
-        const scrollbar = s.pages.scrollbar();
         const available_rows: size.CellCountInt = @intCast(@min(
             scrollbar.total - scrollbar.offset,
             std.math.maxInt(size.CellCountInt),

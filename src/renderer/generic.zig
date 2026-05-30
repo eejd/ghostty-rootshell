@@ -1287,6 +1287,13 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
                 const smooth_scroll_y_px = @max(0, state.smooth_scroll_y_px);
 
+                // Get our scrollbar out of the terminal. We synchronize
+                // the scrollbar read with frame data updates because this
+                // naturally limits the number of calls to this method (it
+                // can be expensive) and also makes it so we don't need another
+                // cross-thread mailbox message within the IO path.
+                const scrollbar = state.terminal.screens.active.pages.scrollbar();
+
                 // Update our terminal state. If a render-only smooth scroll
                 // offset is active, include extra rows after the viewport.
                 //
@@ -1299,6 +1306,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 try self.terminal_state.updateExtraRows(
                     self.alloc,
                     state.terminal,
+                    scrollbar,
                     if (smooth_scroll_y_px > 0) 2 else 0,
                 );
 
@@ -1307,13 +1315,6 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 if (self.terminal_state.dirty != .false) {
                     state.terminal.flags.search_viewport_dirty = true;
                 }
-
-                // Get our scrollbar out of the terminal. We synchronize
-                // the scrollbar read with frame data updates because this
-                // naturally limits the number of calls to this method (it
-                // can be expensive) and also makes it so we don't need another
-                // cross-thread mailbox message within the IO path.
-                const scrollbar = state.terminal.screens.active.pages.scrollbar();
 
                 // Get our preedit state
                 const preedit: ?renderer.State.Preedit = preedit: {
