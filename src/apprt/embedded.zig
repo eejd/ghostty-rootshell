@@ -1352,9 +1352,14 @@ pub const CAPI = struct {
                 ),
             };
 
-            // Clamp our point to the screen bounds.
+            // Clamp our point to the screen bounds. Viewport exact points may
+            // target the smooth-scroll overscan rows that are visually rendered
+            // just past the integer viewport.
             const clamped_x = @min(self.x, screen.pages.cols -| 1);
-            const clamped_y = @min(self.y, screen.pages.rows -| 1);
+            const clamped_y = switch (tag) {
+                .viewport => @min(self.y, @as(u32, screen.pages.rows) + 1),
+                else => @min(self.y, screen.pages.rows -| 1),
+            };
 
             return switch (self.coord_tag) {
                 // Exact coordinates require a specific pin.

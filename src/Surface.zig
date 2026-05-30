@@ -678,7 +678,8 @@ pub fn init(
             errdefer io_pipe.deinit();
             break :blk .{ .pipe = io_pipe };
         } else if (comptime (builtin.os.tag == .ios and builtin.abi != .macabi) or
-            builtin.os.tag == .visionos) blk: {
+            builtin.os.tag == .visionos)
+        blk: {
             // iOS (non-Catalyst) and visionOS: auto-fallback to pipes (no PTY support)
             var io_pipe = try termio.Pipe.init(alloc, .{
                 .cwd = if (config.@"working-directory") |wd| wd.value() else null,
@@ -1223,13 +1224,13 @@ fn selectionScrollTick(self: *Surface) !void {
     if (self.mouse.left_click_count == 0) return;
 
     const pos = try self.rt_surface.getCursorPos();
-    const pos_vp = self.posToViewport(pos.x, pos.y);
     const delta: isize = if (pos.y < 0) -1 else 1;
 
     // We need our locked state for the remainder
     self.renderer_state.mutex.lock();
     defer self.renderer_state.mutex.unlock();
     const t: *terminal.Terminal = self.renderer_state.terminal;
+    const pos_vp = self.posToViewportLocked(pos.x, pos.y);
 
     // If our screen changed while this is happening, we stop our
     // selection scroll.
@@ -1973,6 +1974,11 @@ pub fn dumpTextLocked(
     });
     errdefer alloc.free(text);
 
+    const smooth_extra_rows: usize = if (self.renderer_state.smooth_scroll_y_px > 0)
+        2
+    else
+        0;
+
     // Calculate our viewport info if we can.
     const vp: ?Text.Viewport = viewport: {
         // If our bottom right pin is before the viewport, then we can't
@@ -1983,11 +1989,17 @@ pub fn dumpTextLocked(
 
         // If our top-left pin is after the viewport, then we can't possibly
         // have this text be within the viewport.
-        const vp_br_pin = self.io.terminal.screens.active.pages.getBottomRight(.viewport) orelse {
-            // I don't think this is possible but I don't want to crash on
-            // that assertion so let's just break out...
-            log.warn("viewport bottom-right pin not found, bug?", .{});
-            break :viewport null;
+        const viewport_rows = @as(usize, self.io.terminal.screens.active.pages.rows) +
+            smooth_extra_rows;
+        const vp_br_pin = vp_br_pin: {
+            var pin = vp_tl_pin.down(viewport_rows - 1) orelse {
+                // I don't think this is possible but I don't want to crash on
+                // that assertion so let's just break out...
+                log.warn("viewport bottom-right pin not found, bug?", .{});
+                break :viewport null;
+            };
+            pin.x = self.io.terminal.screens.active.pages.cols - 1;
+            break :vp_br_pin pin;
         };
         const tl_pin = sel.topLeft(self.io.terminal.screens.active);
         if (vp_br_pin.before(tl_pin)) break :viewport null;
@@ -2053,6 +2065,11 @@ pub fn dumpTextLocked(
 
             // Add padding
             y += @floatFromInt(self.size.padding.top);
+
+            // Smooth scrollback is a render-only translation that moves rows
+            // upward by this amount. Selection geometry is viewport UI data, so
+            // report the visual position rather than the unshifted grid row.
+            y -= @max(0, self.renderer_state.smooth_scroll_y_px);
 
             // Scale
             y /= content_scale.y;
@@ -2786,7 +2803,7 @@ pub fn keyCallback(
             defer self.renderer_state.mutex.unlock();
             self.mouseRefreshLinks(
                 pos,
-                self.posToViewport(pos.x, pos.y),
+                self.posToViewportLocked(pos.x, pos.y),
                 self.mouse.over_link,
             ) catch |err| {
                 log.warn("failed to refresh links err={}", .{err});
@@ -4029,7 +4046,7 @@ pub fn mouseButtonCallback(
 
         const pos = try self.rt_surface.getCursorPos();
         const pin = pin: {
-            const pt_viewport = self.posToViewport(pos.x, pos.y);
+            const pt_viewport = self.posToViewportLocked(pos.x, pos.y);
             const pin = screen.pages.pin(.{
                 .viewport = .{
                     .x = pt_viewport.x,
@@ -4181,7 +4198,7 @@ pub fn mouseButtonCallback(
         const screen: *terminal.Screen = self.renderer_state.terminal.screens.active;
         const pos = try self.rt_surface.getCursorPos();
         const pin = pin: {
-            const pt_viewport = self.posToViewport(pos.x, pos.y);
+            const pt_viewport = self.posToViewportLocked(pos.x, pos.y);
             const pin = screen.pages.pin(.{
                 .viewport = .{
                     .x = pt_viewport.x,
@@ -4309,7 +4326,7 @@ fn maybePromptClick(self: *Surface) !bool {
 
     // Get the pin for our mouse click.
     const pos = try self.rt_surface.getCursorPos();
-    const pos_vp = self.posToViewport(pos.x, pos.y);
+    const pos_vp = self.posToViewportLocked(pos.x, pos.y);
     const click_pin: terminal.Pin = pin: {
         const pin = screen.pages.pin(.{
             .viewport = .{
@@ -4420,7 +4437,7 @@ fn linkAtPos(
     // Convert our cursor position to a screen point.
     const screen: *terminal.Screen = self.renderer_state.terminal.screens.active;
     const mouse_pin: terminal.Pin = mouse_pin: {
-        const point = self.posToViewport(pos.x, pos.y);
+        const point = self.posToViewportLocked(pos.x, pos.y);
         const pin = screen.pages.pin(.{ .viewport = point }) orelse {
             log.warn("failed to get pin for clicked point", .{});
             return null;
@@ -4999,9 +5016,6 @@ pub fn cursorPosCallback(
     // Update our modifiers if they changed
     if (mods) |v| self.modsChanged(v);
 
-    // The mouse position in the viewport
-    const pos_vp = self.posToViewport(pos.x, pos.y);
-
     // We always reset the over link status because it will be reprocessed
     // below. But we need the old value to know if we need to undo mouse
     // shape changes.
@@ -5011,6 +5025,9 @@ pub fn cursorPosCallback(
     // We are reading/writing state for the remainder
     self.renderer_state.mutex.lock();
     defer self.renderer_state.mutex.unlock();
+
+    // The mouse position in the viewport.
+    const pos_vp = self.posToViewportLocked(pos.x, pos.y);
 
     // Stop selection scrolling when inside the viewport within a 1px buffer
     // for fullscreen windows, but only when selection scrolling is active.
@@ -5403,11 +5420,56 @@ pub fn colorSchemeCallback(self: *Surface, scheme: apprt.ColorScheme) !void {
     self.queueIo(.{ .color_scheme_report = .{ .force = false } }, .unlocked);
 }
 
+fn posToViewportWithSmoothOffset(
+    self: Surface,
+    xpos: f64,
+    ypos: f64,
+    smooth_scroll_y_px: f64,
+) terminal.point.Coordinate {
+    const grid = self.size.grid();
+    const smooth_offset = @max(0, smooth_scroll_y_px);
+    const screen_height: f64 = @floatFromInt(self.size.screen.height);
+    const apply_smooth_offset = smooth_offset > 0 and ypos >= 0 and ypos < screen_height;
+
+    const terminal_x = xpos - @as(f64, @floatFromInt(self.size.padding.left));
+    const terminal_y = ypos +
+        (if (apply_smooth_offset) smooth_offset else 0) -
+        @as(f64, @floatFromInt(self.size.padding.top));
+    const cell_width: f64 = @floatFromInt(self.size.cell.width);
+    const cell_height: f64 = @floatFromInt(self.size.cell.height);
+
+    const col: terminal.size.CellCountInt = col: {
+        const raw: terminal.size.CellCountInt = @intFromFloat(
+            @max(0, terminal_x) / cell_width,
+        );
+        break :col @min(raw, grid.columns - 1);
+    };
+    const row: u32 = row: {
+        const raw: u32 = @intFromFloat(@max(0, terminal_y) / cell_height);
+        const max_row: u32 = if (apply_smooth_offset)
+            @as(u32, grid.rows) + 1
+        else
+            @as(u32, grid.rows) - 1;
+        break :row @min(raw, max_row);
+    };
+
+    return .{ .x = col, .y = row };
+}
+
+/// Converts a surface coordinate to a viewport cell while accounting for
+/// render-only smooth scrollback translation.
+///
+/// Precondition: the renderer_state mutex must be held.
+fn posToViewportLocked(self: Surface, xpos: f64, ypos: f64) terminal.point.Coordinate {
+    return self.posToViewportWithSmoothOffset(
+        xpos,
+        ypos,
+        self.renderer_state.smooth_scroll_y_px,
+    );
+}
+
 pub fn posToViewport(self: Surface, xpos: f64, ypos: f64) terminal.point.Coordinate {
-    // Get our grid cell
-    const coord: rendererpkg.Coordinate = .{ .surface = .{ .x = xpos, .y = ypos } };
-    const grid = coord.convert(.grid, self.size).grid;
-    return .{ .x = grid.x, .y = grid.y };
+    return self.posToViewportWithSmoothOffset(xpos, ypos, 0);
 }
 
 /// Scroll to the bottom of the viewport.
