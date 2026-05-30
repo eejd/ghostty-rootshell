@@ -603,6 +603,7 @@ pub fn scrollViewport(
     self.renderer_state.mutex.lock();
     defer self.renderer_state.mutex.unlock();
     self.terminal.scrollViewport(scroll);
+    self.renderer_state.smooth_scroll_y_px = 0;
 }
 
 /// Jump the viewport to the prompt.

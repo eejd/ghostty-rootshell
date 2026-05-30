@@ -1244,6 +1244,7 @@ fn selectionScrollTick(self: *Surface) !void {
 
     // Scroll the viewport as required
     t.scrollViewport(.{ .delta = delta });
+    self.renderer_state.smooth_scroll_y_px = 0;
 
     // Next, trigger our drag behavior
     const pin = t.screens.active.pages.pin(.{
@@ -2903,7 +2904,10 @@ pub fn keyCallback(
             try self.setSelection(null);
         }
 
-        if (self.config.scroll_to_bottom.keystroke) self.io.terminal.scrollViewport(.bottom);
+        if (self.config.scroll_to_bottom.keystroke) {
+            self.io.terminal.scrollViewport(.bottom);
+            self.renderer_state.smooth_scroll_y_px = 0;
+        }
 
         try self.queueRender();
     }
@@ -5477,6 +5481,7 @@ pub fn posToViewport(self: Surface, xpos: f64, ypos: f64) terminal.point.Coordin
 /// Precondition: the render_state mutex must be held.
 fn scrollToBottom(self: *Surface) !void {
     self.io.terminal.scrollViewport(.{ .bottom = {} });
+    self.renderer_state.smooth_scroll_y_px = 0;
     try self.queueRender();
 }
 
@@ -5943,6 +5948,7 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
                 defer self.renderer_state.mutex.unlock();
                 const t: *terminal.Terminal = self.renderer_state.terminal;
                 t.screens.active.scroll(.{ .row = n });
+                self.renderer_state.smooth_scroll_y_px = 0;
             }
 
             try self.queueRender();
