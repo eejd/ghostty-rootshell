@@ -204,6 +204,9 @@ pub const Uniforms = extern struct {
     /// Size of a single cell in pixels, unscaled.
     cell_size: [2]f32 align(8),
 
+    /// Render-only vertical offset for smooth scrollback, in pixels.
+    smooth_scroll_offset: f32 align(4),
+
     /// Size of the grid in columns and rows.
     grid_size: [2]u16 align(4),
 

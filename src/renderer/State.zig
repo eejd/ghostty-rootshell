@@ -30,6 +30,12 @@ preedit: ?Preedit = null,
 /// need about the mouse.
 mouse: Mouse = .{},
 
+/// Render-only vertical scroll offset in pixels.
+///
+/// This is used by embedded frontends that provide native, pixel-precise
+/// scroll physics while the terminal viewport itself remains row-based.
+smooth_scroll_y_px: f64 = 0,
+
 pub const Mouse = struct {
     /// The point on the viewport where the mouse currently is. We use
     /// viewport points to avoid the complexity of mapping the mouse to

@@ -169,5 +169,17 @@ extension Ghostty {
                 ghostty_surface_binding_action(surface, cString, UInt(len - 1))
             }
         }
+
+        /// Set the render-only vertical scroll offset in pixels.
+        @MainActor
+        func setSmoothScrollOffset(_ offset: Double) {
+            ghostty_surface_set_smooth_scroll_offset(surface, offset)
+        }
+
+        /// Scroll to an absolute row and set the render-only vertical offset.
+        @MainActor
+        func scrollToRowSmooth(row: Int, offset: Double) {
+            ghostty_surface_scroll_to_row_smooth(surface, UInt(row), offset)
+        }
     }
 }

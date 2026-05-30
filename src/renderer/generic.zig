@@ -740,6 +740,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 .uniforms = .{
                     .projection_matrix = undefined,
                     .cell_size = undefined,
+                    .smooth_scroll_offset = 0,
                     .grid_size = undefined,
                     .grid_padding = undefined,
                     .screen_size = undefined,
@@ -1243,6 +1244,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 preedit: ?renderer.State.Preedit,
                 scrollbar: terminal.Scrollbar,
                 overlay_features: []const Overlay.Feature,
+                smooth_scroll_y_px: f64,
             };
 
             // Update all our data as tightly as possible within the mutex.
@@ -1283,8 +1285,16 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     state.terminal.scrollViewport(.bottom);
                 }
 
-                // Update our terminal state
-                try self.terminal_state.update(self.alloc, state.terminal);
+                const smooth_scroll_y_px = @max(0, state.smooth_scroll_y_px);
+
+                // Update our terminal state. If a render-only smooth scroll
+                // offset is active, include one extra row after the viewport
+                // so translating the grid upward doesn't reveal a blank strip.
+                try self.terminal_state.updateExtraRows(
+                    self.alloc,
+                    state.terminal,
+                    if (smooth_scroll_y_px > 0) 1 else 0,
+                );
 
                 // If our terminal state is dirty at all we need to redo
                 // the viewport search.
@@ -1360,8 +1370,11 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     .preedit = preedit,
                     .scrollbar = scrollbar,
                     .overlay_features = overlay_features,
+                    .smooth_scroll_y_px = smooth_scroll_y_px,
                 };
             };
+
+            self.uniforms.smooth_scroll_offset = @floatCast(critical.smooth_scroll_y_px);
 
             // Outside the critical area we can update our links to contain
             // our regex results.

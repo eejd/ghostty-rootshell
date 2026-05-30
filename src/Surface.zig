@@ -2488,6 +2488,35 @@ pub fn queueRender(self: *Surface) !void {
     try self.renderer_thread.wakeup.notify();
 }
 
+/// Set a render-only vertical scroll offset in pixels.
+pub fn setSmoothScrollOffset(self: *Surface, y_px: f64) !void {
+    const offset = if (std.math.isFinite(y_px)) @max(0, y_px) else 0;
+    {
+        self.renderer_state.mutex.lock();
+        defer self.renderer_state.mutex.unlock();
+
+        if (self.renderer_state.smooth_scroll_y_px == offset) return;
+        self.renderer_state.smooth_scroll_y_px = offset;
+    }
+
+    try self.queueRender();
+}
+
+/// Scroll to an absolute row and apply a render-only vertical offset in pixels.
+pub fn scrollToRowSmooth(self: *Surface, row: usize, y_px: f64) !void {
+    const offset = if (std.math.isFinite(y_px)) @max(0, y_px) else 0;
+    {
+        self.renderer_state.mutex.lock();
+        defer self.renderer_state.mutex.unlock();
+
+        const t: *terminal.Terminal = self.renderer_state.terminal;
+        t.screens.active.scroll(.{ .row = row });
+        self.renderer_state.smooth_scroll_y_px = offset;
+    }
+
+    try self.queueRender();
+}
+
 pub fn sizeCallback(self: *Surface, size: apprt.SurfaceSize) !void {
     // Crash metadata in case we crash in here
     crash.sentry.thread_state = self.crashThreadState();

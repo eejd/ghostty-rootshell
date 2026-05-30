@@ -25,6 +25,9 @@ class SurfaceScrollView: NSView {
     /// on the same row.
     private var lastSentRow: Int?
 
+    /// Last render-only smooth scroll offset sent to Ghostty.
+    private var lastSentSmoothScrollOffset: CGFloat = 0
+
     init(contentSize: CGSize, surfaceView: Ghostty.SurfaceView) {
         self.surfaceView = surfaceView
         // The scroll view is our outermost view that controls all our scrollbar
@@ -98,6 +101,7 @@ class SurfaceScrollView: NSView {
             object: scrollView,
             queue: .main
         ) { [weak self] _ in
+            self?.settleSmoothScroll()
             self?.isLiveScrolling = false
         })
 
@@ -234,6 +238,7 @@ class SurfaceScrollView: NSView {
                 // Track the current row position to avoid redundant movements when we
                 // move the scrollbar.
                 lastSentRow = Int(scrollbar.offset)
+                resetSmoothScrollOffset()
             }
         }
 
@@ -262,8 +267,8 @@ class SurfaceScrollView: NSView {
 
     /// Handles live scroll events (user actively dragging the scrollbar).
     ///
-    /// Converts the current scroll position to a row number and sends a `scroll_to_row` action
-    /// to the terminal core. Only sends actions when the row changes to avoid IPC spam.
+    /// Converts the current scroll position to a row number and render-only
+    /// pixel offset.
     private func handleLiveScroll() {
         // If our cell height is currently zero then we avoid a div by zero below
         // and just don't scroll (there's no where to scroll anyways). This can
@@ -275,14 +280,56 @@ class SurfaceScrollView: NSView {
         let visibleRect = scrollView.contentView.documentVisibleRect
         let documentHeight = documentView.frame.height
         let scrollOffset = documentHeight - visibleRect.origin.y - visibleRect.height
-        let row = Int(scrollOffset / cellHeight)
+        let clampedOffset = max(0, scrollOffset)
+        let row = max(0, Int(clampedOffset / cellHeight))
+        let smoothOffset = clampedOffset - CGFloat(row) * cellHeight
 
-        // Only send action if the row changed to avoid action spam
-        guard row != lastSentRow else { return }
+        applySmoothScroll(row: row, offset: smoothOffset)
+    }
+
+    private func applySmoothScroll(row: Int, offset: CGFloat) {
+        let cellHeight = surfaceView.cellSize.height
+        let normalized = max(0, min(offset, max(0, cellHeight - CGFloat.ulpOfOne)))
+        let rowChanged = row != lastSentRow
+        let offsetChanged: Bool
+        if normalized == 0 {
+            offsetChanged = lastSentSmoothScrollOffset != 0
+        } else {
+            offsetChanged = abs(normalized - lastSentSmoothScrollOffset) > 0.25
+        }
+
+        guard rowChanged || offsetChanged else { return }
+
         lastSentRow = row
+        lastSentSmoothScrollOffset = normalized
+        surfaceView.surfaceModel?.scrollToRowSmooth(row: row, offset: Double(normalized))
+    }
 
-        // Use the keybinding action to scroll.
-        _ = surfaceView.surfaceModel?.perform(action: "scroll_to_row:\(row)")
+    private func resetSmoothScrollOffset() {
+        guard lastSentSmoothScrollOffset != 0 else { return }
+        lastSentSmoothScrollOffset = 0
+        surfaceView.surfaceModel?.setSmoothScrollOffset(0)
+    }
+
+    private func settleSmoothScroll() {
+        guard lastSentSmoothScrollOffset != 0 else { return }
+        guard let row = lastSentRow else {
+            resetSmoothScrollOffset()
+            return
+        }
+
+        if lastSentSmoothScrollOffset >= surfaceView.cellSize.height / 2,
+           let scrollbar = surfaceView.scrollbar {
+            let maxRow = max(0, Int(scrollbar.total > scrollbar.len ? scrollbar.total - scrollbar.len : 0))
+            let settledRow = min(row + 1, maxRow)
+            lastSentRow = settledRow
+            lastSentSmoothScrollOffset = 0
+            surfaceView.surfaceModel?.scrollToRowSmooth(row: settledRow, offset: 0)
+            return
+        }
+
+        lastSentSmoothScrollOffset = 0
+        surfaceView.surfaceModel?.scrollToRowSmooth(row: row, offset: 0)
     }
 
     /// Handles scrollbar state updates from the terminal core.

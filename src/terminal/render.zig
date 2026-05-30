@@ -265,8 +265,27 @@ pub const RenderState = struct {
         alloc: Allocator,
         t: *Terminal,
     ) Allocator.Error!void {
+        return self.updateExtraRows(alloc, t, 0);
+    }
+
+    /// Update the render state to the latest terminal state, including extra
+    /// rows after the viewport when available. Extra rows are render-only and
+    /// are useful for pixel-offset scrolling; they do not change the terminal
+    /// grid dimensions.
+    pub fn updateExtraRows(
+        self: *RenderState,
+        alloc: Allocator,
+        t: *Terminal,
+        extra_rows: size.CellCountInt,
+    ) Allocator.Error!void {
         const s: *Screen = t.screens.active;
         const viewport_pin = s.pages.getTopLeft(.viewport);
+        const scrollbar = s.pages.scrollbar();
+        const available_rows: size.CellCountInt = @intCast(@min(
+            scrollbar.total - scrollbar.offset,
+            std.math.maxInt(size.CellCountInt),
+        ));
+        const render_rows = @min(s.pages.rows + extra_rows, available_rows);
         const redraw = redraw: {
             // If our screen key changed, we need to do a full rebuild
             // because our render state is viewport-specific.
@@ -289,7 +308,7 @@ pub const RenderState = struct {
             }
 
             // If our dimensions changed, we do a full rebuild.
-            if (self.rows != s.pages.rows or
+            if (self.rows != render_rows or
                 self.cols != s.pages.cols)
             {
                 break :redraw true;
@@ -304,7 +323,7 @@ pub const RenderState = struct {
         };
 
         // Always set our cheap fields, its more expensive to compare
-        self.rows = s.pages.rows;
+        self.rows = render_rows;
         self.cols = s.pages.cols;
         self.viewport_pin = viewport_pin;
         self.cursor.active = .{ .x = s.cursor.x, .y = s.cursor.y };
@@ -394,14 +413,15 @@ pub const RenderState = struct {
         var last_dirty_page: ?*page.Page = null;
 
         // Go through and setup our rows.
-        var row_it = s.pages.rowIterator(
-            .right_down,
-            .{ .viewport = .{} },
-            null,
-        );
+        // Start at the viewport top and keep walking down. The row count
+        // below bounds this to the visible viewport plus any render-only
+        // rows requested by the frontend.
+        var row_it = viewport_pin.rowIterator(.right_down, null);
         var y: size.CellCountInt = 0;
         var any_dirty: bool = false;
-        while (row_it.next()) |row_pin| : (y = y + 1) {
+        while (y < self.rows) : (y = y + 1) {
+            const row_pin = row_it.next() orelse break;
+
             // Find our cursor if we haven't found it yet. We do this even
             // if the row is not dirty because the cursor is unrelated.
             if (self.cursor.viewport == null and
