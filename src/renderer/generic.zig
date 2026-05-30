@@ -1288,12 +1288,18 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 const smooth_scroll_y_px = @max(0, state.smooth_scroll_y_px);
 
                 // Update our terminal state. If a render-only smooth scroll
-                // offset is active, include one extra row after the viewport
-                // so translating the grid upward doesn't reveal a blank strip.
+                // offset is active, include extra rows after the viewport.
+                //
+                // The physical viewport can be taller than the integer
+                // terminal grid by almost one cell. When that bottom slack is
+                // combined with a near-full smooth offset, the visible bottom
+                // edge can expose part of the second row past the integer
+                // viewport. Keep two rows so the bottom edge clips smoothly
+                // instead of snapping at font-size-dependent thresholds.
                 try self.terminal_state.updateExtraRows(
                     self.alloc,
                     state.terminal,
-                    if (smooth_scroll_y_px > 0) 1 else 0,
+                    if (smooth_scroll_y_px > 0) 2 else 0,
                 );
 
                 // If our terminal state is dirty at all we need to redo
