@@ -21,6 +21,14 @@ const log = std.log.scoped(.ios_display_link);
 /// NSRunLoopCommonModes constant from Foundation
 pub extern "c" const NSRunLoopCommonModes: *anyopaque;
 
+/// Mirror of Core Animation's `CAFrameRateRange` (three C `float`s). Passed by
+/// value to `-[CADisplayLink setPreferredFrameRateRange:]`.
+const CAFrameRateRange = extern struct {
+    minimum: f32,
+    maximum: f32,
+    preferred: f32,
+};
+
 /// Singleton subclass for the CADisplayLink target.
 var TargetClass: ?objc.Class = null;
 
@@ -236,6 +244,17 @@ pub const IOSDisplayLink = struct {
 
             // Retain the link since displayLinkWithTarget returns autoreleased
             const retained = new_link.retain();
+
+            // Opt into ProMotion. Without an explicit frame-rate range an
+            // iPhone caps the display link at 60Hz even when the app sets
+            // `CADisableMinimumFrameDurationOnPhone` (iPad runs the same link
+            // at 120Hz by default, hence the iPhone-only stutter). The system
+            // clamps this range to the panel's real maximum, so hardcoding
+            // 120 is safe on 60Hz iPhones and 90Hz visionOS alike. minimum=60
+            // lets Core Animation settle to a steady 60 when content is static.
+            const range: CAFrameRateRange = .{ .minimum = 60, .maximum = 120, .preferred = 120 };
+            retained.msgSend(void, objc.sel("setPreferredFrameRateRange:"), .{range});
+
             self.link = retained;
             break :link retained;
         };
