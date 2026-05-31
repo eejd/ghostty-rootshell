@@ -5272,6 +5272,84 @@ fn dragLeftClickSingle(
     ));
 }
 
+/// Begin a touch selection-handle drag. Anchors a left-button selection drag at
+/// the endpoint of the current selection OPPOSITE the handle being dragged, so
+/// that subsequent cursorPosCallback drags (driven by mouse_pos events) extend
+/// or contract the selection from that fixed endpoint. Because this reuses the
+/// native mouse-selection path it inherits smooth-scroll-correct hit-testing
+/// and auto-scroll past the viewport edge for free. The drag is ended by the
+/// normal left-button release.
+///
+/// Returns false if there is no active selection to drag.
+pub fn beginSelectionHandleDrag(self: *Surface, dragging_start: bool) bool {
+    self.renderer_state.mutex.lock();
+    defer self.renderer_state.mutex.unlock();
+
+    const t: *terminal.Terminal = self.renderer_state.terminal;
+    const screen: *terminal.Screen = t.screens.active;
+    const sel = screen.selection orelse return false;
+
+    // Keep the endpoint opposite the dragged handle fixed. The handles are
+    // placed in SCREEN order (the leading handle sits at the selection's
+    // top-left, the trailing handle at its bottom-right), so we must anchor by
+    // topLeft/bottomRight too — sel.start()/end() are storage order and would
+    // anchor at the wrong (or the same) endpoint for a reverse-ordered
+    // selection, collapsing the drag.
+    const fixed_pin = if (dragging_start)
+        sel.bottomRight(screen)
+    else
+        sel.topLeft(screen);
+    const tracked = screen.pages.trackPin(fixed_pin) catch return false;
+
+    // Replace any previous click anchor.
+    if (self.mouse.left_click_pin) |prev| {
+        if (t.screens.get(self.mouse.left_click_screen)) |s| s.pages.untrackPin(prev);
+    }
+    self.mouse.left_click_pin = tracked;
+    self.mouse.left_click_screen = t.screens.active_key;
+    self.mouse.left_click_count = 1;
+    self.mouse.click_state[@intCast(@intFromEnum(input.MouseButton.left))] = .press;
+
+    // Anchor the click-x at the outer edge of the fixed cell so that cell stays
+    // included for the natural drag direction: right edge when the fixed point is
+    // the selection's bottom-right (dragging the leading handle), left edge when
+    // it is the top-left (dragging the trailing handle). (pin.x equals the grid
+    // column on the active full-width screen.)
+    const cell_w: u32 = self.size.cell.width;
+    const edge: u32 = if (dragging_start) cell_w -| 1 else 0;
+    self.mouse.left_click_xpos = @floatFromInt(
+        self.size.padding.left + @as(u32, fixed_pin.x) * cell_w + edge,
+    );
+    self.mouse.left_click_ypos = 0;
+
+    return true;
+}
+
+/// Report whether each endpoint of the current selection currently falls within
+/// the viewport. This lets a touch UI show only the handle(s) for the visible
+/// endpoint(s) of a selection that spans more than one screen (the geometry from
+/// read_selection clamps off-screen endpoints to the viewport edge and so can't
+/// distinguish them on its own). Returns false if there is no active selection.
+pub fn selectionViewportVisibility(
+    self: *Surface,
+    start_visible: *bool,
+    end_visible: *bool,
+) bool {
+    self.renderer_state.mutex.lock();
+    defer self.renderer_state.mutex.unlock();
+
+    const screen = self.renderer_state.terminal.screens.active;
+    const sel = screen.selection orelse return false;
+
+    // pointFromPin(.viewport, ...) returns null when the pin is outside the
+    // viewport (above or below) — exactly the case where read_selection clamps
+    // that endpoint to the viewport edge.
+    start_visible.* = screen.pages.pointFromPin(.viewport, sel.topLeft(screen)) != null;
+    end_visible.* = screen.pages.pointFromPin(.viewport, sel.bottomRight(screen)) != null;
+
+    return true;
+}
+
 /// Calculates the appropriate selection given pins and pixel x positions for
 /// the click point and the drag point, as well as mouse mods and screen size.
 fn mouseSelection(

@@ -1746,6 +1746,27 @@ pub const CAPI = struct {
         };
     }
 
+    /// Begin a touch selection-handle drag anchored at the fixed (opposite)
+    /// endpoint of the current selection. Subsequent ghostty_surface_mouse_pos
+    /// calls extend the selection from that endpoint; a left-button release ends
+    /// the drag. Returns false if there is no active selection.
+    export fn ghostty_surface_selection_handle_drag_begin(
+        surface: *Surface,
+        dragging_start: bool,
+    ) bool {
+        return surface.core_surface.beginSelectionHandleDrag(dragging_start);
+    }
+
+    /// Report whether each endpoint of the current selection is within the
+    /// viewport, so a touch UI can show only the visible endpoint's handle.
+    export fn ghostty_surface_selection_viewport_visibility(
+        surface: *Surface,
+        start_visible: *bool,
+        end_visible: *bool,
+    ) bool {
+        return surface.core_surface.selectionViewportVisibility(start_visible, end_visible);
+    }
+
     /// Tell the surface that it needs to schedule a render
     /// call as soon as possible (NOW if possible).
     export fn ghostty_surface_draw(surface: *Surface) void {
