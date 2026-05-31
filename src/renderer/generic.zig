@@ -1384,7 +1384,15 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 };
             };
 
-            self.uniforms.smooth_scroll_offset = @floatCast(critical.smooth_scroll_y_px);
+            // Snap the smooth-scroll offset to a whole device pixel. The cell
+            // text shader samples the glyph atlas with nearest-neighbor
+            // filtering, so a fractional offset makes glyph-edge rows shimmer
+            // ("sparkle") as the value slides between texels frame to frame.
+            // Rounding keeps every frame pixel-aligned the way native platform
+            // scrolling renders, while staying smooth: one device pixel is well
+            // under a point at @2x/@3x. All three offset consumers (text, bg,
+            // image) read this single uniform, so they stay aligned.
+            self.uniforms.smooth_scroll_offset = @round(@as(f32, @floatCast(critical.smooth_scroll_y_px)));
 
             // Outside the critical area we can update our links to contain
             // our regex results.
