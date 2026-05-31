@@ -243,6 +243,8 @@ pub const StreamHandler = struct {
             .erase_display_above => self.terminal.eraseDisplay(.above, value),
             .erase_display_complete => {
                 self.terminal.scrollViewport(.{ .bottom = {} });
+                self.renderer_state.smooth_scroll_y_px = 0;
+                self.renderer_state.smooth_scroll_active = false;
                 self.terminal.eraseDisplay(.complete, value);
             },
             .erase_display_scrollback => self.terminal.eraseDisplay(.scrollback, value),

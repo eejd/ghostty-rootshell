@@ -36,6 +36,11 @@ mouse: Mouse = .{},
 /// scroll physics while the terminal viewport itself remains row-based.
 smooth_scroll_y_px: f64 = 0,
 
+/// True when a frontend is driving pixel-precise scrollback. This is separate
+/// from the pixel offset so exact row boundaries can still render the bottom
+/// overscan rows needed for a continuous viewport.
+smooth_scroll_active: bool = false,
+
 pub const Mouse = struct {
     /// The point on the viewport where the mouse currently is. We use
     /// viewport points to avoid the complexity of mapping the mouse to

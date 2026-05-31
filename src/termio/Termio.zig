@@ -604,6 +604,7 @@ pub fn scrollViewport(
     defer self.renderer_state.mutex.unlock();
     self.terminal.scrollViewport(scroll);
     self.renderer_state.smooth_scroll_y_px = 0;
+    self.renderer_state.smooth_scroll_active = false;
 }
 
 /// Jump the viewport to the prompt.
@@ -612,6 +613,8 @@ pub fn jumpToPrompt(self: *Termio, delta: isize) !void {
         self.renderer_state.mutex.lock();
         defer self.renderer_state.mutex.unlock();
         self.terminal.screens.active.scroll(.{ .delta_prompt = delta });
+        self.renderer_state.smooth_scroll_y_px = 0;
+        self.renderer_state.smooth_scroll_active = false;
     }
 
     try self.renderer_wakeup.notify();

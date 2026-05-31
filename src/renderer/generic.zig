@@ -1283,9 +1283,12 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
                     // Scroll
                     state.terminal.scrollViewport(.bottom);
+                    state.smooth_scroll_y_px = 0;
+                    state.smooth_scroll_active = false;
                 }
 
                 const smooth_scroll_y_px = @max(0, state.smooth_scroll_y_px);
+                const smooth_scroll_active = state.smooth_scroll_active;
 
                 // Get our scrollbar out of the terminal. We synchronize
                 // the scrollbar read with frame data updates because this
@@ -1307,7 +1310,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     self.alloc,
                     state.terminal,
                     scrollbar,
-                    if (smooth_scroll_y_px > 0) 2 else 0,
+                    if (smooth_scroll_active) 2 else 0,
                 );
 
                 // If our terminal state is dirty at all we need to redo

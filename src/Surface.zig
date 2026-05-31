@@ -1245,6 +1245,7 @@ fn selectionScrollTick(self: *Surface) !void {
     // Scroll the viewport as required
     t.scrollViewport(.{ .delta = delta });
     self.renderer_state.smooth_scroll_y_px = 0;
+    self.renderer_state.smooth_scroll_active = false;
 
     // Next, trigger our drag behavior
     const pin = t.screens.active.pages.pin(.{
@@ -1975,7 +1976,7 @@ pub fn dumpTextLocked(
     });
     errdefer alloc.free(text);
 
-    const smooth_extra_rows: usize = if (self.renderer_state.smooth_scroll_y_px > 0)
+    const smooth_extra_rows: usize = if (self.renderer_state.smooth_scroll_active)
         2
     else
         0;
@@ -2518,8 +2519,12 @@ pub fn setSmoothScrollOffset(self: *Surface, y_px: f64) !void {
         self.renderer_state.mutex.lock();
         defer self.renderer_state.mutex.unlock();
 
-        if (self.renderer_state.smooth_scroll_y_px == offset) return;
+        const active = offset > 0;
+        if (self.renderer_state.smooth_scroll_y_px == offset and
+            self.renderer_state.smooth_scroll_active == active) return;
+
         self.renderer_state.smooth_scroll_y_px = offset;
+        self.renderer_state.smooth_scroll_active = active;
     }
 
     try self.queueRender();
@@ -2535,6 +2540,9 @@ pub fn scrollToRowSmooth(self: *Surface, row: usize, y_px: f64) !void {
         const t: *terminal.Terminal = self.renderer_state.terminal;
         t.screens.active.scroll(.{ .row = row });
         self.renderer_state.smooth_scroll_y_px = offset;
+        const scrollbar = t.screens.active.pages.scrollbar();
+        self.renderer_state.smooth_scroll_active =
+            offset > 0 or scrollbar.offset + scrollbar.len < scrollbar.total;
     }
 
     try self.queueRender();
@@ -2912,6 +2920,7 @@ pub fn keyCallback(
         if (self.config.scroll_to_bottom.keystroke) {
             self.io.terminal.scrollViewport(.bottom);
             self.renderer_state.smooth_scroll_y_px = 0;
+            self.renderer_state.smooth_scroll_active = false;
         }
 
         try self.queueRender();
@@ -3730,6 +3739,8 @@ pub fn scrollCallback(
             // rendering. We have to switch signs here because our delta
             // is negative down but our viewport is positive down.
             self.io.terminal.scrollViewport(.{ .delta = y.delta * -1 });
+            self.renderer_state.smooth_scroll_y_px = 0;
+            self.renderer_state.smooth_scroll_active = false;
         }
     }
 
@@ -5434,11 +5445,12 @@ fn posToViewportWithSmoothOffset(
     xpos: f64,
     ypos: f64,
     smooth_scroll_y_px: f64,
+    smooth_scroll_active: bool,
 ) terminal.point.Coordinate {
     const grid = self.size.grid();
     const smooth_offset = @max(0, smooth_scroll_y_px);
     const screen_height: f64 = @floatFromInt(self.size.screen.height);
-    const apply_smooth_offset = smooth_offset > 0 and ypos >= 0 and ypos < screen_height;
+    const apply_smooth_offset = smooth_scroll_active and ypos >= 0 and ypos < screen_height;
 
     const terminal_x = xpos - @as(f64, @floatFromInt(self.size.padding.left));
     const terminal_y = ypos +
@@ -5474,11 +5486,12 @@ fn posToViewportLocked(self: Surface, xpos: f64, ypos: f64) terminal.point.Coord
         xpos,
         ypos,
         self.renderer_state.smooth_scroll_y_px,
+        self.renderer_state.smooth_scroll_active,
     );
 }
 
 pub fn posToViewport(self: Surface, xpos: f64, ypos: f64) terminal.point.Coordinate {
-    return self.posToViewportWithSmoothOffset(xpos, ypos, 0);
+    return self.posToViewportWithSmoothOffset(xpos, ypos, 0, false);
 }
 
 /// Scroll to the bottom of the viewport.
@@ -5487,6 +5500,7 @@ pub fn posToViewport(self: Surface, xpos: f64, ypos: f64) terminal.point.Coordin
 fn scrollToBottom(self: *Surface) !void {
     self.io.terminal.scrollViewport(.{ .bottom = {} });
     self.renderer_state.smooth_scroll_y_px = 0;
+    self.renderer_state.smooth_scroll_active = false;
     try self.queueRender();
 }
 
@@ -5639,6 +5653,8 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             self.renderer_state.mutex.lock();
             defer self.renderer_state.mutex.unlock();
             self.renderer_state.terminal.fullReset();
+            self.renderer_state.smooth_scroll_y_px = 0;
+            self.renderer_state.smooth_scroll_active = false;
         },
 
         .start_search => {
@@ -5954,6 +5970,7 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
                 const t: *terminal.Terminal = self.renderer_state.terminal;
                 t.screens.active.scroll(.{ .row = n });
                 self.renderer_state.smooth_scroll_y_px = 0;
+                self.renderer_state.smooth_scroll_active = false;
             }
 
             try self.queueRender();
@@ -5966,6 +5983,8 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
                 const sel = self.io.terminal.screens.active.selection orelse return false;
                 const tl = sel.topLeft(self.io.terminal.screens.active);
                 self.io.terminal.screens.active.scroll(.{ .pin = tl });
+                self.renderer_state.smooth_scroll_y_px = 0;
+                self.renderer_state.smooth_scroll_active = false;
             }
 
             try self.queueRender();
