@@ -5190,7 +5190,13 @@ pub fn cursorPosCallback(
         // scroll even in full screen windows.
         // Note: one day, we can change this from distance to time based if we want.
         //log.warn("CURSOR POS: {} {}", .{ pos, self.size.screen });
-        const max_y: f32 = @floatFromInt(self.size.screen.height);
+        // The bottom inset (e.g. the iOS home-indicator safe-area strip) is
+        // reserved as bottom padding, so the visible grid ends at
+        // screen.height - bottom_inset_px, not at the drawable's bottom edge.
+        // Use that as the auto-scroll trigger so dragging a selection to the
+        // bottom of the *visible* grid still extends past the viewport, rather
+        // than requiring the finger to reach into the reserved strip below.
+        const max_y: f32 = @floatFromInt(self.size.screen.height -| self.bottom_inset_px);
 
         // If the mouse is outside the viewport and we have the left
         // mouse button pressed then we need to start the scroll timer.
