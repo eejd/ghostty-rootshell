@@ -1,6 +1,11 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
+const Glyf = @import("../../../font/opentype/glyf.zig").Glyf;
+
+/// Maximum decoded glyph payload size accepted by the protocol.
+/// This is documented in the spec.
+const max_payload_size = 64 * 1024; // 64 KiB
 
 /// Stateful parser for a single glyph APC payload after the `25a1;` prefix.
 pub const CommandParser = struct {
@@ -240,6 +245,65 @@ pub const Request = union(enum) {
                 ""
             else
                 self.raw[self.payload_idx + 1 ..];
+        }
+
+        /// Errors that can occur while decoding a register glyph payload.
+        pub const DecodeError = Allocator.Error || error{
+            /// The decoded payload exceeds the protocol limit.
+            PayloadTooLarge,
+
+            /// The payload could not be decoded or parsed as the declared format.
+            MalformedPayload,
+
+            /// The glyf payload is composite, which the protocol forbids.
+            CompositeUnsupported,
+
+            /// The glyf payload contains hinting instructions, which the
+            /// protocol forbids.
+            HintingUnsupported,
+        };
+
+        /// Decode this request's base64 glyf payload into an owned outline.
+        pub fn decodeGlyfPayload(self: Register, alloc: Allocator) DecodeError!Glyf.Outline {
+            // Prep base64 decoding, initial validation.
+            const Decoder = std.base64.standard.Decoder;
+            const payload_bytes = self.payload();
+            const size = Decoder.calcSizeForSlice(payload_bytes) catch
+                return error.MalformedPayload;
+            if (size > max_payload_size) return error.PayloadTooLarge;
+
+            // Max payload size is reasonable for stack and its likely
+            // we'll have stack space. We don't use much stack space in
+            // the future function calls either, so try a stack allocator
+            // here and fallback to heap as necessary.
+            var data_stack = std.heap.stackFallback(
+                max_payload_size,
+                alloc,
+            );
+            const data_alloc = data_stack.get();
+            const data = try data_alloc.alloc(u8, size);
+            defer data_alloc.free(data);
+
+            // Base64 decode
+            Decoder.decode(data, payload_bytes) catch
+                return error.MalformedPayload;
+
+            // Glyf.Entry borrows from `data`, but only for the duration of the
+            // decode call below. Glyf.Entry.decode returns an owned Outline, so
+            // it is safe to free `data` before returning that outline.
+            const glyf_entry = Glyf.Entry.init(data) catch return error.MalformedPayload;
+            return glyf_entry.decode(alloc) catch |err| switch (err) {
+                error.OutOfMemory => error.OutOfMemory,
+                // Unsupported fields
+                error.CompositeNotSupported => error.CompositeUnsupported,
+                error.InstructionsNotSupported => error.HintingUnsupported,
+                // Various semantic issues
+                error.EndOfStream,
+                error.EndPointsOutOfOrder,
+                error.TooManyPoints,
+                error.CoordinateOverflow,
+                => error.MalformedPayload,
+            };
         }
 
         /// Return the raw option portion of a valid register command.
@@ -688,6 +752,28 @@ test "register command with invalid payload" {
     try testing.expectEqual(@as(u21, 0xE0A0), cmd.register.get(.cp).?);
     try testing.expectEqual(Format.glyf, cmd.register.get(.fmt).?);
     try testing.expectEqualStrings("%%%not-base64%%%", cmd.register.payload());
+}
+
+test "register decodes glyf payload" {
+    const testing = std.testing;
+
+    var cmd = try testParse(testing.allocator, "r;cp=e0a0;AAAAAAAAAAAAAA==");
+    defer cmd.deinit(testing.allocator);
+
+    var outline = try cmd.register.decodeGlyfPayload(testing.allocator);
+    defer outline.deinit(testing.allocator);
+
+    try testing.expectEqual(@as(usize, 0), outline.points.len);
+    try testing.expectEqual(@as(usize, 0), outline.contours.len);
+}
+
+test "register rejects malformed glyf payload" {
+    const testing = std.testing;
+
+    var cmd = try testParse(testing.allocator, "r;cp=e0a0;%%%not-base64%%%");
+    defer cmd.deinit(testing.allocator);
+
+    try testing.expectError(error.MalformedPayload, cmd.register.decodeGlyfPayload(testing.allocator));
 }
 
 test "register response without payload" {
