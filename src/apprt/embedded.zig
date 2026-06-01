@@ -1735,6 +1735,16 @@ pub const CAPI = struct {
         };
     }
 
+    /// Set a render-only signed rubber-band offset in pixels.
+    export fn ghostty_surface_set_rubber_band_offset(
+        surface: *Surface,
+        y_px: f64,
+    ) void {
+        surface.core_surface.setRubberBandOffset(y_px) catch |err| {
+            log.err("error setting rubber-band offset err={}", .{err});
+        };
+    }
+
     /// Scroll to an absolute row and apply a render-only offset in pixels.
     export fn ghostty_surface_scroll_to_row_smooth(
         surface: *Surface,

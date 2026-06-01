@@ -1245,6 +1245,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 scrollbar: terminal.Scrollbar,
                 overlay_features: []const Overlay.Feature,
                 smooth_scroll_y_px: f64,
+                rubber_band_y_px: f64,
             };
 
             // Update all our data as tightly as possible within the mutex.
@@ -1289,6 +1290,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
                 const smooth_scroll_y_px = @max(0, state.smooth_scroll_y_px);
                 const smooth_scroll_active = state.smooth_scroll_active;
+                const rubber_band_y_px = state.rubber_band_y_px;
 
                 // Get our scrollbar out of the terminal. We synchronize
                 // the scrollbar read with frame data updates because this
@@ -1403,6 +1405,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     .scrollbar = scrollbar,
                     .overlay_features = overlay_features,
                     .smooth_scroll_y_px = smooth_scroll_y_px,
+                    .rubber_band_y_px = rubber_band_y_px,
                 };
             };
 
@@ -1414,7 +1417,8 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             // scrolling renders, while staying smooth: one device pixel is well
             // under a point at @2x/@3x. All three offset consumers (text, bg,
             // image) read this single uniform, so they stay aligned.
-            self.uniforms.smooth_scroll_offset = @round(@as(f32, @floatCast(critical.smooth_scroll_y_px)));
+            const visual_y_px = critical.smooth_scroll_y_px - critical.rubber_band_y_px;
+            self.uniforms.smooth_scroll_offset = @round(@as(f32, @floatCast(visual_y_px)));
 
             // Outside the critical area we can update our links to contain
             // our regex results.

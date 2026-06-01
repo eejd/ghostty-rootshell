@@ -1111,6 +1111,7 @@ GHOSTTY_API bool ghostty_surface_process_exited(ghostty_surface_t);
 GHOSTTY_API void ghostty_surface_refresh(ghostty_surface_t);
 GHOSTTY_API void ghostty_surface_draw(ghostty_surface_t);
 GHOSTTY_API void ghostty_surface_set_smooth_scroll_offset(ghostty_surface_t, double);
+GHOSTTY_API void ghostty_surface_set_rubber_band_offset(ghostty_surface_t, double);
 GHOSTTY_API void ghostty_surface_scroll_to_row_smooth(ghostty_surface_t, uintptr_t, double);
 GHOSTTY_API void ghostty_surface_set_bottom_inset(ghostty_surface_t, double);
 GHOSTTY_API bool ghostty_surface_selection_handle_drag_begin(ghostty_surface_t, bool);

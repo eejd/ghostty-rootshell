@@ -41,6 +41,13 @@ smooth_scroll_y_px: f64 = 0,
 /// overscan rows needed for a continuous viewport.
 smooth_scroll_active: bool = false,
 
+/// Render-only signed vertical rubber-band offset in pixels.
+///
+/// This is separate from scrollback. Positive values shift rendered terminal
+/// contents down, negative values shift them up, while the surface itself still
+/// covers the full drawable and paints its normal background.
+rubber_band_y_px: f64 = 0,
+
 /// Runtime bottom inset in framebuffer pixels (e.g. the iOS home-indicator
 /// safe-area strip). The renderer scales the number of bottom overscan rows so
 /// they cover this reserved strip, letting scrollback fill it when the viewport

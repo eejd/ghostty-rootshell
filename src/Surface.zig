@@ -2536,6 +2536,24 @@ pub fn setSmoothScrollOffset(self: *Surface, y_px: f64) !void {
     try self.queueRender();
 }
 
+/// Set a render-only signed rubber-band offset in pixels.
+pub fn setRubberBandOffset(self: *Surface, y_px: f64) !void {
+    const offset = offset: {
+        if (!std.math.isFinite(y_px)) break :offset 0;
+        const max_abs: f64 = @floatFromInt(self.size.screen.height);
+        break :offset @min(@max(y_px, -max_abs), max_abs);
+    };
+    {
+        self.renderer_state.mutex.lock();
+        defer self.renderer_state.mutex.unlock();
+
+        if (self.renderer_state.rubber_band_y_px == offset) return;
+        self.renderer_state.rubber_band_y_px = offset;
+    }
+
+    try self.queueRender();
+}
+
 /// Scroll to an absolute row and apply a render-only vertical offset in pixels.
 pub fn scrollToRowSmooth(self: *Surface, row: usize, y_px: f64) !void {
     const offset = if (std.math.isFinite(y_px)) @max(0, y_px) else 0;
