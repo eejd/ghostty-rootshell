@@ -2544,11 +2544,42 @@ pub fn scrollToRowSmooth(self: *Surface, row: usize, y_px: f64) !void {
         defer self.renderer_state.mutex.unlock();
 
         const t: *terminal.Terminal = self.renderer_state.terminal;
-        t.screens.active.scroll(.{ .row = row });
-        self.renderer_state.smooth_scroll_y_px = offset;
-        const scrollbar = t.screens.active.pages.scrollbar();
-        self.renderer_state.smooth_scroll_active =
-            offset > 0 or scrollbar.offset + scrollbar.len < scrollbar.total;
+
+        // The maximum scrollable top row is the live bottom (the viewport
+        // showing the last `len` rows). The iOS scroll bridge encodes the exact
+        // bottom as (max_top - 1, one-full-cell offset), and rubber-band
+        // overscroll past the bottom keeps sending that. The pixel offset (px)
+        // and the cell height share units (both originate from size.cell), so we
+        // can recover the requested fractional top row and detect when it lands
+        // at or past the live bottom.
+        //
+        // When it does, treat it as fully bottomed-out: pin the viewport to the
+        // active area (the live bottom, which follows new output) with no render
+        // offset and smooth scroll inactive. That keeps the reserved bottom
+        // inset strip (the iOS home-indicator area) blank instead of flashing
+        // the prompt row into it as overscan while the user pushes into the
+        // bottom. We scroll to `.active` rather than `.{ .row = max_top }`
+        // because PageList.scroll treats `.row = 0` as `.top` (so with no
+        // scrollback, max_top == 0 would otherwise pin the top and stop the
+        // viewport from following live output). A fractional position strictly
+        // above the bottom is genuine scrollback and renders smoothly as before.
+        const pre = t.screens.active.pages.scrollbar();
+        const max_top: usize = if (pre.total > pre.len) pre.total - pre.len else 0;
+        const cell_h: f64 = @floatFromInt(self.size.cell.height);
+        const frac: f64 = if (cell_h > 0) offset / cell_h else 0;
+        const eff_top: f64 = @as(f64, @floatFromInt(row)) + frac;
+
+        if (eff_top + 1e-6 >= @as(f64, @floatFromInt(max_top))) {
+            t.screens.active.scroll(.active);
+            self.renderer_state.smooth_scroll_y_px = 0;
+            self.renderer_state.smooth_scroll_active = false;
+        } else {
+            t.screens.active.scroll(.{ .row = row });
+            self.renderer_state.smooth_scroll_y_px = offset;
+            const scrollbar = t.screens.active.pages.scrollbar();
+            self.renderer_state.smooth_scroll_active =
+                offset > 0 or scrollbar.offset + scrollbar.len < scrollbar.total;
+        }
     }
 
     try self.queueRender();
