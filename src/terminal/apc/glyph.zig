@@ -152,7 +152,13 @@ const std = @import("std");
 
 pub const request = @import("glyph/request.zig");
 pub const response = @import("glyph/response.zig");
+pub const execute = @import("glyph/execute.zig").execute;
 
 pub const CommandParser = request.CommandParser;
+pub const Glossary = @import("glyph/Glossary.zig");
 pub const Request = request.Request;
 pub const Response = response.Response;
+
+test {
+    std.testing.refAllDecls(@This());
+}

@@ -303,11 +303,11 @@ test "register reason names" {
     const testing = std.testing;
     const Reason = Response.Register.Reason;
 
-    try testing.expectEqualStrings("out_of_namespace", Reason.out_of_namespace.name());
-    try testing.expectEqualStrings("composite_unsupported", Reason.composite_unsupported.name());
-    try testing.expectEqualStrings("hinting_unsupported", Reason.hinting_unsupported.name());
-    try testing.expectEqualStrings("malformed_payload", Reason.malformed_payload.name());
-    try testing.expectEqualStrings("payload_too_large", Reason.payload_too_large.name());
+    try testing.expectEqualStrings("out_of_namespace", (Reason{ .out_of_namespace = {} }).name());
+    try testing.expectEqualStrings("composite_unsupported", (Reason{ .composite_unsupported = {} }).name());
+    try testing.expectEqualStrings("hinting_unsupported", (Reason{ .hinting_unsupported = {} }).name());
+    try testing.expectEqualStrings("malformed_payload", (Reason{ .malformed_payload = {} }).name());
+    try testing.expectEqualStrings("payload_too_large", (Reason{ .payload_too_large = {} }).name());
     try testing.expectEqualStrings("future_reason", (Reason{ .other = "future_reason" }).name());
 }
 
