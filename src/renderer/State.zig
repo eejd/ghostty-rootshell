@@ -41,6 +41,13 @@ smooth_scroll_y_px: f64 = 0,
 /// overscan rows needed for a continuous viewport.
 smooth_scroll_active: bool = false,
 
+/// Runtime bottom inset in framebuffer pixels (e.g. the iOS home-indicator
+/// safe-area strip). The renderer scales the number of bottom overscan rows so
+/// they cover this reserved strip, letting scrollback fill it when the viewport
+/// is scrolled off the bottom. Zero on platforms without a reserved bottom
+/// strip (desktop, macOS), which keeps the overscan at its default of two rows.
+bottom_inset_px: u32 = 0,
+
 pub const Mouse = struct {
     /// The point on the viewport where the mouse currently is. We use
     /// viewport points to avoid the complexity of mapping the mouse to

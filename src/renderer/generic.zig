@@ -1306,11 +1306,33 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 // edge can expose part of the second row past the integer
                 // viewport. Keep two rows so the bottom edge clips smoothly
                 // instead of snapping at font-size-dependent thresholds.
+                // Number of bottom overscan rows to render while scrolled off
+                // the bottom. Two is enough for the sub-cell remainder and smooth
+                // clipping on platforms with no reserved bottom strip. When a
+                // bottom inset is set (the iOS safe-area strip) we must cover the
+                // WHOLE blank region below the last grid row, not just the inset:
+                // that region is base window padding + inset + the sub-cell
+                // remainder, and the remainder changes with the surface height
+                // (e.g. hiding the tab bar in fullscreen makes the surface taller
+                // and shifts the remainder), so keying off the inset alone leaves
+                // the bottom row clipping mid-cell. Measure the region directly
+                // and add slack for the sub-cell smooth-scroll slide; extra rows
+                // past the drawable just clip, so over-provisioning is harmless.
+                const extra_rows: terminal.size.CellCountInt = rows: {
+                    if (!smooth_scroll_active) break :rows 0;
+                    const cell_h = self.size.cell.height;
+                    if (state.bottom_inset_px == 0 or cell_h == 0) break :rows 2;
+                    const grid_rows: u32 = self.size.grid().rows;
+                    const used = self.size.padding.top + grid_rows * cell_h;
+                    const bottom_region = self.size.screen.height -| used;
+                    const need: u32 = (bottom_region + cell_h - 1) / cell_h + 2;
+                    break :rows @intCast(@min(@max(need, 2), 255));
+                };
                 try self.terminal_state.updateExtraRows(
                     self.alloc,
                     state.terminal,
                     scrollbar,
-                    if (smooth_scroll_active) 2 else 0,
+                    extra_rows,
                 );
 
                 // If our terminal state is dirty at all we need to redo

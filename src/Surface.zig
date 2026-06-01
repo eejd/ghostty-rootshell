@@ -82,6 +82,12 @@ font_metrics: font.Metrics,
 /// a specific size.
 font_size_adjusted: bool,
 
+/// Runtime bottom inset in framebuffer pixels (e.g. the iOS home-indicator
+/// safe-area strip), applied as extra bottom padding so the grid stays
+/// top-aligned and shrinks from the bottom. Persisted here so a font/DPI
+/// padding recompute can re-apply it. Set via setBottomInset.
+bottom_inset_px: u32 = 0,
+
 /// The renderer for this surface.
 renderer: Renderer,
 
@@ -2548,6 +2554,41 @@ pub fn scrollToRowSmooth(self: *Surface, row: usize, y_px: f64) !void {
     try self.queueRender();
 }
 
+/// Reserve a bottom inset in framebuffer pixels at the bottom of the surface,
+/// e.g. the iOS home-indicator safe-area strip. The inset is applied as extra
+/// bottom padding so the terminal grid and the prompt stay where they are while
+/// the drawable extends past them; the reserved strip renders blank at rest and
+/// is filled by smooth-scroll overscan rows when the viewport is scrolled off
+/// the bottom. Only the unbalanced padding path is adjusted, which is the only
+/// mode iOS (the sole caller) uses.
+pub fn setBottomInset(self: *Surface, px: f64) !void {
+    const inset: u32 = if (std.math.isFinite(px))
+        @intFromFloat(@min(@max(@round(px), 0), 10000))
+    else
+        0;
+    if (self.bottom_inset_px == inset) return;
+    self.bottom_inset_px = inset;
+
+    {
+        self.renderer_state.mutex.lock();
+        defer self.renderer_state.mutex.unlock();
+        self.renderer_state.bottom_inset_px = inset;
+    }
+
+    if (self.config.window_padding_balance == .false) {
+        const content_scale = try self.rt_surface.getContentScale();
+        const x_dpi = content_scale.x * font.face.default_dpi;
+        const y_dpi = content_scale.y * font.face.default_dpi;
+        self.size.padding = self.config.scaledPadding(x_dpi, y_dpi);
+        self.size.padding.bottom += inset;
+    }
+
+    // Recompute the grid for the new padding and notify the IO thread, then
+    // schedule a render so the new overscan count takes effect.
+    try self.resize(self.size.screen);
+    try self.queueRender();
+}
+
 pub fn sizeCallback(self: *Surface, size: apprt.SurfaceSize) !void {
     // Crash metadata in case we crash in here
     crash.sentry.thread_state = self.crashThreadState();
@@ -3777,6 +3818,9 @@ pub fn contentScaleCallback(self: *Surface, content_scale: apprt.ContentScale) !
     // unbalanced padding since balanced padding is not dependent on DPI.
     if (self.config.window_padding_balance == .false) {
         self.size.padding = self.config.scaledPadding(x_dpi, y_dpi);
+        // Re-apply the runtime bottom inset (e.g. iOS safe-area) after the
+        // DPI-dependent padding recompute so a font/DPI change doesn't drop it.
+        self.size.padding.bottom += self.bottom_inset_px;
     }
 
     // Force a resize event because the change in padding will affect

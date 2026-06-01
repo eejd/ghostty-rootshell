@@ -1746,6 +1746,19 @@ pub const CAPI = struct {
         };
     }
 
+    /// Reserve a bottom inset in framebuffer pixels (e.g. the iOS home-indicator
+    /// safe-area strip). The grid and prompt stay put; the reserved strip renders
+    /// blank at rest and is filled by smooth-scroll overscan rows when scrolled
+    /// off the bottom. Pass 0 to clear.
+    export fn ghostty_surface_set_bottom_inset(
+        surface: *Surface,
+        px: f64,
+    ) void {
+        surface.core_surface.setBottomInset(px) catch |err| {
+            log.err("error setting bottom inset err={}", .{err});
+        };
+    }
+
     /// Begin a touch selection-handle drag anchored at the fixed (opposite)
     /// endpoint of the current selection. Subsequent ghostty_surface_mouse_pos
     /// calls extend the selection from that endpoint; a left-button release ends
