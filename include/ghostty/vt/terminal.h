@@ -637,6 +637,16 @@ typedef enum GHOSTTY_ENUM_TYPED {
    * Input type: GhosttyTerminalCursorStyle*
    */
   GHOSTTY_TERMINAL_OPT_DEFAULT_CURSOR_STYLE = 22,
+
+  /**
+   * Set whether the default cursor should blink when reset by DECSCUSR
+   * (CSI 0 q).
+   *
+   * A NULL value pointer resets to the built-in default of not blinking.
+   *
+   * Input type: bool*
+   */
+  GHOSTTY_TERMINAL_OPT_DEFAULT_CURSOR_BLINK = 23,
   GHOSTTY_TERMINAL_OPT_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
 } GhosttyTerminalOption;
 

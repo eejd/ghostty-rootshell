@@ -46,6 +46,7 @@ pub const Handler = struct {
     /// Default cursor style used by DECSCUSR reset (CSI 0 q).
     default_cursor: bool = true,
     default_cursor_style: Screen.CursorStyle = .block,
+    default_cursor_blink: bool = false,
 
     pub const Effects = struct {
         /// Called when the terminal needs to write data back to the pty,
@@ -159,7 +160,8 @@ pub const Handler = struct {
                 self.default_cursor = false;
 
                 const blink = switch (value) {
-                    .default, .steady_block, .steady_bar, .steady_underline => false,
+                    .default => self.default_cursor_blink,
+                    .steady_block, .steady_bar, .steady_underline => false,
                     .blinking_block, .blinking_bar, .blinking_underline => true,
                 };
                 const style: Screen.CursorStyle = switch (value) {
@@ -241,6 +243,7 @@ pub const Handler = struct {
             .full_reset => {
                 self.terminal.fullReset();
                 self.default_cursor = true;
+                self.terminal.modes.set(.cursor_blinking, self.default_cursor_blink);
                 self.terminal.screens.active.cursor.cursor_style = self.default_cursor_style;
             },
             .start_hyperlink => try self.terminal.screens.active.startHyperlink(value.uri, value.id),

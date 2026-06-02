@@ -328,6 +328,7 @@ pub const Option = enum(c_int) {
     apc_max_bytes_kitty = 20,
     selection = 21,
     default_cursor_style = 22,
+    default_cursor_blink = 23,
 
     /// Input type expected for setting the option.
     pub fn InType(comptime self: Option) type {
@@ -352,6 +353,7 @@ pub const Option = enum(c_int) {
             .apc_max_bytes, .apc_max_bytes_kitty => ?*const usize,
             .selection => ?*const selection_c.CSelection,
             .default_cursor_style => ?*const TerminalCursorStyle,
+            .default_cursor_blink => ?*const bool,
         };
     }
 };
@@ -472,6 +474,13 @@ fn setTyped(
             wrapper.stream.handler.default_cursor_style = style;
             if (wrapper.stream.handler.default_cursor) {
                 wrapper.terminal.screens.active.cursor.cursor_style = style;
+            }
+        },
+        .default_cursor_blink => {
+            const blink = if (value) |ptr| ptr.* else false;
+            wrapper.stream.handler.default_cursor_blink = blink;
+            if (wrapper.stream.handler.default_cursor) {
+                wrapper.terminal.modes.set(.cursor_blinking, blink);
             }
         },
     }
