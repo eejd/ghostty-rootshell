@@ -5,6 +5,7 @@ const lib = @import("../lib.zig");
 const CAllocator = lib.alloc.Allocator;
 pub const ZigTerminal = @import("../Terminal.zig");
 const Stream = @import("../stream_terminal.zig").Stream;
+const Screen = @import("../Screen.zig");
 const ScreenSet = @import("../ScreenSet.zig");
 const PageList = @import("../PageList.zig");
 const apc = @import("../apc.zig");
@@ -326,6 +327,7 @@ pub const Option = enum(c_int) {
     apc_max_bytes = 19,
     apc_max_bytes_kitty = 20,
     selection = 21,
+    default_cursor_style = 22,
 
     /// Input type expected for setting the option.
     pub fn InType(comptime self: Option) type {
@@ -349,6 +351,7 @@ pub const Option = enum(c_int) {
             => ?*const bool,
             .apc_max_bytes, .apc_max_bytes_kitty => ?*const usize,
             .selection => ?*const selection_c.CSelection,
+            .default_cursor_style => ?*const TerminalCursorStyle,
         };
     }
 };
@@ -464,9 +467,35 @@ fn setTyped(
                 wrapper.terminal.screens.active.clearSelection();
             }
         },
+        .default_cursor_style => {
+            const style = (if (value) |ptr| ptr.* else TerminalCursorStyle.block).toZig() orelse return .invalid_value;
+            wrapper.stream.handler.default_cursor_style = style;
+            if (wrapper.stream.handler.default_cursor) {
+                wrapper.terminal.screens.active.cursor.cursor_style = style;
+            }
+        },
     }
     return .success;
 }
+
+/// C: GhosttyTerminalCursorStyle
+pub const TerminalCursorStyle = enum(c_int) {
+    bar = 0,
+    block = 1,
+    underline = 2,
+    block_hollow = 3,
+    _,
+
+    fn toZig(self: TerminalCursorStyle) ?Screen.CursorStyle {
+        return switch (self) {
+            .bar => .bar,
+            .block => .block,
+            .underline => .underline,
+            .block_hollow => .block_hollow,
+            _ => null,
+        };
+    }
+};
 
 /// C: GhosttyDeviceAttributes
 pub const DeviceAttributes = Effects.CDeviceAttributes;

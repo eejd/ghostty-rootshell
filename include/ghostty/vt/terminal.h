@@ -233,6 +233,26 @@ typedef enum GHOSTTY_ENUM_TYPED {
 } GhosttyTerminalScreen;
 
 /**
+ * Visual style of the terminal cursor.
+ *
+ * @ingroup terminal
+ */
+typedef enum GHOSTTY_ENUM_TYPED {
+  /** Bar cursor (DECSCUSR 5, 6). */
+  GHOSTTY_TERMINAL_CURSOR_STYLE_BAR = 0,
+
+  /** Block cursor (DECSCUSR 1, 2). */
+  GHOSTTY_TERMINAL_CURSOR_STYLE_BLOCK = 1,
+
+  /** Underline cursor (DECSCUSR 3, 4). */
+  GHOSTTY_TERMINAL_CURSOR_STYLE_UNDERLINE = 2,
+
+  /** Hollow block cursor. */
+  GHOSTTY_TERMINAL_CURSOR_STYLE_BLOCK_HOLLOW = 3,
+  GHOSTTY_TERMINAL_CURSOR_STYLE_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
+} GhosttyTerminalCursorStyle;
+
+/**
  * Scrollbar state for the terminal viewport.
  *
  * Represents the scrollable area dimensions needed to render a scrollbar.
@@ -608,6 +628,15 @@ typedef enum GHOSTTY_ENUM_TYPED {
    * Input type: GhosttySelection*
    */
   GHOSTTY_TERMINAL_OPT_SELECTION = 21,
+
+  /**
+   * Set the default cursor style used by DECSCUSR reset (CSI 0 q).
+   *
+   * A NULL value pointer resets to the built-in default block cursor.
+   *
+   * Input type: GhosttyTerminalCursorStyle*
+   */
+  GHOSTTY_TERMINAL_OPT_DEFAULT_CURSOR_STYLE = 22,
   GHOSTTY_TERMINAL_OPT_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
 } GhosttyTerminalOption;
 
