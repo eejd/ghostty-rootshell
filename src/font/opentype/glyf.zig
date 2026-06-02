@@ -18,7 +18,7 @@ pub const Glyf = struct {
 
     /// A decoded glyph outline.
     ///
-    /// The `countours` slice is the list of end point indices and
+    /// The `contours` slice is the list of end point indices and
     /// `points` owns all the points. Glyf guarantees that contour
     /// points are sequential so we can just store the end and calculate
     /// the points that way. Use the helpers to make it ergonomic.

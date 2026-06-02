@@ -465,6 +465,10 @@ fn testMetrics(width: u32, height: u32) @import("Metrics.zig") {
     };
 }
 
+test {
+    _ = @import("glyf_rasterize_png_test.zig");
+}
+
 test "glyf_rasterize: empty outline returns empty bitmap" {
     const testing = std.testing;
     const alloc = testing.allocator;
