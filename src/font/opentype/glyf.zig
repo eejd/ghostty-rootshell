@@ -25,10 +25,10 @@ pub const Glyf = struct {
     pub const Outline = struct {
         /// List of contour end points. Calculate the full list of
         /// points using points[prev...this+1]
-        contours: []sfnt.uint16,
+        contours: []const sfnt.uint16,
 
         /// The backing storage of all points in the entry.
-        points: []Point,
+        points: []const Point,
 
         /// A single decoded point in a simple glyph contour.
         pub const Point = struct {
@@ -41,7 +41,7 @@ pub const Glyf = struct {
         ///
         /// The returned slice references `points` and is invalidated when
         /// this outline is deinitialized.
-        pub fn contour(self: Outline, index: usize) []Point {
+        pub fn contour(self: Outline, index: usize) []const Point {
             const start = if (index == 0)
                 0
             else
