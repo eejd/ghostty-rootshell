@@ -1415,6 +1415,45 @@ test "get invalid" {
     try testing.expectEqual(Result.invalid_value, get(t, .invalid, null));
 }
 
+test "set default cursor style and blink" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib.alloc.test_allocator,
+        &t,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 0,
+        },
+    ));
+    defer free(t);
+
+    var default_style: TerminalCursorStyle = .bar;
+    var default_blink = true;
+    try testing.expectEqual(Result.success, set(t, .default_cursor_style, @ptrCast(&default_style)));
+    try testing.expectEqual(Result.success, set(t, .default_cursor_blink, @ptrCast(&default_blink)));
+
+    // Setting defaults applies them immediately while the cursor is still default.
+    try testing.expectEqual(Screen.CursorStyle.bar, t.?.terminal.screens.active.cursor.cursor_style);
+    try testing.expect(t.?.terminal.modes.get(.cursor_blinking));
+
+    // An explicit DECSCUSR style overrides the configured defaults.
+    vt_write(t, "\x1b[2 q", 5);
+    try testing.expectEqual(Screen.CursorStyle.block, t.?.terminal.screens.active.cursor.cursor_style);
+    try testing.expect(!t.?.terminal.modes.get(.cursor_blinking));
+
+    // Changing defaults does not override an explicit cursor style.
+    default_style = .underline;
+    try testing.expectEqual(Result.success, set(t, .default_cursor_style, @ptrCast(&default_style)));
+    try testing.expectEqual(Screen.CursorStyle.block, t.?.terminal.screens.active.cursor.cursor_style);
+    try testing.expect(!t.?.terminal.modes.get(.cursor_blinking));
+
+    // DECSCUSR reset restores the configured default style and blink.
+    vt_write(t, "\x1b[0 q", 5);
+    try testing.expectEqual(Screen.CursorStyle.underline, t.?.terminal.screens.active.cursor.cursor_style);
+    try testing.expect(t.?.terminal.modes.get(.cursor_blinking));
+}
+
 test "set and get selection" {
     var t: Terminal = null;
     try testing.expectEqual(Result.success, new(
