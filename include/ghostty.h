@@ -949,6 +949,7 @@ typedef enum {
   GHOSTTY_ACTION_SEARCH_SELECTED,
   GHOSTTY_ACTION_READONLY,
   GHOSTTY_ACTION_COPY_TITLE_TO_CLIPBOARD,
+  GHOSTTY_ACTION_TMUX_RECONCILE,
 } ghostty_action_tag_e;
 
 typedef union {
@@ -990,12 +991,84 @@ typedef union {
   ghostty_action_search_total_s search_total;
   ghostty_action_search_selected_s search_selected;
   ghostty_action_readonly_e readonly;
+  /// tmux control mode reconcile payload (opaque *TmuxReconcilePayload).
+  /// Read via the ghostty_tmux_* accessor functions; the embedded apprt
+  /// frees the payload after the action callback returns.
+  void* tmux_reconcile;
 } ghostty_action_u;
 
 typedef struct {
   ghostty_action_tag_e tag;
   ghostty_action_u action;
 } ghostty_action_s;
+
+// tmux control mode: reconcile op-batch consumer.
+//
+// GHOSTTY_ACTION_TMUX_RECONCILE delivers an opaque payload (the
+// `tmux_reconcile` action union member). Walk the op batch with the
+// accessors below, create pane surfaces with
+// ghostty_surface_new_tmux_pane, then free the payload with
+// ghostty_tmux_reconcile_free. Field layouts must match the Zig extern
+// structs in src/apprt/embedded.zig (CTmuxOp / CTmuxLayoutInfo).
+typedef enum {
+  GHOSTTY_TMUX_OP_SYNC_BEGIN = 0,
+  GHOSTTY_TMUX_OP_ENSURE_WINDOW = 1,
+  GHOSTTY_TMUX_OP_ENSURE_PANE = 2,
+  GHOSTTY_TMUX_OP_SET_LAYOUT = 3,
+  GHOSTTY_TMUX_OP_SET_FOCUS = 4,
+  GHOSTTY_TMUX_OP_PRUNE_ABSENT = 5,
+  GHOSTTY_TMUX_OP_SYNC_END = 6,
+  GHOSTTY_TMUX_OP_SET_TAB_TITLE = 7,
+  GHOSTTY_TMUX_OP_SET_WINDOW_TITLE = 8,
+} ghostty_tmux_op_tag_e;
+
+typedef struct {
+  ghostty_tmux_op_tag_e tag;
+  uintptr_t window_id;
+  bool has_window_id;
+  uintptr_t pane_id;
+  uintptr_t width;
+  uintptr_t height;
+  void *viewer_terminal;
+  void *viewer_pane;
+  const void *layout;
+  const char *title;
+  uintptr_t title_len;
+  const uintptr_t *window_ids;
+  uintptr_t window_ids_len;
+  const uintptr_t *pane_ids;
+  uintptr_t pane_ids_len;
+} ghostty_tmux_op_s;
+
+typedef enum {
+  GHOSTTY_TMUX_LAYOUT_PANE = 0,
+  GHOSTTY_TMUX_LAYOUT_HORIZONTAL = 1,
+  GHOSTTY_TMUX_LAYOUT_VERTICAL = 2,
+} ghostty_tmux_layout_kind_e;
+
+typedef struct {
+  ghostty_tmux_layout_kind_e kind;
+  uintptr_t width;
+  uintptr_t height;
+  uintptr_t x;
+  uintptr_t y;
+  uintptr_t pane_id;
+  uintptr_t child_count;
+} ghostty_tmux_layout_info_s;
+
+GHOSTTY_API uintptr_t ghostty_tmux_reconcile_op_count(void*);
+GHOSTTY_API bool ghostty_tmux_reconcile_op(void*, uintptr_t, ghostty_tmux_op_s*);
+GHOSTTY_API void ghostty_tmux_reconcile_free(void*);
+GHOSTTY_API void ghostty_tmux_layout_info(const void*, ghostty_tmux_layout_info_s*);
+GHOSTTY_API const void* ghostty_tmux_layout_child(const void*, uintptr_t);
+GHOSTTY_API ghostty_surface_t ghostty_surface_new_tmux_pane(
+    ghostty_app_t,
+    ghostty_surface_t,
+    uintptr_t window_id,
+    uintptr_t pane_id,
+    void* viewer_terminal,
+    void* viewer_pane,
+    const ghostty_surface_config_s*);
 
 typedef void (*ghostty_runtime_wakeup_cb)(void*);
 typedef bool (*ghostty_runtime_read_clipboard_cb)(void*,
@@ -1139,6 +1212,8 @@ GHOSTTY_API bool ghostty_surface_key_is_binding(ghostty_surface_t,
                                                    ghostty_input_key_s,
                                                    ghostty_binding_flags_e*);
 GHOSTTY_API void ghostty_surface_text(ghostty_surface_t, const char*, uintptr_t);
+GHOSTTY_API void ghostty_surface_send_input(ghostty_surface_t, const char*, uintptr_t);
+GHOSTTY_API void ghostty_surface_tmux_set_client_size(ghostty_surface_t, uint16_t, uint16_t);
 GHOSTTY_API void ghostty_surface_preedit(ghostty_surface_t, const char*, uintptr_t);
 GHOSTTY_API bool ghostty_surface_mouse_captured(ghostty_surface_t);
 GHOSTTY_API bool ghostty_surface_mouse_button(ghostty_surface_t,

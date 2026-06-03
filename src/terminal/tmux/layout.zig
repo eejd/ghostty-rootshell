@@ -2,6 +2,10 @@ const std = @import("std");
 const testing = std.testing;
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
+const assert = @import("../../quirks.zig").inlineAssert;
+const SplitTree = @import("../../datastruct/split_tree.zig").SplitTree;
+
+const log = std.log.scoped(.terminal_tmux);
 
 /// A tmux layout.
 ///
@@ -220,6 +224,190 @@ pub const Layout = struct {
             .x = x,
             .y = y,
             .content = content,
+        };
+    }
+
+    /// Build a `SplitTree(V)` from this tmux layout tree. Converts
+    /// N-ary tmux splits into right-nested binary splits with ratios
+    /// derived from the tmux geometry.
+    ///
+    /// The `Resolver` type must provide a `resolve` method:
+    ///
+    ///   fn resolve(*const Resolver, pane_id: usize) ?*V
+    ///
+    /// This is called for each leaf pane to obtain the view pointer.
+    /// If any pane cannot be resolved, returns `SplitTree(V).empty`.
+    ///
+    /// The returned tree holds refs on the views; the caller must
+    /// call `deinit()` to release them.
+    pub fn buildSplitTree(
+        self: Layout,
+        comptime V: type,
+        gpa: Allocator,
+        resolver: anytype,
+    ) Allocator.Error!SplitTree(V) {
+        const Tree = SplitTree(V);
+        const node_count = countTreeNodes(self);
+        if (node_count == 0) return Tree.empty;
+
+        var arena: ArenaAllocator = .init(gpa);
+        errdefer arena.deinit();
+        const alloc = arena.allocator();
+
+        const nodes = try alloc.alloc(Tree.Node, node_count);
+
+        const next = fillLayoutNode(V, self, nodes, 0, resolver) orelse {
+            // A leaf pane was not found in the resolver. This is a
+            // normal condition (pane not yet created), not an error.
+            // Deinit the arena explicitly since errdefer won't fire.
+            arena.deinit();
+            return Tree.empty;
+        };
+        assert(next == node_count);
+
+        // Ref all leaf views. SplitTree owns refs and will unref
+        // on deinit. Handle both 1-param and 2-param ref functions.
+        for (nodes) |*node| {
+            switch (node.*) {
+                .leaf => |view| {
+                    const func = @typeInfo(@TypeOf(V.ref)).@"fn";
+                    const reffed = switch (func.params.len) {
+                        1 => view.ref(),
+                        2 => try view.ref(gpa),
+                        else => @compileError("invalid view ref function"),
+                    };
+                    node.* = .{ .leaf = reffed };
+                },
+                .split => {},
+            }
+        }
+
+        return .{
+            .arena = arena,
+            .nodes = nodes,
+            .zoomed = null,
+        };
+    }
+
+    /// Count the total number of SplitTree nodes needed to represent
+    /// a layout as a binary tree. Each leaf pane = 1 node. Each
+    /// N-ary split = (N-1) split nodes + sum of child subtrees.
+    fn countTreeNodes(layout: Layout) usize {
+        return switch (layout.content) {
+            .pane => 1,
+            .horizontal, .vertical => |children| countChildrenNodes(children),
+        };
+    }
+
+    fn countChildrenNodes(children: []const Layout) usize {
+        if (children.len == 0) return 0;
+        if (children.len == 1) return countTreeNodes(children[0]);
+
+        // One split node for this level, plus nodes for left child
+        // and nodes for the right subtree (remaining children).
+        return 1 + countTreeNodes(children[0]) + countChildrenNodes(children[1..]);
+    }
+
+    /// Recursively fill nodes array for a layout. Returns the
+    /// next free index, or null if a required pane view is missing.
+    fn fillLayoutNode(
+        comptime V: type,
+        layout: Layout,
+        nodes: []SplitTree(V).Node,
+        idx: usize,
+        resolver: anytype,
+    ) ?usize {
+        return switch (layout.content) {
+            .pane => |pane_id| {
+                const view = resolver.resolve(pane_id) orelse {
+                    log.warn("buildSplitTree: layout references unknown pane {}", .{pane_id});
+                    return null;
+                };
+                nodes[idx] = .{ .leaf = view };
+                return idx + 1;
+            },
+            .horizontal => |children| fillChildrenNodes(V, .horizontal, children, nodes, idx, resolver),
+            .vertical => |children| fillChildrenNodes(V, .vertical, children, nodes, idx, resolver),
+        };
+    }
+
+    /// Fill nodes for an N-ary split, converting to right-nested
+    /// binary splits. The split ratio at each level is computed from
+    /// the tmux geometry (width for horizontal, height for vertical).
+    fn fillChildrenNodes(
+        comptime V: type,
+        direction: SplitTree(V).Split.Layout,
+        children: []const Layout,
+        nodes: []SplitTree(V).Node,
+        idx: usize,
+        resolver: anytype,
+    ) ?usize {
+        if (children.len == 0) return idx;
+        if (children.len == 1) return fillLayoutNode(V, children[0], nodes, idx, resolver);
+
+        // Binary split: left = children[0], right = rest.
+        // Place split node at idx, left subtree at idx+1, right
+        // subtree immediately after left.
+        const left_start = idx + 1;
+        const right_start = fillLayoutNode(V, children[0], nodes, left_start, resolver) orelse
+            return null;
+        const next = fillChildrenNodes(V, direction, children[1..], nodes, right_start, resolver) orelse
+            return null;
+
+        // Compute ratio from tmux geometry. For horizontal splits,
+        // use width; for vertical, use height.
+        const ratio: f16 = computeSplitRatio(direction == .horizontal, children);
+
+        nodes[idx] = .{ .split = .{
+            .layout = direction,
+            .ratio = ratio,
+            .left = @enumFromInt(left_start),
+            .right = @enumFromInt(right_start),
+        } };
+
+        return next;
+    }
+
+    /// Compute the ratio of the first child relative to the total
+    /// dimension of all children in the slice. Returns 0.5 as a
+    /// fallback if the total is zero.
+    fn computeSplitRatio(
+        use_width: bool,
+        children: []const Layout,
+    ) f16 {
+        if (children.len < 2) return 0.5;
+
+        var total: usize = 0;
+        for (children) |child| {
+            total += if (use_width) child.width else child.height;
+        }
+
+        if (total == 0) return 0.5;
+
+        const first_dim: usize = if (use_width) children[0].width else children[0].height;
+
+        return @floatCast(@as(f64, @floatFromInt(first_dim)) / @as(f64, @floatFromInt(total)));
+    }
+
+    /// Deep-copy a layout tree onto a new allocator. All child slices
+    /// are duplicated so the returned tree is fully independent of the
+    /// original's backing memory.
+    pub fn clone(self: Layout, alloc: Allocator) Allocator.Error!Layout {
+        return .{
+            .width = self.width,
+            .height = self.height,
+            .x = self.x,
+            .y = self.y,
+            .content = switch (self.content) {
+                .pane => |id| .{ .pane = id },
+                inline .horizontal, .vertical => |children, tag| content: {
+                    const cloned = try alloc.alloc(Layout, children.len);
+                    for (children, 0..) |child, i| {
+                        cloned[i] = try child.clone(alloc);
+                    }
+                    break :content @unionInit(Content, @tagName(tag), cloned);
+                },
+            },
         };
     }
 };
@@ -635,4 +823,327 @@ test "checksum known tmux layout bb62" {
     // The checksum "bb62" corresponds to the layout "159x48,0,0{79x48,0,0,79x48,80,0}"
     const checksum = Checksum.calculate("159x48,0,0{79x48,0,0,79x48,80,0}");
     try testing.expectEqualStrings("bb62", &checksum.asString());
+}
+
+test "clone preserves leaf" {
+    var src_arena: ArenaAllocator = .init(testing.allocator);
+    defer src_arena.deinit();
+    const original: Layout = try .parse(src_arena.allocator(), "80x24,0,0,42");
+
+    var dst_arena: ArenaAllocator = .init(testing.allocator);
+    defer dst_arena.deinit();
+    const cloned = try original.clone(dst_arena.allocator());
+
+    try testing.expectEqual(original.width, cloned.width);
+    try testing.expectEqual(original.height, cloned.height);
+    try testing.expectEqual(original.x, cloned.x);
+    try testing.expectEqual(original.y, cloned.y);
+    try testing.expectEqual(original.content.pane, cloned.content.pane);
+}
+
+test "clone deep copies split tree" {
+    var src_arena: ArenaAllocator = .init(testing.allocator);
+    defer src_arena.deinit();
+
+    // Nested layout: vertical split containing a horizontal split
+    const original: Layout = try .parse(
+        src_arena.allocator(),
+        "80x24,0,0[80x12,0,0{40x12,0,0,1,40x12,40,0,2},80x12,0,12,3]",
+    );
+
+    var dst_arena: ArenaAllocator = .init(testing.allocator);
+    defer dst_arena.deinit();
+    const cloned = try original.clone(dst_arena.allocator());
+
+    // Verify structure
+    const children = cloned.content.vertical;
+    try testing.expectEqual(2, children.len);
+
+    // First child is a horizontal split
+    const horiz = children[0].content.horizontal;
+    try testing.expectEqual(2, horiz.len);
+    try testing.expectEqual(1, horiz[0].content.pane);
+    try testing.expectEqual(2, horiz[1].content.pane);
+
+    // Second child is a leaf
+    try testing.expectEqual(3, children[1].content.pane);
+
+    // Verify cloned children are on a different allocation (not aliased)
+    try testing.expect(cloned.content.vertical.ptr != original.content.vertical.ptr);
+}
+
+/// Minimal view type for testing buildSplitTree. Implements the
+/// ref/unref/eql contract required by SplitTree.
+const TestView = struct {
+    id: usize,
+    ref_count: usize = 1,
+
+    pub fn ref(self: *TestView) *TestView {
+        self.ref_count += 1;
+        return self;
+    }
+
+    pub fn unref(self: *TestView) void {
+        self.ref_count -= 1;
+    }
+
+    pub fn eql(a: *const TestView, b: *const TestView) bool {
+        return a.id == b.id;
+    }
+};
+
+test "buildSplitTree single pane" {
+    var layout_arena: ArenaAllocator = .init(testing.allocator);
+    defer layout_arena.deinit();
+    const layout: Layout = try .parse(layout_arena.allocator(), "80x24,0,0,1");
+
+    var view: TestView = .{ .id = 1 };
+    const resolver: struct {
+        view: *TestView,
+
+        pub fn resolve(self: *const @This(), pane_id: usize) ?*TestView {
+            return if (pane_id == self.view.id) self.view else null;
+        }
+    } = .{ .view = &view };
+
+    var tree = try layout.buildSplitTree(TestView, testing.allocator, &resolver);
+    defer tree.deinit();
+
+    try testing.expectEqual(1, tree.nodes.len);
+    try testing.expectEqual(&view, tree.nodes[0].leaf);
+    // buildSplitTree refs the view; deinit will unref.
+    try testing.expectEqual(2, view.ref_count);
+}
+
+test "buildSplitTree horizontal split" {
+    var layout_arena: ArenaAllocator = .init(testing.allocator);
+    defer layout_arena.deinit();
+    const layout: Layout = try .parse(
+        layout_arena.allocator(),
+        "80x24,0,0{40x24,0,0,1,40x24,40,0,2}",
+    );
+
+    var views = [_]TestView{
+        .{ .id = 1 },
+        .{ .id = 2 },
+    };
+    const resolver: struct {
+        views: []TestView,
+
+        pub fn resolve(self: *const @This(), pane_id: usize) ?*TestView {
+            for (self.views) |*v| {
+                if (v.id == pane_id) return v;
+            }
+            return null;
+        }
+    } = .{ .views = &views };
+
+    var tree = try layout.buildSplitTree(TestView, testing.allocator, &resolver);
+    defer tree.deinit();
+
+    // 1 split + 2 leaves = 3 nodes
+    try testing.expectEqual(3, tree.nodes.len);
+
+    // Root is a split
+    const root = tree.nodes[0].split;
+    try testing.expectEqual(.horizontal, root.layout);
+
+    // Left leaf is pane 1, right leaf is pane 2
+    try testing.expectEqual(&views[0], tree.nodes[root.left.idx()].leaf);
+    try testing.expectEqual(&views[1], tree.nodes[root.right.idx()].leaf);
+
+    // Ratio should be ~0.5 (40/80)
+    try testing.expect(root.ratio > 0.4 and root.ratio < 0.6);
+}
+
+test "buildSplitTree missing pane returns empty" {
+    var layout_arena: ArenaAllocator = .init(testing.allocator);
+    defer layout_arena.deinit();
+    const layout: Layout = try .parse(layout_arena.allocator(), "80x24,0,0,99");
+
+    // Resolver that resolves nothing
+    const resolver: struct {
+        pub fn resolve(_: *const @This(), _: usize) ?*TestView {
+            return null;
+        }
+    } = .{};
+
+    var tree = try layout.buildSplitTree(TestView, testing.allocator, &resolver);
+    defer tree.deinit();
+
+    try testing.expectEqual(0, tree.nodes.len);
+}
+
+test "buildSplitTree nested vertical+horizontal" {
+    var layout_arena: ArenaAllocator = .init(testing.allocator);
+    defer layout_arena.deinit();
+    // Vertical split containing a horizontal split and a leaf
+    const layout: Layout = try .parse(
+        layout_arena.allocator(),
+        "80x24,0,0[80x12,0,0{40x12,0,0,1,40x12,40,0,2},80x12,0,12,3]",
+    );
+
+    var views = [_]TestView{
+        .{ .id = 1 },
+        .{ .id = 2 },
+        .{ .id = 3 },
+    };
+    const resolver: struct {
+        views: []TestView,
+
+        pub fn resolve(self: *const @This(), pane_id: usize) ?*TestView {
+            for (self.views) |*v| {
+                if (v.id == pane_id) return v;
+            }
+            return null;
+        }
+    } = .{ .views = &views };
+
+    var tree = try layout.buildSplitTree(TestView, testing.allocator, &resolver);
+    defer tree.deinit();
+
+    // Structure: vertical_split(horizontal_split(pane1, pane2), pane3)
+    // = 2 splits + 3 leaves = 5 nodes
+    try testing.expectEqual(5, tree.nodes.len);
+
+    // Root is vertical
+    const root = tree.nodes[0].split;
+    try testing.expectEqual(.vertical, root.layout);
+
+    // Left child of root is a horizontal split
+    const left_split = tree.nodes[root.left.idx()].split;
+    try testing.expectEqual(.horizontal, left_split.layout);
+
+    // Right child of root is pane 3
+    try testing.expectEqual(&views[2], tree.nodes[root.right.idx()].leaf);
+}
+
+test "countTreeNodes: single pane" {
+    const layout: Layout = .{
+        .width = 80,
+        .height = 24,
+        .x = 0,
+        .y = 0,
+        .content = .{ .pane = 1 },
+    };
+    try testing.expectEqual(@as(usize, 1), Layout.countTreeNodes(layout));
+}
+
+test "countTreeNodes: horizontal split two panes" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+
+    // 80x24,0,0{40x24,0,0,1,40x24,40,0,2}
+    const layout: Layout = try .parse(arena.allocator(), "80x24,0,0{40x24,0,0,1,40x24,40,0,2}");
+    // Binary: split(leaf, leaf) = 1 split + 2 leaves = 3 nodes
+    try testing.expectEqual(@as(usize, 3), Layout.countTreeNodes(layout));
+}
+
+test "countTreeNodes: vertical split two panes" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+
+    const layout: Layout = try .parse(arena.allocator(), "80x24,0,0[80x12,0,0,1,80x12,0,12,2]");
+    try testing.expectEqual(@as(usize, 3), Layout.countTreeNodes(layout));
+}
+
+test "countTreeNodes: three-way horizontal split" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+
+    // 80x24,0,0{27x24,0,0,1,26x24,28,0,2,26x24,55,0,3}
+    const layout: Layout = try .parse(
+        arena.allocator(),
+        "80x24,0,0{27x24,0,0,1,26x24,28,0,2,26x24,55,0,3}",
+    );
+    // N-ary with 3 children → 2 split nodes + 3 leaves = 5
+    try testing.expectEqual(@as(usize, 5), Layout.countTreeNodes(layout));
+}
+
+test "countTreeNodes: nested layout" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+
+    // 80x24,0,0{40x24,0,0,1,40x24,40,0[40x12,40,0,2,40x12,40,12,3]}
+    const layout: Layout = try .parse(
+        arena.allocator(),
+        "80x24,0,0{40x24,0,0,1,40x24,40,0[40x12,40,0,2,40x12,40,12,3]}",
+    );
+    // Outer horizontal: split(leaf=1, vertical_split(leaf=2, leaf=3))
+    // = 1 outer split + 1 leaf + 1 inner split + 2 leaves = 5
+    try testing.expectEqual(@as(usize, 5), Layout.countTreeNodes(layout));
+}
+
+test "countChildrenNodes: empty children" {
+    const empty: []const Layout = &.{};
+    try testing.expectEqual(@as(usize, 0), Layout.countChildrenNodes(empty));
+}
+
+test "countChildrenNodes: single child pane" {
+    const children: []const Layout = &.{
+        .{ .width = 80, .height = 24, .x = 0, .y = 0, .content = .{ .pane = 1 } },
+    };
+    try testing.expectEqual(@as(usize, 1), Layout.countChildrenNodes(children));
+}
+
+test "computeSplitRatio: equal horizontal split" {
+    const children: []const Layout = &.{
+        .{ .width = 40, .height = 24, .x = 0, .y = 0, .content = .{ .pane = 1 } },
+        .{ .width = 40, .height = 24, .x = 40, .y = 0, .content = .{ .pane = 2 } },
+    };
+    const ratio = Layout.computeSplitRatio(true, children);
+    try testing.expectEqual(@as(f16, 0.5), ratio);
+}
+
+test "computeSplitRatio: unequal horizontal split" {
+    const children: []const Layout = &.{
+        .{ .width = 60, .height = 24, .x = 0, .y = 0, .content = .{ .pane = 1 } },
+        .{ .width = 20, .height = 24, .x = 60, .y = 0, .content = .{ .pane = 2 } },
+    };
+    const ratio = Layout.computeSplitRatio(true, children);
+    try testing.expectEqual(@as(f16, 0.75), ratio);
+}
+
+test "computeSplitRatio: equal vertical split" {
+    const children: []const Layout = &.{
+        .{ .width = 80, .height = 12, .x = 0, .y = 0, .content = .{ .pane = 1 } },
+        .{ .width = 80, .height = 12, .x = 0, .y = 12, .content = .{ .pane = 2 } },
+    };
+    const ratio = Layout.computeSplitRatio(false, children);
+    try testing.expectEqual(@as(f16, 0.5), ratio);
+}
+
+test "computeSplitRatio: three-way split uses first child ratio" {
+    // With three children [27, 26, 26], first ratio = 27/79
+    const children: []const Layout = &.{
+        .{ .width = 27, .height = 24, .x = 0, .y = 0, .content = .{ .pane = 1 } },
+        .{ .width = 26, .height = 24, .x = 28, .y = 0, .content = .{ .pane = 2 } },
+        .{ .width = 26, .height = 24, .x = 55, .y = 0, .content = .{ .pane = 3 } },
+    };
+    const ratio = Layout.computeSplitRatio(true, children);
+    const expected: f16 = @floatCast(@as(f64, 27.0) / @as(f64, 79.0));
+    try testing.expectEqual(expected, ratio);
+}
+
+test "computeSplitRatio: single child returns 0.5" {
+    const children: []const Layout = &.{
+        .{ .width = 80, .height = 24, .x = 0, .y = 0, .content = .{ .pane = 1 } },
+    };
+    const ratio = Layout.computeSplitRatio(true, children);
+    try testing.expectEqual(@as(f16, 0.5), ratio);
+}
+
+test "computeSplitRatio: empty children returns 0.5" {
+    const empty: []const Layout = &.{};
+    const ratio = Layout.computeSplitRatio(true, empty);
+    try testing.expectEqual(@as(f16, 0.5), ratio);
+}
+
+test "computeSplitRatio: zero dimension returns 0.5" {
+    const children: []const Layout = &.{
+        .{ .width = 0, .height = 24, .x = 0, .y = 0, .content = .{ .pane = 1 } },
+        .{ .width = 0, .height = 24, .x = 0, .y = 0, .content = .{ .pane = 2 } },
+    };
+    const ratio = Layout.computeSplitRatio(true, children);
+    try testing.expectEqual(@as(f16, 0.5), ratio);
 }

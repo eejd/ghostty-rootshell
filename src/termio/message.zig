@@ -62,6 +62,16 @@ pub const Message = union(enum) {
     /// Jump forward/backward n prompts.
     jump_to_prompt: isize,
 
+    /// Set the tmux control-mode client size (cols x rows in cells). Handled on
+    /// the IO thread so it can safely touch the viewer's command queue. The
+    /// stream handler sends `refresh-client -C <cols>x<rows>` to tmux so the
+    /// active window's panes are laid out to the visible tab's size. No-op when
+    /// no tmux viewer is active.
+    tmux_set_client_size: struct {
+        cols: u16,
+        rows: u16,
+    },
+
     /// Send this when a synchronized output mode is started. This will
     /// start the timer so that the output mode is disabled after a
     /// period of time so that a bad actor can't hang the terminal.

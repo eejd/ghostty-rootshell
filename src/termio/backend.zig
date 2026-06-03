@@ -20,7 +20,7 @@ const ProcessInfo = @import("../pty.zig").ProcessInfo;
 const WRITE_REQ_PREALLOC = std.math.pow(usize, 2, 5);
 
 /// The kinds of backends.
-pub const Kind = enum { exec, pipe };
+pub const Kind = enum { exec, pipe, tmux };
 
 /// Configuration for the various backend types.
 pub const Config = union(Kind) {
@@ -29,6 +29,10 @@ pub const Config = union(Kind) {
 
     /// Pipe uses pipes instead of PTY for external I/O management
     pipe: termio.Pipe.Config,
+
+    /// Tmux routes I/O through a tmux control mode connection that is
+    /// owned by a parent terminal surface (the `tmux -CC` viewer-owner).
+    tmux: termio.Tmux.Config,
 };
 
 /// Backend implementations. A backend is responsible for owning the pty
@@ -36,11 +40,13 @@ pub const Config = union(Kind) {
 pub const Backend = union(Kind) {
     exec: termio.Exec,
     pipe: termio.Pipe,
+    tmux: termio.Tmux,
 
     pub fn deinit(self: *Backend) void {
         switch (self.*) {
             .exec => |*exec| exec.deinit(),
             .pipe => |*p| p.deinit(),
+            .tmux => |*tmux| tmux.deinit(),
         }
     }
 
@@ -48,6 +54,7 @@ pub const Backend = union(Kind) {
         switch (self.*) {
             .exec => |*exec| exec.initTerminal(t),
             .pipe => |*p| p.initTerminal(t),
+            .tmux => |*tmux| tmux.initTerminal(t),
         }
     }
 
@@ -60,6 +67,7 @@ pub const Backend = union(Kind) {
         switch (self.*) {
             .exec => |*exec| try exec.threadEnter(alloc, io, td),
             .pipe => |*p| try p.threadEnter(alloc, io, td),
+            .tmux => |*tmux| try tmux.threadEnter(alloc, io, td),
         }
     }
 
@@ -67,6 +75,7 @@ pub const Backend = union(Kind) {
         switch (self.*) {
             .exec => |*exec| exec.threadExit(td),
             .pipe => |*p| p.threadExit(td),
+            .tmux => |*tmux| tmux.threadExit(td),
         }
     }
 
@@ -78,6 +87,7 @@ pub const Backend = union(Kind) {
         switch (self.*) {
             .exec => |*exec| try exec.focusGained(td, focused),
             .pipe => |*p| try p.focusGained(td, focused),
+            .tmux => |*tmux| try tmux.focusGained(td, focused),
         }
     }
 
@@ -89,6 +99,7 @@ pub const Backend = union(Kind) {
         switch (self.*) {
             .exec => |*exec| try exec.resize(grid_size, screen_size),
             .pipe => |*p| try p.resize(grid_size, screen_size),
+            .tmux => |*tmux| try tmux.resize(grid_size, screen_size),
         }
     }
 
@@ -102,6 +113,7 @@ pub const Backend = union(Kind) {
         switch (self.*) {
             .exec => |*exec| try exec.queueWrite(alloc, td, data, linefeed),
             .pipe => |*p| try p.queueWrite(alloc, td, data, linefeed),
+            .tmux => |*tmux| try tmux.queueWrite(alloc, td, data, linefeed),
         }
     }
 
@@ -125,6 +137,22 @@ pub const Backend = union(Kind) {
                 exit_code,
                 runtime_ms,
             ),
+            .tmux => |*tmux| try tmux.childExitedAbnormally(
+                gpa,
+                t,
+                exit_code,
+                runtime_ms,
+            ),
+        }
+    }
+
+    /// Forward a raw command to the tmux control mode connection.
+    /// No-op for the exec and pipe backends.
+    pub fn tmuxCommand(self: *Backend, cmd: []const u8) void {
+        switch (self.*) {
+            .exec => {},
+            .pipe => {},
+            .tmux => |*tmux| tmux.tmuxCommand(cmd),
         }
     }
 
@@ -135,6 +163,7 @@ pub const Backend = union(Kind) {
         return switch (self.*) {
             .exec => |*exec| exec.getProcessInfo(info),
             .pipe => null,
+            .tmux => null,
         };
     }
 };
@@ -143,11 +172,13 @@ pub const Backend = union(Kind) {
 pub const ThreadData = union(Kind) {
     exec: termio.Exec.ThreadData,
     pipe: termio.Pipe.ThreadData,
+    tmux: termio.Tmux.ThreadData,
 
     pub fn deinit(self: *ThreadData, alloc: Allocator) void {
         switch (self.*) {
             .exec => |*exec| exec.deinit(alloc),
             .pipe => |*p| p.deinit(alloc),
+            .tmux => |*tmux| tmux.deinit(alloc),
         }
     }
 

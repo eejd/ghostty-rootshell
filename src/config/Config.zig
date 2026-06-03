@@ -2956,6 +2956,17 @@ keybind: Keybinds = .{},
 /// need KAM, you don't need it.
 @"vt-kam-allowed": bool = false,
 
+/// If true, Ghostty will enter tmux control mode when it detects the
+/// DCS sequence sent by `tmux -CC`. In control mode, Ghostty acts as
+/// the tmux UI: tmux windows appear as tabs, tmux panes appear as
+/// splits, and input is forwarded to the tmux server. Set to false to
+/// ignore the control mode sequence entirely, which is useful if you
+/// run `tmux -CC` but want to handle the raw protocol yourself.
+///
+/// This option has no effect if Ghostty was built without oniguruma
+/// support, which is required for tmux control mode.
+@"tmux-control-mode": bool = true,
+
 /// Custom shaders to run after the default shaders. This is a file path
 /// to a GLSL-syntax shader for all platforms.
 ///

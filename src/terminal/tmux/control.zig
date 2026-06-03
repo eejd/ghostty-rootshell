@@ -29,6 +29,19 @@ pub const Parser = struct {
     /// exited and future data dropped).
     max_bytes: usize = 1024 * 1024,
 
+    /// Tokens from the most recent %begin line, used to validate that
+    /// the corresponding %end/%error matches. Null if %begin could not
+    /// be parsed (validation is skipped in that case).
+    block_begin: ?BlockInfo = null,
+
+    /// Parsed tokens from a %begin, %end, or %error guard line.
+    /// tmux guarantees these match between begin and end/error.
+    const BlockInfo = struct {
+        time: usize,
+        command_id: usize,
+        flags: usize,
+    };
+
     const State = enum {
         /// Outside of any active notifications. This should drop any output
         /// unless it is '%' on the first byte of a line. The buffer will be
@@ -116,7 +129,27 @@ pub const Parser = struct {
                 )) |v| v + 1 else 0;
                 const line = written[idx..];
 
-                if (parseBlockTerminator(line)) |terminator| {
+                if (parseBlockTerminator(line)) |result| {
+                    // Validate that end/error tokens match the begin tokens.
+                    // tmux guarantees these match, so a mismatch indicates
+                    // a protocol error or interleaving bug. We log but still
+                    // process the block (per Ghostty error resilience convention).
+                    if (self.block_begin) |begin| {
+                        if (begin.time != result.info.time or
+                            begin.command_id != result.info.command_id or
+                            begin.flags != result.info.flags)
+                        {
+                            log.warn(
+                                "block begin/end mismatch: begin=({},{},{}) end=({},{},{})",
+                                .{
+                                    begin.time,       begin.command_id,       begin.flags,
+                                    result.info.time, result.info.command_id, result.info.flags,
+                                },
+                            );
+                        }
+                    }
+                    self.block_begin = null;
+
                     const output = std.mem.trimRight(
                         u8,
                         written[0..idx],
@@ -126,7 +159,7 @@ pub const Parser = struct {
                     // Important: do not clear buffer since the notification
                     // contains it.
                     self.state = .idle;
-                    switch (terminator) {
+                    switch (result.terminator) {
                         .end => return .{ .block_end = output },
                         .err => {
                             log.warn("tmux control mode error={s}", .{output});
@@ -146,13 +179,30 @@ pub const Parser = struct {
         return null;
     }
 
+    /// Whether a 7-bit ST (`ESC \`) seen by the DCS handler right now should be
+    /// honored as the tmux control-mode terminator. Only true between
+    /// notifications (`idle`) or once broken — that's where tmux's real closing
+    /// ST appears (it follows a `%exit` line, which resets us to idle). Inside a
+    /// notification or a command-response block, `ESC \` is content (e.g. an OSC
+    /// string terminator embedded in a `capture-pane -e` history replay during
+    /// attach) and must be forwarded, not treated as the end of control mode —
+    /// otherwise the remainder of the DCS stream leaks into the terminal.
+    pub fn canTerminate(self: *const Parser) bool {
+        return self.state == .idle or self.state == .broken;
+    }
+
     const ParseError = error{RegexError};
 
     const BlockTerminator = enum { end, err };
 
+    const BlockTerminatorResult = struct {
+        terminator: BlockTerminator,
+        info: BlockInfo,
+    };
+
     /// Block payload is raw data, so a line only terminates a block if it
     /// exactly matches tmux's `%end`/`%error` guard-line shape.
-    fn parseBlockTerminator(line_raw: []const u8) ?BlockTerminator {
+    fn parseBlockTerminator(line_raw: []const u8) ?BlockTerminatorResult {
         var line = line_raw;
         if (line.len > 0 and line[line.len - 1] == '\r') {
             line = line[0 .. line.len - 1];
@@ -167,20 +217,38 @@ pub const Parser = struct {
         else
             return null;
 
-        const time = fields.next() orelse return null;
-        const command_id = fields.next() orelse return null;
-        const flags = fields.next() orelse return null;
+        const time_str = fields.next() orelse return null;
+        const command_id_str = fields.next() orelse return null;
+        const flags_str = fields.next() orelse return null;
         const extra = fields.next();
 
-        // In the future, we should compare these to the %begin block
-        // because the tmux source guarantees that these always match and
-        // that is a more robust way to match.
-        _ = std.fmt.parseInt(usize, time, 10) catch return null;
-        _ = std.fmt.parseInt(usize, command_id, 10) catch return null;
-        _ = std.fmt.parseInt(usize, flags, 10) catch return null;
+        const time = std.fmt.parseInt(usize, time_str, 10) catch return null;
+        const command_id = std.fmt.parseInt(usize, command_id_str, 10) catch return null;
+        const flags = std.fmt.parseInt(usize, flags_str, 10) catch return null;
         if (extra != null) return null;
 
-        return terminator;
+        return .{
+            .terminator = terminator,
+            .info = .{ .time = time, .command_id = command_id, .flags = flags },
+        };
+    }
+
+    /// Parse BlockInfo from a %begin line. Format: %begin <time> <command_id> <flags>
+    fn parseBeginInfo(line: []const u8) ?BlockInfo {
+        var fields = std.mem.tokenizeScalar(u8, line, ' ');
+        const cmd = fields.next() orelse return null;
+        if (!std.mem.eql(u8, cmd, "%begin")) return null;
+
+        const time_str = fields.next() orelse return null;
+        const command_id_str = fields.next() orelse return null;
+        const flags_str = fields.next() orelse return null;
+        if (fields.next() != null) return null; // unexpected extra fields
+
+        return .{
+            .time = std.fmt.parseInt(usize, time_str, 10) catch return null,
+            .command_id = std.fmt.parseInt(usize, command_id_str, 10) catch return null,
+            .flags = std.fmt.parseInt(usize, flags_str, 10) catch return null,
+        };
     }
 
     fn parseNotification(self: *Parser) ParseError!?Notification {
@@ -199,11 +267,12 @@ pub const Parser = struct {
         // The notification MUST exist because we guard entering the notification
         // state on seeing at least a '%'.
         if (std.mem.eql(u8, cmd, "%begin")) {
-            // We don't use the rest of the tokens for now because tmux
-            // claims to guarantee that begin/end are always in order and
-            // never intermixed. In the future, we should probably validate
-            // this.
-            // TODO(tmuxcc): do this before merge?
+            // Parse the begin tokens so we can validate the matching
+            // end/error. The format is: %begin <time> <command_id> <flags>
+            self.block_begin = parseBeginInfo(line);
+            if (self.block_begin == null) {
+                log.info("failed to parse %begin tokens: {s}", .{line});
+            }
 
             // Move to block state because we expect a corresponding end/error
             // and want to accumulate the data.
@@ -281,6 +350,41 @@ pub const Parser = struct {
             self.buffer.clearRetainingCapacity();
             self.state = .idle;
             return .{ .sessions_changed = {} };
+        } else if (std.mem.eql(u8, cmd, "%session-window-changed")) cmd: {
+            var re = oni.Regex.init(
+                "^%session-window-changed \\$([0-9]+) @([0-9]+)$",
+                .{ .capture_group = true },
+                oni.Encoding.utf8,
+                oni.Syntax.default,
+                null,
+            ) catch |err| {
+                log.warn("regex init failed error={}", .{err});
+                return error.RegexError;
+            };
+            defer re.deinit();
+
+            var region = re.search(line, .{}) catch |err| {
+                log.warn("failed to match notification cmd={s} line=\"{s}\" err={}", .{ cmd, line, err });
+                break :cmd;
+            };
+            defer region.deinit();
+            const starts = region.starts();
+            const ends = region.ends();
+
+            const session_id = std.fmt.parseInt(
+                usize,
+                line[@intCast(starts[1])..@intCast(ends[1])],
+                10,
+            ) catch unreachable;
+            const window_id = std.fmt.parseInt(
+                usize,
+                line[@intCast(starts[2])..@intCast(ends[2])],
+                10,
+            ) catch unreachable;
+
+            self.buffer.clearRetainingCapacity();
+            self.state = .idle;
+            return .{ .session_window_changed = .{ .session_id = session_id, .window_id = window_id } };
         } else if (std.mem.eql(u8, cmd, "%layout-change")) cmd: {
             var re = oni.Regex.init(
                 "^%layout-change @([0-9]+) (.+) (.+) (.*)$",
@@ -349,6 +453,36 @@ pub const Parser = struct {
             self.buffer.clearRetainingCapacity();
             self.state = .idle;
             return .{ .window_add = .{ .id = id } };
+        } else if (std.mem.eql(u8, cmd, "%window-close")) cmd: {
+            var re = oni.Regex.init(
+                "^%window-close @([0-9]+)$",
+                .{ .capture_group = true },
+                oni.Encoding.utf8,
+                oni.Syntax.default,
+                null,
+            ) catch |err| {
+                log.warn("regex init failed error={}", .{err});
+                return error.RegexError;
+            };
+            defer re.deinit();
+
+            var region = re.search(line, .{}) catch |err| {
+                log.warn("failed to match notification cmd={s} line=\"{s}\" err={}", .{ cmd, line, err });
+                break :cmd;
+            };
+            defer region.deinit();
+            const starts = region.starts();
+            const ends = region.ends();
+
+            const id = std.fmt.parseInt(
+                usize,
+                line[@intCast(starts[1])..@intCast(ends[1])],
+                10,
+            ) catch unreachable;
+
+            self.buffer.clearRetainingCapacity();
+            self.state = .idle;
+            return .{ .window_close = .{ .id = id } };
         } else if (std.mem.eql(u8, cmd, "%window-renamed")) cmd: {
             var re = oni.Regex.init(
                 "^%window-renamed @([0-9]+) (.+)$",
@@ -473,6 +607,207 @@ pub const Parser = struct {
             // Important: do not clear buffer here since client/name point to it
             self.state = .idle;
             return .{ .client_session_changed = .{ .client = client, .session_id = session_id, .name = name } };
+        } else if (std.mem.eql(u8, cmd, "%pane-mode-changed")) cmd: {
+            var re = oni.Regex.init(
+                "^%pane-mode-changed %([0-9]+)$",
+                .{ .capture_group = true },
+                oni.Encoding.utf8,
+                oni.Syntax.default,
+                null,
+            ) catch |err| {
+                log.warn("regex init failed error={}", .{err});
+                return error.RegexError;
+            };
+            defer re.deinit();
+
+            var region = re.search(line, .{}) catch |err| {
+                log.warn("failed to match notification cmd={s} line=\"{s}\" err={}", .{ cmd, line, err });
+                break :cmd;
+            };
+            defer region.deinit();
+            const starts = region.starts();
+            const ends = region.ends();
+
+            const pane_id = std.fmt.parseInt(
+                usize,
+                line[@intCast(starts[1])..@intCast(ends[1])],
+                10,
+            ) catch unreachable;
+
+            self.buffer.clearRetainingCapacity();
+            self.state = .idle;
+            return .{ .pane_mode_changed = .{ .pane_id = pane_id } };
+        } else if (std.mem.eql(u8, cmd, "%session-renamed")) cmd: {
+            var re = oni.Regex.init(
+                "^%session-renamed (.+)$",
+                .{ .capture_group = true },
+                oni.Encoding.utf8,
+                oni.Syntax.default,
+                null,
+            ) catch |err| {
+                log.warn("regex init failed error={}", .{err});
+                return error.RegexError;
+            };
+            defer re.deinit();
+
+            var region = re.search(line, .{}) catch |err| {
+                log.warn("failed to match notification cmd={s} line=\"{s}\" err={}", .{ cmd, line, err });
+                break :cmd;
+            };
+            defer region.deinit();
+            const starts = region.starts();
+            const ends = region.ends();
+
+            const name = line[@intCast(starts[1])..@intCast(ends[1])];
+
+            // Important: do not clear buffer here since name points to it
+            self.state = .idle;
+            return .{ .session_renamed = .{ .name = name } };
+        } else if (std.mem.eql(u8, cmd, "%pause")) cmd: {
+            var re = oni.Regex.init(
+                "^%pause %([0-9]+)$",
+                .{ .capture_group = true },
+                oni.Encoding.utf8,
+                oni.Syntax.default,
+                null,
+            ) catch |err| {
+                log.warn("regex init failed error={}", .{err});
+                return error.RegexError;
+            };
+            defer re.deinit();
+
+            var region = re.search(line, .{}) catch |err| {
+                log.warn("failed to match notification cmd={s} line=\"{s}\" err={}", .{ cmd, line, err });
+                break :cmd;
+            };
+            defer region.deinit();
+            const starts = region.starts();
+            const ends = region.ends();
+
+            const pane_id = std.fmt.parseInt(
+                usize,
+                line[@intCast(starts[1])..@intCast(ends[1])],
+                10,
+            ) catch unreachable;
+
+            self.buffer.clearRetainingCapacity();
+            self.state = .idle;
+            return .{ .pause = .{ .pane_id = pane_id } };
+        } else if (std.mem.eql(u8, cmd, "%continue")) cmd: {
+            var re = oni.Regex.init(
+                "^%continue %([0-9]+)$",
+                .{ .capture_group = true },
+                oni.Encoding.utf8,
+                oni.Syntax.default,
+                null,
+            ) catch |err| {
+                log.warn("regex init failed error={}", .{err});
+                return error.RegexError;
+            };
+            defer re.deinit();
+
+            var region = re.search(line, .{}) catch |err| {
+                log.warn("failed to match notification cmd={s} line=\"{s}\" err={}", .{ cmd, line, err });
+                break :cmd;
+            };
+            defer region.deinit();
+            const starts = region.starts();
+            const ends = region.ends();
+
+            const pane_id = std.fmt.parseInt(
+                usize,
+                line[@intCast(starts[1])..@intCast(ends[1])],
+                10,
+            ) catch unreachable;
+
+            self.buffer.clearRetainingCapacity();
+            self.state = .idle;
+            return .{ .@"continue" = .{ .pane_id = pane_id } };
+        } else if (std.mem.eql(u8, cmd, "%exit")) {
+            // The tmux server is exiting or has detached. The optional reason
+            // string is dropped (see Notification.exit comment).
+            self.buffer.clearRetainingCapacity();
+            self.state = .idle;
+            return .{ .exit = {} };
+        } else if (std.mem.eql(u8, cmd, "%extended-output")) cmd: {
+            // Extended output: sent instead of %output when pause-after is
+            // enabled. Format: %extended-output %<pane_id> <age_ms> : <data>
+            var re = oni.Regex.init(
+                "^%extended-output %([0-9]+) ([0-9]+) : (.+)$",
+                .{ .capture_group = true },
+                oni.Encoding.utf8,
+                oni.Syntax.default,
+                null,
+            ) catch |err| {
+                log.warn("regex init failed error={}", .{err});
+                return error.RegexError;
+            };
+            defer re.deinit();
+
+            var region = re.search(line, .{}) catch |err| {
+                log.warn("failed to match notification cmd={s} line=\"{s}\" err={}", .{ cmd, line, err });
+                break :cmd;
+            };
+            defer region.deinit();
+            const starts = region.starts();
+            const ends = region.ends();
+
+            const pane_id = std.fmt.parseInt(
+                usize,
+                line[@intCast(starts[1])..@intCast(ends[1])],
+                10,
+            ) catch unreachable;
+            const age_ms = std.fmt.parseInt(
+                usize,
+                line[@intCast(starts[2])..@intCast(ends[2])],
+                10,
+            ) catch unreachable;
+            const raw_data = line[@intCast(starts[3])..@intCast(ends[3])];
+
+            // Important: do not clear buffer here since raw_data points to it
+            self.state = .idle;
+            return .{ .extended_output = .{
+                .pane_id = pane_id,
+                .age_ms = age_ms,
+                .data = raw_data,
+            } };
+        } else if (std.mem.eql(u8, cmd, "%message")) cmd: {
+            var re = oni.Regex.init(
+                "^%message (.+)$",
+                .{ .capture_group = true },
+                oni.Encoding.utf8,
+                oni.Syntax.default,
+                null,
+            ) catch |err| {
+                log.warn("regex init failed error={}", .{err});
+                return error.RegexError;
+            };
+            defer re.deinit();
+
+            var region = re.search(line, .{}) catch |err| {
+                log.warn("failed to match notification cmd={s} line=\"{s}\" err={}", .{ cmd, line, err });
+                break :cmd;
+            };
+            defer region.deinit();
+            const starts = region.starts();
+            const ends = region.ends();
+
+            const text = line[@intCast(starts[1])..@intCast(ends[1])];
+
+            // Important: do not clear buffer here since text points to it
+            self.state = .idle;
+            return .{ .message = .{ .text = text } };
+        } else if (std.mem.eql(u8, cmd, "%unlinked-window-add") or
+            std.mem.eql(u8, cmd, "%unlinked-window-close") or
+            std.mem.eql(u8, cmd, "%unlinked-window-renamed") or
+            std.mem.eql(u8, cmd, "%paste-buffer-changed") or
+            std.mem.eql(u8, cmd, "%paste-buffer-deleted") or
+            std.mem.eql(u8, cmd, "%subscription-changed"))
+        {
+            // Recognized but intentionally ignored notifications. These relate
+            // to other sessions' windows, clipboard buffers, or format
+            // subscriptions that we do not currently use.
+            log.debug("ignoring tmux notification: {s}", .{cmd});
         } else {
             // Unknown notification, log it and return to idle state.
             log.warn("unknown tmux control mode notification={s}", .{cmd});
@@ -495,6 +830,10 @@ pub const Parser = struct {
 /// Possible notification types from tmux control mode. These are documented
 /// in tmux(1). A lot of the simple documentation was copied from that man
 /// page here.
+///
+/// Lifetime: all slice fields (`[]const u8`) within a notification point
+/// into the parser's internal buffer and are valid only until the next
+/// call to `next()`.
 pub const Notification = union(enum) {
     /// Entering tmux control mode. This isn't an actual event sent by
     /// tmux but is one sent by us to indicate that we have detected that
@@ -519,7 +858,7 @@ pub const Notification = union(enum) {
     /// Raw output from a pane.
     output: struct {
         pane_id: usize,
-        data: []const u8, // unescaped
+        data: []const u8, // raw from protocol (octal-escaped by tmux)
     },
 
     /// The client is now attached to the session with ID session-id, which is
@@ -532,6 +871,13 @@ pub const Notification = union(enum) {
     /// A session was created or destroyed.
     sessions_changed,
 
+    /// The active window in the session with ID session-id changed to
+    /// the window with ID window-id.
+    session_window_changed: struct {
+        session_id: usize,
+        window_id: usize,
+    },
+
     /// The layout of the window with ID window-id changed.
     layout_change: struct {
         window_id: usize,
@@ -542,6 +888,11 @@ pub const Notification = union(enum) {
 
     /// The window with ID window-id was linked to the current session.
     window_add: struct {
+        id: usize,
+    },
+
+    /// The window with ID window-id was closed.
+    window_close: struct {
         id: usize,
     },
 
@@ -569,6 +920,42 @@ pub const Notification = union(enum) {
         client: []const u8,
         session_id: usize,
         name: []const u8,
+    },
+
+    /// The pane with ID pane-id has changed mode (e.g. entered/exited
+    /// copy mode).
+    pane_mode_changed: struct {
+        pane_id: usize,
+    },
+
+    /// The current session was renamed to name.
+    session_renamed: struct {
+        name: []const u8,
+    },
+
+    /// The pane has been paused (if the pause-after flag is set).
+    pause: struct {
+        pane_id: usize,
+    },
+
+    /// The pane has been continued after being paused.
+    @"continue": struct {
+        pane_id: usize,
+    },
+
+    /// Extended output from a pane. Sent instead of `%output` when the
+    /// `pause-after` flag is set on the client. Contains an age in
+    /// milliseconds since the output was produced.
+    extended_output: struct {
+        pane_id: usize,
+        age_ms: usize,
+        data: []const u8, // raw from protocol (octal-escaped by tmux)
+    },
+
+    /// A message sent with the display-message command, or an
+    /// informational/error message from the tmux server.
+    message: struct {
+        text: []const u8,
     },
 
     pub fn format(self: Notification, writer: *std.Io.Writer) !void {
@@ -759,6 +1146,32 @@ test "tmux sessions-changed carriage return" {
     try testing.expect(n == .sessions_changed);
 }
 
+test "tmux session-window-changed" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var c: Parser = .{ .buffer = .init(alloc) };
+    defer c.deinit();
+    for ("%session-window-changed $1 @3") |byte| try testing.expect(try c.put(byte) == null);
+    const n = (try c.put('\n')).?;
+    try testing.expect(n == .session_window_changed);
+    try testing.expectEqual(1, n.session_window_changed.session_id);
+    try testing.expectEqual(3, n.session_window_changed.window_id);
+}
+
+test "tmux session-window-changed carriage return" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var c: Parser = .{ .buffer = .init(alloc) };
+    defer c.deinit();
+    for ("%session-window-changed $1 @3\r") |byte| try testing.expect(try c.put(byte) == null);
+    const n = (try c.put('\n')).?;
+    try testing.expect(n == .session_window_changed);
+    try testing.expectEqual(1, n.session_window_changed.session_id);
+    try testing.expectEqual(3, n.session_window_changed.window_id);
+}
+
 test "tmux layout-change" {
     const testing = std.testing;
     const alloc = testing.allocator;
@@ -784,6 +1197,18 @@ test "tmux window-add" {
     const n = (try c.put('\n')).?;
     try testing.expect(n == .window_add);
     try testing.expectEqual(14, n.window_add.id);
+}
+
+test "tmux window-close" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var c: Parser = .{ .buffer = .init(alloc) };
+    defer c.deinit();
+    for ("%window-close @7") |byte| try testing.expect(try c.put(byte) == null);
+    const n = (try c.put('\n')).?;
+    try testing.expect(n == .window_close);
+    try testing.expectEqual(7, n.window_close.id);
 }
 
 test "tmux window-renamed" {
@@ -836,4 +1261,188 @@ test "tmux client-session-changed" {
     try testing.expectEqualStrings("/dev/pts/1", n.client_session_changed.client);
     try testing.expectEqual(2, n.client_session_changed.session_id);
     try testing.expectEqualStrings("mysession", n.client_session_changed.name);
+}
+
+test "tmux pane-mode-changed" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var c: Parser = .{ .buffer = .init(alloc) };
+    defer c.deinit();
+    for ("%pane-mode-changed %5") |byte| try testing.expect(try c.put(byte) == null);
+    const n = (try c.put('\n')).?;
+    try testing.expect(n == .pane_mode_changed);
+    try testing.expectEqual(5, n.pane_mode_changed.pane_id);
+}
+
+test "tmux session-renamed" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var c: Parser = .{ .buffer = .init(alloc) };
+    defer c.deinit();
+    for ("%session-renamed my-session") |byte| try testing.expect(try c.put(byte) == null);
+    const n = (try c.put('\n')).?;
+    try testing.expect(n == .session_renamed);
+    try testing.expectEqualStrings("my-session", n.session_renamed.name);
+}
+
+test "tmux pause" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var c: Parser = .{ .buffer = .init(alloc) };
+    defer c.deinit();
+    for ("%pause %3") |byte| try testing.expect(try c.put(byte) == null);
+    const n = (try c.put('\n')).?;
+    try testing.expect(n == .pause);
+    try testing.expectEqual(3, n.pause.pane_id);
+}
+
+test "tmux continue" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var c: Parser = .{ .buffer = .init(alloc) };
+    defer c.deinit();
+    for ("%continue %3") |byte| try testing.expect(try c.put(byte) == null);
+    const n = (try c.put('\n')).?;
+    try testing.expect(n == .@"continue");
+    try testing.expectEqual(3, n.@"continue".pane_id);
+}
+
+test "tmux block begin/end mismatch still processes" {
+    // Mismatched command_id between %begin and %end should log a warning
+    // but still return the block_end notification (resilient processing).
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var c: Parser = .{ .buffer = .init(alloc) };
+    defer c.deinit();
+    for ("%begin 1578922740 269 1\n") |byte| try testing.expect(try c.put(byte) == null);
+    // block_begin should be set after %begin
+    try testing.expect(c.block_begin != null);
+    try testing.expectEqual(269, c.block_begin.?.command_id);
+
+    for ("some data\n") |byte| try testing.expect(try c.put(byte) == null);
+    // Mismatched command_id (999 instead of 269)
+    for ("%end 1578922740 999 1") |byte| try testing.expect(try c.put(byte) == null);
+    const n = (try c.put('\n')).?;
+    // Block should still be processed despite mismatch
+    try testing.expect(n == .block_end);
+    try testing.expectEqualStrings("some data", n.block_end);
+    // block_begin should be cleared
+    try testing.expect(c.block_begin == null);
+}
+
+test "tmux block begin tokens parsed" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var c: Parser = .{ .buffer = .init(alloc) };
+    defer c.deinit();
+    for ("%begin 42 100 0\n") |byte| try testing.expect(try c.put(byte) == null);
+    try testing.expect(c.block_begin != null);
+    try testing.expectEqual(42, c.block_begin.?.time);
+    try testing.expectEqual(100, c.block_begin.?.command_id);
+    try testing.expectEqual(0, c.block_begin.?.flags);
+
+    for ("%end 42 100 0") |byte| try testing.expect(try c.put(byte) == null);
+    const n = (try c.put('\n')).?;
+    try testing.expect(n == .block_end);
+    try testing.expect(c.block_begin == null);
+}
+
+test "tmux block begin malformed tokens" {
+    // If %begin tokens can't be parsed, block_begin is null but
+    // block processing still works (validation is skipped).
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var c: Parser = .{ .buffer = .init(alloc) };
+    defer c.deinit();
+    // Malformed: non-numeric time
+    for ("%begin abc 269 1\n") |byte| try testing.expect(try c.put(byte) == null);
+    try testing.expect(c.block_begin == null);
+    // Block state should still be entered
+    try testing.expect(c.state == .block);
+
+    for ("%end 1578922740 269 1") |byte| try testing.expect(try c.put(byte) == null);
+    const n = (try c.put('\n')).?;
+    try testing.expect(n == .block_end);
+}
+
+test "tmux exit notification" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var c: Parser = .{ .buffer = .init(alloc) };
+    defer c.deinit();
+    for ("%exit") |byte| try testing.expect(try c.put(byte) == null);
+    const n = (try c.put('\n')).?;
+    try testing.expect(n == .exit);
+}
+
+test "tmux exit notification with reason" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var c: Parser = .{ .buffer = .init(alloc) };
+    defer c.deinit();
+    // %exit can have an optional reason string which we drop
+    for ("%exit server exited") |byte| try testing.expect(try c.put(byte) == null);
+    const n = (try c.put('\n')).?;
+    try testing.expect(n == .exit);
+}
+
+test "tmux extended-output" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var c: Parser = .{ .buffer = .init(alloc) };
+    defer c.deinit();
+    for ("%extended-output %5 1234 : hello\\033[m") |byte| try testing.expect(try c.put(byte) == null);
+    const n = (try c.put('\n')).?;
+    try testing.expect(n == .extended_output);
+    try testing.expectEqual(5, n.extended_output.pane_id);
+    try testing.expectEqual(1234, n.extended_output.age_ms);
+    try testing.expectEqualStrings("hello\\033[m", n.extended_output.data);
+}
+
+test "tmux ignored notifications suppressed" {
+    // Recognized-but-ignored notifications should not produce any
+    // notification (null return) and should not log as "unknown".
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    const ignored_lines = [_][]const u8{
+        "%unlinked-window-add @1",
+        "%unlinked-window-close @2",
+        "%unlinked-window-renamed @3 newname",
+        "%paste-buffer-changed buf0",
+        "%paste-buffer-deleted buf1",
+        "%subscription-changed myvar $1 @2 3 %4 : value",
+    };
+
+    for (ignored_lines) |line| {
+        var c: Parser = .{ .buffer = .init(alloc) };
+        defer c.deinit();
+        for (line) |byte| try testing.expect(try c.put(byte) == null);
+        // Should return null (ignored), not a notification
+        try testing.expect(try c.put('\n') == null);
+        // Parser should return to idle, not broken
+        try testing.expect(c.state == .idle);
+    }
+}
+
+test "tmux message" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var c: Parser = .{ .buffer = .init(alloc) };
+    defer c.deinit();
+    for ("%message Session created session 1") |byte| try testing.expect(try c.put(byte) == null);
+    const n = (try c.put('\n')).?;
+    try testing.expect(n == .message);
+    try testing.expectEqualStrings("Session created session 1", n.message.text);
 }

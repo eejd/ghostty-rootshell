@@ -56,6 +56,9 @@ pub const StreamHandler = struct {
     /// The clipboard write access configuration.
     clipboard_write: configpkg.ClipboardAccess,
 
+    /// Whether tmux control mode is enabled at runtime.
+    tmux_control_mode: bool = true,
+
     //---------------------------------------------------------------
     // Internal state
 
@@ -110,6 +113,20 @@ pub const StreamHandler = struct {
         self.osc_color_report_format = config.osc_color_report_format;
         self.clipboard_write = config.clipboard_write;
         self.enquiry_response = config.enquiry_response;
+        // If tmux control mode was just disabled and a viewer is active,
+        // proactively tear down the viewer and close child surfaces so
+        // they don't leak until the tmux server sends an exit.
+        if (comptime tmux_enabled) {
+            if (self.tmux_control_mode and !config.tmux_control_mode) {
+                if (self.tmux_viewer) |viewer| {
+                    self.sendEmptyTopologySnapshot();
+                    viewer.deinit();
+                    self.alloc.destroy(viewer);
+                    self.tmux_viewer = null;
+                }
+            }
+        }
+        self.tmux_control_mode = config.tmux_control_mode;
         self.default_cursor_style = config.cursor_style;
         self.default_cursor_blink = config.cursor_blink;
 
@@ -132,6 +149,21 @@ pub const StreamHandler = struct {
             self.renderer_state.mutex.unlock();
             defer self.renderer_state.mutex.lock();
             _ = self.surface_mailbox.push(msg, .{ .forever = {} });
+        }
+    }
+
+    /// Send an empty topology snapshot so the reconciler prunes all tmux
+    /// windows/panes. Used by both the DCS unhook (.exit) path and the
+    /// viewer defunct (.exit action) path.
+    fn sendEmptyTopologySnapshot(self: *StreamHandler) void {
+        if (apprt.surface.Message.TmuxTopologySnapshot.initFromWindows(
+            self.alloc,
+            &.{},
+            null,
+        )) |snapshot| {
+            self.surfaceMessageWriter(.{ .tmux_topology_changed = snapshot });
+        } else |err| {
+            log.warn("failed to create exit topology snapshot: {}", .{err});
         }
     }
 
@@ -368,6 +400,33 @@ pub const StreamHandler = struct {
         }
     }
 
+    /// Set the tmux control-mode client size and push it to tmux so the active
+    /// window's panes are laid out to the visible tab's grid. Called on the IO
+    /// thread (via the `tmux_set_client_size` mailbox message), so it can touch
+    /// the viewer's command queue safely.
+    pub fn tmuxSetClientSize(self: *StreamHandler, cols: u16, rows: u16) void {
+        if (comptime !tmux_enabled) return;
+        const viewer = self.tmux_viewer orelse return;
+
+        // Store the size; if we're mid command-queue this also queues an
+        // in-order, response-matched client_size command.
+        viewer.setClientSize(@intCast(cols), @intCast(rows));
+
+        // If the queue is idle, send refresh-client directly so the resize takes
+        // effect immediately rather than waiting for the next command cycle.
+        // Safe only when the queue is empty: tmux's (empty) response then has no
+        // queued command to be mis-matched against (the viewer ignores unmatched
+        // block output).
+        if (!viewer.commandQueueEmpty()) return;
+        var buf: [64]u8 = undefined;
+        const cmd = std.fmt.bufPrint(
+            &buf,
+            "refresh-client -C {d}x{d}\n",
+            .{ cols, rows },
+        ) catch return;
+        self.messageWriter(termio.Message.writeReq(self.alloc, cmd) catch return);
+    }
+
     pub inline fn dcsHook(self: *StreamHandler, dcs: terminal.DCS) !void {
         var cmd = self.dcs.hook(self.alloc, dcs) orelse return;
         defer cmd.deinit();
@@ -393,22 +452,44 @@ pub const StreamHandler = struct {
                 // If tmux control mode is disabled at the build level,
                 // then this whole block shouldn't be analyzed.
                 if (comptime !tmux_enabled) break :tmux;
+
                 log.info("tmux control mode event cmd={f}", .{tmux});
 
                 switch (tmux) {
                     .enter => {
+                        // Runtime config gate: only block entering tmux
+                        // control mode when disabled. Exit and other events
+                        // must still be processed to tear down an active
+                        // viewer (e.g. config toggled off mid-session).
+                        if (!self.tmux_control_mode) break :tmux;
+
                         // Setup our viewer state
                         assert(self.tmux_viewer == null);
                         const viewer = try self.alloc.create(terminal.tmux.Viewer);
                         errdefer self.alloc.destroy(viewer);
-                        viewer.* = try .init(self.alloc);
+                        viewer.* = try .init(
+                            self.alloc,
+                            self.terminal.cols,
+                            self.terminal.rows,
+                        );
                         errdefer viewer.deinit();
+                        // Theme the viewer's pane terminals with the gateway
+                        // terminal's colors so default-background cells match the
+                        // app theme instead of the built-in dark default.
+                        viewer.colors = self.terminal.colors;
                         self.tmux_viewer = viewer;
                         break :tmux;
                     },
 
                     .exit => {
-                        // Free our viewer state if we have one
+                        // Send an empty topology snapshot so the reconciler
+                        // prunes all tmux windows/panes. This closes all
+                        // child surfaces created for the tmux session.
+                        if (self.tmux_viewer != null) {
+                            self.sendEmptyTopologySnapshot();
+                        }
+
+                        // Free our viewer state if we have one.
                         if (self.tmux_viewer) |viewer| {
                             viewer.deinit();
                             self.alloc.destroy(viewer);
@@ -427,9 +508,11 @@ pub const StreamHandler = struct {
                 assert(tmux != .exit);
 
                 const viewer = self.tmux_viewer orelse {
-                    // This can only really happen if we failed to
-                    // initialize the viewer on enter.
-                    log.info(
+                    // This can happen if we failed to initialize the
+                    // viewer on enter, or if tmux_control_mode was
+                    // disabled mid-session while the server continues
+                    // sending notifications.
+                    log.debug(
                         "received tmux control mode command without viewer: {f}",
                         .{tmux},
                     );
@@ -438,13 +521,15 @@ pub const StreamHandler = struct {
                 };
 
                 for (viewer.next(.{ .tmux = tmux })) |action| {
-                    log.info("tmux viewer action={f}", .{action});
+                    log.debug("tmux viewer action={f}", .{action});
                     switch (action) {
                         .exit => {
-                            // We ignore this because we will fully exit when
-                            // our DCS connection ends. We may want to handle
-                            // this in the future to notify our GUI we're
-                            // disconnected though.
+                            // The viewer has gone defunct (e.g. broken control
+                            // stream). Send an empty topology snapshot to close
+                            // all child tmux surfaces. The DCS unhook path also
+                            // sends this, but the viewer may go defunct before
+                            // the DCS session formally ends.
+                            self.sendEmptyTopologySnapshot();
                         },
 
                         .command => |command| {
@@ -456,8 +541,98 @@ pub const StreamHandler = struct {
                             ));
                         },
 
-                        .windows => {
-                            // TODO
+                        .windows => |windows| {
+                            // Deep-copy the window topology and forward it to
+                            // the app thread via the surface mailbox. The app
+                            // thread will reconcile tmux windows/panes into
+                            // apprt surfaces.
+                            //
+                            // The viewer already maintains the authoritative
+                            // window list; this handler forwards the topology
+                            // so the app thread can diff and create/destroy
+                            // surfaces.
+                            for (windows) |window| {
+                                log.debug("tmux window id={} size={}x{}", .{
+                                    window.id,
+                                    window.width,
+                                    window.height,
+                                });
+                                logPaneIds(window.layout);
+                            }
+
+                            const snapshot = apprt.surface.Message.TmuxTopologySnapshot.initFromWindows(
+                                self.alloc,
+                                windows,
+                                &viewer.panes,
+                            ) catch |err| {
+                                log.warn("failed to snapshot tmux topology: {}", .{err});
+                                continue;
+                            };
+                            self.surfaceMessageWriter(.{ .tmux_topology_changed = snapshot });
+                        },
+
+                        .focus => |focus| {
+                            // Forward focus change to the parent surface's
+                            // mailbox so the app thread can update which tab
+                            // and pane has focus.
+                            //
+                            // Lightweight value message — no heap allocation
+                            // needed, just two IDs.
+                            self.surfaceMessageWriter(.{
+                                .tmux_focus_changed = .{
+                                    .window_id = focus.window_id,
+                                    .pane_id = focus.pane_id,
+                                },
+                            });
+                        },
+
+                        .title => |t| {
+                            // Forward window rename to the app thread so it
+                            // can update the tab title.
+                            self.surfaceMessageWriter(.{
+                                .tmux_title_changed = apprt.surface.Message.TmuxTitleChanged.init(
+                                    t.window_id,
+                                    t.name,
+                                ),
+                            });
+                        },
+
+                        .session_title => |st| {
+                            // Forward session rename to the app thread so it
+                            // can update the Ghostty window title.
+                            self.surfaceMessageWriter(.{
+                                .tmux_title_changed = apprt.surface.Message.TmuxTitleChanged.init(
+                                    null,
+                                    st.name,
+                                ),
+                            });
+                        },
+
+                        .pane_paused => |pp| {
+                            // Log the pause state change. The runtime
+                            // integration (auto-continue on focus, visual
+                            // indicator) will be added in a follow-up PR.
+                            log.debug("tmux pane {} {s}", .{
+                                pp.pane_id,
+                                if (pp.paused) "paused" else "continued",
+                            });
+                        },
+
+                        .pane_mode_changed => |pm| {
+                            // Log the mode change. Visual indicators
+                            // (e.g., copy mode overlay) will be added in
+                            // a follow-up PR.
+                            log.debug("tmux pane {} mode changed to {s}", .{
+                                pm.pane_id,
+                                @tagName(pm.mode),
+                            });
+                        },
+
+                        .message => |msg| {
+                            // Log the tmux server message. Runtime visual
+                            // feedback (toast, status bar) will be added in
+                            // a follow-up PR.
+                            log.info("tmux message: {s}", .{msg.text});
                         },
                     }
                 }
@@ -1555,5 +1730,114 @@ pub const StreamHandler = struct {
     /// Display a GUI progress report.
     fn progressReport(self: *StreamHandler, report: terminal.osc.Command.ProgressReport) void {
         self.surfaceMessageWriter(.{ .progress_report = report });
+    }
+
+    /// Log pane IDs from a tmux layout tree. Walks the tree recursively
+    /// to find all leaf panes so we can observe the topology in logs.
+    fn logPaneIds(layout: terminal.tmux.Layout) void {
+        switch (layout.content) {
+            .pane => |pane_id| {
+                log.debug("tmux pane id={} pos={}x{}+{}+{}", .{
+                    pane_id,
+                    layout.width,
+                    layout.height,
+                    layout.x,
+                    layout.y,
+                });
+            },
+            .horizontal => |children| {
+                for (children) |child| logPaneIds(child);
+            },
+            .vertical => |children| {
+                for (children) |child| logPaneIds(child);
+            },
+        }
+    }
+
+    test "logPaneIds walks single leaf pane" {
+        // Base case: a single pane with no children. Verifies
+        // the function handles leaf nodes without crashing.
+        const layout: terminal.tmux.Layout = .{
+            .width = 80,
+            .height = 24,
+            .x = 0,
+            .y = 0,
+            .content = .{ .pane = 1 },
+        };
+        logPaneIds(layout);
+    }
+
+    test "logPaneIds walks horizontal split" {
+        // Two panes in a horizontal split. Verifies recursion
+        // into .horizontal children.
+        const children = [_]terminal.tmux.Layout{
+            .{
+                .width = 40,
+                .height = 24,
+                .x = 0,
+                .y = 0,
+                .content = .{ .pane = 1 },
+            },
+            .{
+                .width = 40,
+                .height = 24,
+                .x = 40,
+                .y = 0,
+                .content = .{ .pane = 2 },
+            },
+        };
+        const layout: terminal.tmux.Layout = .{
+            .width = 80,
+            .height = 24,
+            .x = 0,
+            .y = 0,
+            .content = .{ .horizontal = &children },
+        };
+        logPaneIds(layout);
+    }
+
+    test "logPaneIds walks nested layout tree" {
+        // A horizontal split where the right child is a vertical
+        // split of two panes. Exercises deeper recursion.
+        const right_children = [_]terminal.tmux.Layout{
+            .{
+                .width = 40,
+                .height = 12,
+                .x = 40,
+                .y = 0,
+                .content = .{ .pane = 2 },
+            },
+            .{
+                .width = 40,
+                .height = 12,
+                .x = 40,
+                .y = 12,
+                .content = .{ .pane = 3 },
+            },
+        };
+        const children = [_]terminal.tmux.Layout{
+            .{
+                .width = 40,
+                .height = 24,
+                .x = 0,
+                .y = 0,
+                .content = .{ .pane = 1 },
+            },
+            .{
+                .width = 40,
+                .height = 24,
+                .x = 40,
+                .y = 0,
+                .content = .{ .vertical = &right_children },
+            },
+        };
+        const layout: terminal.tmux.Layout = .{
+            .width = 80,
+            .height = 24,
+            .x = 0,
+            .y = 0,
+            .content = .{ .horizontal = &children },
+        };
+        logPaneIds(layout);
     }
 };

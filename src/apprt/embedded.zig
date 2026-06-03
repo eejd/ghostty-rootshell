@@ -252,6 +252,34 @@ pub const App = struct {
         return surface;
     }
 
+    /// Create a new tmux control mode pane surface bound to a parent
+    /// (viewer-owner) surface. See `Surface.initTmuxPane`.
+    fn newTmuxPaneSurface(
+        self: *App,
+        opts: Surface.Options,
+        parent: *Surface,
+        window_id: usize,
+        pane_id: usize,
+        viewer_terminal: ?*terminal.Terminal,
+        viewer_pane: ?*terminal.tmux.Viewer.Pane,
+    ) !*Surface {
+        var surface = try self.core_app.alloc.create(Surface);
+        errdefer self.core_app.alloc.destroy(surface);
+
+        try surface.initTmuxPane(
+            self,
+            opts,
+            parent,
+            window_id,
+            pane_id,
+            viewer_terminal,
+            viewer_pane,
+        );
+        errdefer surface.deinit();
+
+        return surface;
+    }
+
     /// Close the given surface.
     pub fn closeSurface(self: *App, surface: *Surface) void {
         surface.deinit();
@@ -416,6 +444,12 @@ pub const Surface = struct {
     size: apprt.SurfaceSize,
     cursor_pos: apprt.CursorPos,
     inspector: ?*Inspector = null,
+
+    /// For tmux control mode pane surfaces: the heap-allocated relay writer
+    /// that routes this pane's input as `send-keys` to the parent
+    /// (viewer-owner) surface's mailbox. Owned by this surface, freed in
+    /// deinit. Null for non-tmux surfaces.
+    tmux_relay_writer: ?*apprt.surface.SurfaceRelayWriter = null,
 
     /// The current title of the surface. The embedded apprt saves this so
     /// that getTitle works without the implementer needing to save it.
@@ -609,6 +643,89 @@ pub const Surface = struct {
         }
     }
 
+    /// Initialize a tmux control mode pane surface. Unlike `init`, this
+    /// spawns no command/pty; it creates a surface whose termio uses the
+    /// `tmux` backend, routing input as `send-keys` to the parent
+    /// (viewer-owner) surface and rendering from the viewer-owned pane
+    /// terminal (single-terminal model).
+    pub fn initTmuxPane(
+        self: *Surface,
+        app: *App,
+        opts: Options,
+        parent: *Surface,
+        window_id: usize,
+        pane_id: usize,
+        viewer_terminal: ?*terminal.Terminal,
+        viewer_pane: ?*terminal.tmux.Viewer.Pane,
+    ) !void {
+        self.* = .{
+            .app = app,
+            .platform = try .init(opts.platform_tag, opts.platform),
+            .userdata = opts.userdata,
+            .core_surface = undefined,
+            .content_scale = .{
+                .x = @floatCast(opts.scale_factor),
+                .y = @floatCast(opts.scale_factor),
+            },
+            .size = .{ .width = 800, .height = 600 },
+            .cursor_pos = .{ .x = -1, .y = -1 },
+            .use_external_io = false,
+        };
+
+        // Add ourselves to the list of surfaces on the app.
+        try app.core_app.addSurface(self);
+        errdefer app.core_app.deleteSurface(self);
+
+        // Shallow copy the config. tmux panes use the default config; there
+        // is no command/working-directory since the tmux backend owns no pty.
+        var config = try apprt.surface.newConfig(app.core_app, &app.config, opts.context);
+        defer config.deinit();
+
+        // Allocate a relay writer bound to the parent (viewer-owner)
+        // surface's mailbox. The tmux backend's ControlWriter points into
+        // this, so it must outlive the surface; we own it and free it in
+        // deinit. The errdefer covers the window before ownership transfer.
+        const alloc = app.core_app.alloc;
+        const relay = try alloc.create(apprt.surface.SurfaceRelayWriter);
+        errdefer alloc.destroy(relay);
+        relay.* = .{
+            .parent_mailbox = .{
+                .surface = &parent.core_surface,
+                .app = .{ .rt_app = app, .mailbox = &app.core_app.mailbox },
+            },
+            .alloc = alloc,
+        };
+
+        // Initialize the core surface with a tmux backend.
+        try self.core_surface.initWithOptions(
+            alloc,
+            &config,
+            app.core_app,
+            app,
+            self,
+            .{ .tmux_backend = .{
+                .pane_id = pane_id,
+                .window_id = window_id,
+                .control_writer = relay.controlWriter(),
+                .viewer_terminal = viewer_terminal,
+                .viewer_pane = viewer_pane,
+            } },
+        );
+        errdefer self.core_surface.deinit();
+
+        // If our options requested a specific font-size, set that.
+        if (opts.font_size != 0) {
+            var font_size = self.core_surface.font_size;
+            font_size.points = opts.font_size;
+            try self.core_surface.setFontSize(font_size);
+        }
+
+        // Transfer ownership of the relay writer to the surface; from here
+        // it is freed in deinit. No fallible ops follow, so the errdefer
+        // above will not run on success (no double free).
+        self.tmux_relay_writer = relay;
+    }
+
     pub fn deinit(self: *Surface) void {
         // Shut down our inspector
         self.freeInspector();
@@ -621,6 +738,11 @@ pub const Surface = struct {
 
         // Clean up our core surface so that all the rendering and IO stop.
         self.core_surface.deinit();
+
+        // Free the tmux relay writer if this was a tmux pane surface. Safe
+        // after core_surface.deinit() since the IO thread (the only user of
+        // the control writer) has stopped.
+        if (self.tmux_relay_writer) |relay| self.app.core_app.alloc.destroy(relay);
     }
 
     /// Initialize the inspector instance. A surface can only have one
@@ -1577,6 +1699,42 @@ pub const CAPI = struct {
         return try app.newSurface(opts.*);
     }
 
+    /// Create a tmux control mode pane surface. `parent` is the
+    /// viewer-owner surface (the one running `tmux -CC`). `viewer_terminal`
+    /// and `viewer_pane` are the opaque pointers delivered by an
+    /// `ensure_pane` reconcile op (see ghostty_tmux_reconcile_op). The new
+    /// surface renders from the viewer's pane terminal and relays input as
+    /// `send-keys` to the parent. Returns null on error.
+    export fn ghostty_surface_new_tmux_pane(
+        app: *App,
+        parent: *Surface,
+        window_id: usize,
+        pane_id: usize,
+        viewer_terminal: ?*anyopaque,
+        viewer_pane: ?*anyopaque,
+        opts: *const apprt.Surface.Options,
+    ) ?*Surface {
+        const vt: ?*terminal.Terminal = if (viewer_terminal) |p|
+            @ptrCast(@alignCast(p))
+        else
+            null;
+        const vp: ?*terminal.tmux.Viewer.Pane = if (viewer_pane) |p|
+            @ptrCast(@alignCast(p))
+        else
+            null;
+        return app.newTmuxPaneSurface(
+            opts.*,
+            parent,
+            window_id,
+            pane_id,
+            vt,
+            vp,
+        ) catch |err| {
+            log.err("error initializing tmux pane surface err={}", .{err});
+            return null;
+        };
+    }
+
     export fn ghostty_surface_free(ptr: *Surface) void {
         ptr.app.closeSurface(ptr);
     }
@@ -1922,6 +2080,184 @@ pub const CAPI = struct {
         };
     }
 
+    //---------------------------------------------------------------
+    // tmux control mode: reconcile op-batch consumer (embedded apprt)
+    //
+    // The GHOSTTY_ACTION_TMUX_RECONCILE action carries an opaque
+    // *CoreSurface.TmuxReconcilePayload. The Swift side walks the op
+    // batch via these accessors, applies them to native tabs/splits,
+    // and frees the payload with ghostty_tmux_reconcile_free when done.
+    // Mirrors the GTK consumer (apprt/gtk application.zig:tmuxReconcile)
+    // but adapted to the C boundary.
+
+    const TmuxReconcilePayload = CoreSurface.TmuxReconcilePayload;
+    const TmuxLayout = terminal.tmux.Layout;
+
+    const CTmuxOpTag = enum(c_int) {
+        sync_begin = 0,
+        ensure_window = 1,
+        ensure_pane = 2,
+        set_layout = 3,
+        set_focus = 4,
+        prune_absent = 5,
+        sync_end = 6,
+        set_tab_title = 7,
+        set_window_title = 8,
+    };
+
+    /// C-flat view of a single reconcile op. Sync with ghostty_tmux_op_s.
+    const CTmuxOp = extern struct {
+        tag: CTmuxOpTag,
+        window_id: usize = 0,
+        has_window_id: bool = false,
+        pane_id: usize = 0,
+        width: usize = 0,
+        height: usize = 0,
+        /// ensure_pane: *terminal.Terminal (opaque)
+        viewer_terminal: ?*anyopaque = null,
+        /// ensure_pane: *terminal.tmux.Viewer.Pane (opaque)
+        viewer_pane: ?*anyopaque = null,
+        /// set_layout: *const terminal.tmux.Layout (opaque, walk via accessors)
+        layout: ?*const anyopaque = null,
+        /// titles (not NUL-terminated; use title_len)
+        title: ?[*]const u8 = null,
+        title_len: usize = 0,
+        /// prune_absent (sorted)
+        window_ids: ?[*]const usize = null,
+        window_ids_len: usize = 0,
+        pane_ids: ?[*]const usize = null,
+        pane_ids_len: usize = 0,
+    };
+
+    export fn ghostty_tmux_reconcile_op_count(payload: *TmuxReconcilePayload) usize {
+        return payload.ops.len;
+    }
+
+    export fn ghostty_tmux_reconcile_op(
+        payload: *TmuxReconcilePayload,
+        index: usize,
+        out: *CTmuxOp,
+    ) bool {
+        if (index >= payload.ops.len) return false;
+        switch (payload.ops[index]) {
+            .sync_windows_begin => out.* = .{ .tag = .sync_begin },
+            .sync_windows_end => out.* = .{ .tag = .sync_end },
+            .ensure_window => |w| out.* = .{
+                .tag = .ensure_window,
+                .window_id = w.tmux_window_id,
+                .has_window_id = true,
+                .width = w.width,
+                .height = w.height,
+            },
+            .ensure_pane => |p| out.* = .{
+                .tag = .ensure_pane,
+                .window_id = p.tmux_window_id,
+                .has_window_id = true,
+                .pane_id = p.pane_id,
+                .viewer_terminal = if (p.viewer_terminal) |t| @ptrCast(t) else null,
+                .viewer_pane = if (p.viewer_pane) |pp| @ptrCast(pp) else null,
+            },
+            .set_layout => |s| out.* = .{
+                .tag = .set_layout,
+                .window_id = s.tmux_window_id,
+                .has_window_id = true,
+                .layout = @ptrCast(s.layout),
+            },
+            .set_focus => |f| out.* = .{
+                .tag = .set_focus,
+                .window_id = f.tmux_window_id,
+                .has_window_id = true,
+                .pane_id = f.pane_id,
+            },
+            .prune_absent => |pa| out.* = .{
+                .tag = .prune_absent,
+                .window_ids = pa.window_ids.ptr,
+                .window_ids_len = pa.window_ids.len,
+                .pane_ids = pa.pane_ids.ptr,
+                .pane_ids_len = pa.pane_ids.len,
+            },
+            .set_tab_title => |t| out.* = .{
+                .tag = .set_tab_title,
+                .window_id = t.tmux_window_id,
+                .has_window_id = true,
+                .title = t.title.ptr,
+                .title_len = t.title.len,
+            },
+            .set_window_title => |t| out.* = .{
+                .tag = .set_window_title,
+                .has_window_id = false,
+                .title = t.title.ptr,
+                .title_len = t.title.len,
+            },
+        }
+        return true;
+    }
+
+    /// Free a reconcile payload. The Swift consumer calls this after it
+    /// has applied all ops (the apprt owns the payload once the action
+    /// callback returns success; see Surface.handleMessage).
+    export fn ghostty_tmux_reconcile_free(payload: *TmuxReconcilePayload) void {
+        payload.deinit();
+    }
+
+    const CTmuxLayoutKind = enum(c_int) {
+        pane = 0,
+        horizontal = 1,
+        vertical = 2,
+    };
+
+    /// C-flat view of a layout node. Sync with ghostty_tmux_layout_info_s.
+    const CTmuxLayoutInfo = extern struct {
+        kind: CTmuxLayoutKind,
+        width: usize = 0,
+        height: usize = 0,
+        x: usize = 0,
+        y: usize = 0,
+        /// valid when kind == pane
+        pane_id: usize = 0,
+        /// valid when kind == horizontal/vertical
+        child_count: usize = 0,
+    };
+
+    export fn ghostty_tmux_layout_info(layout: *const TmuxLayout, out: *CTmuxLayoutInfo) void {
+        switch (layout.content) {
+            .pane => |id| out.* = .{
+                .kind = .pane,
+                .width = layout.width,
+                .height = layout.height,
+                .x = layout.x,
+                .y = layout.y,
+                .pane_id = id,
+            },
+            .horizontal => |ch| out.* = .{
+                .kind = .horizontal,
+                .width = layout.width,
+                .height = layout.height,
+                .x = layout.x,
+                .y = layout.y,
+                .child_count = ch.len,
+            },
+            .vertical => |ch| out.* = .{
+                .kind = .vertical,
+                .width = layout.width,
+                .height = layout.height,
+                .x = layout.x,
+                .y = layout.y,
+                .child_count = ch.len,
+            },
+        }
+    }
+
+    export fn ghostty_tmux_layout_child(
+        layout: *const TmuxLayout,
+        index: usize,
+    ) ?*const TmuxLayout {
+        return switch (layout.content) {
+            .pane => null,
+            .horizontal, .vertical => |ch| if (index < ch.len) &ch[index] else null,
+        };
+    }
+
     /// Filter the mods if necessary. This handles settings such as
     /// `macos-option-as-alt`. The filtered mods should be used for
     /// key translation but should NOT be sent back via the `_key`
@@ -1989,6 +2325,36 @@ pub const CAPI = struct {
         surface.textCallback(ptr[0..len]);
     }
 
+    /// Write raw, already-encoded input bytes to the surface's IO without the
+    /// clipboard-paste framing/filtering that `ghostty_surface_text` applies.
+    /// Correct for pre-encoded terminal sequences (control keys like backspace,
+    /// escape sequences). For a tmux control-mode pane the bytes are relayed
+    /// verbatim as `send-keys` to tmux; otherwise they go to the pty.
+    export fn ghostty_surface_send_input(
+        surface: *Surface,
+        ptr: [*]const u8,
+        len: usize,
+    ) void {
+        surface.core_surface.sendInput(ptr[0..len]) catch |err| {
+            log.warn("error sending surface input err={}", .{err});
+        };
+    }
+
+    /// Set the tmux control-mode client size (in cells) for this surface's
+    /// viewer. Posts to the IO thread, which sends `refresh-client -C` to tmux
+    /// so the active window's panes are laid out to the given grid. No-op if the
+    /// surface isn't a tmux control-mode gateway. Call this with the visible tmux
+    /// tab's grid size when it changes (debounced).
+    export fn ghostty_surface_tmux_set_client_size(
+        surface: *Surface,
+        cols: u16,
+        rows: u16,
+    ) void {
+        surface.core_surface.io.queueMessage(.{
+            .tmux_set_client_size = .{ .cols = cols, .rows = rows },
+        }, .unlocked);
+    }
+
     /// Set the preedit text for the surface. This is used for IME
     /// composition. If the length is 0, then the preedit text is cleared.
     export fn ghostty_surface_preedit(
@@ -2021,7 +2387,14 @@ pub const CAPI = struct {
         const core_surface = &surface.core_surface;
         core_surface.renderer_state.mutex.lock();
         defer core_surface.renderer_state.mutex.unlock();
-        const screen = core_surface.io.terminal.screens.get(.primary) orelse return 0;
+        // Use the DISPLAYED terminal (renderer_state.terminal), not io.terminal:
+        // for a tmux control-mode pane the rendered terminal is the viewer-owned
+        // pane terminal (which holds the scrollback), while io.terminal is an
+        // empty dummy. Reading io.terminal here makes the iPad touch-scroll path
+        // see zero scrollback rows and refuse to scroll into history. Same pointer
+        // for a normal surface. Held under renderer_state.mutex (the viewer writes
+        // the pane terminal under the same mutex).
+        const screen = core_surface.renderer_state.terminal.screens.get(.primary) orelse return 0;
         return screen.pages.total_rows;
     }
 

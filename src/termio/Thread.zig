@@ -330,6 +330,7 @@ fn drainMailbox(
                 }
             },
             .jump_to_prompt => |v| try io.jumpToPrompt(v),
+            .tmux_set_client_size => |v| io.terminal_stream.handler.tmuxSetClientSize(v.cols, v.rows),
             .start_synchronized_output => self.startSynchronizedOutput(cb),
             .linefeed_mode => |v| self.flags.linefeed_mode = v,
             .focused => |v| try io.focusGained(data, v),

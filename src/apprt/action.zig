@@ -343,6 +343,12 @@ pub const Action = union(Key) {
     /// otherwise the terminal-set title.
     copy_title_to_clipboard,
 
+    /// Apply a batch of tmux topology reconcile operations. The payload
+    /// is a heap-allocated list of structural ops (ensure/prune tabs and
+    /// panes) that the apprt applies atomically. The receiver must call
+    /// `deinit` on the payload after processing.
+    tmux_reconcile: TmuxReconcile,
+
     /// Sync with: ghostty_action_tag_e
     pub const Key = enum(c_int) {
         quit,
@@ -410,6 +416,7 @@ pub const Action = union(Key) {
         search_selected,
         readonly,
         copy_title_to_clipboard,
+        tmux_reconcile,
 
         test "ghostty.h Action.Key" {
             try lib.checkGhosttyHEnum(Key, "GHOSTTY_ACTION_");
@@ -998,6 +1005,21 @@ pub const SearchSelected = struct {
     pub fn cval(self: SearchSelected) C {
         return .{
             .selected = if (self.selected) |s| @intCast(s) else -1,
+        };
+    }
+};
+
+pub const TmuxReconcile = struct {
+    payload: *CoreSurface.TmuxReconcilePayload,
+
+    // Sync with: ghostty_action_tmux_reconcile_s
+    pub const C = extern struct {
+        payload: *CoreSurface.TmuxReconcilePayload,
+    };
+
+    pub fn cval(self: TmuxReconcile) C {
+        return .{
+            .payload = self.payload,
         };
     }
 };

@@ -18,20 +18,35 @@ pub fn parseFormatStruct(
     str: []const u8,
     delimiter: u8,
 ) ParseError!T {
-    // Parse all our fields
     const fields = @typeInfo(T).@"struct".fields;
     var it = std.mem.splitScalar(u8, str, delimiter);
     var result: T = undefined;
-    inline for (fields) |field| {
-        const part = it.next() orelse return error.MissingEntry;
+
+    // For the last field: if it is a string ([]const u8), consume the
+    // remainder of the input via rest() so the value may contain the
+    // delimiter character. This is important for list_windows where
+    // window_name (last field) can contain spaces.
+    const last_is_string = comptime blk: {
+        const last = fields[fields.len - 1];
+        break :blk @field(Variable, last.name).Type() == []const u8;
+    };
+
+    inline for (fields, 0..) |field, i| {
+        const part = if (comptime (last_is_string and i == fields.len - 1))
+            it.rest()
+        else
+            it.next() orelse return error.MissingEntry;
         @field(result, field.name) = Variable.parse(
             @field(Variable, field.name),
             part,
         ) catch return error.FormatError;
     }
 
-    // We should have consumed all parts now.
-    if (it.next() != null) return error.ExtraEntry;
+    // If the last field consumed the rest, no extra-entry check needed.
+    // Otherwise verify we consumed all parts.
+    if (!last_is_string) {
+        if (it.next() != null) return error.ExtraEntry;
+    }
 
     return result;
 }
@@ -143,6 +158,9 @@ pub const Variable = enum {
     mouse_utf8_flag,
     /// Pane origin flag.
     origin_flag,
+    /// Pane mode. Empty string when in normal mode, otherwise the mode
+    /// name (e.g., "copy-mode", "view-mode").
+    pane_mode,
     /// Unique pane ID prefixed with `%` (e.g., `%0`, `%42`).
     pane_id,
     /// Pane tab positions as a comma-separated list of 0-indexed column
@@ -156,6 +174,8 @@ pub const Variable = enum {
     session_id,
     /// Server version (e.g., `3.5a`).
     version,
+    /// 1 if window is the current window in the session.
+    window_active,
     /// Unique window ID prefixed with `@` (e.g., `@0`, `@42`).
     window_id,
     /// Width of window.
@@ -167,6 +187,8 @@ pub const Variable = enum {
     /// encodes pane dimensions as `WxH,X,Y[,ID]` with `{...}` for horizontal
     /// splits and `[...]` for vertical splits.
     window_layout,
+    /// Name of window.
+    window_name,
     /// Pane wrap flag.
     wrap_flag,
 
@@ -189,6 +211,7 @@ pub const Variable = enum {
             .mouse_standard_flag,
             .mouse_utf8_flag,
             .origin_flag,
+            .window_active,
             .wrap_flag,
             => std.mem.eql(u8, value, "1"),
             .alternate_saved_x,
@@ -214,9 +237,11 @@ pub const Variable = enum {
             .window_height => try std.fmt.parseInt(usize, value, 10),
             .cursor_colour,
             .cursor_shape,
+            .pane_mode,
             .pane_tabs,
             .version,
             .window_layout,
+            .window_name,
             => value,
         };
     }
@@ -239,6 +264,7 @@ pub const Variable = enum {
             .mouse_standard_flag,
             .mouse_utf8_flag,
             .origin_flag,
+            .window_active,
             .wrap_flag,
             => bool,
             .alternate_saved_x,
@@ -255,9 +281,11 @@ pub const Variable = enum {
             => usize,
             .cursor_colour,
             .cursor_shape,
+            .pane_mode,
             .pane_tabs,
             .version,
             .window_layout,
+            .window_name,
             => []const u8,
         };
     }
@@ -457,6 +485,19 @@ test "parse origin_flag" {
     try testing.expectEqual(false, try Variable.parse(.origin_flag, "true"));
 }
 
+test "parse window_active" {
+    try testing.expectEqual(true, try Variable.parse(.window_active, "1"));
+    try testing.expectEqual(false, try Variable.parse(.window_active, "0"));
+    try testing.expectEqual(false, try Variable.parse(.window_active, ""));
+    try testing.expectEqual(false, try Variable.parse(.window_active, "true"));
+}
+
+test "parse pane_mode" {
+    try testing.expectEqualStrings("copy-mode", try Variable.parse(.pane_mode, "copy-mode"));
+    try testing.expectEqualStrings("view-mode", try Variable.parse(.pane_mode, "view-mode"));
+    try testing.expectEqualStrings("", try Variable.parse(.pane_mode, ""));
+}
+
 test "parse pane_id" {
     try testing.expectEqual(42, try Variable.parse(.pane_id, "%42"));
     try testing.expectEqual(0, try Variable.parse(.pane_id, "%0"));
@@ -549,6 +590,17 @@ test "parseFormatStruct with empty layout field" {
     const result = try parseFormatStruct(T, "$1,", ',');
     try testing.expectEqual(1, result.session_id);
     try testing.expectEqualStrings("", result.window_layout);
+}
+
+test "parseFormatStruct last string field contains delimiter" {
+    // Simulates list_windows where window_name (last field) contains spaces.
+    // The rest() approach for the last string field consumes the remainder
+    // of the input, allowing the delimiter to appear in the value.
+    const T = FormatStruct(&.{ .session_id, .window_id, .window_name });
+    const result = try parseFormatStruct(T, "$1 @2 my cool window", ' ');
+    try testing.expectEqual(1, result.session_id);
+    try testing.expectEqual(2, result.window_id);
+    try testing.expectEqualStrings("my cool window", result.window_name);
 }
 
 fn testFormat(
