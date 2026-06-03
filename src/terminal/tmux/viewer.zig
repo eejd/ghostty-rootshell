@@ -8,6 +8,7 @@ const CircBuf = @import("../../datastruct/main.zig").CircBuf;
 const Screen = @import("../Screen.zig");
 const ScreenSet = @import("../ScreenSet.zig");
 const Terminal = @import("../Terminal.zig");
+const TerminalStream = @import("../stream_terminal.zig").Stream;
 const Layout = @import("layout.zig").Layout;
 const control = @import("control.zig");
 const output = @import("output.zig");
@@ -384,6 +385,7 @@ pub const Viewer = struct {
 
     pub const Pane = struct {
         terminal: Terminal,
+        stream: TerminalStream,
 
         /// Mutex protecting concurrent access to `terminal`. This is set
         /// by the child surface's tmux backend during `threadEnter` to
@@ -437,6 +439,7 @@ pub const Viewer = struct {
         mode: PaneMode = .normal,
 
         pub fn deinit(self: *Pane, alloc: Allocator) void {
+            self.stream.deinit();
             self.terminal.deinit(alloc);
         }
     };
@@ -1713,6 +1716,7 @@ pub const Viewer = struct {
         var stream = t.vtStream();
         defer stream.deinit();
         stream.nextSlice(content);
+        stream.nextSlice("\x1b[0m");
 
         // Populate the active area to be empty since this is only history.
         // We'll fill it with blanks and move the cursor to the top-left.
@@ -1759,7 +1763,9 @@ pub const Viewer = struct {
 
         var stream = t.vtStream();
         defer stream.deinit();
+        stream.nextSlice("\x1b[0m");
         stream.nextSlice(content);
+        stream.nextSlice("\x1b[0m");
 
         wakePane(pane);
     }
@@ -1792,10 +1798,6 @@ pub const Viewer = struct {
         // from the same terminal under this mutex.
         if (pane.renderer_mutex) |m| m.lock();
         defer if (pane.renderer_mutex) |m| m.unlock();
-
-        const t: *Terminal = &pane.terminal;
-        var stream = t.vtStream();
-        defer stream.deinit();
 
         // tmux escapes control bytes (< 0x20) and the backslash itself as
         // `\ooo` (a backslash followed by exactly three octal digits) in
@@ -1833,7 +1835,7 @@ pub const Viewer = struct {
                 i += 1;
             }
         }
-        stream.nextSlice(buf[0..n]);
+        pane.stream.nextSlice(buf[0..n]);
 
         wakePane(pane);
     }
@@ -1923,13 +1925,16 @@ pub const Viewer = struct {
                 errdefer t.deinit(gpa_alloc);
 
                 const pane = try gpa_alloc.create(Pane);
+                errdefer gpa_alloc.destroy(pane);
                 pane.* = .{
                     .terminal = t,
+                    .stream = undefined,
                     // A child surface will be created for this new pane (the
                     // reconcile emits an ensure_pane op). Mark it en route so no
                     // free path reclaims it before that child attaches.
                     .pending_attach = true,
                 };
+                pane.stream = pane.terminal.vtStream();
                 gop.value_ptr.* = pane;
             },
         }

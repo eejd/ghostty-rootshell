@@ -1381,6 +1381,17 @@ pub const Inspector = struct {
 pub const CAPI = struct {
     const global = &@import("../global.zig").state;
 
+    /// Terminal used for local UI reads. Tmux pane surfaces render a
+    /// viewer-owned terminal while their `io.terminal` is only a relay
+    /// placeholder. Normal surfaces keep upstream behavior.
+    /// Precondition: the renderer_state mutex must be held.
+    fn uiTerminalLocked(surface: *CoreSurface) *terminal.Terminal {
+        return switch (surface.io.backend) {
+            .tmux => surface.renderer_state.terminal,
+            else => &surface.io.terminal,
+        };
+    }
+
     /// This is the same as Surface.KeyEvent but this is the raw C API version.
     const KeyEvent = extern struct {
         action: input.Action,
@@ -1794,7 +1805,8 @@ pub const CAPI = struct {
         defer core_surface.renderer_state.mutex.unlock();
 
         // If we don't have a selection, do nothing.
-        const core_sel = core_surface.io.terminal.screens.active.selection orelse return false;
+        const t: *terminal.Terminal = uiTerminalLocked(core_surface);
+        const core_sel = t.screens.active.selection orelse return false;
 
         // Read the text from the selection.
         return readTextLocked(surface, core_sel, result);
@@ -2398,6 +2410,25 @@ pub const CAPI = struct {
         return screen.pages.total_rows;
     }
 
+    /// Returns the displayed terminal's primary-screen scrollbar state.
+    /// This targets the viewer-owned terminal for tmux panes, avoiding the
+    /// dummy `io.terminal` offset used by the relay backend.
+    export fn ghostty_surface_display_scrollbar(
+        surface: *Surface,
+        out: *terminal.Scrollbar.C,
+    ) bool {
+        const core_surface = &surface.core_surface;
+        core_surface.renderer_state.mutex.lock();
+        defer core_surface.renderer_state.mutex.unlock();
+
+        const screen = uiTerminalLocked(core_surface).screens.get(.primary) orelse return false;
+        const scrollbar = screen.pages.scrollbar();
+        if (scrollbar.total <= scrollbar.len) return false;
+
+        out.* = scrollbar.cval();
+        return true;
+    }
+
     /// Dump the entire primary screen (including scrollback) as ANSI-styled text.
     /// Always reads from the primary screen (not alternate), so scrollback is captured
     /// even when an alternate-screen app like vim is active. Uses unwrap mode so
@@ -2412,7 +2443,8 @@ pub const CAPI = struct {
         core_surface.renderer_state.mutex.lock();
         defer core_surface.renderer_state.mutex.unlock();
 
-        const screen = core_surface.io.terminal.screens.get(.primary) orelse return null;
+        const t: *terminal.Terminal = uiTerminalLocked(core_surface);
+        const screen = t.screens.get(.primary) orelse return null;
         _ = screen.pages.getBottomRight(.screen) orelse return null;
 
         const tl_active = screen.pages.getTopLeft(.active);
@@ -2441,7 +2473,7 @@ pub const CAPI = struct {
             .emit = .vt,
             .unwrap = true,
             .trim = false,
-            .palette = &core_surface.io.terminal.colors.palette.current,
+            .palette = &t.colors.palette.current,
         };
 
         // Phase 1: Dump scrollback (everything above the adjusted active
@@ -2545,7 +2577,8 @@ pub const CAPI = struct {
         core_surface.renderer_state.mutex.lock();
         defer core_surface.renderer_state.mutex.unlock();
 
-        const screen = core_surface.io.terminal.screens.get(.alternate) orelse return null;
+        const t: *terminal.Terminal = uiTerminalLocked(core_surface);
+        const screen = t.screens.get(.alternate) orelse return null;
         const br_active = screen.pages.getBottomRight(.active) orelse return null;
         const tl_active = screen.pages.getTopLeft(.active);
 
@@ -2555,7 +2588,7 @@ pub const CAPI = struct {
             .emit = .vt,
             .unwrap = false,
             .trim = false,
-            .palette = &core_surface.io.terminal.colors.palette.current,
+            .palette = &t.colors.palette.current,
         };
 
         // Home cursor, then emit the active viewport.
@@ -2608,7 +2641,7 @@ pub const CAPI = struct {
         const core_surface = &surface.core_surface;
         core_surface.renderer_state.mutex.lock();
         defer core_surface.renderer_state.mutex.unlock();
-        return core_surface.io.terminal.screens.active_key == .alternate;
+        return uiTerminalLocked(core_surface).screens.active_key == .alternate;
     }
 
     /// Free text returned by ghostty_surface_dump_primary_screen.
@@ -2997,7 +3030,7 @@ pub const CAPI = struct {
                     if (comptime std.debug.runtime_safety) unreachable;
                     return false;
                 };
-                break :sel surface.io.terminal.screens.active.selectWordOrIPv6(
+                break :sel screen.selectWordOrIPv6(
                     pin,
                     surface.config.selection_word_chars,
                 ) orelse return false;
