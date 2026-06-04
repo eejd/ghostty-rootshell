@@ -5,6 +5,7 @@ const lib = @import("../lib.zig");
 const CAllocator = lib.alloc.Allocator;
 pub const ZigTerminal = @import("../Terminal.zig");
 const Stream = @import("../stream_terminal.zig").Stream;
+const Screen = @import("../Screen.zig");
 const ScreenSet = @import("../ScreenSet.zig");
 const PageList = @import("../PageList.zig");
 const apc = @import("../apc.zig");
@@ -326,6 +327,8 @@ pub const Option = enum(c_int) {
     apc_max_bytes = 19,
     apc_max_bytes_kitty = 20,
     selection = 21,
+    default_cursor_style = 22,
+    default_cursor_blink = 23,
 
     /// Input type expected for setting the option.
     pub fn InType(comptime self: Option) type {
@@ -349,6 +352,8 @@ pub const Option = enum(c_int) {
             => ?*const bool,
             .apc_max_bytes, .apc_max_bytes_kitty => ?*const usize,
             .selection => ?*const selection_c.CSelection,
+            .default_cursor_style => ?*const TerminalCursorStyle,
+            .default_cursor_blink => ?*const bool,
         };
     }
 };
@@ -464,9 +469,42 @@ fn setTyped(
                 wrapper.terminal.screens.active.clearSelection();
             }
         },
+        .default_cursor_style => {
+            const style = (if (value) |ptr| ptr.* else TerminalCursorStyle.block).toZig() orelse return .invalid_value;
+            wrapper.stream.handler.default_cursor_style = style;
+            if (wrapper.stream.handler.default_cursor) {
+                wrapper.terminal.screens.active.cursor.cursor_style = style;
+            }
+        },
+        .default_cursor_blink => {
+            const blink = if (value) |ptr| ptr.* else false;
+            wrapper.stream.handler.default_cursor_blink = blink;
+            if (wrapper.stream.handler.default_cursor) {
+                wrapper.terminal.modes.set(.cursor_blinking, blink);
+            }
+        },
     }
     return .success;
 }
+
+/// C: GhosttyTerminalCursorStyle
+pub const TerminalCursorStyle = enum(c_int) {
+    bar = 0,
+    block = 1,
+    underline = 2,
+    block_hollow = 3,
+    _,
+
+    fn toZig(self: TerminalCursorStyle) ?Screen.CursorStyle {
+        return switch (self) {
+            .bar => .bar,
+            .block => .block,
+            .underline => .underline,
+            .block_hollow => .block_hollow,
+            _ => null,
+        };
+    }
+};
 
 /// C: GhosttyDeviceAttributes
 pub const DeviceAttributes = Effects.CDeviceAttributes;
@@ -1399,6 +1437,45 @@ test "get invalid" {
     defer free(t);
 
     try testing.expectEqual(Result.invalid_value, get(t, .invalid, null));
+}
+
+test "set default cursor style and blink" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib.alloc.test_allocator,
+        &t,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 0,
+        },
+    ));
+    defer free(t);
+
+    var default_style: TerminalCursorStyle = .bar;
+    var default_blink = true;
+    try testing.expectEqual(Result.success, set(t, .default_cursor_style, @ptrCast(&default_style)));
+    try testing.expectEqual(Result.success, set(t, .default_cursor_blink, @ptrCast(&default_blink)));
+
+    // Setting defaults applies them immediately while the cursor is still default.
+    try testing.expectEqual(Screen.CursorStyle.bar, t.?.terminal.screens.active.cursor.cursor_style);
+    try testing.expect(t.?.terminal.modes.get(.cursor_blinking));
+
+    // An explicit DECSCUSR style overrides the configured defaults.
+    vt_write(t, "\x1b[2 q", 5);
+    try testing.expectEqual(Screen.CursorStyle.block, t.?.terminal.screens.active.cursor.cursor_style);
+    try testing.expect(!t.?.terminal.modes.get(.cursor_blinking));
+
+    // Changing defaults does not override an explicit cursor style.
+    default_style = .underline;
+    try testing.expectEqual(Result.success, set(t, .default_cursor_style, @ptrCast(&default_style)));
+    try testing.expectEqual(Screen.CursorStyle.block, t.?.terminal.screens.active.cursor.cursor_style);
+    try testing.expect(!t.?.terminal.modes.get(.cursor_blinking));
+
+    // DECSCUSR reset restores the configured default style and blink.
+    vt_write(t, "\x1b[0 q", 5);
+    try testing.expectEqual(Screen.CursorStyle.underline, t.?.terminal.screens.active.cursor.cursor_style);
+    try testing.expect(t.?.terminal.modes.get(.cursor_blinking));
 }
 
 test "set and get selection" {
