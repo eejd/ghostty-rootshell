@@ -3,6 +3,12 @@
 //! rather than owning the application lifecycle itself. This is used for
 //! example for the macOS build of Ghostty so that we can use a native
 //! Swift+XCode-based application.
+//!
+//! ROOTSHELL-TMUX: this upstream-shared file carries the fork's tmux control-mode
+//! C ABI (ghostty_tmux_*, ghostty_surface_new_tmux_pane, ghostty_surface_tmux_set_client_size)
+//! plus tmux pane surface lifecycle hooks. Grep "ROOTSHELL-TMUX" here for every
+//! hook; C-ABI hooks are also tagged FROZEN-ABI because the iOS Swift app
+//! depends on their exact shape. See docs/tmux-control-mode-fork.md.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -254,7 +260,7 @@ pub const App = struct {
 
     /// Create a new tmux control mode pane surface bound to a parent
     /// (viewer-owner) surface. See `Surface.initTmuxPane`.
-    fn newTmuxPaneSurface(
+    fn newTmuxPaneSurface( // ROOTSHELL-TMUX (id=embedded-new-tmux-pane-fn): builds a tmux pane surface; calls Surface.initTmuxPane
         self: *App,
         opts: Surface.Options,
         parent: *Surface,
@@ -449,7 +455,7 @@ pub const Surface = struct {
     /// that routes this pane's input as `send-keys` to the parent
     /// (viewer-owner) surface's mailbox. Owned by this surface, freed in
     /// deinit. Null for non-tmux surfaces.
-    tmux_relay_writer: ?*apprt.surface.SurfaceRelayWriter = null,
+    tmux_relay_writer: ?*apprt.surface.SurfaceRelayWriter = null, // ROOTSHELL-TMUX (id=embedded-relay-field)
 
     /// The current title of the surface. The embedded apprt saves this so
     /// that getTitle works without the implementer needing to save it.
@@ -648,7 +654,7 @@ pub const Surface = struct {
     /// `tmux` backend, routing input as `send-keys` to the parent
     /// (viewer-owner) surface and rendering from the viewer-owned pane
     /// terminal (single-terminal model).
-    pub fn initTmuxPane(
+    pub fn initTmuxPane( // ROOTSHELL-TMUX (id=embedded-init-tmux-pane-fn): tmux-backend surface init + relay writer ownership
         self: *Surface,
         app: *App,
         opts: Options,
@@ -742,7 +748,7 @@ pub const Surface = struct {
         // Free the tmux relay writer if this was a tmux pane surface. Safe
         // after core_surface.deinit() since the IO thread (the only user of
         // the control writer) has stopped.
-        if (self.tmux_relay_writer) |relay| self.app.core_app.alloc.destroy(relay);
+        if (self.tmux_relay_writer) |relay| self.app.core_app.alloc.destroy(relay); // ROOTSHELL-TMUX (id=embedded-relay-deinit)
     }
 
     /// Initialize the inspector instance. A surface can only have one
@@ -1387,7 +1393,7 @@ pub const CAPI = struct {
     /// Precondition: the renderer_state mutex must be held.
     fn uiTerminalLocked(surface: *CoreSurface) *terminal.Terminal {
         return switch (surface.io.backend) {
-            .tmux => surface.renderer_state.terminal,
+            .tmux => surface.renderer_state.terminal, // ROOTSHELL-TMUX (id=embedded-ui-terminal-arm)
             else => &surface.io.terminal,
         };
     }
@@ -1710,6 +1716,10 @@ pub const CAPI = struct {
         return try app.newSurface(opts.*);
     }
 
+    // ROOTSHELL-TMUX BEGIN FROZEN-ABI (id=embedded-new-tmux-pane)
+    // ghostty_surface_new_tmux_pane is called by the iOS Swift app for each
+    // `ensure_pane` reconcile op. Keep the signature stable. reapply: re-add this
+    // export inside the CAPI struct. See docs/tmux-control-mode-fork.md.
     /// Create a tmux control mode pane surface. `parent` is the
     /// viewer-owner surface (the one running `tmux -CC`). `viewer_terminal`
     /// and `viewer_pane` are the opaque pointers delivered by an
@@ -1745,6 +1755,7 @@ pub const CAPI = struct {
             return null;
         };
     }
+    // ROOTSHELL-TMUX END FROZEN-ABI (id=embedded-new-tmux-pane)
 
     export fn ghostty_surface_free(ptr: *Surface) void {
         ptr.app.closeSurface(ptr);
@@ -2092,6 +2103,14 @@ pub const CAPI = struct {
         };
     }
 
+    // ROOTSHELL-TMUX BEGIN FROZEN-ABI (id=embedded-capi-reconcile)
+    // The CTmuxOpTag / CTmuxOp / CTmuxLayoutKind / CTmuxLayoutInfo extern types and
+    // the ghostty_tmux_reconcile_* / ghostty_tmux_layout_* exports below are the
+    // tmux reconcile C ABI the iOS Swift app consumes (TmuxReconcileDecoder in
+    // Core/Tmux/TmuxController.swift). Keep the enum tag values (op 0-8, layout
+    // 0-2), the extern struct field order, and the export signatures stable.
+    // reapply: re-add this whole block inside the CAPI struct. See
+    // docs/tmux-control-mode-fork.md.
     //---------------------------------------------------------------
     // tmux control mode: reconcile op-batch consumer (embedded apprt)
     //
@@ -2269,6 +2288,7 @@ pub const CAPI = struct {
             .horizontal, .vertical => |ch| if (index < ch.len) &ch[index] else null,
         };
     }
+    // ROOTSHELL-TMUX END FROZEN-ABI (id=embedded-capi-reconcile)
 
     /// Filter the mods if necessary. This handles settings such as
     /// `macos-option-as-alt`. The filtered mods should be used for
@@ -2352,6 +2372,10 @@ pub const CAPI = struct {
         };
     }
 
+    // ROOTSHELL-TMUX BEGIN FROZEN-ABI (id=embedded-set-client-size)
+    // ghostty_surface_tmux_set_client_size is the only client-resize entry point
+    // the iOS Swift app has for tmux. Keep the signature stable. reapply: re-add
+    // this export inside the CAPI struct. See docs/tmux-control-mode-fork.md.
     /// Set the tmux control-mode client size (in cells) for this surface's
     /// viewer. Posts to the IO thread, which sends `refresh-client -C` to tmux
     /// so the active window's panes are laid out to the given grid. No-op if the
@@ -2366,6 +2390,7 @@ pub const CAPI = struct {
             .tmux_set_client_size = .{ .cols = cols, .rows = rows },
         }, .unlocked);
     }
+    // ROOTSHELL-TMUX END FROZEN-ABI (id=embedded-set-client-size)
 
     /// Set the preedit text for the surface. This is used for IME
     /// composition. If the length is 0, then the preedit text is cleared.

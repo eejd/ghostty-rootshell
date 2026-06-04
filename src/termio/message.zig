@@ -1,3 +1,7 @@
+// ROOTSHELL-TMUX: this upstream-shared file carries the fork's
+// `tmux_set_client_size` termio message variant. Grep "ROOTSHELL-TMUX" here for
+// every hook. See docs/tmux-control-mode-fork.md.
+
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const renderer = @import("../renderer.zig");
@@ -67,7 +71,7 @@ pub const Message = union(enum) {
     /// stream handler sends `refresh-client -C <cols>x<rows>` to tmux so the
     /// active window's panes are laid out to the visible tab's size. No-op when
     /// no tmux viewer is active.
-    tmux_set_client_size: struct {
+    tmux_set_client_size: struct { // ROOTSHELL-TMUX (id=termio-msg-set-client-size)
         cols: u16,
         rows: u16,
     },

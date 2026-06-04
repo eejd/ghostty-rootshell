@@ -9,6 +9,11 @@
 //! it just draws and responds to events. The events come from the application
 //! runtime so the runtime can determine when and how those are delivered
 //! (i.e. with focus, without focus, and so on).
+//!
+//! ROOTSHELL-TMUX: this upstream-shared file carries fork-owned tmux control-mode
+//! hooks (reconcile dispatch, tmux backend selection, pane message routing).
+//! Grep "ROOTSHELL-TMUX" here for every hook; the reconcile-op bodies live in
+//! Surface_tmux.zig. See docs/tmux-control-mode-fork.md.
 const Surface = @This();
 
 const apprt = @import("apprt.zig");
@@ -478,7 +483,7 @@ const DerivedConfig = struct {
 /// a tmux control mode pane whose renderer reads from the viewer-owned
 /// pane terminal (single-terminal model).
 pub const InitOptions = struct {
-    tmux_backend: ?termio.Tmux.Config = null,
+    tmux_backend: ?termio.Tmux.Config = null, // ROOTSHELL-TMUX (id=surface-initoptions-backend)
 };
 
 /// Create a new surface. This must be called from the main thread. The
@@ -700,7 +705,7 @@ pub fn initWithOptions(
         else
             false;
 
-        const backend: termio.backend.Backend = if (opts.tmux_backend) |tmux_config| blk: {
+        const backend: termio.backend.Backend = if (opts.tmux_backend) |tmux_config| blk: { // ROOTSHELL-TMUX (id=surface-init-backend-select)
             // Tmux control mode pane: route I/O through the parent surface's
             // tmux control connection. The renderer reads from the viewer-owned
             // pane terminal, so this backend allocates no pty/subprocess.
@@ -862,315 +867,23 @@ pub fn initWithOptions(
     app.first = false;
 }
 
-/// The reconcile planner (in `handleMessage(.tmux_topology_changed)`)
-/// converts a `TmuxTopologySnapshot` into an ordered list of these ops.
-/// The apprt receives them via the `tmux_reconcile` action and applies
-/// them using its own tab/split/surface primitives.
-pub const TmuxReconcileOp = union(enum) {
-    /// Begin an atomic reconcile transaction. The apprt may defer
-    /// visual updates until `sync_windows_end`.
-    sync_windows_begin,
-
-    /// Ensure a tab exists for the given tmux window ID. If it
-    /// already exists, retain it; otherwise create a new tab.
-    ensure_window: struct {
-        tmux_window_id: usize,
-        width: usize,
-        height: usize,
-    },
-
-    /// Ensure a pane leaf surface exists for the given pane ID
-    /// within the specified tmux window. The surface should use
-    /// the tmux backend with the given pane ID.
-    ensure_pane: struct {
-        tmux_window_id: usize,
-        pane_id: usize,
-        /// Pointer to the viewer-owned terminal for this pane. The child
-        /// surface's renderer will read from this terminal, implementing
-        /// the single-terminal architecture where the viewer's pane
-        /// terminals ARE the terminals. Null when the viewer terminal is
-        /// not yet available (e.g., during tests without a real viewer).
-        viewer_terminal: ?*terminal.Terminal = null,
-        /// Pointer to the viewer-owned pane. The child surface registers
-        /// its renderer mutex to this pane during threadEnter, enabling
-        /// the viewer to coordinate terminal writes with the renderer.
-        viewer_pane: ?*terminal.tmux.Viewer.Pane = null,
-    },
-
-    /// Update the split tree of the given tmux window to match
-    /// the provided layout shape. The layout is borrowed from
-    /// the payload's arena and valid for the duration of the action.
-    set_layout: struct {
-        tmux_window_id: usize,
-        layout: *const terminal.tmux.Layout,
-    },
-
-    /// Move focus to the specified tmux window and pane.
-    set_focus: struct {
-        tmux_window_id: usize,
-        pane_id: usize,
-    },
-
-    /// Remove any tabs/panes whose tmux window/pane IDs are not
-    /// in the provided sets. `window_ids` and `pane_ids` are
-    /// sorted slices for binary search.
-    prune_absent: struct {
-        window_ids: []const usize,
-        pane_ids: []const usize,
-    },
-
-    /// End the atomic reconcile transaction. The apprt should
-    /// commit any deferred visual updates and restore stable focus.
-    sync_windows_end,
-
-    /// Set the tab title for a specific tmux window. Emitted in
-    /// response to `%window-renamed` notifications.
-    set_tab_title: struct {
-        tmux_window_id: usize,
-        title: []const u8,
-    },
-
-    /// Set the Ghostty window title from the tmux session name.
-    /// Emitted in response to `%session-renamed` notifications.
-    set_window_title: struct {
-        title: []const u8,
-    },
-};
-
-/// Payload for the `tmux_reconcile` action. Contains an ordered list
-/// of reconcile operations and an arena that owns all referenced data
-/// (layout trees, ID slices). The receiver must call `deinit` after
-/// processing.
-///
-/// Heap-allocated and pointer-passed; the receiver frees via `deinit`.
-pub const TmuxReconcilePayload = struct {
-    /// Allocator used to create this struct itself.
-    alloc: Allocator,
-
-    /// Arena owning all op-referenced data (layout trees, ID slices).
-    arena: ArenaAllocator,
-
-    /// Ordered list of reconcile operations.
-    ops: []const TmuxReconcileOp,
-
-    pub fn deinit(self: *TmuxReconcilePayload) void {
-        const alloc = self.alloc;
-        self.arena.deinit();
-        alloc.destroy(self);
-    }
-};
-
-/// Build an ordered list of reconcile ops from a tmux topology snapshot.
-///
-/// The planner emits: sync_windows_begin, then for each window
-/// (ensure_window, ensure_pane for each leaf pane, set_layout,
-/// set_tab_title), then prune_absent, sync_windows_end.
-///
-/// The returned payload is heap-allocated and owns all referenced data
-/// via its arena. The caller must call `deinit` after processing.
-///
-/// This is a pure function operating on snapshot data — no Surface
-/// instance needed — making it straightforward to unit test.
-pub fn planTmuxReconcile(
-    alloc: Allocator,
-    windows: []const terminal.tmux.Viewer.Window,
-    panes: ?*const terminal.tmux.Viewer.PanesMap,
-) Allocator.Error!*TmuxReconcilePayload {
-    var arena: ArenaAllocator = .init(alloc);
-    errdefer arena.deinit();
-    const arena_alloc = arena.allocator();
-
-    // Pre-count ops: 1 begin + per-window(1 ensure_window + N panes + 1 set_layout + 1 set_tab_title) +
-    // 1 prune_absent + 1 end = 3 + sum(1 + pane_count + 1 + 1)
-    var total_panes: usize = 0;
-    for (windows) |window| {
-        total_panes += countPanesInLayout(window.layout);
-    }
-    const op_count = 3 + windows.len * 3 + total_panes;
-    const ops = try arena_alloc.alloc(TmuxReconcileOp, op_count);
-
-    // Collect all window and pane IDs for the prune set
-    const window_ids = try arena_alloc.alloc(usize, windows.len);
-    const pane_ids = try arena_alloc.alloc(usize, total_panes);
-
-    var op_idx: usize = 0;
-    var pane_idx: usize = 0;
-
-    // sync_windows_begin
-    ops[op_idx] = .sync_windows_begin;
-    op_idx += 1;
-
-    for (windows, 0..) |window, wi| {
-        window_ids[wi] = window.id;
-
-        // ensure_window
-        ops[op_idx] = .{ .ensure_window = .{
-            .tmux_window_id = window.id,
-            .width = window.width,
-            .height = window.height,
-        } };
-        op_idx += 1;
-
-        // ensure_pane for each leaf
-        const pane_start = pane_idx;
-        collectPaneIds(window.layout, pane_ids, &pane_idx);
-
-        for (pane_ids[pane_start..pane_idx]) |pid| {
-            const pane_entry = if (panes) |p| p.getEntry(pid) else null;
-            const pane_ptr: ?*terminal.tmux.Viewer.Pane = if (pane_entry) |e| e.value_ptr.* else null;
-            ops[op_idx] = .{ .ensure_pane = .{
-                .tmux_window_id = window.id,
-                .pane_id = pid,
-                .viewer_terminal = if (pane_ptr) |pp| &pp.terminal else null,
-                .viewer_pane = pane_ptr,
-            } };
-            op_idx += 1;
-        }
-
-        // set_layout — clone the layout into the arena so it outlives the snapshot
-        const layout_ptr = try arena_alloc.create(terminal.tmux.Layout);
-        layout_ptr.* = try window.layout.clone(arena_alloc);
-
-        ops[op_idx] = .{ .set_layout = .{
-            .tmux_window_id = window.id,
-            .layout = layout_ptr,
-        } };
-        op_idx += 1;
-
-        // set_tab_title — set the tab title from the tmux window name
-        const name_copy = try arena_alloc.dupe(u8, window.name);
-        ops[op_idx] = .{ .set_tab_title = .{
-            .tmux_window_id = window.id,
-            .title = name_copy,
-        } };
-        op_idx += 1;
-    }
-
-    // Sort ID slices for binary search in prune_absent
-    std.mem.sort(usize, window_ids, {}, std.sort.asc(usize));
-    std.mem.sort(usize, pane_ids, {}, std.sort.asc(usize));
-
-    // prune_absent
-    ops[op_idx] = .{ .prune_absent = .{
-        .window_ids = window_ids,
-        .pane_ids = pane_ids,
-    } };
-    op_idx += 1;
-
-    // sync_windows_end
-    ops[op_idx] = .sync_windows_end;
-    op_idx += 1;
-
-    std.debug.assert(op_idx == op_count);
-
-    const payload = try alloc.create(TmuxReconcilePayload);
-    payload.* = .{
-        .alloc = alloc,
-        .arena = arena,
-        .ops = ops,
-    };
-    return payload;
-}
-
-/// Count the number of leaf panes in a layout tree.
-fn countPanesInLayout(layout: terminal.tmux.Layout) usize {
-    switch (layout.content) {
-        .pane => return 1,
-        .horizontal, .vertical => |children| {
-            var count: usize = 0;
-            for (children) |child| {
-                count += countPanesInLayout(child);
-            }
-            return count;
-        },
-    }
-}
-
-/// Collect all leaf pane IDs from a layout tree into a pre-allocated slice.
-fn collectPaneIds(layout: terminal.tmux.Layout, ids: []usize, idx: *usize) void {
-    switch (layout.content) {
-        .pane => |pane_id| {
-            ids[idx.*] = pane_id;
-            idx.* += 1;
-        },
-        .horizontal, .vertical => |children| {
-            for (children) |child| {
-                collectPaneIds(child, ids, idx);
-            }
-        },
-    }
-}
-
-/// Build a minimal reconcile payload containing a single `.set_focus`
-/// op for the given tmux window and pane. Used when focus changes
-/// without a topology change (i.e. `%window-pane-changed`).
-///
-/// Reuses the existing `TmuxReconcilePayload` / `tmux_reconcile`
-/// action so the apprt handler doesn't need a separate code path.
-///
-/// This is a pure function — no Surface instance needed — making it
-/// straightforward to unit test.
-pub fn focusTmuxReconcile(
-    alloc: Allocator,
-    window_id: usize,
-    pane_id: usize,
-) Allocator.Error!*TmuxReconcilePayload {
-    var arena: ArenaAllocator = .init(alloc);
-    errdefer arena.deinit();
-    const arena_alloc = arena.allocator();
-
-    const ops = try arena_alloc.alloc(TmuxReconcileOp, 1);
-    ops[0] = .{ .set_focus = .{
-        .tmux_window_id = window_id,
-        .pane_id = pane_id,
-    } };
-
-    const payload = try alloc.create(TmuxReconcilePayload);
-    payload.* = .{
-        .alloc = alloc,
-        .arena = arena,
-        .ops = ops,
-    };
-    return payload;
-}
-
-/// Build a minimal reconcile payload containing a single title op.
-/// Used for `%window-renamed` (tab title, `window_id` set) and
-/// `%session-renamed` (window title, `window_id` null).
-///
-/// The title string is copied into the payload's arena so the caller
-/// can discard the source after this returns.
-pub fn titleTmuxReconcile(
-    alloc: Allocator,
-    tmux_window_id: ?usize,
-    title: []const u8,
-) Allocator.Error!*TmuxReconcilePayload {
-    var arena: ArenaAllocator = .init(alloc);
-    errdefer arena.deinit();
-    const arena_alloc = arena.allocator();
-
-    const title_copy = try arena_alloc.dupe(u8, title);
-    const ops = try arena_alloc.alloc(TmuxReconcileOp, 1);
-
-    if (tmux_window_id) |wid| {
-        ops[0] = .{ .set_tab_title = .{
-            .tmux_window_id = wid,
-            .title = title_copy,
-        } };
-    } else {
-        ops[0] = .{ .set_window_title = .{
-            .title = title_copy,
-        } };
-    }
-
-    const payload = try alloc.create(TmuxReconcilePayload);
-    payload.* = .{
-        .alloc = alloc,
-        .arena = arena,
-        .ops = ops,
-    };
-    return payload;
-}
+// ROOTSHELL-TMUX BEGIN (id=surface-reconcile-extracted)
+// The tmux reconcile-op vocabulary (TmuxReconcileOp, TmuxReconcilePayload) and
+// the pure planner functions (planTmuxReconcile / focusTmuxReconcile /
+// titleTmuxReconcile + helpers) were extracted to the fork-owned sidecar
+// src/Surface_tmux.zig to shrink the tmux footprint in this upstream-shared file.
+//
+// These two types MUST stay re-exported here: the C ABI path
+// `CoreSurface.TmuxReconcile{Op,Payload}` (used by apprt/embedded.zig and
+// apprt/action.zig) resolves through `Surface.*`. The planners are called below
+// in handleMessage via `tmux_reconcile.planTmuxReconcile(...)` etc.
+//
+// reapply: if this conflicts on rebase, keep the import + the two pub aliases;
+// the bodies live in Surface_tmux.zig. See docs/tmux-control-mode-fork.md.
+const tmux_reconcile = @import("Surface_tmux.zig");
+pub const TmuxReconcileOp = tmux_reconcile.TmuxReconcileOp;
+pub const TmuxReconcilePayload = tmux_reconcile.TmuxReconcilePayload;
+// ROOTSHELL-TMUX END (id=surface-reconcile-extracted)
 
 pub fn deinit(self: *Surface) void {
     // Stop search thread
@@ -1558,14 +1271,14 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
             );
         },
 
-        .tmux_topology_changed => |snapshot| {
+        .tmux_topology_changed => |snapshot| { // ROOTSHELL-TMUX (id=surface-arm-topology): plan reconcile -> tmux_reconcile action
             defer snapshot.deinit();
             log.debug("tmux topology changed: {} windows", .{snapshot.windows.len});
 
             // Plan reconcile ops from the snapshot. The payload is
             // heap-allocated; ownership transfers to the action handler
             // on success, otherwise we clean up here.
-            const payload = planTmuxReconcile(
+            const payload = tmux_reconcile.planTmuxReconcile(
                 self.alloc,
                 snapshot.windows,
                 snapshot.panes,
@@ -1586,7 +1299,7 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
             );
         },
 
-        .tmux_write_command => |w| {
+        .tmux_write_command => |w| { // ROOTSHELL-TMUX (id=surface-arm-write): relay child-pane bytes to parent termio
             // A tmux child pane relayed a command to this (parent) surface.
             // Forward it into our termio mailbox so the parent IO thread
             // writes it to the pty connected to `tmux -CC`.
@@ -1619,12 +1332,12 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
             self.queueIo(io_msg, .unlocked);
         },
 
-        .tmux_focus_changed => |fc| {
+        .tmux_focus_changed => |fc| { // ROOTSHELL-TMUX (id=surface-arm-focus)
             // A tmux %window-pane-changed notification arrived.
             // Build a minimal reconcile payload with a single
             // set_focus op and dispatch through the existing
             // tmux_reconcile action.
-            const payload = focusTmuxReconcile(
+            const payload = tmux_reconcile.focusTmuxReconcile(
                 self.alloc,
                 fc.window_id,
                 fc.pane_id,
@@ -1641,11 +1354,11 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
             );
         },
 
-        .tmux_title_changed => |tc| {
+        .tmux_title_changed => |tc| { // ROOTSHELL-TMUX (id=surface-arm-title)
             // A tmux %window-renamed or %session-renamed notification
             // arrived. Build a minimal reconcile payload with a single
             // set_tab_title or set_window_title op.
-            const payload = titleTmuxReconcile(
+            const payload = tmux_reconcile.titleTmuxReconcile(
                 self.alloc,
                 tc.tmux_window_id,
                 tc.title(),

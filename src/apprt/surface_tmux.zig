@@ -1,0 +1,128 @@
+//! ROOTSHELL-TMUX: fork-owned sidecar extracted from apprt/surface.zig.
+//!
+//! Holds the plain value types carried by the fork's tmux control-mode surface
+//! messages. These were lifted out of the `Message` union in the
+//! upstream-shared apprt/surface.zig to shrink the tmux footprint there.
+//!
+//! The `Message` union keeps re-export aliases (`Message.TmuxTopologySnapshot`,
+//! `Message.TmuxTitleChanged`, `Message.TmuxFocusChanged`) pointing here, so
+//! external references like `apprt.surface.Message.TmuxTopologySnapshot` keep
+//! resolving. The relay writer (`SurfaceRelayWriter`) intentionally stays in
+//! apprt/surface.zig because it is tightly coupled to that file's `Message` /
+//! `Mailbox` types (moving it would create a circular import for no real gain).
+//!
+//! None of these types reference `Message`/`Mailbox`, so there is no import
+//! cycle here. Carry this file forward verbatim on rebase. See
+//! docs/tmux-control-mode-fork.md.
+
+const std = @import("std");
+const Allocator = std.mem.Allocator;
+const terminal = @import("../terminal/main.zig");
+
+/// Carries the window and pane IDs from a tmux
+/// `%window-pane-changed` notification.
+pub const TmuxFocusChanged = struct {
+    window_id: usize,
+    pane_id: usize,
+};
+
+/// Carries a title change from a tmux `%window-renamed` or
+/// `%session-renamed` notification. Fixed-size buffer following
+/// the `set_title: [256]u8` pattern.
+pub const TmuxTitleChanged = struct {
+    /// For tab title (window rename): the tmux window ID.
+    /// For window title (session rename): null.
+    tmux_window_id: ?usize,
+
+    /// Title string. Stored inline in a fixed buffer.
+    title_buf: [256]u8 = undefined,
+    title_len: u8 = 0,
+
+    pub fn init(tmux_window_id: ?usize, name: []const u8) TmuxTitleChanged {
+        var result: TmuxTitleChanged = .{
+            .tmux_window_id = tmux_window_id,
+        };
+        const len: u8 = @intCast(@min(name.len, result.title_buf.len - 1));
+        @memcpy(result.title_buf[0..len], name[0..len]);
+        result.title_len = len;
+        return result;
+    }
+
+    pub fn title(self: *const TmuxTitleChanged) []const u8 {
+        return self.title_buf[0..self.title_len];
+    }
+};
+
+/// A deep-copy snapshot of the tmux viewer's window topology. Owns
+/// all memory through a dedicated arena so it is safe to pass across
+/// thread boundaries via the surface mailbox.
+///
+/// Follows the `change_config: *const Config` pattern: the IO thread
+/// allocates the snapshot, sends a pointer through the mailbox, and
+/// the app thread calls `deinit` after consuming it.
+pub const TmuxTopologySnapshot = struct {
+    /// Backing allocator used to allocate this struct itself.
+    alloc: Allocator,
+
+    /// Arena that owns all cloned window/layout data.
+    arena: std.heap.ArenaAllocator,
+
+    /// Deep-copied window list. Layout trees are fully independent
+    /// of the viewer's backing memory.
+    windows: []const terminal.tmux.Viewer.Window,
+
+    /// Optional pointer to the viewer's panes map. The viewer's
+    /// panes are heap-allocated (boxed) so the pointers remain stable
+    /// across map mutations. This allows the reconcile planner to
+    /// pass viewer-owned terminal pointers to child surfaces.
+    /// Null when no viewer panes are available (e.g., in tests).
+    panes: ?*const terminal.tmux.Viewer.PanesMap,
+
+    /// Create a snapshot by deep-copying `windows`. Each window's
+    /// layout tree is cloned into a dedicated arena so the snapshot
+    /// is independent of the source memory.
+    pub fn initFromWindows(
+        alloc: Allocator,
+        windows: []const terminal.tmux.Viewer.Window,
+        panes: ?*const terminal.tmux.Viewer.PanesMap,
+    ) Allocator.Error!*TmuxTopologySnapshot {
+        var arena: std.heap.ArenaAllocator = .init(alloc);
+        errdefer arena.deinit();
+        const arena_alloc = arena.allocator();
+
+        const cloned_windows = try arena_alloc.alloc(
+            terminal.tmux.Viewer.Window,
+            windows.len,
+        );
+        for (windows, 0..) |window, i| {
+            cloned_windows[i] = .{
+                .id = window.id,
+                .width = window.width,
+                .height = window.height,
+                .layout = try window.layout.clone(arena_alloc),
+                .name = try arena_alloc.dupe(u8, window.name),
+            };
+        }
+
+        const self = try alloc.create(TmuxTopologySnapshot);
+        self.* = .{
+            .alloc = alloc,
+            .arena = arena,
+            .windows = cloned_windows,
+            .panes = panes,
+        };
+        return self;
+    }
+
+    /// Free all owned memory: the arena (windows + layouts) and the
+    /// struct itself.
+    pub fn deinit(self: *TmuxTopologySnapshot) void {
+        const alloc = self.alloc;
+        self.arena.deinit();
+        alloc.destroy(self);
+    }
+};
+
+test {
+    std.testing.refAllDecls(@This());
+}

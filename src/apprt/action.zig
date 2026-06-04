@@ -1,3 +1,8 @@
+// ROOTSHELL-TMUX: this upstream-shared file carries the fork's tmux_reconcile
+// action (union variant + Key enum entry + TmuxReconcile payload struct). These
+// are part of the FROZEN C ABI the iOS Swift app depends on. Grep "ROOTSHELL-TMUX"
+// here for every hook. See docs/tmux-control-mode-fork.md.
+
 const std = @import("std");
 const build_config = @import("../build_config.zig");
 const assert = @import("../quirks.zig").inlineAssert;
@@ -343,6 +348,10 @@ pub const Action = union(Key) {
     /// otherwise the terminal-set title.
     copy_title_to_clipboard,
 
+    // ROOTSHELL-TMUX FROZEN-ABI (id=action-reconcile-variant): the iOS Swift app
+    // consumes GHOSTTY_ACTION_TMUX_RECONCILE via this union member `tmux_reconcile`.
+    // DO NOT rename/reorder. reapply: re-add this variant, its Key enum entry, and
+    // the TmuxReconcile struct below. See docs/tmux-control-mode-fork.md.
     /// Apply a batch of tmux topology reconcile operations. The payload
     /// is a heap-allocated list of structural ops (ensure/prune tabs and
     /// panes) that the apprt applies atomically. The receiver must call
@@ -416,6 +425,8 @@ pub const Action = union(Key) {
         search_selected,
         readonly,
         copy_title_to_clipboard,
+        // ROOTSHELL-TMUX FROZEN-ABI (id=action-key-variant): ghostty_action_tag_e
+        // tag value — DO NOT REORDER (the iOS Swift app switches on it).
         tmux_reconcile,
 
         test "ghostty.h Action.Key" {
@@ -1009,6 +1020,10 @@ pub const SearchSelected = struct {
     }
 };
 
+// ROOTSHELL-TMUX BEGIN FROZEN-ABI (id=action-reconcile-struct)
+// Payload type for the tmux_reconcile action. The `C` extern struct is what the
+// iOS Swift app sees as ghostty_action_tmux_reconcile_s — keep the field layout
+// stable. reapply: re-add this struct alongside the action variant + Key entry.
 pub const TmuxReconcile = struct {
     payload: *CoreSurface.TmuxReconcilePayload,
 
@@ -1023,6 +1038,7 @@ pub const TmuxReconcile = struct {
         };
     }
 };
+// ROOTSHELL-TMUX END FROZEN-ABI (id=action-reconcile-struct)
 
 test {
     _ = std.testing.refAllDeclsRecursive(@This());

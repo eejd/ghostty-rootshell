@@ -3,6 +3,9 @@
 //! it routes terminal I/O through a tmux control mode connection that is
 //! owned by a parent terminal surface.
 //!
+//! ROOTSHELL-TMUX: fork-owned file, no upstream equivalent. Carry forward
+//! verbatim on rebase. See docs/tmux-control-mode-fork.md.
+//!
 //! User input (keyboard, paste, etc.) is formatted as tmux `send-keys -H`
 //! commands targeting a specific pane, and written to the control connection
 //! via the ControlWriter interface. The `ParentWriter` implementation routes
@@ -77,7 +80,7 @@ screen_size: renderer.ScreenSize,
 control_writer: ControlWriter,
 
 /// Re-exported from `terminal.tmux` for convenience — the canonical
-/// definition lives in the core layer (`terminal/tmux/control_writer.zig`).
+/// definition lives in the core layer (`terminal/tmux_cc/control_writer.zig`).
 pub const ControlWriter = terminal.tmux.ControlWriter;
 
 /// A ControlWriter implementation that routes tmux commands through

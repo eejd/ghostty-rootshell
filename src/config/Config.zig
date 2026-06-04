@@ -2965,6 +2965,7 @@ keybind: Keybinds = .{},
 ///
 /// This option has no effect if Ghostty was built without oniguruma
 /// support, which is required for tmux control mode.
+// ROOTSHELL-TMUX (id=config-tmux-control-mode): fork-owned config option.
 @"tmux-control-mode": bool = true,
 
 /// Custom shaders to run after the default shaders. This is a file path

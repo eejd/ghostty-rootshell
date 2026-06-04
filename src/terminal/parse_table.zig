@@ -245,6 +245,9 @@ fn genTable() Table {
         range(&result, 0x20, 0x7E, source, source, .put);
         single(&result, 0x7F, source, source, .ignore);
 
+        // ROOTSHELL-TMUX (id=parsetable-dcs-utf8-passthrough): the 0x80-0xFF
+        // dcs_passthrough overrides below (incl. 0x9C/C1-ST as .put) exist so tmux
+        // %output UTF-8 isn't mangled/leaked. reapply: re-add this range override.
         // High bytes (0x80-0xFF): override "anywhere" transitions to stay
         // in dcs_passthrough. tmux control mode protocol data contains raw
         // UTF-8 in %output pane content. UTF-8 multi-byte sequences use:
@@ -524,6 +527,7 @@ test "dcs_passthrough: all bytes 0xA0-0xFF stay in dcs_passthrough with put" {
     const t = table;
     const testing = @import("std").testing;
 
+    // ROOTSHELL-TMUX (id=parsetable-dcs-utf8-test): test for the tmux passthrough above.
     // Verify the entire 0xA0-0xFF range. These bytes appear in UTF-8
     // encoded text within tmux %output lines and must be forwarded
     // to the DCS handler, not silently dropped.

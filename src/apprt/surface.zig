@@ -1,3 +1,8 @@
+// ROOTSHELL-TMUX: this upstream-shared file carries fork-owned tmux control-mode
+// message variants and the SurfaceRelayWriter; the payload value types live in
+// the sidecar apprt/surface_tmux.zig. Grep "ROOTSHELL-TMUX" here for every hook.
+// See docs/tmux-control-mode-fork.md.
+
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
@@ -112,7 +117,7 @@ pub const Message = union(enum) {
     /// deep copy of the viewer's windows and layouts, allocated on its own
     /// arena. The receiver (app thread) owns the snapshot and must call
     /// deinit when done.
-    tmux_topology_changed: *TmuxTopologySnapshot,
+    tmux_topology_changed: *TmuxTopologySnapshot, // ROOTSHELL-TMUX (id=apprt-msg-topology)
 
     /// A tmux child pane is relaying a command to its parent surface's
     /// pty. The child's IO thread constructs this message targeting the
@@ -122,7 +127,7 @@ pub const Message = union(enum) {
     /// This preserves the SPSC invariant: the parent's IO thread remains
     /// the single consumer of its termio mailbox. The child never writes
     /// directly to the parent's mailbox.
-    tmux_write_command: WriteReq,
+    tmux_write_command: WriteReq, // ROOTSHELL-TMUX (id=apprt-msg-write)
 
     /// The active pane changed in tmux (`%window-pane-changed`
     /// notification). The parent surface's stream handler constructs
@@ -131,7 +136,7 @@ pub const Message = union(enum) {
     ///
     /// Lightweight value type — no heap allocation needed since it
     /// carries only two IDs.
-    tmux_focus_changed: TmuxFocusChanged,
+    tmux_focus_changed: TmuxFocusChanged, // ROOTSHELL-TMUX (id=apprt-msg-focus)
 
     /// A tmux title changed — either a window rename (tab title) or
     /// a session rename (Ghostty window title). The parent surface's
@@ -139,7 +144,7 @@ pub const Message = union(enum) {
     /// update the displayed title.
     ///
     /// Lightweight value type — fixed-size buffer, no heap allocation.
-    tmux_title_changed: TmuxTitleChanged,
+    tmux_title_changed: TmuxTitleChanged, // ROOTSHELL-TMUX (id=apprt-msg-title)
 
     pub const ReportTitleStyle = enum {
         csi_21_t,
@@ -163,109 +168,22 @@ pub const Message = union(enum) {
         };
     };
 
-    /// Carries the window and pane IDs from a tmux
-    /// `%window-pane-changed` notification.
-    pub const TmuxFocusChanged = struct {
-        window_id: usize,
-        pane_id: usize,
-    };
-
-    /// Carries a title change from a tmux `%window-renamed` or
-    /// `%session-renamed` notification. Fixed-size buffer following
-    /// the `set_title: [256]u8` pattern.
-    pub const TmuxTitleChanged = struct {
-        /// For tab title (window rename): the tmux window ID.
-        /// For window title (session rename): null.
-        tmux_window_id: ?usize,
-
-        /// Title string. Stored inline in a fixed buffer.
-        title_buf: [256]u8 = undefined,
-        title_len: u8 = 0,
-
-        pub fn init(tmux_window_id: ?usize, name: []const u8) TmuxTitleChanged {
-            var result: TmuxTitleChanged = .{
-                .tmux_window_id = tmux_window_id,
-            };
-            const len: u8 = @intCast(@min(name.len, result.title_buf.len - 1));
-            @memcpy(result.title_buf[0..len], name[0..len]);
-            result.title_len = len;
-            return result;
-        }
-
-        pub fn title(self: *const TmuxTitleChanged) []const u8 {
-            return self.title_buf[0..self.title_len];
-        }
-    };
-
-    /// A deep-copy snapshot of the tmux viewer's window topology. Owns
-    /// all memory through a dedicated arena so it is safe to pass across
-    /// thread boundaries via the surface mailbox.
-    ///
-    /// Follows the `change_config: *const Config` pattern: the IO thread
-    /// allocates the snapshot, sends a pointer through the mailbox, and
-    /// the app thread calls `deinit` after consuming it.
-    pub const TmuxTopologySnapshot = struct {
-        /// Backing allocator used to allocate this struct itself.
-        alloc: Allocator,
-
-        /// Arena that owns all cloned window/layout data.
-        arena: std.heap.ArenaAllocator,
-
-        /// Deep-copied window list. Layout trees are fully independent
-        /// of the viewer's backing memory.
-        windows: []const terminal.tmux.Viewer.Window,
-
-        /// Optional pointer to the viewer's panes map. The viewer's
-        /// panes are heap-allocated (boxed) so the pointers remain stable
-        /// across map mutations. This allows the reconcile planner to
-        /// pass viewer-owned terminal pointers to child surfaces.
-        /// Null when no viewer panes are available (e.g., in tests).
-        panes: ?*const terminal.tmux.Viewer.PanesMap,
-
-        /// Create a snapshot by deep-copying `windows`. Each window's
-        /// layout tree is cloned into a dedicated arena so the snapshot
-        /// is independent of the source memory.
-        pub fn initFromWindows(
-            alloc: Allocator,
-            windows: []const terminal.tmux.Viewer.Window,
-            panes: ?*const terminal.tmux.Viewer.PanesMap,
-        ) Allocator.Error!*TmuxTopologySnapshot {
-            var arena: std.heap.ArenaAllocator = .init(alloc);
-            errdefer arena.deinit();
-            const arena_alloc = arena.allocator();
-
-            const cloned_windows = try arena_alloc.alloc(
-                terminal.tmux.Viewer.Window,
-                windows.len,
-            );
-            for (windows, 0..) |window, i| {
-                cloned_windows[i] = .{
-                    .id = window.id,
-                    .width = window.width,
-                    .height = window.height,
-                    .layout = try window.layout.clone(arena_alloc),
-                    .name = try arena_alloc.dupe(u8, window.name),
-                };
-            }
-
-            const self = try alloc.create(TmuxTopologySnapshot);
-            self.* = .{
-                .alloc = alloc,
-                .arena = arena,
-                .windows = cloned_windows,
-                .panes = panes,
-            };
-            return self;
-        }
-
-        /// Free all owned memory: the arena (windows + layouts) and the
-        /// struct itself.
-        pub fn deinit(self: *TmuxTopologySnapshot) void {
-            const alloc = self.alloc;
-            self.arena.deinit();
-            alloc.destroy(self);
-        }
-    };
+    // ROOTSHELL-TMUX BEGIN (id=apprt-surface-tmux-types-extracted)
+    // The tmux message payload value types (TmuxFocusChanged, TmuxTitleChanged,
+    // TmuxTopologySnapshot) were extracted to the fork-owned sidecar
+    // src/apprt/surface_tmux.zig to shrink the tmux footprint in this
+    // upstream-shared union. They stay re-exported here as `Message.Tmux*` so
+    // external references (e.g. stream_handler.zig's
+    // `apprt.surface.Message.TmuxTopologySnapshot.initFromWindows`) keep
+    // resolving, and so the tmux_* variants above resolve them in-scope.
+    //
+    // reapply: if this conflicts on rebase, keep these three aliases inside the
+    // Message union; the bodies live in surface_tmux.zig. See
+    // docs/tmux-control-mode-fork.md.
+    pub const TmuxFocusChanged = @import("surface_tmux.zig").TmuxFocusChanged;
+    pub const TmuxTitleChanged = @import("surface_tmux.zig").TmuxTitleChanged;
+    pub const TmuxTopologySnapshot = @import("surface_tmux.zig").TmuxTopologySnapshot;
+    // ROOTSHELL-TMUX END (id=apprt-surface-tmux-types-extracted)
 };
 
 /// A ControlWriter implementation that routes tmux commands through
@@ -295,6 +213,9 @@ pub const Message = union(enum) {
 /// The `parent_mailbox` must remain valid for the lifetime of this
 /// writer. In practice, the parent surface outlives all child surfaces
 /// it creates.
+// ROOTSHELL-TMUX (id=apprt-relay-writer): MPSC relay of a child tmux pane's
+// writes to the parent surface mailbox. Kept here (not in surface_tmux.zig)
+// because it is tightly coupled to this file's Message/Mailbox types.
 pub const SurfaceRelayWriter = struct {
     const ControlWriter = terminal.tmux.ControlWriter;
 

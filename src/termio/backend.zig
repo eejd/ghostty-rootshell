@@ -1,3 +1,8 @@
+// ROOTSHELL-TMUX: this upstream-shared file carries the fork's `tmux` termio
+// backend variant in the Kind/Config/Backend/ThreadData unions, plus its switch
+// arms. The backend implementation lives in the fork-owned termio/Tmux.zig. Grep
+// "ROOTSHELL-TMUX" here for every hook. See docs/tmux-control-mode-fork.md.
+
 const std = @import("std");
 const builtin = @import("builtin");
 const assert = @import("../quirks.zig").inlineAssert;
@@ -20,7 +25,7 @@ const ProcessInfo = @import("../pty.zig").ProcessInfo;
 const WRITE_REQ_PREALLOC = std.math.pow(usize, 2, 5);
 
 /// The kinds of backends.
-pub const Kind = enum { exec, pipe, tmux };
+pub const Kind = enum { exec, pipe, tmux }; // ROOTSHELL-TMUX (id=backend-kind): `tmux` variant
 
 /// Configuration for the various backend types.
 pub const Config = union(Kind) {
@@ -32,7 +37,7 @@ pub const Config = union(Kind) {
 
     /// Tmux routes I/O through a tmux control mode connection that is
     /// owned by a parent terminal surface (the `tmux -CC` viewer-owner).
-    tmux: termio.Tmux.Config,
+    tmux: termio.Tmux.Config, // ROOTSHELL-TMUX (id=backend-config-tmux)
 };
 
 /// Backend implementations. A backend is responsible for owning the pty
@@ -40,7 +45,7 @@ pub const Config = union(Kind) {
 pub const Backend = union(Kind) {
     exec: termio.Exec,
     pipe: termio.Pipe,
-    tmux: termio.Tmux,
+    tmux: termio.Tmux, // ROOTSHELL-TMUX (id=backend-tmux): switch arms below dispatch to the fork-owned termio/Tmux.zig backend
 
     pub fn deinit(self: *Backend) void {
         switch (self.*) {
@@ -172,7 +177,7 @@ pub const Backend = union(Kind) {
 pub const ThreadData = union(Kind) {
     exec: termio.Exec.ThreadData,
     pipe: termio.Pipe.ThreadData,
-    tmux: termio.Tmux.ThreadData,
+    tmux: termio.Tmux.ThreadData, // ROOTSHELL-TMUX (id=backend-threaddata-tmux)
 
     pub fn deinit(self: *ThreadData, alloc: Allocator) void {
         switch (self.*) {

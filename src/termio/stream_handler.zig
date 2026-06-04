@@ -1,3 +1,8 @@
+// ROOTSHELL-TMUX: this upstream-shared file carries fork-owned tmux control-mode
+// hooks (tmux_viewer field, %-notification dispatch, client-size helper, empty
+// topology snapshot on exit). Grep "ROOTSHELL-TMUX" here for every hook. See
+// docs/tmux-control-mode-fork.md.
+
 const std = @import("std");
 const builtin = @import("builtin");
 const assert = @import("../quirks.zig").inlineAssert;
@@ -74,7 +79,7 @@ pub const StreamHandler = struct {
     dcs: terminal.dcs.Handler = .{},
 
     /// The tmux control mode viewer state.
-    tmux_viewer: if (tmux_enabled) ?*terminal.tmux.Viewer else void = if (tmux_enabled) null else {},
+    tmux_viewer: if (tmux_enabled) ?*terminal.tmux.Viewer else void = if (tmux_enabled) null else {}, // ROOTSHELL-TMUX (id=streamhandler-viewer-field)
 
     /// This is set to true when a message was written to the termio
     /// mailbox. This can be used by callers to determine if they need
@@ -93,7 +98,7 @@ pub const StreamHandler = struct {
     pub fn deinit(self: *StreamHandler) void {
         self.apc.deinit();
         self.dcs.deinit();
-        if (comptime tmux_enabled) tmux: {
+        if (comptime tmux_enabled) tmux: { // ROOTSHELL-TMUX (id=streamhandler-deinit-viewer): tear down viewer on handler deinit
             const viewer = self.tmux_viewer orelse break :tmux;
             viewer.deinit();
             self.alloc.destroy(viewer);
@@ -116,7 +121,7 @@ pub const StreamHandler = struct {
         // If tmux control mode was just disabled and a viewer is active,
         // proactively tear down the viewer and close child surfaces so
         // they don't leak until the tmux server sends an exit.
-        if (comptime tmux_enabled) {
+        if (comptime tmux_enabled) { // ROOTSHELL-TMUX (id=streamhandler-changeconfig-disable): tear down viewer if tmux disabled at runtime
             if (self.tmux_control_mode and !config.tmux_control_mode) {
                 if (self.tmux_viewer) |viewer| {
                     self.sendEmptyTopologySnapshot();
@@ -404,7 +409,7 @@ pub const StreamHandler = struct {
     /// window's panes are laid out to the visible tab's grid. Called on the IO
     /// thread (via the `tmux_set_client_size` mailbox message), so it can touch
     /// the viewer's command queue safely.
-    pub fn tmuxSetClientSize(self: *StreamHandler, cols: u16, rows: u16) void {
+    pub fn tmuxSetClientSize(self: *StreamHandler, cols: u16, rows: u16) void { // ROOTSHELL-TMUX (id=streamhandler-set-client-size)
         if (comptime !tmux_enabled) return;
         const viewer = self.tmux_viewer orelse return;
 
@@ -448,7 +453,7 @@ pub const StreamHandler = struct {
     fn dcsCommand(self: *StreamHandler, cmd: *terminal.dcs.Command) !void {
         // log.warn("DCS command: {}", .{cmd});
         switch (cmd.*) {
-            .tmux => |tmux| tmux: {
+            .tmux => |tmux| tmux: { // ROOTSHELL-TMUX (id=streamhandler-dcs-dispatch): tmux %-notification dispatch to the viewer
                 // If tmux control mode is disabled at the build level,
                 // then this whole block shouldn't be analyzed.
                 if (comptime !tmux_enabled) break :tmux;

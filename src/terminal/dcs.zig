@@ -1,3 +1,8 @@
+// ROOTSHELL-TMUX: this upstream-shared file carries fork-owned tmux control-mode
+// hooks (DCS `ESC P 1000 p` enter detection, 7-bit/8-bit ST termination guarding
+// for tmux blocks). All are gated behind `build_options.tmux_control_mode`. Grep
+// "ROOTSHELL-TMUX" here for every hook. See docs/tmux-control-mode-fork.md.
+
 const std = @import("std");
 const build_options = @import("terminal_options");
 const assert = @import("../quirks.zig").inlineAssert;
@@ -59,7 +64,7 @@ pub const Handler = struct {
         return switch (dcs.intermediates.len) {
             0 => switch (dcs.final) {
                 // Tmux control mode
-                'p' => tmux: {
+                'p' => tmux: { // ROOTSHELL-TMUX (id=dcs-tmux-enter): ESC P 1000 p control-mode entry; further tmux hooks in this file are gated by build_options.tmux_control_mode
                     if (comptime !build_options.tmux_control_mode) {
                         log.debug("tmux control mode not enabled in build, ignoring", .{});
                         break :tmux null;

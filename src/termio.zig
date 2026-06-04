@@ -24,7 +24,7 @@ pub const backend = @import("termio/backend.zig");
 pub const mailbox = @import("termio/mailbox.zig");
 pub const Exec = @import("termio/Exec.zig");
 pub const Pipe = @import("termio/Pipe.zig");
-pub const Tmux = @import("termio/Tmux.zig");
+pub const Tmux = @import("termio/Tmux.zig"); // ROOTSHELL-TMUX (id=termio-tmux-export): fork-owned backend
 pub const Options = @import("termio/Options.zig");
 pub const Termio = @import("termio/Termio.zig");
 pub const Thread = @import("termio/Thread.zig");

@@ -1,3 +1,9 @@
+// ROOTSHELL-TMUX: fork-owned tmux control-mode viewer. This entire src/terminal/tmux_cc/
+// directory is fork-owned and was relocated off the upstream-shared src/terminal/tmux/
+// path so upstream's experimental tmux parser can never 3-way-merge against it. On
+// rebase, take OUR version wholesale; if upstream edits src/terminal/tmux/*, keep them
+// deleted. See docs/tmux-control-mode-fork.md.
+
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;

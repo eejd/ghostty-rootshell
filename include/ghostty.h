@@ -949,6 +949,7 @@ typedef enum {
   GHOSTTY_ACTION_SEARCH_SELECTED,
   GHOSTTY_ACTION_READONLY,
   GHOSTTY_ACTION_COPY_TITLE_TO_CLIPBOARD,
+  // ROOTSHELL-TMUX FROZEN-ABI (id=ghostty-h-action-enum): DO NOT REORDER (tag value).
   GHOSTTY_ACTION_TMUX_RECONCILE,
 } ghostty_action_tag_e;
 
@@ -1002,6 +1003,10 @@ typedef struct {
   ghostty_action_u action;
 } ghostty_action_s;
 
+// ROOTSHELL-TMUX BEGIN FROZEN-ABI (id=ghostty-h-reconcile): the iOS Swift app
+// (Core/Tmux/TmuxController.swift) consumes these enum values, struct field layouts,
+// and function signatures. Keep them byte-stable and in sync with the Zig extern
+// definitions in src/apprt/embedded.zig. See docs/tmux-control-mode-fork.md.
 // tmux control mode: reconcile op-batch consumer.
 //
 // GHOSTTY_ACTION_TMUX_RECONCILE delivers an opaque payload (the
@@ -1069,6 +1074,7 @@ GHOSTTY_API ghostty_surface_t ghostty_surface_new_tmux_pane(
     void* viewer_terminal,
     void* viewer_pane,
     const ghostty_surface_config_s*);
+// ROOTSHELL-TMUX END FROZEN-ABI (id=ghostty-h-reconcile)
 
 typedef void (*ghostty_runtime_wakeup_cb)(void*);
 typedef bool (*ghostty_runtime_read_clipboard_cb)(void*,
@@ -1213,7 +1219,7 @@ GHOSTTY_API bool ghostty_surface_key_is_binding(ghostty_surface_t,
                                                    ghostty_binding_flags_e*);
 GHOSTTY_API void ghostty_surface_text(ghostty_surface_t, const char*, uintptr_t);
 GHOSTTY_API void ghostty_surface_send_input(ghostty_surface_t, const char*, uintptr_t);
-GHOSTTY_API void ghostty_surface_tmux_set_client_size(ghostty_surface_t, uint16_t, uint16_t);
+GHOSTTY_API void ghostty_surface_tmux_set_client_size(ghostty_surface_t, uint16_t, uint16_t); // ROOTSHELL-TMUX FROZEN-ABI (id=ghostty-h-set-client-size)
 GHOSTTY_API void ghostty_surface_preedit(ghostty_surface_t, const char*, uintptr_t);
 GHOSTTY_API bool ghostty_surface_mouse_captured(ghostty_surface_t);
 GHOSTTY_API bool ghostty_surface_mouse_button(ghostty_surface_t,
