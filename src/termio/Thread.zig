@@ -331,6 +331,10 @@ fn drainMailbox(
             },
             .jump_to_prompt => |v| try io.jumpToPrompt(v),
             .tmux_set_client_size => |v| io.terminal_stream.handler.tmuxSetClientSize(v.cols, v.rows), // ROOTSHELL-TMUX (id=thread-set-client-size)
+            .tmux_pane_command => |v| { // ROOTSHELL-TMUX (id=thread-pane-command)
+                defer v.alloc.free(v.data);
+                io.terminal_stream.handler.tmuxQueuePaneCommand(v.data);
+            },
             .start_synchronized_output => self.startSynchronizedOutput(cb),
             .linefeed_mode => |v| self.flags.linefeed_mode = v,
             .focused => |v| try io.focusGained(data, v),

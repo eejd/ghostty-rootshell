@@ -76,6 +76,18 @@ pub const Message = union(enum) {
         rows: u16,
     },
 
+    /// A raw, pre-formatted tmux command (with trailing newline) relayed from a
+    /// child pane backend (resize-pane / select-pane / select-window). Handled
+    /// on the IO thread so it can be routed through the viewer's command queue
+    /// instead of written straight to tmux, keeping the command/response FIFO
+    /// aligned (a stray untracked block otherwise blanks a pane on attach).
+    /// `data` is owned and freed after handling. See
+    /// `StreamHandler.tmuxQueuePaneCommand`.
+    tmux_pane_command: struct { // ROOTSHELL-TMUX (id=termio-msg-pane-command)
+        alloc: Allocator,
+        data: []const u8,
+    },
+
     /// Send this when a synchronized output mode is started. This will
     /// start the timer so that the output mode is disabled after a
     /// period of time so that a bad actor can't hang the terminal.
@@ -116,6 +128,7 @@ pub const Message = union(enum) {
                 config.alloc.destroy(config.ptr);
             },
             .write_alloc => |req| req.alloc.free(req.data),
+            .tmux_pane_command => |v| v.alloc.free(v.data),
             else => {},
         }
     }

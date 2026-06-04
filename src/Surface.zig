@@ -1315,6 +1315,38 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
             // WriteReq.Small holds only 38. Use writeReq() to handle
             // the size decision for the small case; stable and alloc
             // map directly since their layouts are compatible.
+            const bytes: []const u8 = switch (w) {
+                .small => |v| v.data[0..v.len],
+                .stable => |v| v,
+                .alloc => |v| v.data,
+            };
+
+            // resize-pane / select-pane / select-window are TRACKED commands:
+            // route them through the viewer's command queue (via a distinct
+            // termio message handled on the IO thread) so their %begin/%end
+            // responses don't desync the capture-pane FIFO — an untracked block
+            // otherwise mis-matches pane_visible/pane_state and strands a pane
+            // on the wrong (scrollback-less) screen on attach. send-keys (typed
+            // input / paste) stays on the direct write path below for low
+            // keystroke latency: it only fires once a pane is interactive, after
+            // the capture sequence, where a stray block is harmless.
+            if (!std.mem.startsWith(u8, bytes, "send-keys")) {
+                const copy = self.alloc.dupe(u8, bytes) catch null;
+                switch (w) {
+                    .alloc => |v| v.alloc.free(v.data),
+                    else => {},
+                }
+                if (copy) |c| {
+                    self.queueIo(.{ .tmux_pane_command = .{
+                        .alloc = self.alloc,
+                        .data = c,
+                    } }, .unlocked);
+                } else {
+                    log.warn("tmux pane-command alloc failed, dropping", .{});
+                }
+                return;
+            }
+
             const io_msg: termio.Message = switch (w) {
                 .small => |v| termio.Message.writeReq(
                     self.alloc,

@@ -414,22 +414,43 @@ pub const StreamHandler = struct {
         const viewer = self.tmux_viewer orelse return;
 
         // Store the size; if we're mid command-queue this also queues an
-        // in-order, response-matched client_size command.
+        // in-order, response-matched client_size command, and the startup
+        // sequence (`tryFinishStartup`) sends the stored size as a tracked
+        // command. That is the ONLY way we may send refresh-client.
+        //
+        // We must NOT also direct-send refresh-client here. The viewer matches
+        // command-response blocks to queued commands by blind FIFO (no command
+        // id), so any command whose response is not represented in the queue
+        // shifts every subsequent match by one. The previous direct-send was
+        // only ever reached during the `.startup` phase (post-startup,
+        // setClientSize has already queued a client_size, so the queue is
+        // non-empty and the old `commandQueueEmpty()` guard skipped it). Over
+        // SSH/tssh its response is slow and arrives DURING the per-pane
+        // capture-pane sequence, where it was consumed against `pane_visible`/
+        // `pane_state` — leaving pane_state empty, so the pane was never
+        // switched back to its primary screen: the restored history sat hidden
+        // on the primary while the (scrollback-less) alternate screen showed,
+        // so search found nothing and scrolling rubber-banded. Local works only
+        // because the response is instant and lands harmlessly.
         viewer.setClientSize(@intCast(cols), @intCast(rows));
+    }
 
-        // If the queue is idle, send refresh-client directly so the resize takes
-        // effect immediately rather than waiting for the next command cycle.
-        // Safe only when the queue is empty: tmux's (empty) response then has no
-        // queued command to be mis-matched against (the viewer ignores unmatched
-        // block output).
-        if (!viewer.commandQueueEmpty()) return;
-        var buf: [64]u8 = undefined;
-        const cmd = std.fmt.bufPrint(
-            &buf,
-            "refresh-client -C {d}x{d}\n",
-            .{ cols, rows },
-        ) catch return;
-        self.messageWriter(termio.Message.writeReq(self.alloc, cmd) catch return);
+    /// Route a raw tmux command relayed out-of-band from a child pane backend
+    /// (resize-pane / select-pane / select-window) through the viewer's command
+    /// queue, so its %begin/%end response is tracked and consumed in order
+    /// rather than injected as a stray block that desyncs the capture-pane FIFO.
+    /// `cmd` includes its trailing newline and is copied by the viewer.
+    pub fn tmuxQueuePaneCommand(self: *StreamHandler, cmd: []const u8) void { // ROOTSHELL-TMUX (id=streamhandler-pane-command)
+        if (comptime !tmux_enabled) return;
+        const viewer = self.tmux_viewer orelse {
+            // No viewer (should not happen for a pane relay): write directly so
+            // the command still reaches tmux rather than being silently lost.
+            self.messageWriter(termio.Message.writeReq(self.alloc, cmd) catch return);
+            return;
+        };
+        viewer.queueUserCommand(cmd) catch |err| {
+            log.warn("failed to queue tmux pane command err={}", .{err});
+        };
     }
 
     pub inline fn dcsHook(self: *StreamHandler, dcs: terminal.DCS) !void {

@@ -1989,6 +1989,22 @@ pub const Viewer = struct {
         }
     }
 
+    /// Queue a raw, pre-formatted tmux command (already including its trailing
+    /// newline) that was issued out-of-band by a child pane backend —
+    /// `resize-pane`, `select-pane`, `select-window`. Routing it through the
+    /// command queue (rather than writing it straight to tmux) is essential:
+    /// the queue serializes it AFTER any in-flight capture-pane sequence and
+    /// consumes its (empty) %begin/%end response, so it can never inject a
+    /// stray block that shifts the response FIFO — which otherwise mis-matches
+    /// pane_visible/pane_state and strands a pane on the wrong (scrollback-less)
+    /// screen on attach. The bytes are copied; the copy is freed in
+    /// `Command.deinit` via the `.user` arm.
+    pub fn queueUserCommand(self: *Viewer, cmd: []const u8) Allocator.Error!void {
+        const copy = try self.alloc.dupe(u8, cmd);
+        errdefer self.alloc.free(copy);
+        try self.queueCommands(&.{.{ .user = copy }});
+    }
+
     /// Helper to return a single action. The input action may use the arena
     /// for allocated memory; this will not touch the arena.
     fn singleAction(self: *Viewer, action: Action) []const Action {

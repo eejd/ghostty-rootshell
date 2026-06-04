@@ -26,7 +26,20 @@ pub const Parser = struct {
     /// memory usage. If the buffer exceeds this size, the client will
     /// enter a broken state (the control mode session will be forcibly
     /// exited and future data dropped).
-    max_bytes: usize = 1024 * 1024,
+    ///
+    /// This must comfortably exceed the largest single notification or
+    /// command-response block tmux can send. The big one is a `capture-pane
+    /// -e -S -` history replay (on attach, or for a new pane): `-e` emits SGR
+    /// escapes per color run and `-S -` dumps the pane's entire history (tmux's
+    /// history-limit, default 2000 lines but often raised), so a wide, colorful
+    /// pane easily exceeds 1 MiB. The previous 1 MiB cap broke the parser
+    /// mid-restore over SSH/tssh (large captures arrive in many fragments and
+    /// blow the cap), leaving a dead control channel and a blank/partial pane.
+    /// iTerm2's gateway buffers command responses unbounded; we keep a generous
+    /// ceiling instead, only to bound a runaway/malicious server on iOS. The
+    /// buffer holds one block at a time and is freed/cleared after each, so this
+    /// is a transient ceiling, not a reservation.
+    max_bytes: usize = 64 * 1024 * 1024,
 
     /// Tokens from the most recent %begin line, used to validate that
     /// the corresponding %end/%error matches. Null if %begin could not
@@ -81,6 +94,7 @@ pub const Parser = struct {
         if (self.state == .broken) return null;
 
         if (self.buffer.written().len >= self.max_bytes) {
+            log.warn("tmux control buffer exceeded {} bytes; breaking control channel", .{self.max_bytes});
             self.broken();
             return error.OutOfMemory;
         }
