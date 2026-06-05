@@ -87,9 +87,6 @@ pub const RenderOptions = struct {
         /// Sizing rule.
         size: Constraint.Size = .none,
 
-        /// Target coordinate space for sizing, alignment, and padding.
-        target: Target = .face,
-
         /// Vertical alignment rule.
         align_vertical: Align = .none,
         /// Horizontal alignment rule.
@@ -139,21 +136,6 @@ pub const RenderOptions = struct {
             /// Stretch the glyph to exactly fit the bounds in both
             /// directions, disregarding aspect ratio.
             stretch,
-            /// Scale the glyph up or down to exactly match the target height,
-            /// preserving aspect ratio.
-            height,
-            /// Scale the glyph up or down to exactly match the target width,
-            /// preserving aspect ratio.
-            width,
-            /// Scale the glyph up or down to fit within the target bounds,
-            /// preserving aspect ratio.
-            contain,
-            /// Scale the glyph up or down to cover the target bounds,
-            /// preserving aspect ratio.
-            cover_bounds,
-            /// Stretch the glyph to exactly fit the target bounds in both
-            /// directions, disregarding aspect ratio.
-            stretch_bounds,
         };
 
         pub const Align = enum {
@@ -171,9 +153,6 @@ pub const RenderOptions = struct {
             /// but always with respect to the first cell even for
             /// multi-cell constraints. (Nerd Font specific rule.)
             center1,
-            /// Move the glyph so that its design-space baseline aligns with
-            /// the terminal text baseline.
-            baseline,
         };
 
         pub const Height = enum {
@@ -185,17 +164,6 @@ pub const RenderOptions = struct {
             /// this height depends on both the constraint width and the
             /// affected by the `adjust-icon-height` config option.
             icon,
-        };
-
-        pub const Target = enum {
-            /// Size and align relative to the primary face metrics. This is
-            /// the default behavior used for normal fonts, emoji, and Nerd
-            /// Font constraints.
-            face,
-            /// Size and align relative to the full terminal cell span. The
-            /// width is `cell_width * constraint_width`; the height is
-            /// `cell_height`.
-            cell_span,
         };
 
         /// Returns true if the constraint does anything. If it doesn't,
@@ -253,13 +221,10 @@ pub const RenderOptions = struct {
         ) Glyph.Size {
             // For extra wide font faces, never stretch glyphs across two cells.
             // This mirrors font_patcher.
-            const min_constraint_width: u2 = switch (self.target) {
-                .cell_span => constraint_width,
-                .face => if ((self.size == .stretch) and (metrics.face_width > 0.9 * metrics.face_height))
-                    1
-                else
-                    @min(self.max_constraint_width, constraint_width),
-            };
+            const min_constraint_width: u2 = if ((self.size == .stretch) and (metrics.face_width > 0.9 * metrics.face_height))
+                1
+            else
+                @min(self.max_constraint_width, constraint_width);
 
             // The bounding box for the glyph's scale group.
             // Scaling and alignment rules are calculated for
@@ -315,8 +280,23 @@ pub const RenderOptions = struct {
                 return .{ 1.0, 1.0 };
             }
 
-            const target_width, const target_height = self.targetSize(metrics, min_constraint_width);
             const multi_cell = (min_constraint_width > 1);
+
+            const pad_width_factor = @as(f64, @floatFromInt(min_constraint_width)) - (self.pad_left + self.pad_right);
+            const pad_height_factor = 1 - (self.pad_bottom + self.pad_top);
+
+            const target_width = pad_width_factor * metrics.face_width;
+            const target_height = pad_height_factor * switch (self.height) {
+                .cell => metrics.face_height,
+                // Like font-patcher, the icon constraint height depends on the
+                // constraint width. Unlike font-patcher, the multi-cell
+                // icon_height may be different from face_height due to the
+                // `adjust-icon-height` config option.
+                .icon => if (multi_cell)
+                    metrics.icon_height
+                else
+                    metrics.icon_height_single,
+            };
 
             var width_factor = target_width / group.width;
             var height_factor = target_height / group.height;
@@ -356,21 +336,6 @@ pub const RenderOptions = struct {
                     width_factor = height_factor;
                 },
                 .stretch => {},
-                .height => {
-                    width_factor = height_factor;
-                },
-                .width => {
-                    height_factor = width_factor;
-                },
-                .contain => {
-                    height_factor = @min(width_factor, height_factor);
-                    width_factor = height_factor;
-                },
-                .cover_bounds => {
-                    height_factor = @max(width_factor, height_factor);
-                    width_factor = height_factor;
-                },
-                .stretch_bounds => {},
             }
 
             // Reduce aspect ratio if required
@@ -394,23 +359,15 @@ pub const RenderOptions = struct {
                 // we don't touch vertical alignment.
                 return group.y;
             }
-            const span_height: f64 = switch (self.target) {
-                .face => metrics.face_height,
-                .cell_span => @floatFromInt(metrics.cell_height),
-            };
-            const origin_y: f64 = switch (self.target) {
-                // We use face_height and offset by face_y, rather than using
-                // cell_height directly, to account for the asymmetry of the
-                // pixel cell around the face (a consequence of aligning the
-                // baseline with a pixel boundary rather than vertically
-                // centering the face).
-                .face => metrics.face_y,
-                .cell_span => 0,
-            };
-            const pad_bottom_dy = self.pad_bottom * span_height;
-            const pad_top_dy = self.pad_top * span_height;
-            const start_y = origin_y + pad_bottom_dy;
-            const end_y = origin_y + (span_height - group.height - pad_top_dy);
+            // We use face_height and offset by face_y, rather than
+            // using cell_height directly, to account for the asymmetry
+            // of the pixel cell around the face (a consequence of
+            // aligning the baseline with a pixel boundary rather than
+            // vertically centering the face).
+            const pad_bottom_dy = self.pad_bottom * metrics.face_height;
+            const pad_top_dy = self.pad_top * metrics.face_height;
+            const start_y = metrics.face_y + pad_bottom_dy;
+            const end_y = metrics.face_y + (metrics.face_height - group.height - pad_top_dy);
             const center_y = (start_y + end_y) / 2;
             return switch (self.align_vertical) {
                 // NOTE: Even if there is no prescribed alignment, we ensure
@@ -426,7 +383,6 @@ pub const RenderOptions = struct {
                 .start => start_y,
                 .end => end_y,
                 .center, .center1 => center_y,
-                .baseline => @floatFromInt(metrics.cell_baseline),
             };
         }
 
@@ -442,27 +398,18 @@ pub const RenderOptions = struct {
                 // axis, we don't touch horizontal alignment.
                 return group.x;
             }
-            const span_width, const pad_width = switch (self.target) {
-                // For multi-cell constraints, we align relative to the span
-                // from the left edge of the first cell to the right edge of
-                // the last face cell assuming it's left-aligned within the
-                // rounded and adjusted pixel cell. Any horizontal offset to
-                // center the face within the grid cell is the responsibility
-                // of the backend-specific rendering code, and should be done
-                // after applying constraints.
-                .face => .{
-                    metrics.face_width + @as(f64, @floatFromInt((min_constraint_width - 1) * metrics.cell_width)),
-                    metrics.face_width,
-                },
-                .cell_span => .{
-                    @as(f64, @floatFromInt(min_constraint_width * metrics.cell_width)),
-                    @as(f64, @floatFromInt(min_constraint_width * metrics.cell_width)),
-                },
-            };
-            const pad_left_dx = self.pad_left * pad_width;
-            const pad_right_dx = self.pad_right * pad_width;
+            // For multi-cell constraints, we align relative to the span
+            // from the left edge of the first cell to the right edge of
+            // the last face cell assuming it's left-aligned within the
+            // rounded and adjusted pixel cell. Any horizontal offset to
+            // center the face within the grid cell is the responsibility
+            // of the backend-specific rendering code, and should be done
+            // after applying constraints.
+            const full_face_span = metrics.face_width + @as(f64, @floatFromInt((min_constraint_width - 1) * metrics.cell_width));
+            const pad_left_dx = self.pad_left * metrics.face_width;
+            const pad_right_dx = self.pad_right * metrics.face_width;
             const start_x = pad_left_dx;
-            const end_x = span_width - group.width - pad_right_dx;
+            const end_x = full_face_span - group.width - pad_right_dx;
             return switch (self.align_horizontal) {
                 // NOTE: Even if there is no prescribed alignment, we ensure
                 // that the glyph doesn't protrude outside the padded cell,
@@ -481,66 +428,6 @@ pub const RenderOptions = struct {
                 .center1 => center1: {
                     const end1_x = metrics.face_width - group.width - pad_right_dx;
                     break :center1 @max(start_x, (start_x + end1_x) / 2);
-                },
-                // Baseline is vertical-only. We share the Align enum between
-                // axes so registered-glyph options can be stored in the same
-                // Constraint struct, but the parser never maps a horizontal
-                // alignment to .baseline.
-                .baseline => unreachable,
-            };
-        }
-
-        /// Return the available target width and height after padding.
-        ///
-        /// Face-targeted constraints preserve the historical behavior used by
-        /// platform fonts and Nerd Font rules: horizontal padding is measured
-        /// against one face width, and the available span is one face width
-        /// plus any additional grid cells. Vertical sizing uses either the
-        /// face height or configured icon height.
-        ///
-        /// Cell-span constraints are for glyphs whose layout contract is the
-        /// terminal cells themselves. Padding is measured against the full
-        /// cell span, so a two-cell glyph with 10% left padding starts after
-        /// 10% of both cells combined, not 10% of a single face width.
-        fn targetSize(
-            self: Constraint,
-            metrics: Metrics,
-            min_constraint_width: u2,
-        ) struct { f64, f64 } {
-            const multi_cell = (min_constraint_width > 1);
-
-            return switch (self.target) {
-                .face => .{
-                    // Historical font constraints measure horizontal padding
-                    // in face-width units. Additional cells add raw grid-cell
-                    // width to the available span, matching aligned_x.
-                    (@as(f64, @floatFromInt(min_constraint_width)) - (self.pad_left + self.pad_right)) * metrics.face_width,
-                    // Vertical face constraints operate on the selected face
-                    // or icon height. Icon height may depend on whether the
-                    // constraint spans multiple cells.
-                    (1 - (self.pad_bottom + self.pad_top)) * switch (self.height) {
-                        .cell => metrics.face_height,
-                        // Like font-patcher, the icon constraint height depends on the
-                        // constraint width. Unlike font-patcher, the multi-cell
-                        // icon_height may be different from face_height due to the
-                        // `adjust-icon-height` config option.
-                        .icon => if (multi_cell)
-                            metrics.icon_height
-                        else
-                            metrics.icon_height_single,
-                    },
-                },
-                .cell_span => span: {
-                    const span_width: f64 = @floatFromInt(min_constraint_width * metrics.cell_width);
-                    const span_height: f64 = @floatFromInt(metrics.cell_height);
-                    break :span .{
-                        // Cell-span constraints use the full terminal span as
-                        // the target box. This is the exact contract needed by
-                        // runtime registered glyphs, whose width is declared in
-                        // terminal cells rather than face metrics.
-                        (1 - (self.pad_left + self.pad_right)) * span_width,
-                        (1 - (self.pad_bottom + self.pad_top)) * span_height,
-                    };
                 },
             };
         }
@@ -654,79 +541,6 @@ test "Constraints" {
                 .y = 1.4,
             },
             constraint.constrain(glyph_1F978, metrics, 2),
-        );
-    }
-
-    // Cell-span constraints. These are generic target-bound sizing modes used
-    // by registered glyphs where the render span is defined by terminal cell
-    // dimensions rather than primary face metrics.
-    {
-        const glyph: GlyphSize = .{
-            .width = 100,
-            .height = 200,
-            .x = 0,
-            .y = 0,
-        };
-
-        const base: RenderOptions.Constraint = .{
-            .target = .cell_span,
-            .align_horizontal = .start,
-            .align_vertical = .start,
-        };
-
-        // Target span is two cells wide by one cell high: 20px x 22px.
-        var height_constraint = base;
-        height_constraint.size = .height;
-        try comparison.expectApproxEqual(
-            GlyphSize{ .width = 11, .height = 22, .x = 0, .y = 0 },
-            height_constraint.constrain(glyph, metrics, 2),
-        );
-        var width_constraint = base;
-        width_constraint.size = .width;
-        try comparison.expectApproxEqual(
-            GlyphSize{ .width = 20, .height = 40, .x = 0, .y = 0 },
-            width_constraint.constrain(glyph, metrics, 2),
-        );
-        var contain_constraint = base;
-        contain_constraint.size = .contain;
-        try comparison.expectApproxEqual(
-            GlyphSize{ .width = 11, .height = 22, .x = 0, .y = 0 },
-            contain_constraint.constrain(glyph, metrics, 2),
-        );
-        var cover_constraint = base;
-        cover_constraint.size = .cover_bounds;
-        try comparison.expectApproxEqual(
-            GlyphSize{ .width = 20, .height = 40, .x = 0, .y = 0 },
-            cover_constraint.constrain(glyph, metrics, 2),
-        );
-        var stretch_constraint = base;
-        stretch_constraint.size = .stretch_bounds;
-        try comparison.expectApproxEqual(
-            GlyphSize{ .width = 20, .height = 22, .x = 0, .y = 0 },
-            stretch_constraint.constrain(glyph, metrics, 2),
-        );
-
-        // Baseline alignment places the group's y=0 at the terminal text
-        // baseline, independent of vertical padding.
-        try comparison.expectApproxEqual(
-            GlyphSize{ .width = 100, .height = 200, .x = 0, .y = 5 },
-            (RenderOptions.Constraint{
-                .target = .cell_span,
-                .align_vertical = .baseline,
-            }).constrain(glyph, metrics, 2),
-        );
-
-        // Cell-span padding is relative to the full two-cell span.
-        try comparison.expectApproxEqual(
-            GlyphSize{ .width = 10, .height = 20, .x = 5, .y = 0 },
-            (RenderOptions.Constraint{
-                .target = .cell_span,
-                .size = .width,
-                .align_horizontal = .start,
-                .align_vertical = .start,
-                .pad_left = 0.25,
-                .pad_right = 0.25,
-            }).constrain(glyph, metrics, 2),
         );
     }
 

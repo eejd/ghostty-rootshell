@@ -96,16 +96,9 @@
 //!   - `width` — Unicode/wcwidth cell width. Must be `1` or `2`; default `1`.
 //!               This is authoritative for cursor advance, wrapping, and
 //!               selection geometry.
-//!   - `size`  — scale policy. Default `height`. Given the padded render span
-//!               width `W'`, padded render span height `H'`, authored advance
-//!               width `aw`, and authored line height `lh`, scale is:
-//!               `height = H' / lh`, `advance = W' / aw`,
-//!               `contain = min(W'/aw, H'/lh)`,
-//!               `cover = max(W'/aw, H'/lh)`, and
-//!               `stretch = (W'/aw, H'/lh)` independently on each axis.
+//!   - `size`  — scale policy. Default `height`.
 //!   - `align` — horizontal and vertical placement within the render span.
-//!               Default `center,center`. Vertical `baseline` aligns
-//!               design-space `y=0` to the terminal text baseline.
+//!               Default `center,center`.
 //!   - `pad`   — fractional insets from the render span edges. Default
 //!               `0,0,0,0`; degenerate padding is treated as no padding.
 //!   - payload — base64-encoded payload for the selected `fmt`.
