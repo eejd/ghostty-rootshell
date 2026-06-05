@@ -78,6 +78,32 @@ pub fn register(
     self.entries.orderedRemoveAt(0);
 }
 
+/// Delete a single entry from the glossary. If the entry doesn't exist,
+/// then this does nothing and is safe.
+pub fn delete(
+    self: *Glossary,
+    alloc: Allocator,
+    cp: u21,
+) error{OutOfNamespace}!void {
+    if (!isPrivateUse(cp)) return error.OutOfNamespace;
+    const kv = self.entries.fetchOrderedRemove(cp) orelse return;
+    var entry = kv.value;
+    entry.deinit(alloc);
+}
+
+/// Clear all entries from the glossary and free up any underlying
+/// storage.
+pub fn clearAndFree(self: *Glossary, alloc: Allocator) void {
+    for (self.entries.values()) |*entry| entry.deinit(alloc);
+    self.entries.deinit(alloc);
+    self.entries = .empty;
+}
+
+/// Contains returns true if the codepoint is covered by the glossary.
+pub fn contains(self: *Glossary, cp: u21) bool {
+    return self.entries.contains(cp);
+}
+
 /// A single glyph registration entry.
 pub const Entry = struct {
     /// Stored glyph payload variants.
@@ -339,7 +365,73 @@ test "Glossary register rejects non-PUA codepoint" {
     defer glossary.deinit(alloc);
 
     var entry = try testRegisterEntry(alloc, 0xE000);
-    errdefer entry.deinit(alloc);
-
+    defer entry.deinit(alloc);
     try testing.expectError(error.OutOfNamespace, glossary.register(alloc, 'A', entry));
+}
+
+test "Glossary delete removes one PUA slot and ignores empty PUA slot" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var glossary: Glossary = .empty;
+    defer glossary.deinit(alloc);
+
+    try glossary.register(alloc, 0xE000, try testRegisterEntry(alloc, 0xE000));
+    try glossary.register(alloc, 0xE001, try testRegisterEntry(alloc, 0xE001));
+
+    try glossary.delete(alloc, 0xE000);
+    try testing.expectEqual(@as(usize, 1), glossary.entries.count());
+    try testing.expect(!glossary.contains(0xE000));
+    try testing.expect(glossary.contains(0xE001));
+
+    try glossary.delete(alloc, 0xE000);
+    try testing.expectEqual(@as(usize, 1), glossary.entries.count());
+    try testing.expect(glossary.contains(0xE001));
+}
+
+test "Glossary delete rejects non-PUA codepoint" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var glossary: Glossary = .empty;
+    defer glossary.deinit(alloc);
+
+    try glossary.register(alloc, 0xE000, try testRegisterEntry(alloc, 0xE000));
+    try testing.expectError(error.OutOfNamespace, glossary.delete(alloc, 'A'));
+    try testing.expectEqual(@as(usize, 1), glossary.entries.count());
+    try testing.expect(glossary.contains(0xE000));
+}
+
+test "Glossary clearAndFree removes all slots and remains reusable" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var glossary: Glossary = .empty;
+    defer glossary.deinit(alloc);
+
+    try glossary.register(alloc, 0xE000, try testRegisterEntry(alloc, 0xE000));
+    try glossary.register(alloc, 0xE001, try testRegisterEntry(alloc, 0xE001));
+
+    glossary.clearAndFree(alloc);
+    try testing.expectEqual(@as(usize, 0), glossary.entries.count());
+    try testing.expect(!glossary.contains(0xE000));
+    try testing.expect(!glossary.contains(0xE001));
+
+    try glossary.register(alloc, 0xE002, try testRegisterEntry(alloc, 0xE002));
+    try testing.expectEqual(@as(usize, 1), glossary.entries.count());
+    try testing.expect(glossary.contains(0xE002));
+}
+
+test "Glossary contains reports registered slots" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var glossary: Glossary = .empty;
+    defer glossary.deinit(alloc);
+
+    try testing.expect(!glossary.contains(0xE000));
+
+    try glossary.register(alloc, 0xE000, try testRegisterEntry(alloc, 0xE000));
+    try testing.expect(glossary.contains(0xE000));
+    try testing.expect(!glossary.contains(0xE001));
 }
