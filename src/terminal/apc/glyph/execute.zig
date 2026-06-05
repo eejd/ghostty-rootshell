@@ -112,6 +112,11 @@ fn clear(
                 error.OutOfNamespace => "out_of_namespace",
             },
         } };
+    } else if (clr.has(.cp)) {
+        return .{ .clear = .{
+            .status = .err,
+            .reason = "malformed_payload",
+        } };
     } else {
         glossary.clearAndFree(alloc);
     }
@@ -276,6 +281,36 @@ test "execute clear rejects non-PUA" {
             .reason = "out_of_namespace",
         },
     }, testExecute(alloc, &glossary, &req).?);
+}
+
+test "execute clear rejects malformed cp without clearing glossary" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var glossary: Glossary = .empty;
+    defer glossary.deinit(alloc);
+
+    var reg1 = try testParse(alloc, "r;cp=e0a0;AAAAAAAAAAAAAA==");
+    defer reg1.deinit(alloc);
+    _ = testExecute(alloc, &glossary, &reg1);
+
+    var reg2 = try testParse(alloc, "r;cp=e0a1;AAAAAAAAAAAAAA==");
+    defer reg2.deinit(alloc);
+    _ = testExecute(alloc, &glossary, &reg2);
+
+    for ([_][]const u8{ "c;cp=zz", "c;cp=", "c;cp=200000" }) |data| {
+        var req = try testParse(alloc, data);
+        defer req.deinit(alloc);
+
+        try testing.expectEqual(Response{
+            .clear = .{
+                .status = .err,
+                .reason = "malformed_payload",
+            },
+        }, testExecute(alloc, &glossary, &req).?);
+        try testing.expect(glossary.contains(0xE0A0));
+        try testing.expect(glossary.contains(0xE0A1));
+    }
 }
 
 test "execute query reports no coverage" {

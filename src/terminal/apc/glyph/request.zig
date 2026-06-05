@@ -350,11 +350,22 @@ pub const Request = union(enum) {
                     .cp => std.fmt.parseInt(u21, value, 16) catch null,
                 };
             }
+
+            /// Return whether the option is present in the raw option string,
+            /// independent of whether its value can be decoded.
+            pub fn present(comptime self: Option, raw: []const u8) bool {
+                return optionValue(raw, self.key()) != null;
+            }
         };
 
         /// Lazily decode a clear option on demand.
         pub fn get(self: Clear, comptime option: Option) ?option.Type() {
             return option.read(self.rawOptions());
+        }
+
+        /// Return whether a clear option was provided, even if malformed.
+        pub fn has(self: Clear, comptime option: Option) bool {
+            return option.present(self.rawOptions());
         }
 
         /// Return the raw option portion of a valid clear command.
@@ -799,7 +810,21 @@ test "clear command" {
     defer cmd.deinit(testing.allocator);
 
     try testing.expect(cmd == .clear);
+    try testing.expect(cmd.clear.has(.cp));
     try testing.expectEqual(@as(u21, 0xE0A0), cmd.clear.get(.cp).?);
+}
+
+test "clear command tracks malformed cp presence" {
+    const testing = std.testing;
+
+    for ([_][]const u8{ "c;cp=zz", "c;cp=", "c;cp=200000" }) |data| {
+        var cmd = try testParse(testing.allocator, data);
+        defer cmd.deinit(testing.allocator);
+
+        try testing.expect(cmd == .clear);
+        try testing.expect(cmd.clear.has(.cp));
+        try testing.expect(cmd.clear.get(.cp) == null);
+    }
 }
 
 test "invalid command" {
