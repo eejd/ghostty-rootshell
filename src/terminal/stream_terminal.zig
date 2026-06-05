@@ -697,7 +697,24 @@ pub const Handler = struct {
                 }
             },
 
-            .glyph => {},
+            .glyph => |*glyph_req| {
+                const resp = self.terminal.glyphProtocol(alloc, glyph_req);
+                if (resp) |r| resp_block: {
+                    // Don't waste time encoding if we can't write responses
+                    // anyways.
+                    if (self.effects.write_pty == null) break :resp_block;
+
+                    // Glyph responses are short and bounded by the protocol
+                    // fields we emit, so this matches the Kitty response
+                    // buffer size above with ample headroom.
+                    var buf: [apc.glyph.Response.max_wire_bytes]u8 = undefined;
+                    var writer: std.Io.Writer = .fixed(&buf);
+                    r.formatWire(&writer) catch return;
+                    writer.writeByte(0) catch return;
+                    const final = writer.buffered();
+                    self.writePty(final[0 .. final.len - 1 :0]);
+                }
+            },
         }
     }
 };
@@ -919,6 +936,8 @@ test "full reset" {
     s.nextSlice("\x1B[10;20H");
     s.nextSlice("\x1B[5;20r"); // Set scroll region
     s.nextSlice("\x1B[?7l"); // Disable wraparound
+    s.nextSlice("\x1B_25a1;r;cp=e0a0;AAAAAAAAAAAAAA==\x1B\\");
+    try testing.expect(t.glyph_glossary.contains(0xE0A0));
 
     // Full reset
     s.nextSlice("\x1Bc");
@@ -929,6 +948,35 @@ test "full reset" {
     try testing.expectEqual(@as(usize, 0), t.scrolling_region.top);
     try testing.expectEqual(@as(usize, 23), t.scrolling_region.bottom);
     try testing.expect(t.modes.get(.wraparound));
+    try testing.expect(!t.glyph_glossary.contains(0xE0A0));
+}
+
+test "glyph protocol APC with write_pty callback" {
+    var t: Terminal = try .init(testing.allocator, .{ .cols = 80, .rows = 24 });
+    defer t.deinit(testing.allocator);
+
+    const S = struct {
+        var last_response: ?[:0]const u8 = null;
+        fn writePty(_: *Handler, data: [:0]const u8) void {
+            if (last_response) |old| testing.allocator.free(old);
+            last_response = testing.allocator.dupeZ(u8, data) catch @panic("OOM");
+        }
+    };
+    S.last_response = null;
+    defer if (S.last_response) |old| testing.allocator.free(old);
+
+    var handler: Handler = .init(&t);
+    handler.effects.write_pty = &S.writePty;
+
+    var s: Stream = .initAlloc(testing.allocator, handler);
+    defer s.deinit();
+
+    s.nextSlice("\x1B_25a1;s\x1B\\");
+    try testing.expectEqualStrings("\x1B_25a1;s;fmt=glyf\x1B\\", S.last_response.?);
+
+    s.nextSlice("\x1B_25a1;r;cp=e0a0;AAAAAAAAAAAAAA==\x1B\\");
+    try testing.expectEqualStrings("\x1B_25a1;r;cp=e0a0;status=0\x1B\\", S.last_response.?);
+    try testing.expect(t.glyph_glossary.contains(0xE0A0));
 }
 
 test "ignores query actions" {

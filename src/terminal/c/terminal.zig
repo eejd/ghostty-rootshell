@@ -329,6 +329,7 @@ pub const Option = enum(c_int) {
     selection = 21,
     default_cursor_style = 22,
     default_cursor_blink = 23,
+    glyph_protocol = 24,
 
     /// Input type expected for setting the option.
     pub fn InType(comptime self: Option) type {
@@ -349,6 +350,7 @@ pub const Option = enum(c_int) {
             .kitty_image_medium_file,
             .kitty_image_medium_temp_file,
             .kitty_image_medium_shared_mem,
+            .glyph_protocol,
             => ?*const bool,
             .apc_max_bytes, .apc_max_bytes_kitty => ?*const usize,
             .selection => ?*const selection_c.CSelection,
@@ -460,6 +462,11 @@ fn setTyped(
             } else {
                 wrapper.stream.handler.apc_handler.max_bytes.remove(.kitty);
             }
+        },
+        .glyph_protocol => {
+            const enabled = (value orelse return .success).*;
+            wrapper.stream.handler.apc_handler.enable(.glyph, enabled);
+            if (!enabled) wrapper.terminal.glyph_glossary.clearAndFree(wrapper.terminal.gpa());
         },
         .selection => {
             if (value) |ptr| {
@@ -3181,6 +3188,33 @@ test "set color sets dirty flag" {
     const fg: color.RGB.C = .{ .r = 0xFF, .g = 0xFF, .b = 0xFF };
     try testing.expectEqual(Result.success, set(t, .color_foreground, @ptrCast(&fg)));
     try testing.expect(zt.flags.dirty.palette);
+}
+
+test "set glyph protocol disables APC handling and clears glossary" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib.alloc.test_allocator,
+        &t,
+        .{ .cols = 80, .rows = 24, .max_scrollback = 0 },
+    ));
+    defer free(t);
+
+    const register = "\x1B_25a1;r;cp=e0a0;AAAAAAAAAAAAAA==\x1B\\";
+    vt_write(t, register, register.len);
+    try testing.expect(t.?.terminal.glyph_glossary.contains(0xE0A0));
+
+    const disabled = false;
+    try testing.expectEqual(Result.success, set(t, .glyph_protocol, @ptrCast(&disabled)));
+    try testing.expect(!t.?.stream.handler.apc_handler.enabled.contains(.glyph));
+    try testing.expect(!t.?.terminal.glyph_glossary.contains(0xE0A0));
+
+    vt_write(t, register, register.len);
+    try testing.expect(!t.?.terminal.glyph_glossary.contains(0xE0A0));
+
+    const enabled = true;
+    try testing.expectEqual(Result.success, set(t, .glyph_protocol, @ptrCast(&enabled)));
+    vt_write(t, register, register.len);
+    try testing.expect(t.?.terminal.glyph_glossary.contains(0xE0A0));
 }
 
 test "get_multi success" {
