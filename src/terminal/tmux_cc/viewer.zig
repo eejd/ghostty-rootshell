@@ -1388,8 +1388,10 @@ pub const Viewer = struct {
             }
 
             // If we added any panes, then we also want to resync the pane
-            // state (terminal modes and cursor positions and so on).
-            if (added) try self.queueCommands(&.{.pane_state});
+            // state (terminal modes and cursor positions and so on). The
+            // session id targets list-panes at the whole session so EVERY
+            // window's panes are covered (ROOTSHELL-TMUX).
+            if (added) try self.queueCommands(&.{.{ .pane_state = self.session_id }});
         }
 
         // No more errors after this point. We're about to replace all
@@ -2441,8 +2443,14 @@ const Command = union(enum) {
     pane_visible: CapturePane,
 
     /// Capture the pane terminal state as best we can. The pane ID(s)
-    /// are part of the output so we can map it back to our panes.
-    pane_state,
+    /// are part of the output so we can map it back to our panes. The
+    /// payload is the session id: pane_state is targeted via
+    /// `list-panes -s -t $<id>` so the state for EVERY window's panes is
+    /// returned, not just the current window's. Without session scope,
+    /// panes in non-active windows never get switched back to their real
+    /// screen and stay stranded blank on the alternate screen.
+    /// ROOTSHELL-TMUX
+    pane_state: usize,
 
     /// Get the tmux server version.
     tmux_version,
@@ -2562,10 +2570,16 @@ const Command = union(enum) {
                 },
             ),
 
-            .pane_state => try writer.writeAll(std.fmt.comptimePrint(
-                "list-panes -F '{s}'\n",
-                .{comptime Format.list_panes.comptimeFormat()},
-            )),
+            // ROOTSHELL-TMUX: `-s -t $<session>` lists panes for the WHOLE
+            // session (every window), not just the current window. Without
+            // `-s`, tmux returns only the current window's panes, so panes in
+            // other windows never receive their pane_state and stay stranded
+            // on the blank alternate screen (no scrollback). Mirrors iTerm2's
+            // `list-panes -s -t $<sessionId>` (TmuxController.m).
+            .pane_state => |session_id| try writer.print(
+                "list-panes -s -t ${d} -F '{s}'\n",
+                .{ session_id, comptime Format.list_panes.comptimeFormat() },
+            ),
 
             .tmux_version => try writer.writeAll(std.fmt.comptimePrint(
                 "display-message -p '{s}'\n",
@@ -2813,6 +2827,21 @@ test "subscribe_titles command formats refresh-client -B" {
         "refresh-client -B 'ghostty_title:@*:#{pane_title}'\n",
         result,
     );
+}
+
+test "pane_state formats session-scoped list-panes" {
+    // ROOTSHELL-TMUX: pane_state MUST be `-s -t $<session>` so tmux returns
+    // panes for EVERY window in the session, not just the current window.
+    // Without session scope, panes in non-active windows never get switched
+    // back to their real screen on attach and stay stranded blank on the
+    // alternate screen (the multi-window scrollback-restore bug).
+    const cmd: Command = .{ .pane_state = 3 };
+    var builder: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer builder.deinit();
+    try cmd.formatCommand(&builder.writer);
+    const result = builder.writer.buffered();
+    try testing.expect(std.mem.startsWith(u8, result, "list-panes -s -t $3 -F '"));
+    try testing.expect(std.mem.endsWith(u8, result, "'\n"));
 }
 
 test "pane_color_report formats refresh-client -r with escaped OSC 11 (bg)" {
@@ -4562,8 +4591,17 @@ test "two pane flow with pane state" {
         },
         // capture-pane pane 4 alternate history (empty)
         .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        // capture-pane pane 4 alternate visible (empty)
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        // capture-pane pane 4 alternate visible (empty). Completing the
+        // capture sequence emits the trailing pane_state command, which MUST
+        // be session-scoped (`list-panes -s -t $<id>`) so tmux returns panes
+        // for every window in the session, not just the current window —
+        // otherwise non-active windows' panes never get switched back to
+        // their real screen and stay stranded blank (ROOTSHELL-TMUX). The
+        // `$0` confirms the session id was threaded into the command.
+        .{
+            .input = .{ .tmux = .{ .block_end = "" } },
+            .contains_command = "list-panes -s -t $0",
+        },
         // list-panes output with terminal state
         .{
             .input = .{ .tmux = .{
