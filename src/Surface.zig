@@ -2731,6 +2731,26 @@ fn uiTerminalLocked(self: *Surface) *terminal.Terminal {
     };
 }
 
+/// Read-only sibling of `uiTerminalLocked` for `*const Surface` callers,
+/// namely the mouse-reporting predicates (`isMouseReporting`,
+/// `mouseShiftCapture`, ...). Returns the terminal whose VT state is
+/// actually displayed for this surface.
+///
+/// This matters for mouse reporting: a tmux pane app enabling mouse mode
+/// (DECSET 1000/1002/1003/1006) sets `flags.mouse_event`/`mouse_format` on
+/// the viewer-owned pane terminal (fed by `%output`), NOT on `io.terminal`,
+/// which is an unused relay placeholder for tmux panes. Reading `io.terminal`
+/// here would always observe `.none` and silently drop all mouse reports.
+///
+/// Precondition (tmux only): the renderer_state mutex must be held, since the
+/// viewer terminal is mutated by the gateway IO thread under that mutex.
+fn uiTerminalLockedConst(self: *const Surface) *const terminal.Terminal {
+    return switch (self.io.backend) {
+        .tmux => self.renderer_state.terminal,
+        else => &self.io.terminal,
+    };
+}
+
 /// Set a render-only vertical scroll offset in pixels.
 pub fn setSmoothScrollOffset(self: *Surface, y_px: f64) !void {
     const offset = if (std.math.isFinite(y_px)) @max(0, y_px) else 0;
@@ -3994,16 +4014,21 @@ pub fn scrollCallback(
         // we convert to cursor keys. This only happens if we're:
         // (1) alt screen (2) no explicit mouse reporting and (3) alt
         // scroll mode enabled.
-        if (self.io.terminal.screens.active_key == .alternate and
-            self.io.terminal.flags.mouse_event == .none and
-            self.io.terminal.modes.get(.mouse_alternate_scroll))
+        //
+        // Read screen/mode state from the UI terminal: for a tmux pane the
+        // alt-screen/mouse/alt-scroll/cursor-keys modes live on the
+        // viewer-owned terminal, not io.terminal (see uiTerminalLockedConst).
+        const ui_term = self.uiTerminalLockedConst();
+        if (ui_term.screens.active_key == .alternate and
+            ui_term.flags.mouse_event == .none and
+            ui_term.modes.get(.mouse_alternate_scroll))
         {
             if (y.delta != 0) {
                 // When we send mouse events as cursor keys we always
                 // clear the selection.
                 try self.setSelection(null);
 
-                const seq = if (self.io.terminal.modes.get(.cursor_keys)) seq: {
+                const seq = if (ui_term.modes.get(.cursor_keys)) seq: {
                     // cursor key: application mode
                     break :seq switch (y.direction()) {
                         .up_right => "\x1bOA",
@@ -4115,7 +4140,7 @@ pub fn contentScaleCallback(self: *Surface, content_scale: apprt.ContentScale) !
 /// the terminal state.
 fn isMouseReporting(self: *const Surface) bool {
     return self.config.mouse_reporting and
-        self.io.terminal.flags.mouse_event != .none;
+        self.uiTerminalLockedConst().flags.mouse_event != .none;
 }
 
 fn mouseReport(
@@ -4125,15 +4150,18 @@ fn mouseReport(
     mods: input.Mods,
     pos: apprt.CursorPos,
 ) void {
-    // Mouse reporting must be enabled by both config and terminal state
+    // Mouse reporting must be enabled by both config and terminal state.
+    // Read mouse mode/format from the UI terminal so tmux panes use the
+    // viewer-owned terminal's modes (see uiTerminalLockedConst).
+    const ui_term = self.uiTerminalLockedConst();
     assert(self.config.mouse_reporting);
-    assert(self.io.terminal.flags.mouse_event != .none);
+    assert(ui_term.flags.mouse_event != .none);
 
     // Build our encoding options.
     const encoding_opts: input.mouse_encode.Options = opts: {
         // Terminal and size state.
         var opts: input.mouse_encode.Options = .fromTerminal(
-            &self.io.terminal,
+            ui_term,
             self.size,
         );
 
@@ -4198,7 +4226,7 @@ fn mouseShiftCapture(self: *const Surface, lock: bool) bool {
 
     // If the terminal explicitly requests it then we always allow it
     // since we processed never/always at this point.
-    switch (self.io.terminal.flags.mouse_shift_capture) {
+    switch (self.uiTerminalLockedConst().flags.mouse_shift_capture) {
         .false => return false,
         .true => return true,
         .null => {},
@@ -4217,7 +4245,7 @@ fn mouseShiftCapture(self: *const Surface, lock: bool) bool {
 pub fn mouseCaptured(self: *Surface) bool {
     self.renderer_state.mutex.lock();
     defer self.renderer_state.mutex.unlock();
-    return self.config.mouse_reporting and self.io.terminal.flags.mouse_event != .none;
+    return self.config.mouse_reporting and self.uiTerminalLockedConst().flags.mouse_event != .none;
 }
 
 /// Called for mouse button press/release events. This will return true
@@ -5170,7 +5198,7 @@ fn linkAtPinExtended(
 fn mouseModsWithCapture(self: *Surface, mods: input.Mods) input.Mods {
     // In any of these scenarios, whatever mods are set (even shift)
     // are preserved.
-    if (self.io.terminal.flags.mouse_event == .none) return mods;
+    if (self.uiTerminalLockedConst().flags.mouse_event == .none) return mods;
     if (!mods.shift) return mods;
     if (self.mouseShiftCapture(false)) return mods;
 
@@ -5418,7 +5446,7 @@ pub fn cursorPosCallback(
     if ((over_link or
         self.mouse.link_point == null or
         (self.mouse.link_point != null and !self.mouse.link_point.?.eql(pos_vp))) and
-        (self.io.terminal.flags.mouse_event == .none or
+        (self.uiTerminalLockedConst().flags.mouse_event == .none or
             (self.mouse.mods.shift and !self.mouseShiftCapture(false)) or
             self.mouseLinkModBypass())) // rootshell: bypass mouse capture for link detection with Cmd/Ctrl
     {
