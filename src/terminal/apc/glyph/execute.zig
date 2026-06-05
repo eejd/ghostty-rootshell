@@ -32,7 +32,8 @@ pub fn execute(
     return switch (req.*) {
         .support => .{ .support = .{ .fmt = supported_formats } },
         .register => |reg| register(alloc, glossary, reg),
-        .query, .clear => @panic("TODO"),
+        .clear => |clr| clear(alloc, glossary, clr),
+        .query => @panic("TODO"),
     };
 }
 
@@ -80,6 +81,25 @@ fn registerFallible(
 
     try glossary.register(alloc, cp, entry);
     return cp;
+}
+
+fn clear(
+    alloc: Allocator,
+    glossary: *Glossary,
+    clr: Request.Clear,
+) ?Response {
+    if (clr.get(.cp)) |cp| {
+        glossary.delete(alloc, cp) catch |err| return .{ .clear = .{
+            .status = .err,
+            .reason = switch (err) {
+                error.OutOfNamespace => "out_of_namespace",
+            },
+        } };
+    } else {
+        glossary.clearAndFree(alloc);
+    }
+
+    return .{ .clear = .{} };
 }
 
 fn testParse(alloc: Allocator, data: []const u8) !Request {
@@ -171,4 +191,68 @@ test "execute register reports malformed payload" {
         },
     }, execute(alloc, &glossary, &req).?);
     try testing.expect(!glossary.contains(0xE0A0));
+}
+
+test "execute clear removes all glyphs" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var glossary: Glossary = .empty;
+    defer glossary.deinit(alloc);
+
+    var reg1 = try testParse(alloc, "r;cp=e0a0;AAAAAAAAAAAAAA==");
+    defer reg1.deinit(alloc);
+    _ = execute(alloc, &glossary, &reg1);
+
+    var reg2 = try testParse(alloc, "r;cp=e0a1;AAAAAAAAAAAAAA==");
+    defer reg2.deinit(alloc);
+    _ = execute(alloc, &glossary, &reg2);
+
+    var req = try testParse(alloc, "c");
+    defer req.deinit(alloc);
+
+    try testing.expectEqual(Response{ .clear = .{} }, execute(alloc, &glossary, &req).?);
+    try testing.expect(!glossary.contains(0xE0A0));
+    try testing.expect(!glossary.contains(0xE0A1));
+}
+
+test "execute clear removes one glyph" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var glossary: Glossary = .empty;
+    defer glossary.deinit(alloc);
+
+    var reg1 = try testParse(alloc, "r;cp=e0a0;AAAAAAAAAAAAAA==");
+    defer reg1.deinit(alloc);
+    _ = execute(alloc, &glossary, &reg1);
+
+    var reg2 = try testParse(alloc, "r;cp=e0a1;AAAAAAAAAAAAAA==");
+    defer reg2.deinit(alloc);
+    _ = execute(alloc, &glossary, &reg2);
+
+    var req = try testParse(alloc, "c;cp=e0a0");
+    defer req.deinit(alloc);
+
+    try testing.expectEqual(Response{ .clear = .{} }, execute(alloc, &glossary, &req).?);
+    try testing.expect(!glossary.contains(0xE0A0));
+    try testing.expect(glossary.contains(0xE0A1));
+}
+
+test "execute clear rejects non-PUA" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var glossary: Glossary = .empty;
+    defer glossary.deinit(alloc);
+
+    var req = try testParse(alloc, "c;cp=41");
+    defer req.deinit(alloc);
+
+    try testing.expectEqual(Response{
+        .clear = .{
+            .status = .err,
+            .reason = "out_of_namespace",
+        },
+    }, execute(alloc, &glossary, &req).?);
 }

@@ -24,6 +24,9 @@ pub const empty: Glossary = .{ .entries = .empty };
 /// Errors that can occur while registering a glossary entry.
 pub const RegisterError = Allocator.Error || error{OutOfNamespace};
 
+/// Errors that can occur while clearing glossary entries.
+pub const ClearError = error{OutOfNamespace};
+
 /// The set of entries in the glossary keyed by the codepoint.
 ///
 /// The array hash map preserves insertion order and has O(N)
@@ -87,7 +90,7 @@ pub fn delete(
     self: *Glossary,
     alloc: Allocator,
     cp: u21,
-) error{OutOfNamespace}!void {
+) ClearError!void {
     if (!isPrivateUse(cp)) return error.OutOfNamespace;
     const kv = self.entries.fetchOrderedRemove(cp) orelse return;
     var entry = kv.value;
