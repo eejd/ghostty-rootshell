@@ -1380,6 +1380,40 @@ test "select prev with history" {
     }
 }
 
+test "select prev wraps when all matches are in history" {
+    // Regression test: when every match is in scrollback (the active area
+    // has none, so active_len == 0), selecting prev from index 0 must wrap
+    // to the last result without underflowing `active_len - 1`.
+    const alloc = testing.allocator;
+    var t: Terminal = try .init(alloc, .{
+        .cols = 10,
+        .rows = 2,
+        .max_scrollback = std.math.maxInt(usize),
+    });
+    defer t.deinit(alloc);
+    const list: *PageList = &t.screens.active.pages;
+
+    var s = t.vtStream();
+    defer s.deinit();
+
+    // Put the only match in scrollback, then scroll the active area to all
+    // blank lines so it contains no match (active_len == 0, history_len == 1).
+    s.nextSlice("Fizz\r\n");
+    while (list.totalPages() < 3) s.nextSlice("\r\n");
+    for (0..list.rows) |_| s.nextSlice("\r\n");
+
+    var search: ScreenSearch = try .init(alloc, t.screens.active, "Fizz");
+    defer search.deinit();
+    try search.searchAll();
+    try testing.expectEqual(0, search.active_results.items.len);
+
+    // Select the first match (idx 0), then wrap backwards. This must not
+    // panic and must keep a valid selection.
+    _ = try search.select(.next);
+    _ = try search.select(.prev);
+    try testing.expect(search.selectedMatch() != null);
+}
+
 test "screen search no scrollback has no history" {
     const alloc = testing.allocator;
     var t: Terminal = try .init(alloc, .{
