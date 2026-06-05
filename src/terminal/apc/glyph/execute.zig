@@ -23,6 +23,10 @@ pub const supported_formats: response.Response.Support.Formats = .{
 ///
 /// For example, allocation errors can happen, but they're wrapped up in
 /// an out of memory response.
+///
+/// Query responses only report glossary coverage. Callers that can determine
+/// system font coverage must update the returned query response before sending
+/// it to the client.
 pub fn execute(
     alloc: Allocator,
     glossary: *Glossary,
@@ -31,10 +35,23 @@ pub fn execute(
     log.debug("executing glyph protocol request: {t}", .{req.*});
     return switch (req.*) {
         .support => .{ .support = .{ .fmt = supported_formats } },
+        .query => |qry| query(glossary, qry),
         .register => |reg| register(alloc, glossary, reg),
         .clear => |clr| clear(alloc, glossary, clr),
-        .query => @panic("TODO"),
     };
+}
+
+fn query(
+    glossary: *Glossary,
+    qry: Request.Query,
+) ?Response {
+    const cp = qry.get(.cp) orelse return null;
+    return .{ .query = .{
+        .cp = cp,
+        .status = .{
+            .glossary = glossary.contains(cp),
+        },
+    } };
 }
 
 fn register(
@@ -109,6 +126,10 @@ fn testParse(alloc: Allocator, data: []const u8) !Request {
     return try parser.complete(alloc);
 }
 
+fn testExecute(alloc: Allocator, glossary: *Glossary, req: *const Request) ?Response {
+    return execute(alloc, glossary, req);
+}
+
 test "execute register stores glyph and returns success" {
     const testing = std.testing;
     const alloc = testing.allocator;
@@ -121,7 +142,7 @@ test "execute register stores glyph and returns success" {
 
     try testing.expectEqual(Response{
         .register = .{ .cp = 0xE0A0 },
-    }, execute(alloc, &glossary, &req).?);
+    }, testExecute(alloc, &glossary, &req).?);
     try testing.expect(glossary.contains(0xE0A0));
 }
 
@@ -135,7 +156,7 @@ test "execute register reply failures suppresses success" {
     var req = try testParse(alloc, "r;cp=e0a0;reply=2;AAAAAAAAAAAAAA==");
     defer req.deinit(alloc);
 
-    try testing.expect(execute(alloc, &glossary, &req) == null);
+    try testing.expect(testExecute(alloc, &glossary, &req) == null);
     try testing.expect(glossary.contains(0xE0A0));
 }
 
@@ -149,7 +170,7 @@ test "execute register reply none suppresses failure" {
     var req = try testParse(alloc, "r;cp=41;reply=0;%%%not-base64%%%");
     defer req.deinit(alloc);
 
-    try testing.expect(execute(alloc, &glossary, &req) == null);
+    try testing.expect(testExecute(alloc, &glossary, &req) == null);
     try testing.expect(!glossary.contains('A'));
 }
 
@@ -169,7 +190,7 @@ test "execute register rejects non-PUA" {
             .status = .err,
             .reason = .out_of_namespace,
         },
-    }, execute(alloc, &glossary, &req).?);
+    }, testExecute(alloc, &glossary, &req).?);
     try testing.expect(!glossary.contains('A'));
 }
 
@@ -189,7 +210,7 @@ test "execute register reports malformed payload" {
             .status = .err,
             .reason = .malformed_payload,
         },
-    }, execute(alloc, &glossary, &req).?);
+    }, testExecute(alloc, &glossary, &req).?);
     try testing.expect(!glossary.contains(0xE0A0));
 }
 
@@ -202,16 +223,16 @@ test "execute clear removes all glyphs" {
 
     var reg1 = try testParse(alloc, "r;cp=e0a0;AAAAAAAAAAAAAA==");
     defer reg1.deinit(alloc);
-    _ = execute(alloc, &glossary, &reg1);
+    _ = testExecute(alloc, &glossary, &reg1);
 
     var reg2 = try testParse(alloc, "r;cp=e0a1;AAAAAAAAAAAAAA==");
     defer reg2.deinit(alloc);
-    _ = execute(alloc, &glossary, &reg2);
+    _ = testExecute(alloc, &glossary, &reg2);
 
     var req = try testParse(alloc, "c");
     defer req.deinit(alloc);
 
-    try testing.expectEqual(Response{ .clear = .{} }, execute(alloc, &glossary, &req).?);
+    try testing.expectEqual(Response{ .clear = .{} }, testExecute(alloc, &glossary, &req).?);
     try testing.expect(!glossary.contains(0xE0A0));
     try testing.expect(!glossary.contains(0xE0A1));
 }
@@ -225,16 +246,16 @@ test "execute clear removes one glyph" {
 
     var reg1 = try testParse(alloc, "r;cp=e0a0;AAAAAAAAAAAAAA==");
     defer reg1.deinit(alloc);
-    _ = execute(alloc, &glossary, &reg1);
+    _ = testExecute(alloc, &glossary, &reg1);
 
     var reg2 = try testParse(alloc, "r;cp=e0a1;AAAAAAAAAAAAAA==");
     defer reg2.deinit(alloc);
-    _ = execute(alloc, &glossary, &reg2);
+    _ = testExecute(alloc, &glossary, &reg2);
 
     var req = try testParse(alloc, "c;cp=e0a0");
     defer req.deinit(alloc);
 
-    try testing.expectEqual(Response{ .clear = .{} }, execute(alloc, &glossary, &req).?);
+    try testing.expectEqual(Response{ .clear = .{} }, testExecute(alloc, &glossary, &req).?);
     try testing.expect(!glossary.contains(0xE0A0));
     try testing.expect(glossary.contains(0xE0A1));
 }
@@ -254,5 +275,58 @@ test "execute clear rejects non-PUA" {
             .status = .err,
             .reason = "out_of_namespace",
         },
-    }, execute(alloc, &glossary, &req).?);
+    }, testExecute(alloc, &glossary, &req).?);
+}
+
+test "execute query reports no coverage" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var glossary: Glossary = .empty;
+    defer glossary.deinit(alloc);
+
+    var req = try testParse(alloc, "q;cp=e0a0");
+    defer req.deinit(alloc);
+
+    try testing.expectEqual(Response{
+        .query = .{
+            .cp = 0xE0A0,
+            .status = .{},
+        },
+    }, testExecute(alloc, &glossary, &req).?);
+}
+
+test "execute query reports glossary coverage" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var glossary: Glossary = .empty;
+    defer glossary.deinit(alloc);
+
+    var reg = try testParse(alloc, "r;cp=e0a0;AAAAAAAAAAAAAA==");
+    defer reg.deinit(alloc);
+    _ = testExecute(alloc, &glossary, &reg);
+
+    var req = try testParse(alloc, "q;cp=e0a0");
+    defer req.deinit(alloc);
+
+    try testing.expectEqual(Response{
+        .query = .{
+            .cp = 0xE0A0,
+            .status = .{ .glossary = true },
+        },
+    }, testExecute(alloc, &glossary, &req).?);
+}
+
+test "execute query without cp returns no response" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var glossary: Glossary = .empty;
+    defer glossary.deinit(alloc);
+
+    var req = try testParse(alloc, "q;foo=bar");
+    defer req.deinit(alloc);
+
+    try testing.expect(testExecute(alloc, &glossary, &req) == null);
 }
