@@ -9,21 +9,10 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const z2d = @import("z2d");
 
-const face = @import("face.zig");
+const Glyph = @import("Glyph.zig");
 const glyf = @import("opentype/glyf.zig");
 
-/// Metrics describing the authored glyf coordinate space, since
-/// a glyf table doesn't contain this on its own.
-pub const DesignMetrics = struct {
-    /// Units-per-em for outline/design coordinates.
-    units_per_em: u32,
-
-    /// Authored advance width in design units.
-    advance_width: u32,
-
-    /// Authored line height in design units.
-    line_height: u32,
-};
+const DesignMetrics = Glyph.DesignMetrics;
 
 /// An owned, tightly packed alpha8 bitmap.
 pub const Bitmap = struct {
@@ -52,7 +41,7 @@ pub const Error = Allocator.Error || z2d.Path.Error || z2d.painter.FillError;
 ///
 /// The returned bitmap is always `grid_metrics.cell_width * cell_width` by
 /// `grid_metrics.cell_height`. `opts.constraint` is applied using the same
-/// `face.RenderOptions.Constraint` machinery used by the platform font
+/// `RenderOptions.Constraint` machinery used by the platform font
 /// backends.
 ///
 /// The caller owns the returned bitmap.
@@ -60,7 +49,7 @@ pub fn rasterize(
     alloc: Allocator,
     outline: glyf.Glyf.Outline,
     design: DesignMetrics,
-    opts: face.RenderOptions,
+    opts: Glyph.RenderOptions,
 ) Error!Bitmap {
     assert(design.units_per_em > 0);
     assert(design.advance_width > 0);
@@ -207,16 +196,16 @@ const Placement = struct {
 
     /// Bottom edge of the rasterized outline bounds in bitmap pixels, measured
     /// from the bitmap's bottom edge. This matches the cell-relative y axis
-    /// used by font.face.GlyphSize and is converted to z2d's y-down axis when
+    /// used by font.Glyph.Size and is converted to z2d's y-down axis when
     /// points are transformed.
     y: f64,
 
     /// Width of the rasterized outline bounds in bitmap pixels after applying
-    /// font.face.RenderOptions.Constraint.
+    /// font.Glyph.RenderOptions.Constraint.
     width: f64,
 
     /// Height of the rasterized outline bounds in bitmap pixels after applying
-    /// font.face.RenderOptions.Constraint.
+    /// font.Glyph.RenderOptions.Constraint.
     height: f64,
 
     /// Full bitmap height in pixels, used to convert cell-relative y-up-ish
@@ -240,7 +229,7 @@ const Placement = struct {
     fn init(
         bounds: Bounds,
         design: DesignMetrics,
-        opts: face.RenderOptions,
+        opts: Glyph.RenderOptions,
     ) Placement {
         // Start with protocol-like design units mapped so that the em square
         // occupies one cell. This makes units_per_em the scale reference and
@@ -253,7 +242,7 @@ const Placement = struct {
         // Convert the decoded point bounds into the same pixel coordinate space
         // expected by RenderOptions.Constraint. This rectangle is the visible
         // outline bounds, not the full advance/line-height layout box.
-        const glyph: face.GlyphSize = .{
+        const glyph: Glyph.Size = .{
             .width = bounds.width() * scale,
             .height = bounds.height() * scale,
             .x = bounds.x_min * scale,
@@ -268,7 +257,7 @@ const Placement = struct {
         // Apply the same fit/cover/stretch/alignment/padding rules used by
         // normal font rendering. The result is still the outline bounds, but
         // placed as if its containing advance/line-height box was constrained.
-        const constraint: face.RenderOptions.Constraint = constraint: {
+        const constraint: Glyph.RenderOptions.Constraint = constraint: {
             var constraint = opts.constraint;
             if (group_width > 0 and group_height > 0) {
                 // Tell Constraint that `glyph` is a sub-rectangle of the

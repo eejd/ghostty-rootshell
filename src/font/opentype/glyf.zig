@@ -672,6 +672,9 @@ fn testAppendHeader(
 }
 
 test "glyf" {
+    // lib-vt source archives intentionally exclude full Ghostty font fixtures.
+    if (comptime @import("terminal_options").artifact == .lib) return error.SkipZigTest;
+
     const testing = std.testing;
     const alloc = testing.allocator;
     // Cozette because it doesn't have any hinting.
@@ -874,6 +877,9 @@ test "glyf: decode contour ending at max point index" {
 }
 
 test "glyf: reject glyphs with instructions and composite glyphs" {
+    // lib-vt source archives intentionally exclude full Ghostty font fixtures.
+    if (comptime @import("terminal_options").artifact == .lib) return error.SkipZigTest;
+
     const testing = std.testing;
     const alloc = testing.allocator;
     const test_font = @import("../embedded.zig").jetbrains_mono;
@@ -908,6 +914,9 @@ test "glyf: reject glyphs with instructions and composite glyphs" {
 }
 
 test "glyf: reject truncated" {
+    // lib-vt source archives intentionally exclude full Ghostty font fixtures.
+    if (comptime @import("terminal_options").artifact == .lib) return error.SkipZigTest;
+
     const testing = std.testing;
     const alloc = testing.allocator;
     // Cozette because it doesn't have any hinting.
@@ -926,6 +935,9 @@ test "glyf: reject truncated" {
 }
 
 test "glyf: reject endpoints out of order" {
+    // lib-vt source archives intentionally exclude full Ghostty font fixtures.
+    if (comptime @import("terminal_options").artifact == .lib) return error.SkipZigTest;
+
     const testing = std.testing;
     const alloc = testing.allocator;
     // Cozette because it doesn't have any hinting.
@@ -952,6 +964,9 @@ test "glyf: reject endpoints out of order" {
 }
 
 test "glyf: reject too many points" {
+    // lib-vt source archives intentionally exclude full Ghostty font fixtures.
+    if (comptime @import("terminal_options").artifact == .lib) return error.SkipZigTest;
+
     const testing = std.testing;
     const alloc = testing.allocator;
     // Cozette because it doesn't have any hinting.
