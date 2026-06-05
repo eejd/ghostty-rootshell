@@ -209,23 +209,13 @@ pub const Entry = struct {
         const pad = req.get(.pad) orelse return error.InvalidOptions;
 
         return .{
+            .target = .cell_span,
             .size = switch (size) {
-                // The rasterizer's base transform already maps the design em
-                // to the cell height. That is the closest existing behavior to
-                // the protocol's default height-driven mode.
-                .height => .none,
-                // There is no width-driven, aspect-preserving constraint mode
-                // today. Leave the base transform intact rather than forcing a
-                // fit/contain policy that would unexpectedly prevent overflow.
-                .advance => .none,
-                // Constraint.cover currently scales preserving aspect ratio to
-                // the available bounds, which is the best existing match for
-                // the protocol's contain mode.
-                .contain => .cover,
-                // There is no true protocol-cover equivalent that chooses the
-                // larger axis scale, so use the nearest named renderer policy.
-                .cover => .cover,
-                .stretch => .stretch,
+                .height => .height,
+                .advance => .width,
+                .contain => .contain,
+                .cover => .cover_bounds,
+                .stretch => .stretch_bounds,
             },
             .align_horizontal = switch (alignment.horizontal) {
                 .start => .start,
@@ -236,11 +226,7 @@ pub const Entry = struct {
                 .start => .start,
                 .center => .center,
                 .end => .end,
-                // The current constraint API has no baseline alignment mode.
-                // Start is the closest stable default because the glyf
-                // rasterizer's coordinate model already treats y=0 as the
-                // baseline/bottom before constraints are applied.
-                .baseline => .start,
+                .baseline => .baseline,
             },
             .pad_top = pad.top,
             .pad_right = pad.right,
@@ -308,7 +294,8 @@ test "Entry init decodes glyf payload and applies register fields" {
     try testing.expectEqual(@as(u32, 1024), entry.design.advance_width);
     try testing.expectEqual(@as(u32, 1536), entry.design.line_height);
     try testing.expectEqual(request.Width.wide, entry.width);
-    try testing.expectEqual(Constraint.Size.stretch, entry.constraint.size);
+    try testing.expectEqual(Constraint.Target.cell_span, entry.constraint.target);
+    try testing.expectEqual(Constraint.Size.stretch_bounds, entry.constraint.size);
     try testing.expectEqual(Constraint.Align.end, entry.constraint.align_horizontal);
     try testing.expectEqual(Constraint.Align.start, entry.constraint.align_vertical);
     try testing.expectEqual(@as(f64, 0.1), entry.constraint.pad_top);
@@ -318,6 +305,37 @@ test "Entry init decodes glyf payload and applies register fields" {
 
     try testing.expectEqual(@as(usize, 3), entry.glyph.glyf.points.len);
     try testing.expectEqual(@as(usize, 1), entry.glyph.glyf.contours.len);
+}
+
+test "Entry constraintFromRegister maps sizing and baseline exactly" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    const cases = .{
+        .{ "height", Constraint.Size.height },
+        .{ "advance", Constraint.Size.width },
+        .{ "contain", Constraint.Size.contain },
+        .{ "cover", Constraint.Size.cover_bounds },
+        .{ "stretch", Constraint.Size.stretch_bounds },
+    };
+
+    inline for (cases) |case| {
+        const data = try std.fmt.allocPrint(
+            alloc,
+            "r;cp=e000;size={s};align=center,baseline;{s}",
+            .{ case[0], test_triangle_glyf_payload },
+        );
+        defer alloc.free(data);
+
+        const req = try testParseRegister(alloc, data);
+        defer alloc.free(req.raw);
+
+        const constraint = try Entry.constraintFromRegister(req);
+        try testing.expectEqual(Constraint.Target.cell_span, constraint.target);
+        try testing.expectEqual(case[1], constraint.size);
+        try testing.expectEqual(Constraint.Align.center, constraint.align_horizontal);
+        try testing.expectEqual(Constraint.Align.baseline, constraint.align_vertical);
+    }
 }
 
 test "Entry init rejects invalid register payload" {
