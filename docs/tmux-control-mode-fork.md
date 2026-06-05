@@ -121,7 +121,7 @@ REORDER` note; behavioral hooks in `dcs.zig` / `stream_handler.zig` are also gat
 
 ### `id` registry
 
-70 hook ids across 30 files (the table below enumerates the Tier C/D upstream-hooked
+72 hook ids across 30 files (the table below enumerates the Tier C/D upstream-hooked
 files; the fork-owned sidecars `src/Surface_tmux.zig`, `src/apprt/surface_tmux.zig`,
 `src/termio/Tmux.zig`, and the `src/terminal/tmux_cc/*` parser also carry `id=`-tagged hooks
 but are carried forward verbatim, so they are not re-listed here). Regenerate the full list
@@ -136,7 +136,7 @@ grep -rn 'ROOTSHELL-TMUX' src/ include/ | grep -oE 'id=[a-z0-9-]+' | sort -u
 | `src/apprt/embedded.zig` | `embedded-capi-reconcile` (FROZEN), `embedded-new-tmux-pane` (FROZEN), `embedded-set-client-size` (FROZEN), `embedded-tmux-detach` (FROZEN), `embedded-new-tmux-pane-fn`, `embedded-init-tmux-pane-fn`, `embedded-relay-field`, `embedded-relay-deinit`, `embedded-ui-terminal-arm` |
 | `src/apprt/surface.zig` | `apprt-surface-tmux-types-extracted`, `apprt-msg-topology`, `apprt-msg-write`, `apprt-msg-focus`, `apprt-msg-title`, `apprt-relay-writer` |
 | `src/Surface.zig` | `surface-reconcile-extracted`, `surface-initoptions-backend`, `surface-init-backend-select`, `surface-arm-topology`, `surface-arm-write`, `surface-arm-focus`, `surface-arm-title` |
-| `src/termio/stream_handler.zig` | `streamhandler-viewer-field`, `streamhandler-force-unhook-field`, `streamhandler-deinit-viewer`, `streamhandler-changeconfig-disable`, `streamhandler-set-client-size`, `streamhandler-pump-command-queue`, `streamhandler-pane-command`, `streamhandler-detach`, `streamhandler-dcs-ground`, `streamhandler-dcs-dispatch`, `streamhandler-gateway-menu`, `snapshot-feed-pane-titles` |
+| `src/termio/stream_handler.zig` | `streamhandler-viewer-field`, `streamhandler-force-unhook-field`, `streamhandler-deinit-viewer`, `streamhandler-changeconfig-disable`, `streamhandler-changeconfig-colors`, `streamhandler-set-client-size`, `streamhandler-pump-command-queue`, `streamhandler-pane-command`, `streamhandler-detach`, `streamhandler-dcs-ground`, `streamhandler-dcs-dispatch`, `streamhandler-broken-control-unhook`, `streamhandler-gateway-menu`, `streamhandler-suppress-gateway-reports`, `snapshot-feed-pane-titles` |
 | `src/termio/backend.zig` | `backend-kind`, `backend-config-tmux`, `backend-tmux`, `backend-threaddata-tmux` |
 | `src/termio/Termio.zig` | `termio-derived-config`, `termio-derived-init`, `termio-stream-config` |
 | `src/terminal/dcs.zig` | `dcs-tmux-enter` (rest gated by `build_options.tmux_control_mode`) |

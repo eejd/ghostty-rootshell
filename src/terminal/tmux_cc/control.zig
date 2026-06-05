@@ -113,10 +113,13 @@ pub const Parser = struct {
             // Waiting for a notification so if the byte is not '%' then
             // we're in a broken state. Control mode output should always
             // be wrapped in '%begin/%end' orelse we expect a notification.
-            // Return an exit notification.
+            // Do not synthesize an exit notification here: a single leaked
+            // terminal report or stray byte should stop this broken parser from
+            // consuming more input, but it must not look like tmux intentionally
+            // exited and force the UI to close every projected tab.
             .idle => if (byte != '%') {
                 self.broken();
-                return .{ .exit = {} };
+                return .{ .broken = {} };
             } else {
                 self.buffer.clearRetainingCapacity();
                 self.state = .notification;
@@ -619,6 +622,11 @@ pub const Notification = union(enum) {
     /// we have to consider buffer limits and how we handle those (dropping
     /// vs truncating, etc.).
     exit,
+
+    /// The control stream became malformed. This is distinct from `%exit`:
+    /// callers should stop the DCS parser so the gateway terminal can recover,
+    /// but should not treat it as an intentional tmux detach/exit event.
+    broken,
 
     /// Dispatched at the end of a begin/end block with the raw data.
     /// The control mode parser can't parse the data because it is unaware
@@ -1287,6 +1295,22 @@ test "tmux exit notification with reason" {
     for ("%exit server exited") |byte| try testing.expect(try c.put(byte) == null);
     const n = (try c.put('\n')).?;
     try testing.expect(n == .exit);
+}
+
+test "tmux idle stray byte breaks without synthetic exit" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var c: Parser = .{ .buffer = .init(alloc) };
+    defer c.deinit();
+
+    const n = (try c.put(0x1b)).?;
+    try testing.expect(n == .broken);
+    try testing.expect(c.state == .broken);
+
+    // Once broken, additional bytes are dropped and never become an exit
+    // notification. A real %exit is still covered separately above.
+    for ("[c%exit\n") |byte| try testing.expect(try c.put(byte) == null);
 }
 
 test "tmux extended-output" {

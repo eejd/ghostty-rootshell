@@ -719,7 +719,9 @@ pub const Viewer = struct {
             // DCS 1000p, it should never reach us here.
             .enter => unreachable,
 
-            .exit => return self.defunct(),
+            .exit,
+            .broken,
+            => return self.defunct(),
 
             // The initial %begin/%end block is the response to the
             // attach command. Any end (even error) counts.
@@ -797,7 +799,9 @@ pub const Viewer = struct {
 
         switch (n) {
             .enter => unreachable,
-            .exit => return self.defunct(),
+            .exit,
+            .broken,
+            => return self.defunct(),
 
             inline .block_end,
             .block_err,
@@ -2650,9 +2654,12 @@ const Command = union(enum) {
                     .{
                         r.pane_id,
                         r.code,
-                        r.color.r, r.color.r,
-                        r.color.g, r.color.g,
-                        r.color.b, r.color.b,
+                        r.color.r,
+                        r.color.r,
+                        r.color.g,
+                        r.color.g,
+                        r.color.b,
+                        r.color.b,
                     },
                 );
             },

@@ -161,8 +161,11 @@ pub const StreamHandler = struct {
             log.warn("failed to set default cursor style: {}", .{err});
         };
 
-        // The config could have changed any of our colors so update mode 2031
-        self.messageWriter(.{ .color_scheme_report = .{ .force = false } });
+        // The config could have changed any of our colors so update mode 2031.
+        // ROOTSHELL-TMUX (id=streamhandler-suppress-gateway-reports): tmux control gateway must not emit raw terminal reports into tmux's command channel.
+        if (!self.suppressPtyReportForTmuxGateway("color scheme")) {
+            self.messageWriter(.{ .color_scheme_report = .{ .force = false } });
+        }
     }
 
     inline fn surfaceMessageWriter(
@@ -197,6 +200,17 @@ pub const StreamHandler = struct {
     inline fn messageWriter(self: *StreamHandler, msg: termio.Message) void {
         self.termio_mailbox.send(msg, self.renderer_state.mutex);
         self.termio_messaged = true;
+    }
+
+    // ROOTSHELL-TMUX (id=streamhandler-suppress-gateway-reports): iTerm2-style report suppression while this surface is the tmux control-mode gateway.
+    inline fn suppressPtyReportForTmuxGateway(
+        self: *StreamHandler,
+        comptime label: []const u8,
+    ) bool {
+        if (comptime !tmux_enabled) return false;
+        if (self.tmux_viewer == null) return false;
+        log.debug("suppressing {s} report on tmux control-mode gateway", .{label});
+        return true;
     }
 
     /// Send a renderer message and unlock the renderer state mutex
@@ -643,11 +657,19 @@ pub const StreamHandler = struct {
                         break :tmux;
                     },
 
+                    .broken => {
+                        // ROOTSHELL-TMUX (id=streamhandler-broken-control-unhook): malformed tmux control input recovers the gateway without synthetic %exit pruning.
+                        log.warn("tmux control stream became malformed; unhooking gateway parser", .{});
+                        self.tmux_force_unhook = true;
+                        break :tmux;
+                    },
+
                     else => {},
                 }
 
                 assert(tmux != .enter);
                 assert(tmux != .exit);
+                assert(tmux != .broken);
 
                 const viewer = self.tmux_viewer orelse {
                     // This can happen if we failed to initialize the
@@ -782,6 +804,8 @@ pub const StreamHandler = struct {
             },
 
             .xtgettcap => |*gettcap| {
+                // ROOTSHELL-TMUX (id=streamhandler-suppress-gateway-reports): drop report-generating replies on the tmux gateway.
+                if (self.suppressPtyReportForTmuxGateway("XTGETTCAP")) return;
                 const map = comptime terminfo.ghostty.xtgettcapMap();
                 while (gettcap.next()) |key| {
                     const response = map.get(key) orelse continue;
@@ -790,6 +814,8 @@ pub const StreamHandler = struct {
             },
 
             .decrqss => |decrqss| {
+                // ROOTSHELL-TMUX (id=streamhandler-suppress-gateway-reports): drop report-generating replies on the tmux gateway.
+                if (self.suppressPtyReportForTmuxGateway("DECRQSS")) return;
                 var response: [128]u8 = undefined;
                 var stream = std.io.fixedBufferStream(&response);
                 const writer = stream.writer();
@@ -869,6 +895,8 @@ pub const StreamHandler = struct {
         // log.warn("APC command: {}", .{cmd});
         switch (cmd) {
             .kitty => |*kitty_cmd| {
+                // ROOTSHELL-TMUX (id=streamhandler-suppress-gateway-reports): drop report-generating replies on the tmux gateway.
+                if (self.suppressPtyReportForTmuxGateway("kitty graphics")) return;
                 if (self.terminal.kittyGraphics(self.alloc, kitty_cmd)) |resp| {
                     var buf: [1024]u8 = undefined;
                     var writer: std.Io.Writer = .fixed(&buf);
@@ -952,6 +980,8 @@ pub const StreamHandler = struct {
     }
 
     fn sendModeReport(self: *StreamHandler, report: terminal.modes.Report) void {
+        // ROOTSHELL-TMUX (id=streamhandler-suppress-gateway-reports): drop report-generating replies on the tmux gateway.
+        if (self.suppressPtyReportForTmuxGateway("mode")) return;
         var data: termio.Message.WriteReq.Small.Array = undefined;
         var writer: std.Io.Writer = .fixed(&data);
         report.encode(&writer) catch |err| {
@@ -1081,13 +1111,19 @@ pub const StreamHandler = struct {
                 self.messageWriter(.{ .linefeed_mode = enabled });
             },
 
-            .in_band_size_reports => if (enabled) self.messageWriter(.{
-                .size_report = .mode_2048,
-            }),
+            // ROOTSHELL-TMUX (id=streamhandler-suppress-gateway-reports): drop report-generating replies on the tmux gateway.
+            .in_band_size_reports => if (enabled and
+                !self.suppressPtyReportForTmuxGateway("in-band size"))
+            {
+                self.messageWriter(.{ .size_report = .mode_2048 });
+            },
 
-            .focus_event => if (enabled) self.messageWriter(.{
-                .focused = self.terminal.flags.focused,
-            }),
+            // ROOTSHELL-TMUX (id=streamhandler-suppress-gateway-reports): drop report-generating replies on the tmux gateway.
+            .focus_event => if (enabled and
+                !self.suppressPtyReportForTmuxGateway("focus"))
+            {
+                self.messageWriter(.{ .focused = self.terminal.flags.focused });
+            },
 
             .mouse_event_x10 => {
                 if (enabled) {
@@ -1147,6 +1183,8 @@ pub const StreamHandler = struct {
         self: *StreamHandler,
         req: terminal.DeviceAttributeReq,
     ) !void {
+        // ROOTSHELL-TMUX (id=streamhandler-suppress-gateway-reports): drop report-generating replies on the tmux gateway.
+        if (self.suppressPtyReportForTmuxGateway("device attributes")) return;
         // For the below, we quack as a VT220. We don't quack as
         // a 420 because we don't support DCS sequences.
         switch (req) {
@@ -1172,6 +1210,8 @@ pub const StreamHandler = struct {
         self: *StreamHandler,
         req: terminal.device_status.Request,
     ) !void {
+        // ROOTSHELL-TMUX (id=streamhandler-suppress-gateway-reports): drop report-generating replies on the tmux gateway.
+        if (self.suppressPtyReportForTmuxGateway("device status")) return;
         switch (req) {
             .operating_status => self.messageWriter(.{ .write_stable = "\x1B[0n" }),
 
@@ -1266,6 +1306,8 @@ pub const StreamHandler = struct {
     }
 
     pub fn enquiry(self: *StreamHandler) !void {
+        // ROOTSHELL-TMUX (id=streamhandler-suppress-gateway-reports): drop report-generating replies on the tmux gateway.
+        if (self.suppressPtyReportForTmuxGateway("enquiry")) return;
         log.debug("sending enquiry response={s}", .{self.enquiry_response});
         self.messageWriter(try termio.Message.writeReq(self.alloc, self.enquiry_response));
     }
@@ -1285,13 +1327,18 @@ pub const StreamHandler = struct {
         try self.setMouseShape(.text);
 
         // Reset resets our palette so we report it for mode 2031.
-        self.messageWriter(.{ .color_scheme_report = .{ .force = false } });
+        // ROOTSHELL-TMUX (id=streamhandler-suppress-gateway-reports): tmux control gateway must not emit raw terminal reports into tmux's command channel.
+        if (!self.suppressPtyReportForTmuxGateway("color scheme")) {
+            self.messageWriter(.{ .color_scheme_report = .{ .force = false } });
+        }
 
         // Clear the progress bar
         self.progressReport(.{ .state = .remove });
     }
 
     pub fn queryKittyKeyboard(self: *StreamHandler) !void {
+        // ROOTSHELL-TMUX (id=streamhandler-suppress-gateway-reports): drop report-generating replies on the tmux gateway.
+        if (self.suppressPtyReportForTmuxGateway("kitty keyboard")) return;
         log.debug("querying kitty keyboard mode", .{});
         var data: termio.Message.WriteReq.Small.Array = undefined;
         const resp = try std.fmt.bufPrint(&data, "\x1b[?{}u", .{
@@ -1309,6 +1356,8 @@ pub const StreamHandler = struct {
     pub fn reportXtversion(
         self: *StreamHandler,
     ) !void {
+        // ROOTSHELL-TMUX (id=streamhandler-suppress-gateway-reports): drop report-generating replies on the tmux gateway.
+        if (self.suppressPtyReportForTmuxGateway("XTVERSION")) return;
         log.debug("reporting XTVERSION: ghostty {s}", .{build_config.version_string});
         var buf: [288]u8 = undefined;
         const resp = try std.fmt.bufPrint(
@@ -1673,6 +1722,8 @@ pub const StreamHandler = struct {
 
                 .query => |kind| report: {
                     if (self.osc_color_report_format == .none) break :report;
+                    // ROOTSHELL-TMUX (id=streamhandler-suppress-gateway-reports): drop report-generating replies on the tmux gateway.
+                    if (self.suppressPtyReportForTmuxGateway("OSC color")) break :report;
 
                     const color = switch (kind) {
                         .palette => |i| self.terminal.colors.palette.current[i],
@@ -1783,6 +1834,8 @@ pub const StreamHandler = struct {
 
     /// Send a report to the pty.
     pub fn sendSizeReport(self: *StreamHandler, style: terminal.SizeReportStyle) void {
+        // ROOTSHELL-TMUX (id=streamhandler-suppress-gateway-reports): drop report-generating replies on the tmux gateway.
+        if (self.suppressPtyReportForTmuxGateway("size")) return;
         switch (style) {
             .csi_14_t => self.messageWriter(.{ .size_report = .csi_14_t }),
             .csi_16_t => self.messageWriter(.{ .size_report = .csi_16_t }),
@@ -1795,6 +1848,8 @@ pub const StreamHandler = struct {
         self: *StreamHandler,
         request: terminal.kitty.color.OSC,
     ) !void {
+        // ROOTSHELL-TMUX (id=streamhandler-suppress-gateway-reports): drop report-generating replies on the tmux gateway.
+        if (self.suppressPtyReportForTmuxGateway("kitty color")) return;
         var stream: std.Io.Writer.Allocating = .init(self.alloc);
         defer stream.deinit();
         const writer = &stream.writer;
