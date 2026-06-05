@@ -21,6 +21,9 @@ pub const max_entries = 1024;
 /// An empty glossary with no registered glyphs.
 pub const empty: Glossary = .{ .entries = .empty };
 
+/// Errors that can occur while registering a glossary entry.
+pub const RegisterError = Allocator.Error || error{OutOfNamespace};
+
 /// The set of entries in the glossary keyed by the codepoint.
 ///
 /// The array hash map preserves insertion order and has O(N)
@@ -49,7 +52,7 @@ pub fn register(
     alloc: Allocator,
     cp: u21,
     entry: Entry,
-) (Allocator.Error || error{OutOfNamespace})!void {
+) RegisterError!void {
     // Validate codepoint according to spec.
     if (!isPrivateUse(cp)) return error.OutOfNamespace;
 
@@ -143,7 +146,7 @@ pub const Entry = struct {
     /// decodes the base64 glyph payload, and stores the decoded outline. The
     /// returned entry owns decoded glyph memory and must be released with
     /// `deinit`.
-    pub fn init(alloc: Allocator, req: RegisterReq) InitError!Entry {
+    pub fn init(alloc: Allocator, req: RegisterReq) Entry.InitError!Entry {
         // Validate format
         const fmt = req.get(.fmt) orelse return error.InvalidOptions;
         const design: glyf_rasterize.DesignMetrics = .{
