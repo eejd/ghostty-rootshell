@@ -259,6 +259,24 @@ pub const Viewer = struct {
     /// `renderer_mutex`).
     retired_panes: std.ArrayListUnmanaged(*Pane) = .empty,
 
+    /// Active-pane title (`#{pane_title}` / `#T`) per window id, fed by the
+    /// `@*` pane_title format subscription (see `title_subscription_name`).
+    /// Values are owned on `self.alloc` — NOT the windows arena — so they
+    /// survive list-windows rebuilds (tmux only re-sends a subscription value
+    /// when it changes, so we must retain the last one) and stay bounded to
+    /// one string per window even when a pane rewrites its title rapidly.
+    /// Empty/missing means "no pane title; fall back to the window name".
+    /// Freed on replace and on deinit.
+    pane_titles: std.AutoHashMapUnmanaged(usize, []u8) = .empty,
+
+    /// Whether the pane-title subscription command has been queued yet. We
+    /// queue it once, after the first list-windows' capture sequence, so it
+    /// trails (rather than interrupts) the startup command flow. The tmux
+    /// subscription is client-scoped and persists across session changes; a
+    /// replacement viewer (new session) starts false and re-queues it, which
+    /// tmux deduplicates by name.
+    title_subscription_queued: bool = false,
+
     /// The arena used for the prior action allocated state. This contains
     /// the contents for the actions as well as the actions slice itself.
     action_arena: ArenaAllocator.State,
@@ -559,6 +577,11 @@ pub const Viewer = struct {
         }
         if (self.tmux_version.len > 0) {
             self.alloc.free(self.tmux_version);
+        }
+        {
+            var it = self.pane_titles.iterator();
+            while (it.next()) |kv| self.alloc.free(kv.value_ptr.*);
+            self.pane_titles.deinit(self.alloc);
         }
         self.action_arena.promote(self.alloc).deinit();
     }
@@ -879,15 +902,10 @@ pub const Viewer = struct {
                             log.warn("failed to dupe window name for rename", .{});
                             break;
                         };
-                        var act_arena = self.action_arena.promote(self.alloc);
-                        defer self.action_arena = act_arena.state;
-                        actions.append(act_arena.allocator(), .{ .title = .{
-                            .window_id = info.id,
-                            .name = window.name,
-                        } }) catch {
-                            log.warn("failed to queue title action", .{});
-                            return actions.items;
-                        };
+                        // Emit through the shared precedence helper: the
+                        // active-pane title (#T) keeps priority over the
+                        // window name (#W) when one is set.
+                        self.emitWindowTitle(&actions, info.id);
                         return actions.items;
                     }
                 }
@@ -928,6 +946,21 @@ pub const Viewer = struct {
                     return actions.items;
                 };
                 return actions.items;
+            },
+
+            // A subscribed format value changed (`refresh-client -B`). We
+            // subscribe to `@*:#{pane_title}`, so each notification carries a
+            // window id and that window's active-pane title (#T). Store it and
+            // refresh the tab title (pane title preferred, window name as the
+            // fallback). Unsolicited like the other %-notifications, so fall
+            // through and leave the command-slot bookkeeping untouched.
+            .subscription_changed => |info| {
+                if (std.mem.eql(u8, info.name, control.title_subscription_name)) {
+                    self.setPaneTitle(info.window_id, info.value) catch {
+                        log.warn("failed to store pane title for window={}", .{info.window_id});
+                    };
+                    self.emitWindowTitle(&actions, info.window_id);
+                }
             },
 
             // Pause/continue relate to refresh-client -A pause-after
@@ -1139,6 +1172,47 @@ pub const Viewer = struct {
             if (cmd.* == .list_windows) return;
         }
         try self.queueCommands(&.{.list_windows});
+    }
+
+    /// Store the active-pane title for a window (from the `#{pane_title}`
+    /// subscription). Owns a copy on `self.alloc`, freeing any prior value.
+    /// No-op when the value is unchanged.
+    fn setPaneTitle(self: *Viewer, window_id: usize, value: []const u8) Allocator.Error!void {
+        if (self.pane_titles.get(window_id)) |existing| {
+            if (std.mem.eql(u8, existing, value)) return;
+        }
+        const dup = try self.alloc.dupe(u8, value);
+        errdefer self.alloc.free(dup);
+        const gop = try self.pane_titles.getOrPut(self.alloc, window_id);
+        if (gop.found_existing) self.alloc.free(gop.value_ptr.*);
+        gop.value_ptr.* = dup;
+    }
+
+    /// Append a `.title` action for a window, applying the title precedence:
+    /// the active-pane title (`#T`) wins; the tmux window name (`#W`) is the
+    /// fallback when the pane has no title set. Mirrors a regular `tmux attach`
+    /// with `set-titles-string '#T'`. No-op if neither is known yet. The title
+    /// slice (pane title on `self.alloc`, or window name on the windows arena)
+    /// stays valid through the synchronous action processing in the caller.
+    fn emitWindowTitle(self: *Viewer, actions: *std.ArrayList(Action), window_id: usize) void {
+        const pane_title: []const u8 = if (self.pane_titles.get(window_id)) |t| t else "";
+        const window_name: []const u8 = name: {
+            for (self.windows.items) |w| {
+                if (w.id == window_id) break :name w.name;
+            }
+            break :name "";
+        };
+        const title: []const u8 = if (pane_title.len > 0) pane_title else window_name;
+        if (title.len == 0) return;
+
+        var act_arena = self.action_arena.promote(self.alloc);
+        defer self.action_arena = act_arena.state;
+        actions.append(act_arena.allocator(), .{ .title = .{
+            .window_id = window_id,
+            .name = title,
+        } }) catch {
+            log.warn("failed to queue title action for window={}", .{window_id});
+        };
     }
 
     /// Handle output (or extended output) for a pane. Suppresses data for
@@ -1425,7 +1499,7 @@ pub const Viewer = struct {
 
         // Process our command
         switch (command) {
-            .user, .client_size, .continue_pane, .pane_color_report => {},
+            .user, .client_size, .continue_pane, .pane_color_report, .subscribe_titles => {},
 
             .pane_state => {
                 try self.receivedPaneState(content);
@@ -1607,6 +1681,16 @@ pub const Viewer = struct {
         // field. Using the local windows.items would be a
         // use-after-free since defer windows.deinit frees it.
         try self.syncLayouts(windows.items);
+
+        // Subscribe (once) to each window's active-pane title now that the
+        // initial capture/pane_state commands are queued. Appended last so it
+        // trails — rather than interrupts — the startup command flow. The tmux
+        // subscription then drives live tab-title updates via
+        // %subscription-changed. See title_subscription_name.
+        if (!self.title_subscription_queued) {
+            try self.queueCommands(&.{.subscribe_titles});
+            self.title_subscription_queued = true;
+        }
 
         // Setup our windows action so the caller can process GUI
         // window changes. Uses self.windows.items (persistent) to
@@ -2252,6 +2336,14 @@ const Command = union(enum) {
     /// Get the tmux server version.
     tmux_version,
 
+    /// Subscribe to each window's active-pane title via `refresh-client -B`.
+    /// tmux then emits `%subscription-changed` whenever a window's
+    /// `#{pane_title}` (`#T`) changes, which the viewer maps onto the tab
+    /// title. The subscription is client-scoped and persists across session
+    /// changes, so it is issued once during startup. See
+    /// `title_subscription_name`.
+    subscribe_titles,
+
     /// Query the current mode of a specific pane via display-message.
     /// Used to determine whether a pane is in copy-mode, view-mode, etc.
     pane_mode_query: usize,
@@ -2306,6 +2398,7 @@ const Command = union(enum) {
             .pane_visible,
             .pane_state,
             .tmux_version,
+            .subscribe_titles,
             .pane_mode_query,
             .client_size,
             .continue_pane,
@@ -2367,6 +2460,15 @@ const Command = union(enum) {
                 "display-message -p '{s}'\n",
                 .{comptime Format.tmux_version.comptimeFormat()},
             )),
+
+            // Subscribe to every window's active-pane title. `@*` = all
+            // windows; the format is evaluated in each window's context, so
+            // `#{pane_title}` resolves to that window's active pane's title.
+            // Single-quoted so tmux stores `#{pane_title}` as the literal
+            // format (expanded per tick), not at parse time.
+            .subscribe_titles => try writer.writeAll(
+                "refresh-client -B '" ++ control.title_subscription_name ++ ":@*:#{pane_title}'\n",
+            ),
 
             .pane_mode_query => |pane_id| try writer.print(
                 "display-message -p -t %{d} '{s}'\n",
@@ -2590,6 +2692,18 @@ test "continue_pane command formats refresh-client -A" {
     try testing.expectEqualStrings("refresh-client -A '%42:continue'\n", result);
 }
 
+test "subscribe_titles command formats refresh-client -B" {
+    const cmd: Command = .subscribe_titles;
+    var builder: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer builder.deinit();
+    try cmd.formatCommand(&builder.writer);
+    const result = builder.writer.buffered();
+    try testing.expectEqualStrings(
+        "refresh-client -B 'ghostty_title:@*:#{pane_title}'\n",
+        result,
+    );
+}
+
 test "pane_color_report formats refresh-client -r with escaped OSC 11 (bg)" {
     const cmd: Command = .{ .pane_color_report = .{
         .pane_id = 2,
@@ -2724,7 +2838,8 @@ test "setClientSize queues command in command_queue state" {
             } },
             .contains_tags = &.{ .windows, .command },
         },
-        // Complete capture-pane sequence
+        // Complete capture-pane sequence + pane_state + subscribe_titles.
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
         .{ .input = .{ .tmux = .{ .block_end = "" } } },
         .{ .input = .{ .tmux = .{ .block_end = "" } } },
         .{ .input = .{ .tmux = .{ .block_end = "" } } },
@@ -3319,8 +3434,9 @@ test "layout change" {
                 }
             }).check,
         },
-        // Complete all capture-pane commands for pane 0 (primary and alternate)
-        // plus pane_state
+        // Complete all capture-pane commands for pane 0 (primary and alternate),
+        // pane_state, and the trailing title subscription.
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
         .{ .input = .{ .tmux = .{ .block_end = "" } } },
         .{ .input = .{ .tmux = .{ .block_end = "" } } },
         .{ .input = .{ .tmux = .{ .block_end = "" } } },
@@ -3407,7 +3523,9 @@ test "layout change resizes existing pane without structural change" {
                 }
             }).check,
         },
-        // Complete capture-pane commands for pane 0
+        // Complete capture-pane commands for pane 0, pane_state, and the
+        // trailing title subscription.
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
         .{ .input = .{ .tmux = .{ .block_end = "" } } },
         .{ .input = .{ .tmux = .{ .block_end = "" } } },
         .{ .input = .{ .tmux = .{ .block_end = "" } } },
@@ -3540,7 +3658,9 @@ test "layout_change returns command when queue was empty" {
             } },
             .contains_tags = &.{ .windows, .command },
         },
-        // Complete all capture-pane commands for pane 0
+        // Complete all capture-pane commands for pane 0, pane_state, and the
+        // trailing title subscription.
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
         .{ .input = .{ .tmux = .{ .block_end = "" } } },
         .{ .input = .{ .tmux = .{ .block_end = "" } } },
         .{ .input = .{ .tmux = .{ .block_end = "" } } },
@@ -3612,7 +3732,9 @@ test "window_add queues list_windows when queue empty" {
             } },
             .contains_tags = &.{ .windows, .command },
         },
-        // Complete all capture-pane commands for pane 0
+        // Complete all capture-pane commands for pane 0, then pane_state
+        // and the trailing title subscription.
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
         .{ .input = .{ .tmux = .{ .block_end = "" } } },
         .{ .input = .{ .tmux = .{ .block_end = "" } } },
         .{ .input = .{ .tmux = .{ .block_end = "" } } },
@@ -3739,7 +3861,9 @@ test "session_window_changed queues list_windows when queue empty" {
             } },
             .contains_tags = &.{ .windows, .command },
         },
-        // Complete all capture-pane commands for pane 0
+        // Complete all capture-pane commands for pane 0, then pane_state
+        // and the trailing title subscription.
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
         .{ .input = .{ .tmux = .{ .block_end = "" } } },
         .{ .input = .{ .tmux = .{ .block_end = "" } } },
         .{ .input = .{ .tmux = .{ .block_end = "" } } },
@@ -3862,7 +3986,9 @@ test "window_close queues list_windows when queue empty" {
             } },
             .contains_tags = &.{ .windows, .command },
         },
-        // Complete all capture-pane commands for pane 0
+        // Complete all capture-pane commands for pane 0, then pane_state
+        // and the trailing title subscription.
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
         .{ .input = .{ .tmux = .{ .block_end = "" } } },
         .{ .input = .{ .tmux = .{ .block_end = "" } } },
         .{ .input = .{ .tmux = .{ .block_end = "" } } },
@@ -3987,7 +4113,9 @@ test "refreshWindowList coalesces duplicate list_windows" {
             } },
             .contains_tags = &.{ .windows, .command },
         },
-        // Complete all capture-pane commands for pane 0
+        // Complete all capture-pane commands for pane 0, then pane_state
+        // and the trailing title subscription.
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
         .{ .input = .{ .tmux = .{ .block_end = "" } } },
         .{ .input = .{ .tmux = .{ .block_end = "" } } },
         .{ .input = .{ .tmux = .{ .block_end = "" } } },
@@ -4367,7 +4495,9 @@ test "window_pane_changed produces focus action" {
             } },
             .contains_tags = &.{ .windows, .command },
         },
-        // Complete all capture-pane commands (4 per pane × 2 panes = 8)
+        // Complete all capture-pane commands (4 per pane × 2 panes = 8),
+        // then pane_state and the trailing title subscription.
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
         .{ .input = .{ .tmux = .{ .block_end = "" } } },
         .{ .input = .{ .tmux = .{ .block_end = "" } } },
         .{ .input = .{ .tmux = .{ .block_end = "" } } },
@@ -4832,7 +4962,9 @@ test "pause notification triggers auto-continue and full pause cycle" {
             } },
             .contains_tags = &.{ .windows, .command },
         },
-        // Complete capture-pane sequence (4 captures + pane_state)
+        // Complete capture-pane sequence (4 captures + pane_state) and the
+        // trailing title subscription.
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
         .{ .input = .{ .tmux = .{ .block_end = "" } } },
         .{ .input = .{ .tmux = .{ .block_end = "" } } },
         .{ .input = .{ .tmux = .{ .block_end = "" } } },
@@ -4980,7 +5112,9 @@ test "pane_mode_changed queues query and updates state on response" {
             } },
             .contains_tags = &.{ .windows, .command },
         },
-        // Complete capture-pane sequence (4 captures + pane_state)
+        // Complete capture-pane sequence (4 captures + pane_state) and the
+        // trailing title subscription.
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
         .{ .input = .{ .tmux = .{ .block_end = "" } } },
         .{ .input = .{ .tmux = .{ .block_end = "" } } },
         .{ .input = .{ .tmux = .{ .block_end = "" } } },
@@ -5101,7 +5235,8 @@ test "pane_mode_changed empty response means normal mode" {
             } },
             .contains_tags = &.{ .windows, .command },
         },
-        // Complete capture-pane sequence
+        // Complete capture-pane sequence and the trailing title subscription.
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
         .{ .input = .{ .tmux = .{ .block_end = "" } } },
         .{ .input = .{ .tmux = .{ .block_end = "" } } },
         .{ .input = .{ .tmux = .{ .block_end = "" } } },
@@ -5182,7 +5317,9 @@ test "layout_change mid-capture suppresses output for uninitialized pane" {
             } },
             .contains_tags = &.{ .windows, .command },
         },
-        // Complete capture sequence for pane 0: 4 capture-pane + 1 pane_state
+        // Complete capture sequence for pane 0: 4 capture-pane + 1 pane_state,
+        // then the trailing title subscription.
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
         .{ .input = .{ .tmux = .{ .block_end = "" } } },
         .{ .input = .{ .tmux = .{ .block_end = "" } } },
         .{ .input = .{ .tmux = .{ .block_end = "" } } },

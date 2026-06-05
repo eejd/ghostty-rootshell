@@ -9,6 +9,13 @@ const assert = @import("../../quirks.zig").inlineAssert;
 
 const log = std.log.scoped(.terminal_tmux);
 
+/// The `refresh-client -B` subscription name the viewer uses to track each
+/// window's active-pane title (`#{pane_title}`). `%subscription-changed`
+/// notifications carrying this name deliver a window id plus the title value.
+/// Shared with `viewer.zig`, which both issues the subscription command and
+/// filters incoming notifications by this name.
+pub const title_subscription_name = "ghostty_title";
+
 /// A tmux control mode parser. This takes in output from tmux control
 /// mode and parses it into a structured notifications.
 ///
@@ -528,16 +535,49 @@ pub const Parser = struct {
             // Important: do not clear buffer here since text points to it
             self.state = .idle;
             return .{ .message = .{ .text = after } };
+        } else if (std.mem.eql(u8, cmd, "%subscription-changed")) cmd: {
+            // Format (per tmux control.c control_check_subs_*; the header
+            // shape varies by subscription type but always ends " : <value>"):
+            //   all-windows (@*): %subscription-changed <name> $<sid> @<wid> <idx> - : <value>
+            //   all-panes   (%*): %subscription-changed <name> $<sid> @<wid> <idx> %<pid> : <value>
+            // Parse defensively: the value is everything after the FIRST
+            // " : " (a pane title may itself contain " : "); the window id is
+            // the @<n> header token; the name is the first header token.
+            // Keying off the @ sigil instead of a fixed field position keeps
+            // this robust across tmux's per-type header shapes. Subscriptions
+            // without a window id (session scope) are not parsed — we don't
+            // create them.
+            const after = afterCmd(line, cmd) orelse break :cmd;
+            const delim = std.mem.indexOf(u8, after, " : ") orelse break :cmd;
+            const header = after[0..delim];
+            const value = after[delim + 3 ..];
+
+            const name_field = nextField(header);
+            if (name_field.token.len == 0) break :cmd;
+
+            // Find the @<window-id> token among the remaining header fields.
+            var fields = std.mem.tokenizeScalar(u8, name_field.rest, ' ');
+            const window_id: usize = while (fields.next()) |tok| {
+                if (parseSigilInt(tok, '@')) |wid| {
+                    if (wid.rest.len == 0) break wid.value;
+                }
+            } else break :cmd;
+
+            // Important: do not clear buffer here since name/value point to it.
+            self.state = .idle;
+            return .{ .subscription_changed = .{
+                .name = name_field.token,
+                .window_id = window_id,
+                .value = value,
+            } };
         } else if (std.mem.eql(u8, cmd, "%unlinked-window-add") or
             std.mem.eql(u8, cmd, "%unlinked-window-close") or
             std.mem.eql(u8, cmd, "%unlinked-window-renamed") or
             std.mem.eql(u8, cmd, "%paste-buffer-changed") or
-            std.mem.eql(u8, cmd, "%paste-buffer-deleted") or
-            std.mem.eql(u8, cmd, "%subscription-changed"))
+            std.mem.eql(u8, cmd, "%paste-buffer-deleted"))
         {
             // Recognized but intentionally ignored notifications. These relate
-            // to other sessions' windows, clipboard buffers, or format
-            // subscriptions that we do not currently use.
+            // to other sessions' windows or clipboard buffers.
             log.debug("ignoring tmux notification: {s}", .{cmd});
         } else {
             // Unknown notification, log it and return to idle state.
@@ -687,6 +727,21 @@ pub const Notification = union(enum) {
     /// informational/error message from the tmux server.
     message: struct {
         text: []const u8,
+    },
+
+    /// A subscribed format value changed (`refresh-client -B`). tmux sends
+    /// these on a ~1s timer, only when the value actually changed. We
+    /// subscribe to `@*:#{pane_title}` (all windows), so `window_id`
+    /// identifies the window and `value` is that window's active-pane title
+    /// (`#T`). Slice fields point into the parser buffer and are valid only
+    /// until the next `next()`.
+    subscription_changed: struct {
+        /// Subscription name (the first header field). The caller matches
+        /// this against the name it subscribed with
+        /// (`title_subscription_name`).
+        name: []const u8,
+        window_id: usize,
+        value: []const u8,
     },
 
     pub fn format(self: Notification, writer: *std.Io.Writer) !void {
@@ -1063,6 +1118,69 @@ test "tmux session-renamed" {
     try testing.expectEqualStrings("my-session", n.session_renamed.name);
 }
 
+test "tmux subscription-changed all-windows form" {
+    // all-windows (@*) header: <name> $<sid> @<wid> <idx> - : <value>
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var c: Parser = .{ .buffer = .init(alloc) };
+    defer c.deinit();
+    for ("%subscription-changed ghostty_title $1 @7 3 - : my pane title") |byte|
+        try testing.expect(try c.put(byte) == null);
+    const n = (try c.put('\n')).?;
+    try testing.expect(n == .subscription_changed);
+    try testing.expectEqualStrings("ghostty_title", n.subscription_changed.name);
+    try testing.expectEqual(7, n.subscription_changed.window_id);
+    try testing.expectEqualStrings("my pane title", n.subscription_changed.value);
+}
+
+test "tmux subscription-changed all-panes form with pane id" {
+    // all-panes (%*) header: <name> $<sid> @<wid> <idx> %<pid> : <value>
+    // We still key off the @<wid> token and ignore the pane id.
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var c: Parser = .{ .buffer = .init(alloc) };
+    defer c.deinit();
+    for ("%subscription-changed ghostty_title $1 @2 3 %4 : value") |byte|
+        try testing.expect(try c.put(byte) == null);
+    const n = (try c.put('\n')).?;
+    try testing.expect(n == .subscription_changed);
+    try testing.expectEqual(2, n.subscription_changed.window_id);
+    try testing.expectEqualStrings("value", n.subscription_changed.value);
+}
+
+test "tmux subscription-changed value containing colon-space" {
+    // The value is everything after the FIRST " : "; a value that itself
+    // contains " : " must be preserved verbatim.
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var c: Parser = .{ .buffer = .init(alloc) };
+    defer c.deinit();
+    for ("%subscription-changed ghostty_title $1 @9 1 - : foo : bar") |byte|
+        try testing.expect(try c.put(byte) == null);
+    const n = (try c.put('\n')).?;
+    try testing.expect(n == .subscription_changed);
+    try testing.expectEqual(9, n.subscription_changed.window_id);
+    try testing.expectEqualStrings("foo : bar", n.subscription_changed.value);
+}
+
+test "tmux subscription-changed empty value" {
+    // A pane with no title yields an empty value after " : ".
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var c: Parser = .{ .buffer = .init(alloc) };
+    defer c.deinit();
+    for ("%subscription-changed ghostty_title $1 @5 1 - : ") |byte|
+        try testing.expect(try c.put(byte) == null);
+    const n = (try c.put('\n')).?;
+    try testing.expect(n == .subscription_changed);
+    try testing.expectEqual(5, n.subscription_changed.window_id);
+    try testing.expectEqualStrings("", n.subscription_changed.value);
+}
+
 test "tmux pause" {
     const testing = std.testing;
     const alloc = testing.allocator;
@@ -1214,7 +1332,6 @@ test "tmux ignored notifications suppressed" {
         "%unlinked-window-renamed @3 newname",
         "%paste-buffer-changed buf0",
         "%paste-buffer-deleted buf1",
-        "%subscription-changed myvar $1 @2 3 %4 : value",
     };
 
     for (ignored_lines) |line| {
