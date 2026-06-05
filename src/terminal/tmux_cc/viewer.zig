@@ -640,15 +640,36 @@ pub const Viewer = struct {
         }
     }
 
-    /// Whether the command queue has no pending (sent-but-unacked or queued)
-    /// commands. Used by the stream handler to decide whether it can safely
-    /// send a one-off `refresh-client` directly: when the queue is empty, tmux's
-    /// (typically empty) response has no queued command to be mis-matched
-    /// against — the viewer ignores unmatched block output (see
-    /// `receivedCommandOutput`). When non-empty, the resize is instead queued
-    /// in order via `setClientSize`.
-    pub fn commandQueueEmpty(self: *const Viewer) bool {
-        return self.command_queue.empty();
+    /// Format the head command for sending IF it is queued-but-unsent, and
+    /// mark it in flight. Returns the formatted command (owned by `arena_alloc`,
+    /// including its trailing newline) or null when there is nothing to send.
+    ///
+    /// This exists because the viewer's command pump is pull-based: the next
+    /// queued command is only formatted and emitted inside `next()` when an
+    /// inbound tmux notification arrives. Commands queued OUT of that flow —
+    /// `setClientSize` (a `refresh-client -C` resize), `queueUserCommand` (a
+    /// relayed pane `resize-pane`/`select-pane`), `updateColors` — would
+    /// otherwise sit unsent until the next notification, which never comes on an
+    /// idle session (e.g. a shell prompt with no output). The stream handler
+    /// calls this right after such an enqueue to flush the resize immediately.
+    ///
+    /// The response FIFO stays intact: we only return the head when nothing is
+    /// in flight (`command_in_flight == false`), so at most one command is sent
+    /// ahead of its %begin/%end and every later command still waits in order
+    /// (the `nextCommand` pump sends them as each predecessor completes). During
+    /// startup we return null — the stored size is sent by `tryFinishStartup`.
+    pub fn takePendingCommand(
+        self: *Viewer,
+        arena_alloc: Allocator,
+    ) Allocator.Error!?[]const u8 {
+        if (self.state != .command_queue) return null;
+        if (self.command_in_flight) return null;
+        const first = self.command_queue.first() orelse return null;
+
+        var builder: std.Io.Writer.Allocating = .init(arena_alloc);
+        first.formatCommand(&builder.writer) catch return error.OutOfMemory;
+        self.command_in_flight = true;
+        return builder.writer.buffered();
     }
 
     /// Send in an input event (such as a tmux protocol notification,
@@ -2279,6 +2300,96 @@ pub const Viewer = struct {
         try self.queueCommands(&.{.{ .user = copy }});
     }
 
+    /// Queue a command relayed out-of-band from a child pane backend
+    /// (`termio.Tmux`): `resize-pane` (the pane's grid changed — keyboard,
+    /// font, rotation), `select-pane`, `select-window`. Most are forwarded
+    /// verbatim like `queueUserCommand`, with ONE translation:
+    ///
+    /// A `resize-pane` targeting a pane that is the ONLY pane in its window is
+    /// rewritten to a `client_size` (`refresh-client -C`). In a single-pane
+    /// window the pane fills the window, whose size equals the control client
+    /// size, so tmux treats `resize-pane` as a no-op — the window only reflows
+    /// when the client size changes. The pane's grid (computed by the child
+    /// surface, already cell-, font-, and inset-aware exactly like a normal
+    /// surface) IS the desired window/client size, so we forward it as such.
+    /// This keeps the whole resize path in the core/Zig layer — the apprt only
+    /// drives `ghostty_surface_set_size`, identical to a non-tmux surface.
+    ///
+    /// Multi-pane `resize-pane` (a split-divider drag) is forwarded unchanged.
+    pub fn queueRelayedPaneCommand(self: *Viewer, cmd: []const u8) Allocator.Error!void {
+        if (parseResizePane(cmd)) |rp| {
+            if (self.windowIsSinglePane(rp.pane_id)) {
+                // Reuse setClientSize: it stores the dims and queues a tracked
+                // client_size ONLY in the command_queue state (during startup it
+                // just stores, so the size is sent by tryFinishStartup and never
+                // injected mid-startup-sequence).
+                self.setClientSize(rp.cols, rp.rows);
+                return;
+            }
+        }
+        try self.queueUserCommand(cmd);
+    }
+
+    const ResizePane = struct {
+        pane_id: usize,
+        cols: size.CellCountInt,
+        rows: size.CellCountInt,
+    };
+
+    /// Parse `resize-pane -t %<id> -x <cols> -y <rows>` — the exact format
+    /// emitted by `termio.Tmux.resize`. Returns null for any other command.
+    /// Byte-level, no allocation.
+    fn parseResizePane(cmd: []const u8) ?ResizePane {
+        const trimmed = std.mem.trim(u8, cmd, " \r\n");
+        if (!std.mem.startsWith(u8, trimmed, "resize-pane ")) return null;
+        var it = std.mem.tokenizeScalar(u8, trimmed, ' ');
+        _ = it.next() orelse return null; // resize-pane
+        var pane_id: ?usize = null;
+        var cols: ?size.CellCountInt = null;
+        var rows: ?size.CellCountInt = null;
+        while (it.next()) |tok| {
+            const val = it.next() orelse break;
+            if (std.mem.eql(u8, tok, "-t")) {
+                if (val.len < 2 or val[0] != '%') return null;
+                pane_id = std.fmt.parseInt(usize, val[1..], 10) catch return null;
+            } else if (std.mem.eql(u8, tok, "-x")) {
+                cols = std.fmt.parseInt(size.CellCountInt, val, 10) catch return null;
+            } else if (std.mem.eql(u8, tok, "-y")) {
+                rows = std.fmt.parseInt(size.CellCountInt, val, 10) catch return null;
+            }
+        }
+        return .{
+            .pane_id = pane_id orelse return null,
+            .cols = cols orelse return null,
+            .rows = rows orelse return null,
+        };
+    }
+
+    /// Whether `pane_id` is the sole pane in its window (its window's layout
+    /// root is a single leaf). Returns false when the pane's window is unknown
+    /// — be conservative and forward the `resize-pane` rather than resizing the
+    /// whole client.
+    fn windowIsSinglePane(self: *const Viewer, pane_id: usize) bool {
+        for (self.windows.items) |w| {
+            if (layoutContainsPane(w.layout, pane_id)) {
+                return w.layout.content == .pane;
+            }
+        }
+        return false;
+    }
+
+    fn layoutContainsPane(layout: Layout, pane_id: usize) bool {
+        return switch (layout.content) {
+            .pane => |id| id == pane_id,
+            .horizontal, .vertical => |children| {
+                for (children) |child| {
+                    if (layoutContainsPane(child, pane_id)) return true;
+                }
+                return false;
+            },
+        };
+    }
+
     /// Helper to return a single action. The input action may use the arena
     /// for allocated memory; this will not touch the arena.
     fn singleAction(self: *Viewer, action: Action) []const Action {
@@ -2871,6 +2982,152 @@ test "setClientSize queues command in command_queue state" {
     // Queue should be empty again, no command in flight.
     try testing.expect(viewer.command_queue.empty());
     try testing.expect(!viewer.command_in_flight);
+}
+
+test "takePendingCommand flushes an idle-queued resize and keeps FIFO order" {
+    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    defer viewer.deinit();
+
+    try testViewer(&viewer, &.{
+        // Standard startup
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{
+            .input = .{ .tmux = .{ .session_changed = .{
+                .id = 1,
+                .name = "test",
+            } } },
+            .contains_command = "refresh-client",
+        },
+        .{
+            .input = .{ .tmux = .{ .block_end = "" } },
+            .contains_command = "display-message",
+        },
+        .{
+            .input = .{ .tmux = .{ .block_end = "3.5a" } },
+            .contains_command = "list-windows",
+        },
+        .{
+            .input = .{ .tmux = .{
+                .block_end =
+                \\$0 @0 1 %0 83 44 b7dd,83x44,0,0,0 bash
+                ,
+            } },
+            .contains_tags = &.{ .windows, .command },
+        },
+        // Drain the capture-pane sequence + pane_state + subscribe_titles.
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+    });
+
+    // Idle command_queue: nothing to flush yet.
+    try testing.expectEqual(.command_queue, viewer.state);
+    try testing.expect(!viewer.command_in_flight);
+    {
+        var arena: ArenaAllocator = .init(testing.allocator);
+        defer arena.deinit();
+        try testing.expect((try viewer.takePendingCommand(arena.allocator())) == null);
+    }
+
+    // A resize queues a client_size command. takePendingCommand should now
+    // format + return it and mark it in flight (this is the idle-session flush
+    // that the pull-based pump would otherwise miss).
+    viewer.setClientSize(132, 43);
+    {
+        var arena: ArenaAllocator = .init(testing.allocator);
+        defer arena.deinit();
+        const cmd = (try viewer.takePendingCommand(arena.allocator())).?;
+        try testing.expectEqualStrings("refresh-client -C 132x43\n", cmd);
+        try testing.expect(viewer.command_in_flight);
+
+        // A second resize before the first response must NOT be flushed early:
+        // it waits behind the in-flight command so the response FIFO stays in
+        // order.
+        viewer.setClientSize(100, 50);
+        try testing.expect((try viewer.takePendingCommand(arena.allocator())) == null);
+    }
+
+    // The first command's response sends the second in order via the pull pump.
+    try testViewer(&viewer, &.{
+        .{
+            .input = .{ .tmux = .{ .block_end = "" } },
+            .contains_command = "refresh-client -C 100x50",
+        },
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+    });
+    try testing.expect(viewer.command_queue.empty());
+    try testing.expect(!viewer.command_in_flight);
+}
+
+test "parseResizePane parses target/cols/rows, rejects others" {
+    const rp = Viewer.parseResizePane("resize-pane -t %7 -x 120 -y 40\n").?;
+    try testing.expectEqual(@as(usize, 7), rp.pane_id);
+    try testing.expectEqual(@as(size.CellCountInt, 120), rp.cols);
+    try testing.expectEqual(@as(size.CellCountInt, 40), rp.rows);
+
+    // Not a resize-pane.
+    try testing.expect(Viewer.parseResizePane("select-pane -t %7\n") == null);
+    try testing.expect(Viewer.parseResizePane("select-window -t @1\n") == null);
+    // Missing a dimension.
+    try testing.expect(Viewer.parseResizePane("resize-pane -t %7 -x 120\n") == null);
+    // Target without the % sigil.
+    try testing.expect(Viewer.parseResizePane("resize-pane -t 7 -x 1 -y 1\n") == null);
+}
+
+test "queueRelayedPaneCommand rewrites a single-pane resize to client_size" {
+    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    defer viewer.deinit();
+
+    // Standard startup leaving a single-pane window @0 with pane %0.
+    try testViewer(&viewer, &.{
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{
+            .input = .{ .tmux = .{ .session_changed = .{ .id = 1, .name = "test" } } },
+            .contains_command = "refresh-client",
+        },
+        .{ .input = .{ .tmux = .{ .block_end = "" } }, .contains_command = "display-message" },
+        .{ .input = .{ .tmux = .{ .block_end = "3.5a" } }, .contains_command = "list-windows" },
+        .{
+            .input = .{ .tmux = .{
+                .block_end =
+                \\$0 @0 1 %0 83 44 b7dd,83x44,0,0,0 bash
+                ,
+            } },
+            .contains_tags = &.{ .windows, .command },
+        },
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+    });
+    try testing.expectEqual(.command_queue, viewer.state);
+    try testing.expect(viewer.windowIsSinglePane(0));
+
+    // A pane resize for the sole pane is rewritten to `refresh-client -C`.
+    try viewer.queueRelayedPaneCommand("resize-pane -t %0 -x 120 -y 40\n");
+    var arena: ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const cmd = (try viewer.takePendingCommand(arena.allocator())).?;
+    try testing.expectEqualStrings("refresh-client -C 120x40\n", cmd);
+}
+
+test "takePendingCommand returns null during startup" {
+    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    defer viewer.deinit();
+
+    // In startup state setClientSize only stores dims; nothing is queued, so
+    // there is nothing to flush (tryFinishStartup sends the stored size).
+    try testing.expectEqual(.startup, viewer.state);
+    viewer.setClientSize(100, 50);
+
+    var arena: ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    try testing.expect((try viewer.takePendingCommand(arena.allocator())) == null);
 }
 
 test "setClientSize stores dimensions but does not queue during startup" {

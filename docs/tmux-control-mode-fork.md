@@ -120,7 +120,7 @@ REORDER` note; behavioral hooks in `dcs.zig` / `stream_handler.zig` are also gat
 
 ### `id` registry
 
-46 hook ids across 19 files (plus per-file header notes without ids). Regenerate this list
+55 hook ids across 14 files (plus per-file header notes without ids). Regenerate this list
 any time with:
 ```bash
 grep -rn 'ROOTSHELL-TMUX' src/ include/ | grep -oE 'id=[a-z0-9-]+' | sort -u
@@ -132,7 +132,7 @@ grep -rn 'ROOTSHELL-TMUX' src/ include/ | grep -oE 'id=[a-z0-9-]+' | sort -u
 | `src/apprt/embedded.zig` | `embedded-capi-reconcile` (FROZEN), `embedded-new-tmux-pane` (FROZEN), `embedded-set-client-size` (FROZEN), `embedded-new-tmux-pane-fn`, `embedded-init-tmux-pane-fn`, `embedded-relay-field`, `embedded-relay-deinit`, `embedded-ui-terminal-arm` |
 | `src/apprt/surface.zig` | `apprt-surface-tmux-types-extracted`, `apprt-msg-topology`, `apprt-msg-write`, `apprt-msg-focus`, `apprt-msg-title`, `apprt-relay-writer` |
 | `src/Surface.zig` | `surface-reconcile-extracted`, `surface-initoptions-backend`, `surface-init-backend-select`, `surface-arm-topology`, `surface-arm-write`, `surface-arm-focus`, `surface-arm-title` |
-| `src/termio/stream_handler.zig` | `streamhandler-viewer-field`, `streamhandler-deinit-viewer`, `streamhandler-changeconfig-disable`, `streamhandler-set-client-size`, `streamhandler-dcs-dispatch` |
+| `src/termio/stream_handler.zig` | `streamhandler-viewer-field`, `streamhandler-deinit-viewer`, `streamhandler-changeconfig-disable`, `streamhandler-set-client-size`, `streamhandler-pump-command-queue`, `streamhandler-pane-command`, `streamhandler-dcs-dispatch` |
 | `src/termio/backend.zig` | `backend-kind`, `backend-config-tmux`, `backend-tmux`, `backend-threaddata-tmux` |
 | `src/termio/Termio.zig` | `termio-derived-config`, `termio-derived-init`, `termio-stream-config` |
 | `src/terminal/dcs.zig` | `dcs-tmux-enter` (rest gated by `build_options.tmux_control_mode`) |
