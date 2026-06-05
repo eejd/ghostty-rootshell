@@ -737,7 +737,22 @@ pub fn Stream(comptime H: type) type {
                     .esc_dispatch => |esc| self.escDispatch(esc),
                     .osc_dispatch => |cmd| self.oscDispatch(cmd),
                     .dcs_hook => |dcs| self.handler.vt(.dcs_hook, dcs),
-                    .dcs_put => |code| self.handler.vt(.dcs_put, code),
+                    .dcs_put => |code| {
+                        self.handler.vt(.dcs_put, code);
+                        // ROOTSHELL-TMUX (id=stream-dcs-pane-st-reset): the fork's
+                        // parse table never leaves dcs_passthrough on ESC/C1 (so the
+                        // gateway control-mode DCS isn't cut short by raw bytes in its
+                        // payload). A handler that isn't the control client (the pane
+                        // terminal) detects the string terminator itself and asks us to
+                        // return the parser to ground so a normal app DCS doesn't
+                        // swallow the rest of the stream. Handlers without this decl
+                        // (the gateway) are unaffected. See docs/tmux-control-mode-fork.md.
+                        if (comptime @hasDecl(T, "dcsConsumeGroundRequest")) {
+                            if (self.handler.dcsConsumeGroundRequest()) {
+                                self.parser.state = .ground;
+                            }
+                        }
+                    },
                     .dcs_unhook => self.handler.vt(.dcs_unhook, {}),
                     .apc_start => self.handler.vt(.apc_start, {}),
                     .apc_put => |code| self.handler.vt(.apc_put, code),

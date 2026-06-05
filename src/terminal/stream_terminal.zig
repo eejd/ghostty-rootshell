@@ -9,6 +9,7 @@ const stream = @import("stream.zig");
 const Action = stream.Action;
 const Screen = @import("Screen.zig");
 const modes = @import("modes.zig");
+const osc = @import("osc.zig"); // ROOTSHELL-TMUX (id=streamterm-osc-import): OSC color query replies for tmux panes
 const osc_color = @import("osc/parsers/color.zig");
 const kitty_color = @import("kitty/color.zig");
 const size_report = @import("size_report.zig");
@@ -42,6 +43,21 @@ pub const Handler = struct {
     /// to send commands to the terminal emulator. This is used by
     /// the kitty graphics protocol.
     apc_handler: apc.Handler = .{},
+
+    /// ROOTSHELL-TMUX (id=streamterm-dcs-st): DCS string-terminator detection.
+    /// The fork's parse table keeps the parser in `dcs_passthrough` on ESC / C1
+    /// / high bytes so the *gateway*
+    /// can parse the tmux control-mode DCS (`ESC P 1000 p`), whose payload
+    /// carries raw ESC and UTF-8. A pane terminal is never the control client,
+    /// so any DCS it sees is an ordinary one (sixel, XTGETTCAP, or an app's
+    /// `ESC P tmux; ...` passthrough) that MUST end on its ST. We detect the
+    /// 7-bit (`ESC \`) and 8-bit (`0x9C`) terminators ourselves and ask the
+    /// stream to return the parser to ground (`dcsConsumeGroundRequest`).
+    /// Without this the DCS swallows the rest of the stream — e.g. opencode's
+    /// `ESC P tmux; ...` makes the pane eat its own `1049h` + entire UI, so the
+    /// pane renders blank. `dcs_pending_esc` tracks a seen ESC awaiting `\`.
+    dcs_pending_esc: bool = false,
+    dcs_ground_request: bool = false,
 
     pub const Effects = struct {
         /// Called when the terminal needs to write data back to the pty,
@@ -233,7 +249,7 @@ pub const Handler = struct {
             .end_hyperlink => self.terminal.screens.active.endHyperlink(),
             .semantic_prompt => try self.terminal.semanticPrompt(value),
             .mouse_shape => self.terminal.mouse_shape = value,
-            .color_operation => try self.colorOperation(value.op, &value.requests),
+            .color_operation => try self.colorOperation(value.op, &value.requests, value.terminator),
             .kitty_color_report => try self.kittyColorOperation(value),
             .iterm2_image => self.terminal.iterm2Image(self.terminal.gpa(), value),
 
@@ -254,12 +270,13 @@ pub const Handler = struct {
             .window_title => self.windowTitle(value.title),
             .xtversion => self.reportXtversion(),
 
-            // No supported DCS commands have any terminal-modifying effects,
-            // but they may in the future. For now we just ignore it.
-            .dcs_hook,
-            .dcs_put,
-            .dcs_unhook,
-            => {},
+            // ROOTSHELL-TMUX (id=streamterm-dcs-st): no supported DCS commands
+            // have terminal-modifying effects, but we must watch for the string
+            // terminator ourselves (the parse table won't leave dcs_passthrough)
+            // so a pane's DCS doesn't run on forever (see `dcs_pending_esc`).
+            .dcs_hook => self.dcs_pending_esc = false,
+            .dcs_put => self.dcsDetectSt(value),
+            .dcs_unhook => self.dcs_pending_esc = false,
 
             // Have no terminal-modifying effect
             .report_pwd,
@@ -275,6 +292,39 @@ pub const Handler = struct {
     inline fn writePty(self: *Handler, data: [:0]const u8) void {
         const func = self.effects.write_pty orelse return;
         func(self, data);
+    }
+
+    /// Watch a DCS-passthrough byte for the string terminator. Because the
+    /// parse table forwards ESC / `0x9C` as `.put` (so the gateway control-mode
+    /// DCS isn't cut short by raw bytes in its payload), the parser will not
+    /// leave `dcs_passthrough` on its own. We detect 7-bit `ESC \` and 8-bit
+    /// `0x9C` here and set `dcs_ground_request`; the stream consumes it after
+    /// dispatch and returns the parser to ground.
+    fn dcsDetectSt(self: *Handler, byte: u8) void {
+        if (self.dcs_pending_esc) {
+            self.dcs_pending_esc = false;
+            // ESC \ -> 7-bit ST.
+            if (byte == 0x5C) {
+                self.dcs_ground_request = true;
+                return;
+            }
+            // ESC ESC -> keep watching: the second ESC may still begin an ST.
+            if (byte == 0x1B) self.dcs_pending_esc = true;
+            return;
+        }
+        switch (byte) {
+            0x1B => self.dcs_pending_esc = true, // possible start of 7-bit ST
+            0x9C => self.dcs_ground_request = true, // 8-bit C1 ST
+            else => {},
+        }
+    }
+
+    /// Returns (and clears) whether the last DCS put completed a string
+    /// terminator, signalling the stream to return the parser to ground.
+    /// Called by `terminal.stream` after each `dcs_put` dispatch.
+    pub fn dcsConsumeGroundRequest(self: *Handler) bool {
+        defer self.dcs_ground_request = false;
+        return self.dcs_ground_request;
     }
 
     fn bell(self: *Handler) void {
@@ -553,6 +603,7 @@ pub const Handler = struct {
         self: *Handler,
         op: osc_color.Operation,
         requests: *const osc_color.List,
+        terminator: osc.Terminator,
     ) !void {
         _ = op;
         if (requests.count() == 0) return;
@@ -614,11 +665,57 @@ pub const Handler = struct {
                     mask.* = .initEmpty();
                 },
 
-                .query,
-                .reset_special,
-                => {},
+                .query => |target| self.reportColorQuery(target, terminator),
+
+                .reset_special => {},
             }
         }
+    }
+
+    /// ROOTSHELL-TMUX (id=streamterm-osc-query): answer an OSC color query for
+    /// the subset tmux does NOT handle for a control client: palette (OSC 4) and
+    /// cursor color (OSC 12). Foreground
+    /// and background (OSC 10/11) are answered by tmux itself, so we skip them
+    /// to avoid a double reply (and our per-pane color report already gives
+    /// tmux the right values). Routed through `writePty`, which the tmux pane
+    /// turns into `send-keys`; other (readonly) `vtStream` users have
+    /// `write_pty == null` and this is a no-op. Reply uses doubled 8-bit hex
+    /// (`rgb:RRRR/GGGG/BBBB`) and echoes the query's terminator.
+    fn reportColorQuery(
+        self: *Handler,
+        target: osc_color.Target,
+        terminator: osc.Terminator,
+    ) void {
+        if (self.effects.write_pty == null) return;
+        var buf: [64]u8 = undefined;
+        const resp: [:0]const u8 = switch (target) {
+            .palette => |i| std.fmt.bufPrintZ(
+                &buf,
+                "\x1b]4;{d};rgb:{x:0>2}{x:0>2}/{x:0>2}{x:0>2}/{x:0>2}{x:0>2}{s}",
+                .{
+                    i,
+                    self.terminal.colors.palette.current[i].r, self.terminal.colors.palette.current[i].r,
+                    self.terminal.colors.palette.current[i].g, self.terminal.colors.palette.current[i].g,
+                    self.terminal.colors.palette.current[i].b, self.terminal.colors.palette.current[i].b,
+                    terminator.string(),
+                },
+            ) catch return,
+            .dynamic => |dynamic| switch (dynamic) {
+                .cursor => cursor: {
+                    const c = self.terminal.colors.cursor.get() orelse
+                        self.terminal.colors.foreground.get() orelse return;
+                    break :cursor std.fmt.bufPrintZ(
+                        &buf,
+                        "\x1b]12;rgb:{x:0>2}{x:0>2}/{x:0>2}{x:0>2}/{x:0>2}{x:0>2}{s}",
+                        .{ c.r, c.r, c.g, c.g, c.b, c.b, terminator.string() },
+                    ) catch return;
+                },
+                // foreground/background: tmux answers these. Others: unimplemented.
+                else => return,
+            },
+            .special => return,
+        };
+        self.writePty(resp);
     }
 
     fn kittyColorOperation(

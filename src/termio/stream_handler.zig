@@ -132,6 +132,19 @@ pub const StreamHandler = struct {
             }
         }
         self.tmux_control_mode = config.tmux_control_mode;
+        // A config reload may have changed the theme; refresh the tmux viewer's
+        // colors and re-report them to tmux so OSC 10/11 color queries reflect
+        // the new background/foreground. Read from `config` directly because
+        // Termio.changeConfig updates `self.terminal.colors` only AFTER this
+        // handler returns.
+        if (comptime tmux_enabled) { // ROOTSHELL-TMUX (id=streamhandler-changeconfig-colors): re-report pane colors on theme change
+            if (self.tmux_viewer) |viewer| {
+                viewer.updateColors(
+                    config.foreground.toTerminalRGB(),
+                    config.background.toTerminalRGB(),
+                );
+            }
+        }
         self.default_cursor_style = config.cursor_style;
         self.default_cursor_blink = config.cursor_blink;
 
