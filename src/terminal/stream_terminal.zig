@@ -83,6 +83,11 @@ pub const Handler = struct {
         /// handler.terminal.getTitle().
         title_changed: ?*const fn (*Handler) void,
 
+        /// Called when the terminal pwd changes via escape sequences
+        /// (e.g. OSC 7). The new pwd can be queried via
+        /// handler.terminal.getPwd().
+        pwd_changed: ?*const fn (*Handler) void,
+
         /// Called in response to an XTVERSION query. Returns the version
         /// string to report (e.g. "ghostty 1.2.3"). The returned memory
         /// must be valid for the lifetime of the call. The maximum length
@@ -99,6 +104,7 @@ pub const Handler = struct {
             .enquiry = null,
             .size = null,
             .title_changed = null,
+            .pwd_changed = null,
             .write_pty = null,
             .xtversion = null,
         };
@@ -268,6 +274,7 @@ pub const Handler = struct {
             .request_mode_unknown => self.requestModeUnknown(value.mode, value.ansi),
             .size_report => self.reportSize(value),
             .window_title => self.windowTitle(value.title),
+            .report_pwd => self.reportPwd(value.url),
             .xtversion => self.reportXtversion(),
 
             // No supported DCS commands have any terminal-modifying effects,
@@ -278,7 +285,6 @@ pub const Handler = struct {
             => {},
 
             // Have no terminal-modifying effect
-            .report_pwd,
             .show_desktop_notification,
             .progress_report,
             .clipboard_contents,
@@ -434,6 +440,29 @@ pub const Handler = struct {
         };
 
         const func = self.effects.title_changed orelse return;
+        func(self);
+    }
+
+    fn reportPwd(self: *Handler, url_raw: []const u8) void {
+        // Prevent DoS attacks by limiting url length. Headroom for
+        // Linux PATH_MAX (4096) plus URI scheme/host and percent-encoding.
+        const max_url_len = 4096;
+        const url = if (url_raw.len > max_url_len) url: {
+            log.warn("pwd url length {d} exceeds max length {d}, truncating", .{
+                url_raw.len,
+                max_url_len,
+            });
+            break :url url_raw[0..max_url_len];
+        } else url_raw;
+
+        // We store the raw payload unparsed. Embedders read it via
+        // getPwd() and are responsible for decoding any URI scheme.
+        self.terminal.setPwd(url) catch |err| {
+            log.warn("error setting pwd err={}", .{err});
+            return;
+        };
+
+        const func = self.effects.pwd_changed orelse return;
         func(self);
     }
 

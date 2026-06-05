@@ -52,6 +52,7 @@ const Effects = struct {
     enquiry: ?EnquiryFn = null,
     xtversion: ?XtversionFn = null,
     title_changed: ?TitleChangedFn = null,
+    pwd_changed: ?PwdChangedFn = null,
     size_cb: ?SizeFn = null,
 
     /// Scratch buffer for DA1 feature codes. The device attributes
@@ -85,6 +86,9 @@ const Effects = struct {
 
     /// C function pointer type for the title_changed callback.
     pub const TitleChangedFn = *const fn (Terminal, ?*anyopaque) callconv(lib.calling_conv) void;
+
+    /// C function pointer type for the pwd_changed callback.
+    pub const PwdChangedFn = *const fn (Terminal, ?*anyopaque) callconv(lib.calling_conv) void;
 
     /// C function pointer type for the size callback.
     /// Returns true and fills out_size if size is available,
@@ -199,6 +203,13 @@ const Effects = struct {
         func(@ptrCast(wrapper), wrapper.effects.userdata);
     }
 
+    fn pwdChangedTrampoline(handler: *Handler) void {
+        const stream_ptr: *Stream = @fieldParentPtr("handler", handler);
+        const wrapper: *TerminalWrapper = @fieldParentPtr("stream", stream_ptr);
+        const func = wrapper.effects.pwd_changed orelse return;
+        func(@ptrCast(wrapper), wrapper.effects.userdata);
+    }
+
     fn sizeTrampoline(handler: *Handler) ?size_report.Size {
         const stream_ptr: *Stream = @fieldParentPtr("handler", handler);
         const wrapper: *TerminalWrapper = @fieldParentPtr("stream", stream_ptr);
@@ -283,6 +294,7 @@ fn new_(
         .enquiry = &Effects.enquiryTrampoline,
         .xtversion = &Effects.xtversionTrampoline,
         .title_changed = &Effects.titleChangedTrampoline,
+        .pwd_changed = &Effects.pwdChangedTrampoline,
         .size = &Effects.sizeTrampoline,
     };
 
@@ -330,6 +342,7 @@ pub const Option = enum(c_int) {
     default_cursor_style = 22,
     default_cursor_blink = 23,
     glyph_protocol = 24,
+    pwd_changed = 25,
 
     /// Input type expected for setting the option.
     pub fn InType(comptime self: Option) type {
@@ -342,6 +355,7 @@ pub const Option = enum(c_int) {
             .enquiry => ?Effects.EnquiryFn,
             .xtversion => ?Effects.XtversionFn,
             .title_changed => ?Effects.TitleChangedFn,
+            .pwd_changed => ?Effects.PwdChangedFn,
             .size_cb => ?Effects.SizeFn,
             .title, .pwd => ?*const lib.String,
             .color_foreground, .color_background, .color_cursor => ?*const color.RGB.C,
@@ -397,6 +411,7 @@ fn setTyped(
         .enquiry => wrapper.effects.enquiry = value,
         .xtversion => wrapper.effects.xtversion = value,
         .title_changed => wrapper.effects.title_changed = value,
+        .pwd_changed => wrapper.effects.pwd_changed = value,
         .size_cb => wrapper.effects.size_cb = value,
         .title => {
             const str = if (value) |v| v.ptr[0..v.len] else "";
@@ -2361,6 +2376,68 @@ test "title_changed without callback is silent" {
 
     // OSC 2 without a callback should not crash
     vt_write(t, "\x1B]2;Hello\x1B\\", 10);
+}
+
+test "set pwd_changed callback" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib.alloc.test_allocator,
+        &t,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 0,
+        },
+    ));
+    defer free(t);
+
+    const S = struct {
+        var pwd_count: usize = 0;
+        var last_userdata: ?*anyopaque = null;
+
+        fn pwdChanged(_: Terminal, ud: ?*anyopaque) callconv(lib.calling_conv) void {
+            pwd_count += 1;
+            last_userdata = ud;
+        }
+    };
+    S.pwd_count = 0;
+    S.last_userdata = null;
+
+    var sentinel: u8 = 88;
+    try testing.expectEqual(Result.success, set(t, .userdata, @ptrCast(&sentinel)));
+    try testing.expectEqual(Result.success, set(t, .pwd_changed, @ptrCast(&S.pwdChanged)));
+
+    // OSC 7 ; file:///tmp ST — report pwd
+    const seq1 = "\x1B]7;file:///tmp\x1B\\";
+    vt_write(t, seq1, seq1.len);
+    try testing.expectEqual(@as(usize, 1), S.pwd_count);
+    try testing.expectEqual(@as(?*anyopaque, @ptrCast(&sentinel)), S.last_userdata);
+    try testing.expectEqualStrings("file:///tmp", zigTerminal(t).?.getPwd().?);
+
+    // Another pwd change
+    const seq2 = "\x1B]7;file:///home/user\x1B\\";
+    vt_write(t, seq2, seq2.len);
+    try testing.expectEqual(@as(usize, 2), S.pwd_count);
+    try testing.expectEqualStrings("file:///home/user", zigTerminal(t).?.getPwd().?);
+}
+
+test "pwd_changed without callback is silent" {
+    var t: Terminal = null;
+    try testing.expectEqual(Result.success, new(
+        &lib.alloc.test_allocator,
+        &t,
+        .{
+            .cols = 80,
+            .rows = 24,
+            .max_scrollback = 0,
+        },
+    ));
+    defer free(t);
+
+    // OSC 7 without a callback should not crash, but should still set the pwd
+    const seq = "\x1B]7;file:///tmp\x1B\\";
+    vt_write(t, seq, seq.len);
+    try testing.expectEqualStrings("file:///tmp", zigTerminal(t).?.getPwd().?);
 }
 
 test "set size callback" {
