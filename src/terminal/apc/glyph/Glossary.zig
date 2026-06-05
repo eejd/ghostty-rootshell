@@ -7,12 +7,14 @@ const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const CircBuf = @import("../../../datastruct/circ_buf.zig").CircBuf;
-const face = @import("../../../font/face.zig");
+const FontGlyph = @import("../../../font/Glyph.zig");
 const Glyf = @import("../../../font/opentype/glyf.zig").Glyf;
-const glyf_rasterize = @import("../../../font/glyf_rasterize.zig");
 
 const request = @import("request.zig");
 const RegisterReq = request.Request.Register;
+
+const DesignMetrics = FontGlyph.DesignMetrics;
+const Constraint = FontGlyph.RenderOptions.Constraint;
 
 /// Maximum entries allowed in the glossary before eviction.
 /// Defined by the specification.
@@ -124,13 +126,13 @@ pub const Entry = struct {
     glyph: Glyph,
 
     /// Authored metrics for the glyph's design coordinate space.
-    design: glyf_rasterize.DesignMetrics,
+    design: DesignMetrics,
 
     /// Unicode cell width requested by the registration.
     width: request.Width,
 
     /// Normalized scale, alignment, and padding behavior for rasterization.
-    constraint: face.RenderOptions.Constraint,
+    constraint: Constraint,
 
     /// Errors that can occur while constructing a glossary entry from a
     /// register request.
@@ -152,7 +154,7 @@ pub const Entry = struct {
     pub fn init(alloc: Allocator, req: RegisterReq) Entry.InitError!Entry {
         // Validate format
         const fmt = req.get(.fmt) orelse return error.InvalidOptions;
-        const design: glyf_rasterize.DesignMetrics = .{
+        const design: DesignMetrics = .{
             .units_per_em = req.get(.upm) orelse return error.InvalidOptions,
             .advance_width = req.get(.aw) orelse return error.InvalidOptions,
             .line_height = req.get(.lh) orelse return error.InvalidOptions,
@@ -194,13 +196,12 @@ pub const Entry = struct {
     /// Return the renderer constraint for a register request.
     ///
     /// Glyph Protocol §8.5 defines sizing, alignment, and padding in terms of
-    /// the authored extent and render span. Ghostty's existing constraint type
-    /// is the closest renderer-native representation for these controls, but
-    /// it does not have exact equivalents for every protocol size mode, so this
-    /// function is the single normalization point for those policy choices.
+    /// the authored extent and render span. This function is the single
+    /// normalization point for how protocol sizing choices map to the
+    /// renderer-neutral constraint stored here.
     fn constraintFromRegister(
         req: RegisterReq,
-    ) error{InvalidOptions}!face.RenderOptions.Constraint {
+    ) error{InvalidOptions}!Constraint {
         // Register.get applies the Glyph Protocol §6.1 defaults when options
         // are omitted: size=height, align=center,center, and pad=0,0,0,0.
         const size = req.get(.size) orelse return error.InvalidOptions;
@@ -307,9 +308,9 @@ test "Entry init decodes glyf payload and applies register fields" {
     try testing.expectEqual(@as(u32, 1024), entry.design.advance_width);
     try testing.expectEqual(@as(u32, 1536), entry.design.line_height);
     try testing.expectEqual(request.Width.wide, entry.width);
-    try testing.expectEqual(face.RenderOptions.Constraint.Size.stretch, entry.constraint.size);
-    try testing.expectEqual(face.RenderOptions.Constraint.Align.end, entry.constraint.align_horizontal);
-    try testing.expectEqual(face.RenderOptions.Constraint.Align.start, entry.constraint.align_vertical);
+    try testing.expectEqual(Constraint.Size.stretch, entry.constraint.size);
+    try testing.expectEqual(Constraint.Align.end, entry.constraint.align_horizontal);
+    try testing.expectEqual(Constraint.Align.start, entry.constraint.align_vertical);
     try testing.expectEqual(@as(f64, 0.1), entry.constraint.pad_top);
     try testing.expectEqual(@as(f64, 0.2), entry.constraint.pad_right);
     try testing.expectEqual(@as(f64, 0.3), entry.constraint.pad_bottom);
