@@ -88,6 +88,14 @@ pub const Message = union(enum) {
         data: []const u8,
     },
 
+    /// Detach the tmux control-mode client for this surface's viewer. Handled on
+    /// the IO thread so it can queue a `detach-client` through the viewer's
+    /// command queue (FIFO-safe, NOT a raw write that would desync the response
+    /// FIFO). tmux replies %exit, which tears the viewer down and lets the
+    /// `tmux -CC` process exit back to its shell. No-op when no tmux viewer is
+    /// active. See `StreamHandler.tmuxDetach`.
+    tmux_detach: void, // ROOTSHELL-TMUX (id=termio-msg-detach)
+
     /// Send this when a synchronized output mode is started. This will
     /// start the timer so that the output mode is disabled after a
     /// period of time so that a bad actor can't hang the terminal.

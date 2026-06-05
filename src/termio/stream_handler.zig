@@ -81,6 +81,12 @@ pub const StreamHandler = struct {
     /// The tmux control mode viewer state.
     tmux_viewer: if (tmux_enabled) ?*terminal.tmux.Viewer else void = if (tmux_enabled) null else {}, // ROOTSHELL-TMUX (id=streamhandler-viewer-field)
 
+    /// Set when tmux control mode ends (`%exit`) so the next stream check forces
+    /// the parser out of the control-mode DCS passthrough. Without this the
+    /// gateway parser stays hooked after `tmux -CC` exits and swallows the shell's
+    /// prompt, leaving the tab stuck. See `dcsConsumeGroundRequest`.
+    tmux_force_unhook: bool = false, // ROOTSHELL-TMUX (id=streamhandler-force-unhook-field)
+
     /// This is set to true when a message was written to the termio
     /// mailbox. This can be used by callers to determine if they need
     /// to wake up the termio thread.
@@ -472,6 +478,50 @@ pub const StreamHandler = struct {
         });
     }
 
+    /// Detach this tmux control-mode client. Queues a `detach-client` through the
+    /// viewer's command queue (in FIFO order with the viewer's own commands, NOT
+    /// a raw write that desyncs the response FIFO) and flushes it. tmux detaches
+    /// the control client and replies %exit, which makes the viewer defunct and
+    /// tears down control mode; the `tmux -CC` process then exits and the gateway
+    /// returns to its shell. The tmux server/session stays alive. No-op when no
+    /// viewer is active.
+    pub fn tmuxDetach(self: *StreamHandler) void { // ROOTSHELL-TMUX (id=streamhandler-detach)
+        if (comptime !tmux_enabled) return;
+        const viewer = self.tmux_viewer orelse return;
+        viewer.queueUserCommand("detach-client\n") catch |err| {
+            log.warn("failed to queue tmux detach err={}", .{err});
+            return;
+        };
+        self.pumpTmuxCommandQueue(viewer);
+    }
+
+    /// Called by `terminal.stream` after each `dcs_put`. Returns true to ask the
+    /// stream to return the parser to ground. We use it to leave tmux control
+    /// mode: `tmux -CC`'s `%exit` is parsed as a `dcs_put` while the parser is
+    /// still in `dcs_passthrough` (the fork's parse table deliberately never
+    /// leaves passthrough on ESC/C1 so a control-mode payload isn't cut short).
+    /// Once control mode ends, tmux may not emit a clean closing ST, so without
+    /// forcing ground the gateway keeps routing the shell's prompt into the (now
+    /// freed) tmux parser and the tab looks frozen. This mirrors the pane-side
+    /// `dcsConsumeGroundRequest` in `stream_terminal.zig`, but instead of ST
+    /// detection it fires on the `tmux_force_unhook` flag set by the `.exit`
+    /// handler. ROOTSHELL-TMUX (id=streamhandler-dcs-ground).
+    pub fn dcsConsumeGroundRequest(self: *StreamHandler) bool {
+        if (comptime !tmux_enabled) return false;
+        if (!self.tmux_force_unhook) return false;
+        self.tmux_force_unhook = false;
+        // Reset the DCS handler out of `.tmux` (frees the control parser and
+        // returns it to `.inactive`) so a later DCS hook doesn't trip the
+        // `state == .inactive` assert in `dcs.Handler.hook`. The returned
+        // `.tmux = .exit` command is redundant here (the viewer is already
+        // gone), so we just free it.
+        if (self.dcs.unhook()) |cmd| {
+            var freed = cmd;
+            freed.deinit();
+        }
+        return true;
+    }
+
     /// Route a raw tmux command relayed out-of-band from a child pane backend
     /// (resize-pane / select-pane / select-window) through the viewer's command
     /// queue, so its %begin/%end response is tracked and consumed in order
@@ -551,6 +601,16 @@ pub const StreamHandler = struct {
                         // app theme instead of the built-in dark default.
                         viewer.colors = self.terminal.colors;
                         self.tmux_viewer = viewer;
+
+                        // Print a minimal in-TUI menu into the gateway terminal so
+                        // the user has a discoverable, safe way to leave control
+                        // mode. Swift intercepts ESC on the gateway view and sends
+                        // `detach-client`. Best-effort: a print error must not abort
+                        // viewer setup.
+                        self.printTmuxGatewayMenu() catch |err| log.warn(
+                            "failed to print tmux gateway menu: {}",
+                            .{err},
+                        );
                         break :tmux;
                     },
 
@@ -568,6 +628,14 @@ pub const StreamHandler = struct {
                             self.alloc.destroy(viewer);
                             self.tmux_viewer = null;
                         }
+
+                        // Control mode is over (tmux detached / exited). `%exit`
+                        // is delivered as a `dcs_put` while the parser is still in
+                        // DCS passthrough, so request that the stream return the
+                        // parser to ground after this put — otherwise the gateway
+                        // keeps routing the shell's post-detach output into the
+                        // (now freed) tmux parser and the tab looks frozen.
+                        self.tmux_force_unhook = true;
 
                         // And always break since we assert below
                         // that we're not handling an exit command.
@@ -837,6 +905,19 @@ pub const StreamHandler = struct {
         // Small optimization: call index instead of linefeed because they're
         // identical and this avoids one layer of function call overhead.
         try self.terminal.index();
+    }
+
+    /// Print a minimal control-mode menu into the gateway terminal (the surface
+    /// running `tmux -CC`). Gives the user a discoverable, in-TUI way to leave
+    /// control mode: Swift intercepts ESC on the gateway view and sends
+    /// `detach-client`. Called once from the tmux `.enter` dispatch.
+    /// ROOTSHELL-TMUX (id=streamhandler-gateway-menu).
+    fn printTmuxGatewayMenu(self: *StreamHandler) !void {
+        try self.nextLine();
+        try self.terminal.printString("[ tmux control mode ]");
+        try self.nextLine();
+        try self.terminal.printString("Press ESC to detach.");
+        try self.nextLine();
     }
 
     pub inline fn reverseIndex(self: *StreamHandler) !void {

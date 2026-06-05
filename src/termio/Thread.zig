@@ -335,6 +335,7 @@ fn drainMailbox(
                 defer v.alloc.free(v.data);
                 io.terminal_stream.handler.tmuxQueuePaneCommand(v.data);
             },
+            .tmux_detach => io.terminal_stream.handler.tmuxDetach(), // ROOTSHELL-TMUX (id=thread-detach)
             .start_synchronized_output => self.startSynchronizedOutput(cb),
             .linefeed_mode => |v| self.flags.linefeed_mode = v,
             .focused => |v| try io.focusGained(data, v),

@@ -2392,6 +2392,19 @@ pub const CAPI = struct {
     }
     // ROOTSHELL-TMUX END FROZEN-ABI (id=embedded-set-client-size)
 
+    // ROOTSHELL-TMUX BEGIN FROZEN-ABI (id=embedded-tmux-detach)
+    // ghostty_surface_tmux_detach is the gateway ESC-to-detach entry point the iOS
+    // Swift app calls. Keep the signature stable. reapply: re-add this export
+    // inside the CAPI struct. See docs/tmux-control-mode-fork.md.
+    /// Detach the tmux control-mode client for this surface's viewer, returning
+    /// the gateway to its shell while leaving the tmux server/session alive.
+    /// Posts to the IO thread, which queues a `detach-client` through the viewer's
+    /// command queue. No-op if the surface isn't a tmux control-mode gateway.
+    export fn ghostty_surface_tmux_detach(surface: *Surface) void {
+        surface.core_surface.io.queueMessage(.{ .tmux_detach = {} }, .unlocked);
+    }
+    // ROOTSHELL-TMUX END FROZEN-ABI (id=embedded-tmux-detach)
+
     /// Set the preedit text for the surface. This is used for IME
     /// composition. If the length is 0, then the preedit text is cleared.
     export fn ghostty_surface_preedit(
