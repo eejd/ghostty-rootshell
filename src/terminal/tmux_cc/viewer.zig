@@ -267,7 +267,7 @@ pub const Viewer = struct {
     /// one string per window even when a pane rewrites its title rapidly.
     /// Empty/missing means "no pane title; fall back to the window name".
     /// Freed on replace and on deinit.
-    pane_titles: std.AutoHashMapUnmanaged(usize, []u8) = .empty,
+    pane_titles: PaneTitlesMap = .empty,
 
     /// Whether the pane-title subscription command has been queued yet. We
     /// queue it once, after the first list-windows' capture sequence, so it
@@ -288,6 +288,11 @@ pub const Viewer = struct {
 
     pub const CommandQueue = CircBuf(Command, undefined);
     pub const PanesMap = std.AutoArrayHashMapUnmanaged(usize, *Pane);
+    // ROOTSHELL-TMUX (id=viewer-pane-titles-map): active-pane title (#T) per
+    // window id, fed by the `@*:#{pane_title}` subscription. Named so the
+    // topology snapshot can resolve the same title precedence (see
+    // resolveWindowTitle / Surface_tmux planTmuxReconcile).
+    pub const PaneTitlesMap = std.AutoHashMapUnmanaged(usize, []u8);
 
     pub const Action = union(enum) {
         /// Tmux has closed the control mode connection, we should end
@@ -1209,21 +1214,34 @@ pub const Viewer = struct {
         gop.value_ptr.* = dup;
     }
 
-    /// Append a `.title` action for a window, applying the title precedence:
-    /// the active-pane title (`#T`) wins; the tmux window name (`#W`) is the
-    /// fallback when the pane has no title set. Mirrors a regular `tmux attach`
-    /// with `set-titles-string '#T'`. No-op if neither is known yet. The title
-    /// slice (pane title on `self.alloc`, or window name on the windows arena)
-    /// stays valid through the synchronous action processing in the caller.
-    fn emitWindowTitle(self: *Viewer, actions: *std.ArrayList(Action), window_id: usize) void {
+    /// Resolve a window's tab title applying the title precedence: the
+    /// active-pane title (`#T`, from the `pane_titles` cache) wins; the tmux
+    /// window name (`#W`) is the fallback. Shared by `emitWindowTitle` (the
+    /// live `%subscription-changed` / `%window-renamed` path) and the topology
+    /// snapshot (`apprt/surface_tmux.zig`) so a full `planTmuxReconcile` rebuild
+    /// preserves `#T` for inactive windows that tmux won't re-send (it dedups
+    /// subscription values server-side). Returns "" when neither is known.
+    /// ROOTSHELL-TMUX (id=viewer-resolve-window-title).
+    pub fn resolveWindowTitle(self: *const Viewer, window_id: usize, window_name: []const u8) []const u8 {
         const pane_title: []const u8 = if (self.pane_titles.get(window_id)) |t| t else "";
+        return if (pane_title.len > 0) pane_title else window_name;
+    }
+
+    /// Append a `.title` action for a window, applying the title precedence via
+    /// `resolveWindowTitle`: the active-pane title (`#T`) wins; the tmux window
+    /// name (`#W`) is the fallback when the pane has no title set. Mirrors a
+    /// regular `tmux attach` with `set-titles-string '#T'`. No-op if neither is
+    /// known yet. The title slice (pane title on `self.alloc`, or window name on
+    /// the windows arena) stays valid through the synchronous action processing
+    /// in the caller.
+    fn emitWindowTitle(self: *Viewer, actions: *std.ArrayList(Action), window_id: usize) void {
         const window_name: []const u8 = name: {
             for (self.windows.items) |w| {
                 if (w.id == window_id) break :name w.name;
             }
             break :name "";
         };
-        const title: []const u8 = if (pane_title.len > 0) pane_title else window_name;
+        const title: []const u8 = self.resolveWindowTitle(window_id, window_name);
         if (title.len == 0) return;
 
         var act_arena = self.action_arena.promote(self.alloc);

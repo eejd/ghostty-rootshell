@@ -1282,6 +1282,7 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
                 self.alloc,
                 snapshot.windows,
                 snapshot.panes,
+                snapshot.titles,
             ) catch |err| {
                 log.warn("tmux reconcile plan failed: {}", .{err});
                 return;

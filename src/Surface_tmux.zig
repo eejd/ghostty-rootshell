@@ -133,7 +133,12 @@ pub fn planTmuxReconcile(
     alloc: Allocator,
     windows: []const terminal.tmux.Viewer.Window,
     panes: ?*const terminal.tmux.Viewer.PanesMap,
+    // ROOTSHELL-TMUX (id=plan-reconcile-titles): resolved tab title per window
+    // (parallel to `windows`), carrying the `#T`-wins precedence from the
+    // snapshot. Used for the `set_tab_title` op instead of the bare window name.
+    titles: []const []const u8,
 ) Allocator.Error!*TmuxReconcilePayload {
+    std.debug.assert(titles.len == windows.len);
     var arena: ArenaAllocator = .init(alloc);
     errdefer arena.deinit();
     const arena_alloc = arena.allocator();
@@ -195,11 +200,15 @@ pub fn planTmuxReconcile(
         } };
         op_idx += 1;
 
-        // set_tab_title — set the tab title from the tmux window name
-        const name_copy = try arena_alloc.dupe(u8, window.name);
+        // set_tab_title — use the snapshot's resolved title (active-pane `#T`
+        // wins, window name `#W` is the fallback). ROOTSHELL-TMUX
+        // (id=plan-reconcile-set-title): NOT `window.name` directly — that
+        // would clobber inactive windows' `#T` titles on every topology
+        // rebuild, and tmux won't re-send an unchanged pane title to fix it.
+        const title_copy = try arena_alloc.dupe(u8, titles[wi]);
         ops[op_idx] = .{ .set_tab_title = .{
             .tmux_window_id = window.id,
-            .title = name_copy,
+            .title = title_copy,
         } };
         op_idx += 1;
     }
@@ -328,6 +337,54 @@ pub fn titleTmuxReconcile(
         .ops = ops,
     };
     return payload;
+}
+
+test "planTmuxReconcile uses pane-title precedence from the snapshot" {
+    // ROOTSHELL-TMUX (id=test-plan-reconcile-title-precedence): a topology
+    // rebuild must preserve the active-pane title (`#T`) for EVERY window, not
+    // just the active one — window A has a cached pane title, window B does not.
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    const Snapshot = @import("apprt/surface_tmux.zig").TmuxTopologySnapshot;
+
+    // Two single-pane windows: A id=1 name="zsh", B id=2 name="bash".
+    const leaf_a: terminal.tmux.Layout = .{ .width = 80, .height = 24, .x = 0, .y = 0, .content = .{ .pane = 1 } };
+    const leaf_b: terminal.tmux.Layout = .{ .width = 80, .height = 24, .x = 0, .y = 0, .content = .{ .pane = 2 } };
+    const windows = [_]terminal.tmux.Viewer.Window{
+        .{ .id = 1, .width = 80, .height = 24, .layout = leaf_a, .name = "zsh" },
+        .{ .id = 2, .width = 80, .height = 24, .layout = leaf_b, .name = "bash" },
+    };
+
+    // Pane-title cache: only window 1 has a title set (e.g. an app set `#T`).
+    var pane_titles: terminal.tmux.Viewer.PaneTitlesMap = .empty;
+    defer {
+        var it = pane_titles.iterator();
+        while (it.next()) |e| alloc.free(e.value_ptr.*);
+        pane_titles.deinit(alloc);
+    }
+    try pane_titles.put(alloc, 1, try alloc.dupe(u8, "vim - main.zig"));
+
+    const snapshot = try Snapshot.initFromWindows(alloc, &windows, null, &pane_titles);
+    defer snapshot.deinit();
+
+    const payload = try planTmuxReconcile(alloc, snapshot.windows, snapshot.panes, snapshot.titles);
+    defer payload.deinit();
+
+    var title_for_1: ?[]const u8 = null;
+    var title_for_2: ?[]const u8 = null;
+    for (payload.ops) |op| {
+        switch (op) {
+            .set_tab_title => |t| {
+                if (t.tmux_window_id == 1) title_for_1 = t.title;
+                if (t.tmux_window_id == 2) title_for_2 = t.title;
+            },
+            else => {},
+        }
+    }
+
+    // Window 1: pane title wins. Window 2: falls back to the window name.
+    try testing.expectEqualStrings("vim - main.zig", title_for_1 orelse return error.MissingTitle);
+    try testing.expectEqualStrings("bash", title_for_2 orelse return error.MissingTitle);
 }
 
 test {

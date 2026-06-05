@@ -186,6 +186,7 @@ pub const StreamHandler = struct {
             self.alloc,
             &.{},
             null,
+            null,
         )) |snapshot| {
             self.surfaceMessageWriter(.{ .tmux_topology_changed = snapshot });
         } else |err| {
@@ -705,6 +706,7 @@ pub const StreamHandler = struct {
                                 self.alloc,
                                 windows,
                                 &viewer.panes,
+                                &viewer.pane_titles, // ROOTSHELL-TMUX (id=snapshot-feed-pane-titles)
                             ) catch |err| {
                                 log.warn("failed to snapshot tmux topology: {}", .{err});
                                 continue;

@@ -71,6 +71,15 @@ pub const TmuxTopologySnapshot = struct {
     /// of the viewer's backing memory.
     windows: []const terminal.tmux.Viewer.Window,
 
+    /// ROOTSHELL-TMUX (id=snapshot-resolved-titles): resolved tab title per
+    /// window, parallel to `windows`, owned by `arena`. Applies the same
+    /// precedence as `Viewer.resolveWindowTitle` (active-pane `#T` wins, window
+    /// name `#W` is the fallback) at snapshot-build time — on the IO thread,
+    /// where `pane_titles` is stable — so `planTmuxReconcile` doesn't clobber
+    /// inactive windows' `#T` titles with the bare window name (tmux dedups
+    /// subscription values, so it won't re-send an unchanged pane title).
+    titles: []const []const u8,
+
     /// Optional pointer to the viewer's panes map. The viewer's
     /// panes are heap-allocated (boxed) so the pointers remain stable
     /// across map mutations. This allows the reconcile planner to
@@ -85,6 +94,10 @@ pub const TmuxTopologySnapshot = struct {
         alloc: Allocator,
         windows: []const terminal.tmux.Viewer.Window,
         panes: ?*const terminal.tmux.Viewer.PanesMap,
+        // ROOTSHELL-TMUX (id=snapshot-pane-titles): the viewer's active-pane
+        // title cache, so each window's resolved tab title preserves `#T`.
+        // Null on the empty-snapshot / test paths (falls back to window name).
+        pane_titles: ?*const terminal.tmux.Viewer.PaneTitlesMap,
     ) Allocator.Error!*TmuxTopologySnapshot {
         var arena: std.heap.ArenaAllocator = .init(alloc);
         errdefer arena.deinit();
@@ -94,6 +107,7 @@ pub const TmuxTopologySnapshot = struct {
             terminal.tmux.Viewer.Window,
             windows.len,
         );
+        const cloned_titles = try arena_alloc.alloc([]const u8, windows.len);
         for (windows, 0..) |window, i| {
             cloned_windows[i] = .{
                 .id = window.id,
@@ -102,6 +116,13 @@ pub const TmuxTopologySnapshot = struct {
                 .layout = try window.layout.clone(arena_alloc),
                 .name = try arena_alloc.dupe(u8, window.name),
             };
+            // Resolve the tab title with the same precedence as the live path
+            // (active-pane `#T` wins, window name `#W` is the fallback).
+            const resolved: []const u8 = if (pane_titles) |pt|
+                (if (pt.get(window.id)) |t| (if (t.len > 0) t else window.name) else window.name)
+            else
+                window.name;
+            cloned_titles[i] = try arena_alloc.dupe(u8, resolved);
         }
 
         const self = try alloc.create(TmuxTopologySnapshot);
@@ -109,6 +130,7 @@ pub const TmuxTopologySnapshot = struct {
             .alloc = alloc,
             .arena = arena,
             .windows = cloned_windows,
+            .titles = cloned_titles,
             .panes = panes,
         };
         return self;
