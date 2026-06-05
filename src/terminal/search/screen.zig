@@ -798,7 +798,7 @@ pub const ScreenSearch = struct {
 
         const active_len = self.active_results.items.len;
         const history_len = self.history_results.items.len;
-        const next_idx = if (prev.idx != 0) prev.idx - 1 else active_len - 1 + history_len;
+        const next_idx = if (prev.idx != 0) prev.idx - 1 else active_len + history_len - 1;
 
         const hl: FlattenedHighlight = if (next_idx < active_len)
             self.active_results.items[active_len - 1 - next_idx]
