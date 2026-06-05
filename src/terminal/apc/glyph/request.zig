@@ -119,12 +119,12 @@ pub const Request = union(enum) {
         payload_idx: usize,
 
         /// Initialize a register command from owned raw command bytes.
-        pub fn init(raw: []const u8) Register {
-            assert(raw.len >= 2);
-            assert(raw[0] == 'r');
-            assert(raw[1] == ';');
-            const payload_idx = std.mem.lastIndexOfScalar(u8, raw, ';').?;
-            assert(payload_idx > 1);
+        pub fn init(raw: []const u8) ?Register {
+            if (raw.len < 2) return null;
+            if (raw[0] != 'r') return null;
+            if (raw[1] != ';') return null;
+            const payload_idx = std.mem.lastIndexOfScalar(u8, raw, ';') orelse return null;
+            if (payload_idx <= 1) return null;
 
             return .{
                 .raw = raw,
@@ -395,7 +395,7 @@ pub const Request = union(enum) {
                 return .support;
             },
             'q' => .{ .query = .init(raw) },
-            'r' => .{ .register = .init(raw) },
+            'r' => .{ .register = Register.init(raw) orelse return error.InvalidFormat },
             'c' => .{ .clear = .init(raw) },
             else => error.InvalidFormat,
         };
@@ -763,6 +763,17 @@ test "register command with invalid payload" {
     try testing.expectEqual(@as(u21, 0xE0A0), cmd.register.get(.cp).?);
     try testing.expectEqual(Format.glyf, cmd.register.get(.fmt).?);
     try testing.expectEqualStrings("%%%not-base64%%%", cmd.register.payload());
+}
+
+test "register command rejects missing payload separator" {
+    const testing = std.testing;
+
+    for ([_][]const u8{ "r", "r;cp=e0a0", "r;foo" }) |data| {
+        try testing.expectError(
+            error.InvalidFormat,
+            testParse(testing.allocator, data),
+        );
+    }
 }
 
 test "register decodes glyf payload" {
