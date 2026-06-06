@@ -15,6 +15,7 @@ const Screen = @import("../Screen.zig");
 const ScreenSet = @import("../ScreenSet.zig");
 const Terminal = @import("../Terminal.zig");
 const color = @import("../color.zig");
+const mouse = @import("../mouse.zig");
 const TerminalStream = @import("../stream_terminal.zig").Stream;
 const TerminalStreamHandler = @import("../stream_terminal.zig").Handler;
 const Layout = @import("layout.zig").Layout;
@@ -1896,13 +1897,29 @@ pub const Viewer = struct {
             t.modes.set(.cursor_keys, data.keypad_cursor_flag);
             t.modes.set(.origin, data.origin_flag);
 
-            // Mouse modes
+            // Mouse modes. tmux's mouse_any_flag is an aggregate
+            // ALL_MOUSE_MODES indicator; the concrete mutually exclusive
+            // modes are standard/button/all.
+            t.modes.set(.mouse_event_x10, false);
+            t.modes.set(.mouse_event_normal, data.mouse_standard_flag);
+            t.modes.set(.mouse_event_button, data.mouse_button_flag);
             t.modes.set(.mouse_event_any, data.mouse_all_flag);
-            t.modes.set(.mouse_event_button, data.mouse_any_flag);
-            t.modes.set(.mouse_event_normal, data.mouse_button_flag);
-            t.modes.set(.mouse_event_x10, data.mouse_standard_flag);
             t.modes.set(.mouse_format_utf8, data.mouse_utf8_flag);
             t.modes.set(.mouse_format_sgr, data.mouse_sgr_flag);
+            t.flags.mouse_event = if (data.mouse_all_flag)
+                .any
+            else if (data.mouse_button_flag)
+                .button
+            else if (data.mouse_standard_flag)
+                .normal
+            else
+                .none;
+            t.flags.mouse_format = if (data.mouse_sgr_flag)
+                .sgr
+            else if (data.mouse_utf8_flag)
+                .utf8
+            else
+                .x10;
 
             // Focus and bracketed paste
             t.modes.set(.focus_event, data.focus_flag);
@@ -2763,11 +2780,11 @@ const Format = struct {
             .origin_flag,
             // Mouse modes
             //
-            // tmux variable names differ from xterm mode names:
-            //   mouse_all_flag    -> mouse_event_any    (report all motion)
-            //   mouse_any_flag    -> mouse_event_button (report button-motion)
-            //   mouse_button_flag -> mouse_event_normal (report button press/release)
-            //   mouse_standard_flag -> mouse_event_x10  (legacy X10 compat)
+            // tmux variable names differ from Ghostty's xterm mode names:
+            //   mouse_standard_flag -> mouse_event_normal (DECSET 1000)
+            //   mouse_button_flag   -> mouse_event_button (DECSET 1002)
+            //   mouse_all_flag      -> mouse_event_any    (DECSET 1003)
+            //   mouse_any_flag      -> any of the above modes is active
             .mouse_all_flag,
             .mouse_any_flag,
             .mouse_button_flag,
@@ -4908,7 +4925,6 @@ test "window_pane_changed produces focus action" {
             .check = (struct {
                 fn check(v: *Viewer, actions: []const Viewer.Action) anyerror!void {
                     try testing.expectEqual(@as(usize, 1), v.windows.items[0].active_pane_id);
-
                     var found = false;
                     for (actions) |action| {
                         if (action == .focus) {
@@ -5966,4 +5982,104 @@ test "pane state alternate_saved cursor applies to primary screen" {
             .contains_tags = &.{.exit},
         },
     });
+}
+
+fn testPaneStateMouseModes(
+    pane_state: []const u8,
+    expected_event: mouse.Event,
+    expected_format: mouse.Format,
+    expected_normal: bool,
+    expected_button: bool,
+    expected_any: bool,
+) !void {
+    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    defer viewer.deinit();
+    defer {
+        var it = viewer.panes.iterator();
+        while (it.next()) |kv| kv.value_ptr.*.pending_attach = false;
+    }
+
+    try testViewer(&viewer, &.{
+        // Standard startup sequence
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{
+            .input = .{ .tmux = .{ .session_changed = .{
+                .id = 0,
+                .name = "0",
+            } } },
+            .contains_command = "refresh-client",
+        },
+        .{
+            .input = .{ .tmux = .{ .block_end = "" } },
+            .contains_command = "display-message",
+        },
+        .{
+            .input = .{ .tmux = .{ .block_end = "3.5a" } },
+            .contains_command = "list-windows",
+        },
+        .{
+            .input = .{ .tmux = .{
+                .block_end =
+                \\$0 @0 1 %0 80 24 b25d,80x24,0,0,0 bash
+                ,
+            } },
+            .contains_tags = &.{ .windows, .command },
+        },
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{
+            .input = .{ .tmux = .{ .block_end = pane_state } },
+        },
+    });
+
+    const pane: *Viewer.Pane = viewer.panes.getEntry(0).?.value_ptr.*;
+    const t: *Terminal = &pane.terminal;
+
+    try testing.expect(!t.modes.get(.mouse_event_x10));
+    try testing.expectEqual(expected_normal, t.modes.get(.mouse_event_normal));
+    try testing.expectEqual(expected_button, t.modes.get(.mouse_event_button));
+    try testing.expectEqual(expected_any, t.modes.get(.mouse_event_any));
+    try testing.expect(t.modes.get(.mouse_format_sgr));
+    try testing.expect(!t.modes.get(.mouse_format_utf8));
+    try testing.expectEqual(expected_event, t.flags.mouse_event);
+    try testing.expectEqual(expected_format, t.flags.mouse_format);
+
+    try testViewer(&viewer, &.{
+        .{
+            .input = .{ .tmux = .exit },
+            .contains_tags = &.{.exit},
+        },
+    });
+}
+
+test "pane state restores tmux mouse flags" {
+    // tmux source defines mouse_any_flag as ALL_MOUSE_MODES, not DECSET
+    // 1002. The concrete mutually exclusive modes are standard (1000),
+    // button (1002), and all (1003).
+    try testPaneStateMouseModes(
+        "%0;0;0;1;;0;0;4294967295;4294967295;0;1;0;0;0;0;1;0;1;0;1;0;0;0;23;8,16,24,32,40,48,56,64,72,80",
+        .normal,
+        .sgr,
+        true,
+        false,
+        false,
+    );
+    try testPaneStateMouseModes(
+        "%0;0;0;1;;0;0;4294967295;4294967295;0;1;0;0;0;0;1;1;0;0;1;0;0;0;23;8,16,24,32,40,48,56,64,72,80",
+        .button,
+        .sgr,
+        false,
+        true,
+        false,
+    );
+    try testPaneStateMouseModes(
+        "%0;0;0;1;;0;0;4294967295;4294967295;0;1;0;0;0;1;1;0;0;0;1;0;0;0;23;8,16,24,32,40,48,56,64,72,80",
+        .any,
+        .sgr,
+        false,
+        false,
+        true,
+    );
 }
