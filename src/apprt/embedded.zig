@@ -2405,6 +2405,33 @@ pub const CAPI = struct {
     }
     // ROOTSHELL-TMUX END FROZEN-ABI (id=embedded-tmux-detach)
 
+    // ROOTSHELL-TMUX BEGIN FROZEN-ABI (id=embedded-tmux-command)
+    // ghostty_surface_tmux_command lets the iOS Swift app hand a pre-formatted
+    // tmux control command (e.g. `split-window -h -t %0\n`, `kill-pane -t %1\n`)
+    // to the gateway's viewer command queue. Keep the signature stable. reapply:
+    // re-add this export inside the CAPI struct. See docs/tmux-control-mode-fork.md.
+    /// Queue a raw, newline-terminated tmux command through this surface's viewer
+    /// command queue (FIFO-safe, NOT a raw write that would desync the response
+    /// FIFO). The bytes are copied; `len` excludes any terminator. Reuses the
+    /// `tmux_pane_command` path: posts to the IO thread, which routes through
+    /// `tmuxQueuePaneCommand` -> `queueRelayedPaneCommand` and flushes the queue.
+    /// No-op if the surface isn't a tmux control-mode gateway. Used by the app to
+    /// drive split-window / kill-pane so tmux owns the topology and the resulting
+    /// reconcile rebuilds the native splits.
+    export fn ghostty_surface_tmux_command(
+        surface: *Surface,
+        ptr: [*]const u8,
+        len: usize,
+    ) void {
+        const alloc = surface.app.core_app.alloc;
+        const copy = alloc.dupe(u8, ptr[0..len]) catch return;
+        surface.core_surface.io.queueMessage(.{ .tmux_pane_command = .{
+            .alloc = alloc,
+            .data = copy,
+        } }, .unlocked);
+    }
+    // ROOTSHELL-TMUX END FROZEN-ABI (id=embedded-tmux-command)
+
     /// Set the preedit text for the surface. This is used for IME
     /// composition. If the length is 0, then the preedit text is cleared.
     export fn ghostty_surface_preedit(

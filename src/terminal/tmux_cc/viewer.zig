@@ -2219,6 +2219,15 @@ pub const Viewer = struct {
                         cols,
                         rows,
                     );
+                    // Wake the child surface's renderer so it repaints at the new
+                    // size. Resizing the pane terminal reflows its content, but
+                    // unlike the `%output` write paths this is NOT a write, so
+                    // nothing else wakes the renderer. Without this, a pane whose
+                    // program emits no output after a resize (e.g. an idle shell
+                    // prompt) keeps drawing its old-size frame — the terminal
+                    // "doesn't react" to window/divider resizes. wakePane no-ops
+                    // when no child is attached. ROOTSHELL-TMUX (id=viewer-wake-on-resize)
+                    wakePane(pane);
                     break :pane;
                 }
 
@@ -2343,13 +2352,27 @@ pub const Viewer = struct {
     pub fn queueRelayedPaneCommand(self: *Viewer, cmd: []const u8) Allocator.Error!void {
         if (parseResizePane(cmd)) |rp| {
             if (self.windowIsSinglePane(rp.pane_id)) {
-                // Reuse setClientSize: it stores the dims and queues a tracked
-                // client_size ONLY in the command_queue state (during startup it
-                // just stores, so the size is sent by tryFinishStartup and never
-                // injected mid-startup-sequence).
+                // Single-pane window: the pane fills the window, so its grid IS
+                // the desired client size. Reuse setClientSize: it stores the
+                // dims and queues a tracked client_size ONLY in the command_queue
+                // state (during startup it just stores, so the size is sent by
+                // tryFinishStartup and never injected mid-startup-sequence).
                 self.setClientSize(rp.cols, rp.rows);
                 return;
             }
+
+            // Multi-pane window: tmux owns the per-pane split. The apprt must NOT
+            // echo a per-pane `resize-pane` here: a pane's grid is a pixel-rounded
+            // cell count that never exactly matches tmux's cell-exact layout, so
+            // forwarding it makes tmux nudge the layout, which re-renders the pane
+            // off-by-one again on the next reconcile — an unbounded relayout loop
+            // (hit by ANY multi-pane tmux window, from Cmd-D or tmux's own split
+            // binding). The WHOLE-window size is driven instead from the apprt's
+            // split container via `refresh-client -C`
+            // (ghostty_surface_tmux_set_client_size); tmux distributes that across
+            // the panes. So a multi-pane per-pane resize is intentionally dropped.
+            // ROOTSHELL-TMUX (id=viewer-drop-multipane-resize)
+            return;
         }
         try self.queueUserCommand(cmd);
     }

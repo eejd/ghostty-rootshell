@@ -82,15 +82,17 @@ These must remain byte-stable. Mirror any change in `ghostty-ios`.
   `CTmuxOp` (= `ghostty_tmux_op_s`) and `CTmuxLayoutInfo` (= `ghostty_tmux_layout_info_s`);
   exports `ghostty_tmux_reconcile_op_count` / `ghostty_tmux_reconcile_op` /
   `ghostty_tmux_reconcile_free` / `ghostty_tmux_layout_info` / `ghostty_tmux_layout_child`.
-- **Pane creation / resize / detach:** `ghostty_surface_new_tmux_pane` (`id=embedded-new-tmux-pane`),
+- **Pane creation / resize / detach / command:** `ghostty_surface_new_tmux_pane` (`id=embedded-new-tmux-pane`),
   `ghostty_surface_tmux_set_client_size` (`id=embedded-set-client-size`),
-  `ghostty_surface_tmux_detach` (`id=embedded-tmux-detach`).
+  `ghostty_surface_tmux_detach` (`id=embedded-tmux-detach`),
+  `ghostty_surface_tmux_command` (`id=embedded-tmux-command`) — queues a raw
+  `split-window`/`kill-pane` through the viewer command queue (drives splits).
 - **Header:** the matching block in `include/ghostty.h`.
 
 **Verify the ABI** (from the `ghostty-dec20` repo, after a build):
 ```bash
 nm macos/GhosttyKit.xcframework/ios-arm64/libghostty-internal-fat.a \
-  | grep -E '_ghostty_(tmux|surface_new_tmux|surface_tmux_(set_client|detach))' | sort -u
+  | grep -E '_ghostty_(tmux|surface_new_tmux|surface_tmux_(set_client|detach|command))' | sort -u
 ```
 Expect 8 `T` (defined text) symbols:
 `_ghostty_surface_new_tmux_pane`, `_ghostty_surface_tmux_set_client_size`,
@@ -133,7 +135,7 @@ grep -rn 'ROOTSHELL-TMUX' src/ include/ | grep -oE 'id=[a-z0-9-]+' | sort -u
 | File | ids |
 |------|-----|
 | `src/apprt/action.zig` | `action-reconcile-variant` (FROZEN), `action-key-variant` (FROZEN), `action-reconcile-struct` (FROZEN) |
-| `src/apprt/embedded.zig` | `embedded-capi-reconcile` (FROZEN), `embedded-new-tmux-pane` (FROZEN), `embedded-set-client-size` (FROZEN), `embedded-tmux-detach` (FROZEN), `embedded-new-tmux-pane-fn`, `embedded-init-tmux-pane-fn`, `embedded-relay-field`, `embedded-relay-deinit`, `embedded-ui-terminal-arm` |
+| `src/apprt/embedded.zig` | `embedded-capi-reconcile` (FROZEN), `embedded-new-tmux-pane` (FROZEN), `embedded-set-client-size` (FROZEN), `embedded-tmux-detach` (FROZEN), `embedded-tmux-command` (FROZEN), `embedded-new-tmux-pane-fn`, `embedded-init-tmux-pane-fn`, `embedded-relay-field`, `embedded-relay-deinit`, `embedded-ui-terminal-arm` |
 | `src/apprt/surface.zig` | `apprt-surface-tmux-types-extracted`, `apprt-msg-topology`, `apprt-msg-write`, `apprt-msg-focus`, `apprt-msg-title`, `apprt-relay-writer` |
 | `src/Surface.zig` | `surface-reconcile-extracted`, `surface-initoptions-backend`, `surface-init-backend-select`, `surface-arm-topology`, `surface-arm-write`, `surface-arm-focus`, `surface-arm-title` |
 | `src/termio/stream_handler.zig` | `streamhandler-viewer-field`, `streamhandler-force-unhook-field`, `streamhandler-deinit-viewer`, `streamhandler-changeconfig-disable`, `streamhandler-changeconfig-colors`, `streamhandler-set-client-size`, `streamhandler-pump-command-queue`, `streamhandler-pane-command`, `streamhandler-detach`, `streamhandler-dcs-ground`, `streamhandler-dcs-dispatch`, `streamhandler-broken-control-unhook`, `streamhandler-gateway-menu`, `streamhandler-suppress-gateway-reports`, `snapshot-feed-pane-titles` |
@@ -145,7 +147,7 @@ grep -rn 'ROOTSHELL-TMUX' src/ include/ | grep -oE 'id=[a-z0-9-]+' | sort -u
 | `src/termio/Thread.zig` | `thread-set-client-size`, `thread-detach` |
 | `src/termio.zig` | `termio-tmux-export` |
 | `src/config/Config.zig` | `config-tmux-control-mode` |
-| `include/ghostty.h` | `ghostty-h-action-enum` (FROZEN), `ghostty-h-reconcile` (FROZEN), `ghostty-h-set-client-size` (FROZEN), `ghostty-h-tmux-detach` (FROZEN) |
+| `include/ghostty.h` | `ghostty-h-action-enum` (FROZEN), `ghostty-h-reconcile` (FROZEN), `ghostty-h-set-client-size` (FROZEN), `ghostty-h-tmux-detach` (FROZEN), `ghostty-h-tmux-command` (FROZEN) |
 
 ---
 
