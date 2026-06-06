@@ -81,6 +81,14 @@ pub const StreamHandler = struct {
     /// The tmux control mode viewer state.
     tmux_viewer: if (tmux_enabled) ?*terminal.tmux.Viewer else void = if (tmux_enabled) null else {}, // ROOTSHELL-TMUX (id=streamhandler-viewer-field)
 
+    /// Atomic mirror of "a tmux control-mode viewer exists", written by the IO
+    /// thread alongside every `tmux_viewer` mutation and read cross-thread by the
+    /// app thread (`ghostty_surface_tmux_active` → `tmuxActive`). The viewer
+    /// POINTER must never be read off-thread (the IO thread can free it); this
+    /// atomic bool is the well-defined cross-thread signal instead. ROOTSHELL-TMUX
+    /// (id=streamhandler-tmux-active-flag)
+    tmux_active_flag: std.atomic.Value(bool) = .init(false),
+
     /// Set when tmux control mode ends (`%exit`) so the next stream check forces
     /// the parser out of the control-mode DCS passthrough. Without this the
     /// gateway parser stays hooked after `tmux -CC` exits and swallows the shell's
@@ -109,6 +117,7 @@ pub const StreamHandler = struct {
             viewer.deinit();
             self.alloc.destroy(viewer);
             self.tmux_viewer = null;
+            self.tmux_active_flag.store(false, .monotonic); // ROOTSHELL-TMUX (id=streamhandler-tmux-active-flag)
         }
     }
 
@@ -134,6 +143,7 @@ pub const StreamHandler = struct {
                     viewer.deinit();
                     self.alloc.destroy(viewer);
                     self.tmux_viewer = null;
+                    self.tmux_active_flag.store(false, .monotonic); // ROOTSHELL-TMUX (id=streamhandler-tmux-active-flag)
                 }
             }
         }
@@ -487,10 +497,42 @@ pub const StreamHandler = struct {
             log.warn("failed to format pending tmux command", .{});
             return;
         }) orelse return;
-        self.messageWriter(termio.Message.writeReq(self.alloc, cmd) catch {
-            log.warn("failed to write pending tmux command", .{});
+        self.writeTrackedTmuxCommand(cmd);
+    }
+
+    /// Write a tracked tmux command (the viewer's own commands) to the pty via a
+    /// `.tmux_track_command` message rather than a raw `.write_*`. The IO thread
+    /// records a `.tracked` marker in the viewer's sent-FIFO AFTER writing, so the
+    /// marker order matches the actual pty write order (which the SPSC mailbox can
+    /// reorder relative to the viewer enqueue order — that's why recording must
+    /// happen at the drain point, not here). `cmd` is copied. ROOTSHELL-TMUX
+    /// (id=streamhandler-write-tracked-command)
+    fn writeTrackedTmuxCommand(self: *StreamHandler, cmd: []const u8) void {
+        const copy = self.alloc.dupe(u8, cmd) catch {
+            log.warn("failed to dupe tracked tmux command", .{});
             return;
-        });
+        };
+        self.messageWriter(.{ .tmux_track_command = .{
+            .alloc = self.alloc,
+            .data = copy,
+        } });
+    }
+
+    /// Record (on the IO thread, at the drain/write point) that a tracked tmux
+    /// command was just written. ROOTSHELL-TMUX (id=streamhandler-record-tracked)
+    pub fn recordTmuxTrackedSend(self: *StreamHandler) void {
+        if (comptime !tmux_enabled) return;
+        const viewer = self.tmux_viewer orelse return;
+        viewer.recordTrackedSend();
+    }
+
+    /// Record (on the IO thread, at the drain/write point) that an untracked
+    /// `send-keys` was just written. ROOTSHELL-TMUX
+    /// (id=streamhandler-record-untracked)
+    pub fn recordTmuxUntrackedSend(self: *StreamHandler) void {
+        if (comptime !tmux_enabled) return;
+        const viewer = self.tmux_viewer orelse return;
+        viewer.recordUntrackedSend();
     }
 
     /// Detach this tmux control-mode client. Queues a `detach-client` through the
@@ -500,6 +542,21 @@ pub const StreamHandler = struct {
     /// tears down control mode; the `tmux -CC` process then exits and the gateway
     /// returns to its shell. The tmux server/session stays alive. No-op when no
     /// viewer is active.
+    /// Whether this surface is currently a live tmux control-mode gateway (the
+    /// DCS control channel is hooked and a viewer exists). Read cross-thread from
+    /// the app thread by `ghostty_surface_tmux_active` as a best-effort ESC
+    /// escape-hatch hint; a slightly-stale value only means one ESC press may be a
+    /// no-op during a teardown transition. ROOTSHELL-TMUX
+    /// (id=streamhandler-tmux-active)
+    pub fn tmuxActive(self: *const StreamHandler) bool {
+        if (comptime !tmux_enabled) return false;
+        // Atomic load — NOT `self.tmux_viewer != null`. This runs on the app
+        // thread while the IO thread may be freeing the viewer; reading the
+        // pointer would be a data race. The flag is stored next to every viewer
+        // mutation on the IO thread.
+        return self.tmux_active_flag.load(.monotonic);
+    }
+
     pub fn tmuxDetach(self: *StreamHandler) void { // ROOTSHELL-TMUX (id=streamhandler-detach)
         if (comptime !tmux_enabled) return;
         const viewer = self.tmux_viewer orelse return;
@@ -616,6 +673,7 @@ pub const StreamHandler = struct {
                         // app theme instead of the built-in dark default.
                         viewer.colors = self.terminal.colors;
                         self.tmux_viewer = viewer;
+                        self.tmux_active_flag.store(true, .monotonic); // ROOTSHELL-TMUX (id=streamhandler-tmux-active-flag)
 
                         // Print a minimal in-TUI menu into the gateway terminal so
                         // the user has a discoverable, safe way to leave control
@@ -642,6 +700,7 @@ pub const StreamHandler = struct {
                             viewer.deinit();
                             self.alloc.destroy(viewer);
                             self.tmux_viewer = null;
+                            self.tmux_active_flag.store(false, .monotonic); // ROOTSHELL-TMUX (id=streamhandler-tmux-active-flag)
                         }
 
                         // Control mode is over (tmux detached / exited). `%exit`
@@ -684,6 +743,25 @@ pub const StreamHandler = struct {
                     break :tmux;
                 };
 
+                // ROOTSHELL-TMUX (id=streamhandler-block-fifo-filter): a
+                // `%begin/%end` ack for an untracked `send-keys` must be matched
+                // in send-order and SWALLOWED here, never fed to the viewer. The
+                // viewer matches blocks to queued commands by blind FIFO; feeding
+                // it a send-keys ack while a tracked command is in flight (which a
+                // tab switch causes: focus-report send-keys + select-window/
+                // select-pane/refresh-client together) mis-attributes the ack,
+                // desyncs the response stream, garbles the next list-windows into
+                // an empty window list, and prunes every tmux tab while tmux is
+                // still alive. `.tracked` / `.empty` (e.g. the startup attach
+                // block we never wrote) fall through to the viewer unchanged.
+                switch (tmux) {
+                    .block_end, .block_err => switch (viewer.classifyBlock()) {
+                        .untracked => break :tmux,
+                        .tracked, .empty => {},
+                    },
+                    else => {},
+                }
+
                 for (viewer.next(.{ .tmux = tmux })) |action| {
                     log.debug("tmux viewer action={f}", .{action});
                     switch (action) {
@@ -699,13 +777,30 @@ pub const StreamHandler = struct {
                         .command => |command| {
                             assert(command.len > 0);
                             assert(command[command.len - 1] == '\n');
-                            self.messageWriter(try termio.Message.writeReq(
-                                self.alloc,
-                                command,
-                            ));
+                            // ROOTSHELL-TMUX (id=streamhandler-command-tracked):
+                            // route through the tracked-command message so the IO
+                            // thread records a `.tracked` sent-FIFO marker after
+                            // writing (keeps block matching aligned vs untracked
+                            // send-keys).
+                            self.writeTrackedTmuxCommand(command);
                         },
 
                         .windows => |windows| {
+                            // ROOTSHELL-TMUX (id=streamhandler-windows-empty-guard):
+                            // never forward an EMPTY window list as a topology
+                            // snapshot. A live tmux session always has >=1 window,
+                            // so an empty mid-session list is only ever a desync
+                            // artifact or the deliberate `sessionChanged` reset
+                            // (which immediately re-runs list-windows; the next
+                            // non-empty snapshot prunes stale windows via the diff,
+                            // and tmux never reuses window ids across sessions).
+                            // Forwarding it would prune EVERY tmux tab and tear
+                            // down the app's controller while tmux is still alive
+                            // (gateway stuck, ESC dead). Genuine teardown prunes
+                            // via the separate `sendEmptyTopologySnapshot()` on the
+                            // `.exit` path, which is unaffected.
+                            if (windows.len == 0) continue;
+
                             // Deep-copy the window topology and forward it to
                             // the app thread via the surface mailbox. The app
                             // thread will reconcile tmux windows/panes into

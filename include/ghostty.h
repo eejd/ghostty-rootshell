@@ -1222,6 +1222,7 @@ GHOSTTY_API void ghostty_surface_send_input(ghostty_surface_t, const char*, uint
 GHOSTTY_API void ghostty_surface_tmux_set_client_size(ghostty_surface_t, uint16_t, uint16_t); // ROOTSHELL-TMUX FROZEN-ABI (id=ghostty-h-set-client-size)
 GHOSTTY_API void ghostty_surface_tmux_detach(ghostty_surface_t); // ROOTSHELL-TMUX FROZEN-ABI (id=ghostty-h-tmux-detach)
 GHOSTTY_API void ghostty_surface_tmux_command(ghostty_surface_t, const char*, uintptr_t); // ROOTSHELL-TMUX FROZEN-ABI (id=ghostty-h-tmux-command)
+GHOSTTY_API bool ghostty_surface_tmux_active(ghostty_surface_t); // ROOTSHELL-TMUX FROZEN-ABI (id=ghostty-h-tmux-active)
 GHOSTTY_API void ghostty_surface_preedit(ghostty_surface_t, const char*, uintptr_t);
 GHOSTTY_API bool ghostty_surface_mouse_captured(ghostty_surface_t);
 GHOSTTY_API bool ghostty_surface_mouse_button(ghostty_surface_t,

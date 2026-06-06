@@ -88,6 +88,31 @@ pub const Message = union(enum) {
         data: []const u8,
     },
 
+    /// Untracked `send-keys` (typed input / paste / focus reports) relayed from a
+    /// child pane backend. Written straight to the `tmux -CC` pty (no command-
+    /// queue gating, so keystroke latency is unchanged) and then recorded as an
+    /// `.untracked` marker in the viewer's sent-FIFO so its `%begin/%end` ack is
+    /// matched/swallowed in order instead of being mis-attributed to an in-flight
+    /// tracked command (which would desync the response FIFO). `data` is owned and
+    /// freed after handling. See `StreamHandler.recordTmuxUntrackedSend`.
+    tmux_send_keys: struct { // ROOTSHELL-TMUX (id=termio-msg-send-keys)
+        alloc: Allocator,
+        data: []const u8,
+    },
+
+    /// A tracked tmux command (already formatted, with trailing newline) emitted
+    /// by the viewer. Written to the pty and then recorded as a `.tracked` marker
+    /// in the viewer's sent-FIFO. Recording happens at this single drain/write
+    /// point (NOT at the viewer enqueue site) because the SPSC mailbox can reorder
+    /// the actual write behind a `send-keys` already queued ahead of it; recording
+    /// after the write guarantees marker order == pty write order == tmux block
+    /// order. `data` is owned and freed after handling. See
+    /// `StreamHandler.recordTmuxTrackedSend`.
+    tmux_track_command: struct { // ROOTSHELL-TMUX (id=termio-msg-track-command)
+        alloc: Allocator,
+        data: []const u8,
+    },
+
     /// Detach the tmux control-mode client for this surface's viewer. Handled on
     /// the IO thread so it can queue a `detach-client` through the viewer's
     /// command queue (FIFO-safe, NOT a raw write that would desync the response
@@ -137,6 +162,8 @@ pub const Message = union(enum) {
             },
             .write_alloc => |req| req.alloc.free(req.data),
             .tmux_pane_command => |v| v.alloc.free(v.data),
+            .tmux_send_keys => |v| v.alloc.free(v.data), // ROOTSHELL-TMUX (id=termio-msg-send-keys)
+            .tmux_track_command => |v| v.alloc.free(v.data), // ROOTSHELL-TMUX (id=termio-msg-track-command)
             else => {},
         }
     }

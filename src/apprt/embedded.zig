@@ -2405,6 +2405,22 @@ pub const CAPI = struct {
     }
     // ROOTSHELL-TMUX END FROZEN-ABI (id=embedded-tmux-detach)
 
+    // ROOTSHELL-TMUX BEGIN FROZEN-ABI (id=embedded-tmux-active)
+    // ghostty_surface_tmux_active is the iOS Swift app's ESC escape-hatch probe:
+    // it lets the app detach (via ghostty_surface_tmux_detach) whenever this
+    // surface's core is actually in tmux control mode, even if the app's
+    // TmuxController was torn down — so the user can never get trapped in a stuck
+    // gateway. Reads an atomic flag the IO thread keeps in sync with the viewer
+    // (NOT the viewer pointer itself, which the IO thread can free); a stale value
+    // only costs one no-op ESC during teardown. Keep the signature stable.
+    // reapply: re-add this export inside the CAPI struct. See
+    // docs/tmux-control-mode-fork.md.
+    /// Returns true while this surface is a live tmux control-mode gateway.
+    export fn ghostty_surface_tmux_active(surface: *Surface) bool {
+        return surface.core_surface.io.terminal_stream.handler.tmuxActive();
+    }
+    // ROOTSHELL-TMUX END FROZEN-ABI (id=embedded-tmux-active)
+
     // ROOTSHELL-TMUX BEGIN FROZEN-ABI (id=embedded-tmux-command)
     // ghostty_surface_tmux_command lets the iOS Swift app hand a pre-formatted
     // tmux control command (e.g. `split-window -h -t %0\n`, `kill-pane -t %1\n`)

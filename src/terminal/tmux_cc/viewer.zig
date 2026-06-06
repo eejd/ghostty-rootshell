@@ -41,6 +41,23 @@ const log = std.log.scoped(.terminal_tmux_viewer);
 /// our most realistic use cases without resizing.
 const COMMAND_QUEUE_INITIAL = 8;
 
+/// Initial capacity of the sent-command FIFO (see `sent_fifo`). Holds one
+/// entry per command written-but-unacked; in steady state only a handful are
+/// outstanding (tmux acks each with exactly one %begin/%end block, consumed in
+/// order), so a small ring suffices and grows on demand. ROOTSHELL-TMUX
+/// (id=viewer-sent-fifo)
+const SENT_FIFO_INITIAL = 8;
+
+/// Diagnostic-only depth at which we log once that the sent-command FIFO is
+/// unusually deep. This is NOT a cap: dropping/clearing markers would desync the
+/// block matcher (the exact bug this FIFO prevents), and a large paste legitimately
+/// enqueues one marker per `send-keys` chunk (`Tmux.queueWrite` splits at 1 KiB,
+/// so a multi-hundred-KiB paste can outstrip tmux's ack rate transiently). Markers
+/// are 1 byte each, so the FIFO simply grows and drains as acks arrive — cheap and
+/// self-bounding. The warning just surfaces "many send-keys outstanding / slow
+/// acks" for diagnosis. ROOTSHELL-TMUX (id=viewer-sent-fifo)
+const SENT_FIFO_WARN = 4096;
+
 /// Number of bytes of output buffered server-side before tmux pauses the
 /// pane. Sent as `-f pause-after=<N>` in the initial `refresh-client`
 /// command. A low value keeps latency tight but increases pause/continue
@@ -239,6 +256,21 @@ pub const Viewer = struct {
     /// to avoid any possible confusion around ordering.
     command_queue: CommandQueue,
 
+    /// Ordered record of EVERY command written to the `tmux -CC` pty awaiting a
+    /// `%begin/%end` block, tagged tracked vs untracked, in pty-write order. The
+    /// viewer matches blocks to queued commands by blind FIFO; but `send-keys`
+    /// (typed input / paste / focus reports) is written directly, bypassing the
+    /// command_queue, so its ack is invisible to that matcher and — if it lands
+    /// while a tracked command is in flight (e.g. a tab switch fires
+    /// select-window/select-pane/refresh-client concurrently with a focus-report
+    /// send-keys) — gets mis-attributed, desyncing the response stream. This FIFO
+    /// lets `classifyBlock` consume an untracked ack in order and swallow it
+    /// before it reaches `next`, keeping the command/response FIFO aligned.
+    /// Markers are appended at the single drain/write point (`Thread.zig`), NOT
+    /// at the viewer enqueue site, because the SPSC mailbox can reorder the write
+    /// behind a send-keys queued ahead of it. ROOTSHELL-TMUX (id=viewer-sent-fifo)
+    sent_fifo: SentFifo,
+
     /// The windows in the current session.
     windows: std.ArrayList(Window),
 
@@ -288,6 +320,19 @@ pub const Viewer = struct {
     action_single: [1]Action,
 
     pub const CommandQueue = CircBuf(Command, undefined);
+
+    /// Whether a written-but-unacked command was tracked (issued by the viewer
+    /// through the command_queue) or untracked (a `send-keys` written directly).
+    /// ROOTSHELL-TMUX (id=viewer-sent-fifo)
+    pub const SentKind = enum { tracked, untracked };
+    pub const SentFifo = CircBuf(SentKind, undefined);
+
+    /// Result of classifying an incoming `%begin/%end` block against the
+    /// sent-FIFO. `.empty` means we have no record for it (e.g. the startup
+    /// attach block, which we never wrote) — caller should fall through to the
+    /// normal startup/command handling. ROOTSHELL-TMUX (id=viewer-sent-fifo)
+    pub const BlockClass = enum { tracked, untracked, empty };
+
     pub const PanesMap = std.AutoArrayHashMapUnmanaged(usize, *Pane);
     // ROOTSHELL-TMUX (id=viewer-pane-titles-map): active-pane title (#T) per
     // window id, fed by the `@*:#{pane_title}` subscription. Named so the
@@ -520,6 +565,11 @@ pub const Viewer = struct {
         var command_queue: CommandQueue = try .init(alloc, COMMAND_QUEUE_INITIAL);
         errdefer command_queue.deinit(alloc);
 
+        // Ordered record of sent (tracked/untracked) commands awaiting their
+        // %begin/%end block. ROOTSHELL-TMUX (id=viewer-sent-fifo)
+        var sent_fifo: SentFifo = try .init(alloc, SENT_FIFO_INITIAL);
+        errdefer sent_fifo.deinit(alloc);
+
         return .{
             .alloc = alloc,
             .state = .startup,
@@ -535,6 +585,7 @@ pub const Viewer = struct {
             .client_rows = client_rows,
             .command_in_flight = false,
             .command_queue = command_queue,
+            .sent_fifo = sent_fifo,
             .windows = .empty,
             .windows_arena = .{},
             .panes = .empty,
@@ -553,6 +604,13 @@ pub const Viewer = struct {
             while (it.next()) |command| command.deinit(self.alloc);
             self.command_queue.deinit(self.alloc);
         }
+        // ROOTSHELL-TMUX (id=viewer-sent-fifo): markers are plain enums, no
+        // per-entry free. A fresh viewer (sessionChanged) starts with an empty
+        // FIFO; straggler blocks owed for pre-reset commands then classify as
+        // `.empty` and fall through to the existing "unexpected block" handling
+        // exactly as before this change (no carry-forward — carrying a tracked
+        // marker into a new session could mis-match a new in-flight command).
+        self.sent_fifo.deinit(self.alloc);
         {
             var it = self.panes.iterator();
             while (it.next()) |kv| {
@@ -679,6 +737,58 @@ pub const Viewer = struct {
         first.formatCommand(&builder.writer) catch return error.OutOfMemory;
         self.command_in_flight = true;
         return builder.writer.buffered();
+    }
+
+    /// Record that a tracked command was written to the tmux pty (called at the
+    /// drain/write point after the bytes are written). ROOTSHELL-TMUX
+    /// (id=viewer-sent-fifo)
+    pub fn recordTrackedSend(self: *Viewer) void {
+        self.recordSent(.tracked);
+    }
+
+    /// Record that an untracked `send-keys` was written to the tmux pty (called
+    /// at the drain/write point after the bytes are written). ROOTSHELL-TMUX
+    /// (id=viewer-sent-fifo)
+    pub fn recordUntrackedSend(self: *Viewer) void {
+        self.recordSent(.untracked);
+    }
+
+    fn recordSent(self: *Viewer, kind: SentKind) void {
+        // Always grow + append — never drop/clear a marker. Dropping one would
+        // misalign the block matcher and let a later untracked ack fall through to
+        // `next`, reintroducing the desync this FIFO exists to prevent. Outstanding
+        // (written-but-unacked) commands self-bound to the control-channel pipeline
+        // depth (tmux acks each with one block, consumed in order); markers are 1
+        // byte each so even a large in-flight paste is cheap. Only genuine
+        // allocator exhaustion can drop a marker, and there's nothing better to do
+        // then.
+        self.sent_fifo.ensureUnusedCapacity(self.alloc, 1) catch {
+            log.warn("tmux sent-FIFO out of memory; dropping marker (may desync)", .{});
+            return;
+        };
+        self.sent_fifo.appendAssumeCapacity(kind);
+        // Diagnostic only (not a cap): surface an unusually deep FIFO once, e.g. a
+        // huge paste in flight or tmux acking very slowly. It drains as acks arrive.
+        if (self.sent_fifo.len() == SENT_FIFO_WARN) {
+            const depth = self.sent_fifo.len();
+            log.warn("tmux sent-FIFO deep ({} outstanding); large paste or slow acks", .{depth});
+        }
+    }
+
+    /// Classify (and consume) the FIFO entry for an incoming `%begin/%end` block.
+    /// Returns `.untracked` for a `send-keys` ack (caller MUST swallow it without
+    /// feeding `next`), `.tracked` for a viewer-issued command (caller feeds
+    /// `next` as usual), or `.empty` when we have no record (startup attach block
+    /// / post-reset straggler — caller falls through to existing handling).
+    /// ROOTSHELL-TMUX (id=viewer-sent-fifo)
+    pub fn classifyBlock(self: *Viewer) BlockClass {
+        const first = self.sent_fifo.first() orelse return .empty;
+        const kind = first.*;
+        self.sent_fifo.deleteOldest(1);
+        return switch (kind) {
+            .tracked => .tracked,
+            .untracked => .untracked,
+        };
     }
 
     /// Send in an input event (such as a tmux protocol notification,
@@ -3194,6 +3304,152 @@ test "takePendingCommand flushes an idle-queued resize and keeps FIFO order" {
     });
     try testing.expect(viewer.command_queue.empty());
     try testing.expect(!viewer.command_in_flight);
+}
+
+// ROOTSHELL-TMUX (id=viewer-sent-fifo): drive a fresh viewer to a steady
+// command_queue state with exactly one window, leaving the queue empty and
+// nothing in flight. The sent-FIFO is intentionally left empty (these helpers
+// drive `next` directly, mirroring how the real flow has consumed every startup
+// marker by steady state), so a test can then drive its own record/classify
+// sequence with full control.
+fn driveStartupOneWindow(viewer: *Viewer) !void {
+    try testViewer(viewer, &.{
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{
+            .input = .{ .tmux = .{ .session_changed = .{ .id = 1, .name = "test" } } },
+            .contains_command = "refresh-client",
+        },
+        .{ .input = .{ .tmux = .{ .block_end = "" } }, .contains_command = "display-message" },
+        .{ .input = .{ .tmux = .{ .block_end = "3.5a" } }, .contains_command = "list-windows" },
+        .{
+            .input = .{ .tmux = .{ .block_end = "$0 @0 1 %0 83 44 b7dd,83x44,0,0,0 bash" } },
+            .contains_tags = &.{ .windows, .command },
+        },
+    });
+    // Drain the capture-pane sequence + pane_state + title subscription until
+    // the queue is fully idle, regardless of the exact command count.
+    var guard: usize = 0;
+    while (!viewer.command_queue.empty() or viewer.command_in_flight) {
+        _ = viewer.next(.{ .tmux = .{ .block_end = "" } });
+        guard += 1;
+        if (guard > 50) return error.TestDrainStuck;
+    }
+    try testing.expectEqual(.command_queue, viewer.state);
+    try testing.expectEqual(@as(usize, 1), viewer.windows.items.len);
+}
+
+test "untracked send-keys ack is swallowed, not matched to a tracked command" {
+    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    defer viewer.deinit();
+    try driveStartupOneWindow(&viewer);
+
+    // Reproduce the tab-switch ordering: a focus-report send-keys is written
+    // first (untracked), THEN a tracked command is sent and goes in flight. tmux
+    // acks in write order: [send-keys block, tracked block].
+    viewer.recordUntrackedSend();
+    try viewer.queueUserCommand("select-window -t @0\n");
+    {
+        var arena: ArenaAllocator = .init(testing.allocator);
+        defer arena.deinit();
+        const cmd = (try viewer.takePendingCommand(arena.allocator())).?;
+        try testing.expect(std.mem.startsWith(u8, cmd, "select-window"));
+    }
+    viewer.recordTrackedSend();
+    try testing.expect(viewer.command_in_flight);
+    try testing.expectEqual(@as(usize, 1), viewer.command_queue.len());
+
+    // Block 1 = the send-keys ack. It MUST classify as untracked and be
+    // swallowed by the caller — the tracked command stays in flight and queued,
+    // NOT falsely consumed.
+    try testing.expectEqual(Viewer.BlockClass.untracked, viewer.classifyBlock());
+    try testing.expect(viewer.command_in_flight);
+    try testing.expectEqual(@as(usize, 1), viewer.command_queue.len());
+
+    // Block 2 = the real tracked ack. Classified tracked → fed to next, which
+    // consumes the queued command.
+    try testing.expectEqual(Viewer.BlockClass.tracked, viewer.classifyBlock());
+    _ = viewer.next(.{ .tmux = .{ .block_end = "" } });
+    try testing.expect(!viewer.command_in_flight);
+    try testing.expect(viewer.command_queue.empty());
+
+    // The swallowed block never corrupted the window list.
+    try testing.expectEqual(@as(usize, 1), viewer.windows.items.len);
+}
+
+test "window list survives a send-keys block landing before list-windows" {
+    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    defer viewer.deinit();
+    try driveStartupOneWindow(&viewer);
+
+    // A focus-report send-keys is written (untracked); then a topology change
+    // queues + sends a tracked list-windows. tmux acks send-keys first.
+    viewer.recordUntrackedSend();
+    _ = viewer.next(.{ .tmux = .{ .window_add = .{ .id = 1 } } });
+    try testing.expect(viewer.command_in_flight); // list-windows in flight
+    viewer.recordTrackedSend();
+
+    // Block 1 = send-keys ack → swallowed (NOT fed to next). Block 2 = the real
+    // list-windows response → fed to next. WITHOUT the swallow, the empty
+    // send-keys ack would be parsed as the list-windows response → zero windows →
+    // empty topology snapshot → every tmux tab pruned. WITH it, the real window
+    // survives.
+    try testing.expectEqual(Viewer.BlockClass.untracked, viewer.classifyBlock());
+    try testing.expectEqual(Viewer.BlockClass.tracked, viewer.classifyBlock());
+    const actions = viewer.next(.{ .tmux = .{ .block_end = "$0 @0 1 %0 83 44 b7dd,83x44,0,0,0 bash" } });
+    var found_windows = false;
+    for (actions) |a| {
+        if (a == .windows) {
+            found_windows = true;
+            try testing.expectEqual(@as(usize, 1), a.windows.len);
+        }
+    }
+    try testing.expect(found_windows);
+    try testing.expectEqual(@as(usize, 1), viewer.windows.items.len);
+}
+
+test "paste produces multiple untracked markers, all swallowed" {
+    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    defer viewer.deinit();
+    try driveStartupOneWindow(&viewer);
+
+    // A paste splits into multiple send-keys chunks → multiple untracked markers.
+    viewer.recordUntrackedSend();
+    viewer.recordUntrackedSend();
+    viewer.recordUntrackedSend();
+    try testing.expectEqual(Viewer.BlockClass.untracked, viewer.classifyBlock());
+    try testing.expectEqual(Viewer.BlockClass.untracked, viewer.classifyBlock());
+    try testing.expectEqual(Viewer.BlockClass.untracked, viewer.classifyBlock());
+    // Command queue / in-flight / windows are untouched.
+    try testing.expect(viewer.command_queue.empty());
+    try testing.expect(!viewer.command_in_flight);
+    try testing.expectEqual(@as(usize, 1), viewer.windows.items.len);
+}
+
+test "classifyBlock on empty FIFO returns empty and startup still completes" {
+    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    defer viewer.deinit();
+    // Empty FIFO (the startup attach block we never wrote) classifies as empty,
+    // so the caller falls through to the normal handling.
+    try testing.expectEqual(Viewer.BlockClass.empty, viewer.classifyBlock());
+    try driveStartupOneWindow(&viewer);
+    try testing.expectEqual(.command_queue, viewer.state);
+    try testing.expectEqual(@as(usize, 1), viewer.windows.items.len);
+}
+
+test "session change resets the sent-FIFO" {
+    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    defer viewer.deinit();
+    try driveStartupOneWindow(&viewer);
+
+    // Outstanding markers at the moment a session change rebuilds the viewer.
+    viewer.recordUntrackedSend();
+    viewer.recordTrackedSend();
+
+    // sessionChanged deinits the old viewer (freeing the old FIFO) and starts a
+    // fresh one — no carry-forward (a stale tracked marker could mis-match a new
+    // in-flight command). The fresh FIFO is empty.
+    _ = viewer.next(.{ .tmux = .{ .session_changed = .{ .id = 2, .name = "two" } } });
+    try testing.expectEqual(Viewer.BlockClass.empty, viewer.classifyBlock());
 }
 
 test "parseResizePane parses target/cols/rows, rejects others" {

@@ -335,6 +335,24 @@ fn drainMailbox(
                 defer v.alloc.free(v.data);
                 io.terminal_stream.handler.tmuxQueuePaneCommand(v.data);
             },
+            .tmux_send_keys => |v| { // ROOTSHELL-TMUX (id=thread-send-keys)
+                // Write the untracked send-keys straight to the tmux pty (no
+                // command-queue gating, so keystroke latency is unchanged), THEN
+                // record an `.untracked` marker. Record-after-write makes the
+                // sent-FIFO order match the pty write order so its %begin/%end ack
+                // is matched/swallowed in order (not mis-attributed to an in-flight
+                // tracked command).
+                defer v.alloc.free(v.data);
+                try io.queueWrite(data, v.data, self.flags.linefeed_mode);
+                io.terminal_stream.handler.recordTmuxUntrackedSend();
+            },
+            .tmux_track_command => |v| { // ROOTSHELL-TMUX (id=thread-track-command)
+                // Write the tracked command, THEN record a `.tracked` marker
+                // (same record-after-write ordering rationale as send-keys).
+                defer v.alloc.free(v.data);
+                try io.queueWrite(data, v.data, self.flags.linefeed_mode);
+                io.terminal_stream.handler.recordTmuxTrackedSend();
+            },
             .tmux_detach => io.terminal_stream.handler.tmuxDetach(), // ROOTSHELL-TMUX (id=thread-detach)
             .start_synchronized_output => self.startSynchronizedOutput(cb),
             .linefeed_mode => |v| self.flags.linefeed_mode = v,

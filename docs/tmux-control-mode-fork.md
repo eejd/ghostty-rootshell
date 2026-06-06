@@ -82,21 +82,24 @@ These must remain byte-stable. Mirror any change in `ghostty-ios`.
   `CTmuxOp` (= `ghostty_tmux_op_s`) and `CTmuxLayoutInfo` (= `ghostty_tmux_layout_info_s`);
   exports `ghostty_tmux_reconcile_op_count` / `ghostty_tmux_reconcile_op` /
   `ghostty_tmux_reconcile_free` / `ghostty_tmux_layout_info` / `ghostty_tmux_layout_child`.
-- **Pane creation / resize / detach / command:** `ghostty_surface_new_tmux_pane` (`id=embedded-new-tmux-pane`),
+- **Pane creation / resize / detach / command / active:** `ghostty_surface_new_tmux_pane` (`id=embedded-new-tmux-pane`),
   `ghostty_surface_tmux_set_client_size` (`id=embedded-set-client-size`),
   `ghostty_surface_tmux_detach` (`id=embedded-tmux-detach`),
   `ghostty_surface_tmux_command` (`id=embedded-tmux-command`) — queues a raw
-  `split-window`/`kill-pane` through the viewer command queue (drives splits).
+  `split-window`/`kill-pane` through the viewer command queue (drives splits),
+  `ghostty_surface_tmux_active` (`id=embedded-tmux-active`) — bool probe of live
+  control-mode state for the Swift ESC escape hatch.
 - **Header:** the matching block in `include/ghostty.h`.
 
 **Verify the ABI** (from the `ghostty-dec20` repo, after a build):
 ```bash
 nm macos/GhosttyKit.xcframework/ios-arm64/libghostty-internal-fat.a \
-  | grep -E '_ghostty_(tmux|surface_new_tmux|surface_tmux_(set_client|detach|command))' | sort -u
+  | grep -E '_ghostty_(tmux|surface_new_tmux|surface_tmux_(set_client|detach|command|active))' | sort -u
 ```
-Expect 8 `T` (defined text) symbols:
+Expect 10 `T` (defined text) symbols:
 `_ghostty_surface_new_tmux_pane`, `_ghostty_surface_tmux_set_client_size`,
-`_ghostty_surface_tmux_detach`, `_ghostty_tmux_layout_child`,
+`_ghostty_surface_tmux_detach`, `_ghostty_surface_tmux_command`,
+`_ghostty_surface_tmux_active`, `_ghostty_tmux_layout_child`,
 `_ghostty_tmux_layout_info`, `_ghostty_tmux_reconcile_free`,
 `_ghostty_tmux_reconcile_op`, `_ghostty_tmux_reconcile_op_count`. Also
 `git diff include/ghostty.h` should be comment-only across a refactor.
@@ -123,7 +126,7 @@ REORDER` note; behavioral hooks in `dcs.zig` / `stream_handler.zig` are also gat
 
 ### `id` registry
 
-72 hook ids across 30 files (the table below enumerates the Tier C/D upstream-hooked
+88 hook ids across 30 files (the table below enumerates the Tier C/D upstream-hooked
 files; the fork-owned sidecars `src/Surface_tmux.zig`, `src/apprt/surface_tmux.zig`,
 `src/termio/Tmux.zig`, and the `src/terminal/tmux_cc/*` parser also carry `id=`-tagged hooks
 but are carried forward verbatim, so they are not re-listed here). Regenerate the full list
@@ -135,19 +138,19 @@ grep -rn 'ROOTSHELL-TMUX' src/ include/ | grep -oE 'id=[a-z0-9-]+' | sort -u
 | File | ids |
 |------|-----|
 | `src/apprt/action.zig` | `action-reconcile-variant` (FROZEN), `action-key-variant` (FROZEN), `action-reconcile-struct` (FROZEN) |
-| `src/apprt/embedded.zig` | `embedded-capi-reconcile` (FROZEN), `embedded-new-tmux-pane` (FROZEN), `embedded-set-client-size` (FROZEN), `embedded-tmux-detach` (FROZEN), `embedded-tmux-command` (FROZEN), `embedded-new-tmux-pane-fn`, `embedded-init-tmux-pane-fn`, `embedded-relay-field`, `embedded-relay-deinit`, `embedded-ui-terminal-arm` |
+| `src/apprt/embedded.zig` | `embedded-capi-reconcile` (FROZEN), `embedded-new-tmux-pane` (FROZEN), `embedded-set-client-size` (FROZEN), `embedded-tmux-detach` (FROZEN), `embedded-tmux-command` (FROZEN), `embedded-tmux-active` (FROZEN), `embedded-new-tmux-pane-fn`, `embedded-init-tmux-pane-fn`, `embedded-relay-field`, `embedded-relay-deinit`, `embedded-ui-terminal-arm` |
 | `src/apprt/surface.zig` | `apprt-surface-tmux-types-extracted`, `apprt-msg-topology`, `apprt-msg-write`, `apprt-msg-focus`, `apprt-msg-title`, `apprt-relay-writer` |
-| `src/Surface.zig` | `surface-reconcile-extracted`, `surface-initoptions-backend`, `surface-init-backend-select`, `surface-arm-topology`, `surface-arm-write`, `surface-arm-focus`, `surface-arm-title` |
-| `src/termio/stream_handler.zig` | `streamhandler-viewer-field`, `streamhandler-force-unhook-field`, `streamhandler-deinit-viewer`, `streamhandler-changeconfig-disable`, `streamhandler-changeconfig-colors`, `streamhandler-set-client-size`, `streamhandler-pump-command-queue`, `streamhandler-pane-command`, `streamhandler-detach`, `streamhandler-dcs-ground`, `streamhandler-dcs-dispatch`, `streamhandler-broken-control-unhook`, `streamhandler-gateway-menu`, `streamhandler-suppress-gateway-reports`, `snapshot-feed-pane-titles` |
+| `src/Surface.zig` | `surface-reconcile-extracted`, `surface-initoptions-backend`, `surface-init-backend-select`, `surface-arm-topology`, `surface-arm-write`, `surface-send-keys-untracked`, `surface-arm-focus`, `surface-arm-title` |
+| `src/termio/stream_handler.zig` | `streamhandler-viewer-field`, `streamhandler-force-unhook-field`, `streamhandler-deinit-viewer`, `streamhandler-changeconfig-disable`, `streamhandler-changeconfig-colors`, `streamhandler-set-client-size`, `streamhandler-pump-command-queue`, `streamhandler-write-tracked-command`, `streamhandler-record-tracked`, `streamhandler-record-untracked`, `streamhandler-pane-command`, `streamhandler-detach`, `streamhandler-tmux-active`, `streamhandler-tmux-active-flag`, `streamhandler-dcs-ground`, `streamhandler-block-fifo-filter`, `streamhandler-command-tracked`, `streamhandler-windows-empty-guard`, `streamhandler-dcs-dispatch`, `streamhandler-broken-control-unhook`, `streamhandler-gateway-menu`, `streamhandler-suppress-gateway-reports`, `snapshot-feed-pane-titles` |
 | `src/termio/backend.zig` | `backend-kind`, `backend-config-tmux`, `backend-tmux`, `backend-threaddata-tmux` |
 | `src/termio/Termio.zig` | `termio-derived-config`, `termio-derived-init`, `termio-stream-config` |
 | `src/terminal/dcs.zig` | `dcs-tmux-enter` (rest gated by `build_options.tmux_control_mode`) |
 | `src/terminal/parse_table.zig` | `parsetable-dcs-utf8-passthrough`, `parsetable-dcs-utf8-test` |
-| `src/termio/message.zig` | `termio-msg-set-client-size`, `termio-msg-detach` |
-| `src/termio/Thread.zig` | `thread-set-client-size`, `thread-detach` |
+| `src/termio/message.zig` | `termio-msg-set-client-size`, `termio-msg-pane-command`, `termio-msg-send-keys`, `termio-msg-track-command`, `termio-msg-detach` |
+| `src/termio/Thread.zig` | `thread-set-client-size`, `thread-pane-command`, `thread-send-keys`, `thread-track-command`, `thread-detach` |
 | `src/termio.zig` | `termio-tmux-export` |
 | `src/config/Config.zig` | `config-tmux-control-mode` |
-| `include/ghostty.h` | `ghostty-h-action-enum` (FROZEN), `ghostty-h-reconcile` (FROZEN), `ghostty-h-set-client-size` (FROZEN), `ghostty-h-tmux-detach` (FROZEN), `ghostty-h-tmux-command` (FROZEN) |
+| `include/ghostty.h` | `ghostty-h-action-enum` (FROZEN), `ghostty-h-reconcile` (FROZEN), `ghostty-h-set-client-size` (FROZEN), `ghostty-h-tmux-detach` (FROZEN), `ghostty-h-tmux-command` (FROZEN), `ghostty-h-tmux-active` (FROZEN) |
 
 ---
 
@@ -182,7 +185,7 @@ echo "$(grep -rc 'ROOTSHELL-TMUX BEGIN' src/ include/ | awk -F: '{s+=$2} END{pri
       $(grep -rc 'ROOTSHELL-TMUX END'   src/ include/ | awk -F: '{s+=$2} END{print s}') end"
 # Every FROZEN-ABI symbol still present:
 nm macos/GhosttyKit.xcframework/ios-arm64/libghostty-internal-fat.a \
-  | grep -cE '_ghostty_(tmux|surface_new_tmux|surface_tmux_(set_client|detach))'   # expect 8
+  | grep -cE '_ghostty_(tmux|surface_new_tmux|surface_tmux_(set_client|detach|command|active))'   # expect 10
 # No stale upstream tmux/ path references crept back in:
 grep -rn 'terminal/tmux/' src/ --include='*.zig' | grep -v 'tmux_cc/'      # expect empty
 ```

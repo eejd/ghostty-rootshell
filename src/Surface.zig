@@ -1348,21 +1348,30 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
                 return;
             }
 
-            const io_msg: termio.Message = switch (w) {
-                .small => |v| termio.Message.writeReq(
-                    self.alloc,
-                    v.data[0..v.len],
-                ) catch |err| {
-                    log.warn("tmux relay alloc failed: {}", .{err});
-                    return;
-                },
-                .stable => |v| .{ .write_stable = v },
-                .alloc => |v| .{ .write_alloc = .{
-                    .alloc = v.alloc,
-                    .data = v.data,
-                } },
-            };
-            self.queueIo(io_msg, .unlocked);
+            // ROOTSHELL-TMUX (id=surface-send-keys-untracked): send-keys (typed
+            // input / paste / focus reports) go through `.tmux_send_keys` instead
+            // of a raw `.write_*`. The IO thread writes them directly (still no
+            // command-queue gating — keystroke latency is unchanged) and then
+            // records an `.untracked` marker in the viewer's sent-FIFO so the
+            // command's %begin/%end ack is matched/swallowed in send-order rather
+            // than mis-attributed to an in-flight tracked command (which would
+            // desync the response FIFO → garbled list-windows → all tabs pruned).
+            // Dupe onto self.alloc (mirrors the .tmux_pane_command branch); the IO
+            // thread frees it. The dupe is tiny (a keystroke / one ~3 KB paste
+            // chunk) and uniform across WriteReq variants.
+            const sk_copy = self.alloc.dupe(u8, bytes) catch null;
+            switch (w) {
+                .alloc => |v| v.alloc.free(v.data),
+                else => {},
+            }
+            if (sk_copy) |c| {
+                self.queueIo(.{ .tmux_send_keys = .{
+                    .alloc = self.alloc,
+                    .data = c,
+                } }, .unlocked);
+            } else {
+                log.warn("tmux send-keys alloc failed, dropping", .{});
+            }
         },
 
         .tmux_focus_changed => |fc| { // ROOTSHELL-TMUX (id=surface-arm-focus)
