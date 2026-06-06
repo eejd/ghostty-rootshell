@@ -647,6 +647,18 @@ typedef enum GHOSTTY_ENUM_TYPED {
    * Input type: bool*
    */
   GHOSTTY_TERMINAL_OPT_DEFAULT_CURSOR_BLINK = 23,
+
+  /**
+   * Enable or disable Glyph Protocol APC handling.
+   *
+   * When disabled, Glyph Protocol APC sequences are ignored and no
+   * support/query/register/clear responses are emitted. Disabling also clears
+   * the terminal session's glyph glossary. A NULL value pointer is a no-op.
+   *
+   * Input type: bool*
+   */
+  GHOSTTY_TERMINAL_OPT_GLYPH_PROTOCOL = 24,
+
   GHOSTTY_TERMINAL_OPT_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
 } GhosttyTerminalOption;
 
