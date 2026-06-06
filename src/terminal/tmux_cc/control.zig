@@ -53,6 +53,27 @@ pub const Parser = struct {
     /// be parsed (validation is skipped in that case).
     block_begin: ?BlockInfo = null,
 
+    /// Resync-tolerant mode for a mid-stream control-mode RESUME (the iOS app
+    /// reattached a live `tmux -CC`). The parser is created at an arbitrary
+    /// point, so the leading bytes are a partial line / block content that the
+    /// strict `.idle` "non-'%' => broken" rule would trip on. While tolerant,
+    /// `.idle` SKIPS non-'%' bytes instead of breaking, so the parser harmlessly
+    /// discards reattach garbage until it lands on a real notification. It is
+    /// cleared the moment we complete a `%begin/%end` block (a definitive
+    /// alignment signal — and the resume probe's response is always such a
+    /// block), restoring the normal break-on-stray safety. ROOTSHELL-TMUX
+    /// (id=control-resync-tolerant)
+    tolerant: bool = false,
+
+    /// Whether the current byte begins a line (the previous byte was '\n', or it
+    /// is the first byte after `beginResync`). Updated every byte; only consulted
+    /// while `tolerant`, where a notification may only start on a '%' at a line
+    /// boundary — NOT a literal mid-line '%' from stale pane output, which would
+    /// false-trigger a bogus notification. Set true by `beginResync` so the
+    /// probe-first case (the gateway's idle answer is the very first byte) is
+    /// accepted. ROOTSHELL-TMUX (id=control-resync-line-start)
+    resync_at_line_start: bool = false,
+
     /// Parsed tokens from a %begin, %end, or %error guard line.
     /// tmux guarantees these match between begin and end/error.
     const BlockInfo = struct {
@@ -106,6 +127,12 @@ pub const Parser = struct {
             return error.OutOfMemory;
         }
 
+        // Track line boundaries for resync realignment (only consulted while
+        // tolerant). `at_line_start` is whether THIS byte begins a line; update
+        // the field for the NEXT byte. ROOTSHELL-TMUX (id=control-resync-line-start)
+        const at_line_start = self.resync_at_line_start;
+        self.resync_at_line_start = (byte == '\n');
+
         switch (self.state) {
             // Drop because we're in a broken state.
             .broken => return null,
@@ -117,7 +144,23 @@ pub const Parser = struct {
             // terminal report or stray byte should stop this broken parser from
             // consuming more input, but it must not look like tmux intentionally
             // exited and force the UI to close every projected tab.
-            .idle => if (byte != '%') {
+            .idle => if (self.tolerant) {
+                // Mid-stream RESUME: skip arbitrary reattach garbage instead of
+                // breaking. Only start a notification on a '%' that begins a line
+                // (byte 0 of the resync, or just after '\n') — NOT a literal
+                // mid-line '%' in stale pane output, which would false-trigger a
+                // bogus notification. ROOTSHELL-TMUX (id=control-resync-tolerant)
+                if (byte == '%' and at_line_start) {
+                    self.buffer.clearRetainingCapacity();
+                    self.state = .notification;
+                    // Fall through to buffer the leading '%'.
+                } else {
+                    self.buffer.clearRetainingCapacity();
+                    return null;
+                }
+            } else if (byte != '%') {
+                // Control mode output should always be wrapped in '%begin/%end'
+                // or be a '%' notification; a stray byte breaks the channel.
                 self.broken();
                 return .{ .broken = {} };
             } else {
@@ -182,6 +225,11 @@ pub const Parser = struct {
                     // Important: do not clear buffer since the notification
                     // contains it.
                     self.state = .idle;
+                    // Completing a block is a definitive alignment signal: leave
+                    // resync-tolerant mode so the normal break-on-stray safety is
+                    // restored. The resume probe's response is always a block.
+                    // ROOTSHELL-TMUX (id=control-resync-tolerant)
+                    self.tolerant = false;
                     switch (result.terminator) {
                         .end => return .{ .block_end = output },
                         .err => {
@@ -210,8 +258,28 @@ pub const Parser = struct {
     /// string terminator embedded in a `capture-pane -e` history replay during
     /// attach) and must be forwarded, not treated as the end of control mode —
     /// otherwise the remainder of the DCS stream leaks into the terminal.
+    ///
+    /// While resync-tolerant (mid-stream RESUME, not yet realigned) we are in
+    /// `.idle` but must NOT terminate on a stray ST in the reattach garbage —
+    /// that ST is not tmux's real closing ST. ROOTSHELL-TMUX
+    /// (id=control-resync-tolerant)
     pub fn canTerminate(self: *const Parser) bool {
-        return self.state == .idle or self.state == .broken;
+        return (self.state == .idle and !self.tolerant) or self.state == .broken;
+    }
+
+    /// Enter resync-tolerant mode for a mid-stream control-mode RESUME (the iOS
+    /// app reattached a live `tmux -CC`). The parser stays in `.idle` but skips
+    /// arbitrary reattach garbage instead of breaking, until it lands on a real
+    /// notification and completes a block (which clears tolerance). Called right
+    /// after the synthetic control-mode entry on resume. ROOTSHELL-TMUX
+    /// (id=control-resync-tolerant)
+    pub fn beginResync(self: *Parser) void {
+        self.state = .idle;
+        self.tolerant = true;
+        // Treat the first post-resync byte as a line start so the probe-first
+        // case (an idle gateway's answer is literally byte 0) is accepted.
+        self.resync_at_line_start = true;
+        self.buffer.clearRetainingCapacity();
     }
 
     const ParseError = error{RegexError};
@@ -1311,6 +1379,75 @@ test "tmux idle stray byte breaks without synthetic exit" {
     // Once broken, additional bytes are dropped and never become an exit
     // notification. A real %exit is still covered separately above.
     for ("[c%exit\n") |byte| try testing.expect(try c.put(byte) == null);
+}
+
+test "tmux resync parses the probe block when it is the FIRST thing seen" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var c: Parser = .{ .buffer = .init(alloc) };
+    defer c.deinit();
+
+    // The critical idle-session case: on RESUME the gateway is at a shell prompt,
+    // so tmux sends nothing until it answers OUR probe — the probe response block
+    // is literally the first thing the (freshly resynced) parser sees. It must
+    // NOT be discarded.
+    c.beginResync();
+    try testing.expect(c.tolerant);
+    for ("%begin 1 2 0\n__ROOTSHELL_TMUX_RESYNC__ $1\n%end 1 2 0") |byte| {
+        try testing.expect(try c.put(byte) == null);
+        try testing.expect(c.state != .broken);
+    }
+    const n = (try c.put('\n')).?;
+    try testing.expect(n == .block_end);
+    try testing.expect(std.mem.indexOf(u8, n.block_end, "__ROOTSHELL_TMUX_RESYNC__") != null);
+    // Completing a block clears tolerance (alignment restored).
+    try testing.expect(!c.tolerant);
+    try testing.expect(c.state == .idle);
+}
+
+test "tmux resync skips mid-line/mid-block garbage without breaking" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var c: Parser = .{ .buffer = .init(alloc) };
+    defer c.deinit();
+
+    // A mid-stream RESUME landing inside a line / block: arbitrary leading bytes
+    // are skipped (not broken) until a real block parses.
+    c.beginResync();
+    for ("rbage from mid-line\nsome content line\n\n") |byte| {
+        try testing.expect(try c.put(byte) == null);
+        try testing.expect(c.state != .broken);
+    }
+    for ("%begin 3 4 0\nhi\n%end 3 4 0") |byte| try testing.expect(try c.put(byte) == null);
+    const n = (try c.put('\n')).?;
+    try testing.expect(n == .block_end);
+    try testing.expect(!c.tolerant);
+    try testing.expect(c.state == .idle);
+}
+
+test "tmux resync ignores a literal mid-line % in reattach garbage" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var c: Parser = .{ .buffer = .init(alloc) };
+    defer c.deinit();
+
+    c.beginResync();
+    // A partial line containing a literal '%' that is NOT at a line start must
+    // not falsely start a notification — it is skipped until a real line-start
+    // '%'. Guards against latching onto stale pane output that contains '%'.
+    for ("output with a % sign mid-line\n") |byte| {
+        try testing.expect(try c.put(byte) == null);
+        try testing.expect(c.state != .broken);
+        try testing.expect(c.state != .notification); // never falsely entered
+    }
+    // The real block at a true line start then parses.
+    for ("%begin 1 2 0\nhi\n%end 1 2 0") |byte| _ = try c.put(byte);
+    const n = (try c.put('\n')).?;
+    try testing.expect(n == .block_end);
+    try testing.expect(!c.tolerant);
 }
 
 test "tmux extended-output" {

@@ -354,6 +354,38 @@ fn drainMailbox(
                 io.terminal_stream.handler.recordTmuxTrackedSend();
             },
             .tmux_detach => io.terminal_stream.handler.tmuxDetach(), // ROOTSHELL-TMUX (id=thread-detach)
+            .tmux_resume => { // ROOTSHELL-TMUX (id=thread-resume)
+                // Hold the renderer mutex around the whole arm, exactly like the
+                // read path (Exec.zig processOutput): the `.enter` dispatch
+                // mutates the gateway terminal (prints the gateway menu) and
+                // messageWriter's queue-full path requires the mutex be locked.
+                // drainMailbox does NOT hold it (each Termio handler locks it
+                // itself), so we must.
+                io.renderer_state.mutex.lock();
+                defer io.renderer_state.mutex.unlock();
+                if (io.terminal_stream.handler.tmuxResumeShouldEnter()) {
+                    // First resume: synthesize control-mode entry. Feeding
+                    // `ESC P 1000 p` drives the VT parser into DCS passthrough and
+                    // fires the `.enter` dispatch, which creates the viewer (in
+                    // resync) and writes the first probe, exactly as a real hook.
+                    io.terminal_stream.nextSlice("\x1bP1000p");
+                } else {
+                    // A viewer already exists: this is a probe RETRY (the app
+                    // re-sends until a reconcile arrives). Re-write the probe.
+                    io.terminal_stream.handler.tmuxResumeResendProbe();
+                }
+            },
+            .tmux_resume_abort => { // ROOTSHELL-TMUX (id=thread-resume-abort)
+                // Same locking rationale as `.tmux_resume`: tearing down the
+                // viewer / resetting the parser touches state the renderer reads.
+                io.renderer_state.mutex.lock();
+                defer io.renderer_state.mutex.unlock();
+                io.terminal_stream.handler.tmuxResumeAbort();
+                // Force the VT parser out of DCS passthrough back to ground so
+                // the gateway's shell output renders normally; on abort there may
+                // be no further bytes to trigger dcsConsumeGroundRequest.
+                io.terminal_stream.parser.state = .ground;
+            },
             .start_synchronized_output => self.startSynchronizedOutput(cb),
             .linefeed_mode => |v| self.flags.linefeed_mode = v,
             .focused => |v| try io.focusGained(data, v),

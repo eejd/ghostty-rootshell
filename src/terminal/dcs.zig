@@ -231,6 +231,20 @@ pub const Handler = struct {
         return null;
     }
 
+    /// Engage control-parser resync on the active tmux control parser. No-op if
+    /// the handler is not currently in the tmux DCS state. Called on a
+    /// control-mode RESUME (the iOS app reattached a live `tmux -CC`) so the
+    /// freshly-hooked parser realigns to a clean line boundary instead of
+    /// breaking on the arbitrary mid-stream reattach garbage. ROOTSHELL-TMUX
+    /// (id=dcs-begin-tmux-resync)
+    pub fn beginTmuxResync(self: *Handler) void {
+        if (comptime !build_options.tmux_control_mode) return;
+        switch (self.state) {
+            .tmux => |*tmux| tmux.beginResync(),
+            else => {},
+        }
+    }
+
     pub fn unhook(self: *Handler) ?Command {
         // Note: we do NOT call deinit here on purpose because some commands
         // transfer memory ownership. If state needs cleanup, the switch

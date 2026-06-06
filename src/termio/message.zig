@@ -121,6 +121,23 @@ pub const Message = union(enum) {
     /// active. See `StreamHandler.tmuxDetach`.
     tmux_detach: void, // ROOTSHELL-TMUX (id=termio-msg-detach)
 
+    /// Resume tmux control mode on this surface after the app relaunched and
+    /// tssh reattached a still-live `tmux -CC` pty. Handled on the IO thread:
+    /// it synthesizes the `ESC P 1000 p` control-mode entry on the (fresh)
+    /// stream so the viewer is created exactly as on a real hook, then puts the
+    /// viewer into the resync state to drain the reattached stream and rebuild
+    /// the topology. No-op when no resume is appropriate (tmux disabled, viewer
+    /// already active). See `Thread` `.tmux_resume` + `StreamHandler.enterResync`.
+    tmux_resume: void, // ROOTSHELL-TMUX (id=termio-msg-resume)
+
+    /// Abort an in-progress tmux control-mode resume (the app's resume watchdog
+    /// fired because no reconcile arrived: tmux died / the session expired / the
+    /// reattached pty is at a bare shell). Handled on the IO thread: tears down
+    /// the resync viewer and forces the VT parser back to ground so the gateway
+    /// renders its shell normally. No-op when no viewer is active. See
+    /// `StreamHandler.tmuxResumeAbort`.
+    tmux_resume_abort: void, // ROOTSHELL-TMUX (id=termio-msg-resume-abort)
+
     /// Send this when a synchronized output mode is started. This will
     /// start the timer so that the output mode is disabled after a
     /// period of time so that a bad actor can't hang the terminal.

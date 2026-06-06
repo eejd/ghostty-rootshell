@@ -82,24 +82,32 @@ These must remain byte-stable. Mirror any change in `ghostty-ios`.
   `CTmuxOp` (= `ghostty_tmux_op_s`) and `CTmuxLayoutInfo` (= `ghostty_tmux_layout_info_s`);
   exports `ghostty_tmux_reconcile_op_count` / `ghostty_tmux_reconcile_op` /
   `ghostty_tmux_reconcile_free` / `ghostty_tmux_layout_info` / `ghostty_tmux_layout_child`.
-- **Pane creation / resize / detach / command / active:** `ghostty_surface_new_tmux_pane` (`id=embedded-new-tmux-pane`),
+- **Pane creation / resize / detach / command / active / resume:** `ghostty_surface_new_tmux_pane` (`id=embedded-new-tmux-pane`),
   `ghostty_surface_tmux_set_client_size` (`id=embedded-set-client-size`),
   `ghostty_surface_tmux_detach` (`id=embedded-tmux-detach`),
   `ghostty_surface_tmux_command` (`id=embedded-tmux-command`) — queues a raw
   `split-window`/`kill-pane` through the viewer command queue (drives splits),
   `ghostty_surface_tmux_active` (`id=embedded-tmux-active`) — bool probe of live
-  control-mode state for the Swift ESC escape hatch.
+  control-mode state for the Swift ESC escape hatch,
+  `ghostty_surface_tmux_resume` (`id=embedded-tmux-resume`) — re-enters control
+  mode on a relaunched surface whose tssh session reattached a live `tmux -CC`
+  (synthesizes the `ESC P 1000 p` entry, then the viewer `.resync` state drains
+  the reattached stream and rebuilds via list-windows),
+  `ghostty_surface_tmux_resume_abort` (`id=embedded-tmux-resume-abort`) — aborts a
+  resume from the app's watchdog (tmux gone / session expired), tearing down the
+  resync viewer and returning the parser to ground.
 - **Header:** the matching block in `include/ghostty.h`.
 
 **Verify the ABI** (from the `ghostty-dec20` repo, after a build):
 ```bash
 nm macos/GhosttyKit.xcframework/ios-arm64/libghostty-internal-fat.a \
-  | grep -E '_ghostty_(tmux|surface_new_tmux|surface_tmux_(set_client|detach|command|active))' | sort -u
+  | grep -E '_ghostty_(tmux|surface_new_tmux|surface_tmux_(set_client|detach|command|active|resume))' | sort -u
 ```
-Expect 10 `T` (defined text) symbols:
+Expect 12 `T` (defined text) symbols:
 `_ghostty_surface_new_tmux_pane`, `_ghostty_surface_tmux_set_client_size`,
 `_ghostty_surface_tmux_detach`, `_ghostty_surface_tmux_command`,
-`_ghostty_surface_tmux_active`, `_ghostty_tmux_layout_child`,
+`_ghostty_surface_tmux_active`, `_ghostty_surface_tmux_resume`,
+`_ghostty_surface_tmux_resume_abort`, `_ghostty_tmux_layout_child`,
 `_ghostty_tmux_layout_info`, `_ghostty_tmux_reconcile_free`,
 `_ghostty_tmux_reconcile_op`, `_ghostty_tmux_reconcile_op_count`. Also
 `git diff include/ghostty.h` should be comment-only across a refactor.

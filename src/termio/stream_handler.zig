@@ -95,6 +95,15 @@ pub const StreamHandler = struct {
     /// prompt, leaving the tab stuck. See `dcsConsumeGroundRequest`.
     tmux_force_unhook: bool = false, // ROOTSHELL-TMUX (id=streamhandler-force-unhook-field)
 
+    /// Set by `tmuxResumeShouldEnter` just before the synthetic `ESC P 1000 p`
+    /// is fed on a control-mode RESUME (app relaunch reattaching a live
+    /// `tmux -CC` over tssh). The `.enter` DCS dispatch checks it: instead of
+    /// leaving the freshly-created viewer in `.startup` (waiting for a fresh
+    /// handshake that never comes on a resume), it flips the viewer into
+    /// `.resync` and sends the resync probe. Cleared as soon as it is consumed.
+    /// ROOTSHELL-TMUX (id=streamhandler-resume-pending-field)
+    tmux_resume_pending: bool = false,
+
     /// This is set to true when a message was written to the termio
     /// mailbox. This can be used by callers to determine if they need
     /// to wake up the termio thread.
@@ -557,6 +566,78 @@ pub const StreamHandler = struct {
         return self.tmux_active_flag.load(.monotonic);
     }
 
+    /// Whether the `.tmux_resume` message should feed the synthetic control-mode
+    /// entry on this surface. Returns false (and does nothing) when tmux is
+    /// disabled at build/runtime or a viewer is already active; otherwise sets
+    /// `tmux_resume_pending` so the upcoming `.enter` dispatch enters resync.
+    /// The caller (Thread) then feeds `ESC P 1000 p` into the stream. Keeping the
+    /// gate here lets Thread stay agnostic of the tmux build flag. ROOTSHELL-TMUX
+    /// (id=streamhandler-resume-should-enter)
+    pub fn tmuxResumeShouldEnter(self: *StreamHandler) bool {
+        if (comptime !tmux_enabled) return false;
+        if (!self.tmux_control_mode) return false;
+        if (self.tmux_viewer != null) return false;
+        self.tmux_resume_pending = true;
+        return true;
+    }
+
+    /// Re-send the resync probe to tmux. Called when a viewer already exists and
+    /// is still resyncing (the app retries the probe on a cadence). The first
+    /// probe can be lost if it is written before the tssh transport finished
+    /// attaching, and an idle tmux session only ever answers OUR probe, so the
+    /// retry is what actually drives the rebuild. No-op once we have left resync
+    /// (the reconcile is in progress) or there is no viewer. ROOTSHELL-TMUX
+    /// (id=streamhandler-resume-resend-probe)
+    pub fn tmuxResumeResendProbe(self: *StreamHandler) void {
+        if (comptime !tmux_enabled) return;
+        const viewer = self.tmux_viewer orelse return;
+        if (!viewer.isResyncing()) return;
+        self.messageWriter(termio.Message.writeReq(
+            self.alloc,
+            terminal.tmux.Viewer.resync_probe_command,
+        ) catch return);
+    }
+
+    /// Abort an in-progress control-mode resume (see `Viewer.enterResync`).
+    /// Called when the app's resume watchdog fires because no reconcile arrived:
+    /// tmux died, the session expired, or the reattached pty is at a bare shell,
+    /// so the resync probe will never echo back. Tears down the resync viewer AND
+    /// synchronously resets the DCS handler back to `.inactive` (the caller, in
+    /// Thread, separately forces the outer VT parser to ground). Both resets are
+    /// required: without the DCS unhook, `self.dcs.state` stays `.tmux`, and the
+    /// NEXT real `ESC P 1000 p` (a fresh `tmux -CC attach`) trips
+    /// `dcs.Handler.hook`'s `assert(state == .inactive)` / corrupts state, leaving
+    /// the new control mode broken (empty tabs). `dcsConsumeGroundRequest` only
+    /// fires during later DCS processing, which may never happen on abort, so we
+    /// unhook here directly. No-op when no viewer is active. ROOTSHELL-TMUX
+    /// (id=streamhandler-resume-abort)
+    pub fn tmuxResumeAbort(self: *StreamHandler) void {
+        if (comptime !tmux_enabled) return;
+        self.tmux_resume_pending = false;
+        if (self.tmux_viewer) |viewer| {
+            // Do NOT send an empty topology snapshot here: the abort fires before
+            // any window was projected (a reconcile would have cancelled the
+            // watchdog), so there is nothing to prune — and an empty reconcile
+            // would otherwise make the app create a windowless (stale) controller
+            // that never tears down, re-marking the gateway tmux-active on save.
+            viewer.deinit();
+            self.alloc.destroy(viewer);
+            self.tmux_viewer = null;
+            self.tmux_active_flag.store(false, .monotonic); // ROOTSHELL-TMUX (id=streamhandler-tmux-active-flag)
+        }
+        // Reset the DCS handler out of `.tmux` (frees the control parser buffer)
+        // so a later real control-mode hook starts from `.inactive`. Mirrors
+        // `dcsConsumeGroundRequest`'s unhook; the returned `.tmux = .exit` command
+        // is redundant here (viewer already gone), so just free it.
+        if (self.dcs.unhook()) |cmd| {
+            var freed = cmd;
+            freed.deinit();
+        }
+        // The DCS handler is already reset above, so clear the deferred flag to
+        // avoid a redundant unhook on the next stray DCS put.
+        self.tmux_force_unhook = false;
+    }
+
     pub fn tmuxDetach(self: *StreamHandler) void { // ROOTSHELL-TMUX (id=streamhandler-detach)
         if (comptime !tmux_enabled) return;
         const viewer = self.tmux_viewer orelse return;
@@ -684,6 +765,29 @@ pub const StreamHandler = struct {
                             "failed to print tmux gateway menu: {}",
                             .{err},
                         );
+
+                        // ROOTSHELL-TMUX (id=streamhandler-enter-resume): on a
+                        // control-mode RESUME the synthetic `ESC P 1000 p` (fed
+                        // by `.tmux_resume`) created this viewer, but there is no
+                        // fresh startup handshake coming — the live `tmux -CC`
+                        // resumes mid-protocol. Flip the viewer into resync and
+                        // probe for a clean point; the probe's marker reply
+                        // (handled in viewer.nextResync) drives the list-windows
+                        // rebuild that reprojects the windows/panes.
+                        if (self.tmux_resume_pending) {
+                            self.tmux_resume_pending = false;
+                            viewer.enterResync();
+                            // Realign the control parser to a clean line boundary:
+                            // the live stream resumes mid-line, so without this the
+                            // parser's `.idle` "non-'%' => broken" rule trips on the
+                            // first reattach byte (→ defunct → tabs torn down).
+                            self.dcs.beginTmuxResync();
+                            log.info("tmux control mode resuming (re-entered after reattach)", .{});
+                            self.messageWriter(termio.Message.writeReq(
+                                self.alloc,
+                                terminal.tmux.Viewer.resync_probe_command,
+                            ) catch break :tmux);
+                        }
                         break :tmux;
                     },
 
@@ -755,9 +859,25 @@ pub const StreamHandler = struct {
                 // still alive. `.tracked` / `.empty` (e.g. the startup attach
                 // block we never wrote) fall through to the viewer unchanged.
                 switch (tmux) {
-                    .block_end, .block_err => switch (viewer.classifyBlock()) {
-                        .untracked => break :tmux,
-                        .tracked, .empty => {},
+                    .block_end, .block_err => |content| {
+                        // Drop a stray resync-probe response that arrived AFTER
+                        // resync completed (from a retried probe), identified by
+                        // the marker in its content. Dropping it WITHOUT
+                        // classifyBlock keeps the positional sent-FIFO aligned
+                        // with the rebuild commands (a raw probe carries no FIFO
+                        // marker, so consuming one here would desync). During
+                        // resync the marker block is the legit one and is handled
+                        // by the viewer, so only guard once we have left resync.
+                        // ROOTSHELL-TMUX (id=streamhandler-drop-stray-probe)
+                        if (!viewer.isResyncing() and
+                            std.mem.indexOf(u8, content, terminal.tmux.Viewer.resync_marker) != null)
+                        {
+                            break :tmux;
+                        }
+                        switch (viewer.classifyBlock()) {
+                            .untracked => break :tmux,
+                            .tracked, .empty => {},
+                        }
                     },
                     else => {},
                 }
@@ -1039,7 +1159,7 @@ pub const StreamHandler = struct {
     /// ROOTSHELL-TMUX (id=streamhandler-gateway-menu).
     fn printTmuxGatewayMenu(self: *StreamHandler) !void {
         try self.nextLine();
-        try self.terminal.printString("[ tmux control mode ]");
+        try self.terminal.printString("[ rootshell tmux control mode ]");
         try self.nextLine();
         try self.terminal.printString("Press ESC to detach.");
         try self.nextLine();

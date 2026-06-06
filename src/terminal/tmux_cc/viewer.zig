@@ -321,6 +321,28 @@ pub const Viewer = struct {
 
     pub const CommandQueue = CircBuf(Command, undefined);
 
+    /// Sentinel printed by the resync probe (`display-message -p`) on a
+    /// control-mode RESUME (app relaunch reattaching a live `tmux -CC` over
+    /// tssh). The reattached stream may carry buffered output and in-flight
+    /// `%begin/%end` blocks from before the relaunch; in `.resync` the viewer
+    /// drops everything until it sees this marker echoed back in a command
+    /// block, which proves the stream is clean from that point. A stale block
+    /// can NEVER contain it (we emit it for the first time on resume), so it is
+    /// an unambiguous "stream is clean from here" signal. ROOTSHELL-TMUX
+    /// (id=viewer-resync-marker)
+    pub const resync_marker = "__ROOTSHELL_TMUX_RESYNC__";
+
+    /// The probe command sent on resume. `#{session_id}` is evaluated by tmux
+    /// at runtime (the literal string carries no per-session value), so the
+    /// probe's output gives us the attached session id alongside the marker. We
+    /// need that id for the session-scoped `list-panes -s -t $<id>` pane_state
+    /// command (otherwise learned only from a `%session-changed`, which does not
+    /// arrive on a resume). Plain ASCII (no raw ESC) so the gateway report
+    /// stripper leaves it intact. Typed as `[]const u8` (NOT the inferred
+    /// `*const [N:0]u8`) so it can be passed to `termio.Message.writeReq`, whose
+    /// `MessageData.init` asserts a slice. ROOTSHELL-TMUX (id=viewer-resync-probe)
+    pub const resync_probe_command: []const u8 = "display-message -p '" ++ resync_marker ++ " #{session_id}'\n";
+
     /// Whether a written-but-unacked command was tracked (issued by the viewer
     /// through the command_queue) or untracked (a `send-keys` written directly).
     /// ROOTSHELL-TMUX (id=viewer-sent-fifo)
@@ -818,8 +840,109 @@ pub const Viewer = struct {
             },
 
             .startup => self.nextStartup(n),
+            .resync => self.nextResync(n),
             .command_queue => self.nextCommand(n),
         };
+    }
+
+    /// Put a freshly-initialized viewer into the `.resync` state. Used by the
+    /// stream handler's `tmuxResume` path: after the app relaunches and tssh
+    /// reattaches the live `tmux -CC` pty, we synthesize control-mode entry on a
+    /// brand-new surface (so the VT parser passthrough + viewer are set up
+    /// exactly as on a real `ESC P 1000 p`), but there is no fresh startup
+    /// handshake. `.resync` drains the reattached stream until the resume probe
+    /// marker proves it is clean, then rebuilds the full topology. ROOTSHELL-TMUX
+    /// (id=viewer-enter-resync)
+    pub fn enterResync(self: *Viewer) void {
+        assert(self.state == .startup);
+        self.state = .resync;
+    }
+
+    /// Whether the viewer is still awaiting its resync probe marker. The app
+    /// re-sends the probe on a cadence while this is true (the first probe can
+    /// be lost if sent before the transport finished attaching, and an idle tmux
+    /// session only ever answers our probe). Also used to drop a stray duplicate
+    /// probe response once we have left resync. ROOTSHELL-TMUX (id=viewer-is-resyncing)
+    pub fn isResyncing(self: *const Viewer) bool {
+        return self.state == .resync;
+    }
+
+    /// Handle a notification while resyncing a resumed control-mode stream.
+    /// Drops all pre-reattach noise (stale command blocks, buffered %output,
+    /// topology notifications) until our resume probe's marker is seen, then
+    /// rebuilds the topology exactly like `tryFinishStartup` (client size,
+    /// version, list-windows). The post-marker list-windows -> syncLayouts path
+    /// recaptures every pane and its scrollback, so the resumed session is
+    /// rebuilt identically to a fresh `tmux -CC attach`. ROOTSHELL-TMUX
+    /// (id=viewer-next-resync)
+    fn nextResync(
+        self: *Viewer,
+        n: control.Notification,
+    ) []const Action {
+        assert(self.state == .resync);
+
+        switch (n) {
+            .enter => unreachable,
+            .exit, .broken => return self.defunct(),
+
+            // Command-output blocks: the only one we care about is the resume
+            // probe's, identified by `resync_marker` in its content. Anything
+            // else is a block buffered before the reattach — drop it. We must
+            // NOT feed it to `receivedCommandOutput`, which would mis-match it
+            // against a rebuild command we have not sent yet (the FIFO
+            // slot-shift / blank-pane bug class). Both prongs carry `[]const u8`,
+            // so a shared (non-inline) capture is fine.
+            .block_end, .block_err => |content| {
+                // Drop every block until the resume probe's marker proves the
+                // stream is clean (stale blocks from before the reattach can't
+                // contain it).
+                const idx = std.mem.indexOf(u8, content, resync_marker) orelse return &.{};
+
+                // Recover the attached session id from `<marker> $<id>` so the
+                // rebuild's session-scoped pane_state covers EVERY window's
+                // panes (not just the active window's). Keep the prior id if the
+                // probe output is malformed.
+                if (parseResyncSessionId(content[idx + resync_marker.len ..])) |sid| {
+                    self.session_id = sid;
+                }
+                log.info("tmux control mode resync complete (session={}), rebuilding topology", .{self.session_id});
+
+                // Stream is clean from here: rebuild the topology exactly like
+                // tryFinishStartup. enterCommandQueue moves us to .command_queue
+                // and emits the first command (client_size) as an action.
+                var arena = self.action_arena.promote(self.alloc);
+                defer self.action_arena = arena.state;
+                _ = arena.reset(.free_all);
+                return self.enterCommandQueue(
+                    arena.allocator(),
+                    &.{ .{ .client_size = .{
+                        .cols = self.client_cols,
+                        .rows = self.client_rows,
+                        .enable_pause = true,
+                    } }, .tmux_version, .list_windows },
+                ) catch {
+                    log.warn("resync: failed to queue rebuild, becoming defunct", .{});
+                    return self.defunct();
+                };
+            },
+
+            // Any other notification (live %output, %window-*, %session-changed,
+            // etc.) seen before the probe marker is pre-reattach noise. Drop it;
+            // the post-marker list-windows rebuild is the source of truth.
+            else => return &.{},
+        }
+    }
+
+    /// Parse the `$<id>` session id tmux appends after the resync marker in the
+    /// probe's output (`<marker> $<id>`). Returns null if absent/malformed.
+    /// ROOTSHELL-TMUX (id=viewer-resync-session-id)
+    fn parseResyncSessionId(rest: []const u8) ?usize {
+        const trimmed = std.mem.trim(u8, rest, " \t\r\n");
+        if (trimmed.len < 2 or trimmed[0] != '$') return null;
+        var end: usize = 1;
+        while (end < trimmed.len and trimmed[end] >= '0' and trimmed[end] <= '9') : (end += 1) {}
+        if (end == 1) return null;
+        return std.fmt.parseInt(usize, trimmed[1..end], 10) catch null;
     }
 
     fn nextStartup(
@@ -2627,6 +2750,18 @@ const State = enum {
     /// handle either order for robustness.
     startup,
 
+    /// We entered this state on a control-mode RESUME: the iOS app
+    /// relaunched and tssh reattached a still-live `tmux -CC` pty, so
+    /// there is no fresh `ESC P 1000 p` handshake to wait for — the
+    /// reattached stream resumes mid-protocol and may carry buffered
+    /// output and in-flight `%begin/%end` blocks from before the
+    /// relaunch. We drop everything until a `display-message` probe
+    /// echoes our `resync_marker` back (proving the stream is clean
+    /// from here), then transition to `command_queue` and rebuild the
+    /// full topology with list-windows. See `nextResync`. ROOTSHELL-TMUX
+    /// (id=viewer-state-resync)
+    resync,
+
     /// Tmux has closed the control mode connection
     defunct,
 
@@ -3434,6 +3569,66 @@ test "classifyBlock on empty FIFO returns empty and startup still completes" {
     try driveStartupOneWindow(&viewer);
     try testing.expectEqual(.command_queue, viewer.state);
     try testing.expectEqual(@as(usize, 1), viewer.windows.items.len);
+}
+
+test "resync drops stale stream then rebuilds on probe marker" {
+    var viewer = try Viewer.init(testing.allocator, 100, 40);
+    defer viewer.deinit();
+
+    // tmuxResume creates a fresh viewer in .startup then flips it to .resync.
+    viewer.enterResync();
+    try testing.expectEqual(.resync, viewer.state);
+
+    // Buffered pre-reattach noise is dropped: a stale command block (e.g. a
+    // capture-pane response in flight at relaunch) and stale %output produce no
+    // actions and leave us in .resync. Critically, the stale block is NOT fed to
+    // receivedCommandOutput (which would desync the rebuild FIFO).
+    try testing.expectEqual(@as(usize, 0), viewer.next(.{ .tmux = .{
+        .block_end = "stale capture output\nmore lines",
+    } }).len);
+    try testing.expectEqual(.resync, viewer.state);
+    try testing.expectEqual(@as(usize, 0), viewer.next(.{ .tmux = .{
+        .output = .{ .pane_id = 0, .data = "junk" },
+    } }).len);
+    try testing.expectEqual(.resync, viewer.state);
+
+    // The probe response (marker + session id) proves the stream is clean: we
+    // parse the session id, move to command_queue, and emit the rebuild's first
+    // command (client_size as refresh-client -C).
+    {
+        const actions = viewer.next(.{ .tmux = .{
+            .block_end = Viewer.resync_marker ++ " $7",
+        } });
+        var found = false;
+        for (actions) |a| {
+            if (a == .command and std.mem.startsWith(u8, a.command, "refresh-client -C")) {
+                found = true;
+            }
+        }
+        try testing.expect(found);
+    }
+    try testing.expectEqual(.command_queue, viewer.state);
+    try testing.expectEqual(@as(usize, 7), viewer.session_id);
+
+    // The rebuild then drives the normal version/list-windows flow. Feed the
+    // version + a single-window list-windows and confirm the topology rebuilds.
+    try testViewer(&viewer, &.{
+        .{ .input = .{ .tmux = .{ .block_end = "" } }, .contains_command = "display-message" },
+        .{ .input = .{ .tmux = .{ .block_end = "3.5a" } }, .contains_command = "list-windows" },
+        .{
+            .input = .{ .tmux = .{ .block_end = "$7 @0 1 %0 99 39 b7dd,99x39,0,0,0 bash" } },
+            .contains_tags = &.{ .windows, .command },
+        },
+    });
+    try testing.expectEqual(@as(usize, 1), viewer.windows.items.len);
+}
+
+test "parseResyncSessionId parses $<id>, rejects malformed" {
+    try testing.expectEqual(@as(?usize, 7), Viewer.parseResyncSessionId(" $7"));
+    try testing.expectEqual(@as(?usize, 12), Viewer.parseResyncSessionId(" $12\n"));
+    try testing.expectEqual(@as(?usize, null), Viewer.parseResyncSessionId(" 7"));
+    try testing.expectEqual(@as(?usize, null), Viewer.parseResyncSessionId(" $"));
+    try testing.expectEqual(@as(?usize, null), Viewer.parseResyncSessionId(""));
 }
 
 test "session change resets the sent-FIFO" {

@@ -2405,6 +2405,35 @@ pub const CAPI = struct {
     }
     // ROOTSHELL-TMUX END FROZEN-ABI (id=embedded-tmux-detach)
 
+    // ROOTSHELL-TMUX BEGIN FROZEN-ABI (id=embedded-tmux-resume)
+    // ghostty_surface_tmux_resume re-enters tmux control mode on a surface whose
+    // tssh session reattached a still-live `tmux -CC` after the iOS app
+    // relaunched. The fresh surface never saw the `ESC P 1000 p` preamble, so the
+    // continuing control stream would render as garbage and no reconcile would
+    // fire. The iOS app calls this once the restored gateway session is back in
+    // the running state. Posts to the IO thread, which synthesizes control-mode
+    // entry and drains/rebuilds via the viewer resync path. No-op if a viewer is
+    // already active. Keep the signature stable. reapply: re-add this export
+    // inside the CAPI struct. See docs/tmux-control-mode-fork.md.
+    export fn ghostty_surface_tmux_resume(surface: *Surface) void {
+        surface.core_surface.io.queueMessage(.{ .tmux_resume = {} }, .unlocked);
+    }
+    // ROOTSHELL-TMUX END FROZEN-ABI (id=embedded-tmux-resume)
+
+    // ROOTSHELL-TMUX BEGIN FROZEN-ABI (id=embedded-tmux-resume-abort)
+    // ghostty_surface_tmux_resume_abort aborts an in-progress resume started by
+    // ghostty_surface_tmux_resume. The iOS app calls it from its resume watchdog
+    // when no reconcile arrives (tmux died / session expired / the reattached pty
+    // is at a bare shell), so the resync probe will never echo back. Tears down
+    // the resync viewer and returns the gateway's parser to ground so its shell
+    // renders normally. No-op if no viewer is active. Keep the signature stable.
+    // reapply: re-add this export inside the CAPI struct. See
+    // docs/tmux-control-mode-fork.md.
+    export fn ghostty_surface_tmux_resume_abort(surface: *Surface) void {
+        surface.core_surface.io.queueMessage(.{ .tmux_resume_abort = {} }, .unlocked);
+    }
+    // ROOTSHELL-TMUX END FROZEN-ABI (id=embedded-tmux-resume-abort)
+
     // ROOTSHELL-TMUX BEGIN FROZEN-ABI (id=embedded-tmux-active)
     // ghostty_surface_tmux_active is the iOS Swift app's ESC escape-hatch probe:
     // it lets the app detach (via ghostty_surface_tmux_detach) whenever this
