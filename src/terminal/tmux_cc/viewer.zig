@@ -408,6 +408,9 @@ pub const Viewer = struct {
         width: usize,
         height: usize,
         layout: Layout,
+        /// Active pane for this tmux window. In list-windows context,
+        /// `pane_id` is the active pane for the window.
+        active_pane_id: usize = 0,
         /// Window name from tmux (e.g., "bash", "vim"). Stored on the
         /// shared windows arena and valid until the next list-windows
         /// refresh. Empty slice if not yet known.
@@ -826,12 +829,12 @@ pub const Viewer = struct {
                 command_consumed = true;
             },
 
-            .output => |out| self.handlePaneOutput(out.pane_id, out.data),
+            .output => |out| self.handlePaneOutput(&actions, out.pane_id, out.data),
 
             // Extended output: sent instead of %output when pause-after
             // flow control is enabled. Treated identically to %output;
             // the age_ms field is informational for flow control timing.
-            .extended_output => |out| self.handlePaneOutput(out.pane_id, out.data),
+            .extended_output => |out| self.handlePaneOutput(&actions, out.pane_id, out.data),
 
             // Session changed means we switched to a different tmux session.
             // We need to reset our state and start fresh with list-windows.
@@ -892,6 +895,13 @@ pub const Viewer = struct {
             // The active pane changed in tmux. Forward to the caller
             // so it can update focus to the correct window and pane.
             .window_pane_changed => |info| {
+                for (self.windows.items) |*window| {
+                    if (window.id == info.window_id) {
+                        window.active_pane_id = info.pane_id;
+                        break;
+                    }
+                }
+
                 var arena = self.action_arena.promote(self.alloc);
                 defer self.action_arena = arena.state;
                 actions.append(arena.allocator(), .{
@@ -1258,11 +1268,27 @@ pub const Viewer = struct {
         };
     }
 
+    fn windowForActivePane(self: *const Viewer, pane_id: usize) ?usize {
+        for (self.windows.items) |window| {
+            if (window.active_pane_id == pane_id) return window.id;
+        }
+        return null;
+    }
+
+    fn emitPaneTitle(self: *Viewer, actions: *std.ArrayList(Action), pane_id: usize, title: []const u8) void {
+        const window_id = self.windowForActivePane(pane_id) orelse return;
+        self.setPaneTitle(window_id, title) catch {
+            log.warn("failed to store pane title for window={}", .{window_id});
+            return;
+        };
+        self.emitWindowTitle(actions, window_id);
+    }
+
     /// Handle output (or extended output) for a pane. Suppresses data for
     /// panes that haven't completed their capture-pane initialization
     /// sequence — processing output before capture completes would corrupt
     /// the terminal state being built up by receivedPaneHistory/Visible.
-    fn handlePaneOutput(self: *Viewer, pane_id: usize, data: []const u8) void {
+    fn handlePaneOutput(self: *Viewer, actions: *std.ArrayList(Action), pane_id: usize, data: []const u8) void {
         const pane = if (self.panes.getEntry(pane_id)) |entry|
             entry.value_ptr.*
         else
@@ -1270,7 +1296,7 @@ pub const Viewer = struct {
         if (pane != null and !pane.?.initialized) {
             log.debug("suppressing output for uninitialized pane id={}", .{pane_id});
         } else {
-            self.receivedOutput(pane_id, data) catch |err| {
+            self.receivedOutput(actions, pane_id, data) catch |err| {
                 log.warn("failed to process output for pane id={}: {}", .{ pane_id, err });
             };
         }
@@ -1714,6 +1740,7 @@ pub const Viewer = struct {
                 .width = data.window_width,
                 .height = data.window_height,
                 .layout = layout,
+                .active_pane_id = data.pane_id,
                 .name = try win_alloc.dupe(u8, data.window_name),
             });
         }
@@ -2003,8 +2030,16 @@ pub const Viewer = struct {
         if (pane.wake_fn) |f| f(pane.wake_ctx);
     }
 
+    fn titleFingerprint(title: ?[:0]const u8) u64 {
+        const slice: []const u8 = title orelse "";
+        var hasher = std.hash.Wyhash.init(slice.len);
+        hasher.update(slice);
+        return hasher.final();
+    }
+
     fn receivedOutput(
         self: *Viewer,
+        actions: *std.ArrayList(Action),
         id: usize,
         data: []const u8,
     ) !void {
@@ -2056,7 +2091,12 @@ pub const Viewer = struct {
                 i += 1;
             }
         }
+        const title_before = titleFingerprint(pane.terminal.getTitle());
         pane.stream.nextSlice(buf[0..n]);
+        if (titleFingerprint(pane.terminal.getTitle()) != title_before) {
+            const title: []const u8 = pane.terminal.getTitle() orelse "";
+            self.emitPaneTitle(actions, id, title);
+        }
 
         // Route any query replies the pane terminal generated (kitty-keyboard,
         // DECRQM, OSC 4/12, ...) back to the app via send-keys. tmux relays the
@@ -4866,7 +4906,9 @@ test "window_pane_changed produces focus action" {
             } } },
             .contains_tags = &.{.focus},
             .check = (struct {
-                fn check(_: *Viewer, actions: []const Viewer.Action) anyerror!void {
+                fn check(v: *Viewer, actions: []const Viewer.Action) anyerror!void {
+                    try testing.expectEqual(@as(usize, 1), v.windows.items[0].active_pane_id);
+
                     var found = false;
                     for (actions) |action| {
                         if (action == .focus) {
@@ -4986,6 +5028,78 @@ test "output suppressed for uninitialized panes" {
                     );
                     defer testing.allocator.free(str);
                     try testing.expect(std.mem.containsAtLeast(u8, str, 1, "real output"));
+                }
+            }).check,
+        },
+    });
+}
+
+test "output OSC title from active pane produces title action" {
+    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    defer viewer.deinit();
+    defer {
+        var it = viewer.panes.iterator();
+        while (it.next()) |kv| kv.value_ptr.*.pending_attach = false;
+    }
+
+    try testViewer(&viewer, &.{
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{
+            .input = .{ .tmux = .{ .session_changed = .{
+                .id = 1,
+                .name = "test",
+            } } },
+            .contains_command = "refresh-client",
+        },
+        .{
+            .input = .{ .tmux = .{ .block_end = "" } },
+            .contains_command = "display-message",
+        },
+        .{
+            .input = .{ .tmux = .{ .block_end = "3.5a" } },
+            .contains_command = "list-windows",
+        },
+        .{
+            .input = .{ .tmux = .{
+                .block_end =
+                \\$0 @0 1 %0 83 44 b7dd,83x44,0,0,0 bash
+                ,
+            } },
+            .contains_tags = &.{ .windows, .command },
+        },
+        // Complete capture-pane sequence: 4 captures, pane_state, then the
+        // trailing title subscription command.
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{
+            .input = .{ .tmux = .{ .block_end = "" } },
+            .check = (struct {
+                fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
+                    try testing.expect(v.command_queue.empty());
+                    try testing.expectEqual(@as(usize, 0), v.windows.items[0].active_pane_id);
+                }
+            }).check,
+        },
+        .{
+            .input = .{ .tmux = .{ .output = .{
+                .pane_id = 0,
+                .data = "\\033]0;codex spinner\\007",
+            } } },
+            .contains_tags = &.{.title},
+            .check = (struct {
+                fn check(_: *Viewer, actions: []const Viewer.Action) anyerror!void {
+                    var found = false;
+                    for (actions) |action| {
+                        if (action == .title) {
+                            try testing.expectEqual(@as(usize, 0), action.title.window_id);
+                            try testing.expectEqualStrings("codex spinner", action.title.name);
+                            found = true;
+                        }
+                    }
+                    try testing.expect(found);
                 }
             }).check,
         },
