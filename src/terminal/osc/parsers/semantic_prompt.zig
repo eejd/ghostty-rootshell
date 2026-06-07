@@ -60,6 +60,16 @@ pub const Command = struct {
     }
 };
 
+// ClickEvents can either be a click_events=1 or click_events=2.
+// The click_events=1 sends a click event with the absolute coordinates
+// of the click.
+// The click_events=2 sends a click event with the coordinates of the click
+// relative to the prompt area.
+// See https://github.com/ghostty-org/ghostty/issues/10865 and
+// https://github.com/kovidgoyal/kitty/issues/9500
+// for further details.
+pub const ClickEvents = enum { Absolute, Relative };
+
 pub const Option = enum {
     aid,
     cl,
@@ -102,7 +112,7 @@ pub const Option = enum {
             .err => []const u8,
             .redraw => Redraw,
             .special_key => bool,
-            .click_events => bool,
+            .click_events => ClickEvents,
             .cmdline => []const u8,
             .cmdline_url => []const u8,
             .exit_code => i32,
@@ -200,7 +210,12 @@ pub const Option = enum {
                     .last
                 else
                     null,
-                .special_key, .click_events => if (value.len == 1) switch (value[0]) {
+                .click_events => if (value.len == 1) switch (value[0]) {
+                    '1' => .Absolute,
+                    '2' => .Relative,
+                    else => null,
+                } else null,
+                .special_key => if (value.len == 1) switch (value[0]) {
                     '0' => false,
                     '1' => true,
                     else => null,

@@ -1226,10 +1226,8 @@ pub fn semanticPrompt(
                 // within a prompt area to SGR mouse events and defers to the
                 // shell to handle them.
                 if (cmd.readOption(.click_events)) |v| {
-                    if (v) {
-                        screen.semantic_prompt.click = .click_events;
-                        break :click;
-                    }
+                    screen.semantic_prompt.click = .{ .click_events = v } ;
+                    break :click;
                 }
 
                 // If click_events was not set or disabled, fallback to `cl`.
