@@ -20,6 +20,132 @@ const posix = std.posix;
 
 const log = std.log.scoped(.io_handler);
 
+// ROOTSHELL-TMUX BEGIN FROZEN-ABI (id=tmux-debug-snapshot-struct)
+// Privacy-safe scalar snapshot of tmux control-mode internals, filled by
+// `ghostty_surface_tmux_debug_snapshot` for the iOS debug log. Contains ONLY
+// numeric ids, counts, enum codes, ages (ms) and booleans — never pane output,
+// titles, command text, keystrokes, or hostnames — so the log is safe for users
+// to share with us. Read losslessly off the IO thread via an atomic mirror, so
+// it stays valid even when the IO thread is wedged (the exact case this exists
+// to diagnose). Layout is FROZEN: only APPEND new fields at the end and bump
+// `abi_version`; never reorder or resize existing fields (the Swift bridge maps
+// it by C layout). Mirrored byte-for-byte in include/ghostty.h. See
+// docs/tmux-control-mode-fork.md.
+pub const TmuxDebugSnapshot = extern struct {
+    /// Snapshot ABI version. Bumped when fields are appended. Currently 1.
+    abi_version: u32,
+
+    // --- liveness / state (booleans are 0/1) ---
+    /// 0 none, 1 startup, 2 resync, 3 command_queue, 4 defunct.
+    viewer_state: u8,
+    /// 0 inactive(unhooked), 1 idle, 2 notification, 3 block, 4 broken.
+    parser_state: u8,
+    parser_tolerant: u8,
+    tmux_active: u8,
+    /// DCS still hooked after %exit / broken — the gateway-stuck signal.
+    force_unhook_pending: u8,
+    resume_pending: u8,
+    command_in_flight: u8,
+    /// Command union tag of the in-flight command (0 none). See commandKindCode:
+    /// 1 list_windows, 2 pane_history, 3 pane_visible, 4 pane_state,
+    /// 5 tmux_version, 6 subscribe_titles, 7 pane_mode_query, 8 client_size,
+    /// 9 continue_pane, 10 pane_color_report, 11 user.
+    in_flight_cmd_kind: u8,
+    /// control.ErrorCode of the parser / viewer respectively.
+    parser_last_error: u8,
+    viewer_last_error: u8,
+
+    // --- command pipeline ---
+    command_queue_depth: u32,
+    command_queue_highwater: u32,
+    sent_fifo_depth: u32,
+    sent_fifo_highwater: u32,
+
+    // --- topology ---
+    session_id: u32,
+    window_count: u32,
+    pane_count: u32,
+    retired_pane_count: u32,
+    paused_pane_count: u32,
+    uninitialized_pane_count: u32,
+    /// Sum of per-pane query replies buffered but not yet flushed back to tmux
+    /// (a TUI waiting on a reply tmux never answered shows up here).
+    pending_pane_responses: u32,
+
+    // --- control buffer (bytes only, never the content) ---
+    parser_buffer_bytes: u32,
+    parser_buffer_highwater: u32,
+    parser_buffer_max_bytes: u32,
+
+    // --- timings, ms; computed at read time so they grow during a stall.
+    //     0 means "never / n.a." ---
+    ms_since_last_output: u64,
+    ms_since_last_block: u64,
+    ms_since_last_command_sent: u64,
+    ms_since_last_notification: u64,
+    ms_since_viewer_created: u64,
+    resync_age_ms: u64,
+
+    // --- monotonic counters since viewer creation ---
+    total_notifications: u64,
+    total_blocks: u64,
+    total_output_events: u64,
+    total_commands_sent: u64,
+};
+// ROOTSHELL-TMUX END FROZEN-ABI (id=tmux-debug-snapshot-struct)
+
+/// IO-thread-written / app-thread-read atomic mirror backing
+/// `TmuxDebugSnapshot`. The IO thread refreshes it at existing tmux event sites
+/// (only while `enabled`, so it is a no-op until the app first calls the
+/// snapshot ABI); the app thread reads it locklessly with relaxed ordering.
+/// Per-field relaxed atomics (not a seqlock): fields may be from instants a few
+/// microseconds apart, which is irrelevant for a 1–2 Hz diagnostic dump and
+/// keeps the read free of any dependency on the (possibly wedged) IO thread.
+/// Timestamps are wall-clock ms (`std.time.milliTimestamp`), 0 = never; the app
+/// reader converts them to ages. ROOTSHELL-TMUX (id=tmux-debug-mirror)
+const TmuxDebugMirror = struct {
+    enabled: std.atomic.Value(bool) = .init(false),
+
+    viewer_state: std.atomic.Value(u8) = .init(0),
+    parser_state: std.atomic.Value(u8) = .init(0),
+    parser_tolerant: std.atomic.Value(bool) = .init(false),
+    force_unhook: std.atomic.Value(bool) = .init(false),
+    resume_pending: std.atomic.Value(bool) = .init(false),
+    command_in_flight: std.atomic.Value(bool) = .init(false),
+    in_flight_cmd_kind: std.atomic.Value(u8) = .init(0),
+    parser_last_error: std.atomic.Value(u8) = .init(0),
+    viewer_last_error: std.atomic.Value(u8) = .init(0),
+
+    command_queue_depth: std.atomic.Value(u32) = .init(0),
+    command_queue_highwater: std.atomic.Value(u32) = .init(0),
+    sent_fifo_depth: std.atomic.Value(u32) = .init(0),
+    sent_fifo_highwater: std.atomic.Value(u32) = .init(0),
+
+    session_id: std.atomic.Value(u32) = .init(0),
+    window_count: std.atomic.Value(u32) = .init(0),
+    pane_count: std.atomic.Value(u32) = .init(0),
+    retired_pane_count: std.atomic.Value(u32) = .init(0),
+    paused_pane_count: std.atomic.Value(u32) = .init(0),
+    uninitialized_pane_count: std.atomic.Value(u32) = .init(0),
+    pending_pane_responses: std.atomic.Value(u32) = .init(0),
+
+    parser_buffer_bytes: std.atomic.Value(u32) = .init(0),
+    parser_buffer_highwater: std.atomic.Value(u32) = .init(0),
+    parser_buffer_max_bytes: std.atomic.Value(u32) = .init(0),
+
+    last_output_ms: std.atomic.Value(i64) = .init(0),
+    last_block_ms: std.atomic.Value(i64) = .init(0),
+    last_command_ms: std.atomic.Value(i64) = .init(0),
+    last_notification_ms: std.atomic.Value(i64) = .init(0),
+    viewer_created_ms: std.atomic.Value(i64) = .init(0),
+    resync_started_ms: std.atomic.Value(i64) = .init(0),
+
+    total_notifications: std.atomic.Value(u64) = .init(0),
+    total_blocks: std.atomic.Value(u64) = .init(0),
+    total_output_events: std.atomic.Value(u64) = .init(0),
+    total_commands_sent: std.atomic.Value(u64) = .init(0),
+};
+
 /// This is used as the handler for the terminal.Stream type. This is
 /// stateful and is expected to live for the entire lifetime of the terminal.
 /// It is NOT VALID to stop a stream handler, create a new one, and use that
@@ -103,6 +229,13 @@ pub const StreamHandler = struct {
     /// `.resync` and sends the resync probe. Cleared as soon as it is consumed.
     /// ROOTSHELL-TMUX (id=streamhandler-resume-pending-field)
     tmux_resume_pending: bool = false,
+
+    /// Atomic mirror of tmux control-mode internals for the iOS debug snapshot
+    /// (`ghostty_surface_tmux_debug_snapshot`). Written by the IO thread at tmux
+    /// event sites via `refreshTmuxDebug` (only once the app has opted in), read
+    /// locklessly by the app thread via `tmuxDebugSnapshot`. ROOTSHELL-TMUX
+    /// (id=tmux-debug-mirror)
+    tmux_debug: if (tmux_enabled) TmuxDebugMirror else void = if (tmux_enabled) .{} else {},
 
     /// This is set to true when a message was written to the termio
     /// mailbox. This can be used by callers to determine if they need
@@ -533,6 +666,7 @@ pub const StreamHandler = struct {
         if (comptime !tmux_enabled) return;
         const viewer = self.tmux_viewer orelse return;
         viewer.recordTrackedSend();
+        self.tmuxDebugNoteCommandSent(); // ROOTSHELL-TMUX (id=tmux-debug-mirror)
     }
 
     /// Record (on the IO thread, at the drain/write point) that an untracked
@@ -542,6 +676,20 @@ pub const StreamHandler = struct {
         if (comptime !tmux_enabled) return;
         const viewer = self.tmux_viewer orelse return;
         viewer.recordUntrackedSend();
+        self.tmuxDebugNoteCommandSent(); // ROOTSHELL-TMUX (id=tmux-debug-mirror)
+    }
+
+    /// Stamp "a command was just written to tmux" into the debug mirror, then
+    /// refresh so the in-flight/FIFO depth reflects the send. No-op until the app
+    /// opts in. ROOTSHELL-TMUX (id=tmux-debug-mirror)
+    fn tmuxDebugNoteCommandSent(self: *StreamHandler) void {
+        if (comptime !tmux_enabled) return;
+        const m = &self.tmux_debug;
+        if (m.enabled.load(.monotonic)) {
+            m.last_command_ms.store(std.time.milliTimestamp(), .monotonic);
+            _ = m.total_commands_sent.fetchAdd(1, .monotonic);
+        }
+        self.refreshTmuxDebug();
     }
 
     /// Detach this tmux control-mode client. Queues a `detach-client` through the
@@ -564,6 +712,258 @@ pub const StreamHandler = struct {
         // pointer would be a data race. The flag is stored next to every viewer
         // mutation on the IO thread.
         return self.tmux_active_flag.load(.monotonic);
+    }
+
+    /// Enable + prime the tmux debug mirror when a viewer is created. The mirror
+    /// runs for the gateway's whole lifetime (NOT only after the app opts into
+    /// logging) so a snapshot taken after the user hits a hang and THEN enables
+    /// logging still reflects real state — the diagnostic's whole point. Cost is
+    /// bounded to tmux control-mode DCS events (the high-volume %output path is
+    /// skipped in `refreshTmuxDebugAfter`); non-tmux surfaces never enable it.
+    /// Resets per-session fields so a fresh gateway starts clean. ROOTSHELL-TMUX
+    /// (id=tmux-debug-mirror)
+    fn tmuxDebugOnViewerCreated(self: *StreamHandler) void {
+        if (comptime !tmux_enabled) return;
+        const m = &self.tmux_debug;
+        m.command_queue_highwater.store(0, .monotonic);
+        m.sent_fifo_highwater.store(0, .monotonic);
+        m.parser_buffer_highwater.store(0, .monotonic);
+        m.viewer_created_ms.store(0, .monotonic); // refresh stamps "now"
+        m.resync_started_ms.store(0, .monotonic);
+        m.last_output_ms.store(0, .monotonic);
+        m.last_block_ms.store(0, .monotonic);
+        m.last_command_ms.store(0, .monotonic);
+        m.last_notification_ms.store(0, .monotonic);
+        m.total_notifications.store(0, .monotonic);
+        m.total_blocks.store(0, .monotonic);
+        m.total_output_events.store(0, .monotonic);
+        m.total_commands_sent.store(0, .monotonic);
+        m.parser_last_error.store(0, .monotonic);
+        m.viewer_last_error.store(0, .monotonic);
+        m.enabled.store(true, .monotonic);
+        self.refreshTmuxDebug(); // populate immediately so an idle session is warm
+    }
+
+    /// Refresh after a completed DCS command, skipping the full field sync for
+    /// high-volume %output/%extended-output (their last-output timestamp is
+    /// stamped cheaply in the .tmux dispatch arm; the diagnostic fields only move
+    /// on lower-volume events — blocks, layout/window/session changes — and on
+    /// command sends). Keeps the hot path to a couple of atomic stores.
+    /// ROOTSHELL-TMUX (id=tmux-debug-mirror)
+    fn refreshTmuxDebugAfter(self: *StreamHandler, cmd: *const terminal.dcs.Command) void {
+        if (comptime !tmux_enabled) return;
+        switch (cmd.*) {
+            .tmux => |t| switch (t) {
+                .output, .extended_output => return,
+                else => {},
+            },
+            else => {},
+        }
+        self.refreshTmuxDebug();
+    }
+
+    /// Refresh the tmux debug mirror from the current viewer + DCS-parser state.
+    /// Runs on the IO thread at tmux event sites; a no-op unless a tmux gateway
+    /// has enabled the mirror (`tmuxDebugOnViewerCreated`). O(1) plus a tiny pane
+    /// loop, no allocation, never touches the pty or blocks. ROOTSHELL-TMUX
+    /// (id=tmux-debug-mirror)
+    fn refreshTmuxDebug(self: *StreamHandler) void {
+        if (comptime !tmux_enabled) return;
+        const m = &self.tmux_debug;
+        if (!m.enabled.load(.monotonic)) return;
+        const now = std.time.milliTimestamp();
+
+        // Parser (DCS control channel) state. The control parser lives at
+        // self.dcs.state.tmux only while the channel is hooked.
+        switch (self.dcs.state) {
+            .tmux => |*p| {
+                const code: u8 = switch (p.state) {
+                    .idle => 1,
+                    .notification => 2,
+                    .block => 3,
+                    .broken => 4,
+                };
+                m.parser_state.store(code, .monotonic);
+                m.parser_tolerant.store(p.tolerant, .monotonic);
+                m.parser_last_error.store(@intFromEnum(p.last_error), .monotonic);
+                // The buffer is deinited while broken; never read it then.
+                const blen: u32 = if (p.state != .broken)
+                    @intCast(@min(p.buffer.written().len, std.math.maxInt(u32)))
+                else
+                    0;
+                m.parser_buffer_bytes.store(blen, .monotonic);
+                if (blen > m.parser_buffer_highwater.load(.monotonic))
+                    m.parser_buffer_highwater.store(blen, .monotonic);
+                m.parser_buffer_max_bytes.store(
+                    @intCast(@min(p.max_bytes, std.math.maxInt(u32))),
+                    .monotonic,
+                );
+            },
+            else => {
+                m.parser_state.store(0, .monotonic);
+                m.parser_tolerant.store(false, .monotonic);
+            },
+        }
+
+        m.force_unhook.store(self.tmux_force_unhook, .monotonic);
+        m.resume_pending.store(self.tmux_resume_pending, .monotonic);
+
+        if (self.tmux_viewer) |viewer| {
+            const vcode: u8 = switch (viewer.state) {
+                .startup => 1,
+                .resync => 2,
+                .command_queue => 3,
+                .defunct => 4,
+            };
+            m.viewer_state.store(vcode, .monotonic);
+            m.command_in_flight.store(viewer.command_in_flight, .monotonic);
+            m.viewer_last_error.store(@intFromEnum(viewer.last_error), .monotonic);
+            m.session_id.store(@intCast(@min(viewer.session_id, std.math.maxInt(u32))), .monotonic);
+
+            const qd: u32 = @intCast(@min(viewer.command_queue.len(), std.math.maxInt(u32)));
+            m.command_queue_depth.store(qd, .monotonic);
+            if (qd > m.command_queue_highwater.load(.monotonic))
+                m.command_queue_highwater.store(qd, .monotonic);
+
+            const fd: u32 = @intCast(@min(viewer.sent_fifo.len(), std.math.maxInt(u32)));
+            m.sent_fifo_depth.store(fd, .monotonic);
+            if (fd > m.sent_fifo_highwater.load(.monotonic))
+                m.sent_fifo_highwater.store(fd, .monotonic);
+
+            // In-flight command kind: per the command_queue precondition, the
+            // head is the in-flight command while command_in_flight is set.
+            const kind: u8 = if (viewer.command_in_flight)
+                if (viewer.command_queue.first()) |first| switch (first.*) {
+                    .list_windows => 1,
+                    .pane_history => 2,
+                    .pane_visible => 3,
+                    .pane_state => 4,
+                    .tmux_version => 5,
+                    .subscribe_titles => 6,
+                    .pane_mode_query => 7,
+                    .client_size => 8,
+                    .continue_pane => 9,
+                    .pane_color_report => 10,
+                    .user => 11,
+                } else 0
+            else
+                0;
+            m.in_flight_cmd_kind.store(kind, .monotonic);
+
+            m.window_count.store(@intCast(@min(viewer.windows.items.len, std.math.maxInt(u32))), .monotonic);
+            m.retired_pane_count.store(@intCast(@min(viewer.retired_panes.items.len, std.math.maxInt(u32))), .monotonic);
+
+            var pcount: u32 = 0;
+            var paused: u32 = 0;
+            var uninit: u32 = 0;
+            var pending: u32 = 0;
+            var it = viewer.panes.iterator();
+            while (it.next()) |entry| {
+                const pane = entry.value_ptr.*;
+                pcount += 1;
+                if (pane.paused) paused += 1;
+                if (!pane.initialized) uninit += 1;
+                pending += @intCast(@min(pane.responses.items.len, std.math.maxInt(u32)));
+            }
+            m.pane_count.store(pcount, .monotonic);
+            m.paused_pane_count.store(paused, .monotonic);
+            m.uninitialized_pane_count.store(uninit, .monotonic);
+            m.pending_pane_responses.store(pending, .monotonic);
+
+            if (m.viewer_created_ms.load(.monotonic) == 0)
+                m.viewer_created_ms.store(now, .monotonic);
+            if (viewer.isResyncing()) {
+                if (m.resync_started_ms.load(.monotonic) == 0)
+                    m.resync_started_ms.store(now, .monotonic);
+            } else {
+                m.resync_started_ms.store(0, .monotonic);
+            }
+        } else {
+            // No viewer: zero the viewer-scoped fields so a stale topology from a
+            // prior session can't read back after teardown.
+            m.viewer_state.store(0, .monotonic);
+            m.command_in_flight.store(false, .monotonic);
+            m.in_flight_cmd_kind.store(0, .monotonic);
+            m.command_queue_depth.store(0, .monotonic);
+            m.sent_fifo_depth.store(0, .monotonic);
+            m.session_id.store(0, .monotonic);
+            m.window_count.store(0, .monotonic);
+            m.pane_count.store(0, .monotonic);
+            m.retired_pane_count.store(0, .monotonic);
+            m.paused_pane_count.store(0, .monotonic);
+            m.uninitialized_pane_count.store(0, .monotonic);
+            m.pending_pane_responses.store(0, .monotonic);
+            m.viewer_created_ms.store(0, .monotonic);
+            m.resync_started_ms.store(0, .monotonic);
+        }
+    }
+
+    /// Fill `out` with a privacy-safe snapshot of this surface's tmux
+    /// control-mode internals for the iOS debug log. Lockless atomic read on the
+    /// APP thread (no IO-thread hop), so it stays valid even when control mode is
+    /// protocol-stalled. The mirror is warmed for the whole gateway lifetime (see
+    /// `tmuxDebugOnViewerCreated`), so it reads real state even if the app enables
+    /// logging only AFTER a hang. Returns false (and zero-fills) when this surface
+    /// isn't a live tmux gateway. ROOTSHELL-TMUX (id=tmux-debug-snapshot)
+    pub fn tmuxDebugSnapshot(self: *StreamHandler, out: *TmuxDebugSnapshot) bool {
+        out.* = std.mem.zeroes(TmuxDebugSnapshot);
+        out.abi_version = 1;
+        if (comptime !tmux_enabled) return false;
+        const m = &self.tmux_debug;
+        if (!self.tmux_active_flag.load(.monotonic)) return false;
+
+        const now = std.time.milliTimestamp();
+
+        out.viewer_state = m.viewer_state.load(.monotonic);
+        out.parser_state = m.parser_state.load(.monotonic);
+        out.parser_tolerant = @intFromBool(m.parser_tolerant.load(.monotonic));
+        out.tmux_active = 1;
+        out.force_unhook_pending = @intFromBool(m.force_unhook.load(.monotonic));
+        out.resume_pending = @intFromBool(m.resume_pending.load(.monotonic));
+        out.command_in_flight = @intFromBool(m.command_in_flight.load(.monotonic));
+        out.in_flight_cmd_kind = m.in_flight_cmd_kind.load(.monotonic);
+        out.parser_last_error = m.parser_last_error.load(.monotonic);
+        out.viewer_last_error = m.viewer_last_error.load(.monotonic);
+
+        out.command_queue_depth = m.command_queue_depth.load(.monotonic);
+        out.command_queue_highwater = m.command_queue_highwater.load(.monotonic);
+        out.sent_fifo_depth = m.sent_fifo_depth.load(.monotonic);
+        out.sent_fifo_highwater = m.sent_fifo_highwater.load(.monotonic);
+
+        out.session_id = m.session_id.load(.monotonic);
+        out.window_count = m.window_count.load(.monotonic);
+        out.pane_count = m.pane_count.load(.monotonic);
+        out.retired_pane_count = m.retired_pane_count.load(.monotonic);
+        out.paused_pane_count = m.paused_pane_count.load(.monotonic);
+        out.uninitialized_pane_count = m.uninitialized_pane_count.load(.monotonic);
+        out.pending_pane_responses = m.pending_pane_responses.load(.monotonic);
+
+        out.parser_buffer_bytes = m.parser_buffer_bytes.load(.monotonic);
+        out.parser_buffer_highwater = m.parser_buffer_highwater.load(.monotonic);
+        out.parser_buffer_max_bytes = m.parser_buffer_max_bytes.load(.monotonic);
+
+        out.ms_since_last_output = msSince(now, m.last_output_ms.load(.monotonic));
+        out.ms_since_last_block = msSince(now, m.last_block_ms.load(.monotonic));
+        out.ms_since_last_command_sent = msSince(now, m.last_command_ms.load(.monotonic));
+        out.ms_since_last_notification = msSince(now, m.last_notification_ms.load(.monotonic));
+        out.ms_since_viewer_created = msSince(now, m.viewer_created_ms.load(.monotonic));
+        out.resync_age_ms = msSince(now, m.resync_started_ms.load(.monotonic));
+
+        out.total_notifications = m.total_notifications.load(.monotonic);
+        out.total_blocks = m.total_blocks.load(.monotonic);
+        out.total_output_events = m.total_output_events.load(.monotonic);
+        out.total_commands_sent = m.total_commands_sent.load(.monotonic);
+
+        return true;
+    }
+
+    /// Milliseconds between a stored wall-clock ms timestamp and `now`; 0 when
+    /// the timestamp is unset (0) or the clock moved backwards. ROOTSHELL-TMUX
+    /// (id=tmux-debug-mirror)
+    fn msSince(now: i64, then: i64) u64 {
+        if (then == 0) return 0;
+        const d = now - then;
+        return if (d > 0) @intCast(d) else 0;
     }
 
     /// Whether the `.tmux_resume` message should feed the synthetic control-mode
@@ -707,18 +1107,23 @@ pub const StreamHandler = struct {
         var cmd = self.dcs.hook(self.alloc, dcs) orelse return;
         defer cmd.deinit();
         try self.dcsCommand(&cmd);
+        // Sync the tmux debug mirror after each completed DCS command (no-op
+        // unless a tmux gateway is live). ROOTSHELL-TMUX (id=tmux-debug-mirror)
+        if (comptime tmux_enabled) self.refreshTmuxDebugAfter(&cmd);
     }
 
     pub inline fn dcsPut(self: *StreamHandler, byte: u8) !void {
         var cmd = self.dcs.put(byte) orelse return;
         defer cmd.deinit();
         try self.dcsCommand(&cmd);
+        if (comptime tmux_enabled) self.refreshTmuxDebugAfter(&cmd); // ROOTSHELL-TMUX (id=tmux-debug-mirror)
     }
 
     pub inline fn dcsUnhook(self: *StreamHandler) !void {
         var cmd = self.dcs.unhook() orelse return;
         defer cmd.deinit();
         try self.dcsCommand(&cmd);
+        if (comptime tmux_enabled) self.refreshTmuxDebugAfter(&cmd); // ROOTSHELL-TMUX (id=tmux-debug-mirror)
     }
 
     fn dcsCommand(self: *StreamHandler, cmd: *terminal.dcs.Command) !void {
@@ -735,6 +1140,29 @@ pub const StreamHandler = struct {
                 // data and arrives at very high volume. Log only the variant
                 // name at debug level.
                 log.debug("tmux control mode event={s}", .{@tagName(tmux)});
+
+                // Stamp per-kind arrival timestamps/counters into the debug
+                // mirror (no-op until the app opts in). The full field sync runs
+                // after dcsCommand returns (see dcsPut/dcsHook/dcsUnhook).
+                // ROOTSHELL-TMUX (id=tmux-debug-mirror)
+                tmuxdbg: {
+                    const m = &self.tmux_debug;
+                    if (!m.enabled.load(.monotonic)) break :tmuxdbg;
+                    const now = std.time.milliTimestamp();
+                    m.last_notification_ms.store(now, .monotonic);
+                    _ = m.total_notifications.fetchAdd(1, .monotonic);
+                    switch (tmux) {
+                        .output, .extended_output => {
+                            m.last_output_ms.store(now, .monotonic);
+                            _ = m.total_output_events.fetchAdd(1, .monotonic);
+                        },
+                        .block_end, .block_err => {
+                            m.last_block_ms.store(now, .monotonic);
+                            _ = m.total_blocks.fetchAdd(1, .monotonic);
+                        },
+                        else => {},
+                    }
+                }
 
                 switch (tmux) {
                     .enter => {
@@ -760,6 +1188,10 @@ pub const StreamHandler = struct {
                         viewer.colors = self.terminal.colors;
                         self.tmux_viewer = viewer;
                         self.tmux_active_flag.store(true, .monotonic); // ROOTSHELL-TMUX (id=streamhandler-tmux-active-flag)
+                        // Warm the debug mirror for this gateway's lifetime so a
+                        // snapshot taken after a hang (logging enabled late) is
+                        // populated. ROOTSHELL-TMUX (id=tmux-debug-mirror)
+                        self.tmuxDebugOnViewerCreated();
 
                         // Print a minimal in-TUI menu into the gateway terminal so
                         // the user has a discoverable, safe way to leave control

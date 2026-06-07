@@ -319,6 +319,12 @@ pub const Viewer = struct {
     /// errors on single-action returns, especially those such as `.exit`.
     action_single: [1]Action,
 
+    /// Most recent error this viewer hit, surfaced to the iOS debug snapshot
+    /// (`ghostty_surface_tmux_debug_snapshot`) so a defunct viewer can explain
+    /// itself. Diagnostic only — sticky (last specific write wins); never reset.
+    /// ROOTSHELL-TMUX (id=control-error-code)
+    last_error: control.ErrorCode = .none,
+
     pub const CommandQueue = CircBuf(Command, undefined);
 
     /// Sentinel printed by the resync probe (`display-message -p`) on a
@@ -785,6 +791,7 @@ pub const Viewer = struct {
         // allocator exhaustion can drop a marker, and there's nothing better to do
         // then.
         self.sent_fifo.ensureUnusedCapacity(self.alloc, 1) catch {
+            self.last_error = .sent_fifo_oom; // ROOTSHELL-TMUX (id=control-error-code)
             log.warn("tmux sent-FIFO out of memory; dropping marker (may desync)", .{});
             return;
         };
@@ -921,6 +928,7 @@ pub const Viewer = struct {
                         .enable_pause = true,
                     } }, .tmux_version, .list_windows },
                 ) catch {
+                    self.last_error = .resync_rebuild_failed; // ROOTSHELL-TMUX (id=control-error-code)
                     log.warn("resync: failed to queue rebuild, becoming defunct", .{});
                     return self.defunct();
                 };
@@ -1054,6 +1062,7 @@ pub const Viewer = struct {
                     };
                     self.command_in_flight = false;
                 } else {
+                    self.last_error = .unexpected_block; // ROOTSHELL-TMUX (id=control-error-code)
                     log.info("unexpected block output (no command in flight) err={}", .{tag == .block_err});
                 }
 
@@ -2736,6 +2745,9 @@ pub const Viewer = struct {
     }
 
     fn defunct(self: *Viewer) []const Action {
+        // Record a generic defunct reason if a more specific error wasn't
+        // already set on the way here. ROOTSHELL-TMUX (id=control-error-code)
+        if (self.last_error == .none) self.last_error = .defunct;
         self.state = .defunct;
         return self.singleAction(.exit);
     }

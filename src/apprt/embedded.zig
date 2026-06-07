@@ -28,6 +28,9 @@ const configpkg = @import("../config.zig");
 const Config = configpkg.Config;
 const build_config = @import("../build_config.zig");
 const String = @import("../main_c.zig").String;
+// ROOTSHELL-TMUX (id=embedded-tmux-debug-snapshot): privacy-safe scalar snapshot
+// of tmux control-mode internals, surfaced to the iOS debug log.
+const TmuxDebugSnapshot = @import("../termio/stream_handler.zig").TmuxDebugSnapshot;
 
 const log = std.log.scoped(.embedded_window);
 
@@ -2476,6 +2479,30 @@ pub const CAPI = struct {
         } }, .unlocked);
     }
     // ROOTSHELL-TMUX END FROZEN-ABI (id=embedded-tmux-command)
+
+    // ROOTSHELL-TMUX BEGIN FROZEN-ABI (id=embedded-tmux-debug-snapshot)
+    // ghostty_surface_tmux_debug_snapshot fills a privacy-safe scalar snapshot of
+    // this gateway's tmux control-mode internals (viewer/parser state, command
+    // queue + sent-FIFO depths, in-flight command kind, pending pane responses,
+    // ages) for the iOS debug log. Lockless atomic read on the app thread (NO
+    // IO-thread hop), so it stays valid even when control mode is protocol-stalled
+    // — the exact case it exists to diagnose. Returns false (and zero-fills `out`)
+    // when the surface isn't a live tmux gateway. The first call enables the cheap
+    // IO-thread mirror refresh. The `ghostty_tmux_debug_snapshot_s` layout is
+    // FROZEN: only append fields and bump `abi_version`; keep it byte-for-byte in
+    // sync with include/ghostty.h. reapply: re-add this export inside the CAPI
+    // struct plus the TmuxDebugSnapshot extern struct in stream_handler.zig. See
+    // docs/tmux-control-mode-fork.md.
+    /// Fill `out` with a privacy-safe snapshot of this surface's tmux
+    /// control-mode internals. Returns true if filled (live tmux gateway),
+    /// false if not (and `out` is zeroed).
+    export fn ghostty_surface_tmux_debug_snapshot(
+        surface: *Surface,
+        out: *TmuxDebugSnapshot,
+    ) bool {
+        return surface.core_surface.io.terminal_stream.handler.tmuxDebugSnapshot(out);
+    }
+    // ROOTSHELL-TMUX END FROZEN-ABI (id=embedded-tmux-debug-snapshot)
 
     /// Set the preedit text for the surface. This is used for IME
     /// composition. If the length is 0, then the preedit text is cleared.

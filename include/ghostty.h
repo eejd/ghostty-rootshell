@@ -1219,6 +1219,69 @@ GHOSTTY_API bool ghostty_surface_key_is_binding(ghostty_surface_t,
                                                    ghostty_binding_flags_e*);
 GHOSTTY_API void ghostty_surface_text(ghostty_surface_t, const char*, uintptr_t);
 GHOSTTY_API void ghostty_surface_send_input(ghostty_surface_t, const char*, uintptr_t);
+// ROOTSHELL-TMUX BEGIN FROZEN-ABI (id=ghostty-h-tmux-debug-snapshot)
+// Privacy-safe scalar snapshot of tmux control-mode internals for the iOS debug
+// log. Filled by ghostty_surface_tmux_debug_snapshot. Contains ONLY numeric
+// ids, counts, enum codes, ages (ms) and 0/1 booleans — never pane output,
+// titles, command text, keystrokes, or hostnames. Layout MUST match
+// stream_handler.zig's TmuxDebugSnapshot byte-for-byte; append-only, bump
+// abi_version. See docs/tmux-control-mode-fork.md.
+//
+// viewer_state: 0 none, 1 startup, 2 resync, 3 command_queue, 4 defunct
+// parser_state: 0 inactive, 1 idle, 2 notification, 3 block, 4 broken
+// in_flight_cmd_kind: 0 none, 1 list_windows, 2 pane_history, 3 pane_visible,
+//   4 pane_state, 5 tmux_version, 6 subscribe_titles, 7 pane_mode_query,
+//   8 client_size, 9 continue_pane, 10 pane_color_report, 11 user
+// parser_last_error/viewer_last_error: 0 none, 1 stray_byte_broken,
+//   2 buffer_overflow, 3 block_mismatch, 4 control_error, 5 unexpected_block,
+//   6 defunct, 7 sent_fifo_oom, 8 resync_rebuild_failed
+typedef struct {
+  uint32_t abi_version;
+
+  uint8_t viewer_state;
+  uint8_t parser_state;
+  uint8_t parser_tolerant;
+  uint8_t tmux_active;
+  uint8_t force_unhook_pending;
+  uint8_t resume_pending;
+  uint8_t command_in_flight;
+  uint8_t in_flight_cmd_kind;
+  uint8_t parser_last_error;
+  uint8_t viewer_last_error;
+
+  uint32_t command_queue_depth;
+  uint32_t command_queue_highwater;
+  uint32_t sent_fifo_depth;
+  uint32_t sent_fifo_highwater;
+
+  uint32_t session_id;
+  uint32_t window_count;
+  uint32_t pane_count;
+  uint32_t retired_pane_count;
+  uint32_t paused_pane_count;
+  uint32_t uninitialized_pane_count;
+  uint32_t pending_pane_responses;
+
+  uint32_t parser_buffer_bytes;
+  uint32_t parser_buffer_highwater;
+  uint32_t parser_buffer_max_bytes;
+
+  uint64_t ms_since_last_output;
+  uint64_t ms_since_last_block;
+  uint64_t ms_since_last_command_sent;
+  uint64_t ms_since_last_notification;
+  uint64_t ms_since_viewer_created;
+  uint64_t resync_age_ms;
+
+  uint64_t total_notifications;
+  uint64_t total_blocks;
+  uint64_t total_output_events;
+  uint64_t total_commands_sent;
+} ghostty_tmux_debug_snapshot_s;
+
+GHOSTTY_API bool ghostty_surface_tmux_debug_snapshot(ghostty_surface_t, ghostty_tmux_debug_snapshot_s*); // ROOTSHELL-TMUX FROZEN-ABI (id=ghostty-h-tmux-debug-snapshot)
+// ROOTSHELL-TMUX END FROZEN-ABI (id=ghostty-h-tmux-debug-snapshot)
+
 GHOSTTY_API void ghostty_surface_tmux_set_client_size(ghostty_surface_t, uint16_t, uint16_t); // ROOTSHELL-TMUX FROZEN-ABI (id=ghostty-h-set-client-size)
 GHOSTTY_API void ghostty_surface_tmux_detach(ghostty_surface_t); // ROOTSHELL-TMUX FROZEN-ABI (id=ghostty-h-tmux-detach)
 GHOSTTY_API void ghostty_surface_tmux_command(ghostty_surface_t, const char*, uintptr_t); // ROOTSHELL-TMUX FROZEN-ABI (id=ghostty-h-tmux-command)

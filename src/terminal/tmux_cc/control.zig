@@ -16,6 +16,32 @@ const log = std.log.scoped(.terminal_tmux);
 /// filters incoming notifications by this name.
 pub const title_subscription_name = "ghostty_title";
 
+/// Privacy-safe last-error code surfaced to the iOS debug snapshot
+/// (`ghostty_surface_tmux_debug_snapshot`). Shared by the control `Parser` and
+/// the `Viewer` so a single u8 in the snapshot can explain WHY the channel
+/// broke or the viewer went defunct, without ever exposing the offending bytes.
+/// FROZEN for the snapshot ABI: only append; never renumber. ROOTSHELL-TMUX
+/// (id=control-error-code)
+pub const ErrorCode = enum(u8) {
+    none = 0,
+    /// `.idle` saw a stray non-'%' byte and broke the channel.
+    stray_byte_broken = 1,
+    /// The control buffer exceeded `max_bytes`.
+    buffer_overflow = 2,
+    /// A `%begin`/`%end` token mismatch (logged, block still processed).
+    block_mismatch = 3,
+    /// tmux reported a command error (`%error` block).
+    control_error = 4,
+    /// The viewer received a block with no command in flight.
+    unexpected_block = 5,
+    /// The viewer went defunct for an unspecified reason.
+    defunct = 6,
+    /// The sent-FIFO could not grow (allocator exhaustion; may desync).
+    sent_fifo_oom = 7,
+    /// A resume resync failed to queue its rebuild.
+    resync_rebuild_failed = 8,
+};
+
 /// A tmux control mode parser. This takes in output from tmux control
 /// mode and parses it into a structured notifications.
 ///
@@ -74,6 +100,11 @@ pub const Parser = struct {
     /// accepted. ROOTSHELL-TMUX (id=control-resync-line-start)
     resync_at_line_start: bool = false,
 
+    /// Most recent error this parser hit, surfaced to the iOS debug snapshot.
+    /// Diagnostic only — sticky (last write wins); never reset. ROOTSHELL-TMUX
+    /// (id=control-error-code)
+    last_error: ErrorCode = .none,
+
     /// Parsed tokens from a %begin, %end, or %error guard line.
     /// tmux guarantees these match between begin and end/error.
     const BlockInfo = struct {
@@ -123,6 +154,7 @@ pub const Parser = struct {
 
         if (self.buffer.written().len >= self.max_bytes) {
             log.warn("tmux control buffer exceeded {} bytes; breaking control channel", .{self.max_bytes});
+            self.last_error = .buffer_overflow; // ROOTSHELL-TMUX (id=control-error-code)
             self.broken();
             return error.OutOfMemory;
         }
@@ -161,6 +193,7 @@ pub const Parser = struct {
             } else if (byte != '%') {
                 // Control mode output should always be wrapped in '%begin/%end'
                 // or be a '%' notification; a stray byte breaks the channel.
+                self.last_error = .stray_byte_broken; // ROOTSHELL-TMUX (id=control-error-code)
                 self.broken();
                 return .{ .broken = {} };
             } else {
@@ -205,6 +238,7 @@ pub const Parser = struct {
                             begin.command_id != result.info.command_id or
                             begin.flags != result.info.flags)
                         {
+                            self.last_error = .block_mismatch; // ROOTSHELL-TMUX (id=control-error-code)
                             log.warn(
                                 "block begin/end mismatch: begin=({},{},{}) end=({},{},{})",
                                 .{
@@ -233,6 +267,7 @@ pub const Parser = struct {
                     switch (result.terminator) {
                         .end => return .{ .block_end = output },
                         .err => {
+                            self.last_error = .control_error; // ROOTSHELL-TMUX (id=control-error-code)
                             log.warn("tmux control mode error={s}", .{output});
                             return .{ .block_err = output };
                         },

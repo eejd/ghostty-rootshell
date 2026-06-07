@@ -96,6 +96,22 @@ These must remain byte-stable. Mirror any change in `ghostty-ios`.
   `ghostty_surface_tmux_resume_abort` (`id=embedded-tmux-resume-abort`) — aborts a
   resume from the app's watchdog (tmux gone / session expired), tearing down the
   resync viewer and returning the parser to ground.
+- **Debug snapshot (`id=embedded-tmux-debug-snapshot`, FROZEN):**
+  `ghostty_surface_tmux_debug_snapshot` fills a privacy-safe scalar
+  `ghostty_tmux_debug_snapshot_s` (viewer/parser state, command-queue + sent-FIFO
+  depths, in-flight command kind, pending pane responses, ages) for the iOS tmux
+  debug log. It is a **lockless atomic read on the app thread** (no IO-thread hop)
+  off an atomic mirror (`TmuxDebugMirror`, `id=tmux-debug-mirror`) the IO thread
+  refreshes at tmux event sites — so it stays valid even when control mode is
+  protocol-stalled. The first call flips an `enabled` atomic that gates the
+  refresh, so it is a true no-op until the app opts in. The struct contains ONLY
+  numeric ids/counts/enum-codes/ages/booleans — never pane output, titles,
+  command text, keystrokes, or hostnames. The `ghostty_tmux_debug_snapshot_s`
+  layout is **append-only**: add fields at the end and bump `abi_version`; keep
+  `stream_handler.zig`'s `TmuxDebugSnapshot` and the `include/ghostty.h` typedef
+  byte-for-byte in sync. Error/state codes are documented inline in both. The
+  shared `control.ErrorCode` enum (`id=control-error-code`, in `control.zig`,
+  also set on `viewer.zig`) backs `parser_last_error` / `viewer_last_error`.
 - **Header:** the matching block in `include/ghostty.h`.
 
 **Verify the ABI** (from the `ghostty-dec20` repo, after a build):
