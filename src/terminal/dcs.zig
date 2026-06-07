@@ -125,6 +125,38 @@ pub const Handler = struct {
     /// Put a byte into the DCS handler. This will return a command
     /// if a command needs to be executed.
     pub fn put(self: *Handler, byte: u8) ?Command {
+        // CAN (0x18) / SUB (0x1A): ECMA-48 abort of a control string. The fork's
+        // parse table forwards them as .put (so a raw byte inside a tmux payload
+        // can't cut control mode short), so we honor the abort here instead. For
+        // an ordinary DCS, discard and return to .inactive — the stream then
+        // returns the parser to ground (see `isInactive`), otherwise the parser
+        // would wedge in dcs_passthrough until an ST arrives. For the live tmux
+        // control parser, forward them as content: control mode only ends via its
+        // own %exit / .broken, never a stray byte. ROOTSHELL-TMUX
+        // (id=dcs-can-sub-abort)
+        if (byte == 0x18 or byte == 0x1A) {
+            switch (self.state) {
+                .tmux => if (comptime build_options.tmux_control_mode) {
+                    // Forward as content (control mode only ends via %exit /
+                    // .broken). Flush any pending ESC FIRST: an `ESC CAN` / `ESC
+                    // SUB` embedded in the payload must keep BOTH bytes — clearing
+                    // pending_esc and forwarding only CAN/SUB would silently drop
+                    // the ESC the parser is deliberately preserving for tmux.
+                    if (self.pending_esc) {
+                        self.pending_esc = false;
+                        if (self.forwardPut(0x1B)) |cmd| return cmd;
+                    }
+                    return self.forwardPut(byte);
+                },
+                else => {},
+            }
+            // Ordinary DCS: abort the control string to ground (discard without
+            // dispatching). Dropping any buffered ESC is correct here — the whole
+            // aborted string is discarded.
+            self.discard();
+            return null;
+        }
+
         // Handle 7-bit ST detection. Because ESC (0x1B) is now forwarded
         // as .put in dcs_passthrough (rather than triggering a state
         // transition to .escape), we must detect the ESC + '\' sequence
@@ -294,6 +326,21 @@ pub const Handler = struct {
         self.pending_esc = false;
         self.state.deinit();
         self.state = .inactive;
+    }
+
+    /// Whether no control string is in progress (the DCS handler has unhooked /
+    /// aborted and returned to .inactive). The fork's parse table never leaves
+    /// dcs_passthrough on ESC / C1 / CAN / SUB (so a tmux control payload isn't
+    /// cut short), so `terminal.stream` asks this — via the stream handler's
+    /// `dcsConsumeGroundRequest` — after each `dcs_put` to detect that our own
+    /// ST / abort handling above has ended the DCS, and returns the parser to
+    /// ground. Without it an ordinary DCS would wedge the parser. ROOTSHELL-TMUX
+    /// (id=dcs-is-inactive)
+    pub fn isInactive(self: *const Handler) bool {
+        return switch (self.state) {
+            .inactive => true,
+            else => false,
+        };
     }
 };
 
@@ -612,6 +659,49 @@ test "tmux: ESC in block content does not cause exit" {
     // We should still be in tmux state (not exited)
     try testing.expect(h.state == .tmux);
     try testing.expect(got_block_end);
+}
+
+test "tmux: ESC CAN / ESC SUB in block content is forwarded, not dropped" {
+    // Regression: the CAN/SUB abort handling must flush a pending ESC before
+    // forwarding the CAN/SUB in tmux state, otherwise an `ESC CAN` / `ESC SUB`
+    // embedded in control payload loses the ESC byte (and never aborts/exits).
+    if (comptime !build_options.tmux_control_mode) return error.SkipZigTest;
+
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var h: Handler = .{};
+    defer h.deinit();
+
+    {
+        var cmd = h.hook(alloc, .{ .params = &.{1000}, .final = 'p' }).?;
+        defer cmd.deinit();
+        try testing.expect(cmd == .tmux);
+        try testing.expect(cmd.tmux == .enter);
+    }
+
+    // Block content carrying ESC CAN (0x1B 0x18) and ESC SUB (0x1B 0x1A).
+    const block =
+        "%begin 1234 1 0\n" ++
+        "a\x1b\x18b\x1b\x1ac\n" ++
+        "%end 1234 1 0\n";
+
+    var got_block_end = false;
+    for (block) |byte| {
+        if (h.put(byte)) |cmd| {
+            try testing.expect(cmd == .tmux);
+            switch (cmd.tmux) {
+                .exit => return error.TestUnexpectedResult,
+                .block_end => got_block_end = true,
+                else => {},
+            }
+        }
+    }
+
+    // Control mode intact (CAN/SUB did not abort/exit it) and the block parsed.
+    try testing.expect(h.state == .tmux);
+    try testing.expect(got_block_end);
+    try testing.expect(h.pending_esc == false);
 }
 
 test "tmux: 7-bit ST exits tmux control mode" {

@@ -19,6 +19,10 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 const terminal = @import("terminal/main.zig");
+// The snapshot sidecar only imports `terminal` (no Message/Mailbox), so this
+// pulls in no apprt import cycle. ROOTSHELL-TMUX (id=snapshot-pane-refs)
+const surface_tmux = @import("apprt/surface_tmux.zig");
+const PaneRef = surface_tmux.PaneRef;
 
 /// The reconcile planner (in `Surface.handleMessage(.tmux_topology_changed)`)
 /// converts a `TmuxTopologySnapshot` into an ordered list of these ops.
@@ -112,6 +116,14 @@ pub const TmuxReconcilePayload = struct {
     ops: []const TmuxReconcileOp,
 
     pub fn deinit(self: *TmuxReconcilePayload) void {
+        // Drop the payload holds taken in planTmuxReconcile BEFORE freeing the
+        // arena that owns the ops. The focus/title payload builders carry no
+        // ensure_pane op, so this releases nothing for them. ROOTSHELL-TMUX
+        // (id=viewer-snapshot-refcount)
+        for (self.ops) |op| switch (op) {
+            .ensure_pane => |ep| if (ep.viewer_pane) |pane| pane.releaseSnapshotRef(),
+            else => {},
+        };
         const alloc = self.alloc;
         self.arena.deinit();
         alloc.destroy(self);
@@ -132,7 +144,11 @@ pub const TmuxReconcilePayload = struct {
 pub fn planTmuxReconcile(
     alloc: Allocator,
     windows: []const terminal.tmux.Viewer.Window,
-    panes: ?*const terminal.tmux.Viewer.PanesMap,
+    // ROOTSHELL-TMUX (id=snapshot-pane-refs): captured (pane_id -> *Pane)
+    // pointers from the snapshot arena, NOT a live viewer map. Runs on the app
+    // thread, so reading the live map here would race the gateway IO thread
+    // reallocating/freeing its backing.
+    panes: []const PaneRef,
     // ROOTSHELL-TMUX (id=plan-reconcile-titles): resolved tab title per window
     // (parallel to `windows`), carrying the `#T`-wins precedence from the
     // snapshot. Used for the `set_tab_title` op instead of the bare window name.
@@ -179,8 +195,7 @@ pub fn planTmuxReconcile(
         collectPaneIds(window.layout, pane_ids, &pane_idx);
 
         for (pane_ids[pane_start..pane_idx]) |pid| {
-            const pane_entry = if (panes) |p| p.getEntry(pid) else null;
-            const pane_ptr: ?*terminal.tmux.Viewer.Pane = if (pane_entry) |e| e.value_ptr.* else null;
+            const pane_ptr: ?*terminal.tmux.Viewer.Pane = lookupPaneRef(panes, pid);
             ops[op_idx] = .{ .ensure_pane = .{
                 .tmux_window_id = window.id,
                 .pane_id = pid,
@@ -236,10 +251,32 @@ pub fn planTmuxReconcile(
         .arena = arena,
         .ops = ops,
     };
+
+    // Take a payload hold on every pane this op batch carries a raw pointer to,
+    // now that the payload is fully built (no fallible step follows). The payload
+    // outlives the snapshot — it rides the tmux_reconcile action to the app /
+    // Swift apply, which dereferences viewer_pane / viewer_terminal there — so the
+    // hold must persist until the payload is freed (`TmuxReconcilePayload.deinit`
+    // releases it). ROOTSHELL-TMUX (id=viewer-snapshot-refcount)
+    for (ops) |op| switch (op) {
+        .ensure_pane => |ep| if (ep.viewer_pane) |pane| pane.acquireSnapshotRef(),
+        else => {},
+    };
     return payload;
 }
 
 /// Count the number of leaf panes in a layout tree.
+/// Look up a captured viewer pane pointer by tmux pane ID. Linear scan — a
+/// tmux session has only a handful of panes, and the slice is the snapshot's
+/// immutable capture, not the live (concurrently-mutated) viewer map.
+/// ROOTSHELL-TMUX (id=snapshot-pane-refs)
+fn lookupPaneRef(panes: []const PaneRef, id: usize) ?*terminal.tmux.Viewer.Pane {
+    for (panes) |ref| {
+        if (ref.id == id) return ref.pane;
+    }
+    return null;
+}
+
 fn countPanesInLayout(layout: terminal.tmux.Layout) usize {
     switch (layout.content) {
         .pane => return 1,

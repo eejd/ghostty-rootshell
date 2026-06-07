@@ -349,6 +349,24 @@ pub const StreamHandler = struct {
         }
     }
 
+    /// Tear down the active tmux control-mode viewer: prune all child pane
+    /// surfaces (empty topology snapshot so the reconciler closes them), free
+    /// the viewer, and clear the cross-thread active flag. Shared by the `%exit`
+    /// and `.broken` control-stream paths so a malformed stream recovers exactly
+    /// like a clean exit instead of orphaning child tabs and leaving the gateway
+    /// stuck-active. No-op when there is no viewer. ROOTSHELL-TMUX
+    /// (id=streamhandler-tmux-teardown)
+    fn tmuxTeardownViewer(self: *StreamHandler) void {
+        if (comptime !tmux_enabled) return;
+        const viewer = self.tmux_viewer orelse return;
+        // Prune all tmux windows/panes so child surfaces are closed.
+        self.sendEmptyTopologySnapshot();
+        viewer.deinit();
+        self.alloc.destroy(viewer);
+        self.tmux_viewer = null;
+        self.tmux_active_flag.store(false, .monotonic); // ROOTSHELL-TMUX (id=streamhandler-tmux-active-flag)
+    }
+
     inline fn messageWriter(self: *StreamHandler, msg: termio.Message) void {
         self.termio_mailbox.send(msg, self.renderer_state.mutex);
         self.termio_messaged = true;
@@ -639,7 +657,10 @@ pub const StreamHandler = struct {
             log.warn("failed to format pending tmux command", .{});
             return;
         }) orelse return;
-        self.writeTrackedTmuxCommand(cmd);
+        // takePendingCommand marked the command in-flight; if we fail to actually
+        // hand it to the pty, roll that back so the pump retries instead of
+        // wedging with command_in_flight stuck true and no response coming.
+        if (!self.writeTrackedTmuxCommand(cmd)) viewer.rollbackInFlightCommand();
     }
 
     /// Write a tracked tmux command (the viewer's own commands) to the pty via a
@@ -649,15 +670,16 @@ pub const StreamHandler = struct {
     /// reorder relative to the viewer enqueue order — that's why recording must
     /// happen at the drain point, not here). `cmd` is copied. ROOTSHELL-TMUX
     /// (id=streamhandler-write-tracked-command)
-    fn writeTrackedTmuxCommand(self: *StreamHandler, cmd: []const u8) void {
+    fn writeTrackedTmuxCommand(self: *StreamHandler, cmd: []const u8) bool {
         const copy = self.alloc.dupe(u8, cmd) catch {
             log.warn("failed to dupe tracked tmux command", .{});
-            return;
+            return false;
         };
         self.messageWriter(.{ .tmux_track_command = .{
             .alloc = self.alloc,
             .data = copy,
         } });
+        return true;
     }
 
     /// Record (on the IO thread, at the drain/write point) that a tracked tmux
@@ -996,6 +1018,9 @@ pub const StreamHandler = struct {
             self.alloc,
             terminal.tmux.Viewer.resync_probe_command,
         ) catch return);
+        // Count this probe so a later stray response is dropped by count, not by
+        // an unconditional sentinel scan. ROOTSHELL-TMUX (id=viewer-resync-probe-count)
+        viewer.recordResyncProbeSent();
     }
 
     /// Abort an in-progress control-mode resume (see `Viewer.enterResync`).
@@ -1049,30 +1074,46 @@ pub const StreamHandler = struct {
     }
 
     /// Called by `terminal.stream` after each `dcs_put`. Returns true to ask the
-    /// stream to return the parser to ground. We use it to leave tmux control
-    /// mode: `tmux -CC`'s `%exit` is parsed as a `dcs_put` while the parser is
-    /// still in `dcs_passthrough` (the fork's parse table deliberately never
-    /// leaves passthrough on ESC/C1 so a control-mode payload isn't cut short).
-    /// Once control mode ends, tmux may not emit a clean closing ST, so without
-    /// forcing ground the gateway keeps routing the shell's prompt into the (now
-    /// freed) tmux parser and the tab looks frozen. This mirrors the pane-side
-    /// `dcsConsumeGroundRequest` in `stream_terminal.zig`, but instead of ST
-    /// detection it fires on the `tmux_force_unhook` flag set by the `.exit`
-    /// handler. ROOTSHELL-TMUX (id=streamhandler-dcs-ground).
+    /// stream to return the parser to ground. The fork's parse table deliberately
+    /// never leaves `dcs_passthrough` on ESC / C1 / CAN / SUB (so a control-mode
+    /// payload isn't cut short), so the parser has no native exit from
+    /// passthrough — this is the only path back to ground. Two cases:
+    ///
+    ///   1. Leaving tmux control mode: `tmux -CC`'s `%exit` (and the malformed
+    ///      `.broken` recovery) is parsed as a `dcs_put` and sets
+    ///      `tmux_force_unhook`. tmux may not emit a clean closing ST, so without
+    ///      forcing ground the gateway keeps routing the shell's prompt into the
+    ///      (now freed) tmux parser and the tab looks frozen. We also reset the
+    ///      DCS handler out of `.tmux` so a later DCS hook doesn't trip the
+    ///      `state == .inactive` assert in `dcs.Handler.hook`.
+    ///
+    ///   2. An ORDINARY DCS on this surface (XTGETTCAP, DECRQSS, sixel,
+    ///      unknown→ignore): `dcs.Handler.put` performs its own 7-bit `ESC \` /
+    ///      8-bit `0x9C` ST and CAN/SUB abort detection and returns the handler
+    ///      to `.inactive` when the control string ends. Once it is inactive we
+    ///      must return the parser to ground ourselves, or every subsequent byte
+    ///      is silently swallowed by the now-inactive DCS handler (the wedge this
+    ///      whole mechanism exists to prevent — see `dcs.Handler.isInactive`).
+    ///
+    /// Both cases work in a non-tmux build too (case 1 is compiled out).
+    /// ROOTSHELL-TMUX (id=streamhandler-dcs-ground).
     pub fn dcsConsumeGroundRequest(self: *StreamHandler) bool {
-        if (comptime !tmux_enabled) return false;
-        if (!self.tmux_force_unhook) return false;
-        self.tmux_force_unhook = false;
-        // Reset the DCS handler out of `.tmux` (frees the control parser and
-        // returns it to `.inactive`) so a later DCS hook doesn't trip the
-        // `state == .inactive` assert in `dcs.Handler.hook`. The returned
-        // `.tmux = .exit` command is redundant here (the viewer is already
-        // gone), so we just free it.
-        if (self.dcs.unhook()) |cmd| {
-            var freed = cmd;
-            freed.deinit();
+        if (comptime tmux_enabled) {
+            if (self.tmux_force_unhook) {
+                self.tmux_force_unhook = false;
+                // The returned `.tmux = .exit` command is redundant here (the
+                // viewer is already gone), so we just free it.
+                if (self.dcs.unhook()) |cmd| {
+                    var freed = cmd;
+                    freed.deinit();
+                }
+                return true;
+            }
         }
-        return true;
+
+        // Ordinary DCS: dcs.put has its own ST/abort detection and goes inactive
+        // when the control string ends.
+        return self.dcs.isInactive();
     }
 
     /// Route a raw tmux command relayed out-of-band from a child pane backend
@@ -1224,25 +1265,16 @@ pub const StreamHandler = struct {
                                 self.alloc,
                                 terminal.tmux.Viewer.resync_probe_command,
                             ) catch break :tmux);
+                            // Count this probe (see id=viewer-resync-probe-count).
+                            viewer.recordResyncProbeSent();
                         }
                         break :tmux;
                     },
 
                     .exit => {
-                        // Send an empty topology snapshot so the reconciler
-                        // prunes all tmux windows/panes. This closes all
-                        // child surfaces created for the tmux session.
-                        if (self.tmux_viewer != null) {
-                            self.sendEmptyTopologySnapshot();
-                        }
-
-                        // Free our viewer state if we have one.
-                        if (self.tmux_viewer) |viewer| {
-                            viewer.deinit();
-                            self.alloc.destroy(viewer);
-                            self.tmux_viewer = null;
-                            self.tmux_active_flag.store(false, .monotonic); // ROOTSHELL-TMUX (id=streamhandler-tmux-active-flag)
-                        }
+                        // Tear down the viewer: prune all child surfaces and free
+                        // the viewer state.
+                        self.tmuxTeardownViewer();
 
                         // Control mode is over (tmux detached / exited). `%exit`
                         // is delivered as a `dcs_put` while the parser is still in
@@ -1258,8 +1290,19 @@ pub const StreamHandler = struct {
                     },
 
                     .broken => {
-                        // ROOTSHELL-TMUX (id=streamhandler-broken-control-unhook): malformed tmux control input recovers the gateway without synthetic %exit pruning.
-                        log.warn("tmux control stream became malformed; unhooking gateway parser", .{});
+                        // ROOTSHELL-TMUX (id=streamhandler-broken-control-unhook):
+                        // a malformed control stream must recover EXACTLY like a
+                        // clean `%exit` — prune child surfaces, free and null the
+                        // viewer, and clear the active flag — not merely set
+                        // tmux_force_unhook. Otherwise child tabs are orphaned
+                        // (frozen), `tmuxActive()` stays true so ESC keeps sending
+                        // detach-client into a dead stream and the surface
+                        // re-persists as a gateway, and a later genuine `%enter`
+                        // trips `assert(self.tmux_viewer == null)` (UB under
+                        // inlineAssert in ReleaseFast: silent pointer overwrite +
+                        // leak).
+                        log.warn("tmux control stream became malformed; tearing down gateway", .{});
+                        self.tmuxTeardownViewer();
                         self.tmux_force_unhook = true;
                         break :tmux;
                     },
@@ -1298,18 +1341,27 @@ pub const StreamHandler = struct {
                 switch (tmux) {
                     .block_end, .block_err => |content| {
                         // Drop a stray resync-probe response that arrived AFTER
-                        // resync completed (from a retried probe), identified by
-                        // the marker in its content. Dropping it WITHOUT
-                        // classifyBlock keeps the positional sent-FIFO aligned
-                        // with the rebuild commands (a raw probe carries no FIFO
-                        // marker, so consuming one here would desync). During
+                        // resync completed (from a retried probe). Dropping it
+                        // WITHOUT classifyBlock keeps the positional sent-FIFO
+                        // aligned with the rebuild commands (a raw probe carries no
+                        // FIFO marker, so consuming one here would desync). During
                         // resync the marker block is the legit one and is handled
                         // by the viewer, so only guard once we have left resync.
-                        // ROOTSHELL-TMUX (id=streamhandler-drop-stray-probe)
-                        if (!viewer.isResyncing() and
-                            std.mem.indexOf(u8, content, terminal.tmux.Viewer.resync_marker) != null)
-                        {
-                            break :tmux;
+                        //
+                        // ROOTSHELL-TMUX (id=streamhandler-drop-stray-probe): gate
+                        // the sentinel scan on the viewer's outstanding-probe COUNT
+                        // (set when each probe is written, decremented as responses
+                        // arrive). In normal steady state the count is zero, so a
+                        // genuine tracked block whose scrollback content happens to
+                        // contain the 24-char sentinel is NOT dropped. The first
+                        // non-probe block clears the count, so a probe lost before
+                        // the transport attached can't keep the scan armed forever.
+                        if (!viewer.isResyncing() and viewer.hasOutstandingResyncProbes()) {
+                            if (std.mem.indexOf(u8, content, terminal.tmux.Viewer.resync_marker) != null) {
+                                viewer.consumeResyncProbe();
+                                break :tmux;
+                            }
+                            viewer.clearOutstandingResyncProbes();
                         }
                         switch (viewer.classifyBlock()) {
                             .untracked => break :tmux,
@@ -1340,8 +1392,12 @@ pub const StreamHandler = struct {
                             // route through the tracked-command message so the IO
                             // thread records a `.tracked` sent-FIFO marker after
                             // writing (keeps block matching aligned vs untracked
-                            // send-keys).
-                            self.writeTrackedTmuxCommand(command);
+                            // send-keys). The viewer set command_in_flight when it
+                            // emitted this `.command`; roll it back if the write
+                            // fails so the pump doesn't wedge (id=viewer-rollback-in-flight).
+                            if (!self.writeTrackedTmuxCommand(command)) {
+                                viewer.rollbackInFlightCommand();
+                            }
                         },
 
                         .windows => |windows| {

@@ -10,6 +10,7 @@
 //!
 
 const std = @import("std");
+const build_options = @import("terminal_options");
 const parser = @import("Parser.zig");
 const State = parser.State;
 const Action = parser.TransitionAction;
@@ -235,41 +236,43 @@ fn genTable() Table {
     {
         const source = State.dcs_passthrough;
 
-        // events
+        // events (standard VT100)
         single(&result, 0x19, source, source, .put);
         range(&result, 0, 0x17, source, source, .put);
-        single(&result, 0x18, source, source, .put); // CAN: override "anywhere" → ground
-        single(&result, 0x1A, source, source, .put); // SUB: override "anywhere" → ground
-        single(&result, 0x1B, source, source, .put); // ESC: override "anywhere" → escape
         range(&result, 0x1C, 0x1F, source, source, .put);
         range(&result, 0x20, 0x7E, source, source, .put);
         single(&result, 0x7F, source, source, .ignore);
 
-        // ROOTSHELL-TMUX (id=parsetable-dcs-utf8-passthrough): the 0x80-0xFF
-        // dcs_passthrough overrides below (incl. 0x9C/C1-ST as .put) exist so tmux
-        // %output UTF-8 isn't mangled/leaked. reapply: re-add this range override.
-        // High bytes (0x80-0xFF): override "anywhere" transitions to stay
-        // in dcs_passthrough. tmux control mode protocol data contains raw
-        // UTF-8 in %output pane content. UTF-8 multi-byte sequences use:
-        //   - Continuation bytes: 0x80-0xBF
-        //   - 2-byte start bytes: 0xC0-0xDF
-        //   - 3-byte start bytes: 0xE0-0xEF
-        //   - 4-byte start bytes: 0xF0-0xF4
+        // ROOTSHELL-TMUX (id=parsetable-dcs-utf8-passthrough): tmux control-mode
+        // overrides of the "anywhere" transitions, GATED on
+        // build_options.tmux_control_mode so a non-tmux build is byte-for-byte
+        // stock (CAN/SUB → ground, ESC → escape, 0x9C → ground ST, high bytes via
+        // the default "anywhere" rules). reapply: re-add this gated block.
         //
-        // Without these overrides, bytes >= 0xA0 would default to .none
-        // (silently dropped), mangling all non-ASCII UTF-8 text. Bytes
-        // 0x80-0x9F also need overrides to prevent "anywhere" C1 transitions
-        // from kicking the parser out of dcs_passthrough.
-        //
-        // 0x9C (C1 ST) is ALSO forwarded as .put here rather than exiting to
-        // ground. In tmux control mode 0x9C is a common UTF-8 continuation byte
-        // (e.g. 'Ü' = 0xC3 0x9C) embedded in command-response content, and
-        // exiting dcs_passthrough on it kicks the parser to ground mid-stream —
-        // leaking the rest of the tmux protocol into the terminal (notably on
-        // `tmux -CC attach`, whose capture-pane replay carries arbitrary UTF-8).
-        // 8-bit ST detection now happens in the DCS handler (dcs.zig), gated
-        // like 7-bit ESC \ so it only terminates between notifications.
-        range(&result, 0x80, 0xFF, source, source, .put);
+        // In a tmux build these keep the parser in dcs_passthrough so the
+        // gateway's control-mode DCS isn't cut short by raw ESC / C1 / CAN / SUB
+        // / UTF-8 bytes carried in its %output / %begin payload. The string
+        // terminator (and CAN/SUB abort for an ordinary DCS) is detected in the
+        // DCS handler (dcs.zig) and the pane handler (stream_terminal.zig), which
+        // then ask the stream to return the parser to ground.
+        if (comptime build_options.tmux_control_mode) {
+            single(&result, 0x18, source, source, .put); // CAN: override "anywhere" → ground
+            single(&result, 0x1A, source, source, .put); // SUB: override "anywhere" → ground
+            single(&result, 0x1B, source, source, .put); // ESC: override "anywhere" → escape
+
+            // High bytes (0x80-0xFF): keep in dcs_passthrough. tmux %output pane
+            // content is raw UTF-8 whose multi-byte sequences use 0x80-0xBF
+            // (continuation), 0xC0-0xDF / 0xE0-0xEF / 0xF0-0xF4 (start bytes).
+            // Without this, bytes >= 0xA0 default to .none (silently dropped) and
+            // 0x80-0x9F take the "anywhere" C1 transitions, both kicking the
+            // parser out of dcs_passthrough. 0x9C (C1 ST) is included as .put: in
+            // control mode it is a common UTF-8 continuation byte (e.g. 'Ü' =
+            // 0xC3 0x9C); exiting on it would leak the rest of the protocol (most
+            // visibly on `tmux -CC attach`, whose capture-pane replay carries
+            // arbitrary UTF-8). 8-bit ST detection happens in dcs.zig, gated like
+            // 7-bit ESC \ so it only terminates between notifications.
+            range(&result, 0x80, 0xFF, source, source, .put);
+        }
     }
 
     // csi_param
@@ -417,6 +420,8 @@ test {
 }
 
 test "dcs_passthrough: ESC stays in dcs_passthrough with put" {
+    // ROOTSHELL-TMUX (id=parsetable-dcs-utf8-test): tmux-only override.
+    if (comptime !build_options.tmux_control_mode) return error.SkipZigTest;
     const t = table;
     const entry = t[0x1B][@intFromEnum(State.dcs_passthrough)];
     try @import("std").testing.expectEqual(State.dcs_passthrough, entry.state);
@@ -424,6 +429,8 @@ test "dcs_passthrough: ESC stays in dcs_passthrough with put" {
 }
 
 test "dcs_passthrough: CAN stays in dcs_passthrough with put" {
+    // ROOTSHELL-TMUX (id=parsetable-dcs-utf8-test): tmux-only override.
+    if (comptime !build_options.tmux_control_mode) return error.SkipZigTest;
     const t = table;
     const entry = t[0x18][@intFromEnum(State.dcs_passthrough)];
     try @import("std").testing.expectEqual(State.dcs_passthrough, entry.state);
@@ -431,6 +438,8 @@ test "dcs_passthrough: CAN stays in dcs_passthrough with put" {
 }
 
 test "dcs_passthrough: SUB stays in dcs_passthrough with put" {
+    // ROOTSHELL-TMUX (id=parsetable-dcs-utf8-test): tmux-only override.
+    if (comptime !build_options.tmux_control_mode) return error.SkipZigTest;
     const t = table;
     const entry = t[0x1A][@intFromEnum(State.dcs_passthrough)];
     try @import("std").testing.expectEqual(State.dcs_passthrough, entry.state);
@@ -438,6 +447,8 @@ test "dcs_passthrough: SUB stays in dcs_passthrough with put" {
 }
 
 test "dcs_passthrough: C1 0x80 stays in dcs_passthrough with put" {
+    // ROOTSHELL-TMUX (id=parsetable-dcs-utf8-test): tmux-only override.
+    if (comptime !build_options.tmux_control_mode) return error.SkipZigTest;
     const t = table;
     const entry = t[0x80][@intFromEnum(State.dcs_passthrough)];
     try @import("std").testing.expectEqual(State.dcs_passthrough, entry.state);
@@ -445,6 +456,8 @@ test "dcs_passthrough: C1 0x80 stays in dcs_passthrough with put" {
 }
 
 test "dcs_passthrough: C1 0x9B (CSI) stays in dcs_passthrough with put" {
+    // ROOTSHELL-TMUX (id=parsetable-dcs-utf8-test): tmux-only override.
+    if (comptime !build_options.tmux_control_mode) return error.SkipZigTest;
     const t = table;
     const entry = t[0x9B][@intFromEnum(State.dcs_passthrough)];
     try @import("std").testing.expectEqual(State.dcs_passthrough, entry.state);
@@ -452,17 +465,28 @@ test "dcs_passthrough: C1 0x9B (CSI) stays in dcs_passthrough with put" {
 }
 
 test "dcs_passthrough: C1 0x9D (OSC) stays in dcs_passthrough with put" {
+    // ROOTSHELL-TMUX (id=parsetable-dcs-utf8-test): tmux-only override.
+    if (comptime !build_options.tmux_control_mode) return error.SkipZigTest;
     const t = table;
     const entry = t[0x9D][@intFromEnum(State.dcs_passthrough)];
     try @import("std").testing.expectEqual(State.dcs_passthrough, entry.state);
     try @import("std").testing.expectEqual(Action.put, entry.action);
 }
 
-test "dcs_passthrough: C1 ST (0x9C) still transitions to ground" {
+test "dcs_passthrough: C1 ST (0x9C) stays in dcs_passthrough with put (tmux)" {
+    // ROOTSHELL-TMUX (id=parsetable-dcs-utf8-test): the tmux override keeps 0x9C
+    // in dcs_passthrough as .put; 8-bit ST termination is detected in the DCS
+    // handler (dcs.zig), not the parse table. In a non-tmux build 0x9C takes the
+    // stock "anywhere → ground" ST transition.
     const t = table;
     const entry = t[0x9C][@intFromEnum(State.dcs_passthrough)];
-    try @import("std").testing.expectEqual(State.ground, entry.state);
-    try @import("std").testing.expectEqual(Action.none, entry.action);
+    if (comptime build_options.tmux_control_mode) {
+        try @import("std").testing.expectEqual(State.dcs_passthrough, entry.state);
+        try @import("std").testing.expectEqual(Action.put, entry.action);
+    } else {
+        try @import("std").testing.expectEqual(State.ground, entry.state);
+        try @import("std").testing.expectEqual(Action.none, entry.action);
+    }
 }
 
 test "dcs_passthrough: regular bytes still produce put" {
@@ -479,6 +503,8 @@ test "dcs_passthrough: regular bytes still produce put" {
 }
 
 test "dcs_passthrough: UTF-8 start bytes (0xC0-0xF4) produce put" {
+    // ROOTSHELL-TMUX (id=parsetable-dcs-utf8-test): tmux-only override.
+    if (comptime !build_options.tmux_control_mode) return error.SkipZigTest;
     const t = table;
     const testing = @import("std").testing;
 
@@ -509,6 +535,8 @@ test "dcs_passthrough: UTF-8 start bytes (0xC0-0xF4) produce put" {
 }
 
 test "dcs_passthrough: UTF-8 continuation bytes 0xA0-0xBF produce put" {
+    // ROOTSHELL-TMUX (id=parsetable-dcs-utf8-test): tmux-only override.
+    if (comptime !build_options.tmux_control_mode) return error.SkipZigTest;
     const t = table;
     const testing = @import("std").testing;
 
@@ -524,6 +552,8 @@ test "dcs_passthrough: UTF-8 continuation bytes 0xA0-0xBF produce put" {
 }
 
 test "dcs_passthrough: all bytes 0xA0-0xFF stay in dcs_passthrough with put" {
+    // ROOTSHELL-TMUX (id=parsetable-dcs-utf8-test): tmux-only override.
+    if (comptime !build_options.tmux_control_mode) return error.SkipZigTest;
     const t = table;
     const testing = @import("std").testing;
 

@@ -83,16 +83,29 @@ pub const Layout = struct {
             alloc,
             str,
             &offset,
+            0,
         );
         if (offset != str.len) return error.SyntaxError;
         return root;
     }
 
+    /// Maximum nesting depth for a tmux layout string. A `%layout-change` is
+    /// server-controlled (its layout field is accumulated up to the 64 MiB
+    /// notification cap), so a crafted or buggy server could otherwise send
+    /// `1x1,0,0{1x1,0,0{...` and overflow the thread stack with `parseNext`
+    /// recursion. tmux's own layouts never approach this. ROOTSHELL-TMUX
+    /// (id=layout-parse-depth-cap)
+    const max_parse_depth = 64;
+
     fn parseNext(
         alloc: Allocator,
         str: []const u8,
         offset: *usize,
+        depth: usize,
     ) ParseError!Layout {
+        // Reject pathologically nested layouts before recursing further.
+        if (depth > max_parse_depth) return error.SyntaxError;
+
         // Find the first `x` to grab the width.
         const width: usize = if (std.mem.indexOfScalar(
             u8,
@@ -185,6 +198,7 @@ pub const Layout = struct {
                         alloc,
                         str,
                         offset,
+                        depth + 1,
                     ));
 
                     // We should not reach the end of string here because
@@ -379,7 +393,12 @@ pub const Layout = struct {
 
         var total: usize = 0;
         for (children) |child| {
-            total += if (use_width) child.width else child.height;
+            // Saturating add: a crafted/buggy layout can carry near-maxInt
+            // dimensions (parse only rejects values that don't fit usize), and an
+            // unchecked sum would overflow — a panic in safe builds, a silent wrap
+            // to a wrong ratio in ReleaseFast. ROOTSHELL-TMUX
+            // (id=layout-split-ratio-overflow)
+            total +|= if (use_width) child.width else child.height;
         }
 
         if (total == 0) return 0.5;
@@ -614,6 +633,25 @@ test "syntax error empty string" {
     defer arena.deinit();
 
     try testing.expectError(error.SyntaxError, Layout.parse(arena.allocator(), ""));
+}
+
+test "syntax error pathologically nested layout (depth cap)" {
+    // A crafted/buggy server could send arbitrarily nested splits; the depth
+    // cap must reject them with SyntaxError instead of overflowing the stack.
+    // ROOTSHELL-TMUX (id=layout-parse-depth-cap)
+    var arena: ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var buf: std.ArrayList(u8) = .empty;
+    defer buf.deinit(alloc);
+    // `1x1,0,0{1x1,0,0{...` far deeper than max_parse_depth.
+    const depth = Layout.max_parse_depth + 50;
+    for (0..depth) |_| try buf.appendSlice(alloc, "1x1,0,0{");
+    try buf.appendSlice(alloc, "1x1,0,0,1");
+    for (0..depth) |_| try buf.append(alloc, '}');
+
+    try testing.expectError(error.SyntaxError, Layout.parse(alloc, buf.items));
 }
 
 test "syntax error missing width" {

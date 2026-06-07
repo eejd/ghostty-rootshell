@@ -53,6 +53,27 @@ pub const TmuxTitleChanged = struct {
     }
 };
 
+/// A captured (pane_id -> viewer Pane pointer) entry. ROOTSHELL-TMUX
+/// (id=snapshot-pane-refs): the viewer's `Pane` boxes are heap-allocated and
+/// stable, but the `PanesMap` *backing* is NOT — an `AutoArrayHashMapUnmanaged`
+/// reallocs/frees its arrays on growth/deinit. So the snapshot captures the
+/// stable pointers on the IO thread (where the map is not being mutated)
+/// instead of handing the app thread a live map to `getEntry()` into
+/// off-thread, which would be a concurrent read of reallocated/freed memory.
+///
+/// The pointed-to `Pane` boxes' LIFETIME is held for the crossing by a per-pane
+/// refcount (id=viewer-snapshot-refcount): `initFromWindows` takes a hold on
+/// each captured pane (released in the snapshot's `deinit`), and
+/// `planTmuxReconcile` takes a further hold on each pane its op batch references
+/// (released when the reconcile payload is freed, AFTER the Swift apply). Every
+/// viewer free path honors these holds (`Pane.isRetained`), so the app thread
+/// can safely dereference these pointers even if the pane's child detaches and
+/// the IO thread tries to remove it mid-flight.
+pub const PaneRef = struct {
+    id: usize,
+    pane: *terminal.tmux.Viewer.Pane,
+};
+
 /// A deep-copy snapshot of the tmux viewer's window topology. Owns
 /// all memory through a dedicated arena so it is safe to pass across
 /// thread boundaries via the surface mailbox.
@@ -80,12 +101,12 @@ pub const TmuxTopologySnapshot = struct {
     /// subscription values, so it won't re-send an unchanged pane title).
     titles: []const []const u8,
 
-    /// Optional pointer to the viewer's panes map. The viewer's
-    /// panes are heap-allocated (boxed) so the pointers remain stable
-    /// across map mutations. This allows the reconcile planner to
-    /// pass viewer-owned terminal pointers to child surfaces.
-    /// Null when no viewer panes are available (e.g., in tests).
-    panes: ?*const terminal.tmux.Viewer.PanesMap,
+    /// Captured (pane_id -> *Pane) pointers, owned by `arena`. Cloned from the
+    /// viewer's live panes map on the IO thread at snapshot time so the app
+    /// thread never reads the live map's reallocating backing (see `PaneRef`).
+    /// Empty when no viewer panes are available (e.g., in tests). Lets the
+    /// reconcile planner pass viewer-owned terminal pointers to child surfaces.
+    panes: []const PaneRef,
 
     /// Create a snapshot by deep-copying `windows`. Each window's
     /// layout tree is cloned into a dedicated arena so the snapshot
@@ -125,20 +146,46 @@ pub const TmuxTopologySnapshot = struct {
             cloned_titles[i] = try arena_alloc.dupe(u8, resolved);
         }
 
+        // Snapshot the (pane_id -> *Pane) mapping into the arena. Read the live
+        // map synchronously here on the IO thread (it is not being mutated
+        // concurrently with its owning gateway), capturing only the stable boxed
+        // pointers — see `PaneRef`.
+        const cloned_panes: []const PaneRef = if (panes) |p| blk: {
+            const refs = try arena_alloc.alloc(PaneRef, p.count());
+            var it = p.iterator();
+            var i: usize = 0;
+            while (it.next()) |kv| : (i += 1) {
+                refs[i] = .{ .id = kv.key_ptr.*, .pane = kv.value_ptr.* };
+            }
+            break :blk refs;
+        } else &.{};
+
         const self = try alloc.create(TmuxTopologySnapshot);
         self.* = .{
             .alloc = alloc,
             .arena = arena,
             .windows = cloned_windows,
             .titles = cloned_titles,
-            .panes = panes,
+            .panes = cloned_panes,
         };
+
+        // Take a snapshot hold on each captured pane now that the snapshot is
+        // fully built (no fallible step follows, so no error path can leave a
+        // ref acquired-but-never-released). This keeps the pane boxes alive while
+        // their raw pointers ride the mailbox to the app thread and through
+        // `planTmuxReconcile`. Released in `deinit`. ROOTSHELL-TMUX
+        // (id=viewer-snapshot-refcount)
+        for (cloned_panes) |ref| ref.pane.acquireSnapshotRef();
         return self;
     }
 
     /// Free all owned memory: the arena (windows + layouts) and the
     /// struct itself.
     pub fn deinit(self: *TmuxTopologySnapshot) void {
+        // Drop the snapshot holds taken in initFromWindows BEFORE freeing the
+        // arena that owns the PaneRef slice. ROOTSHELL-TMUX
+        // (id=viewer-snapshot-refcount)
+        for (self.panes) |ref| ref.pane.releaseSnapshotRef();
         const alloc = self.alloc;
         self.arena.deinit();
         alloc.destroy(self);

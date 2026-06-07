@@ -993,8 +993,10 @@ typedef union {
   ghostty_action_search_selected_s search_selected;
   ghostty_action_readonly_e readonly;
   /// tmux control mode reconcile payload (opaque *TmuxReconcilePayload).
-  /// Read via the ghostty_tmux_* accessor functions; the embedded apprt
-  /// frees the payload after the action callback returns.
+  /// Read via the ghostty_tmux_* accessor functions. Ownership transfers to
+  /// the C consumer: the apprt does NOT auto-free it after the callback — the
+  /// caller must free it with ghostty_tmux_reconcile_free when done applying
+  /// the ops (see ghostty_tmux_reconcile_free below).
   void* tmux_reconcile;
 } ghostty_action_u;
 

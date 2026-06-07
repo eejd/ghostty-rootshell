@@ -301,6 +301,18 @@ pub const Handler = struct {
     /// `0x9C` here and set `dcs_ground_request`; the stream consumes it after
     /// dispatch and returns the parser to ground.
     fn dcsDetectSt(self: *Handler, byte: u8) void {
+        // ROOTSHELL-TMUX (id=streamterm-dcs-can-sub): CAN (0x18) / SUB (0x1A) is
+        // an ECMA-48 abort of the control string. The fork's parse table forwards
+        // them as `.put` (so a raw payload byte can't cut the gateway's
+        // control-mode DCS short), so we honor the abort here — a pane is never
+        // the control client, so an aborted DCS must return to ground or it wedges
+        // in dcs_passthrough until an ST arrives. Aborts regardless of a pending
+        // ESC.
+        if (byte == 0x18 or byte == 0x1A) {
+            self.dcs_pending_esc = false;
+            self.dcs_ground_request = true;
+            return;
+        }
         if (self.dcs_pending_esc) {
             self.dcs_pending_esc = false;
             // ESC \ -> 7-bit ST.

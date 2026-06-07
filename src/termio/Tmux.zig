@@ -219,29 +219,24 @@ pub fn threadEnter(
         io.renderer_state.terminal = vt;
     }
 
-    // Register this child surface's renderer mutex back to the viewer
-    // pane. The viewer acquires this mutex before writing to the shared
-    // terminal, coordinating with the child's renderer thread. Before
-    // this point, renderer_mutex is null and no locking is needed
-    // because the child renderer hasn't started reading yet.
+    // Register this child surface's renderer mutex and wake callback back to
+    // the viewer pane, and clear the en-route flag. The viewer (parent gateway
+    // IO thread) acquires the mutex before writing to the shared terminal and
+    // invokes the wake callback after, both coordinating with this child's
+    // renderer thread. `Pane.attachRenderer` publishes all of this with release
+    // ordering so the gateway never observes a half-built handshake on a
+    // weakly-ordered target (see `Pane`'s id=viewer-pane-atomics notes). The
+    // wake context `&io.renderer_wakeup` is stable for the lifetime of the
+    // child surface's IO and is cleared in threadExit before teardown; the
+    // child's own IO thread (this tmux backend) never processes pane output, so
+    // without the explicit wake the pane would not repaint until some unrelated
+    // event (the source of the "super slow" pane behavior).
     if (self.viewer_pane) |pane| {
-        pane.renderer_mutex = io.renderer_state.mutex;
-
-        // Register a wake callback so the viewer can wake THIS child's
-        // renderer after it writes to the shared pane terminal. The child's
-        // own IO thread (this tmux backend) never processes pane output, so
-        // without an explicit wake the pane would not repaint until some
-        // unrelated event (the source of the "super slow" pane behavior).
-        // `&io.renderer_wakeup` is stable for the lifetime of the child
-        // surface's IO and is cleared in threadExit before teardown.
-        pane.wake_ctx = @ptrCast(&io.renderer_wakeup);
-        pane.wake_fn = &wakeRenderer;
-
-        // The child has now bound: renderer_mutex protects this pane, so clear
-        // the en-route flag. Order matters — the mutex is set first, so a viewer
-        // free path always sees either pending_attach or a live renderer_mutex,
-        // never an unprotected pane between the two.
-        pane.pending_attach = false;
+        pane.attachRenderer(
+            io.renderer_state.mutex,
+            @ptrCast(&io.renderer_wakeup),
+            &wakeRenderer,
+        );
     }
 
     // Populate the thread data with our (empty) thread state.
@@ -252,12 +247,32 @@ pub fn threadExit(self: *Tmux, td: *termio.Termio.ThreadData) void {
     assert(td.backend == .tmux);
     log.info("tmux backend thread exit pane_id={}", .{self.pane_id});
 
-    // Clear the renderer mutex registration from the viewer pane so
-    // the viewer stops trying to lock a mutex that's about to be freed.
+    // Unregister the renderer mutex and wake callback from the viewer pane so
+    // the gateway stops touching memory that's about to be freed with this
+    // child surface. `detachRenderer` clears wake_fn first (release) so a
+    // concurrent gateway wake skips, then clears the mutex, and returns the
+    // mutex it had registered.
     if (self.viewer_pane) |pane| {
-        pane.renderer_mutex = null;
-        pane.wake_ctx = null;
-        pane.wake_fn = null;
+        const mutex = pane.detachRenderer();
+
+        // Flush any in-flight gateway critical section: if the gateway is
+        // currently writing to this pane's terminal under the mutex, block until
+        // it releases so the child surface can free its renderer_state without
+        // the gateway holding (a soon-to-be-freed) lock. This narrows the
+        // teardown lifetime window but does not fully close it — a gateway that
+        // already loaded the mutex pointer but has not yet locked is not caught.
+        // A complete fix needs a detach ack (see `Pane`'s id=viewer-pane-atomics).
+        if (mutex) |m| {
+            m.lock();
+            m.unlock();
+        }
+
+        // If this pane's viewer was already torn down, the pane is a graveyard
+        // orphan and we were the last (renderer) hold: reap it now — AFTER the
+        // flush above, so no renderer thread is mid-read of its terminal when it
+        // is freed. No-op while the viewer is alive. `pane` may be freed here; do
+        // not touch it afterward. ROOTSHELL-TMUX (id=viewer-orphan-graveyard)
+        pane.reapIfOrphaned();
     }
 }
 
@@ -267,7 +282,11 @@ pub fn threadExit(self: *Tmux, td: *termio.Termio.ThreadData) void {
 /// Safe to call from the viewer's (parent gateway) IO thread because
 /// `xev.Async` is purpose-built for cross-thread notification.
 fn wakeRenderer(ctx: ?*anyopaque) void {
-    const wakeup: *xev.Async = @ptrCast(@alignCast(ctx.?));
+    // Null-tolerant: a concurrent threadExit may have cleared wake_ctx between
+    // the gateway's wake_fn load and this call. `Pane.detachRenderer` clears
+    // wake_fn before wake_ctx, so the gateway usually skips entirely, but guard
+    // here too rather than deref a null/torn context.
+    const wakeup: *xev.Async = @ptrCast(@alignCast(ctx orelse return));
     wakeup.notify() catch {};
 }
 

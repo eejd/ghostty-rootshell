@@ -198,6 +198,74 @@ const PAUSE_AFTER_BYTES = 200;
 /// empty windows action, and restarts the `list_windows` flow for the new
 /// session.
 ///
+
+// ROOTSHELL-TMUX (id=viewer-orphan-graveyard): process-global graveyard of panes
+// orphaned by viewer teardown while still retained (a child renderer or an
+// in-flight snapshot/payload still holds a raw pointer to them). The viewer is
+// gone, so its IO-thread reap can no longer free them; instead the LAST holder
+// to release (`Pane.detachRenderer` on the child IO thread, or
+// `Pane.releaseSnapshotRef` on the app/main thread) reaps the pane here. An
+// intrusive singly-linked list via `Pane.orphan_next`, serialized by
+// `orphan_mutex` so the "still in the list?" check + unlink + free is atomic and
+// exactly one releaser frees. The membership check compares pointer VALUES, so a
+// stale pointer (already-reaped pane) is simply not found — never dereferenced.
+var orphan_mutex: std.Thread.Mutex = .{};
+var orphan_head: ?*Viewer.Pane = null;
+
+/// Transfer a still-retained pane to the graveyard at viewer teardown (IO
+/// thread). It will be freed by `reapOrphan` once its last child / snapshot hold
+/// is released. ROOTSHELL-TMUX (id=viewer-orphan-graveyard)
+fn orphanPane(pane: *Viewer.Pane, alloc: Allocator) void {
+    orphan_mutex.lock();
+    defer orphan_mutex.unlock();
+    // Re-check retention UNDER the lock. A hold may have been released between
+    // the caller's `isRetained()` check and here (e.g. the child detached on its
+    // own thread, whose `reapOrphan` found the pane not-yet-listed and no-op'd).
+    // If nothing retains it now, free it directly — listing it would leak it,
+    // since no future release would call `reapOrphan` for it.
+    if (!pane.isRetained()) {
+        pane.deinit(alloc);
+        alloc.destroy(pane);
+        return;
+    }
+    pane.orphan_alloc = alloc;
+    pane.orphan_next = orphan_head;
+    orphan_head = pane;
+}
+
+/// Reap `pane` if it is a graveyard orphan whose last hold has now been
+/// released. Called after every child-detach / snapshot-ref release; a no-op
+/// (cheap list-empty check) while the owning viewer is alive. ROOTSHELL-TMUX
+/// (id=viewer-orphan-graveyard)
+fn reapOrphan(pane: *Viewer.Pane) void {
+    orphan_mutex.lock();
+    defer orphan_mutex.unlock();
+
+    // Locate `pane` in the list, comparing addresses only (never dereferences a
+    // possibly-freed pointer). If it isn't present it was never orphaned, or
+    // another releaser already reaped it — either way, nothing to do.
+    var prev: ?*Viewer.Pane = null;
+    var cur = orphan_head;
+    while (cur) |node| {
+        if (node == pane) break;
+        prev = node;
+        cur = node.orphan_next;
+    } else return;
+
+    // Found and still alive (list membership guarantees it isn't freed). Leave it
+    // if another hold remains; the holder that releases last will reap it.
+    if (pane.isRetained()) return;
+
+    if (prev) |p| {
+        p.orphan_next = pane.orphan_next;
+    } else {
+        orphan_head = pane.orphan_next;
+    }
+    const alloc = pane.orphan_alloc.?;
+    pane.deinit(alloc);
+    alloc.destroy(pane);
+}
+
 pub const Viewer = struct {
     /// Allocator used for all internal state.
     alloc: Allocator,
@@ -324,6 +392,17 @@ pub const Viewer = struct {
     /// itself. Diagnostic only — sticky (last specific write wins); never reset.
     /// ROOTSHELL-TMUX (id=control-error-code)
     last_error: control.ErrorCode = .none,
+
+    /// ROOTSHELL-TMUX (id=viewer-resync-probe-count): number of resync probes
+    /// written but not yet matched to a `%begin/%end` response. The resume path
+    /// retries the probe on a cadence (all sends happen during `.resync`); the
+    /// first response completes resync, the rest arrive in steady state and must
+    /// be dropped WITHOUT consuming a sent-FIFO marker (a raw probe records
+    /// none). The stream handler uses this count to gate that drop so it only
+    /// looks for stray probe responses while some are actually outstanding —
+    /// rather than substring-scanning EVERY steady-state block for the sentinel,
+    /// which would drop a real tracked block whose content happens to contain it.
+    outstanding_resync_probes: usize = 0,
 
     pub const CommandQueue = CircBuf(Command, undefined);
 
@@ -524,10 +603,50 @@ pub const Viewer = struct {
         /// the child hasn't bound yet, so `renderer_mutex` is still null. The
         /// viewer must NOT free the pane in this window or the child later binds
         /// to freed memory (the `tmux -CC attach` / `%session-changed` crash).
-        /// All free paths treat this like `renderer_mutex != null`. Set and read
-        /// on the io thread; cleared on the child io thread right after
-        /// `renderer_mutex` is set, so a free path always sees one or the other.
+        /// All free paths treat this like `renderer_mutex != null`.
         pending_attach: bool = false,
+
+        /// Outstanding holds taken by in-flight topology snapshots / reconcile
+        /// payloads that carry a RAW pointer to this pane across to the app (and
+        /// Swift) threads. Independent of renderer-attach state: an existing
+        /// pane's child can detach (clearing `renderer_mutex`) WHILE a reconcile
+        /// payload still references the pane, so attach state alone cannot guard
+        /// the pointer. Acquired on the IO thread when a snapshot/payload captures
+        /// the pointer; released on the app thread when that snapshot/payload is
+        /// freed. While > 0 no free path may destroy the pane (see `isRetained`).
+        /// Accessed from both threads — always via the atomic helpers below.
+        /// ROOTSHELL-TMUX (id=viewer-snapshot-refcount)
+        snapshot_refs: usize = 0,
+
+        /// Orphan-graveyard linkage. ROOTSHELL-TMUX (id=viewer-orphan-graveyard):
+        /// when the viewer is torn down (`%exit` / `.broken` / `%session-changed`)
+        /// while this pane is still retained (a child renderer or an in-flight
+        /// snapshot/payload references it), ownership transfers to the
+        /// process-global graveyard list instead of leaking — the LAST holder to
+        /// release (child `threadExit` or snapshot/payload deinit) reaps it. Only
+        /// touched under `orphan_mutex`, so plain (non-atomic) fields are fine.
+        orphan_next: ?*Pane = null,
+        orphan_alloc: ?Allocator = null,
+
+        // ROOTSHELL-TMUX (id=viewer-pane-atomics): the four fields above
+        // (`renderer_mutex`, `wake_ctx`, `wake_fn`, `pending_attach`) form a
+        // cross-thread handshake between the gateway (parent) IO thread that owns
+        // this Viewer and the child surface's IO thread (`Tmux.threadEnter` /
+        // `threadExit`). On weakly-ordered targets (ARM64 / Apple Silicon, the
+        // shipping target) plain stores have no inter-thread ordering, so the
+        // gateway could observe `pending_attach == false` before the matching
+        // `renderer_mutex` write (free-guard frees a pane the child is binding) or
+        // `wake_fn` set while `wake_ctx` is still null (wake deref of null). ALL
+        // access goes through the methods below, which publish with release and
+        // consume with acquire so a half-built handshake is never observed.
+        //
+        // The methods (defined after the fields below) do NOT close the teardown
+        // LIFETIME window: after `detachRenderer` the child surface frees its
+        // `renderer_state` (mutex + wake target), and a gateway that already
+        // loaded those pointers could still touch freed memory. `detachRenderer`'s
+        // returned mutex is flushed (lock/unlock) by the caller to drain any
+        // in-flight critical section, which narrows but does not eliminate it; a
+        // full fix needs a detach ack.
 
         /// Whether this pane has been fully initialized with captured
         /// content and terminal state from tmux. Output notifications
@@ -555,6 +674,111 @@ pub const Viewer = struct {
         /// router; capture-pane replays use throwaway readonly streams so stale
         /// queries in history never produce replies.
         responses: std.ArrayList([]const u8) = .empty,
+
+        /// Child IO thread (`Tmux.threadEnter`): publish the attach handshake.
+        /// Stores the wake context/fn and renderer mutex with release ordering,
+        /// then clears `pending_attach` LAST, so a gateway acquire-load that sees
+        /// `!pending_attach` is guaranteed to also see `renderer_mutex`, and one
+        /// that sees `wake_fn` is guaranteed to also see `wake_ctx`.
+        /// ROOTSHELL-TMUX (id=viewer-pane-atomics)
+        pub fn attachRenderer(
+            self: *Pane,
+            mutex: *std.Thread.Mutex,
+            wake_ctx: *anyopaque,
+            wake_fn: *const fn (?*anyopaque) void,
+        ) void {
+            @atomicStore(?*anyopaque, &self.wake_ctx, wake_ctx, .release);
+            @atomicStore(?*const fn (?*anyopaque) void, &self.wake_fn, wake_fn, .release);
+            @atomicStore(?*std.Thread.Mutex, &self.renderer_mutex, mutex, .release);
+            @atomicStore(bool, &self.pending_attach, false, .release);
+        }
+
+        /// Child IO thread (`Tmux.threadExit`): tear down the attach handshake.
+        /// Clears `wake_fn` FIRST (so a concurrent gateway wake that loads it as
+        /// null skips entirely, never dereferencing a stale `wake_ctx`), then
+        /// `wake_ctx`, then the renderer mutex. Returns the previously-registered
+        /// mutex so the caller can flush any in-flight gateway critical section
+        /// before the child frees it.
+        pub fn detachRenderer(self: *Pane) ?*std.Thread.Mutex {
+            const mutex = @atomicLoad(?*std.Thread.Mutex, &self.renderer_mutex, .acquire);
+            @atomicStore(?*const fn (?*anyopaque) void, &self.wake_fn, null, .release);
+            @atomicStore(?*anyopaque, &self.wake_ctx, null, .release);
+            @atomicStore(?*std.Thread.Mutex, &self.renderer_mutex, null, .release);
+            return mutex;
+        }
+
+        /// Reap this pane if its owning viewer was torn down (it is a graveyard
+        /// orphan) and its last hold is now released. The caller MUST first flush
+        /// the renderer (lock/unlock the returned `detachRenderer` mutex) so no
+        /// renderer thread is mid-read of this pane's terminal — reaping frees it.
+        /// No-op while the viewer is alive (the pane isn't in the graveyard).
+        /// `self` may be freed by this call; do not touch it afterward.
+        /// ROOTSHELL-TMUX (id=viewer-orphan-graveyard)
+        pub fn reapIfOrphaned(self: *Pane) void {
+            reapOrphan(self);
+        }
+
+        /// Gateway IO thread: acquire-load the renderer mutex (null => no child
+        /// renderer attached, so no locking is needed for terminal writes).
+        pub fn rendererMutex(self: *const Pane) ?*std.Thread.Mutex {
+            return @atomicLoad(?*std.Thread.Mutex, &self.renderer_mutex, .acquire);
+        }
+
+        /// Gateway IO thread: whether a child renderer is attached OR en route,
+        /// in which case this pane's terminal must NOT be freed. Loads
+        /// `pending_attach` with acquire FIRST: if the child has cleared it, the
+        /// paired release store guarantees the `renderer_mutex` it published is
+        /// visible to the subsequent load. Reading `renderer_mutex` first could
+        /// observe a stale null and free a pane the child is mid-bind on.
+        pub fn isHeldByChild(self: *const Pane) bool {
+            if (@atomicLoad(bool, &self.pending_attach, .acquire)) return true;
+            return @atomicLoad(?*std.Thread.Mutex, &self.renderer_mutex, .acquire) != null;
+        }
+
+        /// Gateway IO thread: invoke the child's wake callback if one is
+        /// registered (after writing to this pane's terminal).
+        pub fn wake(self: *const Pane) void {
+            const f = @atomicLoad(?*const fn (?*anyopaque) void, &self.wake_fn, .acquire);
+            if (f) |func| func(@atomicLoad(?*anyopaque, &self.wake_ctx, .acquire));
+        }
+
+        /// Gateway IO thread: clear the en-route flag (reset paths). The
+        /// creation-time `pending_attach = true` initializer runs before the pane
+        /// is published into `panes`, so it stays a plain store.
+        pub fn clearPendingAttach(self: *Pane) void {
+            @atomicStore(bool, &self.pending_attach, false, .release);
+        }
+
+        /// Take a hold for an in-flight snapshot/payload that captured a raw
+        /// pointer to this pane (IO thread, at snapshot/payload build). Pairs
+        /// with `releaseSnapshotRef`. ROOTSHELL-TMUX (id=viewer-snapshot-refcount)
+        pub fn acquireSnapshotRef(self: *Pane) void {
+            _ = @atomicRmw(usize, &self.snapshot_refs, .Add, 1, .acq_rel);
+        }
+
+        /// Drop a hold taken by `acquireSnapshotRef` (app thread, when the
+        /// snapshot/payload is freed). After this returns the IO thread may
+        /// destroy the pane if nothing else retains it, so the caller must not
+        /// touch the pane again. ROOTSHELL-TMUX (id=viewer-snapshot-refcount)
+        pub fn releaseSnapshotRef(self: *Pane) void {
+            _ = @atomicRmw(usize, &self.snapshot_refs, .Sub, 1, .acq_rel);
+            // May now be a fully-released orphan whose viewer is gone — reap it.
+            // After this `self` may be freed; do not touch it again.
+            reapOrphan(self);
+        }
+
+        /// Whether any in-flight snapshot/payload still holds this pane.
+        pub fn hasSnapshotRefs(self: *const Pane) bool {
+            return @atomicLoad(usize, &self.snapshot_refs, .acquire) > 0;
+        }
+
+        /// Whether this pane must NOT be freed: a child renderer is attached or
+        /// en route, OR an in-flight snapshot/payload still references its raw
+        /// pointer. Every viewer free path checks this. ROOTSHELL-TMUX
+        /// (id=viewer-snapshot-refcount)
+        pub fn isRetained(self: *const Pane) bool {
+            return self.isHeldByChild() or self.hasSnapshotRefs();
+        }
 
         pub fn deinit(self: *Pane, alloc: Allocator) void {
             for (self.responses.items) |chunk| alloc.free(chunk);
@@ -649,22 +873,28 @@ pub const Viewer = struct {
                 // stream_handler frees the viewer synchronously on `%exit`, and
                 // `sessionChanged` deinits the old viewer on `%session-changed`,
                 // both BEFORE the child pane surfaces have been torn down. Freeing
-                // an attached pane's terminal here would UAF that renderer thread
-                // (crash in updateFrame/updateExtraRows). Leak it instead: the
-                // child later clears renderer_mutex on still-valid memory when it
-                // detaches. Detached panes (mutex null) free normally. Also leak
-                // en-route panes (pending_attach) whose child has not bound yet.
-                if (pane.renderer_mutex != null or pane.pending_attach) continue;
+                // a retained pane's terminal here would UAF that renderer thread
+                // (crash in updateFrame/updateExtraRows) or an in-flight reconcile
+                // payload. Hand it to the orphan graveyard instead of leaking:
+                // the last holder to release reaps it (id=viewer-orphan-graveyard).
+                // Detached, unreferenced panes free normally.
+                if (pane.isRetained()) {
+                    orphanPane(pane, self.alloc);
+                    continue;
+                }
                 pane.deinit(self.alloc);
                 self.alloc.destroy(pane);
             }
             self.panes.deinit(self.alloc);
         }
         {
-            // Free retired panes whose child has already detached; leak any
-            // still attached or en route (same reasoning as above).
+            // Free retired panes whose child has already detached; orphan any
+            // still attached / en route / snapshot-referenced (same as above).
             for (self.retired_panes.items) |pane| {
-                if (pane.renderer_mutex != null or pane.pending_attach) continue;
+                if (pane.isRetained()) {
+                    orphanPane(pane, self.alloc);
+                    continue;
+                }
                 pane.deinit(self.alloc);
                 self.alloc.destroy(pane);
             }
@@ -767,6 +997,17 @@ pub const Viewer = struct {
         return builder.writer.buffered();
     }
 
+    /// Roll back the `command_in_flight` flag set by `takePendingCommand` (or by
+    /// a viewer-emitted `.command` action) when the stream handler fails to
+    /// actually hand the command to the pty (e.g. OOM duping it). Without this
+    /// the pump wedges: the flag stays set, no `%begin/%end` response ever
+    /// arrives to clear it, and no further queued command is sent. Nothing was
+    /// written and no sent-FIFO marker was recorded, so clearing the flag is
+    /// consistent. ROOTSHELL-TMUX (id=viewer-rollback-in-flight)
+    pub fn rollbackInFlightCommand(self: *Viewer) void {
+        self.command_in_flight = false;
+    }
+
     /// Record that a tracked command was written to the tmux pty (called at the
     /// drain/write point after the bytes are written). ROOTSHELL-TMUX
     /// (id=viewer-sent-fifo)
@@ -818,6 +1059,31 @@ pub const Viewer = struct {
             .tracked => .tracked,
             .untracked => .untracked,
         };
+    }
+
+    /// Record that a resync probe was written to the tmux pty. ROOTSHELL-TMUX
+    /// (id=viewer-resync-probe-count). See `outstanding_resync_probes`.
+    pub fn recordResyncProbeSent(self: *Viewer) void {
+        self.outstanding_resync_probes += 1;
+    }
+
+    /// Whether the viewer still expects one or more resync probe responses.
+    pub fn hasOutstandingResyncProbes(self: *const Viewer) bool {
+        return self.outstanding_resync_probes > 0;
+    }
+
+    /// Account for one resync probe response (the marker block that completes
+    /// resync, or a stray retry consumed in steady state). Saturating.
+    pub fn consumeResyncProbe(self: *Viewer) void {
+        self.outstanding_resync_probes -|= 1;
+    }
+
+    /// Stop expecting resync probe responses. Called when the first NON-probe
+    /// block arrives in steady state: any probes that were lost (e.g. sent
+    /// before the transport attached) will never be answered, so we must not
+    /// keep looking for the sentinel in later blocks.
+    pub fn clearOutstandingResyncProbes(self: *Viewer) void {
+        self.outstanding_resync_probes = 0;
     }
 
     /// Send in an input event (such as a tmux protocol notification,
@@ -904,6 +1170,12 @@ pub const Viewer = struct {
                 // stream is clean (stale blocks from before the reattach can't
                 // contain it).
                 const idx = std.mem.indexOf(u8, content, resync_marker) orelse return &.{};
+
+                // This marker block is one probe's response; account for it so
+                // the stream handler drops only the REMAINING in-flight probe
+                // responses (retries) in steady state. ROOTSHELL-TMUX
+                // (id=viewer-resync-probe-count)
+                self.consumeResyncProbe();
 
                 // Recover the attached session id from `<marker> $<id>` so the
                 // rebuild's session-scoped pane_state covers EVERY window's
@@ -1552,7 +1824,7 @@ pub const Viewer = struct {
         var i: usize = 0;
         while (i < self.retired_panes.items.len) {
             const pane = self.retired_panes.items[i];
-            if (pane.renderer_mutex == null and !pane.pending_attach) {
+            if (!pane.isRetained()) {
                 pane.deinit(self.alloc);
                 self.alloc.destroy(pane);
                 _ = self.retired_panes.swapRemove(i);
@@ -1707,10 +1979,11 @@ pub const Viewer = struct {
                 id,
             )) |entry_const| {
                 const pane = entry_const.value;
-                if (pane.renderer_mutex != null or pane.pending_attach) {
-                    // Child still attached, or one is en route: defer the free.
-                    // On allocation failure we leak rather than free under a live
-                    // (or imminent) renderer.
+                if (pane.isRetained()) {
+                    // Child still attached/en route, or an in-flight snapshot or
+                    // reconcile payload still holds a raw pointer to it: defer the
+                    // free. On allocation failure we leak rather than free under a
+                    // live (or imminent) renderer / pointer holder.
                     self.retired_panes.append(self.alloc, pane) catch {};
                 } else {
                     pane.deinit(self.alloc);
@@ -1872,10 +2145,15 @@ pub const Viewer = struct {
             return;
         };
 
+        // Dupe into a temp BEFORE freeing the old buffer: if the dupe fails
+        // (OOM), `self.tmux_version` must keep pointing at valid memory, not a
+        // freed buffer with len > 0 (which deinit and sessionChanged would then
+        // double-free / read-after-free). ROOTSHELL-TMUX (id=viewer-version-dupe)
+        const dup = try self.alloc.dupe(u8, data.version);
         if (self.tmux_version.len > 0) {
             self.alloc.free(self.tmux_version);
         }
-        self.tmux_version = try self.alloc.dupe(u8, data.version);
+        self.tmux_version = dup;
     }
 
     fn receivedPaneMode(
@@ -1917,8 +2195,13 @@ pub const Viewer = struct {
         actions: *std.ArrayList(Action),
         content: []const u8,
     ) !void {
-        // If there is an error, reset our actions to what it was before.
-        errdefer actions.shrinkRetainingCapacity(actions.items.len);
+        // If there is an error, reset our actions to what it was before. Capture
+        // the length NOW — `shrinkRetainingCapacity(actions.items.len)` evaluated
+        // at errdefer time would shrink to the current (already-grown) length, a
+        // no-op that leaves half-built actions in place. ROOTSHELL-TMUX
+        // (id=viewer-listwindows-errdefer)
+        const actions_start_len = actions.items.len;
+        errdefer actions.shrinkRetainingCapacity(actions_start_len);
 
         // Reset the shared windows arena so all layout allocations start
         // fresh. This is safe because every Window's layout data lives on
@@ -2054,8 +2337,9 @@ pub const Viewer = struct {
             };
             const pane: *Pane = entry.value_ptr.*;
 
-            if (pane.renderer_mutex) |m| m.lock();
-            defer if (pane.renderer_mutex) |m| m.unlock();
+            const render_mutex = pane.rendererMutex();
+            if (render_mutex) |m| m.lock();
+            defer if (render_mutex) |m| m.unlock();
 
             const t: *Terminal = &pane.terminal;
 
@@ -2167,16 +2451,29 @@ pub const Viewer = struct {
             t.modes.set(.focus_event, data.focus_flag);
             t.modes.set(.bracketed_paste, data.bracketed_paste);
 
-            // Scroll region (tmux uses 0-based values)
+            // Scroll region (tmux uses 0-based, inclusive). Clamp to the pane's
+            // current rows and require a valid (top < bottom) region, mirroring
+            // `Terminal.setTopAndBottomMargin`'s bounds but WITHOUT its
+            // cursor-home side effect (the cursor was already restored above). A
+            // tmux-reported region taller than the pane terminal's current rows
+            // (a real transient during resize/relayout) would otherwise feed OOB
+            // row math, and top >= bottom would underflow the region height. On a
+            // degenerate report we leave the default full-screen region.
+            // ROOTSHELL-TMUX (id=viewer-pane-state-scroll-clamp)
             scroll: {
-                const scroll_top = std.math.cast(
+                if (t.rows == 0) break :scroll;
+                const upper = std.math.cast(
                     size.CellCountInt,
                     data.scroll_region_upper,
                 ) orelse break :scroll;
-                const scroll_bottom = std.math.cast(
+                const lower = std.math.cast(
                     size.CellCountInt,
                     data.scroll_region_lower,
                 ) orelse break :scroll;
+                const max_row: size.CellCountInt = @intCast(t.rows - 1);
+                const scroll_top = @min(upper, max_row);
+                const scroll_bottom = @min(lower, max_row);
+                if (scroll_top >= scroll_bottom) break :scroll;
                 t.scrolling_region.top = scroll_top;
                 t.scrolling_region.bottom = scroll_bottom;
             }
@@ -2210,8 +2507,9 @@ pub const Viewer = struct {
         };
         const pane: *Pane = entry.value_ptr.*;
 
-        if (pane.renderer_mutex) |m| m.lock();
-        defer if (pane.renderer_mutex) |m| m.unlock();
+        const render_mutex = pane.rendererMutex();
+        if (render_mutex) |m| m.lock();
+        defer if (render_mutex) |m| m.unlock();
 
         const t: *Terminal = &pane.terminal;
         _ = try t.switchScreen(screen_key);
@@ -2257,8 +2555,9 @@ pub const Viewer = struct {
         };
         const pane: *Pane = entry.value_ptr.*;
 
-        if (pane.renderer_mutex) |m| m.lock();
-        defer if (pane.renderer_mutex) |m| m.unlock();
+        const render_mutex = pane.rendererMutex();
+        if (render_mutex) |m| m.lock();
+        defer if (render_mutex) |m| m.unlock();
 
         const t: *Terminal = &pane.terminal;
         _ = try t.switchScreen(screen_key);
@@ -2286,7 +2585,7 @@ pub const Viewer = struct {
     /// the pane after the viewer has written to its terminal. No-op when no
     /// child is attached (`wake_fn == null`). See `Pane.wake_fn`.
     fn wakePane(pane: *const Pane) void {
-        if (pane.wake_fn) |f| f(pane.wake_ctx);
+        pane.wake();
     }
 
     fn titleFingerprint(title: ?[:0]const u8) u64 {
@@ -2311,8 +2610,9 @@ pub const Viewer = struct {
         // Lock the renderer mutex if a child surface has registered one.
         // This coordinates with the child's renderer thread which reads
         // from the same terminal under this mutex.
-        if (pane.renderer_mutex) |m| m.lock();
-        defer if (pane.renderer_mutex) |m| m.unlock();
+        const render_mutex = pane.rendererMutex();
+        if (render_mutex) |m| m.lock();
+        defer if (render_mutex) |m| m.unlock();
 
         // tmux escapes control bytes (< 0x20) and the backslash itself as
         // `\ooo` (a backslash followed by exactly three octal digits) in
@@ -2511,8 +2811,9 @@ pub const Viewer = struct {
                     // terminal under that mutex. Without this lock a relayout
                     // during heavy output (e.g. running btop in a pane) races
                     // the renderer and crashes in updateFrame/updateExtraRows.
-                    if (pane.renderer_mutex) |m| m.lock();
-                    defer if (pane.renderer_mutex) |m| m.unlock();
+                    const render_mutex = pane.rendererMutex();
+                    if (render_mutex) |m| m.lock();
+                    defer if (render_mutex) |m| m.unlock();
                     try pane.terminal.resize(
                         gpa_alloc,
                         cols,
@@ -5518,7 +5819,7 @@ test "output OSC title from active pane produces title action" {
     defer viewer.deinit();
     defer {
         var it = viewer.panes.iterator();
-        while (it.next()) |kv| kv.value_ptr.*.pending_attach = false;
+        while (it.next()) |kv| kv.value_ptr.*.clearPendingAttach();
     }
 
     try testViewer(&viewer, &.{
@@ -6459,7 +6760,7 @@ fn testPaneStateMouseModes(
     defer viewer.deinit();
     defer {
         var it = viewer.panes.iterator();
-        while (it.next()) |kv| kv.value_ptr.*.pending_attach = false;
+        while (it.next()) |kv| kv.value_ptr.*.clearPendingAttach();
     }
 
     try testViewer(&viewer, &.{
