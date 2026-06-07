@@ -3417,13 +3417,15 @@ const Command = union(enum) {
                 if (cs.enable_pause) {
                     // pause-after (SECONDS) enables control-mode pause so tmux
                     // pauses a lagging pane instead of killing the client at
-                    // CONTROL_MAXIMUM_AGE. wait-exit makes the server wait for this
-                    // control client before tearing down on exit, so we don't miss
-                    // the final %output/%exit (matches iTerm2). Unknown flags are
-                    // silently ignored by older tmux (server_client_set_flags), so
-                    // wait-exit is safe to send unconditionally.
-                    // ROOTSHELL-TMUX (id=client-flags)
-                    try writer.print(" -f pause-after={d},wait-exit", .{PAUSE_AFTER_SECONDS});
+                    // CONTROL_MAXIMUM_AGE.
+                    //
+                    // Do NOT add `wait-exit` here. It makes the `tmux -CC` client
+                    // BLOCK reading stdin after it prints `%exit` (client.c) until
+                    // it receives an empty line. The app's gateway-detach path does
+                    // not drain that handshake, so wait-exit leaves the gateway's
+                    // `tmux -CC` stuck after an ESC detach (gateway never returns to
+                    // its shell). ROOTSHELL-TMUX (id=client-flags)
+                    try writer.print(" -f pause-after={d}", .{PAUSE_AFTER_SECONDS});
                 }
                 try writer.writeAll("\n");
             },
@@ -3630,7 +3632,7 @@ test "client_size with enable_pause formats pause-after flag" {
     defer builder.deinit();
     try cmd.formatCommand(&builder.writer);
     const result = builder.writer.buffered();
-    try testing.expectEqualStrings("refresh-client -C 80x24 -f pause-after=200,wait-exit\n", result);
+    try testing.expectEqualStrings("refresh-client -C 80x24 -f pause-after=200\n", result);
 }
 
 test "continue_pane command formats refresh-client -A" {
@@ -4220,7 +4222,7 @@ test "startup sends client_size with pause-after before version query" {
             .check_command = (struct {
                 fn check(_: *Viewer, cmd: []const u8) anyerror!void {
                     try testing.expectEqualStrings(
-                        "refresh-client -C 132x43 -f pause-after=200,wait-exit\n",
+                        "refresh-client -C 132x43 -f pause-after=200\n",
                         cmd,
                     );
                 }
