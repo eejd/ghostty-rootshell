@@ -4222,8 +4222,8 @@ fn maybePromptClick(self: *Surface) !bool {
             // For the event, we always send a left-click press event.
             // This matches what Kitty sends.
             const key: u8, const y: u32 = switch (v) {
-                .Absolute => .{ 1, pos_vp.y + 1 },
-                .Relative => .{ 2, pos_vp.y - prompt_pin.y + 1 },
+                .absolute => .{ 1, pos_vp.y + 1 },
+                .relative => .{ 2, pos_vp.y - prompt_pin.y + 1 },
             };
             var data: termio.Message.WriteReq.Small.Array = undefined;
             const resp = try std.fmt.bufPrint(

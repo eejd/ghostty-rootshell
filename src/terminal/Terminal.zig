@@ -1226,7 +1226,7 @@ pub fn semanticPrompt(
                 // within a prompt area to SGR mouse events and defers to the
                 // shell to handle them.
                 if (cmd.readOption(.click_events)) |v| {
-                    screen.semantic_prompt.click = .{ .click_events = v } ;
+                    screen.semantic_prompt.click = .{ .click_events = v };
                     break :click;
                 }
 
@@ -12419,7 +12419,24 @@ test "Terminal: OSC133A click_events=1 sets click to click_events" {
         .options_unvalidated = "click_events=1",
     });
 
-    try testing.expectEqual(.click_events, t.screens.active.semantic_prompt.click);
+    try testing.expectEqual(Screen.SemanticPrompt.SemanticClick{ .click_events = .absolute }, t.screens.active.semantic_prompt.click);
+}
+
+test "Terminal: OSC133A click_events=2 sets click to click_events (relative)" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, .{ .cols = 10, .rows = 5 });
+    defer t.deinit(alloc);
+
+    // Verify default state is none
+    try testing.expectEqual(.none, t.screens.active.semantic_prompt.click);
+
+    // OSC 133;A with click_events=2
+    try t.semanticPrompt(.{
+        .action = .fresh_line_new_prompt,
+        .options_unvalidated = "click_events=2",
+    });
+
+    try testing.expectEqual(Screen.SemanticPrompt.SemanticClick{ .click_events = .relative }, t.screens.active.semantic_prompt.click);
 }
 
 test "Terminal: OSC133A click_events=0 does not set click_events" {
@@ -12476,7 +12493,7 @@ test "Terminal: OSC133A click_events=1 takes priority over cl" {
     });
 
     // click_events should take priority
-    try testing.expectEqual(.click_events, t.screens.active.semantic_prompt.click);
+    try testing.expectEqual(Screen.SemanticPrompt.SemanticClick{ .click_events = .absolute }, t.screens.active.semantic_prompt.click);
 }
 
 test "Terminal: OSC133A click_events=0 falls back to cl" {

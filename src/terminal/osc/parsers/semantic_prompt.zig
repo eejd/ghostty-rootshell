@@ -68,7 +68,7 @@ pub const Command = struct {
 // See https://github.com/ghostty-org/ghostty/issues/10865 and
 // https://github.com/kovidgoyal/kitty/issues/9500
 // for further details.
-pub const ClickEvents = enum { Absolute, Relative };
+pub const ClickEvents = enum { absolute, relative };
 
 pub const Option = enum {
     aid,
@@ -211,8 +211,8 @@ pub const Option = enum {
                 else
                     null,
                 .click_events => if (value.len == 1) switch (value[0]) {
-                    '1' => .Absolute,
-                    '2' => .Relative,
+                    '1' => .absolute,
+                    '2' => .relative,
                     else => null,
                 } else null,
                 .special_key => if (value.len == 1) switch (value[0]) {
@@ -1264,9 +1264,10 @@ test "Option.read special_key" {
 
 test "Option.read click_events" {
     const testing = std.testing;
-    try testing.expect(Option.click_events.read("click_events=1").? == true);
-    try testing.expect(Option.click_events.read("click_events=0").? == false);
     try testing.expect(Option.click_events.read("click_events=yes") == null);
+    try testing.expect(Option.click_events.read("click_events=0") == null);
+    try testing.expect(Option.click_events.read("click_events=1").? == .absolute);
+    try testing.expect(Option.click_events.read("click_events=2").? == .relative);
 }
 
 test "Option.read exit_code" {
