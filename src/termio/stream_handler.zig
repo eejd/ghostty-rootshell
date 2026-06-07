@@ -729,7 +729,12 @@ pub const StreamHandler = struct {
                 // then this whole block shouldn't be analyzed.
                 if (comptime !tmux_enabled) break :tmux;
 
-                log.info("tmux control mode event cmd={f}", .{tmux});
+                // Do NOT log the event with `{f}`: the formatter dumps raw
+                // payloads (`%output` pane bytes, `%begin/%end` block content
+                // such as `capture-pane` scrollback) which is sensitive user
+                // data and arrives at very high volume. Log only the variant
+                // name at debug level.
+                log.debug("tmux control mode event={s}", .{@tagName(tmux)});
 
                 switch (tmux) {
                     .enter => {
@@ -840,8 +845,8 @@ pub const StreamHandler = struct {
                     // disabled mid-session while the server continues
                     // sending notifications.
                     log.debug(
-                        "received tmux control mode command without viewer: {f}",
-                        .{tmux},
+                        "received tmux control mode command without viewer: {s}",
+                        .{@tagName(tmux)},
                     );
 
                     break :tmux;
@@ -883,7 +888,9 @@ pub const StreamHandler = struct {
                 }
 
                 for (viewer.next(.{ .tmux = tmux })) |action| {
-                    log.debug("tmux viewer action={f}", .{action});
+                    // `{f}` would dump payloads (window topology, raw command
+                    // bytes, server message text); log only the variant name.
+                    log.debug("tmux viewer action={s}", .{@tagName(action)});
                     switch (action) {
                         .exit => {
                             // The viewer has gone defunct (e.g. broken control
