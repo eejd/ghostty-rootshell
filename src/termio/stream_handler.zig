@@ -1023,6 +1023,46 @@ pub const StreamHandler = struct {
         viewer.recordResyncProbeSent();
     }
 
+    /// Drive a LIVE re-resync of the control channel: reset the viewer's command
+    /// pipeline (preserving panes/windows), realign the control parser, and send
+    /// a fresh resync probe whose marker reply rebuilds the topology via
+    /// list-windows. This is the recovery for a block-framing desync (the
+    /// observed command-pipeline hang) and for mid-stream data loss (the tsshd
+    /// buffer overflowing while backgrounded drops a chunk). Same probe logic as
+    /// the resume `.enter` path. Triggered from `tmuxMaybeRecover` (the control
+    /// parser raised its recover edge) and from the app's
+    /// `ghostty_surface_tmux_recover` watchdog. No-op unless a viewer is live in
+    /// the steady `.command_queue` state (a fresh startup/resume drives its own
+    /// resync). Runs on the IO thread; the read path holds the renderer mutex, so
+    /// `messageWriter` is safe. ROOTSHELL-TMUX (id=streamhandler-force-resync)
+    pub fn tmuxForceResync(self: *StreamHandler) void {
+        if (comptime !tmux_enabled) return;
+        const viewer = self.tmux_viewer orelse return;
+        if (!viewer.isCommandQueue()) return;
+        log.warn("tmux control desync/data-loss detected; forcing live re-resync", .{});
+        viewer.forceResync();
+        // Realign the parser to a clean line boundary (the live stream may resume
+        // mid-line after data loss) so it does not break on the next byte.
+        self.dcs.beginTmuxResync();
+        self.messageWriter(termio.Message.writeReq(
+            self.alloc,
+            terminal.tmux.Viewer.resync_probe_command,
+        ) catch return);
+        viewer.recordResyncProbeSent();
+        // Surface the new state immediately (no-op unless the app opted in).
+        self.refreshTmuxDebug();
+    }
+
+    /// After feeding control-mode bytes, consume the parser's recover edge and
+    /// drive a live re-resync if it was raised (a stray byte, a run of mismatched
+    /// block terminators, or a runaway block — all signatures of mid-stream data
+    /// loss). Cheap: a take-and-clear bool unless a desync was actually flagged.
+    /// ROOTSHELL-TMUX (id=streamhandler-force-resync)
+    inline fn tmuxMaybeRecover(self: *StreamHandler) void {
+        if (comptime !tmux_enabled) return;
+        if (self.dcs.tmuxTakeRecoverRequest()) self.tmuxForceResync();
+    }
+
     /// Abort an in-progress control-mode resume (see `Viewer.enterResync`).
     /// Called when the app's resume watchdog fires because no reconcile arrived:
     /// tmux died, the session expired, or the reattached pty is at a bare shell,
@@ -1071,6 +1111,43 @@ pub const StreamHandler = struct {
             return;
         };
         self.pumpTmuxCommandQueue(viewer);
+    }
+
+    /// Forcibly exit control mode LOCALLY (recovery watchdog gave up on a wedge
+    /// it could not heal). Unlike `tmuxDetach`, this does NOT ask tmux to exit
+    /// (no `detach-client` round-trip) — it tears down locally so it works even
+    /// when tmux/the link is unresponsive. `tmuxTeardownViewer` emits the
+    /// empty-topology snapshot exactly like `%exit`, so the app prunes the
+    /// projected tabs through the normal reconcile path (which also drops the
+    /// controller) and the gateway returns to its shell. The caller (Thread)
+    /// forces the VT parser back to ground; `tmux_force_unhook` resets the DCS
+    /// handler out of `.tmux` so a later real hook starts clean. The tmux
+    /// server/session stays alive. No-op when no viewer is active. ROOTSHELL-TMUX
+    /// (id=streamhandler-force-exit)
+    pub fn tmuxForceExit(self: *StreamHandler) void {
+        if (comptime !tmux_enabled) return;
+        if (self.tmux_viewer == null) return;
+        log.warn("tmux recovery gave up; forcing local control-mode exit", .{});
+        // Emits the empty-topology snapshot (the app prunes via the reconcile
+        // path) and frees the viewer + clears the active flag.
+        self.tmuxTeardownViewer();
+        // Reset the DCS handler out of `.tmux` SYNCHRONOUSLY (frees the control
+        // parser buffer). This is REQUIRED, not deferrable: the caller (Thread)
+        // forces the VT parser straight to `.ground`, which bypasses the only
+        // caller of `dcsConsumeGroundRequest`, so the deferred `tmux_force_unhook`
+        // would never run and `self.dcs.state` would stay `.tmux` — tripping
+        // `dcs.Handler.hook`'s `assert(state == .inactive)` on the next real
+        // control-mode entry. Mirrors `tmuxResumeAbort`; the returned `.tmux =
+        // .exit` command is redundant (viewer already gone), so free it.
+        // ROOTSHELL-TMUX (id=streamhandler-force-exit)
+        if (self.dcs.unhook()) |cmd| {
+            var freed = cmd;
+            freed.deinit();
+        }
+        // DCS already reset above; clear the deferred flag so a later stray DCS
+        // put doesn't redundantly unhook.
+        self.tmux_force_unhook = false;
+        self.refreshTmuxDebug();
     }
 
     /// Called by `terminal.stream` after each `dcs_put`. Returns true to ask the
@@ -1145,7 +1222,12 @@ pub const StreamHandler = struct {
     }
 
     pub inline fn dcsHook(self: *StreamHandler, dcs: terminal.DCS) !void {
-        var cmd = self.dcs.hook(self.alloc, dcs) orelse return;
+        const maybe = self.dcs.hook(self.alloc, dcs);
+        // Heal a control-mode framing desync / mid-stream data loss the parser
+        // flagged while consuming this input, before processing any command.
+        // ROOTSHELL-TMUX (id=streamhandler-force-resync)
+        if (comptime tmux_enabled) self.tmuxMaybeRecover();
+        var cmd = maybe orelse return;
         defer cmd.deinit();
         try self.dcsCommand(&cmd);
         // Sync the tmux debug mirror after each completed DCS command (no-op
@@ -1154,14 +1236,18 @@ pub const StreamHandler = struct {
     }
 
     pub inline fn dcsPut(self: *StreamHandler, byte: u8) !void {
-        var cmd = self.dcs.put(byte) orelse return;
+        const maybe = self.dcs.put(byte);
+        if (comptime tmux_enabled) self.tmuxMaybeRecover(); // ROOTSHELL-TMUX (id=streamhandler-force-resync)
+        var cmd = maybe orelse return;
         defer cmd.deinit();
         try self.dcsCommand(&cmd);
         if (comptime tmux_enabled) self.refreshTmuxDebugAfter(&cmd); // ROOTSHELL-TMUX (id=tmux-debug-mirror)
     }
 
     pub inline fn dcsUnhook(self: *StreamHandler) !void {
-        var cmd = self.dcs.unhook() orelse return;
+        const maybe = self.dcs.unhook();
+        if (comptime tmux_enabled) self.tmuxMaybeRecover(); // ROOTSHELL-TMUX (id=streamhandler-force-resync)
+        var cmd = maybe orelse return;
         defer cmd.deinit();
         try self.dcsCommand(&cmd);
         if (comptime tmux_enabled) self.refreshTmuxDebugAfter(&cmd); // ROOTSHELL-TMUX (id=tmux-debug-mirror)

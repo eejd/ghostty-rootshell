@@ -285,6 +285,20 @@ pub const Handler = struct {
         }
     }
 
+    /// Take-and-clear the control parser's recovery-request edge (see
+    /// `control.Parser.recover_pending`). The stream handler calls this after
+    /// feeding each byte; a true result means a framing desync / mid-stream data
+    /// loss was detected and the gateway should drive a live re-resync. No-op
+    /// (false) unless currently in the tmux DCS state. ROOTSHELL-TMUX
+    /// (id=dcs-tmux-take-recover)
+    pub fn tmuxTakeRecoverRequest(self: *Handler) bool {
+        if (comptime !build_options.tmux_control_mode) return false;
+        return switch (self.state) {
+            .tmux => |*tmux| tmux.takeRecoverRequest(),
+            else => false,
+        };
+    }
+
     pub fn unhook(self: *Handler) ?Command {
         // Note: we do NOT call deinit here on purpose because some commands
         // transfer memory ownership. If state needs cleanup, the switch

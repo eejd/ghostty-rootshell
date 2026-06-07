@@ -1225,6 +1225,47 @@ pub const Viewer = struct {
         self.state = .resync;
     }
 
+    /// Re-enter `.resync` from a LIVE `.command_queue` viewer whose control
+    /// channel desynced — a block-framing mismatch (the observed hang) or
+    /// mid-stream data loss (the tsshd buffer overflowing while backgrounded
+    /// drops a byte chunk, so command replies are lost and the block stream
+    /// shifts). Resets ONLY the command pipeline; it deliberately PRESERVES
+    /// `panes`/`windows` (and their child surfaces / per-pane VT decoders) so the
+    /// post-marker `list-windows` rebuild reuses them with no recapture and no
+    /// flicker — `initLayout`/`syncLayouts` reuse a pane by id. The caller
+    /// (stream handler) realigns the parser (`beginTmuxResync`) and sends the
+    /// resync probe, exactly like the resume path. No-op unless we are in
+    /// `.command_queue` (a fresh startup/resume drives its own resync).
+    /// ROOTSHELL-TMUX (id=viewer-force-resync)
+    pub fn forceResync(self: *Viewer) void {
+        if (self.state != .command_queue) return;
+
+        // Drop the stranded in-flight command and every queued command: the
+        // rebuild re-establishes topology + focus, and keeping them would just
+        // desync against the post-resync block stream.
+        self.command_in_flight = false;
+        {
+            var it = self.command_queue.iterator(.forward);
+            while (it.next()) |command| command.deinit(self.alloc);
+            self.command_queue.clear();
+        }
+        // Markers are plain enums (no per-entry free). Clearing realigns the
+        // block matcher against the fresh probe + rebuild stream.
+        self.sent_fifo.clear();
+        // The probe the stream handler is about to send re-arms this to 1.
+        self.outstanding_resync_probes = 0;
+
+        // Recycle the action arena so a stale action slice can't alias freed
+        // memory after the state flip.
+        {
+            var arena = self.action_arena.promote(self.alloc);
+            _ = arena.reset(.free_all);
+            self.action_arena = arena.state;
+        }
+
+        self.state = .resync;
+    }
+
     /// Whether the viewer is still awaiting its resync probe marker. The app
     /// re-sends the probe on a cadence while this is true (the first probe can
     /// be lost if sent before the transport finished attaching, and an idle tmux
@@ -1232,6 +1273,14 @@ pub const Viewer = struct {
     /// probe response once we have left resync. ROOTSHELL-TMUX (id=viewer-is-resyncing)
     pub fn isResyncing(self: *const Viewer) bool {
         return self.state == .resync;
+    }
+
+    /// Whether the viewer is in the steady-state command-queue phase (startup and
+    /// resync are complete). The live-recovery path (`forceResync`) only fires
+    /// here; a fresh startup/resume drives its own resync. ROOTSHELL-TMUX
+    /// (id=viewer-force-resync)
+    pub fn isCommandQueue(self: *const Viewer) bool {
+        return self.state == .command_queue;
     }
 
     /// Handle a notification while resyncing a resumed control-mode stream.

@@ -2456,6 +2456,38 @@ pub const CAPI = struct {
     }
     // ROOTSHELL-TMUX END FROZEN-ABI (id=embedded-tmux-resume-abort)
 
+    // ROOTSHELL-TMUX BEGIN FROZEN-ABI (id=embedded-tmux-recover)
+    // ghostty_surface_tmux_recover heals a LIVE tmux control-mode gateway whose
+    // command/response stream desynced or that lost mid-stream data (the tsshd
+    // buffer overflowed while the app was backgrounded). The iOS app calls it
+    // from its always-on wedge watchdog (a command stuck in-flight with a growing
+    // queue) and on foreground if the gateway looks stalled. Drives a live
+    // re-resync (re-probe + list-windows rebuild) WITHOUT tearing down panes.
+    // No-op unless a viewer is live in the steady command-queue state — distinct
+    // from ghostty_surface_tmux_resume, which only acts when NO viewer exists.
+    // Keep the signature stable. reapply: re-add this export inside the CAPI
+    // struct. See docs/tmux-control-mode-fork.md.
+    export fn ghostty_surface_tmux_recover(surface: *Surface) void {
+        surface.core_surface.io.queueMessage(.{ .tmux_recover = {} }, .unlocked);
+    }
+    // ROOTSHELL-TMUX END FROZEN-ABI (id=embedded-tmux-recover)
+
+    // ROOTSHELL-TMUX BEGIN FROZEN-ABI (id=embedded-tmux-force-exit)
+    // ghostty_surface_tmux_force_exit forcibly exits control mode LOCALLY on a
+    // live gateway when the app's recovery watchdog gives up on a wedge it cannot
+    // heal. Equivalent to a `%exit`: tears down the viewer, emits the empty-
+    // topology snapshot (the app prunes the projected tabs via the normal
+    // reconcile path, which also drops the controller), and returns the parser to
+    // ground so the gateway renders its shell. Unlike ghostty_surface_tmux_detach
+    // it does not wait for tmux to answer a detach-client, so it works even when
+    // tmux/the link is unresponsive. The tmux server/session stays alive. No-op
+    // if no viewer is active. Keep the signature stable. reapply: re-add this
+    // export inside the CAPI struct. See docs/tmux-control-mode-fork.md.
+    export fn ghostty_surface_tmux_force_exit(surface: *Surface) void {
+        surface.core_surface.io.queueMessage(.{ .tmux_force_exit = {} }, .unlocked);
+    }
+    // ROOTSHELL-TMUX END FROZEN-ABI (id=embedded-tmux-force-exit)
+
     // ROOTSHELL-TMUX BEGIN FROZEN-ABI (id=embedded-tmux-active)
     // ghostty_surface_tmux_active is the iOS Swift app's ESC escape-hatch probe:
     // it lets the app detach (via ghostty_surface_tmux_detach) whenever this

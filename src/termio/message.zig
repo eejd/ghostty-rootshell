@@ -138,6 +138,28 @@ pub const Message = union(enum) {
     /// `StreamHandler.tmuxResumeAbort`.
     tmux_resume_abort: void, // ROOTSHELL-TMUX (id=termio-msg-resume-abort)
 
+    /// Recover a LIVE tmux control-mode gateway whose command/response stream
+    /// desynced or that lost mid-stream data (the tsshd buffer overflowed while
+    /// the app was backgrounded). Handled on the IO thread: drives a live
+    /// re-resync (reset the command pipeline, realign the parser, re-probe,
+    /// rebuild via list-windows) WITHOUT tearing down panes. No-op unless a
+    /// viewer is live in the steady command-queue state. Distinct from
+    /// `tmux_resume` (which only acts when NO viewer exists). See `Thread`
+    /// `.tmux_recover` + `StreamHandler.tmuxForceResync`. ROOTSHELL-TMUX
+    /// (id=termio-msg-recover)
+    tmux_recover: void, // ROOTSHELL-TMUX (id=termio-msg-recover)
+
+    /// Forcibly exit tmux control mode LOCALLY on a live gateway, equivalent to a
+    /// `%exit`: tear down the viewer, emit an empty-topology snapshot (so the app
+    /// prunes the projected tabs via the normal reconcile path, which also drops
+    /// the controller), and return the VT parser to ground so the gateway renders
+    /// its shell. Used by the app's recovery watchdog when a wedge cannot be
+    /// healed (does NOT wait for tmux to answer a `detach-client`, unlike
+    /// `tmux_detach`, so it works even if tmux/the link is unresponsive). The tmux
+    /// server/session stays alive. See `Thread` `.tmux_force_exit` +
+    /// `StreamHandler.tmuxForceExit`. ROOTSHELL-TMUX (id=termio-msg-force-exit)
+    tmux_force_exit: void, // ROOTSHELL-TMUX (id=termio-msg-force-exit)
+
     /// Send this when a synchronized output mode is started. This will
     /// start the timer so that the output mode is disabled after a
     /// period of time so that a bad actor can't hang the terminal.

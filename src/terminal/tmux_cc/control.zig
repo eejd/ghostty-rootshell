@@ -105,6 +105,44 @@ pub const Parser = struct {
     /// (id=control-error-code)
     last_error: ErrorCode = .none,
 
+    /// Edge-triggered request for the gateway to heal a framing desync by
+    /// re-resyncing the LIVE control channel (NOT breaking it). Raised when the
+    /// parser detects desync it cannot silently absorb — a stray byte in `.idle`
+    /// (which used to break the channel → defunct → every tab torn down), a run
+    /// of well-formed-but-mismatched block terminators, or a runaway block whose
+    /// matching `%end` never arrives. All three are exactly what mid-stream data
+    /// loss looks like (the tsshd buffer overflowing while the app is
+    /// backgrounded drops a byte chunk, so the stream resumes mid-line/mid-block).
+    /// The stream handler consumes this via `takeRecoverRequest` after each `put`
+    /// and drives a live re-resync (re-probe + list-windows rebuild). The parser
+    /// itself is left in resync-tolerant `.idle` (it does not break), so the
+    /// channel survives even if the recover request races. ROOTSHELL-TMUX
+    /// (id=control-recover-request)
+    recover_pending: bool = false,
+
+    /// Well-formed-but-mismatched block terminators seen since the current
+    /// `%begin` (reset on block completion and on `beginResync`). tmux guarantees
+    /// the `%end`/`%error` tuple matches its `%begin`, so a non-matching guard
+    /// line is NOT this block's terminator: one is plausibly stray pane content
+    /// shaped like a guard line, but several mean the real `%end` was lost and the
+    /// block stream desynced — at which point we request recovery instead of
+    /// merging blocks forever. ROOTSHELL-TMUX (id=control-block-mismatch-bound)
+    mismatched_terminators: usize = 0,
+
+    /// After this many well-formed-but-mismatched terminators within one block,
+    /// the real `%end` is almost certainly lost (data loss merged the stream) —
+    /// request a recovery resync rather than swallowing later blocks forever.
+    /// ROOTSHELL-TMUX (id=control-block-mismatch-bound)
+    const mismatched_terminator_limit = 4;
+
+    /// Byte ceiling on a SINGLE block before requesting recovery. Comfortably
+    /// above a legitimate `capture-pane -e -S -` history replay yet far below
+    /// `max_bytes` (the broken/teardown cap), so a runaway/never-terminating
+    /// block (a `%begin` whose `%end` was lost to data loss) self-heals via
+    /// resync instead of breaking the channel. ROOTSHELL-TMUX
+    /// (id=control-block-mismatch-bound)
+    const block_recover_bytes = 16 * 1024 * 1024;
+
     /// Parsed tokens from a %begin, %end, or %error guard line.
     /// tmux guarantees these match between begin and end/error.
     const BlockInfo = struct {
@@ -159,6 +197,18 @@ pub const Parser = struct {
             return error.OutOfMemory;
         }
 
+        // Bound a runaway control-mode block (a `%begin` whose matching `%end`
+        // was lost to mid-stream data loss) BELOW the hard broken/teardown cap,
+        // so it self-heals via resync instead of breaking the channel. Checked
+        // before any per-byte work and only while inside a block. ROOTSHELL-TMUX
+        // (id=control-block-mismatch-bound)
+        if (self.state == .block and self.buffer.written().len >= block_recover_bytes) {
+            log.warn("tmux block exceeded {} bytes with no matching %end; requesting resync", .{block_recover_bytes});
+            self.last_error = .block_mismatch; // ROOTSHELL-TMUX (id=control-error-code)
+            self.requestRecover();
+            return null;
+        }
+
         // Track line boundaries for resync realignment (only consulted while
         // tolerant). `at_line_start` is whether THIS byte begins a line; update
         // the field for the NEXT byte. ROOTSHELL-TMUX (id=control-resync-line-start)
@@ -191,11 +241,20 @@ pub const Parser = struct {
                     return null;
                 }
             } else if (byte != '%') {
-                // Control mode output should always be wrapped in '%begin/%end'
-                // or be a '%' notification; a stray byte breaks the channel.
+                // A stray byte in `.idle` means the control-stream framing is
+                // broken — overwhelmingly mid-stream data loss (the tsshd buffer
+                // overflowed while the app was backgrounded, dropping a chunk so
+                // the stream resumes mid-line). Do NOT break the channel: that
+                // goes defunct and tears down every projected tab. Self-heal
+                // instead — record the cause, enter resync-tolerant mode so the
+                // rest of the garbage is skipped (not broken), and request a live
+                // re-resync (re-probe + rebuild). We are mid-line, so do not treat
+                // the next byte as a line start (wait for a real '\n%'); that also
+                // preserves the "ignore mid-line %" guarantee. ROOTSHELL-TMUX
+                // (id=control-recover-request)
                 self.last_error = .stray_byte_broken; // ROOTSHELL-TMUX (id=control-error-code)
-                self.broken();
-                return .{ .broken = {} };
+                self.requestRecover();
+                return null;
             } else {
                 self.buffer.clearRetainingCapacity();
                 self.state = .notification;
@@ -229,59 +288,78 @@ pub const Parser = struct {
                 const line = written[idx..];
 
                 if (parseBlockTerminator(line)) |result| {
-                    // Validate that end/error tokens match the begin tokens.
-                    // tmux guarantees these match, so a mismatch indicates
-                    // a protocol error or interleaving bug. We log but still
-                    // process the block (per Ghostty error resilience convention).
-                    if (self.block_begin) |begin| {
-                        if (begin.time != result.info.time or
-                            begin.command_id != result.info.command_id or
-                            begin.flags != result.info.flags)
-                        {
-                            self.last_error = .block_mismatch; // ROOTSHELL-TMUX (id=control-error-code)
-                            log.warn(
-                                "block begin/end mismatch: begin=({},{},{}) end=({},{},{})",
-                                .{
-                                    begin.time,       begin.command_id,       begin.flags,
-                                    result.info.time, result.info.command_id, result.info.flags,
-                                },
-                            );
+                    // Only the guard line whose tuple MATCHES the `%begin`
+                    // terminates the block. tmux guarantees the `%end`/`%error`
+                    // tuple matches its `%begin`, so a well-formed but NON-matching
+                    // guard line is NOT this block's real terminator: it is either
+                    // stray pane content shaped like a guard line (e.g. a pane
+                    // showing tmux logs — treat as body), or evidence that the real
+                    // `%end` was lost to mid-stream data loss. Accepting it anyway
+                    // is what merges two tmux blocks into one and desyncs the
+                    // command/response FIFO (the observed hang). When the `%begin`
+                    // could not be parsed (block_begin == null) we cannot validate,
+                    // so we accept to make progress (prior behavior). ROOTSHELL-TMUX
+                    // (id=control-block-mismatch-bound)
+                    const matches = if (self.block_begin) |begin|
+                        begin.time == result.info.time and
+                            begin.command_id == result.info.command_id and
+                            begin.flags == result.info.flags
+                    else
+                        true;
+
+                    if (matches) {
+                        self.block_begin = null;
+                        self.mismatched_terminators = 0;
+
+                        const output = std.mem.trimRight(
+                            u8,
+                            written[0..idx],
+                            "\r\n",
+                        );
+
+                        // Important: do not clear buffer since the notification
+                        // contains it.
+                        self.state = .idle;
+                        // Completing a block is a definitive alignment signal: leave
+                        // resync-tolerant mode so the normal break-on-stray safety is
+                        // restored. The resume probe's response is always a block.
+                        // ROOTSHELL-TMUX (id=control-resync-tolerant)
+                        self.tolerant = false;
+                        // NOTE: we deliberately do NOT swallow server-originated blocks
+                        // (begin/end flags bit 0 clear) at the parser. The STARTUP attach
+                        // block (`tmux -CC new`/attach) is itself server-originated
+                        // (flags=0 — it is not a control-channel command, so it lacks
+                        // CMDQ_STATE_CONTROL), and the viewer's startup handshake needs
+                        // it. Swallowing flags=0 here breaks attach entirely (no windows,
+                        // stuck queue, ESC can't detach). The FIFO-desync that
+                        // server-originated steady-state blocks could cause must instead
+                        // be handled at the consumer (gated on viewer state / matched to
+                        // sent commands), not by dropping the block. See
+                        // id=server-originated-block.
+                        switch (result.terminator) {
+                            .end => return .{ .block_end = output },
+                            .err => {
+                                self.last_error = .control_error; // ROOTSHELL-TMUX (id=control-error-code)
+                                log.warn("tmux control mode error={s}", .{output});
+                                return .{ .block_err = output };
+                            },
                         }
                     }
-                    self.block_begin = null;
 
-                    const output = std.mem.trimRight(
-                        u8,
-                        written[0..idx],
-                        "\r\n",
-                    );
-
-                    // Important: do not clear buffer since the notification
-                    // contains it.
-                    self.state = .idle;
-                    // Completing a block is a definitive alignment signal: leave
-                    // resync-tolerant mode so the normal break-on-stray safety is
-                    // restored. The resume probe's response is always a block.
-                    // ROOTSHELL-TMUX (id=control-resync-tolerant)
-                    self.tolerant = false;
-                    // NOTE: we deliberately do NOT swallow server-originated blocks
-                    // (begin/end flags bit 0 clear) at the parser. The STARTUP attach
-                    // block (`tmux -CC new`/attach) is itself server-originated
-                    // (flags=0 — it is not a control-channel command, so it lacks
-                    // CMDQ_STATE_CONTROL), and the viewer's startup handshake needs
-                    // it. Swallowing flags=0 here breaks attach entirely (no windows,
-                    // stuck queue, ESC can't detach). The FIFO-desync that
-                    // server-originated steady-state blocks could cause must instead
-                    // be handled at the consumer (gated on viewer state / matched to
-                    // sent commands), not by dropping the block. See
-                    // id=server-originated-block.
-                    switch (result.terminator) {
-                        .end => return .{ .block_end = output },
-                        .err => {
-                            self.last_error = .control_error; // ROOTSHELL-TMUX (id=control-error-code)
-                            log.warn("tmux control mode error={s}", .{output});
-                            return .{ .block_err = output };
-                        },
+                    // Well-formed but non-matching terminator: treat it as block
+                    // body (fall through to accumulate). Count it — several within
+                    // one block mean the real `%end` was lost and the block stream
+                    // desynced, so request a recovery resync rather than merging
+                    // blocks forever. ROOTSHELL-TMUX (id=control-block-mismatch-bound)
+                    self.last_error = .block_mismatch; // ROOTSHELL-TMUX (id=control-error-code)
+                    self.mismatched_terminators += 1;
+                    if (self.mismatched_terminators >= mismatched_terminator_limit) {
+                        log.warn(
+                            "tmux block desync ({} mismatched terminators); requesting resync",
+                            .{self.mismatched_terminators},
+                        );
+                        self.requestRecover();
+                        return null;
                     }
                 }
 
@@ -325,7 +403,35 @@ pub const Parser = struct {
         // Treat the first post-resync byte as a line start so the probe-first
         // case (an idle gateway's answer is literally byte 0) is accepted.
         self.resync_at_line_start = true;
+        // Drop any in-progress block framing: a resync realigns to a fresh
+        // notification, so a stale `%begin`/mismatch count must not leak across.
+        // ROOTSHELL-TMUX (id=control-block-mismatch-bound)
+        self.block_begin = null;
+        self.mismatched_terminators = 0;
         self.buffer.clearRetainingCapacity();
+    }
+
+    /// Self-heal a framing desync without breaking the channel: enter
+    /// resync-tolerant `.idle` (so the remaining mid-stream garbage is skipped,
+    /// not broken) and raise the recover edge for the stream handler to drive a
+    /// live re-resync. Unlike `beginResync` (a fresh RESUME, where byte 0 is the
+    /// probe answer), we are mid-line here, so the next byte is NOT a line start —
+    /// wait for a real '\n%' before starting a notification, preserving the
+    /// "ignore mid-line %" guarantee. ROOTSHELL-TMUX (id=control-recover-request)
+    fn requestRecover(self: *Parser) void {
+        self.beginResync();
+        self.resync_at_line_start = false;
+        self.recover_pending = true;
+    }
+
+    /// Take-and-clear the recovery-request edge (see `recover_pending`). The
+    /// stream handler calls this after feeding each byte; a true result means it
+    /// should drive a live re-resync of the gateway. ROOTSHELL-TMUX
+    /// (id=control-recover-request)
+    pub fn takeRecoverRequest(self: *Parser) bool {
+        const v = self.recover_pending;
+        self.recover_pending = false;
+        return v;
     }
 
     const ParseError = error{RegexError};
@@ -1364,9 +1470,12 @@ test "tmux continue" {
     try testing.expectEqual(3, n.@"continue".pane_id);
 }
 
-test "tmux block begin/end mismatch still processes" {
-    // Mismatched command_id between %begin and %end should log a warning
-    // but still return the block_end notification (resilient processing).
+test "tmux block begin/end mismatch is treated as body, real %end terminates" {
+    // A well-formed %end whose tuple does NOT match the open %begin is NOT this
+    // block's terminator (tmux guarantees they match): accepting it merges two
+    // blocks and desyncs the command/response FIFO (the observed hang). It must
+    // be treated as body so the real matching %end ends the block. ROOTSHELL-TMUX
+    // (id=control-block-mismatch-bound)
     const testing = std.testing;
     const alloc = testing.allocator;
 
@@ -1378,13 +1487,18 @@ test "tmux block begin/end mismatch still processes" {
     try testing.expectEqual(269, c.block_begin.?.command_id);
 
     for ("some data\n") |byte| try testing.expect(try c.put(byte) == null);
-    // Mismatched command_id (999 instead of 269)
-    for ("%end 1578922740 999 1") |byte| try testing.expect(try c.put(byte) == null);
+    // Mismatched command_id (999 instead of 269): does NOT terminate the block.
+    for ("%end 1578922740 999 1\n") |byte| try testing.expect(try c.put(byte) == null);
+    // A single mismatch is absorbed as body, not escalated to recovery.
+    try testing.expect(!c.recover_pending);
+    try testing.expect(c.block_begin != null);
+
+    // The real matching %end ends the block; the stray line is part of the body.
+    for ("%end 1578922740 269 1") |byte| try testing.expect(try c.put(byte) == null);
     const n = (try c.put('\n')).?;
-    // Block should still be processed despite mismatch
     try testing.expect(n == .block_end);
-    try testing.expectEqualStrings("some data", n.block_end);
-    // block_begin should be cleared
+    try testing.expectEqualStrings("some data\n%end 1578922740 999 1", n.block_end);
+    // block_begin should be cleared after the real terminator.
     try testing.expect(c.block_begin == null);
 }
 
@@ -1452,20 +1566,76 @@ test "tmux exit notification with reason" {
     try testing.expect(n == .exit);
 }
 
-test "tmux idle stray byte breaks without synthetic exit" {
+test "tmux idle stray byte self-heals into resync (no synthetic exit, no break)" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
     var c: Parser = .{ .buffer = .init(alloc) };
     defer c.deinit();
 
-    const n = (try c.put(0x1b)).?;
-    try testing.expect(n == .broken);
-    try testing.expect(c.state == .broken);
+    // A stray byte in idle (mid-stream data loss) must NOT break the channel
+    // (that goes defunct → tabs torn down) and must NOT synthesize an exit.
+    // Instead it self-heals: stays alive in resync-tolerant idle and raises the
+    // recover edge for the stream handler to drive a live re-resync.
+    try testing.expect(try c.put(0x1b) == null);
+    try testing.expect(c.state == .idle);
+    try testing.expect(c.tolerant);
+    try testing.expect(c.last_error == .stray_byte_broken);
+    try testing.expect(c.takeRecoverRequest());
+    // Edge is take-and-clear.
+    try testing.expect(!c.takeRecoverRequest());
 
-    // Once broken, additional bytes are dropped and never become an exit
-    // notification. A real %exit is still covered separately above.
-    for ("[c%exit\n") |byte| try testing.expect(try c.put(byte) == null);
+    // Remaining mid-line garbage is skipped (tolerant), not broken, and never
+    // becomes an exit. A literal mid-line `%` is ignored until a real line start.
+    for ("[c%exit") |byte| try testing.expect(try c.put(byte) == null);
+    try testing.expect(c.state != .broken);
+
+    // A clean notification at a real line start realigns and parses normally.
+    for ("\n%sessions-changed") |byte| try testing.expect(try c.put(byte) == null);
+    const n = (try c.put('\n')).?;
+    try testing.expect(n == .sessions_changed);
+}
+
+test "tmux well-formed non-matching terminator is body, real %end terminates" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var c: Parser = .{ .buffer = .init(alloc) };
+    defer c.deinit();
+
+    // A well-formed `%end` whose tuple does NOT match the open `%begin` is stray
+    // pane content, NOT this block's terminator: it must be treated as body so
+    // the real matching `%end` ends the block (prevents the block-merge desync).
+    for ("%begin 1 1 1\n") |byte| try testing.expect(try c.put(byte) == null);
+    for ("%end 2 2 2\n") |byte| try testing.expect(try c.put(byte) == null);
+    for ("hello\n") |byte| try testing.expect(try c.put(byte) == null);
+    for ("%end 1 1 1") |byte| try testing.expect(try c.put(byte) == null);
+    const n = (try c.put('\n')).?;
+    try testing.expect(n == .block_end);
+    try testing.expectEqualStrings("%end 2 2 2\nhello", n.block_end);
+    // A single non-matching terminator is absorbed, not escalated to recovery.
+    try testing.expect(!c.recover_pending);
+}
+
+test "tmux repeated mismatched terminators request recovery (lost %end)" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var c: Parser = .{ .buffer = .init(alloc) };
+    defer c.deinit();
+
+    // Mid-stream data loss can drop a real `%end`, so subsequent blocks' `%end`
+    // lines all mismatch the still-open `%begin`. After the limit we must stop
+    // merging and request a resync — without breaking the channel.
+    for ("%begin 1 1 1\n") |byte| try testing.expect(try c.put(byte) == null);
+    var i: usize = 0;
+    while (i < Parser.mismatched_terminator_limit) : (i += 1) {
+        for ("%end 9 9 9\n") |byte| try testing.expect(try c.put(byte) == null);
+    }
+    try testing.expect(c.takeRecoverRequest());
+    try testing.expect(c.state == .idle);
+    try testing.expect(c.tolerant);
+    try testing.expect(c.state != .broken);
 }
 
 test "tmux resync parses the probe block when it is the FIRST thing seen" {

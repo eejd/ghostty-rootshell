@@ -408,6 +408,27 @@ fn drainMailbox(
                 // be no further bytes to trigger dcsConsumeGroundRequest.
                 io.terminal_stream.parser.state = .ground;
             },
+            .tmux_recover => { // ROOTSHELL-TMUX (id=thread-recover)
+                // Same locking rationale as `.tmux_resume`: forceResync resets
+                // the viewer command pipeline, realigns the control parser, and
+                // uses messageWriter (queue-full path needs the mutex held). Stay
+                // in DCS passthrough — unlike abort, the channel keeps running.
+                io.renderer_state.mutex.lock();
+                defer io.renderer_state.mutex.unlock();
+                io.terminal_stream.handler.tmuxForceResync();
+            },
+            .tmux_force_exit => { // ROOTSHELL-TMUX (id=thread-force-exit)
+                // Same locking rationale as `.tmux_resume_abort`: tearing down the
+                // viewer + emitting the empty-topology snapshot touches state the
+                // renderer reads, and uses messageWriter.
+                io.renderer_state.mutex.lock();
+                defer io.renderer_state.mutex.unlock();
+                io.terminal_stream.handler.tmuxForceExit();
+                // Force the VT parser out of DCS passthrough back to ground so the
+                // gateway's shell output renders normally (same as resume_abort);
+                // there may be no further bytes to trigger dcsConsumeGroundRequest.
+                io.terminal_stream.parser.state = .ground;
+            },
             .start_synchronized_output => self.startSynchronizedOutput(cb),
             .linefeed_mode => |v| self.flags.linefeed_mode = v,
             .focused => |v| try io.focusGained(data, v),
