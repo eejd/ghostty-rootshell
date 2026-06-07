@@ -135,6 +135,12 @@ pub const TmuxTopologySnapshot = struct {
                 .width = window.width,
                 .height = window.height,
                 .layout = try window.layout.clone(arena_alloc),
+                // active_pane_id, index and zoomed are needed by planTmuxReconcile
+                // (window ordering + the zoomed-pane id). ROOTSHELL-TMUX
+                // (id=tmux-window-order / id=tmux-zoom)
+                .active_pane_id = window.active_pane_id,
+                .index = window.index,
+                .zoomed = window.zoomed,
                 .name = try arena_alloc.dupe(u8, window.name),
             };
             // Resolve the tab title with the same precedence as the live path

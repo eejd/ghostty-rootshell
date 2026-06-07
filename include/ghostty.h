@@ -1045,6 +1045,10 @@ typedef struct {
   uintptr_t window_ids_len;
   const uintptr_t *pane_ids;
   uintptr_t pane_ids_len;
+  // ROOTSHELL-TMUX: ensure_window display index (id=tmux-window-order)
+  uintptr_t window_index;
+  // ROOTSHELL-TMUX: set_layout zoomed pane id, 0 if not zoomed (id=tmux-zoom)
+  uintptr_t zoomed_pane_id;
 } ghostty_tmux_op_s;
 
 typedef enum {

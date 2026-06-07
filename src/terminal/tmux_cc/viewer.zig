@@ -58,11 +58,38 @@ const SENT_FIFO_INITIAL = 8;
 /// acks" for diagnosis. ROOTSHELL-TMUX (id=viewer-sent-fifo)
 const SENT_FIFO_WARN = 4096;
 
-/// Number of bytes of output buffered server-side before tmux pauses the
-/// pane. Sent as `-f pause-after=<N>` in the initial `refresh-client`
-/// command. A low value keeps latency tight but increases pause/continue
-/// churn; 200 is empirically a good balance for interactive shells.
-const PAUSE_AFTER_BYTES = 200;
+/// Seconds a pane may fall behind the control client before tmux pauses it.
+/// Sent as `-f pause-after=<N>` in the initial `refresh-client`. tmux parses
+/// this as SECONDS (server-client.c: `pause-after=%u` then `*= 1000`), NOT
+/// bytes. Enabling pause mode means tmux PAUSES a lagging pane (emitting
+/// `%pause`, which we auto-continue) instead of KILLING the control client once
+/// it exceeds CONTROL_MAXIMUM_AGE (300s). The real backpressure is structural
+/// (the synchronous read loop + bounded pane scrollback), so this is a generous
+/// kill-avoidance margin comfortably under 300s, NOT a tight flow-control knob —
+/// a small value would just churn pause/continue since we have no paused-pane UX
+/// to leave a pane paused. ROOTSHELL-TMUX (id=pause-after-seconds)
+const PAUSE_AFTER_SECONDS = 200;
+
+/// Whether a tmux version string (e.g. "3.5a", "next-3.4", "3.1") parses to at
+/// least `major`.`minor`. Conservative: returns false when a leading
+/// major.minor can't be parsed, so a feature gated on this stays OFF for an
+/// unknown/old server. ROOTSHELL-TMUX (id=tmux-version-at-least)
+fn tmuxVersionAtLeast(version: []const u8, major: u32, minor: u32) bool {
+    // Skip any non-digit prefix (e.g. "next-").
+    var i: usize = 0;
+    while (i < version.len and (version[i] < '0' or version[i] > '9')) i += 1;
+    const rest = version[i..];
+    const dot = std.mem.indexOfScalar(u8, rest, '.') orelse return false;
+    const maj = std.fmt.parseInt(u32, rest[0..dot], 10) catch return false;
+    if (maj != major) return maj > major;
+    // Minor: leading digits only ("5a" -> 5).
+    const after_dot = rest[dot + 1 ..];
+    var j: usize = 0;
+    while (j < after_dot.len and after_dot[j] >= '0' and after_dot[j] <= '9') j += 1;
+    if (j == 0) return false;
+    const min = std.fmt.parseInt(u32, after_dot[0..j], 10) catch return false;
+    return min >= minor;
+}
 
 /// A viewer is a tmux control mode client that attempts to create
 /// a remote view of a tmux session, including providing the ability to send
@@ -564,6 +591,15 @@ pub const Viewer = struct {
         /// Active pane for this tmux window. In list-windows context,
         /// `pane_id` is the active pane for the window.
         active_pane_id: usize = 0,
+        /// tmux window index (display order; may be non-contiguous). The app
+        /// sorts its tmux tabs by this so new-window -a / move-window /
+        /// swap-window are reflected. ROOTSHELL-TMUX (id=tmux-window-order)
+        index: usize = 0,
+        /// True when the window is zoomed (one pane shown fullscreen). The
+        /// zoomed pane is the window's active pane (`active_pane_id`). Set from
+        /// `#{window_zoomed_flag}` (list-windows) and the `Z` flag of
+        /// `%layout-change`. ROOTSHELL-TMUX (id=tmux-zoom)
+        zoomed: bool = false,
         /// Window name from tmux (e.g., "bash", "vim"). Stored on the
         /// shared windows arena and valid until the next list-windows
         /// refresh. Empty slice if not yet known.
@@ -1432,6 +1468,7 @@ pub const Viewer = struct {
                 &actions,
                 info.window_id,
                 info.layout,
+                info.raw_flags,
             ) catch {
                 // Note: in the future, we can probably handle a failure
                 // here with a fallback to remove this one window, list
@@ -1685,6 +1722,7 @@ pub const Viewer = struct {
         actions: *std.ArrayList(Action),
         window_id: usize,
         layout_str: []const u8,
+        raw_flags: []const u8,
     ) !void {
         // Find the window this layout change is for.
         const window: *Window = window: for (self.windows.items) |*w| {
@@ -1693,6 +1731,12 @@ pub const Viewer = struct {
             log.info("layout change for unknown window id={}", .{window_id});
             return;
         };
+
+        // Update the zoom state from the window-flags field of %layout-change so a
+        // live `prefix-z` toggle is reflected without waiting for a list-windows
+        // refresh. The 'Z' flag means the active pane is shown fullscreen.
+        // ROOTSHELL-TMUX (id=tmux-zoom)
+        window.zoomed = std.mem.indexOfScalar(u8, raw_flags, 'Z') != null;
 
         // Validate the layout string before doing any destructive arena
         // work. The arena reset below invalidates all existing layout
@@ -1958,11 +2002,14 @@ pub const Viewer = struct {
                 const pane_id: usize = kv.key_ptr.*;
                 if (self.panes.contains(pane_id)) continue;
                 added = true;
+                // -N (preserve trailing whitespace) is a tmux 3.1+ flag; gate it
+                // so older servers don't %error the capture. (id=capture-preserve-trailing)
+                const preserve_trailing = tmuxVersionAtLeast(self.tmux_version, 3, 1);
                 try self.queueCommands(&.{
-                    .{ .pane_history = .{ .id = pane_id, .screen_key = .primary } },
-                    .{ .pane_visible = .{ .id = pane_id, .screen_key = .primary } },
-                    .{ .pane_history = .{ .id = pane_id, .screen_key = .alternate } },
-                    .{ .pane_visible = .{ .id = pane_id, .screen_key = .alternate } },
+                    .{ .pane_history = .{ .id = pane_id, .screen_key = .primary, .preserve_trailing = preserve_trailing } },
+                    .{ .pane_visible = .{ .id = pane_id, .screen_key = .primary, .preserve_trailing = preserve_trailing } },
+                    .{ .pane_history = .{ .id = pane_id, .screen_key = .alternate, .preserve_trailing = preserve_trailing } },
+                    .{ .pane_visible = .{ .id = pane_id, .screen_key = .alternate, .preserve_trailing = preserve_trailing } },
                 });
 
                 // Hand tmux this pane's fg/bg up front so it can answer the
@@ -2135,6 +2182,31 @@ pub const Viewer = struct {
         };
         self.command_queue.deleteOldest(1);
         defer command.deinit(self.alloc);
+
+        // ROOTSHELL-TMUX (id=viewer-command-error): tmux answered this command with
+        // `%error` instead of `%end`. The block body is a human-readable error
+        // string, NOT the command's expected output, so feeding it to the
+        // per-command parser would corrupt state — an `%error` on `list-windows`
+        // parses as ZERO windows and prunes every pane; an `%error` on
+        // `capture-pane` injects the error text into the pane's scrollback. The
+        // command is already consumed (deleteOldest above), so just skip parsing.
+        // tmux's serial command queue means the NEXT command's response is
+        // unaffected. (Don't log the body: it can carry sensitive context.)
+        if (is_err) {
+            self.last_error = .control_error; // ROOTSHELL-TMUX (id=control-error-code)
+            log.info("tmux command {s} returned %error", .{@tagName(command)});
+            // pane_state is the LAST command of the capture sequence and is what
+            // un-gates live output (marks panes initialized). Even when it errors
+            // we must still mark panes initialized — otherwise live %output for
+            // them stays suppressed (handlePaneOutput) and the projected panes are
+            // blank/frozen until recreated. We only skip PARSING the error body as
+            // pane state. ROOTSHELL-TMUX (id=viewer-command-error)
+            if (std.meta.activeTag(command) == .pane_state) {
+                var panes_it = self.panes.iterator();
+                while (panes_it.next()) |kv| kv.value_ptr.*.initialized = true;
+            }
+            return;
+        }
 
         // We'll use our arena for the return value here so we can
         // easily accumulate actions.
@@ -2325,6 +2397,8 @@ pub const Viewer = struct {
                 .height = data.window_height,
                 .layout = layout,
                 .active_pane_id = data.pane_id,
+                .index = data.window_index,
+                .zoomed = data.window_zoomed_flag,
                 .name = try win_alloc.dupe(u8, data.window_name),
             });
         }
@@ -2399,6 +2473,23 @@ pub const Viewer = struct {
             defer pane.unlockRenderer(render_mutex);
 
             const t: *Terminal = &pane.terminal;
+
+            // ROOTSHELL-TMUX (id=alt-screen-fix): when a NEWLY captured pane is in
+            // its alternate screen, tmux's `capture-pane` (no `-a`) returned the
+            // ACTIVE grid (the alt-screen app, e.g. vim) and `capture-pane -a` the
+            // SAVED grid (the normal/shell screen) — so they landed in the OPPOSITE
+            // terminal screens (active grid -> our .primary, saved grid -> our
+            // .alternate). Swap them so .primary holds the normal screen and
+            // .alternate the alt app; the switchScreen below (to .alternate, since
+            // alternate_on) then shows the alt app instead of the shell behind it.
+            // Gate on !initialized so this runs ONCE per new pane: pane_state is
+            // session-wide, so it also revisits already-restored panes — whose own
+            // live %output stream drives their alt-screen transitions — and those
+            // must not be re-swapped. When alternate_on is false the capture->screen
+            // mapping is already correct, so no swap.
+            if (data.alternate_on and !pane.initialized) {
+                t.screens.swapPrimaryAlternate();
+            }
 
             // Determine which screen to use based on alternate_on
             const screen_key: ScreenSet.Key = if (data.alternate_on) .alternate else .primary;
@@ -3221,6 +3312,12 @@ const Command = union(enum) {
     const CapturePane = struct {
         id: usize,
         screen_key: ScreenSet.Key,
+        /// Emit `capture-pane -N` (preserve trailing whitespace, so background
+        /// color runs at line ends — status bars, colored fills — survive the
+        /// capture). Only set when tmux is >= 3.1; an unknown flag would make
+        /// capture-pane return %error on older servers. ROOTSHELL-TMUX
+        /// (id=capture-preserve-trailing)
+        preserve_trailing: bool = false,
     };
 
     pub fn deinit(self: Command, alloc: Allocator) void {
@@ -3256,28 +3353,30 @@ const Command = union(enum) {
             .pane_history => |cap| try writer.print(
                 // -p = output to stdout instead of buffer
                 // -e = output escape sequences for SGR
+                // -J = join wrapped lines into one logical line (no hard break on
+                //   a soft-wrapped row) so the captured content reflows correctly
+                //   when the pane is later resized
+                // -N = preserve trailing whitespace (keep background-color runs at
+                //   line ends); only sent when tmux >= 3.1 (id=capture-preserve-trailing)
                 // -a = capture alternate screen (only valid for alternate)
                 // -q = quiet, don't error if alternate screen doesn't exist
                 // -S - = start at the top of history ("-")
                 // -E -1 = end at the last line of history (1 before the
                 //   visible area is -1).
                 // -t %{d} = target a specific pane ID
-                "capture-pane -p -e -q {s}-S - -E -1 -t %{d}\n",
+                "capture-pane -p -e -J {s}{s}-q -S - -E -1 -t %{d}\n",
                 .{
+                    if (cap.preserve_trailing) "-N " else "",
                     if (cap.screen_key == .alternate) "-a " else "",
                     cap.id,
                 },
             ),
 
             .pane_visible => |cap| try writer.print(
-                // -p = output to stdout instead of buffer
-                // -e = output escape sequences for SGR
-                // -a = capture alternate screen (only valid for alternate)
-                // -q = quiet, don't error if alternate screen doesn't exist
-                // -t %{d} = target a specific pane ID
-                // (no -S/-E = capture visible area only)
-                "capture-pane -p -e -q {s}-t %{d}\n",
+                // See pane_history for the flags. (no -S/-E = visible area only)
+                "capture-pane -p -e -J {s}{s}-q -t %{d}\n",
                 .{
+                    if (cap.preserve_trailing) "-N " else "",
                     if (cap.screen_key == .alternate) "-a " else "",
                     cap.id,
                 },
@@ -3316,7 +3415,15 @@ const Command = union(enum) {
             .client_size => |cs| {
                 try writer.print("refresh-client -C {d}x{d}", .{ cs.cols, cs.rows });
                 if (cs.enable_pause) {
-                    try writer.print(" -f pause-after={d}", .{PAUSE_AFTER_BYTES});
+                    // pause-after (SECONDS) enables control-mode pause so tmux
+                    // pauses a lagging pane instead of killing the client at
+                    // CONTROL_MAXIMUM_AGE. wait-exit makes the server wait for this
+                    // control client before tearing down on exit, so we don't miss
+                    // the final %output/%exit (matches iTerm2). Unknown flags are
+                    // silently ignored by older tmux (server_client_set_flags), so
+                    // wait-exit is safe to send unconditionally.
+                    // ROOTSHELL-TMUX (id=client-flags)
+                    try writer.print(" -f pause-after={d},wait-exit", .{PAUSE_AFTER_SECONDS});
                 }
                 try writer.writeAll("\n");
             },
@@ -3419,6 +3526,8 @@ const Format = struct {
             .session_id,
             .window_id,
             .window_active,
+            .window_index,
+            .window_zoomed_flag,
             .pane_id,
             .window_width,
             .window_height,
@@ -3521,7 +3630,7 @@ test "client_size with enable_pause formats pause-after flag" {
     defer builder.deinit();
     try cmd.formatCommand(&builder.writer);
     const result = builder.writer.buffered();
-    try testing.expectEqualStrings("refresh-client -C 80x24 -f pause-after=200\n", result);
+    try testing.expectEqualStrings("refresh-client -C 80x24 -f pause-after=200,wait-exit\n", result);
 }
 
 test "continue_pane command formats refresh-client -A" {
@@ -3689,7 +3798,7 @@ test "setClientSize queues command in command_queue state" {
         .{
             .input = .{ .tmux = .{
                 .block_end =
-                \\$0 @0 1 %0 83 44 b7dd,83x44,0,0,0 bash
+                \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
                 ,
             } },
             .contains_tags = &.{ .windows, .command },
@@ -3754,7 +3863,7 @@ test "takePendingCommand flushes an idle-queued resize and keeps FIFO order" {
         .{
             .input = .{ .tmux = .{
                 .block_end =
-                \\$0 @0 1 %0 83 44 b7dd,83x44,0,0,0 bash
+                \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
                 ,
             } },
             .contains_tags = &.{ .windows, .command },
@@ -3823,7 +3932,7 @@ fn driveStartupOneWindow(viewer: *Viewer) !void {
         .{ .input = .{ .tmux = .{ .block_end = "" } }, .contains_command = "display-message" },
         .{ .input = .{ .tmux = .{ .block_end = "3.5a" } }, .contains_command = "list-windows" },
         .{
-            .input = .{ .tmux = .{ .block_end = "$0 @0 1 %0 83 44 b7dd,83x44,0,0,0 bash" } },
+            .input = .{ .tmux = .{ .block_end = "$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash" } },
             .contains_tags = &.{ .windows, .command },
         },
     });
@@ -3896,7 +4005,7 @@ test "window list survives a send-keys block landing before list-windows" {
     // survives.
     try testing.expectEqual(Viewer.BlockClass.untracked, viewer.classifyBlock());
     try testing.expectEqual(Viewer.BlockClass.tracked, viewer.classifyBlock());
-    const actions = viewer.next(.{ .tmux = .{ .block_end = "$0 @0 1 %0 83 44 b7dd,83x44,0,0,0 bash" } });
+    const actions = viewer.next(.{ .tmux = .{ .block_end = "$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash" } });
     var found_windows = false;
     for (actions) |a| {
         if (a == .windows) {
@@ -3982,7 +4091,7 @@ test "resync drops stale stream then rebuilds on probe marker" {
         .{ .input = .{ .tmux = .{ .block_end = "" } }, .contains_command = "display-message" },
         .{ .input = .{ .tmux = .{ .block_end = "3.5a" } }, .contains_command = "list-windows" },
         .{
-            .input = .{ .tmux = .{ .block_end = "$7 @0 1 %0 99 39 b7dd,99x39,0,0,0 bash" } },
+            .input = .{ .tmux = .{ .block_end = "$7 @0 1 0 0 %0 99 39 b7dd,99x39,0,0,0 bash" } },
             .contains_tags = &.{ .windows, .command },
         },
     });
@@ -4044,7 +4153,7 @@ test "queueRelayedPaneCommand rewrites a single-pane resize to client_size" {
         .{
             .input = .{ .tmux = .{
                 .block_end =
-                \\$0 @0 1 %0 83 44 b7dd,83x44,0,0,0 bash
+                \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
                 ,
             } },
             .contains_tags = &.{ .windows, .command },
@@ -4111,7 +4220,7 @@ test "startup sends client_size with pause-after before version query" {
             .check_command = (struct {
                 fn check(_: *Viewer, cmd: []const u8) anyerror!void {
                     try testing.expectEqualStrings(
-                        "refresh-client -C 132x43 -f pause-after=200\n",
+                        "refresh-client -C 132x43 -f pause-after=200,wait-exit\n",
                         cmd,
                     );
                 }
@@ -4154,7 +4263,7 @@ test "message notification produces message action" {
         .{
             .input = .{ .tmux = .{
                 .block_end =
-                \\$0 @0 1 %0 80 24 b25d,80x24,0,0,0 bash
+                \\$0 @0 1 0 0 %0 80 24 b25d,80x24,0,0,0 bash
                 ,
             } },
             .contains_tags = &.{ .windows, .command },
@@ -4259,7 +4368,7 @@ test "session changed resets state" {
         .{
             .input = .{ .tmux = .{
                 .block_end =
-                \\$1 @0 1 %0 83 44 027b,83x44,0,0[83x20,0,0,0,83x23,0,21,1] bash
+                \\$1 @0 1 0 0 %0 83 44 027b,83x44,0,0[83x20,0,0,0,83x23,0,21,1] bash
                 ,
             } },
             .contains_tags = &.{ .windows, .command },
@@ -4306,7 +4415,7 @@ test "session changed resets state" {
         .{
             .input = .{ .tmux = .{
                 .block_end =
-                \\$2 @1 1 %0 83 44 027b,83x44,0,0[83x20,0,0,0,83x23,0,21,1] bash
+                \\$2 @1 1 1 0 %0 83 44 027b,83x44,0,0[83x20,0,0,0,83x23,0,21,1] bash
                 ,
             } },
             .contains_tags = &.{ .windows, .command },
@@ -4363,7 +4472,7 @@ test "initial flow" {
         .{
             .input = .{ .tmux = .{
                 .block_end =
-                \\$0 @0 1 %0 83 44 027b,83x44,0,0[83x20,0,0,0,83x23,0,21,1] bash
+                \\$0 @0 1 0 0 %0 83 44 027b,83x44,0,0[83x20,0,0,0,83x23,0,21,1] bash
                 ,
             } },
             .contains_tags = &.{ .windows, .command },
@@ -4630,7 +4739,7 @@ test "layout change" {
         .{
             .input = .{ .tmux = .{
                 .block_end =
-                \\$0 @0 1 %0 83 44 b7dd,83x44,0,0,0 bash
+                \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
                 ,
             } },
             .contains_tags = &.{ .windows, .command },
@@ -4719,7 +4828,7 @@ test "layout change resizes existing pane without structural change" {
         .{
             .input = .{ .tmux = .{
                 .block_end =
-                \\$0 @0 1 %0 83 44 b7dd,83x44,0,0,0 bash
+                \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
                 ,
             } },
             .contains_tags = &.{ .windows, .command },
@@ -4795,7 +4904,7 @@ test "layout_change does not return command when queue not empty" {
         .{
             .input = .{ .tmux = .{
                 .block_end =
-                \\$0 @0 1 %0 83 44 b7dd,83x44,0,0,0 bash
+                \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
                 ,
             } },
             .contains_tags = &.{ .windows, .command },
@@ -4861,7 +4970,7 @@ test "layout_change returns command when queue was empty" {
         .{
             .input = .{ .tmux = .{
                 .block_end =
-                \\$0 @0 1 %0 83 44 b7dd,83x44,0,0,0 bash
+                \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
                 ,
             } },
             .contains_tags = &.{ .windows, .command },
@@ -4935,7 +5044,7 @@ test "window_add queues list_windows when queue empty" {
         .{
             .input = .{ .tmux = .{
                 .block_end =
-                \\$0 @0 1 %0 83 44 b7dd,83x44,0,0,0 bash
+                \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
                 ,
             } },
             .contains_tags = &.{ .windows, .command },
@@ -5003,7 +5112,7 @@ test "window_add queues list_windows when queue not empty" {
         .{
             .input = .{ .tmux = .{
                 .block_end =
-                \\$0 @0 1 %0 83 44 b7dd,83x44,0,0,0 bash
+                \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
                 ,
             } },
             .contains_tags = &.{ .windows, .command },
@@ -5064,7 +5173,7 @@ test "session_window_changed queues list_windows when queue empty" {
         .{
             .input = .{ .tmux = .{
                 .block_end =
-                \\$0 @0 1 %0 83 44 b7dd,83x44,0,0,0 bash
+                \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
                 ,
             } },
             .contains_tags = &.{ .windows, .command },
@@ -5131,7 +5240,7 @@ test "session_window_changed queues list_windows when queue not empty" {
         .{
             .input = .{ .tmux = .{
                 .block_end =
-                \\$0 @0 1 %0 83 44 b7dd,83x44,0,0,0 bash
+                \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
                 ,
             } },
             .contains_tags = &.{ .windows, .command },
@@ -5189,7 +5298,7 @@ test "window_close queues list_windows when queue empty" {
         .{
             .input = .{ .tmux = .{
                 .block_end =
-                \\$0 @0 1 %0 83 44 b7dd,83x44,0,0,0 bash
+                \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
                 ,
             } },
             .contains_tags = &.{ .windows, .command },
@@ -5257,7 +5366,7 @@ test "window_close queues list_windows when queue not empty" {
         .{
             .input = .{ .tmux = .{
                 .block_end =
-                \\$0 @0 1 %0 83 44 b7dd,83x44,0,0,0 bash
+                \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
                 ,
             } },
             .contains_tags = &.{ .windows, .command },
@@ -5316,7 +5425,7 @@ test "refreshWindowList coalesces duplicate list_windows" {
         .{
             .input = .{ .tmux = .{
                 .block_end =
-                \\$0 @0 1 %0 83 44 b7dd,83x44,0,0,0 bash
+                \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
                 ,
             } },
             .contains_tags = &.{ .windows, .command },
@@ -5411,7 +5520,7 @@ test "two pane flow with pane state" {
         .{
             .input = .{ .tmux = .{
                 .block_end =
-                \\$0 @0 1 %0 165 79 ca97,165x79,0,0[165x40,0,0,0,165x38,0,41,4] bash
+                \\$0 @0 1 0 0 %0 165 79 ca97,165x79,0,0[165x40,0,0,0,165x38,0,41,4] bash
                 ,
             } },
             .contains_tags = &.{ .windows, .command },
@@ -5601,8 +5710,8 @@ test "layout change preserves other windows on shared arena" {
         .{
             .input = .{ .tmux = .{
                 .block_end =
-                \\$0 @0 1 %0 80 24 b25d,80x24,0,0,0 bash
-                \\$0 @1 0 %1 80 24 b25e,80x24,0,0,1 vim
+                \\$0 @0 1 0 0 %0 80 24 b25d,80x24,0,0,0 bash
+                \\$0 @1 0 1 0 %1 80 24 b25e,80x24,0,0,1 vim
                 ,
             } },
             .contains_tags = &.{ .windows, .command },
@@ -5707,7 +5816,7 @@ test "window_pane_changed produces focus action" {
         .{
             .input = .{ .tmux = .{
                 .block_end =
-                \\$0 @0 1 %0 83 44 027b,83x44,0,0[83x20,0,0,0,83x23,0,21,1] bash
+                \\$0 @0 1 0 0 %0 83 44 027b,83x44,0,0[83x20,0,0,0,83x23,0,21,1] bash
                 ,
             } },
             .contains_tags = &.{ .windows, .command },
@@ -5798,7 +5907,7 @@ test "output suppressed for uninitialized panes" {
         .{
             .input = .{ .tmux = .{
                 .block_end =
-                \\$0 @0 1 %0 83 44 b7dd,83x44,0,0,0 bash
+                \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
                 ,
             } },
             .contains_tags = &.{ .windows, .command },
@@ -5895,7 +6004,7 @@ test "output OSC title from active pane produces title action" {
         .{
             .input = .{ .tmux = .{
                 .block_end =
-                \\$0 @0 1 %0 83 44 b7dd,83x44,0,0,0 bash
+                \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
                 ,
             } },
             .contains_tags = &.{ .windows, .command },
@@ -5966,7 +6075,7 @@ test "window_renamed produces title action" {
         .{
             .input = .{ .tmux = .{
                 .block_end =
-                \\$0 @0 1 %0 83 44 b7dd,83x44,0,0,0 bash
+                \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
                 ,
             } },
             .contains_tags = &.{ .windows, .command },
@@ -6039,7 +6148,7 @@ test "session_renamed produces session_title action" {
         .{
             .input = .{ .tmux = .{
                 .block_end =
-                \\$0 @0 1 %0 83 44 b7dd,83x44,0,0,0 bash
+                \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
                 ,
             } },
             .contains_tags = &.{ .windows, .command },
@@ -6109,7 +6218,7 @@ test "list_windows stores window name" {
         .{
             .input = .{ .tmux = .{
                 .block_end =
-                \\$0 @0 1 %0 83 44 b7dd,83x44,0,0,0 htop
+                \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 htop
                 ,
             } },
             .contains_tags = &.{ .windows, .command },
@@ -6150,7 +6259,7 @@ test "list_windows emits focus action for active window" {
         .{
             .input = .{ .tmux = .{
                 .block_end =
-                \\$0 @0 1 %0 83 44 b7dd,83x44,0,0,0 bash
+                \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
                 ,
             } },
             .contains_tags = &.{ .windows, .focus },
@@ -6198,8 +6307,8 @@ test "list_windows emits focus for active window in multi-window session" {
         .{
             .input = .{ .tmux = .{
                 .block_end =
-                \\$0 @0 1 %0 80 24 b25d,80x24,0,0,0 bash
-                \\$0 @1 0 %1 80 24 b25e,80x24,0,0,1 vim
+                \\$0 @0 1 0 0 %0 80 24 b25d,80x24,0,0,0 bash
+                \\$0 @1 0 1 0 %1 80 24 b25e,80x24,0,0,1 vim
                 ,
             } },
             .contains_tags = &.{ .windows, .focus },
@@ -6247,7 +6356,7 @@ test "pause notification triggers auto-continue and full pause cycle" {
         .{
             .input = .{ .tmux = .{
                 .block_end =
-                \\$0 @0 1 %0 83 44 b7dd,83x44,0,0,0 bash
+                \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
                 ,
             } },
             .contains_tags = &.{ .windows, .command },
@@ -6343,7 +6452,7 @@ test "pause for unknown pane is ignored" {
         .{
             .input = .{ .tmux = .{
                 .block_end =
-                \\$0 @0 1 %0 83 44 b7dd,83x44,0,0,0 bash
+                \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
                 ,
             } },
             .contains_tags = &.{ .windows, .command },
@@ -6397,7 +6506,7 @@ test "pane_mode_changed queues query and updates state on response" {
         .{
             .input = .{ .tmux = .{
                 .block_end =
-                \\$0 @0 1 %0 83 44 b7dd,83x44,0,0,0 bash
+                \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
                 ,
             } },
             .contains_tags = &.{ .windows, .command },
@@ -6466,7 +6575,7 @@ test "pane_mode_changed for unknown pane is ignored" {
         .{
             .input = .{ .tmux = .{
                 .block_end =
-                \\$0 @0 1 %0 83 44 b7dd,83x44,0,0,0 bash
+                \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
                 ,
             } },
             .contains_tags = &.{ .windows, .command },
@@ -6520,7 +6629,7 @@ test "pane_mode_changed empty response means normal mode" {
         .{
             .input = .{ .tmux = .{
                 .block_end =
-                \\$0 @0 1 %0 83 44 b7dd,83x44,0,0,0 bash
+                \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
                 ,
             } },
             .contains_tags = &.{ .windows, .command },
@@ -6602,7 +6711,7 @@ test "layout_change mid-capture suppresses output for uninitialized pane" {
         .{
             .input = .{ .tmux = .{
                 .block_end =
-                \\$0 @0 1 %0 83 44 b7dd,83x44,0,0,0 bash
+                \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
                 ,
             } },
             .contains_tags = &.{ .windows, .command },
@@ -6747,7 +6856,7 @@ test "pane state alternate_saved cursor applies to primary screen" {
         .{
             .input = .{ .tmux = .{
                 .block_end =
-                \\$0 @0 1 %0 80 24 b25d,80x24,0,0,0 bash
+                \\$0 @0 1 0 0 %0 80 24 b25d,80x24,0,0,0 bash
                 ,
             } },
             .contains_tags = &.{ .windows, .command },
@@ -6801,6 +6910,97 @@ test "pane state alternate_saved cursor applies to primary screen" {
     });
 }
 
+test "pane state alternate_on swaps captured screens so the alt app is shown" {
+    // ROOTSHELL-TMUX (id=alt-screen-fix): a pane in its alternate screen has, in
+    // tmux, the ACTIVE grid = the alt-screen app (captured WITHOUT -a) and the
+    // SAVED grid = the normal/shell screen (captured WITH -a). The viewer must end
+    // up DISPLAYING the alt app on the alternate screen, with the normal screen
+    // behind it on the primary — not the other way around.
+    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    defer viewer.deinit();
+
+    try testViewer(&viewer, &.{
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{
+            .input = .{ .tmux = .{ .session_changed = .{ .id = 0, .name = "0" } } },
+            .contains_command = "refresh-client",
+        },
+        .{
+            .input = .{ .tmux = .{ .block_end = "" } },
+            .contains_command = "display-message",
+        },
+        .{
+            .input = .{ .tmux = .{ .block_end = "3.5a" } },
+            .contains_command = "list-windows",
+        },
+        .{
+            .input = .{ .tmux = .{
+                .block_end =
+                \\$0 @0 1 0 0 %0 80 24 b25d,80x24,0,0,0 bash
+                ,
+            } },
+            .contains_tags = &.{ .windows, .command },
+        },
+        // capture-pane primary history (no -a) = the ACTIVE grid (alt app)
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        // capture-pane primary visible (no -a) = the ACTIVE grid (alt app)
+        .{ .input = .{ .tmux = .{ .block_end = "VIM" } } },
+        // capture-pane alternate history (-a) = the SAVED grid (normal screen)
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        // capture-pane alternate visible (-a) = the SAVED grid (normal screen)
+        .{ .input = .{ .tmux = .{ .block_end = "SHELL" } } },
+        // pane_state: alternate_on=1 (this pane is in the alternate screen).
+        .{
+            .input = .{ .tmux = .{
+                .block_end =
+                \\%0;10;2;1;;0;1;5;3;0;1;0;0;0;0;0;0;0;0;0;0;0;0;23;8,16,24,32,40,48,56,64,72,80
+                ,
+            } },
+            .check = (struct {
+                fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
+                    const pane: *Viewer.Pane = v.panes.getEntry(0).?.value_ptr.*;
+                    const t: *Terminal = &pane.terminal;
+                    // The active screen is the alternate, showing the alt app.
+                    try testing.expectEqual(ScreenSet.Key.alternate, t.screens.active_key);
+                    {
+                        const str = try t.screens.active.dumpStringAlloc(
+                            testing.allocator,
+                            .{ .active = .{} },
+                        );
+                        defer testing.allocator.free(str);
+                        try testing.expectEqualStrings("VIM", str);
+                    }
+                    // The normal/shell screen sits behind it on the primary.
+                    {
+                        const pri = t.screens.get(.primary).?;
+                        const str = try pri.dumpStringAlloc(
+                            testing.allocator,
+                            .{ .active = .{} },
+                        );
+                        defer testing.allocator.free(str);
+                        try testing.expectEqualStrings("SHELL", str);
+                    }
+                }
+            }).check,
+        },
+        .{
+            .input = .{ .tmux = .exit },
+            .contains_tags = &.{.exit},
+        },
+    });
+}
+
+test "tmuxVersionAtLeast" {
+    try testing.expect(tmuxVersionAtLeast("3.1", 3, 1));
+    try testing.expect(tmuxVersionAtLeast("3.5a", 3, 1));
+    try testing.expect(tmuxVersionAtLeast("next-3.4", 3, 1));
+    try testing.expect(tmuxVersionAtLeast("4.0", 3, 1));
+    try testing.expect(!tmuxVersionAtLeast("3.0a", 3, 1));
+    try testing.expect(!tmuxVersionAtLeast("2.9", 3, 1));
+    try testing.expect(!tmuxVersionAtLeast("", 3, 1));
+    try testing.expect(!tmuxVersionAtLeast("garbage", 3, 1));
+}
+
 fn testPaneStateMouseModes(
     pane_state: []const u8,
     expected_event: mouse.Event,
@@ -6837,7 +7037,7 @@ fn testPaneStateMouseModes(
         .{
             .input = .{ .tmux = .{
                 .block_end =
-                \\$0 @0 1 %0 80 24 b25d,80x24,0,0,0 bash
+                \\$0 @0 1 0 0 %0 80 24 b25d,80x24,0,0,0 bash
                 ,
             } },
             .contains_tags = &.{ .windows, .command },

@@ -264,6 +264,13 @@ pub const Layout = struct {
         const node_count = countTreeNodes(self);
         if (node_count == 0) return Tree.empty;
 
+        // fillChildrenNodes recurses once per sibling, so cap the total node count
+        // to keep the stack bounded on a crafted wide layout. No real tmux layout
+        // approaches this, and production never reaches buildSplitTree
+        // (viewer.zig:initLayout iterates) — the cap just hardens it for any future
+        // untrusted use. ROOTSHELL-TMUX (id=layout-buildtree-cap)
+        if (node_count > 4096) return Tree.empty;
+
         var arena: ArenaAllocator = .init(gpa);
         errdefer arena.deinit();
         const alloc = arena.allocator();
@@ -317,9 +324,14 @@ pub const Layout = struct {
         if (children.len == 0) return 0;
         if (children.len == 1) return countTreeNodes(children[0]);
 
-        // One split node for this level, plus nodes for left child
-        // and nodes for the right subtree (remaining children).
-        return 1 + countTreeNodes(children[0]) + countChildrenNodes(children[1..]);
+        // Iterate the siblings rather than recursing on `children[1..]` so a very
+        // wide split can't overflow the stack while merely COUNTING. N children
+        // become N-1 binary split nodes plus the sum of each child's subtree.
+        // (Nesting is still recursive via countTreeNodes, but that is bounded by
+        // the parse-time depth cap.) ROOTSHELL-TMUX (id=layout-count-iterative)
+        var total: usize = children.len - 1;
+        for (children) |child| total += countTreeNodes(child);
+        return total;
     }
 
     /// Recursively fill nodes array for a layout. Returns the

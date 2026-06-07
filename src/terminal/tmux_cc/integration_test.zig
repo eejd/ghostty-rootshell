@@ -125,18 +125,6 @@ const TmuxHarness = struct {
         };
     }
 
-    /// Feed bytes from tmux through the parser, collecting notifications.
-    /// Returns all notifications found in this batch of bytes.
-    fn feedBytes(self: *TmuxHarness, bytes: []const u8) !std.ArrayList(control.Notification) {
-        var notifications: std.ArrayList(control.Notification) = .empty;
-        for (bytes) |byte| {
-            if (try self.parser.put(byte)) |notification| {
-                try notifications.append(testing.allocator, notification);
-            }
-        }
-        return notifications;
-    }
-
     /// Drive the full startup sequence: read from tmux, feed through
     /// parser and viewer, send commands back, until the viewer reaches
     /// the command_queue state (i.e., windows are discovered and pane
@@ -151,19 +139,17 @@ const TmuxHarness = struct {
             const n = try self.readWithTimeout(&buf, remaining_ms);
             if (n == 0) continue;
 
-            var notifications = try self.feedBytes(buf[0..n]);
-            defer notifications.deinit(testing.allocator);
-
-            for (notifications.items) |notification| {
+            // Process each notification INLINE, while its slices are still valid:
+            // a Notification's []const u8 fields alias the parser's single buffer,
+            // which is reused on the next put(). Collecting a whole batch and
+            // processing it afterwards would read clobbered (or freed, on a buffer
+            // grow) bytes. ROOTSHELL-TMUX (id=integration-harness-inline)
+            for (buf[0..n]) |byte| {
+                const notification = (try self.parser.put(byte)) orelse continue;
                 const actions = self.viewer.next(.{ .tmux = notification });
-
                 for (actions) |action| {
-                    if (action == .command) {
-                        try self.sendCommand(action.command);
-                    }
-                    if (action == .windows) {
-                        saw_windows = true;
-                    }
+                    if (action == .command) try self.sendCommand(action.command);
+                    if (action == .windows) saw_windows = true;
                 }
             }
 
@@ -242,10 +228,11 @@ test "integration: output routing" {
         const n = try harness.readWithTimeout(&buf, remaining_ms);
         if (n == 0) continue;
 
-        var notifications = try harness.feedBytes(buf[0..n]);
-        defer notifications.deinit(testing.allocator);
-
-        for (notifications.items) |notification| {
+        // Process each notification INLINE — its slices alias the parser's reused
+        // buffer, so it must be consumed before the next put(). ROOTSHELL-TMUX
+        // (id=integration-harness-inline)
+        for (buf[0..n]) |byte| {
+            const notification = (try harness.parser.put(byte)) orelse continue;
             const actions = harness.viewer.next(.{ .tmux = notification });
             for (actions) |action| {
                 switch (action) {
@@ -307,10 +294,11 @@ test "integration: topology change on split" {
         const n = try harness.readWithTimeout(&buf, remaining_ms);
         if (n == 0) continue;
 
-        var notifications = try harness.feedBytes(buf[0..n]);
-        defer notifications.deinit(testing.allocator);
-
-        for (notifications.items) |notification| {
+        // Process each notification INLINE — its slices alias the parser's reused
+        // buffer, so it must be consumed before the next put(). ROOTSHELL-TMUX
+        // (id=integration-harness-inline)
+        for (buf[0..n]) |byte| {
+            const notification = (try harness.parser.put(byte)) orelse continue;
             const actions = harness.viewer.next(.{ .tmux = notification });
             for (actions) |action| {
                 switch (action) {
@@ -371,10 +359,11 @@ test "integration: session disconnect produces exit" {
             break;
         }
 
-        var notifications = try harness.feedBytes(buf[0..n]);
-        defer notifications.deinit(testing.allocator);
-
-        for (notifications.items) |notification| {
+        // Process each notification INLINE — its slices alias the parser's reused
+        // buffer, so it must be consumed before the next put(). ROOTSHELL-TMUX
+        // (id=integration-harness-inline)
+        for (buf[0..n]) |byte| {
+            const notification = (try harness.parser.put(byte)) orelse continue;
             if (notification == .exit) {
                 saw_exit = true;
                 _ = harness.viewer.next(.{ .tmux = notification });
@@ -419,10 +408,11 @@ test "integration: focus change on pane switch" {
         const n = try harness.readWithTimeout(&buf, remaining_ms);
         if (n == 0) continue;
 
-        var notifications = try harness.feedBytes(buf[0..n]);
-        defer notifications.deinit(testing.allocator);
-
-        for (notifications.items) |notification| {
+        // Process each notification INLINE — its slices alias the parser's reused
+        // buffer, so it must be consumed before the next put(). ROOTSHELL-TMUX
+        // (id=integration-harness-inline)
+        for (buf[0..n]) |byte| {
+            const notification = (try harness.parser.put(byte)) orelse continue;
             const actions = harness.viewer.next(.{ .tmux = notification });
             for (actions) |action| {
                 if (action == .command) try harness.sendCommand(action.command);
@@ -448,10 +438,11 @@ test "integration: focus change on pane switch" {
         const n = try harness.readWithTimeout(&buf, remaining_ms);
         if (n == 0) continue;
 
-        var notifications = try harness.feedBytes(buf[0..n]);
-        defer notifications.deinit(testing.allocator);
-
-        for (notifications.items) |notification| {
+        // Process each notification INLINE — its slices alias the parser's reused
+        // buffer, so it must be consumed before the next put(). ROOTSHELL-TMUX
+        // (id=integration-harness-inline)
+        for (buf[0..n]) |byte| {
+            const notification = (try harness.parser.put(byte)) orelse continue;
             const actions = harness.viewer.next(.{ .tmux = notification });
             for (actions) |action| {
                 switch (action) {

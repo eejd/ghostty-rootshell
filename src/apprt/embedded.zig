@@ -1755,6 +1755,17 @@ pub const CAPI = struct {
             vp,
         ) catch |err| {
             log.err("error initializing tmux pane surface err={}", .{err});
+            // The child surface failed to create, so its IO thread will never run
+            // Tmux.threadEnter -> attachRenderer — which is what normally clears the
+            // pane's `pending_attach` en-route flag. Clear it here so the viewer can
+            // reap the pane once it leaves the layout, instead of pinning its
+            // terminal (captured scrollback) for the process lifetime. Safe from
+            // this (app) thread: with no child IO thread there is no attachRenderer
+            // to race the atomic store, the gateway reads the flag with acquire, and
+            // the in-flight reconcile payload's snapshot-ref still protects the pane
+            // pointer until Swift frees the payload. ROOTSHELL-TMUX
+            // (id=pending-attach-failure-clear)
+            if (vp) |pane| pane.clearPendingAttach();
             return null;
         };
     }
@@ -2161,6 +2172,12 @@ pub const CAPI = struct {
         window_ids_len: usize = 0,
         pane_ids: ?[*]const usize = null,
         pane_ids_len: usize = 0,
+        /// ensure_window: tmux window display index. ROOTSHELL-TMUX
+        /// (id=tmux-window-order)
+        window_index: usize = 0,
+        /// set_layout: the pane id shown fullscreen when zoomed, else 0.
+        /// ROOTSHELL-TMUX (id=tmux-zoom)
+        zoomed_pane_id: usize = 0,
     };
 
     export fn ghostty_tmux_reconcile_op_count(payload: *TmuxReconcilePayload) usize {
@@ -2182,6 +2199,7 @@ pub const CAPI = struct {
                 .has_window_id = true,
                 .width = w.width,
                 .height = w.height,
+                .window_index = w.index,
             },
             .ensure_pane => |p| out.* = .{
                 .tag = .ensure_pane,
@@ -2196,6 +2214,7 @@ pub const CAPI = struct {
                 .window_id = s.tmux_window_id,
                 .has_window_id = true,
                 .layout = @ptrCast(s.layout),
+                .zoomed_pane_id = s.zoomed_pane_id,
             },
             .set_focus => |f| out.* = .{
                 .tag = .set_focus,

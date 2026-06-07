@@ -182,6 +182,12 @@ pub const Variable = enum {
     window_width,
     /// Height of window.
     window_height,
+    /// Window index within its session (display order; may be non-contiguous
+    /// when windows are closed). ROOTSHELL-TMUX (id=tmux-window-order)
+    window_index,
+    /// 1 if the window is zoomed (the active pane is shown fullscreen).
+    /// ROOTSHELL-TMUX (id=tmux-zoom)
+    window_zoomed_flag,
     /// Window layout description, ignoring zoomed window panes. Format is
     /// `<checksum>,<layout>` where checksum is a 4-digit hex CRC16 and layout
     /// encodes pane dimensions as `WxH,X,Y[,ID]` with `{...}` for horizontal
@@ -212,6 +218,7 @@ pub const Variable = enum {
             .mouse_utf8_flag,
             .origin_flag,
             .window_active,
+            .window_zoomed_flag,
             .wrap_flag,
             => std.mem.eql(u8, value, "1"),
             .alternate_saved_x,
@@ -235,6 +242,7 @@ pub const Variable = enum {
                 return error.FormatError,
             .window_width => try std.fmt.parseInt(usize, value, 10),
             .window_height => try std.fmt.parseInt(usize, value, 10),
+            .window_index => try std.fmt.parseInt(usize, value, 10),
             .cursor_colour,
             .cursor_shape,
             .pane_mode,
@@ -265,6 +273,7 @@ pub const Variable = enum {
             .mouse_utf8_flag,
             .origin_flag,
             .window_active,
+            .window_zoomed_flag,
             .wrap_flag,
             => bool,
             .alternate_saved_x,
@@ -278,6 +287,7 @@ pub const Variable = enum {
             .pane_id,
             .window_width,
             .window_height,
+            .window_index,
             => usize,
             .cursor_colour,
             .cursor_shape,

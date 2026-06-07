@@ -1289,15 +1289,20 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
             };
             errdefer payload.deinit();
 
-            // Dispatch to the apprt. The handler owns the payload and
-            // is responsible for calling payload.deinit() after applying
-            // the ops. performAction only throws on dispatch failure, in
-            // which case errdefer above cleans up.
-            _ = try self.rt_app.performAction(
+            // Dispatch to the apprt. On success (callback returns true) the
+            // handler OWNS the payload and frees it via
+            // ghostty_tmux_reconcile_free after applying the ops. performAction
+            // returns the callback's bool: a `false` return means the action was
+            // declined / not handled, so ownership did NOT transfer and we must
+            // free here. `errdefer` fires only on an ERROR return, not on a
+            // `false` value, so without this explicit free the whole payload
+            // (ops arena + held pane snapshot-refs) leaks on every reconcile the
+            // app declines. ROOTSHELL-TMUX (id=surface-reconcile-free-on-decline)
+            if (!try self.rt_app.performAction(
                 .{ .surface = self },
                 .tmux_reconcile,
                 .{ .payload = payload },
-            );
+            )) payload.deinit();
         },
 
         .tmux_write_command => |w| { // ROOTSHELL-TMUX (id=surface-arm-write): relay child-pane bytes to parent termio
@@ -1389,11 +1394,12 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
             };
             errdefer payload.deinit();
 
-            _ = try self.rt_app.performAction(
+            // Free on a `false` (declined) return — see id=surface-reconcile-free-on-decline.
+            if (!try self.rt_app.performAction(
                 .{ .surface = self },
                 .tmux_reconcile,
                 .{ .payload = payload },
-            );
+            )) payload.deinit();
         },
 
         .tmux_title_changed => |tc| { // ROOTSHELL-TMUX (id=surface-arm-title)
@@ -1410,11 +1416,12 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
             };
             errdefer payload.deinit();
 
-            _ = try self.rt_app.performAction(
+            // Free on a `false` (declined) return — see id=surface-reconcile-free-on-decline.
+            if (!try self.rt_app.performAction(
                 .{ .surface = self },
                 .tmux_reconcile,
                 .{ .payload = payload },
-            );
+            )) payload.deinit();
         },
     }
 }

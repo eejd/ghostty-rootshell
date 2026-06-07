@@ -94,6 +94,24 @@ pub fn switchTo(self: *ScreenSet, key: Key) void {
     self.active = self.all.get(key).?;
 }
 
+/// Swap the screens bound to `.primary` and `.alternate` (a pointer swap),
+/// leaving `active_key` unchanged so `active` follows its key to the now-swapped
+/// screen. No-op unless BOTH screens are initialized.
+///
+/// Used by tmux control-mode restore (ROOTSHELL-TMUX id=alt-screen-fix): tmux's
+/// `capture-pane` returns the currently-active grid and `capture-pane -a` the
+/// saved (inactive) grid. When a pane is in its alternate screen those two
+/// captures land in the OPPOSITE terminal screens, so the viewer swaps after the
+/// capture sequence to put the normal screen under `.primary` and the alt-screen
+/// app under `.alternate`.
+pub fn swapPrimaryAlternate(self: *ScreenSet) void {
+    const pri = self.all.get(.primary) orelse return;
+    const alt = self.all.get(.alternate) orelse return;
+    self.all.put(.primary, alt);
+    self.all.put(.alternate, pri);
+    self.active = self.all.get(self.active_key).?;
+}
+
 test ScreenSet {
     const alloc = testing.allocator;
     var set: ScreenSet = try .init(alloc, .default);

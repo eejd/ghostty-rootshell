@@ -264,6 +264,17 @@ pub const Parser = struct {
                     // restored. The resume probe's response is always a block.
                     // ROOTSHELL-TMUX (id=control-resync-tolerant)
                     self.tolerant = false;
+                    // NOTE: we deliberately do NOT swallow server-originated blocks
+                    // (begin/end flags bit 0 clear) at the parser. The STARTUP attach
+                    // block (`tmux -CC new`/attach) is itself server-originated
+                    // (flags=0 — it is not a control-channel command, so it lacks
+                    // CMDQ_STATE_CONTROL), and the viewer's startup handshake needs
+                    // it. Swallowing flags=0 here breaks attach entirely (no windows,
+                    // stuck queue, ESC can't detach). The FIFO-desync that
+                    // server-originated steady-state blocks could cause must instead
+                    // be handled at the consumer (gated on viewer state / matched to
+                    // sent commands), not by dropping the block. See
+                    // id=server-originated-block.
                     switch (result.terminator) {
                         .end => return .{ .block_end = output },
                         .err => {
@@ -581,12 +592,18 @@ pub const Parser = struct {
             self.state = .idle;
             return .{ .pane_mode_changed = .{ .pane_id = pid.value } };
         } else if (std.mem.eql(u8, cmd, "%session-renamed")) cmd: {
-            // Format: %session-renamed <name>
+            // Format: %session-renamed $<id> <name>
+            // tmux emits a leading `$<id>` (control-notify.c
+            // control_notify_session_renamed: "%%session-renamed $%u %s"); the
+            // man page's older `<name>`-only form is stale. Strip the id like
+            // %session-changed does, otherwise the id leaks into the title.
             const after = afterCmd(line, cmd) orelse break :cmd;
+            const id = parseSigilInt(after, '$') orelse break :cmd;
+            const name = afterSpace(id.rest) orelse break :cmd;
 
             // Important: do not clear buffer here since name points to it
             self.state = .idle;
-            return .{ .session_renamed = .{ .name = after } };
+            return .{ .session_renamed = .{ .name = name } };
         } else if (std.mem.eql(u8, cmd, "%pause")) cmd: {
             // Format: %pause %<pane-id>
             const after = afterCmd(line, cmd) orelse break :cmd;
@@ -606,8 +623,16 @@ pub const Parser = struct {
             self.state = .idle;
             return .{ .@"continue" = .{ .pane_id = pid.value } };
         } else if (std.mem.eql(u8, cmd, "%exit")) {
-            // The tmux server is exiting or has detached. The optional reason
-            // string is dropped (see Notification.exit comment).
+            // The tmux server is exiting or has detached. tmux may append an
+            // optional reason ("%exit <reason>", e.g. "server exited", "killed").
+            // We can't carry it in the (void) exit notification without reworking
+            // the DCS/teardown path, but LOG it (a clean detach has no reason) so a
+            // session whose tmux tabs suddenly vanished is diagnosable instead of
+            // silently torn down. The reason is a short tmux status string, not user
+            // content. ROOTSHELL-TMUX (id=exit-reason-log)
+            if (afterCmd(line, cmd)) |reason| {
+                if (reason.len > 0) log.info("tmux control mode %exit reason: {s}", .{reason});
+            }
             self.buffer.clearRetainingCapacity();
             self.state = .idle;
             return .{ .exit = {} };
@@ -680,10 +705,13 @@ pub const Parser = struct {
             std.mem.eql(u8, cmd, "%unlinked-window-close") or
             std.mem.eql(u8, cmd, "%unlinked-window-renamed") or
             std.mem.eql(u8, cmd, "%paste-buffer-changed") or
-            std.mem.eql(u8, cmd, "%paste-buffer-deleted"))
+            std.mem.eql(u8, cmd, "%paste-buffer-deleted") or
+            std.mem.eql(u8, cmd, "%config-error"))
         {
             // Recognized but intentionally ignored notifications. These relate
-            // to other sessions' windows or clipboard buffers.
+            // to other sessions' windows, clipboard buffers, or config-file parse
+            // errors (`%config-error`) that don't affect topology. Listed here so
+            // they don't trip the "unknown notification" warning below.
             log.debug("ignoring tmux notification: {s}", .{cmd});
         } else {
             // Unknown notification, log it and return to idle state.
@@ -904,6 +932,25 @@ test "tmux begin/error empty" {
     const n = (try c.put('\n')).?;
     try testing.expect(n == .block_err);
     try testing.expectEqualStrings("", n.block_err);
+}
+
+test "tmux flags=0 (server-originated) block is delivered, not swallowed" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var c: Parser = .{ .buffer = .init(alloc) };
+    defer c.deinit();
+    // A flags=0 block is server-originated. Critically, the STARTUP attach block
+    // (`tmux -CC new` / attach) is itself flags=0 (it is not a control-channel
+    // command, so it lacks CMDQ_STATE_CONTROL). It MUST be delivered, or the
+    // viewer's startup handshake never completes (no windows, stuck queue, ESC
+    // can't detach). ROOTSHELL-TMUX (id=server-originated-block)
+    for ("%begin 1 5 0\nhook output\n%end 1 5 0") |byte| {
+        try testing.expect(try c.put(byte) == null);
+    }
+    const n = (try c.put('\n')).?;
+    try testing.expect(n == .block_end);
+    try testing.expectEqualStrings("hook output", n.block_end);
 }
 
 test "tmux begin/end data" {
@@ -1223,7 +1270,8 @@ test "tmux session-renamed" {
 
     var c: Parser = .{ .buffer = .init(alloc) };
     defer c.deinit();
-    for ("%session-renamed my-session") |byte| try testing.expect(try c.put(byte) == null);
+    // tmux emits a leading `$<id>` which must be stripped from the title.
+    for ("%session-renamed $3 my-session") |byte| try testing.expect(try c.put(byte) == null);
     const n = (try c.put('\n')).?;
     try testing.expect(n == .session_renamed);
     try testing.expectEqualStrings("my-session", n.session_renamed.name);
@@ -1346,13 +1394,16 @@ test "tmux block begin tokens parsed" {
 
     var c: Parser = .{ .buffer = .init(alloc) };
     defer c.deinit();
-    for ("%begin 42 100 0\n") |byte| try testing.expect(try c.put(byte) == null);
+    // flags=1 (control-client originated): a flags=0 block is server-originated
+    // and is swallowed (id=server-originated-block), so use 1 here to exercise the
+    // begin-token parsing AND get a block_end.
+    for ("%begin 42 100 1\n") |byte| try testing.expect(try c.put(byte) == null);
     try testing.expect(c.block_begin != null);
     try testing.expectEqual(42, c.block_begin.?.time);
     try testing.expectEqual(100, c.block_begin.?.command_id);
-    try testing.expectEqual(0, c.block_begin.?.flags);
+    try testing.expectEqual(1, c.block_begin.?.flags);
 
-    for ("%end 42 100 0") |byte| try testing.expect(try c.put(byte) == null);
+    for ("%end 42 100 1") |byte| try testing.expect(try c.put(byte) == null);
     const n = (try c.put('\n')).?;
     try testing.expect(n == .block_end);
     try testing.expect(c.block_begin == null);
@@ -1394,7 +1445,8 @@ test "tmux exit notification with reason" {
 
     var c: Parser = .{ .buffer = .init(alloc) };
     defer c.deinit();
-    // %exit can have an optional reason string which we drop
+    // %exit can have an optional reason string. It is logged (id=exit-reason-log),
+    // not carried in the notification, so the parse result is still a bare .exit.
     for ("%exit server exited") |byte| try testing.expect(try c.put(byte) == null);
     const n = (try c.put('\n')).?;
     try testing.expect(n == .exit);
@@ -1429,7 +1481,9 @@ test "tmux resync parses the probe block when it is the FIRST thing seen" {
     // NOT be discarded.
     c.beginResync();
     try testing.expect(c.tolerant);
-    for ("%begin 1 2 0\n__ROOTSHELL_TMUX_RESYNC__ $1\n%end 1 2 0") |byte| {
+    // flags=1: the probe is a control-client display-message command (a flags=0
+    // block would be server-originated and swallowed; id=server-originated-block).
+    for ("%begin 1 2 1\n__ROOTSHELL_TMUX_RESYNC__ $1\n%end 1 2 1") |byte| {
         try testing.expect(try c.put(byte) == null);
         try testing.expect(c.state != .broken);
     }
@@ -1455,7 +1509,9 @@ test "tmux resync skips mid-line/mid-block garbage without breaking" {
         try testing.expect(try c.put(byte) == null);
         try testing.expect(c.state != .broken);
     }
-    for ("%begin 3 4 0\nhi\n%end 3 4 0") |byte| try testing.expect(try c.put(byte) == null);
+    // flags=1: a client command response (flags=0 would be swallowed as
+    // server-originated; id=server-originated-block).
+    for ("%begin 3 4 1\nhi\n%end 3 4 1") |byte| try testing.expect(try c.put(byte) == null);
     const n = (try c.put('\n')).?;
     try testing.expect(n == .block_end);
     try testing.expect(!c.tolerant);
@@ -1479,7 +1535,9 @@ test "tmux resync ignores a literal mid-line % in reattach garbage" {
         try testing.expect(c.state != .notification); // never falsely entered
     }
     // The real block at a true line start then parses.
-    for ("%begin 1 2 0\nhi\n%end 1 2 0") |byte| _ = try c.put(byte);
+    // flags=1: a client command response (flags=0 would be swallowed as
+    // server-originated; id=server-originated-block).
+    for ("%begin 1 2 1\nhi\n%end 1 2 1") |byte| _ = try c.put(byte);
     const n = (try c.put('\n')).?;
     try testing.expect(n == .block_end);
     try testing.expect(!c.tolerant);

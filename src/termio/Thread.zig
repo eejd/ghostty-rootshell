@@ -330,8 +330,23 @@ fn drainMailbox(
                 }
             },
             .jump_to_prompt => |v| try io.jumpToPrompt(v),
-            .tmux_set_client_size => |v| io.terminal_stream.handler.tmuxSetClientSize(v.cols, v.rows), // ROOTSHELL-TMUX (id=thread-set-client-size)
+            .tmux_set_client_size => |v| { // ROOTSHELL-TMUX (id=thread-set-client-size)
+                // Hold the renderer mutex around the arm: tmuxSetClientSize pumps
+                // the tmux command queue, and messageWriter's queue-full slow path
+                // unlocks then re-locks the renderer mutex (mailbox.zig). drainMailbox
+                // does NOT hold it (each Termio handler locks it itself), so without
+                // locking here a full mailbox would unlock an unheld mutex and return
+                // with it LOCKED (renderer deadlock). Same rationale as .tmux_resume.
+                io.renderer_state.mutex.lock();
+                defer io.renderer_state.mutex.unlock();
+                io.terminal_stream.handler.tmuxSetClientSize(v.cols, v.rows);
+            },
             .tmux_pane_command => |v| { // ROOTSHELL-TMUX (id=thread-pane-command)
+                // See .tmux_set_client_size: tmuxQueuePaneCommand can reach
+                // messageWriter, whose queue-full slow path requires the renderer
+                // mutex be held by the caller.
+                io.renderer_state.mutex.lock();
+                defer io.renderer_state.mutex.unlock();
                 defer v.alloc.free(v.data);
                 io.terminal_stream.handler.tmuxQueuePaneCommand(v.data);
             },
@@ -353,7 +368,14 @@ fn drainMailbox(
                 try io.queueWrite(data, v.data, self.flags.linefeed_mode);
                 io.terminal_stream.handler.recordTmuxTrackedSend();
             },
-            .tmux_detach => io.terminal_stream.handler.tmuxDetach(), // ROOTSHELL-TMUX (id=thread-detach)
+            .tmux_detach => { // ROOTSHELL-TMUX (id=thread-detach)
+                // See .tmux_set_client_size: tmuxDetach pumps the command queue and
+                // can reach messageWriter's queue-full slow path, which needs the
+                // renderer mutex held.
+                io.renderer_state.mutex.lock();
+                defer io.renderer_state.mutex.unlock();
+                io.terminal_stream.handler.tmuxDetach();
+            },
             .tmux_resume => { // ROOTSHELL-TMUX (id=thread-resume)
                 // Hold the renderer mutex around the whole arm, exactly like the
                 // read path (Exec.zig processOutput): the `.enter` dispatch

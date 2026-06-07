@@ -207,36 +207,47 @@ pub fn threadEnter(
 
     log.info("tmux backend thread enter pane_id={}", .{self.pane_id});
 
-    // Swap the renderer's terminal pointer to the viewer's pane terminal.
-    // This makes the child surface render directly from the viewer-owned
-    // terminal, which the parent IO thread feeds via VT output processing.
-    // The renderer reads terminal state only under this mutex (see
-    // renderer/generic.zig:updateFrame), so the swap is safe here before
-    // any rendering begins.
-    if (self.viewer_terminal) |vt| {
-        io.renderer_state.mutex.lock();
-        defer io.renderer_state.mutex.unlock();
-        io.renderer_state.terminal = vt;
-    }
-
-    // Register this child surface's renderer mutex and wake callback back to
-    // the viewer pane, and clear the en-route flag. The viewer (parent gateway
-    // IO thread) acquires the mutex before writing to the shared terminal and
-    // invokes the wake callback after, both coordinating with this child's
-    // renderer thread. `Pane.attachRenderer` publishes all of this with release
-    // ordering so the gateway never observes a half-built handshake on a
-    // weakly-ordered target (see `Pane`'s id=viewer-pane-atomics notes). The
-    // wake context `&io.renderer_wakeup` is stable for the lifetime of the
-    // child surface's IO and is cleared in threadExit before teardown; the
-    // child's own IO thread (this tmux backend) never processes pane output, so
-    // without the explicit wake the pane would not repaint until some unrelated
-    // event (the source of the "super slow" pane behavior).
+    // Register this child surface's renderer mutex and wake callback on the
+    // viewer pane FIRST — before publishing the pane terminal to the renderer.
+    // ROOTSHELL-TMUX (id=tmux-attach-order): attachRenderer installs
+    // `pane.renderer_mutex = io.renderer_state.mutex`; until it runs, the
+    // gateway's `pane.lockRenderer()` is a no-op, so the gateway would write the
+    // shared pane terminal UNLOCKED. The child's renderer thread is already
+    // running (spawned before the IO thread, Surface.zig) and reads
+    // `io.renderer_state.terminal` under this same mutex, so swapping the
+    // terminal pointer first would open a window where gateway writes race the
+    // renderer's reads of the pane terminal (the crash class the detach drain
+    // fixed, on the attach side). Attaching first, then swapping under the mutex
+    // below, serializes every gateway write of the pane terminal against the
+    // renderer. The viewer (parent gateway IO thread) acquires the mutex before
+    // writing to the shared terminal and invokes the wake callback after.
+    // `Pane.attachRenderer` publishes all of this with release ordering so the
+    // gateway never observes a half-built handshake on a weakly-ordered target
+    // (see `Pane`'s id=viewer-pane-atomics notes). The wake context
+    // `&io.renderer_wakeup` is stable for the lifetime of the child surface's IO
+    // and is cleared in threadExit before teardown; the child's own IO thread
+    // (this tmux backend) never processes pane output, so without the explicit
+    // wake the pane would not repaint until some unrelated event (the source of
+    // the "super slow" pane behavior).
     if (self.viewer_pane) |pane| {
         pane.attachRenderer(
             io.renderer_state.mutex,
             @ptrCast(&io.renderer_wakeup),
             &wakeRenderer,
         );
+    }
+
+    // Now publish the viewer's pane terminal to the renderer. This makes the
+    // child surface render directly from the viewer-owned terminal, which the
+    // parent IO thread feeds via VT output processing. The swap happens under
+    // the renderer mutex — which the gateway now also holds when writing, thanks
+    // to attachRenderer above — so the renderer transitions atomically from the
+    // child's own (empty) terminal to the shared viewer pane terminal with no
+    // unlocked-write window.
+    if (self.viewer_terminal) |vt| {
+        io.renderer_state.mutex.lock();
+        defer io.renderer_state.mutex.unlock();
+        io.renderer_state.terminal = vt;
     }
 
     // Populate the thread data with our (empty) thread state.

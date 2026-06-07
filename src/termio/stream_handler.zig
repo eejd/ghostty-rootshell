@@ -1371,18 +1371,29 @@ pub const StreamHandler = struct {
                     else => {},
                 }
 
+                // ROOTSHELL-TMUX (id=streamhandler-defunct-teardown): set if the
+                // viewer emits `.exit` (went defunct on an internal error). We
+                // cannot tear down inside the loop — actions alias viewer-owned
+                // memory — so we defer it to just after the loop.
+                var viewer_defunct = false;
                 for (viewer.next(.{ .tmux = tmux })) |action| {
                     // `{f}` would dump payloads (window topology, raw command
                     // bytes, server message text); log only the variant name.
                     log.debug("tmux viewer action={s}", .{@tagName(action)});
                     switch (action) {
                         .exit => {
-                            // The viewer has gone defunct (e.g. broken control
-                            // stream). Send an empty topology snapshot to close
-                            // all child tmux surfaces. The DCS unhook path also
-                            // sends this, but the viewer may go defunct before
-                            // the DCS session formally ends.
-                            self.sendEmptyTopologySnapshot();
+                            // The viewer went defunct on an INTERNAL error (failed
+                            // to process a layout/command, OOM) — distinct from a
+                            // clean `%exit` DCS event or a `.broken` parser stream,
+                            // both handled above. We CANNOT free the viewer here:
+                            // `action` aliases viewer-owned memory we are still
+                            // iterating. Defer teardown to after the loop, then tear
+                            // down + force-unhook exactly like `.broken` — otherwise
+                            // the gateway tab freezes (later output is consumed by the
+                            // defunct viewer), tmuxActive() stays true (ESC keeps
+                            // sending detach-client into a dead stream), and the
+                            // viewer lingers allocated.
+                            viewer_defunct = true;
                         },
 
                         .command => |command| {
@@ -1510,6 +1521,17 @@ pub const StreamHandler = struct {
                             log.info("tmux message: {s}", .{msg.text});
                         },
                     }
+                }
+
+                // Now that the action loop is done (no more aliasing of viewer
+                // memory), tear down a viewer that went defunct mid-batch. Mirrors
+                // the `.broken` path so an internal viewer failure recovers exactly
+                // like a clean exit instead of freezing the gateway.
+                // ROOTSHELL-TMUX (id=streamhandler-defunct-teardown)
+                if (viewer_defunct) {
+                    log.warn("tmux viewer went defunct; tearing down gateway", .{});
+                    self.tmuxTeardownViewer();
+                    self.tmux_force_unhook = true;
                 }
             },
 

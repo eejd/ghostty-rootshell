@@ -187,8 +187,16 @@ pub const Handler = struct {
                 return self.forwardPut(byte);
             }
 
-            // Not ST: forward the stored ESC to the sub-handler first,
-            // then fall through to handle the current byte normally.
+            // Not ST. Forward the stored ESC to the sub-handler. If the current
+            // byte is ANOTHER ESC, re-arm pending_esc so a following '\' is still
+            // recognized as ST — `ESC ESC \` must terminate — instead of forwarding
+            // the second ESC as content and losing the terminator. Mirrors
+            // stream_terminal.zig's dcsDetectSt. ROOTSHELL-TMUX (id=dcs-pending-esc-rearm)
+            if (byte == 0x1B) {
+                self.pending_esc = true;
+                return self.forwardPut(0x1B);
+            }
+            // Otherwise forward the stored ESC then the current byte as content.
             if (self.forwardPut(0x1B)) |cmd| return cmd;
             return self.forwardPut(byte);
         }

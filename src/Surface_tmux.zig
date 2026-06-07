@@ -39,6 +39,9 @@ pub const TmuxReconcileOp = union(enum) {
         tmux_window_id: usize,
         width: usize,
         height: usize,
+        /// tmux window index (display order). The app sorts its tmux tabs by
+        /// this. ROOTSHELL-TMUX (id=tmux-window-order)
+        index: usize = 0,
     },
 
     /// Ensure a pane leaf surface exists for the given pane ID
@@ -65,6 +68,9 @@ pub const TmuxReconcileOp = union(enum) {
     set_layout: struct {
         tmux_window_id: usize,
         layout: *const terminal.tmux.Layout,
+        /// The pane id shown fullscreen when the window is zoomed, or 0 when the
+        /// window is not zoomed. ROOTSHELL-TMUX (id=tmux-zoom)
+        zoomed_pane_id: usize = 0,
     },
 
     /// Move focus to the specified tmux window and pane.
@@ -187,6 +193,7 @@ pub fn planTmuxReconcile(
             .tmux_window_id = window.id,
             .width = window.width,
             .height = window.height,
+            .index = window.index,
         } };
         op_idx += 1;
 
@@ -212,6 +219,9 @@ pub fn planTmuxReconcile(
         ops[op_idx] = .{ .set_layout = .{
             .tmux_window_id = window.id,
             .layout = layout_ptr,
+            // When zoomed, tmux shows the window's active pane fullscreen.
+            // ROOTSHELL-TMUX (id=tmux-zoom)
+            .zoomed_pane_id = if (window.zoomed) window.active_pane_id else 0,
         } };
         op_idx += 1;
 
