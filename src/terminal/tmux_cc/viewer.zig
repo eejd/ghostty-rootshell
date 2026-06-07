@@ -606,17 +606,32 @@ pub const Viewer = struct {
         /// All free paths treat this like `renderer_mutex != null`.
         pending_attach: bool = false,
 
-        /// Outstanding holds taken by in-flight topology snapshots / reconcile
-        /// payloads that carry a RAW pointer to this pane across to the app (and
-        /// Swift) threads. Independent of renderer-attach state: an existing
-        /// pane's child can detach (clearing `renderer_mutex`) WHILE a reconcile
-        /// payload still references the pane, so attach state alone cannot guard
-        /// the pointer. Acquired on the IO thread when a snapshot/payload captures
+        /// Keep-alive holds, independent of renderer-attach state. Taken by (a)
+        /// in-flight topology snapshots / reconcile payloads that carry a RAW
+        /// pointer to this pane across to the app (and Swift) threads, and (b) the
+        /// in-progress child detach (`detachRenderer` holds one across its whole
+        /// flush/clear/drain so a concurrent release can't reap the pane mid-detach
+        /// — id=viewer-detach-hold). Independent of attach state because an
+        /// existing pane's child can detach (clearing `renderer_mutex`) WHILE a
+        /// reconcile payload still references the pane, so attach state alone
+        /// cannot guard the pointer. Acquired on the IO thread when a snapshot/payload captures
         /// the pointer; released on the app thread when that snapshot/payload is
         /// freed. While > 0 no free path may destroy the pane (see `isRetained`).
         /// Accessed from both threads — always via the atomic helpers below.
         /// ROOTSHELL-TMUX (id=viewer-snapshot-refcount)
         snapshot_refs: usize = 0,
+
+        /// Count of gateway IO-thread accesses currently inside the
+        /// `lockRenderer`/`unlockRenderer` window (load `renderer_mutex` -> lock ->
+        /// write terminal -> unlock). The child's `detachRenderer` clears
+        /// `renderer_mutex` then drains this to zero before returning, so a gateway
+        /// that loaded the mutex pointer just before the clear cannot lock the
+        /// (about-to-be-freed) child mutex, nor read the (about-to-be-reaped)
+        /// terminal, after detach completes. Incremented only by the gateway IO
+        /// thread (single writer, so 0 or 1), read by the child IO thread; seq_cst
+        /// throughout to order it against the `renderer_mutex` store/load. See
+        /// `lockRenderer`. ROOTSHELL-TMUX (id=viewer-renderer-users-drain)
+        renderer_users: usize = 0,
 
         /// Orphan-graveyard linkage. ROOTSHELL-TMUX (id=viewer-orphan-graveyard):
         /// when the viewer is torn down (`%exit` / `.broken` / `%session-changed`)
@@ -640,13 +655,14 @@ pub const Viewer = struct {
         // access goes through the methods below, which publish with release and
         // consume with acquire so a half-built handshake is never observed.
         //
-        // The methods (defined after the fields below) do NOT close the teardown
-        // LIFETIME window: after `detachRenderer` the child surface frees its
-        // `renderer_state` (mutex + wake target), and a gateway that already
-        // loaded those pointers could still touch freed memory. `detachRenderer`'s
-        // returned mutex is flushed (lock/unlock) by the caller to drain any
-        // in-flight critical section, which narrows but does not eliminate it; a
-        // full fix needs a detach ack.
+        // The teardown LIFETIME window (the child surface freeing its
+        // `renderer_state` mutex + wake target while a gateway still references
+        // them) is closed by `detachRenderer`: it flushes the renderer, clears the
+        // handshake, then DRAINS in-flight gateway accesses via the
+        // `renderer_users` counter (id=viewer-renderer-users-drain) so no gateway
+        // can lock the freed mutex or read the reaped terminal after detach
+        // returns. Gateway terminal access must go through `lockRenderer` /
+        // `unlockRenderer` for that drain to be correct.
 
         /// Whether this pane has been fully initialized with captured
         /// content and terminal state from tmux. Output notifications
@@ -693,35 +709,77 @@ pub const Viewer = struct {
             @atomicStore(bool, &self.pending_attach, false, .release);
         }
 
-        /// Child IO thread (`Tmux.threadExit`): tear down the attach handshake.
-        /// Clears `wake_fn` FIRST (so a concurrent gateway wake that loads it as
-        /// null skips entirely, never dereferencing a stale `wake_ctx`), then
-        /// `wake_ctx`, then the renderer mutex. Returns the previously-registered
-        /// mutex so the caller can flush any in-flight gateway critical section
-        /// before the child frees it.
-        pub fn detachRenderer(self: *Pane) ?*std.Thread.Mutex {
-            const mutex = @atomicLoad(?*std.Thread.Mutex, &self.renderer_mutex, .acquire);
+        /// Child IO thread (`Tmux.threadExit`): tear down the attach handshake so
+        /// the gateway stops accessing this pane and the child can free its
+        /// renderer_state (mutex + wake target) without a use-after-free.
+        ///
+        /// 1. FLUSH the renderer thread while `renderer_mutex` is STILL registered
+        ///    (the pane stays retained, so a concurrent snapshot/payload release
+        ///    cannot reap it mid-flush): lock/unlock the mutex the renderer reads
+        ///    this pane's terminal under, draining any in-flight render read.
+        /// 2. Clear the handshake — `wake_fn` first so a concurrent wake skips,
+        ///    then the mutex so future gateway loads see null and won't lock.
+        /// 3. DRAIN: spin until `renderer_users` hits 0, so a gateway that loaded
+        ///    the mutex pointer just BEFORE step 2 and is mid `lockRenderer` cannot
+        ///    lock the (about-to-be-freed) mutex nor read the (about-to-be-reaped)
+        ///    terminal after we return. seq_cst orders the drain against the
+        ///    `renderer_mutex` store and the gateway's increment+load. Bounded: the
+        ///    gateway is a single thread, so at most one access is outstanding.
+        ///
+        /// Closes the renderer-mutex / terminal lifetime gap (findings: a gateway
+        /// that already loaded the mutex but had not locked it). ROOTSHELL-TMUX
+        /// (id=viewer-renderer-users-drain)
+        pub fn detachRenderer(self: *Pane) void {
+            // (0) Hold a keep-alive ref for the WHOLE detach. Once we null
+            // `renderer_mutex` below, `isRetained` drops the child reason, and a
+            // concurrent snapshot/payload `releaseSnapshotRef` (app thread) could
+            // see the snapshot count hit 0 and reap this pane out from under us
+            // while we are still flushing / draining `self`. This ref keeps
+            // `isRetained` true throughout (detach is itself a retention reason),
+            // and releasing it at the end performs the FINAL reap (last-releaser-
+            // frees) once the detach/drain handoff is complete. ROOTSHELL-TMUX
+            // (id=viewer-detach-hold). Entry is safe: `renderer_mutex` is still set
+            // here (this child is attached), so the pane is retained right now.
+            self.acquireSnapshotRef();
+
+            const mutex = @atomicLoad(?*std.Thread.Mutex, &self.renderer_mutex, .seq_cst);
+            if (mutex) |m| {
+                m.lock();
+                m.unlock();
+            }
             @atomicStore(?*const fn (?*anyopaque) void, &self.wake_fn, null, .release);
             @atomicStore(?*anyopaque, &self.wake_ctx, null, .release);
-            @atomicStore(?*std.Thread.Mutex, &self.renderer_mutex, null, .release);
-            return mutex;
+            @atomicStore(?*std.Thread.Mutex, &self.renderer_mutex, null, .seq_cst);
+            while (@atomicLoad(usize, &self.renderer_users, .seq_cst) > 0) {
+                std.atomic.spinLoopHint();
+            }
+
+            // Release the detach hold. If it was the pane's last hold (an orphan
+            // whose viewer is gone, with no child and no other snapshot/payload
+            // refs), this reaps `self`. `self` may be freed here; do not touch it
+            // afterward.
+            self.releaseSnapshotRef();
         }
 
-        /// Reap this pane if its owning viewer was torn down (it is a graveyard
-        /// orphan) and its last hold is now released. The caller MUST first flush
-        /// the renderer (lock/unlock the returned `detachRenderer` mutex) so no
-        /// renderer thread is mid-read of this pane's terminal — reaping frees it.
-        /// No-op while the viewer is alive (the pane isn't in the graveyard).
-        /// `self` may be freed by this call; do not touch it afterward.
-        /// ROOTSHELL-TMUX (id=viewer-orphan-graveyard)
-        pub fn reapIfOrphaned(self: *Pane) void {
-            reapOrphan(self);
+        /// Gateway IO thread: enter the renderer-access window for a terminal
+        /// write — register as a `renderer_users` user (seq_cst so `detachRenderer`
+        /// observes it), load `renderer_mutex`, and lock it if a child is attached.
+        /// Returns the locked mutex (or null). MUST be paired with
+        /// `unlockRenderer`. ROOTSHELL-TMUX (id=viewer-renderer-users-drain)
+        pub fn lockRenderer(self: *Pane) ?*std.Thread.Mutex {
+            _ = @atomicRmw(usize, &self.renderer_users, .Add, 1, .seq_cst);
+            const m = @atomicLoad(?*std.Thread.Mutex, &self.renderer_mutex, .seq_cst);
+            if (m) |mu| mu.lock();
+            return m;
         }
 
-        /// Gateway IO thread: acquire-load the renderer mutex (null => no child
-        /// renderer attached, so no locking is needed for terminal writes).
-        pub fn rendererMutex(self: *const Pane) ?*std.Thread.Mutex {
-            return @atomicLoad(?*std.Thread.Mutex, &self.renderer_mutex, .acquire);
+        /// Gateway IO thread: leave the renderer-access window opened by
+        /// `lockRenderer` — unlock the mutex (if any) then drop the
+        /// `renderer_users` registration. ROOTSHELL-TMUX
+        /// (id=viewer-renderer-users-drain)
+        pub fn unlockRenderer(self: *Pane, m: ?*std.Thread.Mutex) void {
+            if (m) |mu| mu.unlock();
+            _ = @atomicRmw(usize, &self.renderer_users, .Sub, 1, .seq_cst);
         }
 
         /// Gateway IO thread: whether a child renderer is attached OR en route,
@@ -2337,9 +2395,8 @@ pub const Viewer = struct {
             };
             const pane: *Pane = entry.value_ptr.*;
 
-            const render_mutex = pane.rendererMutex();
-            if (render_mutex) |m| m.lock();
-            defer if (render_mutex) |m| m.unlock();
+            const render_mutex = pane.lockRenderer();
+            defer pane.unlockRenderer(render_mutex);
 
             const t: *Terminal = &pane.terminal;
 
@@ -2507,9 +2564,8 @@ pub const Viewer = struct {
         };
         const pane: *Pane = entry.value_ptr.*;
 
-        const render_mutex = pane.rendererMutex();
-        if (render_mutex) |m| m.lock();
-        defer if (render_mutex) |m| m.unlock();
+        const render_mutex = pane.lockRenderer();
+        defer pane.unlockRenderer(render_mutex);
 
         const t: *Terminal = &pane.terminal;
         _ = try t.switchScreen(screen_key);
@@ -2555,9 +2611,8 @@ pub const Viewer = struct {
         };
         const pane: *Pane = entry.value_ptr.*;
 
-        const render_mutex = pane.rendererMutex();
-        if (render_mutex) |m| m.lock();
-        defer if (render_mutex) |m| m.unlock();
+        const render_mutex = pane.lockRenderer();
+        defer pane.unlockRenderer(render_mutex);
 
         const t: *Terminal = &pane.terminal;
         _ = try t.switchScreen(screen_key);
@@ -2610,9 +2665,8 @@ pub const Viewer = struct {
         // Lock the renderer mutex if a child surface has registered one.
         // This coordinates with the child's renderer thread which reads
         // from the same terminal under this mutex.
-        const render_mutex = pane.rendererMutex();
-        if (render_mutex) |m| m.lock();
-        defer if (render_mutex) |m| m.unlock();
+        const render_mutex = pane.lockRenderer();
+        defer pane.unlockRenderer(render_mutex);
 
         // tmux escapes control bytes (< 0x20) and the backslash itself as
         // `\ooo` (a backslash followed by exactly three octal digits) in
@@ -2811,9 +2865,8 @@ pub const Viewer = struct {
                     // terminal under that mutex. Without this lock a relayout
                     // during heavy output (e.g. running btop in a pane) races
                     // the renderer and crashes in updateFrame/updateExtraRows.
-                    const render_mutex = pane.rendererMutex();
-                    if (render_mutex) |m| m.lock();
-                    defer if (render_mutex) |m| m.unlock();
+                    const render_mutex = pane.lockRenderer();
+                    defer pane.unlockRenderer(render_mutex);
                     try pane.terminal.resize(
                         gpa_alloc,
                         cols,

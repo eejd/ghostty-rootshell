@@ -248,31 +248,18 @@ pub fn threadExit(self: *Tmux, td: *termio.Termio.ThreadData) void {
     log.info("tmux backend thread exit pane_id={}", .{self.pane_id});
 
     // Unregister the renderer mutex and wake callback from the viewer pane so
-    // the gateway stops touching memory that's about to be freed with this
-    // child surface. `detachRenderer` clears wake_fn first (release) so a
-    // concurrent gateway wake skips, then clears the mutex, and returns the
-    // mutex it had registered.
+    // the gateway stops touching memory that's about to be freed with this child
+    // surface. `detachRenderer` holds a keep-alive ref across the whole detach,
+    // flushes the renderer, clears the handshake, DRAINS any in-flight gateway
+    // access (a gateway that loaded the mutex pointer just before the clear), and
+    // then releases its hold — which performs the final reap if this pane is an
+    // orphan whose viewer is gone. After it returns no gateway or renderer is
+    // mid-access of this pane, so the child surface can free its renderer_state
+    // (mutex + wake target) without a use-after-free. `pane` may be freed by the
+    // call; do not touch it afterward. See id=viewer-renderer-users-drain /
+    // id=viewer-detach-hold.
     if (self.viewer_pane) |pane| {
-        const mutex = pane.detachRenderer();
-
-        // Flush any in-flight gateway critical section: if the gateway is
-        // currently writing to this pane's terminal under the mutex, block until
-        // it releases so the child surface can free its renderer_state without
-        // the gateway holding (a soon-to-be-freed) lock. This narrows the
-        // teardown lifetime window but does not fully close it — a gateway that
-        // already loaded the mutex pointer but has not yet locked is not caught.
-        // A complete fix needs a detach ack (see `Pane`'s id=viewer-pane-atomics).
-        if (mutex) |m| {
-            m.lock();
-            m.unlock();
-        }
-
-        // If this pane's viewer was already torn down, the pane is a graveyard
-        // orphan and we were the last (renderer) hold: reap it now — AFTER the
-        // flush above, so no renderer thread is mid-read of its terminal when it
-        // is freed. No-op while the viewer is alive. `pane` may be freed here; do
-        // not touch it afterward. ROOTSHELL-TMUX (id=viewer-orphan-graveyard)
-        pane.reapIfOrphaned();
+        pane.detachRenderer();
     }
 }
 
