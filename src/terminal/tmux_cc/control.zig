@@ -549,7 +549,18 @@ pub const Parser = struct {
 
         const line = line: {
             var line = self.buffer.written();
-            if (line[line.len - 1] == '\r') line = line[0 .. line.len - 1];
+            // Strip ALL trailing CRs, not just one. The control stream reaches
+            // us over a PTY/SSH channel whose ONLCR line discipline turns tmux's
+            // "\n" terminator into "\r\n" — and for some lines into "\r\r\n"
+            // (observed on %output/%extended-output chunks split mid-escape).
+            // tmux escapes every real control byte, CR included, as \ooo
+            // (control.c control_append_data), so a literal 0x0d in a control
+            // line is always framing noise, never pane payload. Dropping just
+            // one CR leaves the second as the payload's last byte; fed into the
+            // pane VT stream it snaps the cursor to column 0 and the next write
+            // lands in the gutter (the helix scroll corruption).
+            // ROOTSHELL-TMUX (id=control-strip-trailing-cr)
+            while (line.len > 0 and line[line.len - 1] == '\r') line = line[0 .. line.len - 1];
             break :line line;
         };
         const cmd = cmd: {
@@ -1725,6 +1736,30 @@ test "tmux extended-output" {
     try testing.expectEqual(5, n.extended_output.pane_id);
     try testing.expectEqual(1234, n.extended_output.age_ms);
     try testing.expectEqualStrings("hello\\033[m", n.extended_output.data);
+}
+
+test "tmux extended-output strips a stray trailing CR (\\r\\r\\n framing)" {
+    // The control stream arrives over a PTY/SSH channel whose ONLCR discipline
+    // can turn tmux's "\n" terminator into "\r\r\n" for some payload lines. We
+    // split on '\n', so the line still carries TWO trailing CRs. Only one is
+    // the normal CRLF; the second would otherwise become the payload's last
+    // byte and snap the pane cursor to column 0 (gutter/whole-line corruption
+    // when scrolling). All trailing CRs must be stripped.
+    // ROOTSHELL-TMUX (id=control-strip-trailing-cr)
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var c: Parser = .{ .buffer = .init(alloc) };
+    defer c.deinit();
+    // payload "...234;" followed by a stray CR + the CRLF terminator's CR
+    // (the observed "\r\r\n" framing; one CR would be handled by older code,
+    // so the regression specifically needs two).
+    for ("%extended-output %1 896 : \\033[38;2;199;146;234;\r\r") |byte| try testing.expect(try c.put(byte) == null);
+    const n = (try c.put('\n')).?;
+    try testing.expect(n == .extended_output);
+    try testing.expectEqual(1, n.extended_output.pane_id);
+    // No trailing CR may survive into the pane payload.
+    try testing.expectEqualStrings("\\033[38;2;199;146;234;", n.extended_output.data);
 }
 
 test "tmux extended-output preserves raw payload and embedded colon-space" {
