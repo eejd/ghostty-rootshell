@@ -100,6 +100,21 @@ const TmuxHarness = struct {
         _ = self.child.wait() catch {};
     }
 
+    fn consumeActions(self: *TmuxHarness, actions: []const Viewer.Action) !void {
+        defer {
+            for (actions) |action| {
+                if (action == .windows) {
+                    var it = self.viewer.panes.iterator();
+                    while (it.next()) |kv| kv.value_ptr.*.clearPendingAttach();
+                }
+            }
+        }
+
+        for (actions) |action| {
+            if (action == .command) try self.sendCommand(action.command);
+        }
+    }
+
     /// Read available bytes from tmux stdout with a timeout.
     /// Returns the number of bytes read, or 0 if timeout/EOF.
     fn readWithTimeout(self: *TmuxHarness, buf: []u8, timeout_ms: u32) !usize {
@@ -148,9 +163,9 @@ const TmuxHarness = struct {
                 const notification = (try self.parser.put(byte)) orelse continue;
                 const actions = self.viewer.next(.{ .tmux = notification });
                 for (actions) |action| {
-                    if (action == .command) try self.sendCommand(action.command);
                     if (action == .windows) saw_windows = true;
                 }
+                try self.consumeActions(actions);
             }
 
             // Check if the viewer has settled (command queue is empty
@@ -234,12 +249,7 @@ test "integration: output routing" {
         for (buf[0..n]) |byte| {
             const notification = (try harness.parser.put(byte)) orelse continue;
             const actions = harness.viewer.next(.{ .tmux = notification });
-            for (actions) |action| {
-                switch (action) {
-                    .command => |cmd| try harness.sendCommand(cmd),
-                    else => {},
-                }
-            }
+            try harness.consumeActions(actions);
         }
 
         // Check all pane terminals for the marker string
@@ -301,14 +311,9 @@ test "integration: topology change on split" {
             const notification = (try harness.parser.put(byte)) orelse continue;
             const actions = harness.viewer.next(.{ .tmux = notification });
             for (actions) |action| {
-                switch (action) {
-                    .command => |cmd| try harness.sendCommand(cmd),
-                    .windows => {
-                        saw_topology_change = true;
-                    },
-                    else => {},
-                }
+                if (action == .windows) saw_topology_change = true;
             }
+            try harness.consumeActions(actions);
         }
 
         // After the split, we need to let the viewer finish processing
@@ -366,7 +371,8 @@ test "integration: session disconnect produces exit" {
             const notification = (try harness.parser.put(byte)) orelse continue;
             if (notification == .exit) {
                 saw_exit = true;
-                _ = harness.viewer.next(.{ .tmux = notification });
+                const actions = harness.viewer.next(.{ .tmux = notification });
+                try harness.consumeActions(actions);
                 break;
             }
 
@@ -374,6 +380,7 @@ test "integration: session disconnect produces exit" {
             for (actions) |action| {
                 if (action == .exit) saw_exit = true;
             }
+            try harness.consumeActions(actions);
         }
 
         if (saw_exit) break;
@@ -415,9 +422,9 @@ test "integration: focus change on pane switch" {
             const notification = (try harness.parser.put(byte)) orelse continue;
             const actions = harness.viewer.next(.{ .tmux = notification });
             for (actions) |action| {
-                if (action == .command) try harness.sendCommand(action.command);
                 if (action == .windows) split_done = true;
             }
+            try harness.consumeActions(actions);
         }
 
         if (split_done and harness.viewer.command_queue.empty()) break;
@@ -446,7 +453,6 @@ test "integration: focus change on pane switch" {
             const actions = harness.viewer.next(.{ .tmux = notification });
             for (actions) |action| {
                 switch (action) {
-                    .command => |cmd| try harness.sendCommand(cmd),
                     .focus => |f| {
                         saw_focus = true;
                         focus_pane_id = f.pane_id;
@@ -454,6 +460,7 @@ test "integration: focus change on pane switch" {
                     else => {},
                 }
             }
+            try harness.consumeActions(actions);
         }
 
         if (saw_focus) break;

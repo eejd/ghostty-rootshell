@@ -479,6 +479,10 @@ pub const Viewer = struct {
         /// our viewer session in some way.
         exit,
 
+        /// The command stream appears desynchronized but the control connection
+        /// is still alive. The caller should force a live resync/rebuild.
+        recover,
+
         /// Send a command to tmux, e.g. `list-windows`. The caller
         /// should not worry about parsing this or reading what command
         /// it is; just send it to tmux as-is. This will include the
@@ -1306,12 +1310,12 @@ pub const Viewer = struct {
             // else is a block buffered before the reattach — drop it. We must
             // NOT feed it to `receivedCommandOutput`, which would mis-match it
             // against a rebuild command we have not sent yet (the FIFO
-            // slot-shift / blank-pane bug class). Both prongs carry `[]const u8`,
-            // so a shared (non-inline) capture is fine.
-            .block_end, .block_err => |content| {
+            // slot-shift / blank-pane bug class).
+            .block_end, .block_err => |block| {
                 // Drop every block until the resume probe's marker proves the
                 // stream is clean (stale blocks from before the reattach can't
                 // contain it).
+                const content = block.content;
                 const idx = std.mem.indexOf(u8, content, resync_marker) orelse return &.{};
 
                 // This marker block is one probe's response; account for it so
@@ -1465,11 +1469,23 @@ pub const Viewer = struct {
 
             inline .block_end,
             .block_err,
-            => |content, tag| {
+            => |block, tag| {
+                const is_server_originated = block.info.flags & 1 == 0;
+                if (is_server_originated) {
+                    // tmux uses flags bit 0 to mark client-originated command
+                    // replies. Server-originated blocks can appear due to hooks
+                    // or async tmux activity; they are not replies to our FIFO
+                    // command stream and must not complete command_in_flight or
+                    // advance the pump.
+                    log.debug("ignoring server-originated tmux block in command queue err={}", .{tag == .block_err});
+                    command_consumed = false;
+                    return actions.items;
+                }
+
                 if (self.command_in_flight) {
                     self.receivedCommandOutput(
                         &actions,
-                        content,
+                        block.content,
                         tag == .block_err,
                     ) catch {
                         log.warn("failed to process command output, becoming defunct", .{});
@@ -1478,12 +1494,16 @@ pub const Viewer = struct {
                     self.command_in_flight = false;
                 } else {
                     self.last_error = .unexpected_block; // ROOTSHELL-TMUX (id=control-error-code)
-                    log.info("unexpected block output (no command in flight) err={}", .{tag == .block_err});
+                    log.info("unexpected client-originated block output (no command in flight) err={}", .{tag == .block_err});
+                    var arena = self.action_arena.promote(self.alloc);
+                    defer self.action_arena = arena.state;
+                    actions.append(arena.allocator(), .recover) catch return self.defunct();
+                    command_consumed = false;
+                    return actions.items;
                 }
 
-                // Slot is available regardless — an unexpected block
-                // still means tmux finished whatever it was doing and
-                // we can send the next queued command.
+                // Slot is available because a client-originated block completed
+                // the tracked command in flight.
                 command_consumed = true;
             },
 
@@ -3642,6 +3662,14 @@ const TestStep = struct {
 
     fn run(self: TestStep, viewer: *Viewer) !void {
         const actions = viewer.next(self.input);
+        defer {
+            for (actions) |action| {
+                if (action == .windows) {
+                    var it = viewer.panes.iterator();
+                    while (it.next()) |kv| kv.value_ptr.*.clearPendingAttach();
+                }
+            }
+        }
 
         // Common mistake, forgetting the newline on a command.
         for (actions) |action| {
@@ -3690,6 +3718,25 @@ const TestStep = struct {
         }
     }
 };
+
+fn testBlock(content: []const u8, flags: usize) control.Block {
+    return .{
+        .content = content,
+        .info = .{
+            .time = 0,
+            .command_id = 0,
+            .flags = flags,
+        },
+    };
+}
+
+fn blockEnd(content: []const u8) control.Notification {
+    return .{ .block_end = testBlock(content, 1) };
+}
+
+fn serverBlockEnd(content: []const u8) control.Notification {
+    return .{ .block_end = testBlock(content, 0) };
+}
 
 test "client_size command formats refresh-client" {
     const cmd: Command = .{ .client_size = .{ .cols = 120, .rows = 36 } };
@@ -3854,7 +3901,7 @@ test "setClientSize queues command in command_queue state" {
 
     try testViewer(&viewer, &.{
         // Standard startup
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         .{
             .input = .{ .tmux = .{ .session_changed = .{
                 .id = 1,
@@ -3864,28 +3911,26 @@ test "setClientSize queues command in command_queue state" {
         },
         // Receive client_size response, which triggers version query
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .contains_command = "display-message",
         },
         .{
-            .input = .{ .tmux = .{ .block_end = "3.5a" } },
+            .input = .{ .tmux = blockEnd("3.5a") },
             .contains_command = "list-windows",
         },
         .{
-            .input = .{ .tmux = .{
-                .block_end =
+            .input = .{ .tmux = blockEnd(
                 \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
-                ,
-            } },
+            ) },
             .contains_tags = &.{ .windows, .command },
         },
         // Complete capture-pane sequence + pane_state + subscribe_titles.
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
     });
 
     // Now in command_queue state with empty queue and no command in flight.
@@ -3906,7 +3951,7 @@ test "setClientSize queues command in command_queue state" {
             .contains_command = "refresh-client -C 132x43",
         },
         // Response to the refresh-client command
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
     });
 
     // Queue should be empty again, no command in flight.
@@ -3920,7 +3965,7 @@ test "takePendingCommand flushes an idle-queued resize and keeps FIFO order" {
 
     try testViewer(&viewer, &.{
         // Standard startup
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         .{
             .input = .{ .tmux = .{ .session_changed = .{
                 .id = 1,
@@ -3929,28 +3974,26 @@ test "takePendingCommand flushes an idle-queued resize and keeps FIFO order" {
             .contains_command = "refresh-client",
         },
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .contains_command = "display-message",
         },
         .{
-            .input = .{ .tmux = .{ .block_end = "3.5a" } },
+            .input = .{ .tmux = blockEnd("3.5a") },
             .contains_command = "list-windows",
         },
         .{
-            .input = .{ .tmux = .{
-                .block_end =
+            .input = .{ .tmux = blockEnd(
                 \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
-                ,
-            } },
+            ) },
             .contains_tags = &.{ .windows, .command },
         },
         // Drain the capture-pane sequence + pane_state + subscribe_titles.
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
     });
 
     // Idle command_queue: nothing to flush yet.
@@ -3983,10 +4026,10 @@ test "takePendingCommand flushes an idle-queued resize and keeps FIFO order" {
     // The first command's response sends the second in order via the pull pump.
     try testViewer(&viewer, &.{
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .contains_command = "refresh-client -C 100x50",
         },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
     });
     try testing.expect(viewer.command_queue.empty());
     try testing.expect(!viewer.command_in_flight);
@@ -4000,15 +4043,15 @@ test "takePendingCommand flushes an idle-queued resize and keeps FIFO order" {
 // sequence with full control.
 fn driveStartupOneWindow(viewer: *Viewer) !void {
     try testViewer(viewer, &.{
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         .{
             .input = .{ .tmux = .{ .session_changed = .{ .id = 1, .name = "test" } } },
             .contains_command = "refresh-client",
         },
-        .{ .input = .{ .tmux = .{ .block_end = "" } }, .contains_command = "display-message" },
-        .{ .input = .{ .tmux = .{ .block_end = "3.5a" } }, .contains_command = "list-windows" },
+        .{ .input = .{ .tmux = blockEnd("") }, .contains_command = "display-message" },
+        .{ .input = .{ .tmux = blockEnd("3.5a") }, .contains_command = "list-windows" },
         .{
-            .input = .{ .tmux = .{ .block_end = "$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash" } },
+            .input = .{ .tmux = blockEnd("$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash") },
             .contains_tags = &.{ .windows, .command },
         },
     });
@@ -4016,7 +4059,7 @@ fn driveStartupOneWindow(viewer: *Viewer) !void {
     // the queue is fully idle, regardless of the exact command count.
     var guard: usize = 0;
     while (!viewer.command_queue.empty() or viewer.command_in_flight) {
-        _ = viewer.next(.{ .tmux = .{ .block_end = "" } });
+        _ = viewer.next(.{ .tmux = blockEnd("") });
         guard += 1;
         if (guard > 50) return error.TestDrainStuck;
     }
@@ -4054,12 +4097,43 @@ test "untracked send-keys ack is swallowed, not matched to a tracked command" {
     // Block 2 = the real tracked ack. Classified tracked → fed to next, which
     // consumes the queued command.
     try testing.expectEqual(Viewer.BlockClass.tracked, viewer.classifyBlock());
-    _ = viewer.next(.{ .tmux = .{ .block_end = "" } });
+    _ = viewer.next(.{ .tmux = blockEnd("") });
     try testing.expect(!viewer.command_in_flight);
     try testing.expect(viewer.command_queue.empty());
 
     // The swallowed block never corrupted the window list.
     try testing.expectEqual(@as(usize, 1), viewer.windows.items.len);
+}
+
+test "server-originated block does not consume command in flight" {
+    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    defer viewer.deinit();
+    try driveStartupOneWindow(&viewer);
+
+    try viewer.queueUserCommand("display-message -p '#{version}'\n");
+    {
+        var arena: ArenaAllocator = .init(testing.allocator);
+        defer arena.deinit();
+        const cmd = (try viewer.takePendingCommand(arena.allocator())).?;
+        try testing.expect(std.mem.startsWith(u8, cmd, "display-message"));
+    }
+    try testing.expect(viewer.command_in_flight);
+
+    const actions = viewer.next(.{ .tmux = serverBlockEnd("hook output") });
+    try testing.expectEqual(@as(usize, 0), actions.len);
+    try testing.expect(viewer.command_in_flight);
+}
+
+test "unexpected client-originated block requests recovery" {
+    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    defer viewer.deinit();
+    try driveStartupOneWindow(&viewer);
+    try testing.expect(!viewer.command_in_flight);
+
+    const actions = viewer.next(.{ .tmux = blockEnd("orphan response") });
+    try testing.expectEqual(@as(usize, 1), actions.len);
+    try testing.expect(actions[0] == .recover);
+    try testing.expectEqual(control.ErrorCode.unexpected_block, viewer.last_error);
 }
 
 test "window list survives a send-keys block landing before list-windows" {
@@ -4081,7 +4155,7 @@ test "window list survives a send-keys block landing before list-windows" {
     // survives.
     try testing.expectEqual(Viewer.BlockClass.untracked, viewer.classifyBlock());
     try testing.expectEqual(Viewer.BlockClass.tracked, viewer.classifyBlock());
-    const actions = viewer.next(.{ .tmux = .{ .block_end = "$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash" } });
+    const actions = viewer.next(.{ .tmux = blockEnd("$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash") });
     var found_windows = false;
     for (actions) |a| {
         if (a == .windows) {
@@ -4134,9 +4208,7 @@ test "resync drops stale stream then rebuilds on probe marker" {
     // capture-pane response in flight at relaunch) and stale %output produce no
     // actions and leave us in .resync. Critically, the stale block is NOT fed to
     // receivedCommandOutput (which would desync the rebuild FIFO).
-    try testing.expectEqual(@as(usize, 0), viewer.next(.{ .tmux = .{
-        .block_end = "stale capture output\nmore lines",
-    } }).len);
+    try testing.expectEqual(@as(usize, 0), viewer.next(.{ .tmux = blockEnd("stale capture output\nmore lines") }).len);
     try testing.expectEqual(.resync, viewer.state);
     try testing.expectEqual(@as(usize, 0), viewer.next(.{ .tmux = .{
         .output = .{ .pane_id = 0, .data = "junk" },
@@ -4147,9 +4219,7 @@ test "resync drops stale stream then rebuilds on probe marker" {
     // parse the session id, move to command_queue, and emit the rebuild's first
     // command (client_size as refresh-client -C).
     {
-        const actions = viewer.next(.{ .tmux = .{
-            .block_end = Viewer.resync_marker ++ " $7",
-        } });
+        const actions = viewer.next(.{ .tmux = blockEnd(Viewer.resync_marker ++ " $7") });
         var found = false;
         for (actions) |a| {
             if (a == .command and std.mem.startsWith(u8, a.command, "refresh-client -C")) {
@@ -4164,10 +4234,10 @@ test "resync drops stale stream then rebuilds on probe marker" {
     // The rebuild then drives the normal version/list-windows flow. Feed the
     // version + a single-window list-windows and confirm the topology rebuilds.
     try testViewer(&viewer, &.{
-        .{ .input = .{ .tmux = .{ .block_end = "" } }, .contains_command = "display-message" },
-        .{ .input = .{ .tmux = .{ .block_end = "3.5a" } }, .contains_command = "list-windows" },
+        .{ .input = .{ .tmux = blockEnd("") }, .contains_command = "display-message" },
+        .{ .input = .{ .tmux = blockEnd("3.5a") }, .contains_command = "list-windows" },
         .{
-            .input = .{ .tmux = .{ .block_end = "$7 @0 1 0 0 %0 99 39 b7dd,99x39,0,0,0 bash" } },
+            .input = .{ .tmux = blockEnd("$7 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash") },
             .contains_tags = &.{ .windows, .command },
         },
     });
@@ -4219,27 +4289,25 @@ test "queueRelayedPaneCommand rewrites a single-pane resize to client_size" {
 
     // Standard startup leaving a single-pane window @0 with pane %0.
     try testViewer(&viewer, &.{
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         .{
             .input = .{ .tmux = .{ .session_changed = .{ .id = 1, .name = "test" } } },
             .contains_command = "refresh-client",
         },
-        .{ .input = .{ .tmux = .{ .block_end = "" } }, .contains_command = "display-message" },
-        .{ .input = .{ .tmux = .{ .block_end = "3.5a" } }, .contains_command = "list-windows" },
+        .{ .input = .{ .tmux = blockEnd("") }, .contains_command = "display-message" },
+        .{ .input = .{ .tmux = blockEnd("3.5a") }, .contains_command = "list-windows" },
         .{
-            .input = .{ .tmux = .{
-                .block_end =
+            .input = .{ .tmux = blockEnd(
                 \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
-                ,
-            } },
+            ) },
             .contains_tags = &.{ .windows, .command },
         },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
     });
     try testing.expectEqual(.command_queue, viewer.state);
     try testing.expect(viewer.windowIsSinglePane(0));
@@ -4285,7 +4353,7 @@ test "startup sends client_size with pause-after before version query" {
     defer viewer.deinit();
 
     try testViewer(&viewer, &.{
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         .{
             .input = .{ .tmux = .{ .session_changed = .{
                 .id = 1,
@@ -4304,7 +4372,7 @@ test "startup sends client_size with pause-after before version query" {
         },
         // Receive client_size response, which triggers version query
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .contains_command = "display-message",
         },
         .{
@@ -4320,7 +4388,7 @@ test "message notification produces message action" {
 
     try testViewer(&viewer, &.{
         // Standard startup
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         .{
             .input = .{ .tmux = .{ .session_changed = .{
                 .id = 0,
@@ -4329,27 +4397,25 @@ test "message notification produces message action" {
             .contains_command = "refresh-client",
         },
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .contains_command = "display-message",
         },
         .{
-            .input = .{ .tmux = .{ .block_end = "3.5a" } },
+            .input = .{ .tmux = blockEnd("3.5a") },
             .contains_command = "list-windows",
         },
         .{
-            .input = .{ .tmux = .{
-                .block_end =
+            .input = .{ .tmux = blockEnd(
                 \\$0 @0 1 0 0 %0 80 24 b25d,80x24,0,0,0 bash
-                ,
-            } },
+            ) },
             .contains_tags = &.{ .windows, .command },
         },
         // Complete capture-pane + pane_state
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         // Send a %message notification
         .{
             .input = .{ .tmux = .{ .message = .{
@@ -4422,7 +4488,7 @@ test "session changed resets state" {
 
     try testViewer(&viewer, &.{
         // Initial startup
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         .{
             .input = .{ .tmux = .{ .session_changed = .{
                 .id = 1,
@@ -4432,21 +4498,19 @@ test "session changed resets state" {
         },
         // Receive client_size response, which triggers version query
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .contains_command = "display-message",
         },
         // Receive version response, which triggers list-windows
         .{
-            .input = .{ .tmux = .{ .block_end = "3.5a" } },
+            .input = .{ .tmux = blockEnd("3.5a") },
             .contains_command = "list-windows",
         },
         // Receive window layout with two panes (same format as "initial flow" test)
         .{
-            .input = .{ .tmux = .{
-                .block_end =
+            .input = .{ .tmux = blockEnd(
                 \\$1 @0 1 0 0 %0 83 44 027b,83x44,0,0[83x20,0,0,0,83x23,0,21,1] bash
-                ,
-            } },
+            ) },
             .contains_tags = &.{ .windows, .command },
             .check = (struct {
                 fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
@@ -4489,11 +4553,9 @@ test "session changed resets state" {
         // Receive new window layout for new session (same layout, different session/window)
         // Uses same pane IDs 0,1 - they should be re-created since old panes were cleared
         .{
-            .input = .{ .tmux = .{
-                .block_end =
+            .input = .{ .tmux = blockEnd(
                 \\$2 @1 1 1 0 %0 83 44 027b,83x44,0,0[83x20,0,0,0,83x23,0,21,1] bash
-                ,
-            } },
+            ) },
             .contains_tags = &.{ .windows, .command },
             .check = (struct {
                 fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
@@ -4517,7 +4579,7 @@ test "initial flow" {
     defer viewer.deinit();
 
     try testViewer(&viewer, &.{
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         .{
             .input = .{ .tmux = .{ .session_changed = .{
                 .id = 42,
@@ -4532,12 +4594,12 @@ test "initial flow" {
         },
         // Receive client_size response, which triggers version query
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .contains_command = "display-message",
         },
         // Receive version response, which triggers list-windows
         .{
-            .input = .{ .tmux = .{ .block_end = "3.5a" } },
+            .input = .{ .tmux = blockEnd("3.5a") },
             .contains_command = "list-windows",
             .check = (struct {
                 fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
@@ -4546,11 +4608,9 @@ test "initial flow" {
             }).check,
         },
         .{
-            .input = .{ .tmux = .{
-                .block_end =
+            .input = .{ .tmux = blockEnd(
                 \\$0 @0 1 0 0 %0 83 44 027b,83x44,0,0[83x20,0,0,0,83x23,0,21,1] bash
-                ,
-            } },
+            ) },
             .contains_tags = &.{ .windows, .command },
             .contains_command = "capture-pane",
             // pane_history for pane 0 (primary)
@@ -4578,11 +4638,9 @@ test "initial flow" {
             }).check,
         },
         .{
-            .input = .{ .tmux = .{
-                .block_end =
+            .input = .{ .tmux = blockEnd(
                 \\Hello, world!
-                ,
-            } },
+            ) },
             // Moves on to pane_visible for pane 0 (primary)
             .contains_command = "capture-pane",
             .check_command = (struct {
@@ -4615,7 +4673,7 @@ test "initial flow" {
             }).check,
         },
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             // Moves on to pane_history for pane 0 (alternate)
             .contains_command = "capture-pane",
             .check_command = (struct {
@@ -4626,7 +4684,7 @@ test "initial flow" {
             }).check,
         },
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             // Moves on to pane_visible for pane 0 (alternate)
             .contains_command = "capture-pane",
             .check_command = (struct {
@@ -4637,7 +4695,7 @@ test "initial flow" {
             }).check,
         },
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             // Moves on to pane_history for pane 1 (primary)
             .contains_command = "capture-pane",
             .check_command = (struct {
@@ -4648,7 +4706,7 @@ test "initial flow" {
             }).check,
         },
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             // Moves on to pane_visible for pane 1 (primary)
             .contains_command = "capture-pane",
             .check_command = (struct {
@@ -4659,7 +4717,7 @@ test "initial flow" {
             }).check,
         },
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             // Moves on to pane_history for pane 1 (alternate)
             .contains_command = "capture-pane",
             .check_command = (struct {
@@ -4670,7 +4728,7 @@ test "initial flow" {
             }).check,
         },
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             // Moves on to pane_visible for pane 1 (alternate)
             .contains_command = "capture-pane",
             .check_command = (struct {
@@ -4681,12 +4739,12 @@ test "initial flow" {
             }).check,
         },
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             // Completes pane_visible(1, alternate), triggers pane_state
             .contains_command = "list-panes",
         },
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             // pane_state response completes initialization
             .check = (struct {
                 fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
@@ -4760,7 +4818,7 @@ test "startup session before block" {
         },
         // Block arrives second — this should complete startup
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .contains_command = "refresh-client",
             .check = (struct {
                 fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
@@ -4772,12 +4830,12 @@ test "startup session before block" {
         },
         // Receive client_size response, which triggers version query
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .contains_command = "display-message",
         },
         // Receive version response
         .{
-            .input = .{ .tmux = .{ .block_end = "3.5a" } },
+            .input = .{ .tmux = blockEnd("3.5a") },
             .contains_command = "list-windows",
         },
         .{
@@ -4793,7 +4851,7 @@ test "layout change" {
 
     try testViewer(&viewer, &.{
         // Initial startup
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         .{
             .input = .{ .tmux = .{ .session_changed = .{
                 .id = 1,
@@ -4803,21 +4861,19 @@ test "layout change" {
         },
         // Receive client_size response, which triggers version query
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .contains_command = "display-message",
         },
         // Receive version response, which triggers list-windows
         .{
-            .input = .{ .tmux = .{ .block_end = "3.5a" } },
+            .input = .{ .tmux = blockEnd("3.5a") },
             .contains_command = "list-windows",
         },
         // Receive initial window layout with one pane
         .{
-            .input = .{ .tmux = .{
-                .block_end =
+            .input = .{ .tmux = blockEnd(
                 \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
-                ,
-            } },
+            ) },
             .contains_tags = &.{ .windows, .command },
             .check = (struct {
                 fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
@@ -4829,12 +4885,12 @@ test "layout change" {
         },
         // Complete all capture-pane commands for pane 0 (primary and alternate),
         // pane_state, and the trailing title subscription.
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         // Now send a layout_change that splits into two panes
         .{
             .input = .{ .tmux = .{ .layout_change = .{
@@ -4883,7 +4939,7 @@ test "layout change resizes existing pane without structural change" {
 
     try testViewer(&viewer, &.{
         // Initial startup
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         .{
             .input = .{ .tmux = .{ .session_changed = .{
                 .id = 1,
@@ -4893,20 +4949,18 @@ test "layout change resizes existing pane without structural change" {
         },
         // Receive client_size response, which triggers version query
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .contains_command = "display-message",
         },
         .{
-            .input = .{ .tmux = .{ .block_end = "3.5a" } },
+            .input = .{ .tmux = blockEnd("3.5a") },
             .contains_command = "list-windows",
         },
         // Initial window: single pane at 83x44
         .{
-            .input = .{ .tmux = .{
-                .block_end =
+            .input = .{ .tmux = blockEnd(
                 \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
-                ,
-            } },
+            ) },
             .contains_tags = &.{ .windows, .command },
             .check = (struct {
                 fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
@@ -4918,12 +4972,12 @@ test "layout change resizes existing pane without structural change" {
         },
         // Complete capture-pane commands for pane 0, pane_state, and the
         // trailing title subscription.
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         // Window resized to 120x50 — same pane, different dimensions
         .{
             .input = .{ .tmux = .{ .layout_change = .{
@@ -4958,7 +5012,7 @@ test "layout_change does not return command when queue not empty" {
 
     try testViewer(&viewer, &.{
         // Initial startup
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         .{
             .input = .{ .tmux = .{ .session_changed = .{
                 .id = 1,
@@ -4968,21 +5022,19 @@ test "layout_change does not return command when queue not empty" {
         },
         // Receive client_size response, which triggers version query
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .contains_command = "display-message",
         },
         // Receive version response, which triggers list-windows
         .{
-            .input = .{ .tmux = .{ .block_end = "3.5a" } },
+            .input = .{ .tmux = blockEnd("3.5a") },
             .contains_command = "list-windows",
         },
         // Receive initial window layout with one pane
         .{
-            .input = .{ .tmux = .{
-                .block_end =
+            .input = .{ .tmux = blockEnd(
                 \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
-                ,
-            } },
+            ) },
             .contains_tags = &.{ .windows, .command },
             .check = (struct {
                 fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
@@ -5024,7 +5076,7 @@ test "layout_change returns command when queue was empty" {
 
     try testViewer(&viewer, &.{
         // Initial startup
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         .{
             .input = .{ .tmux = .{ .session_changed = .{
                 .id = 1,
@@ -5034,33 +5086,31 @@ test "layout_change returns command when queue was empty" {
         },
         // Receive client_size response, which triggers version query
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .contains_command = "display-message",
         },
         // Receive version response, which triggers list-windows
         .{
-            .input = .{ .tmux = .{ .block_end = "3.5a" } },
+            .input = .{ .tmux = blockEnd("3.5a") },
             .contains_command = "list-windows",
         },
         // Receive initial window layout with one pane
         .{
-            .input = .{ .tmux = .{
-                .block_end =
+            .input = .{ .tmux = blockEnd(
                 \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
-                ,
-            } },
+            ) },
             .contains_tags = &.{ .windows, .command },
         },
         // Complete all capture-pane commands for pane 0, pane_state, and the
         // trailing title subscription.
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         // Queue should now be empty
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .check = (struct {
                 fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
                     try testing.expect(v.command_queue.empty());
@@ -5098,7 +5148,7 @@ test "window_add queues list_windows when queue empty" {
 
     try testViewer(&viewer, &.{
         // Initial startup
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         .{
             .input = .{ .tmux = .{ .session_changed = .{
                 .id = 1,
@@ -5108,33 +5158,31 @@ test "window_add queues list_windows when queue empty" {
         },
         // Receive client_size response, which triggers version query
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .contains_command = "display-message",
         },
         // Receive version response, which triggers list-windows
         .{
-            .input = .{ .tmux = .{ .block_end = "3.5a" } },
+            .input = .{ .tmux = blockEnd("3.5a") },
             .contains_command = "list-windows",
         },
         // Receive initial window layout with one pane
         .{
-            .input = .{ .tmux = .{
-                .block_end =
+            .input = .{ .tmux = blockEnd(
                 \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
-                ,
-            } },
+            ) },
             .contains_tags = &.{ .windows, .command },
         },
         // Complete all capture-pane commands for pane 0, then pane_state
         // and the trailing title subscription.
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         // Queue should now be empty
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .check = (struct {
                 fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
                     try testing.expect(v.command_queue.empty());
@@ -5166,7 +5214,7 @@ test "window_add queues list_windows when queue not empty" {
 
     try testViewer(&viewer, &.{
         // Initial startup
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         .{
             .input = .{ .tmux = .{ .session_changed = .{
                 .id = 1,
@@ -5176,21 +5224,19 @@ test "window_add queues list_windows when queue not empty" {
         },
         // Receive client_size response, which triggers version query
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .contains_command = "display-message",
         },
         // Receive version response, which triggers list-windows
         .{
-            .input = .{ .tmux = .{ .block_end = "3.5a" } },
+            .input = .{ .tmux = blockEnd("3.5a") },
             .contains_command = "list-windows",
         },
         // Receive initial window layout with one pane
         .{
-            .input = .{ .tmux = .{
-                .block_end =
+            .input = .{ .tmux = blockEnd(
                 \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
-                ,
-            } },
+            ) },
             .contains_tags = &.{ .windows, .command },
             .check = (struct {
                 fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
@@ -5227,7 +5273,7 @@ test "session_window_changed queues list_windows when queue empty" {
 
     try testViewer(&viewer, &.{
         // Initial startup
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         .{
             .input = .{ .tmux = .{ .session_changed = .{
                 .id = 1,
@@ -5237,33 +5283,31 @@ test "session_window_changed queues list_windows when queue empty" {
         },
         // Receive client_size response, which triggers version query
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .contains_command = "display-message",
         },
         // Receive version response, which triggers list-windows
         .{
-            .input = .{ .tmux = .{ .block_end = "3.5a" } },
+            .input = .{ .tmux = blockEnd("3.5a") },
             .contains_command = "list-windows",
         },
         // Receive initial window layout with one pane
         .{
-            .input = .{ .tmux = .{
-                .block_end =
+            .input = .{ .tmux = blockEnd(
                 \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
-                ,
-            } },
+            ) },
             .contains_tags = &.{ .windows, .command },
         },
         // Complete all capture-pane commands for pane 0, then pane_state
         // and the trailing title subscription.
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         // Queue should now be empty
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .check = (struct {
                 fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
                     try testing.expect(v.command_queue.empty());
@@ -5294,7 +5338,7 @@ test "session_window_changed queues list_windows when queue not empty" {
 
     try testViewer(&viewer, &.{
         // Initial startup
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         .{
             .input = .{ .tmux = .{ .session_changed = .{
                 .id = 1,
@@ -5304,21 +5348,19 @@ test "session_window_changed queues list_windows when queue not empty" {
         },
         // Receive client_size response, which triggers version query
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .contains_command = "display-message",
         },
         // Receive version response, which triggers list-windows
         .{
-            .input = .{ .tmux = .{ .block_end = "3.5a" } },
+            .input = .{ .tmux = blockEnd("3.5a") },
             .contains_command = "list-windows",
         },
         // Receive initial window layout with one pane
         .{
-            .input = .{ .tmux = .{
-                .block_end =
+            .input = .{ .tmux = blockEnd(
                 \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
-                ,
-            } },
+            ) },
             .contains_tags = &.{ .windows, .command },
             .check = (struct {
                 fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
@@ -5352,7 +5394,7 @@ test "window_close queues list_windows when queue empty" {
 
     try testViewer(&viewer, &.{
         // Initial startup
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         .{
             .input = .{ .tmux = .{ .session_changed = .{
                 .id = 1,
@@ -5362,33 +5404,31 @@ test "window_close queues list_windows when queue empty" {
         },
         // Receive client_size response, which triggers version query
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .contains_command = "display-message",
         },
         // Receive version response, which triggers list-windows
         .{
-            .input = .{ .tmux = .{ .block_end = "3.5a" } },
+            .input = .{ .tmux = blockEnd("3.5a") },
             .contains_command = "list-windows",
         },
         // Receive initial window layout with one pane
         .{
-            .input = .{ .tmux = .{
-                .block_end =
+            .input = .{ .tmux = blockEnd(
                 \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
-                ,
-            } },
+            ) },
             .contains_tags = &.{ .windows, .command },
         },
         // Complete all capture-pane commands for pane 0, then pane_state
         // and the trailing title subscription.
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         // Queue should now be empty
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .check = (struct {
                 fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
                     try testing.expect(v.command_queue.empty());
@@ -5420,7 +5460,7 @@ test "window_close queues list_windows when queue not empty" {
 
     try testViewer(&viewer, &.{
         // Initial startup
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         .{
             .input = .{ .tmux = .{ .session_changed = .{
                 .id = 1,
@@ -5430,21 +5470,19 @@ test "window_close queues list_windows when queue not empty" {
         },
         // Receive client_size response, which triggers version query
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .contains_command = "display-message",
         },
         // Receive version response, which triggers list-windows
         .{
-            .input = .{ .tmux = .{ .block_end = "3.5a" } },
+            .input = .{ .tmux = blockEnd("3.5a") },
             .contains_command = "list-windows",
         },
         // Receive initial window layout with one pane
         .{
-            .input = .{ .tmux = .{
-                .block_end =
+            .input = .{ .tmux = blockEnd(
                 \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
-                ,
-            } },
+            ) },
             .contains_tags = &.{ .windows, .command },
             .check = (struct {
                 fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
@@ -5481,7 +5519,7 @@ test "refreshWindowList coalesces duplicate list_windows" {
 
     try testViewer(&viewer, &.{
         // Initial startup
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         .{
             .input = .{ .tmux = .{ .session_changed = .{
                 .id = 1,
@@ -5490,32 +5528,30 @@ test "refreshWindowList coalesces duplicate list_windows" {
             .contains_command = "refresh-client",
         },
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .contains_command = "display-message",
         },
         .{
-            .input = .{ .tmux = .{ .block_end = "3.5a" } },
+            .input = .{ .tmux = blockEnd("3.5a") },
             .contains_command = "list-windows",
         },
         // Receive initial window layout with one pane
         .{
-            .input = .{ .tmux = .{
-                .block_end =
+            .input = .{ .tmux = blockEnd(
                 \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
-                ,
-            } },
+            ) },
             .contains_tags = &.{ .windows, .command },
         },
         // Complete all capture-pane commands for pane 0, then pane_state
         // and the trailing title subscription.
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         // Queue should now be empty
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .check = (struct {
                 fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
                     try testing.expect(v.command_queue.empty());
@@ -5568,7 +5604,7 @@ test "two pane flow with pane state" {
 
     try testViewer(&viewer, &.{
         // Initial block_end from attach
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         // Session changed notification
         .{
             .input = .{ .tmux = .{ .session_changed = .{
@@ -5584,21 +5620,19 @@ test "two pane flow with pane state" {
         },
         // Receive client_size response, which triggers version query
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .contains_command = "display-message",
         },
         // Receive version response, which triggers list-windows
         .{
-            .input = .{ .tmux = .{ .block_end = "3.5a" } },
+            .input = .{ .tmux = blockEnd("3.5a") },
             .contains_command = "list-windows",
         },
         // list-windows output with 2 panes in a vertical split
         .{
-            .input = .{ .tmux = .{
-                .block_end =
+            .input = .{ .tmux = blockEnd(
                 \\$0 @0 1 0 0 %0 165 79 ca97,165x79,0,0[165x40,0,0,0,165x38,0,41,4] bash
-                ,
-            } },
+            ) },
             .contains_tags = &.{ .windows, .command },
             .check = (struct {
                 fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
@@ -5615,20 +5649,16 @@ test "two pane flow with pane state" {
         },
         // capture-pane pane 0 primary history
         .{
-            .input = .{ .tmux = .{
-                .block_end =
+            .input = .{ .tmux = blockEnd(
                 \\prompt %
                 \\prompt %
-                ,
-            } },
+            ) },
         },
         // capture-pane pane 0 primary visible
         .{
-            .input = .{ .tmux = .{
-                .block_end =
+            .input = .{ .tmux = blockEnd(
                 \\prompt %
-                ,
-            } },
+            ) },
             .check = (struct {
                 fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
                     const pane: *Viewer.Pane = v.panes.getEntry(0).?.value_ptr.*;
@@ -5654,24 +5684,20 @@ test "two pane flow with pane state" {
             }).check,
         },
         // capture-pane pane 0 alternate history (empty)
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         // capture-pane pane 0 alternate visible (empty)
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         // capture-pane pane 4 primary history
         .{
-            .input = .{ .tmux = .{
-                .block_end =
+            .input = .{ .tmux = blockEnd(
                 \\prompt %
-                ,
-            } },
+            ) },
         },
         // capture-pane pane 4 primary visible
         .{
-            .input = .{ .tmux = .{
-                .block_end =
+            .input = .{ .tmux = blockEnd(
                 \\prompt %
-                ,
-            } },
+            ) },
             .check = (struct {
                 fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
                     const pane: *Viewer.Pane = v.panes.getEntry(4).?.value_ptr.*;
@@ -5697,7 +5723,7 @@ test "two pane flow with pane state" {
             }).check,
         },
         // capture-pane pane 4 alternate history (empty)
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         // capture-pane pane 4 alternate visible (empty). Completing the
         // capture sequence emits the trailing pane_state command, which MUST
         // be session-scoped (`list-panes -s -t $<id>`) so tmux returns panes
@@ -5706,17 +5732,15 @@ test "two pane flow with pane state" {
         // their real screen and stay stranded blank (ROOTSHELL-TMUX). The
         // `$0` confirms the session id was threaded into the command.
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .contains_command = "list-panes -s -t $0",
         },
         // list-panes output with terminal state
         .{
-            .input = .{ .tmux = .{
-                .block_end =
+            .input = .{ .tmux = blockEnd(
                 \\%0;42;0;1;;;0;4294967295;4294967295;0;1;0;0;0;0;0;0;0;0;0;;;0;39;8,16,24,32,40,48,56,64,72,80,88,96,104,112,120,128,136,144,152,160
                 \\%4;10;5;1;;;0;4294967295;4294967295;0;1;0;0;0;0;0;0;0;0;0;;;0;37;8,16,24,32,40,48,56,64,72,80,88,96,104,112,120,128,136,144,152,160
-                ,
-            } },
+            ) },
             .check = (struct {
                 fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
                     // Pane 0: cursor at (42, 0), cursor visible, wraparound on
@@ -5765,7 +5789,7 @@ test "layout change preserves other windows on shared arena" {
 
     try testViewer(&viewer, &.{
         // Initial startup
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         .{
             .input = .{ .tmux = .{ .session_changed = .{
                 .id = 1,
@@ -5775,21 +5799,19 @@ test "layout change preserves other windows on shared arena" {
         },
         // Receive client_size response, which triggers version query
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .contains_command = "display-message",
         },
         .{
-            .input = .{ .tmux = .{ .block_end = "3.5a" } },
+            .input = .{ .tmux = blockEnd("3.5a") },
             .contains_command = "list-windows",
         },
         // Two windows: @0 with pane 0, @1 with pane 1
         .{
-            .input = .{ .tmux = .{
-                .block_end =
+            .input = .{ .tmux = blockEnd(
                 \\$0 @0 1 0 0 %0 80 24 b25d,80x24,0,0,0 bash
                 \\$0 @1 0 1 0 %1 80 24 b25e,80x24,0,0,1 vim
-                ,
-            } },
+            ) },
             .contains_tags = &.{ .windows, .command },
             .check = (struct {
                 fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
@@ -5801,15 +5823,15 @@ test "layout change preserves other windows on shared arena" {
             }).check,
         },
         // Complete all capture-pane commands for pane 0 and pane 1
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         // Now send a layout_change for window @0 that splits it
         .{
             .input = .{ .tmux = .{ .layout_change = .{
@@ -5870,7 +5892,7 @@ test "window_pane_changed produces focus action" {
 
     try testViewer(&viewer, &.{
         // Initial startup
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         .{
             .input = .{ .tmux = .{ .session_changed = .{
                 .id = 1,
@@ -5880,37 +5902,35 @@ test "window_pane_changed produces focus action" {
         },
         // Receive client_size response, which triggers version query
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .contains_command = "display-message",
         },
         // Receive version response, which triggers list-windows
         .{
-            .input = .{ .tmux = .{ .block_end = "3.5a" } },
+            .input = .{ .tmux = blockEnd("3.5a") },
             .contains_command = "list-windows",
         },
         // Receive initial window layout with two panes
         .{
-            .input = .{ .tmux = .{
-                .block_end =
+            .input = .{ .tmux = blockEnd(
                 \\$0 @0 1 0 0 %0 83 44 027b,83x44,0,0[83x20,0,0,0,83x23,0,21,1] bash
-                ,
-            } },
+            ) },
             .contains_tags = &.{ .windows, .command },
         },
         // Complete all capture-pane commands (4 per pane × 2 panes = 8),
         // then pane_state and the trailing title subscription.
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         // Queue should now be empty
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .check = (struct {
                 fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
                     try testing.expect(v.command_queue.empty());
@@ -5962,7 +5982,7 @@ test "output suppressed for uninitialized panes" {
 
     try testViewer(&viewer, &.{
         // Startup
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         .{
             .input = .{ .tmux = .{ .session_changed = .{
                 .id = 1,
@@ -5972,20 +5992,18 @@ test "output suppressed for uninitialized panes" {
         },
         // Receive client_size response, which triggers version query
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .contains_command = "display-message",
         },
         .{
-            .input = .{ .tmux = .{ .block_end = "3.5a" } },
+            .input = .{ .tmux = blockEnd("3.5a") },
             .contains_command = "list-windows",
         },
         // Receive window with single pane
         .{
-            .input = .{ .tmux = .{
-                .block_end =
+            .input = .{ .tmux = blockEnd(
                 \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
-                ,
-            } },
+            ) },
             .contains_tags = &.{ .windows, .command },
             .check = (struct {
                 fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
@@ -6015,12 +6033,12 @@ test "output suppressed for uninitialized panes" {
             }).check,
         },
         // Complete capture-pane sequence: 4 captures + pane_state
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             // pane_state completes — pane should now be initialized
             .check = (struct {
                 fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
@@ -6061,7 +6079,7 @@ test "output OSC title from active pane produces title action" {
     }
 
     try testViewer(&viewer, &.{
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         .{
             .input = .{ .tmux = .{ .session_changed = .{
                 .id = 1,
@@ -6070,30 +6088,28 @@ test "output OSC title from active pane produces title action" {
             .contains_command = "refresh-client",
         },
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .contains_command = "display-message",
         },
         .{
-            .input = .{ .tmux = .{ .block_end = "3.5a" } },
+            .input = .{ .tmux = blockEnd("3.5a") },
             .contains_command = "list-windows",
         },
         .{
-            .input = .{ .tmux = .{
-                .block_end =
+            .input = .{ .tmux = blockEnd(
                 \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
-                ,
-            } },
+            ) },
             .contains_tags = &.{ .windows, .command },
         },
         // Complete capture-pane sequence: 4 captures, pane_state, then the
         // trailing title subscription command.
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .check = (struct {
                 fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
                     try testing.expect(v.command_queue.empty());
@@ -6140,23 +6156,23 @@ test "output decode drops raw CR and skips CR injected mid-escape" {
     }
 
     try testViewer(&viewer, &.{
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         .{
             .input = .{ .tmux = .{ .session_changed = .{ .id = 1, .name = "test" } } },
             .contains_command = "refresh-client",
         },
-        .{ .input = .{ .tmux = .{ .block_end = "" } }, .contains_command = "display-message" },
-        .{ .input = .{ .tmux = .{ .block_end = "3.5a" } }, .contains_command = "list-windows" },
+        .{ .input = .{ .tmux = blockEnd("") }, .contains_command = "display-message" },
+        .{ .input = .{ .tmux = blockEnd("3.5a") }, .contains_command = "list-windows" },
         .{
-            .input = .{ .tmux = .{ .block_end = "$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash" } },
+            .input = .{ .tmux = blockEnd("$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash") },
             .contains_tags = &.{ .windows, .command },
         },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         // Raw CR injected between "ab" and "cd" inside the title: must be dropped,
         // yielding the title "abcd" (not "ab" truncated, not "ab\rcd").
         .{
@@ -6208,7 +6224,7 @@ test "window_renamed produces title action" {
 
     try testViewer(&viewer, &.{
         // Initial startup
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         .{
             .input = .{ .tmux = .{ .session_changed = .{
                 .id = 1,
@@ -6218,31 +6234,29 @@ test "window_renamed produces title action" {
         },
         // Receive client_size response, which triggers version query
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .contains_command = "display-message",
         },
         .{
-            .input = .{ .tmux = .{ .block_end = "3.5a" } },
+            .input = .{ .tmux = blockEnd("3.5a") },
             .contains_command = "list-windows",
         },
         // Receive initial window layout with single pane
         .{
-            .input = .{ .tmux = .{
-                .block_end =
+            .input = .{ .tmux = blockEnd(
                 \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
-                ,
-            } },
+            ) },
             .contains_tags = &.{ .windows, .command },
         },
         // Complete capture-pane sequence (4 captures + pane_state)
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         // Queue should now be empty
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .check = (struct {
                 fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
                     try testing.expect(v.command_queue.empty());
@@ -6281,7 +6295,7 @@ test "session_renamed produces session_title action" {
 
     try testViewer(&viewer, &.{
         // Initial startup
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         .{
             .input = .{ .tmux = .{ .session_changed = .{
                 .id = 1,
@@ -6291,31 +6305,29 @@ test "session_renamed produces session_title action" {
         },
         // Receive client_size response, which triggers version query
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .contains_command = "display-message",
         },
         .{
-            .input = .{ .tmux = .{ .block_end = "3.5a" } },
+            .input = .{ .tmux = blockEnd("3.5a") },
             .contains_command = "list-windows",
         },
         // Receive initial window layout
         .{
-            .input = .{ .tmux = .{
-                .block_end =
+            .input = .{ .tmux = blockEnd(
                 \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
-                ,
-            } },
+            ) },
             .contains_tags = &.{ .windows, .command },
         },
         // Complete capture-pane sequence
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         // Queue should now be empty
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .check = (struct {
                 fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
                     try testing.expect(v.command_queue.empty());
@@ -6351,7 +6363,7 @@ test "list_windows stores window name" {
     defer viewer.deinit();
 
     try testViewer(&viewer, &.{
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         .{
             .input = .{ .tmux = .{ .session_changed = .{
                 .id = 1,
@@ -6361,20 +6373,18 @@ test "list_windows stores window name" {
         },
         // Receive client_size response, which triggers version query
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .contains_command = "display-message",
         },
         .{
-            .input = .{ .tmux = .{ .block_end = "3.5a" } },
+            .input = .{ .tmux = blockEnd("3.5a") },
             .contains_command = "list-windows",
         },
         // Receive list-windows with a named window
         .{
-            .input = .{ .tmux = .{
-                .block_end =
+            .input = .{ .tmux = blockEnd(
                 \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 htop
-                ,
-            } },
+            ) },
             .contains_tags = &.{ .windows, .command },
             .check = (struct {
                 fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
@@ -6393,7 +6403,7 @@ test "list_windows emits focus action for active window" {
     defer viewer.deinit();
 
     try testViewer(&viewer, &.{
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         .{
             .input = .{ .tmux = .{ .session_changed = .{
                 .id = 1,
@@ -6403,19 +6413,17 @@ test "list_windows emits focus action for active window" {
         },
         // Receive client_size response, which triggers version query
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .contains_command = "display-message",
         },
         .{
-            .input = .{ .tmux = .{ .block_end = "3.5a" } },
+            .input = .{ .tmux = blockEnd("3.5a") },
             .contains_command = "list-windows",
         },
         .{
-            .input = .{ .tmux = .{
-                .block_end =
+            .input = .{ .tmux = blockEnd(
                 \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
-                ,
-            } },
+            ) },
             .contains_tags = &.{ .windows, .focus },
             .check = (struct {
                 fn check(_: *Viewer, actions: []const Viewer.Action) anyerror!void {
@@ -6441,7 +6449,7 @@ test "list_windows emits focus for active window in multi-window session" {
     defer viewer.deinit();
 
     try testViewer(&viewer, &.{
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         .{
             .input = .{ .tmux = .{ .session_changed = .{
                 .id = 1,
@@ -6451,20 +6459,18 @@ test "list_windows emits focus for active window in multi-window session" {
         },
         // Receive client_size response, which triggers version query
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .contains_command = "display-message",
         },
         .{
-            .input = .{ .tmux = .{ .block_end = "3.5a" } },
+            .input = .{ .tmux = blockEnd("3.5a") },
             .contains_command = "list-windows",
         },
         .{
-            .input = .{ .tmux = .{
-                .block_end =
+            .input = .{ .tmux = blockEnd(
                 \\$0 @0 1 0 0 %0 80 24 b25d,80x24,0,0,0 bash
                 \\$0 @1 0 1 0 %1 80 24 b25e,80x24,0,0,1 vim
-                ,
-            } },
+            ) },
             .contains_tags = &.{ .windows, .focus },
             .check = (struct {
                 fn check(_: *Viewer, actions: []const Viewer.Action) anyerror!void {
@@ -6490,7 +6496,7 @@ test "pause notification triggers auto-continue and full pause cycle" {
 
     try testViewer(&viewer, &.{
         // Standard startup
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         .{
             .input = .{ .tmux = .{ .session_changed = .{
                 .id = 1,
@@ -6500,29 +6506,27 @@ test "pause notification triggers auto-continue and full pause cycle" {
         },
         // Receive client_size response, which triggers version query
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .contains_command = "display-message",
         },
         .{
-            .input = .{ .tmux = .{ .block_end = "3.5a" } },
+            .input = .{ .tmux = blockEnd("3.5a") },
             .contains_command = "list-windows",
         },
         .{
-            .input = .{ .tmux = .{
-                .block_end =
+            .input = .{ .tmux = blockEnd(
                 \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
-                ,
-            } },
+            ) },
             .contains_tags = &.{ .windows, .command },
         },
         // Complete capture-pane sequence (4 captures + pane_state) and the
         // trailing title subscription.
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         // Pause pane 0 — should set paused=true, emit pane_paused,
         // and auto-queue a continue_pane command.
         .{
@@ -6555,7 +6559,7 @@ test "pause notification triggers auto-continue and full pause cycle" {
         },
         // Receive continue_pane response (no-op), then %continue
         // notification clears the paused state.
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         .{
             .input = .{ .tmux = .{ .@"continue" = .{ .pane_id = 0 } } },
             .contains_tags = &.{.pane_paused},
@@ -6586,7 +6590,7 @@ test "pause for unknown pane is ignored" {
 
     try testViewer(&viewer, &.{
         // Standard startup
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         .{
             .input = .{ .tmux = .{ .session_changed = .{
                 .id = 1,
@@ -6596,27 +6600,25 @@ test "pause for unknown pane is ignored" {
         },
         // Receive client_size response, which triggers version query
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .contains_command = "display-message",
         },
         .{
-            .input = .{ .tmux = .{ .block_end = "3.5a" } },
+            .input = .{ .tmux = blockEnd("3.5a") },
             .contains_command = "list-windows",
         },
         .{
-            .input = .{ .tmux = .{
-                .block_end =
+            .input = .{ .tmux = blockEnd(
                 \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
-                ,
-            } },
+            ) },
             .contains_tags = &.{ .windows, .command },
         },
         // Complete capture-pane sequence
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         // Pause for unknown pane 99 — should be silently ignored
         .{
             .input = .{ .tmux = .{ .pause = .{ .pane_id = 99 } } },
@@ -6640,7 +6642,7 @@ test "pane_mode_changed queues query and updates state on response" {
 
     try testViewer(&viewer, &.{
         // Standard startup
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         .{
             .input = .{ .tmux = .{ .session_changed = .{
                 .id = 1,
@@ -6650,29 +6652,27 @@ test "pane_mode_changed queues query and updates state on response" {
         },
         // Receive client_size response, which triggers version query
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .contains_command = "display-message",
         },
         .{
-            .input = .{ .tmux = .{ .block_end = "3.5a" } },
+            .input = .{ .tmux = blockEnd("3.5a") },
             .contains_command = "list-windows",
         },
         .{
-            .input = .{ .tmux = .{
-                .block_end =
+            .input = .{ .tmux = blockEnd(
                 \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
-                ,
-            } },
+            ) },
             .contains_tags = &.{ .windows, .command },
         },
         // Complete capture-pane sequence (4 captures + pane_state) and the
         // trailing title subscription.
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         // Pane mode changed notification — should queue display-message query
         .{
             .input = .{ .tmux = .{ .pane_mode_changed = .{ .pane_id = 0 } } },
@@ -6680,7 +6680,7 @@ test "pane_mode_changed queues query and updates state on response" {
         },
         // Response with copy-mode — should update state and emit action
         .{
-            .input = .{ .tmux = .{ .block_end = "copy-mode" } },
+            .input = .{ .tmux = blockEnd("copy-mode") },
             .contains_tags = &.{.pane_mode_changed},
             .check = (struct {
                 fn check(v: *Viewer, actions: []const Viewer.Action) anyerror!void {
@@ -6709,7 +6709,7 @@ test "pane_mode_changed for unknown pane is ignored" {
 
     try testViewer(&viewer, &.{
         // Standard startup
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         .{
             .input = .{ .tmux = .{ .session_changed = .{
                 .id = 1,
@@ -6719,27 +6719,25 @@ test "pane_mode_changed for unknown pane is ignored" {
         },
         // Receive client_size response, which triggers version query
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .contains_command = "display-message",
         },
         .{
-            .input = .{ .tmux = .{ .block_end = "3.5a" } },
+            .input = .{ .tmux = blockEnd("3.5a") },
             .contains_command = "list-windows",
         },
         .{
-            .input = .{ .tmux = .{
-                .block_end =
+            .input = .{ .tmux = blockEnd(
                 \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
-                ,
-            } },
+            ) },
             .contains_tags = &.{ .windows, .command },
         },
         // Complete capture-pane sequence
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         // Pane mode changed for unknown pane 99 — should not queue a command
         .{
             .input = .{ .tmux = .{ .pane_mode_changed = .{ .pane_id = 99 } } },
@@ -6763,7 +6761,7 @@ test "pane_mode_changed empty response means normal mode" {
 
     try testViewer(&viewer, &.{
         // Standard startup
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         .{
             .input = .{ .tmux = .{ .session_changed = .{
                 .id = 1,
@@ -6773,35 +6771,33 @@ test "pane_mode_changed empty response means normal mode" {
         },
         // Receive client_size response, which triggers version query
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .contains_command = "display-message",
         },
         .{
-            .input = .{ .tmux = .{ .block_end = "3.5a" } },
+            .input = .{ .tmux = blockEnd("3.5a") },
             .contains_command = "list-windows",
         },
         .{
-            .input = .{ .tmux = .{
-                .block_end =
+            .input = .{ .tmux = blockEnd(
                 \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
-                ,
-            } },
+            ) },
             .contains_tags = &.{ .windows, .command },
         },
         // Complete capture-pane sequence and the trailing title subscription.
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         // First, enter copy mode so we have a non-normal state
         .{
             .input = .{ .tmux = .{ .pane_mode_changed = .{ .pane_id = 0 } } },
             .contains_command = "display-message",
         },
         .{
-            .input = .{ .tmux = .{ .block_end = "copy-mode" } },
+            .input = .{ .tmux = blockEnd("copy-mode") },
             .contains_tags = &.{.pane_mode_changed},
             .check = (struct {
                 fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
@@ -6816,7 +6812,7 @@ test "pane_mode_changed empty response means normal mode" {
             .contains_command = "display-message",
         },
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .contains_tags = &.{.pane_mode_changed},
             .check = (struct {
                 fn check(v: *Viewer, actions: []const Viewer.Action) anyerror!void {
@@ -6845,7 +6841,7 @@ test "layout_change mid-capture suppresses output for uninitialized pane" {
 
     try testViewer(&viewer, &.{
         // Initial startup: single-pane layout
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         .{
             .input = .{ .tmux = .{ .session_changed = .{
                 .id = 1,
@@ -6854,31 +6850,29 @@ test "layout_change mid-capture suppresses output for uninitialized pane" {
             .contains_command = "refresh-client",
         },
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .contains_command = "display-message",
         },
         .{
-            .input = .{ .tmux = .{ .block_end = "3.5a" } },
+            .input = .{ .tmux = blockEnd("3.5a") },
             .contains_command = "list-windows",
         },
         // Receive initial layout with one pane (%0)
         .{
-            .input = .{ .tmux = .{
-                .block_end =
+            .input = .{ .tmux = blockEnd(
                 \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
-                ,
-            } },
+            ) },
             .contains_tags = &.{ .windows, .command },
         },
         // Complete capture sequence for pane 0: 4 capture-pane + 1 pane_state,
         // then the trailing title subscription.
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .check = (struct {
                 fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
                     try testing.expect(v.command_queue.empty());
@@ -6941,13 +6935,13 @@ test "layout_change mid-capture suppresses output for uninitialized pane" {
         },
         // Complete the capture sequence for pane %2:
         // 4 capture-pane responses
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         // pane_state response — this marks all panes as initialized
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .check = (struct {
                 fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
                     // Pane %2 should now be initialized
@@ -6990,7 +6984,7 @@ test "pane state alternate_saved cursor applies to primary screen" {
 
     try testViewer(&viewer, &.{
         // Standard startup sequence
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         .{
             .input = .{ .tmux = .{ .session_changed = .{
                 .id = 0,
@@ -6999,30 +6993,28 @@ test "pane state alternate_saved cursor applies to primary screen" {
             .contains_command = "refresh-client",
         },
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .contains_command = "display-message",
         },
         .{
-            .input = .{ .tmux = .{ .block_end = "3.5a" } },
+            .input = .{ .tmux = blockEnd("3.5a") },
             .contains_command = "list-windows",
         },
         // Single pane layout
         .{
-            .input = .{ .tmux = .{
-                .block_end =
+            .input = .{ .tmux = blockEnd(
                 \\$0 @0 1 0 0 %0 80 24 b25d,80x24,0,0,0 bash
-                ,
-            } },
+            ) },
             .contains_tags = &.{ .windows, .command },
         },
         // capture-pane pane 0 primary history (empty)
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         // capture-pane pane 0 primary visible (empty)
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         // capture-pane pane 0 alternate history (empty)
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         // capture-pane pane 0 alternate visible (empty)
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         // pane_state: alternate_on=1, cursor at (10,2) on alternate screen,
         // alternate_saved at (5,3) which should go to primary screen.
         //
@@ -7035,11 +7027,9 @@ test "pane state alternate_saved cursor applies to primary screen" {
         //         bracketed_paste;scroll_region_upper;scroll_region_lower;
         //         pane_tabs
         .{
-            .input = .{ .tmux = .{
-                .block_end =
+            .input = .{ .tmux = blockEnd(
                 \\%0;10;2;1;;0;1;5;3;0;1;0;0;0;0;0;0;0;0;0;0;0;0;23;8,16,24,32,40,48,56,64,72,80
-                ,
-            } },
+            ) },
             .check = (struct {
                 fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
                     const pane: *Viewer.Pane = v.panes.getEntry(0).?.value_ptr.*;
@@ -7074,42 +7064,38 @@ test "pane state alternate_on swaps captured screens so the alt app is shown" {
     defer viewer.deinit();
 
     try testViewer(&viewer, &.{
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         .{
             .input = .{ .tmux = .{ .session_changed = .{ .id = 0, .name = "0" } } },
             .contains_command = "refresh-client",
         },
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .contains_command = "display-message",
         },
         .{
-            .input = .{ .tmux = .{ .block_end = "3.5a" } },
+            .input = .{ .tmux = blockEnd("3.5a") },
             .contains_command = "list-windows",
         },
         .{
-            .input = .{ .tmux = .{
-                .block_end =
+            .input = .{ .tmux = blockEnd(
                 \\$0 @0 1 0 0 %0 80 24 b25d,80x24,0,0,0 bash
-                ,
-            } },
+            ) },
             .contains_tags = &.{ .windows, .command },
         },
         // capture-pane primary history (no -a) = the ACTIVE grid (alt app)
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         // capture-pane primary visible (no -a) = the ACTIVE grid (alt app)
-        .{ .input = .{ .tmux = .{ .block_end = "VIM" } } },
+        .{ .input = .{ .tmux = blockEnd("VIM") } },
         // capture-pane alternate history (-a) = the SAVED grid (normal screen)
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         // capture-pane alternate visible (-a) = the SAVED grid (normal screen)
-        .{ .input = .{ .tmux = .{ .block_end = "SHELL" } } },
+        .{ .input = .{ .tmux = blockEnd("SHELL") } },
         // pane_state: alternate_on=1 (this pane is in the alternate screen).
         .{
-            .input = .{ .tmux = .{
-                .block_end =
+            .input = .{ .tmux = blockEnd(
                 \\%0;10;2;1;;0;1;5;3;0;1;0;0;0;0;0;0;0;0;0;0;0;0;23;8,16,24,32,40,48,56,64,72,80
-                ,
-            } },
+            ) },
             .check = (struct {
                 fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
                     const pane: *Viewer.Pane = v.panes.getEntry(0).?.value_ptr.*;
@@ -7172,7 +7158,7 @@ fn testPaneStateMouseModes(
 
     try testViewer(&viewer, &.{
         // Standard startup sequence
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         .{
             .input = .{ .tmux = .{ .session_changed = .{
                 .id = 0,
@@ -7181,27 +7167,25 @@ fn testPaneStateMouseModes(
             .contains_command = "refresh-client",
         },
         .{
-            .input = .{ .tmux = .{ .block_end = "" } },
+            .input = .{ .tmux = blockEnd("") },
             .contains_command = "display-message",
         },
         .{
-            .input = .{ .tmux = .{ .block_end = "3.5a" } },
+            .input = .{ .tmux = blockEnd("3.5a") },
             .contains_command = "list-windows",
         },
         .{
-            .input = .{ .tmux = .{
-                .block_end =
+            .input = .{ .tmux = blockEnd(
                 \\$0 @0 1 0 0 %0 80 24 b25d,80x24,0,0,0 bash
-                ,
-            } },
+            ) },
             .contains_tags = &.{ .windows, .command },
         },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
-        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         .{
-            .input = .{ .tmux = .{ .block_end = pane_state } },
+            .input = .{ .tmux = blockEnd(pane_state) },
         },
     });
 

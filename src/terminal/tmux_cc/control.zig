@@ -40,6 +40,24 @@ pub const ErrorCode = enum(u8) {
     sent_fifo_oom = 7,
     /// A resume resync failed to queue its rebuild.
     resync_rebuild_failed = 8,
+    /// A recognized notification line was malformed; request live resync.
+    malformed_notification = 9,
+};
+
+/// Parsed tokens from a %begin, %end, or %error guard line.
+/// tmux guarantees these match between begin and end/error. Bit 0 of
+/// `flags` is set for client-originated command responses and clear for
+/// server-originated blocks.
+pub const BlockInfo = struct {
+    time: usize,
+    command_id: usize,
+    flags: usize,
+};
+
+/// A begin/end block plus the guard metadata that framed it.
+pub const Block = struct {
+    content: []const u8,
+    info: BlockInfo,
 };
 
 /// A tmux control mode parser. This takes in output from tmux control
@@ -142,14 +160,6 @@ pub const Parser = struct {
     /// resync instead of breaking the channel. ROOTSHELL-TMUX
     /// (id=control-block-mismatch-bound)
     const block_recover_bytes = 16 * 1024 * 1024;
-
-    /// Parsed tokens from a %begin, %end, or %error guard line.
-    /// tmux guarantees these match between begin and end/error.
-    const BlockInfo = struct {
-        time: usize,
-        command_id: usize,
-        flags: usize,
-    };
 
     const State = enum {
         /// Outside of any active notifications. This should drop any output
@@ -347,11 +357,17 @@ pub const Parser = struct {
                         // sent commands), not by dropping the block. See
                         // id=server-originated-block.
                         switch (result.terminator) {
-                            .end => return .{ .block_end = output },
+                            .end => return .{ .block_end = .{
+                                .content = output,
+                                .info = result.info,
+                            } },
                             .err => {
                                 self.last_error = .control_error; // ROOTSHELL-TMUX (id=control-error-code)
                                 log.warn("tmux control mode error={s}", .{output});
-                                return .{ .block_err = output };
+                                return .{ .block_err = .{
+                                    .content = output,
+                                    .info = result.info,
+                                } };
                             },
                         }
                     }
@@ -561,6 +577,35 @@ pub const Parser = struct {
             return .{ .token = s[0..i], .rest = s[i + 1 ..] };
         }
         return .{ .token = s, .rest = "" };
+    }
+
+    fn isRecoverableKnownNotification(cmd: []const u8) bool {
+        const recoverable = [_][]const u8{
+            "%output",
+            "%session-changed",
+            "%sessions-changed",
+            "%session-window-changed",
+            "%layout-change",
+            "%window-add",
+            "%window-close",
+            "%window-renamed",
+            "%window-pane-changed",
+            "%client-detached",
+            "%client-session-changed",
+            "%pane-mode-changed",
+            "%session-renamed",
+            "%pause",
+            "%continue",
+            "%extended-output",
+            "%message",
+            "%subscription-changed",
+        };
+
+        for (recoverable) |known| {
+            if (std.mem.eql(u8, cmd, known)) return true;
+        }
+
+        return false;
     }
 
     fn parseNotification(self: *Parser) ParseError!?Notification {
@@ -854,6 +899,19 @@ pub const Parser = struct {
             log.warn("unknown tmux control mode notification={s}", .{cmd});
         }
 
+        if (self.state == .notification and isRecoverableKnownNotification(cmd)) {
+            // A recognized notification whose fields no longer match tmux's
+            // grammar is strong evidence that we started parsing mid-line
+            // or lost bytes. Treat it like other framing damage: enter
+            // tolerant resync mode and let the stream handler probe/rebuild
+            // instead of silently returning to idle with partially corrupt
+            // topology or pane state.
+            log.warn("malformed tmux control mode notification={s}", .{cmd});
+            self.last_error = .malformed_notification;
+            self.requestRecover();
+            return null;
+        }
+
         // Unknown command. Clear the buffer and return to idle state.
         self.buffer.clearRetainingCapacity();
         self.state = .idle;
@@ -895,11 +953,12 @@ pub const Notification = union(enum) {
     /// but should not treat it as an intentional tmux detach/exit event.
     broken,
 
-    /// Dispatched at the end of a begin/end block with the raw data.
+    /// Dispatched at the end of a begin/end block with the raw data and guard
+    /// metadata.
     /// The control mode parser can't parse the data because it is unaware
     /// of the command that was sent to trigger this output.
-    block_end: []const u8,
-    block_err: []const u8,
+    block_end: Block,
+    block_err: Block,
 
     /// Raw output from a pane.
     output: struct {
@@ -1054,7 +1113,7 @@ test "tmux begin/end empty" {
     for ("%end 1578922740 269 1") |byte| try testing.expect(try c.put(byte) == null);
     const n = (try c.put('\n')).?;
     try testing.expect(n == .block_end);
-    try testing.expectEqualStrings("", n.block_end);
+    try testing.expectEqualStrings("", n.block_end.content);
 }
 
 test "tmux begin/error empty" {
@@ -1067,7 +1126,7 @@ test "tmux begin/error empty" {
     for ("%error 1578922740 269 1") |byte| try testing.expect(try c.put(byte) == null);
     const n = (try c.put('\n')).?;
     try testing.expect(n == .block_err);
-    try testing.expectEqualStrings("", n.block_err);
+    try testing.expectEqualStrings("", n.block_err.content);
 }
 
 test "tmux flags=0 (server-originated) block is delivered, not swallowed" {
@@ -1086,7 +1145,10 @@ test "tmux flags=0 (server-originated) block is delivered, not swallowed" {
     }
     const n = (try c.put('\n')).?;
     try testing.expect(n == .block_end);
-    try testing.expectEqualStrings("hook output", n.block_end);
+    try testing.expectEqualStrings("hook output", n.block_end.content);
+    try testing.expectEqual(@as(usize, 1), n.block_end.info.time);
+    try testing.expectEqual(@as(usize, 5), n.block_end.info.command_id);
+    try testing.expectEqual(@as(usize, 0), n.block_end.info.flags);
 }
 
 test "tmux begin/end data" {
@@ -1100,7 +1162,7 @@ test "tmux begin/end data" {
     for ("%end 1578922740 269 1") |byte| try testing.expect(try c.put(byte) == null);
     const n = (try c.put('\n')).?;
     try testing.expect(n == .block_end);
-    try testing.expectEqualStrings("hello\nworld", n.block_end);
+    try testing.expectEqualStrings("hello\nworld", n.block_end.content);
 }
 
 test "tmux block payload may start with %end" {
@@ -1115,7 +1177,7 @@ test "tmux block payload may start with %end" {
     for ("%end 1 1 1") |byte| try testing.expect(try c.put(byte) == null);
     const n = (try c.put('\n')).?;
     try testing.expect(n == .block_end);
-    try testing.expectEqualStrings("%end not really\nhello", n.block_end);
+    try testing.expectEqualStrings("%end not really\nhello", n.block_end.content);
 }
 
 test "tmux block payload may start with %error" {
@@ -1130,7 +1192,7 @@ test "tmux block payload may start with %error" {
     for ("%end 1 1 1") |byte| try testing.expect(try c.put(byte) == null);
     const n = (try c.put('\n')).?;
     try testing.expect(n == .block_end);
-    try testing.expectEqualStrings("%error not really\nhello", n.block_end);
+    try testing.expectEqualStrings("%error not really\nhello", n.block_end.content);
 }
 
 test "tmux block may terminate with real %error after misleading payload" {
@@ -1145,7 +1207,7 @@ test "tmux block may terminate with real %error after misleading payload" {
     for ("%error 1 1 1") |byte| try testing.expect(try c.put(byte) == null);
     const n = (try c.put('\n')).?;
     try testing.expect(n == .block_err);
-    try testing.expectEqualStrings("%error not really\nhello", n.block_err);
+    try testing.expectEqualStrings("%error not really\nhello", n.block_err.content);
 }
 
 test "tmux block terminator requires exact token count" {
@@ -1160,7 +1222,7 @@ test "tmux block terminator requires exact token count" {
     for ("%end 1 1 1") |byte| try testing.expect(try c.put(byte) == null);
     const n = (try c.put('\n')).?;
     try testing.expect(n == .block_end);
-    try testing.expectEqualStrings("%end 1 1 1 trailing\nhello", n.block_end);
+    try testing.expectEqualStrings("%end 1 1 1 trailing\nhello", n.block_end.content);
 }
 
 test "tmux block terminator requires numeric metadata" {
@@ -1175,7 +1237,7 @@ test "tmux block terminator requires numeric metadata" {
     for ("%end 1 1 1") |byte| try testing.expect(try c.put(byte) == null);
     const n = (try c.put('\n')).?;
     try testing.expect(n == .block_end);
-    try testing.expectEqualStrings("%end foo bar baz\nhello", n.block_end);
+    try testing.expectEqualStrings("%end foo bar baz\nhello", n.block_end.content);
 }
 
 test "tmux block terminator tolerates \\r\\r\\n framing (wedge regression)" {
@@ -1198,7 +1260,7 @@ test "tmux block terminator tolerates \\r\\r\\n framing (wedge regression)" {
     for ("%end 1 1 1\r\r") |byte| try testing.expect(try c.put(byte) == null);
     const n = (try c.put('\n')).?;
     try testing.expect(n == .block_end);
-    try testing.expectEqualStrings("hello", n.block_end);
+    try testing.expectEqualStrings("hello", n.block_end.content);
     // The block closed cleanly: no desync, no recovery edge raised.
     try testing.expect(!c.recover_pending);
     try testing.expect(c.state == .idle);
@@ -1219,7 +1281,7 @@ test "tmux block terminator tolerates a CR injected mid guard line" {
     for ("%end 7 8\r 1") |byte| try testing.expect(try c.put(byte) == null);
     const n = (try c.put('\n')).?;
     try testing.expect(n == .block_end);
-    try testing.expectEqualStrings("hi", n.block_end);
+    try testing.expectEqualStrings("hi", n.block_end.content);
     try testing.expect(!c.recover_pending);
 }
 
@@ -1257,6 +1319,20 @@ test "tmux output" {
     try testing.expect(n == .output);
     try testing.expectEqual(42, n.output.pane_id);
     try testing.expectEqualStrings("foo bar baz", n.output.data);
+}
+
+test "tmux malformed known notification requests recovery" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var c: Parser = .{ .buffer = .init(alloc) };
+    defer c.deinit();
+    for ("%output not-a-pane payload") |byte| try testing.expect(try c.put(byte) == null);
+    try testing.expect(try c.put('\n') == null);
+    try testing.expect(c.recover_pending);
+    try testing.expect(c.tolerant);
+    try testing.expect(c.state == .idle);
+    try testing.expect(c.last_error == .malformed_notification);
 }
 
 test "tmux output preserves split multibyte UTF-8 across notifications" {
@@ -1595,7 +1671,7 @@ test "tmux block begin/end mismatch is treated as body, real %end terminates" {
     for ("%end 1578922740 269 1") |byte| try testing.expect(try c.put(byte) == null);
     const n = (try c.put('\n')).?;
     try testing.expect(n == .block_end);
-    try testing.expectEqualStrings("some data\n%end 1578922740 999 1", n.block_end);
+    try testing.expectEqualStrings("some data\n%end 1578922740 999 1", n.block_end.content);
     // block_begin should be cleared after the real terminator.
     try testing.expect(c.block_begin == null);
 }
@@ -1710,7 +1786,7 @@ test "tmux well-formed non-matching terminator is body, real %end terminates" {
     for ("%end 1 1 1") |byte| try testing.expect(try c.put(byte) == null);
     const n = (try c.put('\n')).?;
     try testing.expect(n == .block_end);
-    try testing.expectEqualStrings("%end 2 2 2\nhello", n.block_end);
+    try testing.expectEqualStrings("%end 2 2 2\nhello", n.block_end.content);
     // A single non-matching terminator is absorbed, not escalated to recovery.
     try testing.expect(!c.recover_pending);
 }
@@ -1757,7 +1833,7 @@ test "tmux resync parses the probe block when it is the FIRST thing seen" {
     }
     const n = (try c.put('\n')).?;
     try testing.expect(n == .block_end);
-    try testing.expect(std.mem.indexOf(u8, n.block_end, "__ROOTSHELL_TMUX_RESYNC__") != null);
+    try testing.expect(std.mem.indexOf(u8, n.block_end.content, "__ROOTSHELL_TMUX_RESYNC__") != null);
     // Completing a block clears tolerance (alignment restored).
     try testing.expect(!c.tolerant);
     try testing.expect(c.state == .idle);

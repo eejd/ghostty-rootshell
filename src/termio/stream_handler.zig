@@ -1040,14 +1040,20 @@ pub const StreamHandler = struct {
         const viewer = self.tmux_viewer orelse return;
         if (!viewer.isCommandQueue()) return;
         log.warn("tmux control desync/data-loss detected; forcing live re-resync", .{});
+        const probe_msg = termio.Message.writeReq(
+            self.alloc,
+            terminal.tmux.Viewer.resync_probe_command,
+        ) catch |err| {
+            log.warn("failed to allocate tmux resync probe message: {}; forcing control-mode exit", .{err});
+            self.tmuxForceExit();
+            return;
+        };
+
         viewer.forceResync();
         // Realign the parser to a clean line boundary (the live stream may resume
         // mid-line after data loss) so it does not break on the next byte.
         self.dcs.beginTmuxResync();
-        self.messageWriter(termio.Message.writeReq(
-            self.alloc,
-            terminal.tmux.Viewer.resync_probe_command,
-        ) catch return);
+        self.messageWriter(probe_msg);
         viewer.recordResyncProbeSent();
         // Surface the new state immediately (no-op unless the app opted in).
         self.refreshTmuxDebug();
@@ -1425,33 +1431,41 @@ pub const StreamHandler = struct {
                 // still alive. `.tracked` / `.empty` (e.g. the startup attach
                 // block we never wrote) fall through to the viewer unchanged.
                 switch (tmux) {
-                    .block_end, .block_err => |content| {
-                        // Drop a stray resync-probe response that arrived AFTER
-                        // resync completed (from a retried probe). Dropping it
-                        // WITHOUT classifyBlock keeps the positional sent-FIFO
-                        // aligned with the rebuild commands (a raw probe carries no
-                        // FIFO marker, so consuming one here would desync). During
-                        // resync the marker block is the legit one and is handled
-                        // by the viewer, so only guard once we have left resync.
-                        //
-                        // ROOTSHELL-TMUX (id=streamhandler-drop-stray-probe): gate
-                        // the sentinel scan on the viewer's outstanding-probe COUNT
-                        // (set when each probe is written, decremented as responses
-                        // arrive). In normal steady state the count is zero, so a
-                        // genuine tracked block whose scrollback content happens to
-                        // contain the 24-char sentinel is NOT dropped. The first
-                        // non-probe block clears the count, so a probe lost before
-                        // the transport attached can't keep the scan armed forever.
-                        if (!viewer.isResyncing() and viewer.hasOutstandingResyncProbes()) {
-                            if (std.mem.indexOf(u8, content, terminal.tmux.Viewer.resync_marker) != null) {
-                                viewer.consumeResyncProbe();
-                                break :tmux;
+                    .block_end, .block_err => |block| {
+                        // Server-originated blocks (flags bit 0 clear) are not
+                        // replies to commands we wrote. Do not consume the
+                        // sent-FIFO for them; the viewer will either use them in
+                        // startup/resync or ignore them in steady state.
+                        if (block.info.flags & 1 != 0) {
+                            // Drop a stray resync-probe response that arrived AFTER
+                            // resync completed (from a retried probe). Dropping it
+                            // WITHOUT classifyBlock keeps the positional sent-FIFO
+                            // aligned with the rebuild commands (a raw probe carries no
+                            // FIFO marker, so consuming one here would desync). During
+                            // resync the marker block is the legit one and is handled
+                            // by the viewer, so only guard once we have left resync.
+                            //
+                            // ROOTSHELL-TMUX (id=streamhandler-drop-stray-probe): gate
+                            // the sentinel scan on the viewer's outstanding-probe COUNT
+                            // (set when each probe is written, decremented as responses
+                            // arrive). In normal steady state the count is zero, so a
+                            // genuine tracked block whose scrollback content happens to
+                            // contain the 24-char sentinel is NOT dropped. The first
+                            // non-probe block clears the count, so a probe lost before
+                            // the transport attached can't keep the scan armed forever.
+                            if (!viewer.isResyncing() and viewer.hasOutstandingResyncProbes()) {
+                                if (std.mem.indexOf(u8, block.content, terminal.tmux.Viewer.resync_marker) != null) {
+                                    viewer.consumeResyncProbe();
+                                    break :tmux;
+                                }
+                                viewer.clearOutstandingResyncProbes();
                             }
+                            switch (viewer.classifyBlock()) {
+                                .untracked => break :tmux,
+                                .tracked, .empty => {},
+                            }
+                        } else if (!viewer.isResyncing() and viewer.hasOutstandingResyncProbes()) {
                             viewer.clearOutstandingResyncProbes();
-                        }
-                        switch (viewer.classifyBlock()) {
-                            .untracked => break :tmux,
-                            .tracked, .empty => {},
                         }
                     },
                     else => {},
@@ -1462,6 +1476,7 @@ pub const StreamHandler = struct {
                 // cannot tear down inside the loop — actions alias viewer-owned
                 // memory — so we defer it to just after the loop.
                 var viewer_defunct = false;
+                var viewer_recover = false;
                 for (viewer.next(.{ .tmux = tmux })) |action| {
                     // `{f}` would dump payloads (window topology, raw command
                     // bytes, server message text); log only the variant name.
@@ -1480,6 +1495,10 @@ pub const StreamHandler = struct {
                             // sending detach-client into a dead stream), and the
                             // viewer lingers allocated.
                             viewer_defunct = true;
+                        },
+
+                        .recover => {
+                            viewer_recover = true;
                         },
 
                         .command => |command| {
@@ -1618,6 +1637,8 @@ pub const StreamHandler = struct {
                     log.warn("tmux viewer went defunct; tearing down gateway", .{});
                     self.tmuxTeardownViewer();
                     self.tmux_force_unhook = true;
+                } else if (viewer_recover) {
+                    self.tmuxForceResync();
                 }
             },
 
