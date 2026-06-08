@@ -2816,6 +2816,16 @@ pub const Viewer = struct {
         // cross-call state is needed, and the decoded length never exceeds the
         // input length.
         //
+        // Because tmux escapes EVERY real control byte, any RAW control byte
+        // (< 0x20) still present in the payload is line-driver framing noise the
+        // SSH/PTY discipline sprinkled in (a stray CR), never pane data. We drop
+        // it, and when reading the three octal digits of a `\ooo` escape we skip
+        // any such noise injected between them. The line-level trailing-CR strip
+        // only caught the END of the line; a CR landing mid-payload would
+        // otherwise reach the pane VT stream and snap the cursor to column 0 (the
+        // helix scroll / gutter corruption).
+        // ROOTSHELL-TMUX (id=control-strip-trailing-cr)
+        //
         // NOTE: the upstream octal-decode PRs (#11217, #12076) were not merged
         // (code-quality review), so this is a fork-local fix on the one path
         // that actually writes pane output to a terminal.
@@ -2824,22 +2834,37 @@ pub const Viewer = struct {
         var n: usize = 0;
         var i: usize = 0;
         while (i < data.len) {
-            if (data[i] == '\\' and
-                i + 3 < data.len and
-                isOctalDigit(data[i + 1]) and
-                isOctalDigit(data[i + 2]) and
-                isOctalDigit(data[i + 3]))
-            {
-                // Octal `\ooo` -> byte. Computed in u16 to avoid intermediate
-                // overflow; tmux only ever escapes single bytes (<= 0o377).
-                const value: u16 = (@as(u16, data[i + 1] - '0') << 6) |
-                    (@as(u16, data[i + 2] - '0') << 3) |
-                    @as(u16, data[i + 3] - '0');
-                buf[n] = @truncate(value);
-                n += 1;
-                i += 4;
+            const c = data[i];
+            if (c == '\\') {
+                // Read exactly three octal digits, skipping any raw control byte
+                // (a CR the line driver inserted) between them.
+                var value: u16 = 0;
+                var digits: usize = 0;
+                var j = i + 1;
+                while (digits < 3 and j < data.len) : (j += 1) {
+                    const d = data[j];
+                    if (d < ' ') continue; // line-driver noise mid-escape
+                    if (!isOctalDigit(d)) break;
+                    value = (value << 3) | @as(u16, d - '0');
+                    digits += 1;
+                }
+                if (digits == 3) {
+                    // tmux only ever escapes single bytes (<= 0o377).
+                    buf[n] = @truncate(value);
+                    n += 1;
+                    i = j;
+                } else {
+                    // Not a valid escape (split/garbled): keep the literal
+                    // backslash; the next iteration handles whatever follows.
+                    buf[n] = '\\';
+                    n += 1;
+                    i += 1;
+                }
+            } else if (c < ' ') {
+                // Raw control byte = line-driver framing noise. Drop it.
+                i += 1;
             } else {
-                buf[n] = data[i];
+                buf[n] = c;
                 n += 1;
                 i += 1;
             }
@@ -6089,6 +6114,84 @@ test "output OSC title from active pane produces title action" {
                         if (action == .title) {
                             try testing.expectEqual(@as(usize, 0), action.title.window_id);
                             try testing.expectEqualStrings("codex spinner", action.title.name);
+                            found = true;
+                        }
+                    }
+                    try testing.expect(found);
+                }
+            }).check,
+        },
+    });
+}
+
+test "output decode drops raw CR and skips CR injected mid-escape" {
+    // ROOTSHELL-TMUX (id=control-strip-trailing-cr): the SSH/PTY line driver can
+    // inject a raw CR anywhere in a %output payload — between visible bytes, or
+    // even inside a `\ooo` escape. tmux escapes every real control byte, so a raw
+    // CR is always framing noise. We observe the decode through the OSC-0 title
+    // path: `\033]0;<title>\007`. A raw CR mid-title must be dropped (title intact,
+    // cursor not snapped to col 0); a CR splitting the leading `\033` escape must
+    // be skipped so the ESC still decodes and the OSC is recognized.
+    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    defer viewer.deinit();
+    defer {
+        var it = viewer.panes.iterator();
+        while (it.next()) |kv| kv.value_ptr.*.clearPendingAttach();
+    }
+
+    try testViewer(&viewer, &.{
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{
+            .input = .{ .tmux = .{ .session_changed = .{ .id = 1, .name = "test" } } },
+            .contains_command = "refresh-client",
+        },
+        .{ .input = .{ .tmux = .{ .block_end = "" } }, .contains_command = "display-message" },
+        .{ .input = .{ .tmux = .{ .block_end = "3.5a" } }, .contains_command = "list-windows" },
+        .{
+            .input = .{ .tmux = .{ .block_end = "$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash" } },
+            .contains_tags = &.{ .windows, .command },
+        },
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        .{ .input = .{ .tmux = .{ .block_end = "" } } },
+        // Raw CR injected between "ab" and "cd" inside the title: must be dropped,
+        // yielding the title "abcd" (not "ab" truncated, not "ab\rcd").
+        .{
+            .input = .{ .tmux = .{ .output = .{
+                .pane_id = 0,
+                .data = "\\033]0;ab\rcd\\007",
+            } } },
+            .contains_tags = &.{.title},
+            .check = (struct {
+                fn check(_: *Viewer, actions: []const Viewer.Action) anyerror!void {
+                    var found = false;
+                    for (actions) |action| {
+                        if (action == .title) {
+                            try testing.expectEqualStrings("abcd", action.title.name);
+                            found = true;
+                        }
+                    }
+                    try testing.expect(found);
+                }
+            }).check,
+        },
+        // CR splitting the leading `\033` escape ("\0" + CR + "33"): must be
+        // skipped so ESC decodes and the OSC title "xy" is recognized.
+        .{
+            .input = .{ .tmux = .{ .output = .{
+                .pane_id = 0,
+                .data = "\\0\r33]0;xy\\007",
+            } } },
+            .contains_tags = &.{.title},
+            .check = (struct {
+                fn check(_: *Viewer, actions: []const Viewer.Action) anyerror!void {
+                    var found = false;
+                    for (actions) |action| {
+                        if (action == .title) {
+                            try testing.expectEqualStrings("xy", action.title.name);
                             found = true;
                         }
                     }

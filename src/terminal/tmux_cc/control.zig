@@ -226,7 +226,17 @@ pub const Parser = struct {
             // terminal report or stray byte should stop this broken parser from
             // consuming more input, but it must not look like tmux intentionally
             // exited and force the UI to close every projected tab.
-            .idle => if (self.tolerant) {
+            .idle => if (byte == '\r' or byte == '\n') {
+                // A bare CR or LF in idle is line-framing noise, NOT mid-stream
+                // data loss: the PTY/SSH line discipline sprinkles CRs between
+                // notifications, and a blank "\r\n" line can land here. Ignore it
+                // (stay idle, start no notification) so it does not trip the
+                // stray-byte self-heal below, which would otherwise false-fire a
+                // resync on a perfectly healthy stream during heavy output. The
+                // line discipline sprinkles CRs in wherever it likes; treat them
+                // as nothing. ROOTSHELL-TMUX (id=control-strip-trailing-cr)
+                return null;
+            } else if (self.tolerant) {
                 // Mid-stream RESUME: skip arbitrary reattach garbage instead of
                 // breaking. Only start a notification on a '%' that begins a line
                 // (byte 0 of the resync, or just after '\n') — NOT a literal
@@ -446,12 +456,17 @@ pub const Parser = struct {
     /// Block payload is raw data, so a line only terminates a block if it
     /// exactly matches tmux's `%end`/`%error` guard-line shape.
     fn parseBlockTerminator(line_raw: []const u8) ?BlockTerminatorResult {
-        var line = line_raw;
-        if (line.len > 0 and line[line.len - 1] == '\r') {
-            line = line[0 .. line.len - 1];
-        }
-
-        var fields = std.mem.tokenizeScalar(u8, line, ' ');
+        // Tokenize on spaces AND carriage returns. The SSH/PTY line discipline
+        // sprinkles CRs anywhere on a control line — a trailing "\r\r\n", or even
+        // mid-line — and tmux escapes every real control byte as \ooo, so a raw
+        // CR in a guard line is always framing noise, never data. Treating CR as
+        // a delimiter (like a space) drops it wherever it lands, which is
+        // symmetric with parseNotification's strip-all-trailing-CR.
+        // Without this, a CR-mangled %end (e.g. "%end 1 1 1\r\r") fails to parse,
+        // the block never closes, later blocks merge into it, and the
+        // command/response sent-FIFO desyncs — the control-mode wedge that forces
+        // a resync/force-exit. ROOTSHELL-TMUX (id=control-strip-trailing-cr)
+        var fields = std.mem.tokenizeAny(u8, line_raw, " \r");
         const cmd = fields.next() orelse return null;
         const terminator: BlockTerminator = if (std.mem.eql(u8, cmd, "%end"))
             .end
@@ -478,7 +493,11 @@ pub const Parser = struct {
 
     /// Parse BlockInfo from a %begin line. Format: %begin <time> <command_id> <flags>
     fn parseBeginInfo(line: []const u8) ?BlockInfo {
-        var fields = std.mem.tokenizeScalar(u8, line, ' ');
+        // CR-tolerant tokenization, for the same reason as parseBlockTerminator:
+        // ignore any CRs the line driver injected into the guard line so a
+        // CR-mangled %begin still opens its block (kept symmetric with %end).
+        // ROOTSHELL-TMUX (id=control-strip-trailing-cr)
+        var fields = std.mem.tokenizeAny(u8, line, " \r");
         const cmd = fields.next() orelse return null;
         if (!std.mem.eql(u8, cmd, "%begin")) return null;
 
@@ -1157,6 +1176,74 @@ test "tmux block terminator requires numeric metadata" {
     const n = (try c.put('\n')).?;
     try testing.expect(n == .block_end);
     try testing.expectEqualStrings("%end foo bar baz\nhello", n.block_end);
+}
+
+test "tmux block terminator tolerates \\r\\r\\n framing (wedge regression)" {
+    // ROOTSHELL-TMUX (id=control-strip-trailing-cr): the SSH/PTY line discipline
+    // sprinkles extra CRs onto ANY control line, including a block's %end guard
+    // line ("\r\r\n" framing). parseNotification strips all trailing CRs for
+    // %begin, but parseBlockTerminator must do the same — otherwise the %end is
+    // mis-read as block body, the block never closes, later blocks merge into it,
+    // and the command/response sent-FIFO desyncs (the control-mode wedge that
+    // forces a resync/force-exit). A few scrolls' worth of output is enough to
+    // hit one CR-mangled %end. This test is the proof: it FAILS before the fix.
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var c: Parser = .{ .buffer = .init(alloc) };
+    defer c.deinit();
+    // Both the %begin and %end guard lines carry the doubled-CR framing.
+    for ("%begin 1 1 1\r\r\n") |byte| try testing.expect(try c.put(byte) == null);
+    for ("hello\n") |byte| try testing.expect(try c.put(byte) == null);
+    for ("%end 1 1 1\r\r") |byte| try testing.expect(try c.put(byte) == null);
+    const n = (try c.put('\n')).?;
+    try testing.expect(n == .block_end);
+    try testing.expectEqualStrings("hello", n.block_end);
+    // The block closed cleanly: no desync, no recovery edge raised.
+    try testing.expect(!c.recover_pending);
+    try testing.expect(c.state == .idle);
+}
+
+test "tmux block terminator tolerates a CR injected mid guard line" {
+    // ROOTSHELL-TMUX (id=control-strip-trailing-cr): a CR can land anywhere on a
+    // line, not just at the end. A CR inside the %end tuple must not stop the
+    // block from terminating.
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var c: Parser = .{ .buffer = .init(alloc) };
+    defer c.deinit();
+    for ("%begin 7 8 1\n") |byte| try testing.expect(try c.put(byte) == null);
+    for ("hi\n") |byte| try testing.expect(try c.put(byte) == null);
+    // CR between the second and third tuple fields.
+    for ("%end 7 8\r 1") |byte| try testing.expect(try c.put(byte) == null);
+    const n = (try c.put('\n')).?;
+    try testing.expect(n == .block_end);
+    try testing.expectEqualStrings("hi", n.block_end);
+    try testing.expect(!c.recover_pending);
+}
+
+test "tmux idle ignores bare CR/LF framing without self-healing" {
+    // ROOTSHELL-TMUX (id=control-strip-trailing-cr): a bare CR or LF arriving in
+    // .idle (a blank "\r\n" line, or an extra CR the line driver appended after a
+    // terminator) is framing noise, NOT mid-stream data loss. It must not trip
+    // the stray-byte self-heal, which would false-fire a resync on a perfectly
+    // healthy stream.
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var c: Parser = .{ .buffer = .init(alloc) };
+    defer c.deinit();
+    // A blank CRLF line at the top level.
+    for ("\r\n") |byte| try testing.expect(try c.put(byte) == null);
+    try testing.expect(c.state == .idle);
+    try testing.expect(!c.tolerant);
+    try testing.expect(!c.recover_pending);
+    try testing.expect(c.last_error == .none);
+    // A normal notification right after still parses.
+    for ("%sessions-changed") |byte| try testing.expect(try c.put(byte) == null);
+    const n = (try c.put('\n')).?;
+    try testing.expect(n == .sessions_changed);
 }
 
 test "tmux output" {
