@@ -3447,20 +3447,32 @@ const Command = union(enum) {
             .pane_history => |cap| try writer.print(
                 // -p = output to stdout instead of buffer
                 // -e = output escape sequences for SGR
-                // -J = join wrapped lines into one logical line (no hard break on
-                //   a soft-wrapped row) so the captured content reflows correctly
-                //   when the pane is later resized
-                // -N = preserve trailing whitespace (keep background-color runs at
-                //   line ends); only sent when tmux >= 3.1 (id=capture-preserve-trailing)
+                // -N vs -J (id=capture-preserve-trailing): mutually exclusive in
+                //   tmux — `-J` overrides `-N`'s trailing-whitespace preservation.
+                //   `-N` (tmux >= 3.1) emits the FULL per-cell background: every
+                //   line is serialized to the pane width with its real bg, and a
+                //   bg-reset (`\x1b[49m`) lands exactly where the grid returns to
+                //   default. That reproduces an app's background runs faithfully —
+                //   full-width fills stay full width, and a margin (the app left
+                //   default past column X) stays a margin. `-J` instead trims each
+                //   line to its last written glyph (tmux's per-line `cellused`),
+                //   dropping any background an app painted past that point with
+                //   `\x1b[K` — the source of the ragged/over-/under-filled colored
+                //   rectangles in reattached scrollback (Claude Code diffs). The
+                //   tradeoff: `-J` joins soft-wrapped rows into one logical line so
+                //   they reflow on a later resize; without it, reattached scrollback
+                //   lines stay hard-broken at the reattach width (cosmetic, only on
+                //   resize). Faithful color wins, so prefer `-N`; fall back to `-J`
+                //   only on tmux < 3.1 where `-N` is unavailable.
                 // -a = capture alternate screen (only valid for alternate)
                 // -q = quiet, don't error if alternate screen doesn't exist
                 // -S - = start at the top of history ("-")
                 // -E -1 = end at the last line of history (1 before the
                 //   visible area is -1).
                 // -t %{d} = target a specific pane ID
-                "capture-pane -p -e -J {s}{s}-q -S - -E -1 -t %{d}\n",
+                "capture-pane -p -e {s}{s}-q -S - -E -1 -t %{d}\n",
                 .{
-                    if (cap.preserve_trailing) "-N " else "",
+                    if (cap.preserve_trailing) "-N " else "-J ",
                     if (cap.screen_key == .alternate) "-a " else "",
                     cap.id,
                 },
@@ -3468,9 +3480,9 @@ const Command = union(enum) {
 
             .pane_visible => |cap| try writer.print(
                 // See pane_history for the flags. (no -S/-E = visible area only)
-                "capture-pane -p -e -J {s}{s}-q -t %{d}\n",
+                "capture-pane -p -e {s}{s}-q -t %{d}\n",
                 .{
-                    if (cap.preserve_trailing) "-N " else "",
+                    if (cap.preserve_trailing) "-N " else "-J ",
                     if (cap.screen_key == .alternate) "-a " else "",
                     cap.id,
                 },
@@ -3775,6 +3787,41 @@ test "subscribe_titles command formats refresh-client -B" {
         "refresh-client -B 'ghostty_title:@*:#{pane_title}'\n",
         result,
     );
+}
+
+test "capture-pane uses -N (faithful bg) on tmux>=3.1 and -J fallback below, never both" {
+    // -N and -J are mutually exclusive in tmux (-J overrides -N's trailing
+    // preservation). -N emits the full per-cell background so colored runs keep
+    // their real extent; -J trims trailing cells and loses them. Modern tmux
+    // gets -N; older tmux falls back to -J (reflow over faithful color).
+    inline for (&[_][]const u8{ "pane_history", "pane_visible" }) |field| {
+        {
+            const cmd: Command = @unionInit(Command, field, .{
+                .id = 7,
+                .screen_key = .primary,
+                .preserve_trailing = true,
+            });
+            var builder: std.Io.Writer.Allocating = .init(testing.allocator);
+            defer builder.deinit();
+            try cmd.formatCommand(&builder.writer);
+            const result = builder.writer.buffered();
+            try testing.expect(std.mem.containsAtLeast(u8, result, 1, "-N "));
+            try testing.expect(!std.mem.containsAtLeast(u8, result, 1, "-J"));
+        }
+        {
+            const cmd: Command = @unionInit(Command, field, .{
+                .id = 7,
+                .screen_key = .primary,
+                .preserve_trailing = false,
+            });
+            var builder: std.Io.Writer.Allocating = .init(testing.allocator);
+            defer builder.deinit();
+            try cmd.formatCommand(&builder.writer);
+            const result = builder.writer.buffered();
+            try testing.expect(std.mem.containsAtLeast(u8, result, 1, "-J "));
+            try testing.expect(!std.mem.containsAtLeast(u8, result, 1, "-N"));
+        }
+    }
 }
 
 test "pane_state formats session-scoped list-panes" {
@@ -5595,6 +5642,62 @@ test "refreshWindowList coalesces duplicate list_windows" {
             .input = .{ .tmux = .exit },
             .contains_tags = &.{.exit},
         },
+    });
+}
+
+test "pane history capture reproduces background extent without over-filling a margin" {
+    // With `-N`, tmux serializes each line's FULL per-cell background and emits a
+    // bg-reset exactly where the grid returns to default, so feeding the capture
+    // straight into the pane terminal reproduces the app's colors faithfully —
+    // a colored run keeps its real extent and the default region past it (an
+    // app-defined margin) stays default. Guards against the regression where we
+    // re-painted the background to the pane edge and over-filled past the margin.
+    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    defer viewer.deinit();
+
+    try testViewer(&viewer, &.{
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{
+            .input = .{ .tmux = .{ .session_changed = .{ .id = 0, .name = "0" } } },
+            .contains_command = "refresh-client",
+        },
+        .{ .input = .{ .tmux = blockEnd("") }, .contains_command = "display-message" },
+        .{ .input = .{ .tmux = blockEnd("3.1") }, .contains_command = "list-windows" },
+        // Single-pane window; completing list-windows queues capture-pane.
+        .{
+            .input = .{ .tmux = blockEnd(
+                \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
+            ) },
+            .contains_command = "capture-pane",
+        },
+        // pane_history (primary) response in `-N` form: green (palette 2) under
+        // "+ GREEN", then a bg-reset (`\x1b[49m`) marking the app's margin — the
+        // rest of the line is default and must NOT be painted green.
+        .{
+            .input = .{ .tmux = blockEnd("\x1b[42m+ GREEN\x1b[49m") },
+            .check = (struct {
+                fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
+                    const pane: *Viewer.Pane = v.panes.getEntry(0).?.value_ptr.*;
+                    const pages = &pane.terminal.screens.active.pages;
+                    // The line scrolled into scrollback (history y=0). A cell
+                    // inside "+ GREEN" carries a non-default (green) style.
+                    {
+                        const lc = pages.getCell(.{ .history = .{ .x = 3, .y = 0 } }).?;
+                        try testing.expect(lc.cell.content_tag == .codepoint);
+                        try testing.expect(lc.cell.style_id != 0);
+                    }
+                    // A cell well past the reset stays a plain default cell: no
+                    // glyph, no background style, no over-filled palette color.
+                    {
+                        const lc = pages.getCell(.{ .history = .{ .x = 40, .y = 0 } }).?;
+                        try testing.expect(lc.cell.content_tag == .codepoint);
+                        try testing.expectEqual(@as(u21, 0), lc.cell.content.codepoint);
+                        try testing.expect(lc.cell.style_id == 0);
+                    }
+                }
+            }).check,
+        },
+        .{ .input = .{ .tmux = .exit }, .contains_tags = &.{.exit} },
     });
 }
 
