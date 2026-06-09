@@ -676,7 +676,10 @@ pub const Surface = struct {
                 .x = @floatCast(opts.scale_factor),
                 .y = @floatCast(opts.scale_factor),
             },
-            .size = .{ .width = 800, .height = 600 },
+            // Seed from the parent (gateway) size rather than the 800x600
+            // placeholder so the pane's initial core resize isn't a narrow
+            // grid. ROOTSHELL-TMUX (id=tmux-pane-init-size)
+            .size = parent.size,
             .cursor_pos = .{ .x = -1, .y = -1 },
             .use_external_io = false,
         };

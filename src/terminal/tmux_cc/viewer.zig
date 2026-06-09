@@ -1446,13 +1446,17 @@ pub const Viewer = struct {
         defer self.action_arena = arena.state;
         _ = arena.reset(.free_all);
 
+        // Enable pause-after flow control but DO NOT send a client size: a
+        // sizeless control client is ignored for window sizing, so tmux keeps
+        // each window at the size it was left at on the previous detach instead
+        // of reflowing every app to our (possibly stale/narrow) gateway grid on
+        // attach (the lossy shrink-then-grow this avoids). The app's first
+        // layout pass sizes the viewport via a normal `client_size`, one
+        // deliberate resize like a regular `tmux attach`. ROOTSHELL-TMUX
+        // (id=viewer-startup-pause-only)
         return self.enterCommandQueue(
             arena.allocator(),
-            &.{ .{ .client_size = .{
-                .cols = self.client_cols,
-                .rows = self.client_rows,
-                .enable_pause = true,
-            } }, .tmux_version, .list_windows },
+            &.{ .enable_pause, .tmux_version, .list_windows },
         ) catch {
             log.warn("failed to queue command, becoming defunct", .{});
             return self.defunct();
@@ -2306,7 +2310,7 @@ pub const Viewer = struct {
 
         // Process our command
         switch (command) {
-            .user, .client_size, .continue_pane, .pane_color_report, .subscribe_titles => {},
+            .user, .client_size, .enable_pause, .continue_pane, .pane_color_report, .subscribe_titles => {},
 
             .pane_state => {
                 try self.receivedPaneState(content);
@@ -3374,6 +3378,19 @@ const Command = union(enum) {
     /// Get the tmux server version.
     tmux_version,
 
+    /// Enable control-mode pause-after flow control WITHOUT asserting a client
+    /// size (`refresh-client -f pause-after=<n>`, no `-C`). Sent as the first
+    /// startup command so tmux pauses a lagging pane instead of killing the
+    /// client at CONTROL_MAXIMUM_AGE, while leaving the control client SIZELESS.
+    /// A sizeless control client is ignored for window sizing, so tmux keeps
+    /// each window at the size it was left at on the previous detach rather than
+    /// reflowing every app to our (possibly stale/narrow) gateway grid on
+    /// attach. The app's first layout pass then sets the real viewport via a
+    /// normal `client_size`, giving one deliberate resize like a regular
+    /// `tmux attach` instead of a lossy shrink-then-grow. ROOTSHELL-TMUX
+    /// (id=viewer-startup-pause-only)
+    enable_pause,
+
     /// Subscribe to each window's active-pane title via `refresh-client -B`.
     /// tmux then emits `%subscription-changed` whenever a window's
     /// `#{pane_title}` (`#T`) changes, which the viewer maps onto the tab
@@ -3436,6 +3453,7 @@ const Command = union(enum) {
             .pane_visible,
             .pane_state,
             .tmux_version,
+            .enable_pause,
             .subscribe_titles,
             .pane_mode_query,
             .client_size,
@@ -3515,6 +3533,15 @@ const Command = union(enum) {
                 "display-message -p '{s}'\n",
                 .{comptime Format.tmux_version.comptimeFormat()},
             )),
+
+            // Enable pause-after flow control without setting a size: no `-C`,
+            // so the control client stays sizeless and tmux preserves each
+            // window's pre-detach size on attach. ROOTSHELL-TMUX
+            // (id=viewer-startup-pause-only)
+            .enable_pause => try writer.print(
+                "refresh-client -f pause-after={d}\n",
+                .{PAUSE_AFTER_SECONDS},
+            ),
 
             // Subscribe to every window's active-pane title. `@*` = all
             // windows; the format is evaluated in each window's context, so
@@ -4394,7 +4421,11 @@ test "setClientSize stores dimensions but does not queue during startup" {
     try testing.expect(viewer.command_queue.empty());
 }
 
-test "startup sends client_size with pause-after before version query" {
+test "startup enables pause-after but sends NO client size" {
+    // ROOTSHELL-TMUX (id=viewer-startup-pause-only): the first startup command
+    // must enable pause-after WITHOUT a `-C` size, so tmux keeps each window at
+    // the size it was left at on detach instead of reflowing every app to our
+    // grid on attach. The init dims (132x43) must NOT leak into a startup size.
     var viewer = try Viewer.init(testing.allocator, 132, 43);
     defer viewer.deinit();
 
@@ -4405,18 +4436,18 @@ test "startup sends client_size with pause-after before version query" {
                 .id = 1,
                 .name = "test",
             } } },
-            // First command should be refresh-client with dimensions and pause-after
             .contains_command = "refresh-client",
             .check_command = (struct {
                 fn check(_: *Viewer, cmd: []const u8) anyerror!void {
+                    // Pause-after only, no `-C`, no dimensions.
                     try testing.expectEqualStrings(
-                        "refresh-client -C 132x43 -f pause-after=200\n",
+                        "refresh-client -f pause-after=200\n",
                         cmd,
                     );
                 }
             }).check,
         },
-        // Receive client_size response, which triggers version query
+        // Pause-after response triggers the version query (display-message).
         .{
             .input = .{ .tmux = blockEnd("") },
             .contains_command = "display-message",
@@ -4425,6 +4456,25 @@ test "startup sends client_size with pause-after before version query" {
             .input = .{ .tmux = .exit },
             .contains_tags = &.{.exit},
         },
+    });
+}
+
+test "post-startup app resize sends a sized refresh-client -C" {
+    // After the sizeless startup, the app's first layout reports the real
+    // viewport; that MUST go out as a sized `refresh-client -C`, which is what
+    // actually drives tmux to (re)size the windows. ROOTSHELL-TMUX
+    // (id=viewer-startup-pause-only)
+    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    defer viewer.deinit();
+    try driveStartupOneWindow(&viewer);
+
+    viewer.setClientSize(150, 40);
+    try testViewer(&viewer, &.{
+        .{
+            .input = .{ .tmux = .{ .output = .{ .pane_id = 0, .data = "x" } } },
+            .contains_command = "refresh-client -C 150x40",
+        },
+        .{ .input = .{ .tmux = blockEnd("") } },
     });
 }
 

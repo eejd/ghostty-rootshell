@@ -876,6 +876,7 @@ pub const StreamHandler = struct {
                     .continue_pane => 9,
                     .pane_color_report => 10,
                     .user => 11,
+                    .enable_pause => 12,
                 } else 0
             else
                 0;
