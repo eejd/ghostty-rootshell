@@ -43,9 +43,9 @@ const log = std.log.scoped(.io_tmux);
 /// (e.g., pane_id 5 corresponds to `%5`).
 pane_id: usize,
 
-/// The tmux window ID this pane belongs to. Used to send `select-window`
-/// when the surface gains focus, keeping tmux's active window in sync
-/// with Ghostty's focused tab.
+/// The tmux window ID this pane belongs to. Identification/bookkeeping
+/// only: the backend no longer sends `select-window` on focus gain (the
+/// app echoes user-initiated focus explicitly — see focusGained).
 window_id: usize,
 
 /// Pointer to the viewer-owned terminal for this pane. When set, the
@@ -292,61 +292,31 @@ fn wakeRenderer(ctx: ?*anyopaque) void {
     wakeup.notify() catch {};
 }
 
-/// Focus gained/lost notification. When a Ghostty surface backed by a
-/// tmux pane gains focus, send `select-pane` to tell tmux which pane
-/// is active. This keeps tmux's active pane in sync with Ghostty's
-/// focused surface.
+/// Focus gained/lost notification. The tmux backend deliberately sends
+/// NOTHING here. It used to echo `select-window` + `select-pane` on every
+/// surface focus gain, but a surface gains focus both from user intent AND
+/// programmatically (following a remote client's %window-pane-changed, view
+/// reparenting after a layout change, focus watchdog re-asserts). Echoing
+/// the programmatic gains is catastrophic with two clients attached to the
+/// same session: each client follows notifications one step behind its own
+/// echoes, so a single divergence (e.g. a split) becomes a self-sustaining
+/// %window-pane-changed oscillation — and because every command also makes
+/// its client tmux's "latest" client, the window size ping-pongs between
+/// differently-sized clients in an infinite %layout-change storm.
 ///
-/// The feedback loop (select-pane → %window-pane-changed → set_focus →
-/// grabFocus → focusCallback) is naturally broken by the deduplication
-/// guard in Surface.focusCallback: if the surface is already focused,
-/// the callback is a no-op.
+/// Only the APP knows whether a focus gain was user-initiated, so the app
+/// now sends select-window/select-pane explicitly on user focus changes
+/// (tap, split navigation, tab switch) via the tracked command path
+/// (ghostty_surface_tmux_command). ROOTSHELL-TMUX
+/// (id=tmux-select-pane-user-only)
 pub fn focusGained(
     self: *Tmux,
     td: *termio.Termio.ThreadData,
     focused: bool,
 ) !void {
     assert(td.backend == .tmux);
-
-    // Only send select commands when this surface gains focus.
-    // Losing focus is a no-op — the pane that gains focus will
-    // send its own select-pane/select-window.
-    if (!focused) return;
-    self.selectWindow();
-    self.selectPane();
-}
-
-/// Send a `select-pane` command to tmux targeting this backend's pane.
-fn selectPane(self: *Tmux) void {
-    var buf: [64]u8 = undefined;
-    const cmd = std.fmt.bufPrint(&buf, "select-pane -t %{d}\n", .{
-        self.pane_id,
-    }) catch |err| {
-        log.warn("select-pane command too large for buffer err={}", .{err});
-        return;
-    };
-
-    self.control_writer.write(cmd) catch |err| {
-        log.warn("failed to send select-pane err={}", .{err});
-    };
-}
-
-/// Send a `select-window` command to tmux targeting this backend's
-/// window. This ensures tmux's active window matches the Ghostty tab
-/// that received focus, which is necessary for multi-window sessions
-/// where switching tabs must also switch the tmux current window.
-fn selectWindow(self: *Tmux) void {
-    var buf: [64]u8 = undefined;
-    const cmd = std.fmt.bufPrint(&buf, "select-window -t @{d}\n", .{
-        self.window_id,
-    }) catch |err| {
-        log.warn("select-window command too large for buffer err={}", .{err});
-        return;
-    };
-
-    self.control_writer.write(cmd) catch |err| {
-        log.warn("failed to send select-window err={}", .{err});
-    };
+    _ = self;
+    _ = focused;
 }
 
 /// Notify the tmux backend of a terminal resize. This sends a
@@ -1200,74 +1170,6 @@ test "tmux relay: conversion preserves data across WriteReq size boundaries" {
             else => unreachable,
         }
     }
-}
-
-test "selectPane sends select-pane command" {
-    const alloc = testing.allocator;
-    var writer = TestControlWriter.init(alloc);
-    defer writer.deinit();
-
-    var tmux = Tmux.init(.{
-        .pane_id = 7,
-        .window_id = 0,
-        .control_writer = writer.controlWriter(),
-    });
-
-    tmux.selectPane();
-
-    try testing.expectEqual(@as(usize, 1), writer.commands.items.len);
-    try testing.expectEqualStrings("select-pane -t %7\n", writer.lastCommand().?);
-}
-
-test "selectPane with large pane_id" {
-    const alloc = testing.allocator;
-    var writer = TestControlWriter.init(alloc);
-    defer writer.deinit();
-
-    var tmux = Tmux.init(.{
-        .pane_id = 99999,
-        .window_id = 0,
-        .control_writer = writer.controlWriter(),
-    });
-
-    tmux.selectPane();
-
-    try testing.expectEqual(@as(usize, 1), writer.commands.items.len);
-    try testing.expectEqualStrings("select-pane -t %99999\n", writer.lastCommand().?);
-}
-
-test "selectWindow sends select-window command" {
-    const alloc = testing.allocator;
-    var writer = TestControlWriter.init(alloc);
-    defer writer.deinit();
-
-    var tmux = Tmux.init(.{
-        .pane_id = 3,
-        .window_id = 5,
-        .control_writer = writer.controlWriter(),
-    });
-
-    tmux.selectWindow();
-
-    try testing.expectEqual(@as(usize, 1), writer.commands.items.len);
-    try testing.expectEqualStrings("select-window -t @5\n", writer.lastCommand().?);
-}
-
-test "selectWindow with large window_id" {
-    const alloc = testing.allocator;
-    var writer = TestControlWriter.init(alloc);
-    defer writer.deinit();
-
-    var tmux = Tmux.init(.{
-        .pane_id = 0,
-        .window_id = 99999,
-        .control_writer = writer.controlWriter(),
-    });
-
-    tmux.selectWindow();
-
-    try testing.expectEqual(@as(usize, 1), writer.commands.items.len);
-    try testing.expectEqualStrings("select-window -t @99999\n", writer.lastCommand().?);
 }
 
 test "tmuxCommand sends raw command to control writer" {
