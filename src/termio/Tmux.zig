@@ -126,8 +126,12 @@ pub const ParentWriter = struct {
 
     fn writeFn(context: *anyopaque, data: []const u8) ControlWriter.WriteError!void {
         const self: *ParentWriter = @ptrCast(@alignCast(context));
-        const msg = termio.Message.writeReq(self.alloc, data) catch
+        const msg = termio.Message.writeReq(self.alloc, data) catch {
+            // A dropped control command (select-pane, send-keys, ...) desyncs
+            // tmux state silently; make the drop visible.
+            log.warn("failed to allocate tmux control command, dropping {} bytes", .{data.len});
             return error.WriteFailed;
+        };
         // Pass null for the mutex: this writer is called from the
         // parent's IO thread (see Threading Contract above) which does
         // NOT hold the renderer mutex. The slow-path in Mailbox.send

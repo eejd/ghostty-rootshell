@@ -929,6 +929,13 @@ pub const Viewer = struct {
             self.windows_arena.promote(self.alloc).deinit();
         }
         {
+            // Normal on a mid-activity detach, but on an unexplained teardown a
+            // non-empty queue points at lost command responses — log the depth
+            // so a desync is diagnosable from the shutdown trace.
+            if (!self.command_queue.empty()) log.info(
+                "viewer deinit with {} unanswered queued commands",
+                .{self.command_queue.len()},
+            );
             var it = self.command_queue.iterator(.forward);
             while (it.next()) |command| command.deinit(self.alloc);
             self.command_queue.deinit(self.alloc);
@@ -1283,6 +1290,20 @@ pub const Viewer = struct {
         // The probe the stream handler is about to send re-arms this to 1.
         self.outstanding_resync_probes = 0;
 
+        // Drop buffered per-pane query replies. Panes are preserved across the
+        // resync, so replies buffered before the desync would otherwise flush
+        // after recovery (`flushPaneResponses`) — stale bytes delivered to a
+        // pane app that stopped waiting for them. ROOTSHELL-TMUX
+        // (id=viewer-force-resync-drop-responses)
+        {
+            var panes_it = self.panes.iterator();
+            while (panes_it.next()) |kv| {
+                const pane = kv.value_ptr.*;
+                for (pane.responses.items) |chunk| self.alloc.free(chunk);
+                pane.responses.clearRetainingCapacity();
+            }
+        }
+
         // Recycle the action arena so a stale action slice can't alias freed
         // memory after the state flip.
         {
@@ -1602,26 +1623,43 @@ pub const Viewer = struct {
             // The active pane changed in tmux. Forward to the caller
             // so it can update focus to the correct window and pane.
             .window_pane_changed => |info| {
-                for (self.windows.items) |*window| {
-                    if (window.id == info.window_id) {
-                        window.active_pane_id = info.pane_id;
-                        break;
+                // The notification can race ahead of the pane's creation (a
+                // split's %window-pane-changed can land before our layout
+                // refresh tracked the new pane). Recording an untracked id
+                // would project a focus op for a nonexistent pane into every
+                // later reconcile; refresh the window list instead, which
+                // re-reads layouts AND active panes. Must NOT return early:
+                // the command-pump tail below is what emits the queued
+                // list-windows when nothing is in flight. ROOTSHELL-TMUX
+                // (id=viewer-pane-changed-untracked)
+                if (!self.panes.contains(info.pane_id)) {
+                    log.info("window-pane-changed for untracked pane={}, refreshing window list", .{info.pane_id});
+                    self.refreshWindowList() catch {
+                        log.warn("failed to handle window pane change, becoming defunct", .{});
+                        return self.defunct();
+                    };
+                } else {
+                    for (self.windows.items) |*window| {
+                        if (window.id == info.window_id) {
+                            window.active_pane_id = info.pane_id;
+                            break;
+                        }
                     }
-                }
 
-                var arena = self.action_arena.promote(self.alloc);
-                defer self.action_arena = arena.state;
-                actions.append(arena.allocator(), .{
-                    .focus = .{
-                        .window_id = info.window_id,
-                        .pane_id = info.pane_id,
-                    },
-                }) catch {
-                    log.warn("failed to queue focus action for window={} pane={}", .{
-                        info.window_id,
-                        info.pane_id,
-                    });
-                };
+                    var arena = self.action_arena.promote(self.alloc);
+                    defer self.action_arena = arena.state;
+                    actions.append(arena.allocator(), .{
+                        .focus = .{
+                            .window_id = info.window_id,
+                            .pane_id = info.pane_id,
+                        },
+                    }) catch {
+                        log.warn("failed to queue focus action for window={} pane={}", .{
+                            info.window_id,
+                            info.pane_id,
+                        });
+                    };
+                }
             },
 
             // We ignore this one. It means a session was created or
@@ -6112,6 +6150,132 @@ test "window_pane_changed produces focus action" {
             }).check,
         },
     });
+}
+
+test "window_pane_changed for untracked pane refreshes window list" {
+    // ROOTSHELL-TMUX (id=viewer-pane-changed-untracked): a
+    // %window-pane-changed naming a pane we don't track yet (it raced ahead
+    // of the layout refresh) must NOT record the id or emit focus for the
+    // ghost pane; it re-queries list-windows instead.
+    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    defer viewer.deinit();
+
+    try testViewer(&viewer, &.{
+        // Initial startup
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{
+            .input = .{ .tmux = .{ .session_changed = .{
+                .id = 1,
+                .name = "test",
+            } } },
+            .contains_command = "refresh-client",
+        },
+        // Receive client_size response, which triggers version query
+        .{
+            .input = .{ .tmux = blockEnd("") },
+            .contains_command = "display-message",
+        },
+        // Receive version response, which triggers list-windows
+        .{
+            .input = .{ .tmux = blockEnd("3.5a") },
+            .contains_command = "list-windows",
+        },
+        // Receive initial window layout with one pane
+        .{
+            .input = .{ .tmux = blockEnd(
+                \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
+            ) },
+            .contains_tags = &.{ .windows, .command },
+        },
+        // Complete all capture-pane commands for pane 0, then pane_state
+        // and the trailing title subscription.
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        // Queue should now be empty
+        .{
+            .input = .{ .tmux = blockEnd("") },
+            .check = (struct {
+                fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
+                    try testing.expect(v.command_queue.empty());
+                }
+            }).check,
+        },
+        // window_pane_changed for a pane we never tracked: no focus action,
+        // active pane untouched, list-windows re-queried.
+        .{
+            .input = .{ .tmux = .{ .window_pane_changed = .{
+                .window_id = 0,
+                .pane_id = 99,
+            } } },
+            .contains_command = "list-windows",
+            .check = (struct {
+                fn check(v: *Viewer, actions: []const Viewer.Action) anyerror!void {
+                    try testing.expectEqual(@as(usize, 0), v.windows.items[0].active_pane_id);
+                    for (actions) |action| try testing.expect(action != .focus);
+                }
+            }).check,
+        },
+    });
+}
+
+test "forceResync drops buffered pane responses" {
+    // ROOTSHELL-TMUX (id=viewer-force-resync-drop-responses): panes survive a
+    // live resync, so query replies buffered before the desync must be dropped
+    // or they'd flush as stale bytes into the pane app after recovery.
+    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    defer viewer.deinit();
+
+    try testViewer(&viewer, &.{
+        // Initial startup
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{
+            .input = .{ .tmux = .{ .session_changed = .{
+                .id = 1,
+                .name = "test",
+            } } },
+            .contains_command = "refresh-client",
+        },
+        .{
+            .input = .{ .tmux = blockEnd("") },
+            .contains_command = "display-message",
+        },
+        .{
+            .input = .{ .tmux = blockEnd("3.5a") },
+            .contains_command = "list-windows",
+        },
+        .{
+            .input = .{ .tmux = blockEnd(
+                \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
+            ) },
+            .contains_tags = &.{ .windows, .command },
+        },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{
+            .input = .{ .tmux = blockEnd("") },
+            .check = (struct {
+                fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
+                    try testing.expect(v.command_queue.empty());
+                }
+            }).check,
+        },
+    });
+
+    const pane = viewer.panes.get(0).?;
+    try pane.responses.append(
+        testing.allocator,
+        try testing.allocator.dupe(u8, "\x1b[?0u"),
+    );
+
+    viewer.forceResync();
+    try testing.expect(viewer.isResyncing());
+    try testing.expectEqual(@as(usize, 0), pane.responses.items.len);
 }
 
 test "Action.format handles focus action" {

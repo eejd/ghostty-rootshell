@@ -280,6 +280,8 @@ pub const StreamHandler = struct {
         // they don't leak until the tmux server sends an exit.
         if (comptime tmux_enabled) { // ROOTSHELL-TMUX (id=streamhandler-changeconfig-disable): tear down viewer if tmux disabled at runtime
             if (self.tmux_control_mode and !config.tmux_control_mode) {
+                // See id=streamhandler-resume-pending-clear.
+                self.tmux_resume_pending = false;
                 if (self.tmux_viewer) |viewer| {
                     self.sendEmptyTopologySnapshot();
                     viewer.deinit();
@@ -367,6 +369,11 @@ pub const StreamHandler = struct {
     /// (id=streamhandler-tmux-teardown)
     fn tmuxTeardownViewer(self: *StreamHandler) void {
         if (comptime !tmux_enabled) return;
+        // A resume that was pending when the viewer died is no longer valid:
+        // left set, it would flip the NEXT real control-mode entry (a fresh
+        // `tmux -CC attach`) into resync and drain its clean startup
+        // handshake as stale bytes. ROOTSHELL-TMUX (id=streamhandler-resume-pending-clear)
+        self.tmux_resume_pending = false;
         const viewer = self.tmux_viewer orelse return;
         // Prune all tmux windows/panes so child surfaces are closed.
         self.sendEmptyTopologySnapshot();

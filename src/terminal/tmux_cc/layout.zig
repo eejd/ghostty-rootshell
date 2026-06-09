@@ -281,6 +281,9 @@ pub const Layout = struct {
             // A leaf pane was not found in the resolver. This is a
             // normal condition (pane not yet created), not an error.
             // Deinit the arena explicitly since errdefer won't fire.
+            // Logged so a layout that NEVER resolves (lost panes, not a
+            // transient ordering gap) is visible in the trace.
+            log.debug("buildSplitTree: unresolved leaf pane, returning empty tree ({} nodes)", .{node_count});
             arena.deinit();
             return Tree.empty;
         };
