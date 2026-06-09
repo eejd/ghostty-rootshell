@@ -70,27 +70,6 @@ const SENT_FIFO_WARN = 4096;
 /// to leave a pane paused. ROOTSHELL-TMUX (id=pause-after-seconds)
 const PAUSE_AFTER_SECONDS = 200;
 
-/// Whether a tmux version string (e.g. "3.5a", "next-3.4", "3.1") parses to at
-/// least `major`.`minor`. Conservative: returns false when a leading
-/// major.minor can't be parsed, so a feature gated on this stays OFF for an
-/// unknown/old server. ROOTSHELL-TMUX (id=tmux-version-at-least)
-fn tmuxVersionAtLeast(version: []const u8, major: u32, minor: u32) bool {
-    // Skip any non-digit prefix (e.g. "next-").
-    var i: usize = 0;
-    while (i < version.len and (version[i] < '0' or version[i] > '9')) i += 1;
-    const rest = version[i..];
-    const dot = std.mem.indexOfScalar(u8, rest, '.') orelse return false;
-    const maj = std.fmt.parseInt(u32, rest[0..dot], 10) catch return false;
-    if (maj != major) return maj > major;
-    // Minor: leading digits only ("5a" -> 5).
-    const after_dot = rest[dot + 1 ..];
-    var j: usize = 0;
-    while (j < after_dot.len and after_dot[j] >= '0' and after_dot[j] <= '9') j += 1;
-    if (j == 0) return false;
-    const min = std.fmt.parseInt(u32, after_dot[0..j], 10) catch return false;
-    return min >= minor;
-}
-
 /// A viewer is a tmux control mode client that attempts to create
 /// a remote view of a tmux session, including providing the ability to send
 /// new input to the session.
@@ -2116,14 +2095,11 @@ pub const Viewer = struct {
                 const pane_id: usize = kv.key_ptr.*;
                 if (self.panes.contains(pane_id)) continue;
                 added = true;
-                // -N (preserve trailing whitespace) is a tmux 3.1+ flag; gate it
-                // so older servers don't %error the capture. (id=capture-preserve-trailing)
-                const preserve_trailing = tmuxVersionAtLeast(self.tmux_version, 3, 1);
                 try self.queueCommands(&.{
-                    .{ .pane_history = .{ .id = pane_id, .screen_key = .primary, .preserve_trailing = preserve_trailing } },
-                    .{ .pane_visible = .{ .id = pane_id, .screen_key = .primary, .preserve_trailing = preserve_trailing } },
-                    .{ .pane_history = .{ .id = pane_id, .screen_key = .alternate, .preserve_trailing = preserve_trailing } },
-                    .{ .pane_visible = .{ .id = pane_id, .screen_key = .alternate, .preserve_trailing = preserve_trailing } },
+                    .{ .pane_history = .{ .id = pane_id, .screen_key = .primary } },
+                    .{ .pane_visible = .{ .id = pane_id, .screen_key = .primary } },
+                    .{ .pane_history = .{ .id = pane_id, .screen_key = .alternate } },
+                    .{ .pane_visible = .{ .id = pane_id, .screen_key = .alternate } },
                 });
 
                 // Hand tmux this pane's fg/bg up front so it can answer the
@@ -3451,12 +3427,6 @@ const Command = union(enum) {
     const CapturePane = struct {
         id: usize,
         screen_key: ScreenSet.Key,
-        /// Emit `capture-pane -N` (preserve trailing whitespace, so background
-        /// color runs at line ends — status bars, colored fills — survive the
-        /// capture). Only set when tmux is >= 3.1; an unknown flag would make
-        /// capture-pane return %error on older servers. ROOTSHELL-TMUX
-        /// (id=capture-preserve-trailing)
-        preserve_trailing: bool = false,
     };
 
     pub fn deinit(self: Command, alloc: Allocator) void {
@@ -3492,32 +3462,30 @@ const Command = union(enum) {
             .pane_history => |cap| try writer.print(
                 // -p = output to stdout instead of buffer
                 // -e = output escape sequences for SGR
-                // -N vs -J (id=capture-preserve-trailing): mutually exclusive in
-                //   tmux — `-J` overrides `-N`'s trailing-whitespace preservation.
-                //   `-N` (tmux >= 3.1) emits the FULL per-cell background: every
-                //   line is serialized to the pane width with its real bg, and a
-                //   bg-reset (`\x1b[49m`) lands exactly where the grid returns to
-                //   default. That reproduces an app's background runs faithfully —
-                //   full-width fills stay full width, and a margin (the app left
-                //   default past column X) stays a margin. `-J` instead trims each
-                //   line to its last written glyph (tmux's per-line `cellused`),
-                //   dropping any background an app painted past that point with
-                //   `\x1b[K` — the source of the ragged/over-/under-filled colored
-                //   rectangles in reattached scrollback (Claude Code diffs). The
-                //   tradeoff: `-J` joins soft-wrapped rows into one logical line so
-                //   they reflow on a later resize; without it, reattached scrollback
-                //   lines stay hard-broken at the reattach width (cosmetic, only on
-                //   resize). Faithful color wins, so prefer `-N`; fall back to `-J`
-                //   only on tmux < 3.1 where `-N` is unavailable.
+                // -J = join wrapped lines (id=capture-join-wrapped). This is the
+                //   only flag that omits the `\n` between a soft-wrapped row and
+                //   its continuation (tmux cmd-capture-pane.c: a newline is emitted
+                //   iff the row is NOT GRID_LINE_WRAPPED). Feeding that joined,
+                //   newline-free run into the pane terminal lets it re-wrap at the
+                //   current width, so reattached scrollback reflows on a later
+                //   resize — matching how a native `tmux attach` behaves. The
+                //   tradeoff: `-J` implies `-T`, which makes tmux serialize each
+                //   line only to its last glyph (`cellused`, not `cellsize`), so a
+                //   background an app painted past that point with `\x1b[K` is
+                //   dropped (slightly ragged colored rectangles in reattached
+                //   scrollback, e.g. Claude Code diffs). The alternative, `-N`,
+                //   keeps the full per-cell background but emits a hard `\n` after
+                //   every row, hard-breaking soft-wrapped lines so they can never
+                //   reflow. Reflow correctness wins (iTerm2 makes the same choice);
+                //   recovering both would need a dual -N/-J capture + merge.
                 // -a = capture alternate screen (only valid for alternate)
                 // -q = quiet, don't error if alternate screen doesn't exist
                 // -S - = start at the top of history ("-")
                 // -E -1 = end at the last line of history (1 before the
                 //   visible area is -1).
                 // -t %{d} = target a specific pane ID
-                "capture-pane -p -e {s}{s}-q -S - -E -1 -t %{d}\n",
+                "capture-pane -p -e -J {s}-q -S - -E -1 -t %{d}\n",
                 .{
-                    if (cap.preserve_trailing) "-N " else "-J ",
                     if (cap.screen_key == .alternate) "-a " else "",
                     cap.id,
                 },
@@ -3525,9 +3493,8 @@ const Command = union(enum) {
 
             .pane_visible => |cap| try writer.print(
                 // See pane_history for the flags. (no -S/-E = visible area only)
-                "capture-pane -p -e {s}{s}-q -t %{d}\n",
+                "capture-pane -p -e -J {s}-q -t %{d}\n",
                 .{
-                    if (cap.preserve_trailing) "-N " else "-J ",
                     if (cap.screen_key == .alternate) "-a " else "",
                     cap.id,
                 },
@@ -3834,30 +3801,17 @@ test "subscribe_titles command formats refresh-client -B" {
     );
 }
 
-test "capture-pane uses -N (faithful bg) on tmux>=3.1 and -J fallback below, never both" {
-    // -N and -J are mutually exclusive in tmux (-J overrides -N's trailing
-    // preservation). -N emits the full per-cell background so colored runs keep
-    // their real extent; -J trims trailing cells and loses them. Modern tmux
-    // gets -N; older tmux falls back to -J (reflow over faithful color).
+test "capture-pane always uses -J (reflow) and never -N" {
+    // -J joins soft-wrapped rows (no `\n` between a wrapped row and its
+    // continuation), so reattached scrollback re-wraps at the current width and
+    // reflows on resize. -N would keep the full per-cell trailing background but
+    // hard-break every row, killing reflow. Reflow wins (see formatCommand), so
+    // both pane_history and pane_visible must always emit -J and never -N.
     inline for (&[_][]const u8{ "pane_history", "pane_visible" }) |field| {
-        {
+        inline for (&[_]ScreenSet.Key{ .primary, .alternate }) |screen_key| {
             const cmd: Command = @unionInit(Command, field, .{
                 .id = 7,
-                .screen_key = .primary,
-                .preserve_trailing = true,
-            });
-            var builder: std.Io.Writer.Allocating = .init(testing.allocator);
-            defer builder.deinit();
-            try cmd.formatCommand(&builder.writer);
-            const result = builder.writer.buffered();
-            try testing.expect(std.mem.containsAtLeast(u8, result, 1, "-N "));
-            try testing.expect(!std.mem.containsAtLeast(u8, result, 1, "-J"));
-        }
-        {
-            const cmd: Command = @unionInit(Command, field, .{
-                .id = 7,
-                .screen_key = .primary,
-                .preserve_trailing = false,
+                .screen_key = screen_key,
             });
             var builder: std.Io.Writer.Allocating = .init(testing.allocator);
             defer builder.deinit();
@@ -5050,17 +5004,13 @@ test "updateColors refreshes existing pane terminal colors live" {
                     const new_bg: color.RGB = .{ .r = 0xaa, .g = 0xbb, .b = 0xcc };
                     const new_cursor: color.RGB = .{ .r = 0x77, .g = 0x88, .b = 0x99 };
                     const accent: color.RGB = .{ .r = 0x12, .g = 0x34, .b = 0x56 };
-
                     try testing.expectEqual(1, v.panes.count());
                     const pane0 = v.panes.get(0).?;
-
                     // Build a themed palette by tweaking one default entry so we
                     // can prove the palette propagates through changeDefault.
                     var new_palette = pane0.terminal.colors.palette.original;
                     new_palette[5] = accent;
-
                     v.updateColors(new_fg, new_bg, new_cursor, new_palette);
-
                     // The existing pane terminal (what the child renderer reads)
                     // picked up the full new theme live (bg/fg/cursor/palette).
                     try testing.expectEqual(new_fg, pane0.terminal.colors.foreground.default.?);
@@ -5069,7 +5019,6 @@ test "updateColors refreshes existing pane terminal colors live" {
                     try testing.expectEqual(accent, pane0.terminal.colors.palette.current[5]);
                     // And it was marked dirty so the next frame fully rebuilds.
                     try testing.expect(pane0.terminal.flags.dirty.palette);
-
                     // Future panes inherit the same colors via self.colors.
                     try testing.expectEqual(new_fg, v.colors.foreground.default.?);
                     try testing.expectEqual(new_bg, v.colors.background.default.?);
@@ -5748,62 +5697,6 @@ test "refreshWindowList coalesces duplicate list_windows" {
             .input = .{ .tmux = .exit },
             .contains_tags = &.{.exit},
         },
-    });
-}
-
-test "pane history capture reproduces background extent without over-filling a margin" {
-    // With `-N`, tmux serializes each line's FULL per-cell background and emits a
-    // bg-reset exactly where the grid returns to default, so feeding the capture
-    // straight into the pane terminal reproduces the app's colors faithfully —
-    // a colored run keeps its real extent and the default region past it (an
-    // app-defined margin) stays default. Guards against the regression where we
-    // re-painted the background to the pane edge and over-filled past the margin.
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
-    defer viewer.deinit();
-
-    try testViewer(&viewer, &.{
-        .{ .input = .{ .tmux = blockEnd("") } },
-        .{
-            .input = .{ .tmux = .{ .session_changed = .{ .id = 0, .name = "0" } } },
-            .contains_command = "refresh-client",
-        },
-        .{ .input = .{ .tmux = blockEnd("") }, .contains_command = "display-message" },
-        .{ .input = .{ .tmux = blockEnd("3.1") }, .contains_command = "list-windows" },
-        // Single-pane window; completing list-windows queues capture-pane.
-        .{
-            .input = .{ .tmux = blockEnd(
-                \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
-            ) },
-            .contains_command = "capture-pane",
-        },
-        // pane_history (primary) response in `-N` form: green (palette 2) under
-        // "+ GREEN", then a bg-reset (`\x1b[49m`) marking the app's margin — the
-        // rest of the line is default and must NOT be painted green.
-        .{
-            .input = .{ .tmux = blockEnd("\x1b[42m+ GREEN\x1b[49m") },
-            .check = (struct {
-                fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
-                    const pane: *Viewer.Pane = v.panes.getEntry(0).?.value_ptr.*;
-                    const pages = &pane.terminal.screens.active.pages;
-                    // The line scrolled into scrollback (history y=0). A cell
-                    // inside "+ GREEN" carries a non-default (green) style.
-                    {
-                        const lc = pages.getCell(.{ .history = .{ .x = 3, .y = 0 } }).?;
-                        try testing.expect(lc.cell.content_tag == .codepoint);
-                        try testing.expect(lc.cell.style_id != 0);
-                    }
-                    // A cell well past the reset stays a plain default cell: no
-                    // glyph, no background style, no over-filled palette color.
-                    {
-                        const lc = pages.getCell(.{ .history = .{ .x = 40, .y = 0 } }).?;
-                        try testing.expect(lc.cell.content_tag == .codepoint);
-                        try testing.expectEqual(@as(u21, 0), lc.cell.content.codepoint);
-                        try testing.expect(lc.cell.style_id == 0);
-                    }
-                }
-            }).check,
-        },
-        .{ .input = .{ .tmux = .exit }, .contains_tags = &.{.exit} },
     });
 }
 
@@ -7337,17 +7230,6 @@ test "pane state alternate_on swaps captured screens so the alt app is shown" {
             .contains_tags = &.{.exit},
         },
     });
-}
-
-test "tmuxVersionAtLeast" {
-    try testing.expect(tmuxVersionAtLeast("3.1", 3, 1));
-    try testing.expect(tmuxVersionAtLeast("3.5a", 3, 1));
-    try testing.expect(tmuxVersionAtLeast("next-3.4", 3, 1));
-    try testing.expect(tmuxVersionAtLeast("4.0", 3, 1));
-    try testing.expect(!tmuxVersionAtLeast("3.0a", 3, 1));
-    try testing.expect(!tmuxVersionAtLeast("2.9", 3, 1));
-    try testing.expect(!tmuxVersionAtLeast("", 3, 1));
-    try testing.expect(!tmuxVersionAtLeast("garbage", 3, 1));
 }
 
 fn testPaneStateMouseModes(
