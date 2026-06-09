@@ -291,15 +291,24 @@ pub const StreamHandler = struct {
         }
         self.tmux_control_mode = config.tmux_control_mode;
         // A config reload may have changed the theme; refresh the tmux viewer's
-        // colors and re-report them to tmux so OSC 10/11 color queries reflect
-        // the new background/foreground. Read from `config` directly because
+        // colors (background/foreground/cursor + ANSI palette) so existing pane
+        // terminals re-render with the new theme and OSC 10/11 color queries
+        // answer correctly. Read from `config` directly because
         // Termio.changeConfig updates `self.terminal.colors` only AFTER this
         // handler returns.
         if (comptime tmux_enabled) { // ROOTSHELL-TMUX (id=streamhandler-changeconfig-colors): re-report pane colors on theme change
             if (self.tmux_viewer) |viewer| {
+                // Resolve the cursor color exactly as Termio.changeConfig does
+                // (config.cursor_color is optional, and so is its RGB form).
+                const cursor: ?terminal.color.RGB = cursor: {
+                    const cc = config.cursor_color orelse break :cursor null;
+                    break :cursor cc.toTerminalRGB() orelse break :cursor null;
+                };
                 viewer.updateColors(
                     config.foreground.toTerminalRGB(),
                     config.background.toTerminalRGB(),
+                    cursor,
+                    config.palette,
                 );
                 // Flush the queued color reports now (the queue may be idle).
                 self.pumpTmuxCommandQueue(viewer);

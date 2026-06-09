@@ -1033,20 +1033,65 @@ pub const Viewer = struct {
         }
     }
 
-    /// Update the themed colors used for new pane terminals, and re-report
-    /// them to tmux for every existing pane so OSC 10/11 queries reflect the
-    /// current theme after a config reload. Only the `default` slot is changed
-    /// (mirroring how `Termio.changeConfig` applies config colors), so a live
-    /// OSC override on the gateway still wins. The report is queued only when
-    /// we are in the `command_queue` state and have concrete colors; otherwise
-    /// the color update still takes effect for future panes.
+    /// Update the themed colors after a config reload, applying them to BOTH
+    /// future pane terminals (via `self.colors`, consumed by `initLayout`) and
+    /// every EXISTING pane terminal so the live render reflects the new theme
+    /// immediately, and re-report fg/bg to tmux so OSC 10/11 queries answer
+    /// with the current theme. Covers the full `Terminal.Colors` set the theme
+    /// can change: background, foreground, cursor, and the 256-color palette —
+    /// mirroring how `Termio.changeConfig` applies config colors. Only the
+    /// `default` slot (and the palette `original`/default entries) is changed,
+    /// so a live OSC override still wins: `DynamicPalette.changeDefault`
+    /// preserves OSC-4 overrides and `DynamicRGB.default` sits under any OSC
+    /// 10/11/12 override. `cursor` is applied as-given (a full snapshot, so a
+    /// null clears the themed cursor) because the caller always passes the
+    /// complete current config; `fg`/`bg`/`palette` keep their present-guards
+    /// only defensively (the caller always supplies them). The fg/bg report is
+    /// queued only when we are in the `command_queue` state and have concrete
+    /// colors; the terminal-color refresh above takes effect regardless.
     pub fn updateColors(
         self: *Viewer,
         fg: ?color.RGB,
         bg: ?color.RGB,
+        cursor: ?color.RGB,
+        palette: ?color.Palette,
     ) void {
         if (fg) |c| self.colors.foreground.default = c;
         if (bg) |c| self.colors.background.default = c;
+        self.colors.cursor.default = cursor;
+        if (palette) |p| self.colors.palette.changeDefault(p);
+
+        // Refresh the colors of panes that already exist so the live render
+        // picks up the new theme immediately. New panes already inherit
+        // `self.colors` via `initLayout`; existing panes were built once and
+        // never refreshed, so without this they stay stale until a
+        // detach/reattach rebuilds them. Mirrors how `Termio.changeConfig`
+        // updates a normal surface's terminal colors. Runs regardless of viewer
+        // state (NOT gated on `.command_queue` like the OSC report below).
+        // ROOTSHELL-TMUX (id=viewer-update-existing-pane-colors)
+        {
+            var pit = self.panes.iterator();
+            while (pit.next()) |kv| {
+                const pane = kv.value_ptr.*;
+                // Hold the child's renderer mutex (if a child is attached)
+                // while mutating the terminal the child's renderer thread
+                // reads, the same discipline as the `initLayout` resize path.
+                // `lockRenderer` no-ops when no child is attached.
+                const m = pane.lockRenderer();
+                defer pane.unlockRenderer(m);
+                if (fg) |c| pane.terminal.colors.foreground.default = c;
+                if (bg) |c| pane.terminal.colors.background.default = c;
+                pane.terminal.colors.cursor.default = cursor;
+                if (palette) |p| pane.terminal.colors.palette.changeDefault(p);
+                // Mark colors dirty so the next frame does a full rebuild and
+                // default/palette cells re-resolve, matching the `dirty.palette`
+                // set in `Termio.changeConfig`.
+                pane.terminal.flags.dirty.palette = true;
+                // Wake the child's renderer so an idle pane (no pending output)
+                // repaints. No-ops when no child is attached.
+                wakePane(pane);
+            }
+        }
 
         if (self.state != .command_queue) return;
         const rfg = self.colors.foreground.get() orelse return;
@@ -4973,6 +5018,67 @@ test "layout change" {
             .input = .{ .tmux = .exit },
             .contains_tags = &.{.exit},
         },
+    });
+}
+
+test "updateColors refreshes existing pane terminal colors live" {
+    // A theme change (config reload) must update the colors of panes that
+    // ALREADY exist, not just future panes. Before the fix this only updated
+    // `self.colors` (consumed at pane creation), so live panes stayed stale
+    // until a detach/reattach rebuilt them. ROOTSHELL-TMUX
+    // (id=viewer-update-existing-pane-colors)
+    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    defer viewer.deinit();
+
+    try testViewer(&viewer, &.{
+        // Startup handshake through the first window layout with one pane.
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{
+            .input = .{ .tmux = .{ .session_changed = .{ .id = 1, .name = "test" } } },
+            .contains_command = "refresh-client",
+        },
+        .{ .input = .{ .tmux = blockEnd("") }, .contains_command = "display-message" },
+        .{ .input = .{ .tmux = blockEnd("3.5a") }, .contains_command = "list-windows" },
+        .{
+            .input = .{ .tmux = blockEnd(
+                \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
+            ) },
+            .contains_tags = &.{ .windows, .command },
+            .check = (struct {
+                fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
+                    const new_fg: color.RGB = .{ .r = 0x11, .g = 0x22, .b = 0x33 };
+                    const new_bg: color.RGB = .{ .r = 0xaa, .g = 0xbb, .b = 0xcc };
+                    const new_cursor: color.RGB = .{ .r = 0x77, .g = 0x88, .b = 0x99 };
+                    const accent: color.RGB = .{ .r = 0x12, .g = 0x34, .b = 0x56 };
+
+                    try testing.expectEqual(1, v.panes.count());
+                    const pane0 = v.panes.get(0).?;
+
+                    // Build a themed palette by tweaking one default entry so we
+                    // can prove the palette propagates through changeDefault.
+                    var new_palette = pane0.terminal.colors.palette.original;
+                    new_palette[5] = accent;
+
+                    v.updateColors(new_fg, new_bg, new_cursor, new_palette);
+
+                    // The existing pane terminal (what the child renderer reads)
+                    // picked up the full new theme live (bg/fg/cursor/palette).
+                    try testing.expectEqual(new_fg, pane0.terminal.colors.foreground.default.?);
+                    try testing.expectEqual(new_bg, pane0.terminal.colors.background.default.?);
+                    try testing.expectEqual(new_cursor, pane0.terminal.colors.cursor.default.?);
+                    try testing.expectEqual(accent, pane0.terminal.colors.palette.current[5]);
+                    // And it was marked dirty so the next frame fully rebuilds.
+                    try testing.expect(pane0.terminal.flags.dirty.palette);
+
+                    // Future panes inherit the same colors via self.colors.
+                    try testing.expectEqual(new_fg, v.colors.foreground.default.?);
+                    try testing.expectEqual(new_bg, v.colors.background.default.?);
+                    try testing.expectEqual(new_cursor, v.colors.cursor.default.?);
+                    try testing.expectEqual(accent, v.colors.palette.current[5]);
+                }
+            }).check,
+        },
+        .{ .input = .{ .tmux = .exit }, .contains_tags = &.{.exit} },
     });
 }
 
