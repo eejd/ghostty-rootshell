@@ -138,6 +138,18 @@ pub const Parser = struct {
     /// (id=control-recover-request)
     recover_pending: bool = false,
 
+    /// Whether a `%exit` notification has been parsed. tmux's real closing ST
+    /// (7-bit `ESC \` or 8-bit 0x9C) always FOLLOWS `%exit`, so this is the
+    /// gate for honoring an ST as the control-mode terminator (see
+    /// `canTerminate`). Gating on plain `.idle` was not enough: a stalled
+    /// transport that later redelivers mid-stream bytes can land an arbitrary
+    /// byte in idle, and if that byte happens to be 0x9C (a common UTF-8
+    /// continuation byte in CJK content) the DCS would silently unhook with
+    /// the viewer still alive — leaking the rest of the protocol into the
+    /// terminal as text and defeating the stray-byte self-heal that would
+    /// otherwise resync the channel. ROOTSHELL-TMUX (id=control-st-after-exit)
+    saw_exit: bool = false,
+
     /// Well-formed-but-mismatched block terminators seen since the current
     /// `%begin` (reset on block completion and on `beginResync`). tmux guarantees
     /// the `%end`/`%error` tuple matches its `%begin`, so a non-matching guard
@@ -400,21 +412,21 @@ pub const Parser = struct {
         return null;
     }
 
-    /// Whether a 7-bit ST (`ESC \`) seen by the DCS handler right now should be
-    /// honored as the tmux control-mode terminator. Only true between
-    /// notifications (`idle`) or once broken — that's where tmux's real closing
-    /// ST appears (it follows a `%exit` line, which resets us to idle). Inside a
-    /// notification or a command-response block, `ESC \` is content (e.g. an OSC
-    /// string terminator embedded in a `capture-pane -e` history replay during
-    /// attach) and must be forwarded, not treated as the end of control mode —
-    /// otherwise the remainder of the DCS stream leaks into the terminal.
-    ///
-    /// While resync-tolerant (mid-stream RESUME, not yet realigned) we are in
-    /// `.idle` but must NOT terminate on a stray ST in the reattach garbage —
-    /// that ST is not tmux's real closing ST. ROOTSHELL-TMUX
-    /// (id=control-resync-tolerant)
+    /// Whether an ST (7-bit `ESC \` or 8-bit 0x9C) seen by the DCS handler
+    /// right now should be honored as the tmux control-mode terminator. Only
+    /// true once a `%exit` notification has been parsed (tmux's real closing
+    /// ST always follows `%exit`) or once broken. Anywhere else an ST byte is
+    /// content or stream garbage: inside a notification or block it is e.g.
+    /// an OSC terminator embedded in a `capture-pane -e` replay, and in
+    /// `.idle` it is mid-stream data loss redelivering at an arbitrary byte
+    /// (0x9C is a common UTF-8 continuation byte in CJK content). Honoring
+    /// those silently unhooked the DCS with the viewer still alive, leaking
+    /// the rest of the protocol into the terminal as text; refusing instead
+    /// routes the byte into the parser, where the `.idle` stray-byte
+    /// self-heal (`requestRecover`) resyncs the live channel. ROOTSHELL-TMUX
+    /// (id=control-st-after-exit)
     pub fn canTerminate(self: *const Parser) bool {
-        return (self.state == .idle and !self.tolerant) or self.state == .broken;
+        return self.saw_exit or self.state == .broken;
     }
 
     /// Enter resync-tolerant mode for a mid-stream control-mode RESUME (the iOS
@@ -426,6 +438,10 @@ pub const Parser = struct {
     pub fn beginResync(self: *Parser) void {
         self.state = .idle;
         self.tolerant = true;
+        // A resync means the channel is live again; a previously parsed %exit
+        // (if any) no longer licenses an ST to terminate the DCS.
+        // ROOTSHELL-TMUX (id=control-st-after-exit)
+        self.saw_exit = false;
         // Treat the first post-resync byte as a line start so the probe-first
         // case (an idle gateway's answer is literally byte 0) is accepted.
         self.resync_at_line_start = true;
@@ -816,6 +832,9 @@ pub const Parser = struct {
             }
             self.buffer.clearRetainingCapacity();
             self.state = .idle;
+            // The closing ST follows this line; allow it to terminate the DCS.
+            // ROOTSHELL-TMUX (id=control-st-after-exit)
+            self.saw_exit = true;
             return .{ .exit = {} };
         } else if (std.mem.eql(u8, cmd, "%extended-output")) cmd: {
             // Extended output: sent instead of %output when pause-after is

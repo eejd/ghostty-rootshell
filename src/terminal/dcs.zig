@@ -726,7 +726,7 @@ test "tmux: ESC CAN / ESC SUB in block content is forwarded, not dropped" {
     try testing.expect(h.pending_esc == false);
 }
 
-test "tmux: 7-bit ST exits tmux control mode" {
+test "tmux: 7-bit ST after %exit exits tmux control mode" {
     if (comptime !build_options.tmux_control_mode) return error.SkipZigTest;
 
     const testing = std.testing;
@@ -742,6 +742,16 @@ test "tmux: 7-bit ST exits tmux control mode" {
         try testing.expect(cmd.tmux == .enter);
     }
 
+    // tmux's real shutdown sequence: a %exit notification line, THEN the ST.
+    // ROOTSHELL-TMUX (id=control-st-after-exit)
+    for ("%exit") |byte| try testing.expect(h.put(byte) == null);
+    {
+        var cmd = h.put('\n').?;
+        defer cmd.deinit();
+        try testing.expect(cmd == .tmux);
+        try testing.expect(cmd.tmux == .exit);
+    }
+
     // Send ESC \ (7-bit ST) to terminate tmux control mode
     try testing.expect(h.put(0x1B) == null);
     var cmd = h.put(0x5C).?;
@@ -749,6 +759,63 @@ test "tmux: 7-bit ST exits tmux control mode" {
     try testing.expect(cmd == .tmux);
     try testing.expect(cmd.tmux == .exit);
     try testing.expect(h.state == .inactive);
+}
+
+test "tmux: stray 0x9C in idle without %exit does not unhook; raises recover" {
+    if (comptime !build_options.tmux_control_mode) return error.SkipZigTest;
+
+    // A stalled transport redelivering mid-stream bytes can land ANY byte in
+    // the idle parser; 0x9C is a common UTF-8 continuation byte in CJK
+    // content. It must NOT be honored as the control-mode terminator (which
+    // silently leaked the rest of the protocol into the terminal with the
+    // viewer still alive); it must take the stray-byte self-heal path
+    // instead. ROOTSHELL-TMUX (id=control-st-after-exit)
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var h: Handler = .{};
+    defer h.deinit();
+
+    {
+        var cmd = h.hook(alloc, .{ .params = &.{1000}, .final = 'p' }).?;
+        defer cmd.deinit();
+        try testing.expect(cmd.tmux == .enter);
+    }
+
+    try testing.expect(h.put(0x9C) == null);
+    try testing.expect(h.state == .tmux); // still hooked
+    try testing.expect(h.tmuxTakeRecoverRequest()); // self-heal requested
+
+    // Clean up.
+    var cmd = h.unhook().?;
+    defer cmd.deinit();
+    try testing.expect(cmd.tmux == .exit);
+}
+
+test "tmux: stray ESC \\ in idle without %exit does not unhook" {
+    if (comptime !build_options.tmux_control_mode) return error.SkipZigTest;
+
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var h: Handler = .{};
+    defer h.deinit();
+
+    {
+        var cmd = h.hook(alloc, .{ .params = &.{1000}, .final = 'p' }).?;
+        defer cmd.deinit();
+        try testing.expect(cmd.tmux == .enter);
+    }
+
+    try testing.expect(h.put(0x1B) == null);
+    try testing.expect(h.put(0x5C) == null);
+    try testing.expect(h.state == .tmux); // still hooked
+    try testing.expect(h.tmuxTakeRecoverRequest()); // stray ESC raised self-heal
+
+    // Clean up.
+    var cmd = h.unhook().?;
+    defer cmd.deinit();
+    try testing.expect(cmd.tmux == .exit);
 }
 
 test "pending_esc is cleared on hook" {

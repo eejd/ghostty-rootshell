@@ -70,6 +70,18 @@ const SENT_FIFO_WARN = 4096;
 /// to leave a pane paused. ROOTSHELL-TMUX (id=pause-after-seconds)
 const PAUSE_AFTER_SECONDS = 200;
 
+/// Maximum scrollback lines replayed per pane at attach (`capture-pane
+/// -S -<N>`; tmux clamps to available history, so shorter panes are
+/// unaffected). Previously `-S -` (unbounded), which made the attach replay
+/// proportional to the pane's entire history: a pane with hundreds of
+/// thousands of CJK-heavy lines produced a multi-megabyte reply in ONE
+/// command block, a burst large enough to stall the iOS app's UDP transport
+/// bidirectionally (observed: command pipeline wedged on pane_history with
+/// zero further inbound bytes). The viewer pane's own scrollback is finite
+/// anyway, so replaying more than this is pure transfer cost.
+/// ROOTSHELL-TMUX (id=pane-history-max-lines)
+const PANE_HISTORY_MAX_LINES = 10_000;
+
 /// A viewer is a tmux control mode client that attempts to create
 /// a remote view of a tmux session, including providing the ability to send
 /// new input to the session.
@@ -3279,8 +3291,9 @@ pub const Viewer = struct {
                 var t: Terminal = try .init(gpa_alloc, .{
                     .cols = cols,
                     .rows = rows,
-                    // tmux replays each pane's full history via `capture-pane -S -`
-                    // (up to tmux's history-limit, default 2000 lines). The Terminal
+                    // tmux replays each pane's recent history via `capture-pane
+                    // -S -N` (bounded by PANE_HISTORY_MAX_LINES, and by tmux's
+                    // own history-limit, default 2000 lines). The Terminal
                     // default max_scrollback is only 10_000 bytes (~a few lines), which
                     // would discard almost all of it, so give panes a real scrollback
                     // budget matching ghostty's default scrollback-limit (10 MiB).
@@ -3728,13 +3741,17 @@ const Command = union(enum) {
                 //   recovering both would need a dual -N/-J capture + merge.
                 // -a = capture alternate screen (only valid for alternate)
                 // -q = quiet, don't error if alternate screen doesn't exist
-                // -S - = start at the top of history ("-")
+                // -S -N = start at most N lines above the visible top (tmux
+                //   clamps to available history). Bounded so a huge-history
+                //   pane can't produce a multi-MB reply in one block (see
+                //   PANE_HISTORY_MAX_LINES, id=pane-history-max-lines).
                 // -E -1 = end at the last line of history (1 before the
                 //   visible area is -1).
                 // -t %{d} = target a specific pane ID
-                "capture-pane -p -e -J {s}-q -S - -E -1 -t %{d}\n",
+                "capture-pane -p -e -J {s}-q -S -{d} -E -1 -t %{d}\n",
                 .{
                     if (cap.screen_key == .alternate) "-a " else "",
+                    PANE_HISTORY_MAX_LINES,
                     cap.id,
                 },
             ),
@@ -4079,6 +4096,25 @@ test "capture-pane always uses -J (reflow) and never -N" {
             try testing.expect(std.mem.containsAtLeast(u8, result, 1, "-J "));
             try testing.expect(!std.mem.containsAtLeast(u8, result, 1, "-N"));
         }
+    }
+}
+
+test "pane_history bounds the replay depth (-S -N, never -S - )" {
+    // ROOTSHELL-TMUX (id=pane-history-max-lines): an unbounded `-S -` makes
+    // the attach replay proportional to the pane's entire history; a
+    // huge-history pane then answers with a multi-MB block whose burst can
+    // stall the transport. The start line must be the bounded constant.
+    inline for (&[_]ScreenSet.Key{ .primary, .alternate }) |screen_key| {
+        const cmd: Command = .{ .pane_history = .{
+            .id = 7,
+            .screen_key = screen_key,
+        } };
+        var builder: std.Io.Writer.Allocating = .init(testing.allocator);
+        defer builder.deinit();
+        try cmd.formatCommand(&builder.writer);
+        const result = builder.writer.buffered();
+        try testing.expect(std.mem.containsAtLeast(u8, result, 1, "-S -10000 "));
+        try testing.expect(!std.mem.containsAtLeast(u8, result, 1, "-S - "));
     }
 }
 
