@@ -31,6 +31,9 @@ const String = @import("../main_c.zig").String;
 // ROOTSHELL-TMUX (id=embedded-tmux-debug-snapshot): privacy-safe scalar snapshot
 // of tmux control-mode internals, surfaced to the iOS debug log.
 const TmuxDebugSnapshot = @import("../termio/stream_handler.zig").TmuxDebugSnapshot;
+// ROOTSHELL-TMUX (id=embedded-tmux-command-with-reply): heap payload type for
+// the app-issued query message.
+const TmuxQueryCommand = @import("../termio.zig").Message.TmuxQueryCommand;
 
 const log = std.log.scoped(.embedded_window);
 
@@ -2533,6 +2536,45 @@ pub const CAPI = struct {
         } }, .unlocked);
     }
     // ROOTSHELL-TMUX END FROZEN-ABI (id=embedded-tmux-command)
+
+    // ROOTSHELL-TMUX BEGIN FROZEN-ABI (id=embedded-tmux-command-with-reply)
+    // ghostty_surface_tmux_command_with_reply lets the iOS Swift app run a tmux
+    // query (e.g. `list-sessions -F ...`, `new-session -d -s x -PF '#{session_id}'`)
+    // whose response it needs to read. The block response (or %error body) comes
+    // back via the action callback as GHOSTTY_ACTION_TMUX_COMMAND_RESPONSE,
+    // correlated by `tag` (app-chosen, echoed verbatim). If the gateway has no
+    // viewer or the query is dropped by a viewer reset before tmux answers, an
+    // error response with an empty body is delivered instead — the app should
+    // still keep its own timeout as the final backstop. Keep the signature
+    // stable. reapply: re-add this export inside the CAPI struct. See
+    // docs/tmux-control-mode-fork.md.
+    /// Queue a raw, newline-terminated tmux command through this surface's
+    /// viewer command queue and deliver its response back through the action
+    /// callback (GHOSTTY_ACTION_TMUX_COMMAND_RESPONSE) correlated by `tag`.
+    /// The bytes are copied.
+    export fn ghostty_surface_tmux_command_with_reply(
+        surface: *Surface,
+        ptr: [*]const u8,
+        len: usize,
+        tag: u32,
+    ) void {
+        const alloc = surface.app.core_app.alloc;
+        const copy = alloc.dupe(u8, ptr[0..len]) catch return;
+        const payload = alloc.create(TmuxQueryCommand) catch {
+            alloc.free(copy);
+            return;
+        };
+        payload.* = .{
+            .alloc = alloc,
+            .data = copy,
+            .tag = tag,
+        };
+        surface.core_surface.io.queueMessage(
+            .{ .tmux_query_command = payload },
+            .unlocked,
+        );
+    }
+    // ROOTSHELL-TMUX END FROZEN-ABI (id=embedded-tmux-command-with-reply)
 
     // ROOTSHELL-TMUX BEGIN FROZEN-ABI (id=embedded-tmux-debug-snapshot)
     // ghostty_surface_tmux_debug_snapshot fills a privacy-safe scalar snapshot of

@@ -146,6 +146,20 @@ pub const Message = union(enum) {
     /// Lightweight value type — fixed-size buffer, no heap allocation.
     tmux_title_changed: TmuxTitleChanged, // ROOTSHELL-TMUX (id=apprt-msg-title)
 
+    /// Response to an app-issued tmux query command (see
+    /// `ghostty_surface_tmux_command_with_reply`). Heap pointer like
+    /// `tmux_topology_changed`; the app thread owns it and must call
+    /// deinit after consuming.
+    tmux_command_response: *TmuxCommandResponse, // ROOTSHELL-TMUX (id=apprt-msg-command-response)
+
+    /// The set of sessions on the tmux server changed (or another client
+    /// attached/detached/switched). The app refreshes any session list UI.
+    tmux_sessions_changed: void, // ROOTSHELL-TMUX (id=apprt-msg-sessions-changed)
+
+    /// The identity of the session this gateway is attached to changed
+    /// (startup, switch, or rename). Lightweight fixed-buffer value.
+    tmux_session_info: TmuxSessionInfo, // ROOTSHELL-TMUX (id=apprt-msg-session-info)
+
     pub const ReportTitleStyle = enum {
         csi_21_t,
 
@@ -183,6 +197,8 @@ pub const Message = union(enum) {
     pub const TmuxFocusChanged = @import("surface_tmux.zig").TmuxFocusChanged;
     pub const TmuxTitleChanged = @import("surface_tmux.zig").TmuxTitleChanged;
     pub const TmuxTopologySnapshot = @import("surface_tmux.zig").TmuxTopologySnapshot;
+    pub const TmuxCommandResponse = @import("surface_tmux.zig").TmuxCommandResponse;
+    pub const TmuxSessionInfo = @import("surface_tmux.zig").TmuxSessionInfo;
     // ROOTSHELL-TMUX END (id=apprt-surface-tmux-types-extracted)
 };
 

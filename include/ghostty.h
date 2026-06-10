@@ -951,7 +951,37 @@ typedef enum {
   GHOSTTY_ACTION_COPY_TITLE_TO_CLIPBOARD,
   // ROOTSHELL-TMUX FROZEN-ABI (id=ghostty-h-action-enum): DO NOT REORDER (tag value).
   GHOSTTY_ACTION_TMUX_RECONCILE,
+  // ROOTSHELL-TMUX FROZEN-ABI (id=ghostty-h-session-actions): append-only; order
+  // must match apprt/action.zig Action.Key (checkGhosttyHEnum enforces it).
+  GHOSTTY_ACTION_TMUX_SESSIONS_CHANGED,
+  GHOSTTY_ACTION_TMUX_SESSION_CHANGED,
+  GHOSTTY_ACTION_TMUX_COMMAND_RESPONSE,
 } ghostty_action_tag_e;
+
+// ROOTSHELL-TMUX FROZEN-ABI (id=ghostty-h-session-actions): tmux session
+// dashboard payloads. Sync with apprt/action.zig TmuxSessionChanged /
+// TmuxCommandResponse `C` structs.
+typedef struct {
+  uint64_t session_id;
+  /// Session name. Borrowed: valid ONLY during the action callback — copy
+  /// immediately. NOT NUL-terminated; use name_len. May be NULL when empty.
+  const uint8_t* name;
+  uintptr_t name_len;
+} ghostty_action_tmux_session_changed_s;
+
+typedef struct {
+  /// App-provided correlation tag (from
+  /// ghostty_surface_tmux_command_with_reply), echoed back verbatim.
+  uint32_t tag;
+  /// True when tmux answered with %error (body is the error text) OR the
+  /// query was dropped before tmux answered it (body is empty).
+  bool is_err;
+  /// Response body (raw block content). Borrowed: valid ONLY during the
+  /// action callback — copy immediately. NOT NUL-terminated; use body_len.
+  /// May be NULL when empty.
+  const uint8_t* body;
+  uintptr_t body_len;
+} ghostty_action_tmux_command_response_s;
 
 typedef union {
   ghostty_action_split_direction_e new_split;
@@ -998,6 +1028,9 @@ typedef union {
   /// caller must free it with ghostty_tmux_reconcile_free when done applying
   /// the ops (see ghostty_tmux_reconcile_free below).
   void* tmux_reconcile;
+  // ROOTSHELL-TMUX FROZEN-ABI (id=ghostty-h-session-actions)
+  ghostty_action_tmux_session_changed_s tmux_session_changed;
+  ghostty_action_tmux_command_response_s tmux_command_response;
 } ghostty_action_u;
 
 typedef struct {
@@ -1237,7 +1270,8 @@ GHOSTTY_API void ghostty_surface_send_input(ghostty_surface_t, const char*, uint
 // parser_state: 0 inactive, 1 idle, 2 notification, 3 block, 4 broken
 // in_flight_cmd_kind: 0 none, 1 list_windows, 2 pane_history, 3 pane_visible,
 //   4 pane_state, 5 tmux_version, 6 subscribe_titles, 7 pane_mode_query,
-//   8 client_size, 9 continue_pane, 10 pane_color_report, 11 user
+//   8 client_size, 9 continue_pane, 10 pane_color_report, 11 user,
+//   12 enable_pause, 13 user_query
 // parser_last_error/viewer_last_error: 0 none, 1 stray_byte_broken,
 //   2 buffer_overflow, 3 block_mismatch, 4 control_error, 5 unexpected_block,
 //   6 defunct, 7 sent_fifo_oom, 8 resync_rebuild_failed
@@ -1291,6 +1325,7 @@ GHOSTTY_API bool ghostty_surface_tmux_debug_snapshot(ghostty_surface_t, ghostty_
 GHOSTTY_API void ghostty_surface_tmux_set_client_size(ghostty_surface_t, uint16_t, uint16_t); // ROOTSHELL-TMUX FROZEN-ABI (id=ghostty-h-set-client-size)
 GHOSTTY_API void ghostty_surface_tmux_detach(ghostty_surface_t); // ROOTSHELL-TMUX FROZEN-ABI (id=ghostty-h-tmux-detach)
 GHOSTTY_API void ghostty_surface_tmux_command(ghostty_surface_t, const char*, uintptr_t); // ROOTSHELL-TMUX FROZEN-ABI (id=ghostty-h-tmux-command)
+GHOSTTY_API void ghostty_surface_tmux_command_with_reply(ghostty_surface_t, const char*, uintptr_t, uint32_t); // ROOTSHELL-TMUX FROZEN-ABI (id=ghostty-h-tmux-command-with-reply)
 GHOSTTY_API bool ghostty_surface_tmux_active(ghostty_surface_t); // ROOTSHELL-TMUX FROZEN-ABI (id=ghostty-h-tmux-active)
 GHOSTTY_API void ghostty_surface_tmux_resume(ghostty_surface_t); // ROOTSHELL-TMUX FROZEN-ABI (id=ghostty-h-tmux-resume)
 GHOSTTY_API void ghostty_surface_tmux_resume_abort(ghostty_surface_t); // ROOTSHELL-TMUX FROZEN-ABI (id=ghostty-h-tmux-resume-abort)

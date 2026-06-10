@@ -88,6 +88,16 @@ pub const Message = union(enum) {
         data: []const u8,
     },
 
+    /// An app-issued tmux query command (with trailing newline) whose response
+    /// must be delivered back to the app, correlated by `tag` (see the
+    /// `command_response` viewer action / GHOSTTY_ACTION_TMUX_COMMAND_RESPONSE).
+    /// Handled on the IO thread so it can be routed through the viewer's
+    /// command queue (FIFO-safe, like `tmux_pane_command`). Heap-allocated
+    /// payload (alloc + data + tag exceeds the 40-byte Message budget); the
+    /// handler frees both the data and the payload struct. See
+    /// `StreamHandler.tmuxQueueQueryCommand`.
+    tmux_query_command: *TmuxQueryCommand, // ROOTSHELL-TMUX (id=termio-msg-query-command)
+
     /// Untracked `send-keys` (typed input / paste / focus reports) relayed from a
     /// child pane backend. Written straight to the `tmux -CC` pty (no command-
     /// queue gating, so keystroke latency is unchanged) and then recorded as an
@@ -201,6 +211,11 @@ pub const Message = union(enum) {
             },
             .write_alloc => |req| req.alloc.free(req.data),
             .tmux_pane_command => |v| v.alloc.free(v.data),
+            // ROOTSHELL-TMUX (id=termio-msg-query-command)
+            .tmux_query_command => |v| {
+                v.alloc.free(v.data);
+                v.alloc.destroy(v);
+            },
             .tmux_send_keys => |v| v.alloc.free(v.data), // ROOTSHELL-TMUX (id=termio-msg-send-keys)
             .tmux_track_command => |v| v.alloc.free(v.data), // ROOTSHELL-TMUX (id=termio-msg-track-command)
             else => {},
@@ -209,6 +224,14 @@ pub const Message = union(enum) {
 
     /// The types of size reports that we support.
     pub const SizeReport = terminal.size_report.Style;
+
+    /// Heap payload for `tmux_query_command`. ROOTSHELL-TMUX
+    /// (id=termio-msg-query-command)
+    pub const TmuxQueryCommand = struct {
+        alloc: Allocator,
+        data: []const u8,
+        tag: u32,
+    };
 };
 
 test {

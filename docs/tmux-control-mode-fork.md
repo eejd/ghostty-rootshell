@@ -77,6 +77,19 @@ These must remain byte-stable. Mirror any change in `ghostty-ios`.
 - **Action:** `GHOSTTY_ACTION_TMUX_RECONCILE` and the `action.zig` union member
   `tmux_reconcile` + `pub const Key` enum entry `tmux_reconcile` (tag value — do not
   reorder) + the `TmuxReconcile` payload struct and its `C` extern struct.
+- **Session-dashboard actions (`id=action-session-variants` /
+  `id=action-session-structs` / `id=ghostty-h-session-actions`):**
+  `GHOSTTY_ACTION_TMUX_SESSIONS_CHANGED` (void — session list churn, incl.
+  other-client attach/detach/switch; the app refreshes its dashboard),
+  `GHOSTTY_ACTION_TMUX_SESSION_CHANGED`
+  (`ghostty_action_tmux_session_changed_s {session_id, name, name_len}` — the
+  attached session's identity on startup/switch/rename; name is borrowed for the
+  callback only), and `GHOSTTY_ACTION_TMUX_COMMAND_RESPONSE`
+  (`ghostty_action_tmux_command_response_s {tag, is_err, body, body_len}` — the
+  response to an app query sent via `ghostty_surface_tmux_command_with_reply`;
+  body borrowed for the callback only; empty body + is_err means the query was
+  dropped by a viewer reset/teardown before tmux answered). Key-enum order is
+  append-only after `tmux_reconcile` and enforced by `checkGhosttyHEnum`.
 - **Reconcile op consumer (`embedded.zig`, `id=embedded-capi-reconcile`):** enum tag values
   `CTmuxOpTag` (op `0..8`) and `CTmuxLayoutKind` (`0..2`); extern struct field order of
   `CTmuxOp` (= `ghostty_tmux_op_s`) and `CTmuxLayoutInfo` (= `ghostty_tmux_layout_info_s`);
@@ -87,6 +100,14 @@ These must remain byte-stable. Mirror any change in `ghostty-ios`.
   `ghostty_surface_tmux_detach` (`id=embedded-tmux-detach`),
   `ghostty_surface_tmux_command` (`id=embedded-tmux-command`) — queues a raw
   `split-window`/`kill-pane` through the viewer command queue (drives splits),
+  `ghostty_surface_tmux_command_with_reply` (`id=embedded-tmux-command-with-reply`)
+  — queues an app query (`list-sessions`, `new-session -P`, ...) through the
+  viewer command queue (`Command.user_query`, `id=viewer-user-query`) and
+  delivers its `%begin/%end` block (or `%error` body) back through the action
+  callback as `GHOSTTY_ACTION_TMUX_COMMAND_RESPONSE`, correlated by the
+  app-chosen `tag`. Pending queries are errored back (empty body, is_err) on
+  every queue-clearing reset: `%session-changed` rebuild, `forceResync`,
+  teardown, resume abort (`id=streamhandler-query-command`),
   `ghostty_surface_tmux_active` (`id=embedded-tmux-active`) — bool probe of live
   control-mode state for the Swift ESC escape hatch,
   `ghostty_surface_tmux_resume` (`id=embedded-tmux-resume`) — re-enters control
@@ -132,9 +153,10 @@ These must remain byte-stable. Mirror any change in `ghostty-ios`.
 nm macos/GhosttyKit.xcframework/ios-arm64/libghostty-internal-fat.a \
   | grep -E '_ghostty_(tmux|surface_new_tmux|surface_tmux_(set_client|detach|command|active|resume|recover|force_exit))' | sort -u
 ```
-Expect 14 `T` (defined text) symbols:
+Expect 15 `T` (defined text) symbols:
 `_ghostty_surface_new_tmux_pane`, `_ghostty_surface_tmux_set_client_size`,
 `_ghostty_surface_tmux_detach`, `_ghostty_surface_tmux_command`,
+`_ghostty_surface_tmux_command_with_reply`,
 `_ghostty_surface_tmux_active`, `_ghostty_surface_tmux_resume`,
 `_ghostty_surface_tmux_resume_abort`, `_ghostty_surface_tmux_recover`,
 `_ghostty_surface_tmux_force_exit`, `_ghostty_tmux_layout_child`,

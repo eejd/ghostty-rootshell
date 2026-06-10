@@ -536,6 +536,38 @@ pub const Viewer = struct {
             text: []const u8,
         },
 
+        /// Response to an app-issued query command (`queueUserQuery`).
+        /// `body` is the raw `%begin/%end` block content (or the `%error`
+        /// body when `is_err`), stored on the action arena — valid only
+        /// until the next call to `next()`. An empty body with `is_err`
+        /// means the query was dropped before tmux answered it (viewer
+        /// reset/teardown); the app should fail the pending request.
+        /// ROOTSHELL-TMUX (id=viewer-user-query)
+        command_response: struct {
+            /// App-provided correlation tag, echoed back verbatim.
+            tag: u32,
+            body: []const u8,
+            is_err: bool,
+        },
+
+        /// The set of sessions on the tmux server changed (a session was
+        /// created or destroyed), or another client attached, detached, or
+        /// switched sessions — anything that can change what a session
+        /// list UI displays (names, counts, attached flags). The app
+        /// should refresh any visible session list. Debounce lives
+        /// app-side. ROOTSHELL-TMUX (id=viewer-sessions-changed)
+        sessions_changed,
+
+        /// The identity of the session THIS client is attached to.
+        /// Emitted when startup completes, on `%session-changed` (a
+        /// switch), and on `%session-renamed`. The name is stored on the
+        /// windows arena — valid until the next list-windows refresh, so
+        /// the caller must copy it. ROOTSHELL-TMUX (id=viewer-session-info)
+        session_info: struct {
+            id: usize,
+            name: []const u8,
+        },
+
         pub fn format(self: Action, writer: *std.Io.Writer) !void {
             const T = Action;
             const info = @typeInfo(T).@"union";
@@ -1495,13 +1527,27 @@ pub const Viewer = struct {
         // layout pass sizes the viewport via a normal `client_size`, one
         // deliberate resize like a regular `tmux attach`. ROOTSHELL-TMUX
         // (id=viewer-startup-pause-only)
-        return self.enterCommandQueue(
-            arena.allocator(),
+        const arena_alloc = arena.allocator();
+        const cmd_actions = self.enterCommandQueue(
+            arena_alloc,
             &.{ .enable_pause, .tmux_version, .list_windows },
         ) catch {
             log.warn("failed to queue command, becoming defunct", .{});
             return self.defunct();
         };
+
+        // Also deliver the attached session's identity (captured from the
+        // startup %session-changed) to the app. On OOM fall back to just
+        // the command action — session_info is best-effort cosmetics/
+        // persistence, the command MUST go out. ROOTSHELL-TMUX
+        // (id=viewer-session-info)
+        var list: std.ArrayList(Action) = .empty;
+        list.append(arena_alloc, .{ .session_info = .{
+            .id = self.session_id,
+            .name = self.session_name,
+        } }) catch return cmd_actions;
+        list.appendSlice(arena_alloc, cmd_actions) catch return cmd_actions;
+        return list.items;
     }
 
     fn nextCommand(
@@ -1682,11 +1728,18 @@ pub const Viewer = struct {
                 }
             },
 
-            // We ignore this one. It means a session was created or
-            // destroyed. If it was our own session we will get an exit
-            // notification very soon. If it is another session we don't
-            // care.
-            .sessions_changed => {},
+            // A session was created or destroyed somewhere on the server.
+            // If it was our own session we will get an exit notification
+            // very soon. Either way, forward an action so the app can
+            // refresh any visible session list (dashboard).
+            // ROOTSHELL-TMUX (id=viewer-sessions-changed)
+            .sessions_changed => {
+                var act_arena = self.action_arena.promote(self.alloc);
+                defer self.action_arena = act_arena.state;
+                actions.append(act_arena.allocator(), .sessions_changed) catch {
+                    log.warn("failed to queue sessions_changed action", .{});
+                };
+            },
 
             // Update the window name and notify the caller so it can
             // update the tab title.
@@ -1744,11 +1797,20 @@ pub const Viewer = struct {
                 };
                 var act_arena = self.action_arena.promote(self.alloc);
                 defer self.action_arena = act_arena.state;
-                actions.append(act_arena.allocator(), .{ .session_title = .{
+                const act_alloc = act_arena.allocator();
+                actions.append(act_alloc, .{ .session_title = .{
                     .name = self.session_name,
                 } }) catch {
                     log.warn("failed to queue session_title action", .{});
                     return actions.items;
+                };
+                // Renames also update the app's persisted session identity
+                // (reconnect-by-name). ROOTSHELL-TMUX (id=viewer-session-info)
+                actions.append(act_alloc, .{ .session_info = .{
+                    .id = self.session_id,
+                    .name = self.session_name,
+                } }) catch {
+                    log.warn("failed to queue session_info action", .{});
                 };
                 return actions.items;
             },
@@ -1825,11 +1887,20 @@ pub const Viewer = struct {
                 return actions.items;
             },
 
-            // This is for other clients, which we don't do anything about.
-            // For us, we'll get `exit` or `session_changed`, respectively.
+            // These are about OTHER clients (for us we'd get `exit` or
+            // `session_changed` instead), but they change what a session
+            // list displays — `session_attached` counts and which session
+            // each client is on — so forward the same refresh nudge as
+            // `%sessions-changed`. ROOTSHELL-TMUX (id=viewer-sessions-changed)
             .client_detached,
             .client_session_changed,
-            => {},
+            => {
+                var act_arena = self.action_arena.promote(self.alloc);
+                defer self.action_arena = act_arena.state;
+                actions.append(act_arena.allocator(), .sessions_changed) catch {
+                    log.warn("failed to queue sessions_changed action", .{});
+                };
+            },
         }
 
         // After processing commands, we add our next command to
@@ -2279,6 +2350,25 @@ pub const Viewer = struct {
         const arena_alloc = arena.allocator();
         try actions.append(arena_alloc, .{ .windows = &.{} });
 
+        // Fail every pending app query back to the app BEFORE the old
+        // viewer (and its command queue) is deinited below — otherwise the
+        // app-side continuations hang until their timeout. Tags are
+        // scalars and the body is an empty literal, so nothing here
+        // aliases the dying viewer. ROOTSHELL-TMUX (id=viewer-user-query)
+        {
+            var it = self.command_queue.iterator(.forward);
+            while (it.next()) |command| switch (command.*) {
+                .user_query => |q| try actions.append(arena_alloc, .{
+                    .command_response = .{
+                        .tag = q.tag,
+                        .body = "",
+                        .is_err = true,
+                    },
+                }),
+                else => {},
+            };
+        }
+
         // Setup our command queue and put ourselves in the command queue
         // state.
         try replacement.queueCommands(&.{.list_windows});
@@ -2301,6 +2391,19 @@ pub const Viewer = struct {
             var win_arena = self.windows_arena.promote(self.alloc);
             defer self.windows_arena = win_arena.state;
             self.session_name = win_arena.allocator().dupe(u8, session_name) catch "";
+        }
+
+        // Tell the app which session we are attached to now (it persists
+        // the name for reconnect and marks the dashboard's current row).
+        // Appended on the (new) action arena post-swap; the name lives on
+        // the new windows arena. ROOTSHELL-TMUX (id=viewer-session-info)
+        {
+            var act_arena = self.action_arena.promote(self.alloc);
+            defer self.action_arena = act_arena.state;
+            actions.append(act_arena.allocator(), .{ .session_info = .{
+                .id = self.session_id,
+                .name = self.session_name,
+            } }) catch log.warn("failed to queue session_info action", .{});
         }
 
         assert(self.state == .command_queue);
@@ -2357,6 +2460,19 @@ pub const Viewer = struct {
                 var panes_it = self.panes.iterator();
                 while (panes_it.next()) |kv| kv.value_ptr.*.initialized = true;
             }
+            // An app-issued query still gets its answer: the %error body is
+            // the human-readable failure (e.g. "duplicate session: x") that
+            // the app surfaces inline. ROOTSHELL-TMUX (id=viewer-user-query)
+            if (std.meta.activeTag(command) == .user_query) {
+                var err_arena = self.action_arena.promote(self.alloc);
+                defer self.action_arena = err_arena.state;
+                const err_alloc = err_arena.allocator();
+                try actions.append(err_alloc, .{ .command_response = .{
+                    .tag = command.user_query.tag,
+                    .body = try err_alloc.dupe(u8, content),
+                    .is_err = true,
+                } });
+            }
             return;
         }
 
@@ -2369,6 +2485,14 @@ pub const Viewer = struct {
         // Process our command
         switch (command) {
             .user, .client_size, .enable_pause, .continue_pane, .pane_color_report, .subscribe_titles => {},
+
+            // Deliver the query's block content back to the app, correlated
+            // by tag. ROOTSHELL-TMUX (id=viewer-user-query)
+            .user_query => |q| try actions.append(arena_alloc, .{ .command_response = .{
+                .tag = q.tag,
+                .body = try arena_alloc.dupe(u8, content),
+                .is_err = false,
+            } }),
 
             .pane_state => {
                 try self.receivedPaneState(content);
@@ -3254,6 +3378,41 @@ pub const Viewer = struct {
         try self.queueCommands(&.{.{ .user = copy }});
     }
 
+    /// Queue an app-issued query command whose response is delivered back
+    /// as a `command_response` action carrying `tag`. Same serialization
+    /// rationale as `queueUserCommand`. A missing trailing newline is
+    /// appended (the `.command` action contract requires it).
+    /// ROOTSHELL-TMUX (id=viewer-user-query)
+    pub fn queueUserQuery(self: *Viewer, cmd: []const u8, tag: u32) Allocator.Error!void {
+        const needs_nl = cmd.len == 0 or cmd[cmd.len - 1] != '\n';
+        const copy = copy: {
+            if (!needs_nl) break :copy try self.alloc.dupe(u8, cmd);
+            const buf = try self.alloc.alloc(u8, cmd.len + 1);
+            @memcpy(buf[0..cmd.len], cmd);
+            buf[cmd.len] = '\n';
+            break :copy buf;
+        };
+        errdefer self.alloc.free(copy);
+        try self.queueCommands(&.{.{ .user_query = .{ .cmd = copy, .tag = tag } }});
+    }
+
+    /// Invoke `cb` with the tag of every queued (including in-flight)
+    /// `user_query` command. The stream handler uses this to error pending
+    /// app queries back before a queue-clearing reset (`forceResync`) or
+    /// viewer teardown — otherwise the app-side continuations would hang
+    /// until their timeout. ROOTSHELL-TMUX (id=viewer-user-query)
+    pub fn forEachPendingQueryTag(
+        self: *Viewer,
+        ctx: anytype,
+        comptime cb: fn (@TypeOf(ctx), u32) void,
+    ) void {
+        var it = self.command_queue.iterator(.forward);
+        while (it.next()) |command| switch (command.*) {
+            .user_query => |q| cb(ctx, q.tag),
+            else => {},
+        };
+    }
+
     /// Queue a command relayed out-of-band from a child pane backend
     /// (`termio.Tmux`): `resize-pane` (the pane's grid changed — keyboard,
     /// font, rotation), `select-pane`, `select-window`. Most are forwarded
@@ -3499,6 +3658,18 @@ const Command = union(enum) {
     /// this is user provided, we can't be sure what it is.
     user: []const u8,
 
+    /// App-issued query: like `user`, but the block response (or `%error`
+    /// body) is delivered back to the app as a `command_response` action,
+    /// correlated by the app-provided tag. Used by the session dashboard
+    /// (`list-sessions`, `list-windows -t`, `new-session -P`, ...).
+    /// ROOTSHELL-TMUX (id=viewer-user-query)
+    user_query: struct {
+        /// gpa-owned, freed in deinit. Includes the trailing newline.
+        cmd: []const u8,
+        /// Opaque app-side correlation tag, echoed back verbatim.
+        tag: u32,
+    },
+
     const CapturePane = struct {
         id: usize,
         screen_key: ScreenSet.Key,
@@ -3519,6 +3690,7 @@ const Command = union(enum) {
             .pane_color_report,
             => {},
             .user => |v| alloc.free(v),
+            .user_query => |v| alloc.free(v.cmd),
         };
     }
 
@@ -3668,6 +3840,8 @@ const Command = union(enum) {
             },
 
             .user => |v| try writer.writeAll(v),
+
+            .user_query => |v| try writer.writeAll(v.cmd),
         }
     }
 };
@@ -7587,4 +7761,370 @@ test "pane state restores tmux mouse flags" {
         false,
         true,
     );
+}
+
+// ROOTSHELL-TMUX (id=viewer-user-query): app-issued query command tests.
+
+test "user_query appends missing trailing newline and formats verbatim" {
+    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    defer viewer.deinit();
+    try driveStartupOneWindow(&viewer);
+
+    try viewer.queueUserQuery("list-sessions -F '#{session_id}'", 7);
+    {
+        var arena: ArenaAllocator = .init(testing.allocator);
+        defer arena.deinit();
+        const cmd = (try viewer.takePendingCommand(arena.allocator())).?;
+        try testing.expectEqualStrings("list-sessions -F '#{session_id}'\n", cmd);
+    }
+    // Drain the response so the viewer ends the test idle.
+    _ = viewer.next(.{ .tmux = blockEnd("") });
+}
+
+test "user_query success delivers command_response with tag and body" {
+    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    defer viewer.deinit();
+    try driveStartupOneWindow(&viewer);
+
+    try viewer.queueUserQuery("list-sessions -F 'x'\n", 42);
+    {
+        var arena: ArenaAllocator = .init(testing.allocator);
+        defer arena.deinit();
+        _ = (try viewer.takePendingCommand(arena.allocator())).?;
+    }
+
+    try testViewer(&viewer, &.{
+        .{
+            .input = .{ .tmux = blockEnd("$0 3 1 main\n$1 1 0 alpha") },
+            .contains_tags = &.{.command_response},
+            .check = (struct {
+                fn check(v: *Viewer, actions: []const Viewer.Action) anyerror!void {
+                    _ = v;
+                    for (actions) |a| {
+                        if (a == .command_response) {
+                            try testing.expectEqual(@as(u32, 42), a.command_response.tag);
+                            try testing.expect(!a.command_response.is_err);
+                            try testing.expectEqualStrings(
+                                "$0 3 1 main\n$1 1 0 alpha",
+                                a.command_response.body,
+                            );
+                            return;
+                        }
+                    }
+                    return error.MissingCommandResponse;
+                }
+            }).check,
+        },
+    });
+    try testing.expect(!viewer.command_in_flight);
+    try testing.expect(viewer.command_queue.empty());
+}
+
+test "user_query %error delivers is_err response and the pump continues" {
+    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    defer viewer.deinit();
+    try driveStartupOneWindow(&viewer);
+
+    // Two queries: the first goes in flight, the second waits behind it.
+    try viewer.queueUserQuery("new-session -d -s dup\n", 1);
+    try viewer.queueUserQuery("list-sessions\n", 2);
+    {
+        var arena: ArenaAllocator = .init(testing.allocator);
+        defer arena.deinit();
+        _ = (try viewer.takePendingCommand(arena.allocator())).?;
+    }
+
+    try testViewer(&viewer, &.{
+        // %error for the first query: is_err response with the error body,
+        // and the pump emits the second queued query (FIFO intact).
+        .{
+            .input = .{ .tmux = .{ .block_err = testBlock("duplicate session: dup", 1) } },
+            .contains_tags = &.{.command_response},
+            .contains_command = "list-sessions",
+            .check = (struct {
+                fn check(v: *Viewer, actions: []const Viewer.Action) anyerror!void {
+                    _ = v;
+                    for (actions) |a| {
+                        if (a == .command_response) {
+                            try testing.expectEqual(@as(u32, 1), a.command_response.tag);
+                            try testing.expect(a.command_response.is_err);
+                            try testing.expectEqualStrings(
+                                "duplicate session: dup",
+                                a.command_response.body,
+                            );
+                            return;
+                        }
+                    }
+                    return error.MissingCommandResponse;
+                }
+            }).check,
+        },
+        // Success for the second query.
+        .{
+            .input = .{ .tmux = blockEnd("$0 main") },
+            .contains_tags = &.{.command_response},
+            .check = (struct {
+                fn check(v: *Viewer, actions: []const Viewer.Action) anyerror!void {
+                    _ = v;
+                    for (actions) |a| {
+                        if (a == .command_response) {
+                            try testing.expectEqual(@as(u32, 2), a.command_response.tag);
+                            try testing.expect(!a.command_response.is_err);
+                            return;
+                        }
+                    }
+                    return error.MissingCommandResponse;
+                }
+            }).check,
+        },
+    });
+    try testing.expect(!viewer.command_in_flight);
+    try testing.expect(viewer.command_queue.empty());
+}
+
+test "pending user queries error back across %session-changed" {
+    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    defer viewer.deinit();
+    try driveStartupOneWindow(&viewer);
+
+    // One query in flight (the attach-session itself), one waiting.
+    try viewer.queueUserQuery("attach-session -t \"$2\"\n", 10);
+    try viewer.queueUserQuery("list-sessions\n", 11);
+    {
+        var arena: ArenaAllocator = .init(testing.allocator);
+        defer arena.deinit();
+        _ = (try viewer.takePendingCommand(arena.allocator())).?;
+    }
+
+    // tmux switched sessions BEFORE answering the queries (notification-first
+    // ordering). Both pending tags must error back, the topology resets, and
+    // the rebuild begins with list-windows + the new session identity.
+    try testViewer(&viewer, &.{
+        .{
+            .input = .{ .tmux = .{ .session_changed = .{ .id = 2, .name = "alpha" } } },
+            .contains_tags = &.{ .windows, .command_response, .session_info, .command },
+            .contains_command = "list-windows",
+            .check = (struct {
+                fn check(v: *Viewer, actions: []const Viewer.Action) anyerror!void {
+                    try testing.expectEqual(@as(usize, 2), v.session_id);
+                    try testing.expectEqualStrings("alpha", v.session_name);
+                    var seen_10 = false;
+                    var seen_11 = false;
+                    for (actions) |a| switch (a) {
+                        .command_response => |cr| {
+                            try testing.expect(cr.is_err);
+                            try testing.expectEqual(@as(usize, 0), cr.body.len);
+                            if (cr.tag == 10) seen_10 = true;
+                            if (cr.tag == 11) seen_11 = true;
+                        },
+                        .windows => |w| try testing.expectEqual(@as(usize, 0), w.len),
+                        .session_info => |si| {
+                            try testing.expectEqual(@as(usize, 2), si.id);
+                            try testing.expectEqualStrings("alpha", si.name);
+                        },
+                        else => {},
+                    };
+                    try testing.expect(seen_10);
+                    try testing.expect(seen_11);
+                }
+            }).check,
+        },
+    });
+}
+
+test "switch-client normal ordering: %end then %session-changed" {
+    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    defer viewer.deinit();
+    try driveStartupOneWindow(&viewer);
+
+    try viewer.queueUserQuery("attach-session -t \"$2\"\n", 5);
+    {
+        var arena: ArenaAllocator = .init(testing.allocator);
+        defer arena.deinit();
+        _ = (try viewer.takePendingCommand(arena.allocator())).?;
+    }
+
+    try testViewer(&viewer, &.{
+        // The attach-session reply block arrives first: a clean success
+        // response, nothing else.
+        .{
+            .input = .{ .tmux = blockEnd("") },
+            .contains_tags = &.{.command_response},
+            .check = (struct {
+                fn check(v: *Viewer, actions: []const Viewer.Action) anyerror!void {
+                    _ = v;
+                    for (actions) |a| {
+                        if (a == .command_response) {
+                            try testing.expectEqual(@as(u32, 5), a.command_response.tag);
+                            try testing.expect(!a.command_response.is_err);
+                            return;
+                        }
+                    }
+                    return error.MissingCommandResponse;
+                }
+            }).check,
+        },
+        // Then %session-changed rebuilds with no pending queries to fail.
+        .{
+            .input = .{ .tmux = .{ .session_changed = .{ .id = 2, .name = "alpha" } } },
+            .contains_tags = &.{ .windows, .session_info, .command },
+            .contains_command = "list-windows",
+            .check = (struct {
+                fn check(v: *Viewer, actions: []const Viewer.Action) anyerror!void {
+                    try testing.expectEqual(@as(usize, 2), v.session_id);
+                    for (actions) |a| {
+                        if (a == .command_response) return error.UnexpectedResponse;
+                    }
+                }
+            }).check,
+        },
+        // The new session's list-windows response builds the topology.
+        .{
+            .input = .{ .tmux = blockEnd("$2 @5 1 0 0 %9 83 44 b7dd,83x44,0,0,9 zsh") },
+            .contains_tags = &.{.windows},
+        },
+    });
+}
+
+test "post-switch straggler block self-heals via recover" {
+    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    defer viewer.deinit();
+    try driveStartupOneWindow(&viewer);
+
+    // The attach query is in flight when the notification-first switch
+    // arrives; the rebuild leaves list-windows in flight.
+    try viewer.queueUserQuery("attach-session -t \"$2\"\n", 20);
+    {
+        var arena: ArenaAllocator = .init(testing.allocator);
+        defer arena.deinit();
+        _ = (try viewer.takePendingCommand(arena.allocator())).?;
+    }
+    try testViewer(&viewer, &.{
+        .{
+            .input = .{ .tmux = .{ .session_changed = .{ .id = 2, .name = "alpha" } } },
+            .contains_command = "list-windows",
+        },
+        // The straggler attach-session reply (empty body) is mis-consumed as
+        // the list-windows response: zero windows (deliberately dropped by the
+        // stream handler's empty guard), and the fresh viewer queues its
+        // subscribe_titles follow-up. No defunct.
+        .{
+            .input = .{ .tmux = blockEnd("") },
+            .contains_command = "refresh-client -B",
+        },
+        // The REAL list-windows reply is mis-consumed one slot later as the
+        // subscribe_titles response (silently discarded). The FIFO is shifted,
+        // not broken.
+        .{ .input = .{ .tmux = blockEnd("$2 @5 1 0 0 %9 83 44 b7dd,83x44,0,0,9 zsh") } },
+        // The subscribe_titles ack then has no command in flight: the viewer
+        // flags the desync and asks for a live recover (forceResync) instead
+        // of going defunct. The recover rebuilds the topology.
+        .{
+            .input = .{ .tmux = blockEnd("") },
+            .contains_tags = &.{.recover},
+        },
+    });
+    try testing.expect(viewer.state == .command_queue);
+}
+
+// ROOTSHELL-TMUX (id=viewer-sessions-changed): dashboard refresh nudges.
+
+test "sessions_changed and other-client churn emit sessions_changed action" {
+    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    defer viewer.deinit();
+    try driveStartupOneWindow(&viewer);
+
+    try testViewer(&viewer, &.{
+        .{
+            .input = .{ .tmux = .sessions_changed },
+            .contains_tags = &.{.sessions_changed},
+        },
+        .{
+            .input = .{ .tmux = .{ .client_detached = .{ .client = "client-1" } } },
+            .contains_tags = &.{.sessions_changed},
+        },
+        .{
+            .input = .{ .tmux = .{ .client_session_changed = .{
+                .client = "client-1",
+                .session_id = 3,
+                .name = "beta",
+            } } },
+            .contains_tags = &.{.sessions_changed},
+        },
+    });
+}
+
+// ROOTSHELL-TMUX (id=viewer-session-info): attached-session identity.
+
+test "startup emits session_info with id and name" {
+    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    defer viewer.deinit();
+
+    try testViewer(&viewer, &.{
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{
+            .input = .{ .tmux = .{ .session_changed = .{ .id = 7, .name = "main" } } },
+            .contains_tags = &.{ .session_info, .command },
+            .check = (struct {
+                fn check(v: *Viewer, actions: []const Viewer.Action) anyerror!void {
+                    _ = v;
+                    for (actions) |a| {
+                        if (a == .session_info) {
+                            try testing.expectEqual(@as(usize, 7), a.session_info.id);
+                            try testing.expectEqualStrings("main", a.session_info.name);
+                            return;
+                        }
+                    }
+                    return error.MissingSessionInfo;
+                }
+            }).check,
+        },
+    });
+}
+
+test "session rename emits session_title and session_info" {
+    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    defer viewer.deinit();
+    try driveStartupOneWindow(&viewer);
+
+    try testViewer(&viewer, &.{
+        .{
+            .input = .{ .tmux = .{ .session_renamed = .{ .name = "renamed" } } },
+            .contains_tags = &.{ .session_title, .session_info },
+            .check = (struct {
+                fn check(v: *Viewer, actions: []const Viewer.Action) anyerror!void {
+                    try testing.expectEqualStrings("renamed", v.session_name);
+                    for (actions) |a| {
+                        if (a == .session_info) {
+                            try testing.expectEqualStrings("renamed", a.session_info.name);
+                        }
+                    }
+                }
+            }).check,
+        },
+    });
+}
+
+test "forceResync yields pending user_query tags" {
+    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    defer viewer.deinit();
+    try driveStartupOneWindow(&viewer);
+
+    try viewer.queueUserQuery("list-sessions\n", 30);
+    try viewer.queueUserQuery("list-windows -a\n", 31);
+
+    var tags: std.ArrayList(u32) = .empty;
+    defer tags.deinit(testing.allocator);
+    viewer.forEachPendingQueryTag(&tags, (struct {
+        fn cb(list: *std.ArrayList(u32), tag: u32) void {
+            list.append(testing.allocator, tag) catch {};
+        }
+    }).cb);
+    try testing.expectEqualSlices(u32, &.{ 30, 31 }, tags.items);
+
+    // forceResync clears the queue (the stream handler errors the tags back
+    // to the app first, using the same iteration just exercised above).
+    viewer.forceResync();
+    try testing.expect(viewer.command_queue.empty());
+    try testing.expect(viewer.isResyncing());
 }

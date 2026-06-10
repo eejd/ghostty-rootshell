@@ -53,6 +53,70 @@ pub const TmuxTitleChanged = struct {
     }
 };
 
+/// Response to an app-issued tmux query command (`%begin/%end` block
+/// content, or the `%error` body), correlated by the app's tag. Follows
+/// the `TmuxTopologySnapshot` heap-pointer pattern because bodies can be
+/// large (`list-windows -a` across sessions): the IO thread allocates it,
+/// sends the pointer through the surface mailbox, and the app thread
+/// calls `deinit` after consuming it. An empty body with `is_err` means
+/// the query was dropped before tmux answered (viewer reset/teardown).
+/// ROOTSHELL-TMUX (id=apprt-msg-command-response)
+pub const TmuxCommandResponse = struct {
+    /// Backing allocator used to allocate this struct and the body.
+    alloc: Allocator,
+    /// App-provided correlation tag, echoed back verbatim.
+    tag: u32,
+    is_err: bool,
+    /// Owned copy of the response body.
+    body: []const u8,
+
+    pub fn create(
+        alloc: Allocator,
+        tag: u32,
+        body: []const u8,
+        is_err: bool,
+    ) Allocator.Error!*TmuxCommandResponse {
+        const body_copy = try alloc.dupe(u8, body);
+        errdefer alloc.free(body_copy);
+        const self = try alloc.create(TmuxCommandResponse);
+        self.* = .{
+            .alloc = alloc,
+            .tag = tag,
+            .is_err = is_err,
+            .body = body_copy,
+        };
+        return self;
+    }
+
+    pub fn deinit(self: *TmuxCommandResponse) void {
+        const alloc = self.alloc;
+        alloc.free(self.body);
+        alloc.destroy(self);
+    }
+};
+
+/// The identity (id + name) of the session this gateway's control client
+/// is attached to. Emitted on startup completion, `%session-changed`
+/// (switch), and `%session-renamed`. Fixed-size buffer following the
+/// `TmuxTitleChanged` pattern. ROOTSHELL-TMUX (id=apprt-msg-session-info)
+pub const TmuxSessionInfo = struct {
+    session_id: usize,
+    name_buf: [256]u8 = undefined,
+    name_len: u8 = 0,
+
+    pub fn init(session_id: usize, session_name: []const u8) TmuxSessionInfo {
+        var result: TmuxSessionInfo = .{ .session_id = session_id };
+        const len: u8 = @intCast(@min(session_name.len, result.name_buf.len - 1));
+        @memcpy(result.name_buf[0..len], session_name[0..len]);
+        result.name_len = len;
+        return result;
+    }
+
+    pub fn name(self: *const TmuxSessionInfo) []const u8 {
+        return self.name_buf[0..self.name_len];
+    }
+};
+
 /// A captured (pane_id -> viewer Pane pointer) entry. ROOTSHELL-TMUX
 /// (id=snapshot-pane-refs): the viewer's `Pane` boxes are heap-allocated and
 /// stable, but the `PanesMap` *backing* is NOT — an `AutoArrayHashMapUnmanaged`

@@ -350,6 +350,16 @@ fn drainMailbox(
                 defer v.alloc.free(v.data);
                 io.terminal_stream.handler.tmuxQueuePaneCommand(v.data);
             },
+            .tmux_query_command => |v| { // ROOTSHELL-TMUX (id=thread-query-command)
+                // Same locking rationale as .tmux_pane_command.
+                io.renderer_state.mutex.lock();
+                defer io.renderer_state.mutex.unlock();
+                defer {
+                    v.alloc.free(v.data);
+                    v.alloc.destroy(v);
+                }
+                io.terminal_stream.handler.tmuxQueueQueryCommand(v.data, v.tag);
+            },
             .tmux_send_keys => |v| { // ROOTSHELL-TMUX (id=thread-send-keys)
                 // Write the untracked send-keys straight to the tmux pty (no
                 // command-queue gating, so keystroke latency is unchanged), THEN

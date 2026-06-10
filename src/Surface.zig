@@ -1423,6 +1423,39 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
                 .{ .payload = payload },
             )) payload.deinit();
         },
+
+        .tmux_command_response => |resp| { // ROOTSHELL-TMUX (id=surface-arm-command-response)
+            // Response to an app-issued tmux query (session dashboard).
+            // The callback is synchronous and the body pointer is only
+            // borrowed for its duration (the apprt copies what it keeps),
+            // so the response can be freed right after dispatch.
+            defer resp.deinit();
+            _ = try self.rt_app.performAction(
+                .{ .surface = self },
+                .tmux_command_response,
+                .{ .tag = resp.tag, .is_err = resp.is_err, .body = resp.body },
+            );
+        },
+
+        .tmux_sessions_changed => { // ROOTSHELL-TMUX (id=surface-arm-sessions-changed)
+            // Session list churn on the tmux server; the apprt refreshes
+            // any visible session dashboard.
+            _ = try self.rt_app.performAction(
+                .{ .surface = self },
+                .tmux_sessions_changed,
+                {},
+            );
+        },
+
+        .tmux_session_info => |si| { // ROOTSHELL-TMUX (id=surface-arm-session-info)
+            // Attached-session identity (startup / switch / rename). The
+            // name pointer is borrowed for the callback's duration only.
+            _ = try self.rt_app.performAction(
+                .{ .surface = self },
+                .tmux_session_changed,
+                .{ .session_id = @intCast(si.session_id), .name = si.name() },
+            );
+        },
     }
 }
 

@@ -358,6 +358,25 @@ pub const Action = union(Key) {
     /// `deinit` on the payload after processing.
     tmux_reconcile: TmuxReconcile,
 
+    // ROOTSHELL-TMUX FROZEN-ABI (id=action-session-variants): consumed by the
+    // iOS Swift app's tmux session dashboard. DO NOT rename/reorder; append
+    // only. reapply: re-add these variants, their Key entries, and the payload
+    // structs below. See docs/tmux-control-mode-fork.md.
+    /// The set of sessions on the tmux server changed (created/destroyed,
+    /// or another client attached/detached/switched). The apprt refreshes
+    /// any visible session list UI.
+    tmux_sessions_changed,
+
+    /// The session this surface's tmux gateway is attached to changed
+    /// (startup, switch, or rename). The name pointer is borrowed for the
+    /// callback's duration only — the apprt must copy it.
+    tmux_session_changed: TmuxSessionChanged,
+
+    /// Response to an app-issued tmux query command (sent via
+    /// `ghostty_surface_tmux_command_with_reply`), correlated by tag. The
+    /// body pointer is borrowed for the callback's duration only.
+    tmux_command_response: TmuxCommandResponse,
+
     /// Sync with: ghostty_action_tag_e
     pub const Key = enum(c_int) {
         quit,
@@ -428,6 +447,11 @@ pub const Action = union(Key) {
         // ROOTSHELL-TMUX FROZEN-ABI (id=action-key-variant): ghostty_action_tag_e
         // tag value — DO NOT REORDER (the iOS Swift app switches on it).
         tmux_reconcile,
+        // ROOTSHELL-TMUX FROZEN-ABI (id=action-session-variants): append-only,
+        // order must match ghostty.h (checkGhosttyHEnum enforces it).
+        tmux_sessions_changed,
+        tmux_session_changed,
+        tmux_command_response,
 
         test "ghostty.h Action.Key" {
             try lib.checkGhosttyHEnum(Key, "GHOSTTY_ACTION_");
@@ -1039,6 +1063,63 @@ pub const TmuxReconcile = struct {
     }
 };
 // ROOTSHELL-TMUX END FROZEN-ABI (id=action-reconcile-struct)
+
+// ROOTSHELL-TMUX BEGIN FROZEN-ABI (id=action-session-structs)
+// Payload types for the tmux session-dashboard actions. The `C` extern structs
+// are what the iOS Swift app sees as ghostty_action_tmux_session_changed_s /
+// ghostty_action_tmux_command_response_s — keep the field layouts stable.
+// reapply: re-add these alongside the action variants + Key entries.
+
+/// The session this gateway is attached to (startup / switch / rename).
+pub const TmuxSessionChanged = struct {
+    session_id: u64,
+    name: []const u8,
+
+    // Sync with: ghostty_action_tmux_session_changed_s
+    pub const C = extern struct {
+        session_id: u64,
+        /// Borrowed: valid only during the action callback. Not
+        /// NUL-terminated; use name_len.
+        name: ?[*]const u8,
+        name_len: usize,
+    };
+
+    pub fn cval(self: TmuxSessionChanged) C {
+        return .{
+            .session_id = self.session_id,
+            .name = if (self.name.len > 0) self.name.ptr else null,
+            .name_len = self.name.len,
+        };
+    }
+};
+
+/// Response to an app-issued tmux query command, correlated by tag.
+pub const TmuxCommandResponse = struct {
+    tag: u32,
+    is_err: bool,
+    body: []const u8,
+
+    // Sync with: ghostty_action_tmux_command_response_s
+    pub const C = extern struct {
+        tag: u32,
+        is_err: bool,
+        /// Borrowed: valid only during the action callback. Not
+        /// NUL-terminated; use body_len. An empty body with is_err set
+        /// means the query was dropped before tmux answered it.
+        body: ?[*]const u8,
+        body_len: usize,
+    };
+
+    pub fn cval(self: TmuxCommandResponse) C {
+        return .{
+            .tag = self.tag,
+            .is_err = self.is_err,
+            .body = if (self.body.len > 0) self.body.ptr else null,
+            .body_len = self.body.len,
+        };
+    }
+};
+// ROOTSHELL-TMUX END FROZEN-ABI (id=action-session-structs)
 
 test {
     _ = std.testing.refAllDeclsRecursive(@This());

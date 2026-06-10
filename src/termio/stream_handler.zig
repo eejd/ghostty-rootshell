@@ -375,6 +375,9 @@ pub const StreamHandler = struct {
         // handshake as stale bytes. ROOTSHELL-TMUX (id=streamhandler-resume-pending-clear)
         self.tmux_resume_pending = false;
         const viewer = self.tmux_viewer orelse return;
+        // Error pending app queries back before the queue dies with the
+        // viewer. ROOTSHELL-TMUX (id=streamhandler-query-command)
+        self.failPendingTmuxQueries(viewer);
         // Prune all tmux windows/panes so child surfaces are closed.
         self.sendEmptyTopologySnapshot();
         viewer.deinit();
@@ -884,6 +887,7 @@ pub const StreamHandler = struct {
                     .pane_color_report => 10,
                     .user => 11,
                     .enable_pause => 12,
+                    .user_query => 13,
                 } else 0
             else
                 0;
@@ -1066,6 +1070,9 @@ pub const StreamHandler = struct {
             return;
         };
 
+        // Error pending app queries back before forceResync clears the
+        // command queue. ROOTSHELL-TMUX (id=streamhandler-query-command)
+        self.failPendingTmuxQueries(viewer);
         viewer.forceResync();
         // Realign the parser to a clean line boundary (the live stream may resume
         // mid-line after data loss) so it does not break on the next byte.
@@ -1103,6 +1110,9 @@ pub const StreamHandler = struct {
         if (comptime !tmux_enabled) return;
         self.tmux_resume_pending = false;
         if (self.tmux_viewer) |viewer| {
+            // Error pending app queries back before the queue dies with the
+            // viewer. ROOTSHELL-TMUX (id=streamhandler-query-command)
+            self.failPendingTmuxQueries(viewer);
             // Do NOT send an empty topology snapshot here: the abort fires before
             // any window was projected (a reconcile would have cancelled the
             // watchdog), so there is nothing to prune — and an empty reconcile
@@ -1242,6 +1252,62 @@ pub const StreamHandler = struct {
         // Flush now in case the queue was idle, so a pane resize/select takes
         // effect without waiting for the next inbound notification.
         self.pumpTmuxCommandQueue(viewer);
+    }
+
+    /// Route an app-issued query command (session dashboard: list-sessions,
+    /// list-windows -t, new-session -P, ...) through the viewer's command
+    /// queue. Its `%begin/%end` (or `%error`) response comes back as a
+    /// `command_response` viewer action, forwarded to the app correlated by
+    /// `tag`. When no viewer is active (or the queue fails), an error
+    /// response is posted immediately so the app-side continuation fails
+    /// fast instead of waiting out its timeout. ROOTSHELL-TMUX
+    /// (id=streamhandler-query-command)
+    pub fn tmuxQueueQueryCommand(self: *StreamHandler, cmd: []const u8, tag: u32) void {
+        if (comptime !tmux_enabled) return;
+        const viewer = self.tmux_viewer orelse {
+            self.postTmuxQueryError(tag);
+            return;
+        };
+        viewer.queueUserQuery(cmd, tag) catch |err| {
+            log.warn("failed to queue tmux query command err={}", .{err});
+            self.postTmuxQueryError(tag);
+            return;
+        };
+        // Flush now in case the queue was idle (an idle session never pumps).
+        self.pumpTmuxCommandQueue(viewer);
+    }
+
+    /// Post an error `tmux_command_response` (empty body) for `tag` so the
+    /// app's pending query fails fast. ROOTSHELL-TMUX (id=streamhandler-query-command)
+    fn postTmuxQueryError(self: *StreamHandler, tag: u32) void {
+        const resp = apprt.surface.Message.TmuxCommandResponse.create(
+            self.alloc,
+            tag,
+            "",
+            true,
+        ) catch |err| {
+            // The app-side timeout is the backstop here.
+            log.warn("failed to allocate tmux query error response tag={} err={}", .{ tag, err });
+            return;
+        };
+        self.surfaceMessageWriter(.{ .tmux_command_response = resp });
+    }
+
+    /// Error every queued/in-flight app query back to the app. Called before
+    /// any reset that destroys or clears the viewer's command queue
+    /// (teardown, forceResync, resume abort) — the queries' responses will
+    /// never arrive, and without this the app-side continuations hang until
+    /// their timeout. ROOTSHELL-TMUX (id=streamhandler-query-command)
+    fn failPendingTmuxQueries(
+        self: *StreamHandler,
+        viewer: *terminal.tmux.Viewer,
+    ) void {
+        if (comptime !tmux_enabled) return;
+        viewer.forEachPendingQueryTag(self, struct {
+            fn cb(handler: *StreamHandler, tag: u32) void {
+                handler.postTmuxQueryError(tag);
+            }
+        }.cb);
     }
 
     pub inline fn dcsHook(self: *StreamHandler, dcs: terminal.DCS) !void {
@@ -1641,6 +1707,44 @@ pub const StreamHandler = struct {
                             // feedback (toast, status bar) will be added in
                             // a follow-up PR.
                             log.info("tmux message: {s}", .{msg.text});
+                        },
+
+                        .command_response => |cr| {
+                            // Deliver an app query's response across the
+                            // surface mailbox (heap pointer — bodies can be
+                            // large, e.g. list-windows -a). On alloc failure
+                            // the app-side timeout is the backstop.
+                            // ROOTSHELL-TMUX (id=streamhandler-query-command)
+                            const resp = apprt.surface.Message.TmuxCommandResponse.create(
+                                self.alloc,
+                                cr.tag,
+                                cr.body,
+                                cr.is_err,
+                            ) catch |err| {
+                                log.warn("failed to allocate tmux command response tag={} err={}", .{ cr.tag, err });
+                                continue;
+                            };
+                            self.surfaceMessageWriter(.{ .tmux_command_response = resp });
+                        },
+
+                        .sessions_changed => {
+                            // Session list churn (create/destroy/other-client
+                            // attach/detach/switch): nudge the app to refresh
+                            // any session dashboard. ROOTSHELL-TMUX
+                            // (id=viewer-sessions-changed)
+                            self.surfaceMessageWriter(.{ .tmux_sessions_changed = {} });
+                        },
+
+                        .session_info => |si| {
+                            // Attached-session identity (startup / switch /
+                            // rename) for dashboard state + reconnect-by-name
+                            // persistence. ROOTSHELL-TMUX (id=viewer-session-info)
+                            self.surfaceMessageWriter(.{
+                                .tmux_session_info = apprt.surface.Message.TmuxSessionInfo.init(
+                                    si.id,
+                                    si.name,
+                                ),
+                            });
                         },
                     }
                 }
