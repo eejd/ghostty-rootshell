@@ -332,6 +332,23 @@ pub fn resize(
     self.grid_size = grid_size;
     self.screen_size = screen_size;
 
+    // A below-floor grid is never a real layout — it's a transient apprt pass
+    // (view mid-teardown, split collapsing). For a sole-pane window the viewer
+    // rewrites this resize-pane into the CLIENT size (`refresh-client -C`),
+    // which clamps the server window down for every attached client, so a
+    // transient 1x1 here becomes a stuck 1x1 window session-wide. Mirrors the
+    // viewer's setClientSize floor. ROOTSHELL-TMUX (id=tmux-size-floor)
+    if (grid_size.columns < terminal.tmux.Viewer.min_client_cols or
+        grid_size.rows < terminal.tmux.Viewer.min_client_rows)
+    {
+        log.warn("ignoring below-floor pane resize {}x{} pane=%{}", .{
+            grid_size.columns,
+            grid_size.rows,
+            self.pane_id,
+        });
+        return;
+    }
+
     // Format and send a resize-pane command. tmux resize-pane uses
     // -x for width (columns) and -y for height (rows).
     var buf: [128]u8 = undefined;

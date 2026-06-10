@@ -995,17 +995,37 @@ pub const Viewer = struct {
         self.action_arena.promote(self.alloc).deinit();
     }
 
+    /// Minimum client size we will ever store or send. A control client's size
+    /// is a hard downward clamp on the tmux server (resize.c
+    /// clients_calculate_size) in every window-size mode while the client is
+    /// attached, so a single transient tiny size (an apprt mid-teardown layout
+    /// pass funneled through the sole-pane resize-pane rewrite) shrinks the
+    /// window to ~1x1 for EVERY attached client and sticks. No legitimate
+    /// viewer surface is ever this small. Mirrors the apprt-side push floor.
+    /// ROOTSHELL-TMUX (id=tmux-size-floor)
+    pub const min_client_cols: size.CellCountInt = 10;
+    pub const min_client_rows: size.CellCountInt = 3;
+
     /// Update the stored control client dimensions and queue a
     /// `refresh-client -C WxH` command if we're in the `command_queue`
     /// state. The command will be sent to tmux on the next notification
     /// cycle (pull-based). During startup the initial size is sent as
     /// part of the startup sequence in `tryFinishStartup`, so calling
     /// this before entering `command_queue` only stores the dimensions.
+    ///
+    /// Below-floor dimensions are dropped entirely (not stored either: a
+    /// resync re-sends `client_cols/rows`, so a stored transient would
+    /// resurface later).
     pub fn setClientSize(
         self: *Viewer,
         cols: size.CellCountInt,
         rows: size.CellCountInt,
     ) void {
+        if (cols < min_client_cols or rows < min_client_rows) {
+            log.warn("ignoring below-floor client size {}x{}", .{ cols, rows });
+            return;
+        }
+
         self.client_cols = cols;
         self.client_rows = rows;
 
@@ -4457,6 +4477,31 @@ test "setClientSize stores dimensions but does not queue during startup" {
 
     // Queue should still be empty (no command queued during startup)
     try testing.expect(viewer.command_queue.empty());
+}
+
+test "setClientSize ignores below-floor dimensions" {
+    // ROOTSHELL-TMUX (id=tmux-size-floor): a transient tiny size (an apprt
+    // mid-teardown layout pass through the sole-pane resize-pane rewrite)
+    // must neither be stored (a resync would re-send it) nor queued — the
+    // control client size clamps the server window DOWN for every attached
+    // client and a 1x1 sticks until explicitly corrected.
+    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    defer viewer.deinit();
+
+    viewer.setClientSize(100, 50);
+    viewer.setClientSize(1, 1); // below both floors
+    try testing.expectEqual(@as(size.CellCountInt, 100), viewer.client_cols);
+    try testing.expectEqual(@as(size.CellCountInt, 50), viewer.client_rows);
+
+    viewer.setClientSize(Viewer.min_client_cols - 1, 50); // cols below floor
+    try testing.expectEqual(@as(size.CellCountInt, 100), viewer.client_cols);
+    viewer.setClientSize(100, Viewer.min_client_rows - 1); // rows below floor
+    try testing.expectEqual(@as(size.CellCountInt, 50), viewer.client_rows);
+
+    // At the floor is accepted.
+    viewer.setClientSize(Viewer.min_client_cols, Viewer.min_client_rows);
+    try testing.expectEqual(Viewer.min_client_cols, viewer.client_cols);
+    try testing.expectEqual(Viewer.min_client_rows, viewer.client_rows);
 }
 
 test "startup enables pause-after but sends NO client size" {
