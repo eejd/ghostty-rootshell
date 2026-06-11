@@ -50,6 +50,10 @@ typedef SSIZE_T ssize_t;
 #endif
 #endif
 
+// Return the terminal display-cell width for a Unicode codepoint.
+// Values match Ghostty core width handling: -1 invalid/control, 0 combining, 1 narrow, 2 wide.
+GHOSTTY_API int8_t ghostty_simd_codepoint_width(uint32_t codepoint);
+
 //-------------------------------------------------------------------
 // Types
 
