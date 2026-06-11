@@ -1074,6 +1074,10 @@ pub const Viewer = struct {
         self.client_rows = rows;
 
         if (self.state == .command_queue) {
+            // Coalesce with a queued-but-unsent client_size instead of piling
+            // up one stale size per resize step (keyboard show/hide, window
+            // drag). ROOTSHELL-TMUX (id=viewer-coalesce-client-size)
+            if (self.coalescePendingClientSize(cols, rows)) return;
             self.queueCommands(&.{.{ .client_size = .{
                 .cols = cols,
                 .rows = rows,
@@ -3375,6 +3379,74 @@ pub const Viewer = struct {
         }
     }
 
+    /// Update the first queued-but-unsent `.client_size` command in place
+    /// instead of appending another one. Rapid resizes (keyboard show/hide,
+    /// window drags) would otherwise pile up stale sizes that each cost a
+    /// full server round-trip — the server visibly steps through obsolete
+    /// sizes long after the resize settles, and every step SIGWINCH-storms
+    /// the pane apps mid-output. The head entry is skipped while a command
+    /// is in flight: its bytes were already formatted and written, and the
+    /// response FIFO depends on it staying put. In-place mutation preserves
+    /// FIFO/sent-FIFO alignment exactly (no add/remove). Only the dims are
+    /// updated — `enable_pause` is preserved (the resync rebuild queues its
+    /// client_size with the pause flag set). Returns true when coalesced.
+    /// ROOTSHELL-TMUX (id=viewer-coalesce-client-size)
+    fn coalescePendingClientSize(
+        self: *Viewer,
+        cols: size.CellCountInt,
+        rows: size.CellCountInt,
+    ) bool {
+        var it = self.command_queue.iterator(.forward);
+        if (self.command_in_flight) _ = it.next();
+        while (it.next()) |entry| {
+            if (entry.* == .client_size) {
+                entry.client_size.cols = cols;
+                entry.client_size.rows = rows;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// For a per-window size push `refresh-client -C @<id>:<W>x<H>\n`,
+    /// return its `refresh-client -C @<id>:` prefix (digits required between
+    /// '@' and ':'); null for any other command.
+    /// ROOTSHELL-TMUX (id=viewer-coalesce-window-refresh)
+    fn windowRefreshPrefix(cmd: []const u8) ?[]const u8 {
+        const lead = "refresh-client -C @";
+        if (!std.mem.startsWith(u8, cmd, lead)) return null;
+        const colon = std.mem.indexOfScalarPos(u8, cmd, lead.len, ':') orelse return null;
+        if (colon == lead.len) return null;
+        for (cmd[lead.len..colon]) |c| if (!std.ascii.isDigit(c)) return null;
+        return cmd[0 .. colon + 1];
+    }
+
+    /// Replace a queued-but-unsent per-window size refresh (`refresh-client
+    /// -C @<id>:WxH`) for the SAME window with the newer bytes, in place.
+    /// Same head-skip and FIFO rationale as `coalescePendingClientSize`. The
+    /// old `.user` buffer is freed and replaced with a gpa-owned dupe of
+    /// `cmd` (ownership identical to the append path; `Command.deinit` frees
+    /// `.user`). The dupe happens BEFORE the free so an allocation failure
+    /// leaves the queue intact. Returns true when coalesced.
+    /// ROOTSHELL-TMUX (id=viewer-coalesce-window-refresh)
+    fn coalescePendingWindowRefresh(
+        self: *Viewer,
+        cmd: []const u8,
+    ) Allocator.Error!bool {
+        const prefix = windowRefreshPrefix(cmd) orelse return false;
+        var it = self.command_queue.iterator(.forward);
+        if (self.command_in_flight) _ = it.next();
+        while (it.next()) |entry| {
+            if (entry.* != .user) continue;
+            if (!std.mem.startsWith(u8, entry.user, prefix)) continue;
+            const copy = try self.alloc.dupe(u8, cmd);
+            self.alloc.free(entry.user);
+            entry.user = copy;
+            return true;
+        }
+        return false;
+    }
+
     /// Queue a raw, pre-formatted tmux command (already including its trailing
     /// newline) that was issued out-of-band by a child pane backend —
     /// `resize-pane`, `select-pane`, `select-window`. Routing it through the
@@ -3385,7 +3457,11 @@ pub const Viewer = struct {
     /// pane_visible/pane_state and strands a pane on the wrong (scrollback-less)
     /// screen on attach. The bytes are copied; the copy is freed in
     /// `Command.deinit` via the `.user` arm.
+    ///
+    /// A per-window size refresh coalesces into a pending one for the same
+    /// window (see `coalescePendingWindowRefresh`) instead of appending.
     pub fn queueUserCommand(self: *Viewer, cmd: []const u8) Allocator.Error!void {
+        if (try self.coalescePendingWindowRefresh(cmd)) return;
         const copy = try self.alloc.dupe(u8, cmd);
         errdefer self.alloc.free(copy);
         try self.queueCommands(&.{.{ .user = copy }});
@@ -4712,6 +4788,144 @@ test "setClientSize ignores below-floor dimensions" {
     viewer.setClientSize(Viewer.min_client_cols, Viewer.min_client_rows);
     try testing.expectEqual(Viewer.min_client_cols, viewer.client_cols);
     try testing.expectEqual(Viewer.min_client_rows, viewer.client_rows);
+}
+
+test "setClientSize coalesces a queued-but-unsent client_size" {
+    // ROOTSHELL-TMUX (id=viewer-coalesce-client-size): rapid resizes must
+    // not pile up one stale size per step — the pending command is updated
+    // in place and the pump sends only the newest size.
+    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    defer viewer.deinit();
+    try driveStartupOneWindow(&viewer);
+
+    viewer.setClientSize(100, 40);
+    viewer.setClientSize(132, 43);
+    try testing.expectEqual(@as(usize, 1), viewer.command_queue.len());
+
+    try testViewer(&viewer, &.{
+        .{
+            .input = .{ .tmux = .{ .output = .{ .pane_id = 0, .data = "x" } } },
+            .contains_command = "refresh-client -C 132x43",
+        },
+        .{ .input = .{ .tmux = blockEnd("") } },
+    });
+    try testing.expect(viewer.command_queue.empty());
+    try testing.expect(!viewer.command_in_flight);
+}
+
+test "setClientSize does not mutate the in-flight client_size head" {
+    // ROOTSHELL-TMUX (id=viewer-coalesce-client-size): once a command's bytes
+    // are written, the response FIFO depends on it staying put; later resizes
+    // queue behind it (and coalesce with each other).
+    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    defer viewer.deinit();
+    try driveStartupOneWindow(&viewer);
+
+    viewer.setClientSize(100, 40);
+    {
+        var arena: ArenaAllocator = .init(testing.allocator);
+        defer arena.deinit();
+        const cmd = (try viewer.takePendingCommand(arena.allocator())).?;
+        try testing.expectEqualStrings("refresh-client -C 100x40\n", cmd);
+    }
+
+    // The first resize appends behind the in-flight head; the second
+    // coalesces into that pending entry.
+    viewer.setClientSize(120, 42);
+    viewer.setClientSize(132, 43);
+    try testing.expectEqual(@as(usize, 2), viewer.command_queue.len());
+
+    // The in-flight response pumps the pending (newest) size.
+    try testViewer(&viewer, &.{
+        .{
+            .input = .{ .tmux = blockEnd("") },
+            .contains_command = "refresh-client -C 132x43",
+        },
+        .{ .input = .{ .tmux = blockEnd("") } },
+    });
+    try testing.expect(viewer.command_queue.empty());
+    try testing.expect(!viewer.command_in_flight);
+}
+
+test "setClientSize coalescing preserves enable_pause" {
+    // ROOTSHELL-TMUX (id=viewer-coalesce-client-size): the resync rebuild
+    // queues its client_size with the pause-after re-enable; coalescing a
+    // later resize into it must update dims only, never strip the flag.
+    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    defer viewer.deinit();
+    try driveStartupOneWindow(&viewer);
+
+    try viewer.queueCommands(&.{.{ .client_size = .{
+        .cols = 80,
+        .rows = 24,
+        .enable_pause = true,
+    } }});
+    viewer.setClientSize(132, 43);
+
+    try testing.expectEqual(@as(usize, 1), viewer.command_queue.len());
+    const entry = viewer.command_queue.first().?;
+    try testing.expectEqual(@as(size.CellCountInt, 132), entry.client_size.cols);
+    try testing.expectEqual(@as(size.CellCountInt, 43), entry.client_size.rows);
+    try testing.expect(entry.client_size.enable_pause);
+}
+
+test "queueUserCommand coalesces a per-window size refresh" {
+    // ROOTSHELL-TMUX (id=viewer-coalesce-window-refresh): per-window
+    // `refresh-client -C @id:WxH` pushes coalesce per window; everything
+    // else still appends.
+    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    defer viewer.deinit();
+    try driveStartupOneWindow(&viewer);
+
+    try viewer.queueUserCommand("refresh-client -C @1:80x24\n");
+    try viewer.queueUserCommand("refresh-client -C @1:100x40\n");
+    try testing.expectEqual(@as(usize, 1), viewer.command_queue.len());
+
+    // A different window does NOT coalesce.
+    try viewer.queueUserCommand("refresh-client -C @2:80x24\n");
+    try testing.expectEqual(@as(usize, 2), viewer.command_queue.len());
+
+    // Non-size commands never match (even repeated).
+    try viewer.queueUserCommand("select-pane -t %0\n");
+    try viewer.queueUserCommand("select-pane -t %0\n");
+    try testing.expectEqual(@as(usize, 4), viewer.command_queue.len());
+
+    // The @1 entry holds the NEWEST bytes.
+    const head = viewer.command_queue.first().?;
+    try testing.expectEqualStrings("refresh-client -C @1:100x40\n", head.user);
+}
+
+test "queueUserCommand does not coalesce into the in-flight head" {
+    // ROOTSHELL-TMUX (id=viewer-coalesce-window-refresh)
+    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    defer viewer.deinit();
+    try driveStartupOneWindow(&viewer);
+
+    try viewer.queueUserCommand("refresh-client -C @1:80x24\n");
+    {
+        var arena: ArenaAllocator = .init(testing.allocator);
+        defer arena.deinit();
+        const cmd = (try viewer.takePendingCommand(arena.allocator())).?;
+        try testing.expectEqualStrings("refresh-client -C @1:80x24\n", cmd);
+    }
+
+    // Queued behind the in-flight head...
+    try viewer.queueUserCommand("refresh-client -C @1:100x40\n");
+    try testing.expectEqual(@as(usize, 2), viewer.command_queue.len());
+    // ...and a third coalesces into the PENDING entry, not the head.
+    try viewer.queueUserCommand("refresh-client -C @1:120x50\n");
+    try testing.expectEqual(@as(usize, 2), viewer.command_queue.len());
+
+    // The in-flight response pumps the pending (newest) bytes.
+    try testViewer(&viewer, &.{
+        .{
+            .input = .{ .tmux = blockEnd("") },
+            .contains_command = "refresh-client -C @1:120x50",
+        },
+        .{ .input = .{ .tmux = blockEnd("") } },
+    });
+    try testing.expect(viewer.command_queue.empty());
+    try testing.expect(!viewer.command_in_flight);
 }
 
 test "startup enables pause-after but sends NO client size" {
