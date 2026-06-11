@@ -61,6 +61,10 @@ pub const Handler = struct {
     };
 
     fn tryHook(self: Handler, alloc: Allocator, dcs: DCS) !?Hook {
+        // ROOTSHELL-TMUX (id=dcs-tmux-max-bytes): self's only previous use was
+        // handing its 1 MiB cap to the tmux parser, which broke legitimate
+        // >1 MiB capture replies. Kept as a parameter for upstream-diff shape.
+        _ = self;
         return switch (dcs.intermediates.len) {
             0 => switch (dcs.final) {
                 // Tmux control mode
@@ -76,7 +80,19 @@ pub const Handler = struct {
                     break :tmux .{
                         .state = .{
                             .tmux = .{
-                                .max_bytes = self.max_bytes,
+                                // ROOTSHELL-TMUX (id=dcs-tmux-max-bytes): do NOT
+                                // inherit the handler's 1 MiB anti-malicious-DCS
+                                // cap. tmux control mode is a long-lived line
+                                // protocol whose single capture-pane reply blocks
+                                // legitimately exceed 1 MiB (a 10k-line CJK
+                                // history replay is ~1-3 MiB); inheriting the cap
+                                // broke the parser at EXACTLY 1 MiB mid-reply and
+                                // (via the old forwardPut error path) silently ate
+                                // the rest of the channel — the "attach opens tabs
+                                // but every pane is frozen/blank" wedge. The
+                                // control parser has its own defenses: a 16 MiB
+                                // per-block recover bound and a 64 MiB hard cap
+                                // (its field default, used here).
                                 .buffer = try .initCapacity(
                                     alloc,
                                     128, // Arbitrary choice to limit initial reallocs
@@ -232,6 +248,22 @@ pub const Handler = struct {
     fn forwardPut(self: *Handler, byte: u8) ?Command {
         return self.tryPut(byte) catch |err| {
             log.info("error putting byte into DCS handler err={}", .{err});
+            // ROOTSHELL-TMUX (id=dcs-tmux-put-error): a failure inside the
+            // tmux control parser (its buffer cap, allocation failure) must
+            // surface as `.broken` so the stream handler tears the gateway
+            // down VISIBLY (prune tabs, force-unhook, back to a shell).
+            // Falling into `.ignore` here made the handler a silent byte
+            // sink: the viewer stayed alive, every pane froze blank, and no
+            // error appeared anywhere — the worst failure mode this channel
+            // has. `.inactive` (not `.ignore`) so dcsConsumeGroundRequest
+            // grounds the VT parser on the next byte.
+            if (comptime build_options.tmux_control_mode) {
+                if (self.state == .tmux) {
+                    self.discard();
+                    self.state = .inactive;
+                    return .{ .tmux = .broken };
+                }
+            }
             self.discard();
             self.state = .ignore;
             return null;
@@ -835,4 +867,101 @@ test "pending_esc is cleared on hook" {
     // Clean up: unhook so deinit doesn't leak
     var cmd = h.unhook().?;
     cmd.deinit();
+}
+
+test "tmux: a block larger than the handler's 1 MiB DCS cap parses fine" {
+    if (comptime !build_options.tmux_control_mode) return error.SkipZigTest;
+
+    // ROOTSHELL-TMUX (id=dcs-tmux-max-bytes): the tmux control parser must
+    // NOT inherit the handler's 1 MiB anti-malicious-DCS cap. A bounded
+    // capture-pane history reply (10k CJK lines) legitimately exceeds 1 MiB
+    // in a single %begin/%end block; inheriting the cap broke the parser at
+    // exactly 1 MiB and silently ate the rest of the channel (every pane
+    // frozen blank on attach — the original field wedge).
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var h: Handler = .{};
+    defer h.deinit();
+
+    {
+        var cmd = h.hook(alloc, .{ .params = &.{1000}, .final = 'p' }).?;
+        defer cmd.deinit();
+        try testing.expect(cmd.tmux == .enter);
+    }
+
+    const begin = "%begin 1718000000 5 1\n";
+    for (begin) |b| try testing.expect(h.put(b) == null);
+
+    // Feed > 1 MiB of block content (a long line then many short ones).
+    var line: [1024]u8 = undefined;
+    @memset(&line, 'x');
+    line[line.len - 1] = '\n';
+    var fed: usize = 0;
+    while (fed < (1024 + 64) * 1024) : (fed += line.len) {
+        for (line) |b| {
+            if (h.put(b)) |cmd_| {
+                var cmd = cmd_;
+                defer cmd.deinit();
+                // No block_end/broken/exit may fire mid-content.
+                try testing.expect(false);
+            }
+        }
+    }
+    try testing.expect(h.state == .tmux); // still hooked
+
+    const end = "%end 1718000000 5 1\n";
+    var got_end = false;
+    for (end) |b| {
+        if (h.put(b)) |cmd_| {
+            var cmd = cmd_;
+            defer cmd.deinit();
+            try testing.expect(cmd.tmux == .block_end);
+            try testing.expect(cmd.tmux.block_end.content.len > 1024 * 1024);
+            got_end = true;
+        }
+    }
+    try testing.expect(got_end);
+
+    var cmd = h.unhook().?;
+    defer cmd.deinit();
+    try testing.expect(cmd.tmux == .exit);
+}
+
+test "tmux: a control-parser put failure surfaces as .broken, not silent .ignore" {
+    if (comptime !build_options.tmux_control_mode) return error.SkipZigTest;
+
+    // ROOTSHELL-TMUX (id=dcs-tmux-put-error): when the tmux parser errors
+    // (its hard buffer cap), the handler must emit `.broken` so the stream
+    // handler tears the gateway down visibly. The old path flipped to
+    // `.ignore` and silently ate the channel forever.
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var h: Handler = .{};
+    defer h.deinit();
+
+    {
+        var cmd = h.hook(alloc, .{ .params = &.{1000}, .final = 'p' }).?;
+        defer cmd.deinit();
+        try testing.expect(cmd.tmux == .enter);
+    }
+
+    // Force the parser's own hard cap low to simulate the failure.
+    h.state.tmux.max_bytes = 8;
+
+    const input = "%begin 1 2 1\nabcdefghijklmnop";
+    var got_broken = false;
+    for (input) |b| {
+        if (h.put(b)) |cmd_| {
+            var cmd = cmd_;
+            defer cmd.deinit();
+            try testing.expect(cmd.tmux == .broken);
+            got_broken = true;
+            break;
+        }
+    }
+    try testing.expect(got_broken);
+    // Handler is inactive so the stream grounds on the next byte.
+    try testing.expect(h.isInactive());
 }
