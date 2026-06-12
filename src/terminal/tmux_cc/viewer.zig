@@ -58,6 +58,20 @@ const SENT_FIFO_INITIAL = 8;
 /// acks" for diagnosis. ROOTSHELL-TMUX (id=viewer-sent-fifo)
 const SENT_FIFO_WARN = 4096;
 
+/// Maximum windows materialized from one session's topology, and maximum
+/// total panes across all of them. Every pane allocates a Terminal with a
+/// 10 MiB scrollback ceiling here plus a Metal-backed TerminalView on the
+/// app's main actor, so an unbounded server-controlled topology (a hostile
+/// server opening thousands of windows, or wide layout strings bounded only
+/// by the 64 MiB control buffer) is a one-shot remote OOM / watchdog-kill on
+/// attach. Windows beyond the cap are DROPPED with a log — the session stays
+/// usable (degraded) instead of killing the app. Real sessions sit far below
+/// both caps (the per-layout node cap is separate, see
+/// Layout.max_parse_nodes). The Swift reconcile enforces the same caps as a
+/// backstop. ROOTSHELL-TMUX (id=viewer-topology-caps)
+pub const MAX_WINDOWS = 128;
+pub const MAX_TOTAL_PANES = 512;
+
 /// Seconds a pane may fall behind the control client before tmux pauses it.
 /// Sent as `-f pause-after=<N>` in the initial `refresh-client`. tmux parses
 /// this as SECONDS (server-client.c: `pause-after=%u` then `*= 1000`), NOT
@@ -1991,13 +2005,33 @@ pub const Viewer = struct {
         {
             var check_arena: ArenaAllocator = .init(self.alloc);
             defer check_arena.deinit();
-            _ = Layout.parseWithChecksum(check_arena.allocator(), layout_str) catch {
+            const checked = Layout.parseWithChecksum(check_arena.allocator(), layout_str) catch {
                 log.info(
                     "failed to parse window layout id={} layout={s}",
                     .{ window_id, layout_str },
                 );
                 return;
             };
+
+            // Topology cap: %layout-change grows panes without passing
+            // through receivedListWindows' caps, so a hostile server could
+            // otherwise inflate every window one layout-change at a time.
+            // Reject (keep the old layout) when the session's total pane
+            // count would exceed the cap; per-layout width is already
+            // bounded by the parser's node cap. ROOTSHELL-TMUX
+            // (id=viewer-topology-caps)
+            var total_panes: usize = checked.countPanes();
+            for (self.windows.items) |w| {
+                if (w.id == window_id) continue;
+                total_panes += w.layout.countPanes();
+            }
+            if (total_panes > MAX_TOTAL_PANES) {
+                log.warn(
+                    "topology cap: rejecting layout change for window id={} ({} total panes > {})",
+                    .{ window_id, total_panes, MAX_TOTAL_PANES },
+                );
+                return;
+            }
         }
 
         // Clone unchanged windows' layouts into a temporary arena BEFORE
@@ -2654,6 +2688,11 @@ pub const Viewer = struct {
         var active_window_id: ?usize = null;
         var active_pane_id: ?usize = null;
 
+        // Running pane total for the topology caps. ROOTSHELL-TMUX
+        // (id=viewer-topology-caps)
+        var total_panes: usize = 0;
+        var dropped_windows: usize = 0;
+
         // Parse all our windows
         var it = std.mem.splitScalar(u8, content, '\n');
         while (it.next()) |line_raw| {
@@ -2680,6 +2719,23 @@ pub const Viewer = struct {
                 continue;
             };
 
+            // Topology caps: a hostile/buggy server can list thousands of
+            // windows or panes, each of which becomes a Terminal grid here
+            // and a Metal view in the app. Drop windows beyond the caps
+            // (whole-window granularity keeps every materialized window's
+            // layout internally consistent) instead of OOMing the client.
+            // Dropped windows never reach self.windows, so the reconcile
+            // neither ensures nor focuses them. ROOTSHELL-TMUX
+            // (id=viewer-topology-caps)
+            const layout_panes = layout.countPanes();
+            if (windows.items.len >= MAX_WINDOWS or
+                total_panes + layout_panes > MAX_TOTAL_PANES)
+            {
+                dropped_windows += 1;
+                continue;
+            }
+            total_panes += layout_panes;
+
             // Record the active window and its current pane
             if (data.window_active) {
                 active_window_id = data.window_id;
@@ -2696,6 +2752,13 @@ pub const Viewer = struct {
                 .zoomed = data.window_zoomed_flag,
                 .name = try win_alloc.dupe(u8, data.window_name),
             });
+        }
+
+        if (dropped_windows > 0) {
+            log.warn(
+                "topology cap: dropped {} window(s) (kept {} windows / {} panes, caps {}/{})",
+                .{ dropped_windows, windows.items.len, total_panes, MAX_WINDOWS, MAX_TOTAL_PANES },
+            );
         }
 
         // Save arena state before we hand off to syncLayouts/actions
@@ -4596,6 +4659,46 @@ test "window list survives a send-keys block landing before list-windows" {
     }
     try testing.expect(found_windows);
     try testing.expectEqual(@as(usize, 1), viewer.windows.items.len);
+}
+
+test "topology cap drops excess windows from list-windows" {
+    // A hostile server listing thousands of windows must not materialize a
+    // Terminal per pane past the caps. ROOTSHELL-TMUX (id=viewer-topology-caps)
+    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    defer viewer.deinit();
+    try driveStartupOneWindow(&viewer);
+
+    // A topology change queues + sends a tracked list-windows.
+    _ = viewer.next(.{ .tmux = .{ .window_add = .{ .id = 1 } } });
+    try testing.expect(viewer.command_in_flight);
+    viewer.recordTrackedSend();
+
+    // Build a response listing more windows than MAX_WINDOWS; each is a
+    // single-pane 2x2 layout with a freshly computed checksum.
+    const Checksum = @import("layout.zig").Checksum;
+    var body: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer body.deinit();
+    for (0..MAX_WINDOWS + 10) |i| {
+        var layout_buf: [64]u8 = undefined;
+        const layout = try std.fmt.bufPrint(&layout_buf, "2x2,0,0,{d}", .{i});
+        const checksum_str = Checksum.calculate(layout).asString();
+        try body.writer.print(
+            "$0 @{d} {d} {d} 0 %{d} 2 2 {s},{s} w{d}\n",
+            .{ i, @intFromBool(i == 0), i, i, checksum_str, layout, i },
+        );
+    }
+
+    try testing.expectEqual(Viewer.BlockClass.tracked, viewer.classifyBlock());
+    _ = viewer.next(.{ .tmux = blockEnd(body.writer.buffered()) });
+    // No child surfaces in this test: clear the en-route flag like the
+    // TestStep harness does, or deinit orphans every new pane (= test leak).
+    {
+        var it = viewer.panes.iterator();
+        while (it.next()) |kv| kv.value_ptr.*.clearPendingAttach();
+    }
+
+    // Only the first MAX_WINDOWS windows survive; the excess is dropped.
+    try testing.expectEqual(@as(usize, MAX_WINDOWS), viewer.windows.items.len);
 }
 
 test "paste produces multiple untracked markers, all swallowed" {

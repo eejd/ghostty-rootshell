@@ -79,11 +79,13 @@ pub const Layout = struct {
     /// - WxH,X,Y[...] Vertical split (top-bottom), children comma-separated
     pub fn parse(alloc: Allocator, str: []const u8) ParseError!Layout {
         var offset: usize = 0;
+        var node_count: usize = 0;
         const root = try parseNext(
             alloc,
             str,
             &offset,
             0,
+            &node_count,
         );
         if (offset != str.len) return error.SyntaxError;
         return root;
@@ -97,14 +99,28 @@ pub const Layout = struct {
     /// (id=layout-parse-depth-cap)
     const max_parse_depth = 64;
 
+    /// Maximum total node count for a tmux layout string. The depth cap alone
+    /// doesn't bound a WIDE flat layout (`{1x1,0,0,1,1x1,0,0,2,...}` up to the
+    /// 64 MiB notification cap ≈ millions of leaves), and every leaf becomes a
+    /// full Terminal grid + pane + view downstream — a one-shot remote OOM /
+    /// watchdog-kill on attach. No real tmux window approaches 1024 nodes.
+    /// ROOTSHELL-TMUX (id=layout-parse-node-cap)
+    pub const max_parse_nodes = 1024;
+
     fn parseNext(
         alloc: Allocator,
         str: []const u8,
         offset: *usize,
         depth: usize,
+        node_count: *usize,
     ) ParseError!Layout {
         // Reject pathologically nested layouts before recursing further.
         if (depth > max_parse_depth) return error.SyntaxError;
+
+        // Reject pathologically wide layouts before allocating further.
+        // ROOTSHELL-TMUX (id=layout-parse-node-cap)
+        node_count.* += 1;
+        if (node_count.* > max_parse_nodes) return error.SyntaxError;
 
         // Find the first `x` to grab the width.
         const width: usize = if (std.mem.indexOfScalar(
@@ -199,6 +215,7 @@ pub const Layout = struct {
                         str,
                         offset,
                         depth + 1,
+                        node_count,
                     ));
 
                     // We should not reach the end of string here because
@@ -310,6 +327,22 @@ pub const Layout = struct {
             .arena = arena,
             .nodes = nodes,
             .zoomed = null,
+        };
+    }
+
+    /// Count the leaf panes in this layout. Used to enforce the viewer's
+    /// total-pane cap (each pane materializes a Terminal grid here and a
+    /// Metal-backed view in the app). Nesting recursion is bounded by the
+    /// parse-time depth cap; siblings are iterated. ROOTSHELL-TMUX
+    /// (id=viewer-topology-caps)
+    pub fn countPanes(self: Layout) usize {
+        return switch (self.content) {
+            .pane => 1,
+            .horizontal, .vertical => |children| total: {
+                var total: usize = 0;
+                for (children) |child| total += child.countPanes();
+                break :total total;
+            },
         };
     }
 
@@ -667,6 +700,57 @@ test "syntax error pathologically nested layout (depth cap)" {
     for (0..depth) |_| try buf.append(alloc, '}');
 
     try testing.expectError(error.SyntaxError, Layout.parse(alloc, buf.items));
+}
+
+test "syntax error pathologically wide layout (node cap)" {
+    // A wide flat split (millions of siblings, bounded only by the 64 MiB
+    // notification cap) must be rejected instead of materializing a Terminal
+    // grid per leaf. ROOTSHELL-TMUX (id=layout-parse-node-cap)
+    var arena: ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var buf: std.ArrayList(u8) = .empty;
+    defer buf.deinit(alloc);
+    try buf.appendSlice(alloc, "9x9,0,0{");
+    const leaves = Layout.max_parse_nodes + 50;
+    for (0..leaves) |i| {
+        if (i > 0) try buf.append(alloc, ',');
+        try buf.appendSlice(alloc, "1x1,0,0,1");
+    }
+    try buf.append(alloc, '}');
+
+    try testing.expectError(error.SyntaxError, Layout.parse(alloc, buf.items));
+}
+
+test "node cap allows realistic layouts" {
+    // A 32-pane flat split is well under the cap and must keep parsing.
+    var arena: ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var buf: std.ArrayList(u8) = .empty;
+    defer buf.deinit(alloc);
+    try buf.appendSlice(alloc, "9x9,0,0{");
+    for (0..32) |i| {
+        if (i > 0) try buf.append(alloc, ',');
+        try buf.appendSlice(alloc, "1x1,0,0,1");
+    }
+    try buf.append(alloc, '}');
+
+    const layout = try Layout.parse(alloc, buf.items);
+    try testing.expectEqual(@as(usize, 32), layout.countPanes());
+}
+
+test "countPanes counts leaves of nested layout" {
+    var arena: ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+
+    const layout: Layout = try .parse(
+        arena.allocator(),
+        "80x24,0,0[80x12,0,0{40x12,0,0,1,40x12,40,0,2},80x12,0,12,3]",
+    );
+    try testing.expectEqual(@as(usize, 3), layout.countPanes());
 }
 
 test "syntax error missing width" {
