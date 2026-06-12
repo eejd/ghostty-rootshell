@@ -378,13 +378,16 @@ pub const Viewer = struct {
     /// `renderer_mutex`).
     retired_panes: std.ArrayListUnmanaged(*Pane) = .empty,
 
-    /// Active-pane title (`#{pane_title}` / `#T`) per window id, fed by the
-    /// `@*` pane_title format subscription (see `title_subscription_name`).
-    /// Values are owned on `self.alloc` — NOT the windows arena — so they
-    /// survive list-windows rebuilds (tmux only re-sends a subscription value
-    /// when it changes, so we must retain the last one) and stay bounded to
-    /// one string per window even when a pane rewrites its title rapidly.
-    /// Empty/missing means "no pane title; fall back to the window name".
+    /// Resolved display title per window id, fed by the `@*` title format
+    /// subscription (see `title_subscription_name`): the active pane's title
+    /// (`#T`) while the window name is automatic, the manually chosen window
+    /// name (`#W`) once any client has renamed the window
+    /// (id=viewer-title-subscription-rename). Values are owned on
+    /// `self.alloc` — NOT the windows arena — so they survive list-windows
+    /// rebuilds (tmux only re-sends a subscription value when it changes, so
+    /// we must retain the last one) and stay bounded to one string per window
+    /// even when a pane rewrites its title rapidly. Empty/missing means
+    /// "nothing resolved yet; fall back to the window name".
     /// Freed on replace and on deinit.
     pane_titles: PaneTitlesMap = .empty,
 
@@ -3866,13 +3869,24 @@ const Command = union(enum) {
                 .{PAUSE_AFTER_SECONDS},
             ),
 
-            // Subscribe to every window's active-pane title. `@*` = all
-            // windows; the format is evaluated in each window's context, so
-            // `#{pane_title}` resolves to that window's active pane's title.
-            // Single-quoted so tmux stores `#{pane_title}` as the literal
-            // format (expanded per tick), not at parse time.
+            // Subscribe to every window's display title. `@*` = all windows;
+            // the format is evaluated in each window's context. Single-quoted
+            // so tmux stores the literal format (expanded per tick), not at
+            // parse time.
+            //
+            // The format resolves the title precedence server-side:
+            // `automatic-rename` is a flag option (expands 1/0 in formats),
+            // so a window with an automatic name shows its active pane's
+            // title (`#T`, rich), while a MANUALLY renamed window (any
+            // client's rename-window flips automatic-rename off) shows the
+            // chosen window name (`#W`). Without the conditional,
+            // rename-window was invisible: `#T` always won and shells rewrite
+            // it constantly. tmux re-evaluates the subscription whenever
+            // either input changes, so renames and pane-title updates both
+            // stream in live. ROOTSHELL-TMUX (id=viewer-title-subscription-rename)
             .subscribe_titles => try writer.writeAll(
-                "refresh-client -B '" ++ control.title_subscription_name ++ ":@*:#{pane_title}'\n",
+                "refresh-client -B '" ++ control.title_subscription_name ++
+                    ":@*:#{?automatic-rename,#{pane_title},#{window_name}}'\n",
             ),
 
             .pane_mode_query => |pane_id| try writer.print(
@@ -4148,7 +4162,7 @@ test "subscribe_titles command formats refresh-client -B" {
     try cmd.formatCommand(&builder.writer);
     const result = builder.writer.buffered();
     try testing.expectEqualStrings(
-        "refresh-client -B 'ghostty_title:@*:#{pane_title}'\n",
+        "refresh-client -B 'ghostty_title:@*:#{?automatic-rename,#{pane_title},#{window_name}}'\n",
         result,
     );
 }
