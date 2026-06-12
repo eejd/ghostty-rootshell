@@ -369,6 +369,14 @@ fn drainMailbox(
                 // tracked command).
                 defer v.alloc.free(v.data);
                 try io.queueWrite(data, v.data, self.flags.linefeed_mode);
+                // Hold the renderer mutex for the record: it appends to the
+                // viewer's sent FIFO and refreshes the debug mirror (which
+                // iterates viewer.panes), both of which the io-reader thread
+                // mutates under this mutex while parsing control-mode events.
+                // The write stays outside the lock (queueWrite may block on a
+                // full response pipe) and record-after-write order is kept.
+                io.renderer_state.mutex.lock();
+                defer io.renderer_state.mutex.unlock();
                 io.terminal_stream.handler.recordTmuxUntrackedSend();
             },
             .tmux_track_command => |v| { // ROOTSHELL-TMUX (id=thread-track-command)
@@ -376,6 +384,11 @@ fn drainMailbox(
                 // (same record-after-write ordering rationale as send-keys).
                 defer v.alloc.free(v.data);
                 try io.queueWrite(data, v.data, self.flags.linefeed_mode);
+                // Same locking rationale as .tmux_send_keys: the record
+                // touches viewer state the io-reader thread mutates under the
+                // renderer mutex.
+                io.renderer_state.mutex.lock();
+                defer io.renderer_state.mutex.unlock();
                 io.terminal_stream.handler.recordTmuxTrackedSend();
             },
             .tmux_detach => { // ROOTSHELL-TMUX (id=thread-detach)
