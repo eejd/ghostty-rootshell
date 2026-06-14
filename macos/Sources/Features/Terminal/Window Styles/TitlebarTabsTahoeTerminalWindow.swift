@@ -51,6 +51,11 @@ class TitlebarTabsTahoeTerminalWindow: TransparentTitlebarTerminalWindow, NSTool
         self.toolbar = toolbar
         toolbarStyle = .unifiedCompact
     }
+    override func syncAppearance(_ surfaceConfig: Ghostty.SurfaceView.DerivedConfig) {
+        super.syncAppearance(surfaceConfig)
+        setupTabBar()
+    }
+
 
     override func becomeMain() {
         super.becomeMain()
