@@ -56,7 +56,6 @@ class TitlebarTabsTahoeTerminalWindow: TransparentTitlebarTerminalWindow, NSTool
         setupTabBar()
     }
 
-
     override func becomeMain() {
         super.becomeMain()
 
