@@ -157,7 +157,6 @@ pub const Command = union(Key) {
     kitty_clipboard_protocol: KittyClipboardProtocol,
 
     /// Kitty drag and drop protocol (OSC 72)
-    /// https://sw.kovidgoyal.net/kitty/drag-and-drop-protocol/
     kitty_dnd_protocol: KittyDndProtocol,
 
     /// OSC 3008. Hierarchical context signalling (UAPI spec).

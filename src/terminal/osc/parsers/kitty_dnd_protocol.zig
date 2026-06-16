@@ -1,19 +1,5 @@
 //! Kitty's drag and drop protocol (OSC 72)
 //! Specification: https://sw.kovidgoyal.net/kitty/drag-and-drop-protocol/
-//!
-//! The OSC 72 escape has the form:
-//!
-//!     OSC 72 ; metadata ; payload ST
-//!
-//! Where `metadata` is a colon separated list of `key=value` pairs and
-//! `payload` is event-type specific (a space separated MIME list, base64
-//! encoded binary data, or absent). The protocol is chunked at 4096 bytes
-//! per payload; chunked transfers are signalled via the `m` metadata key.
-//!
-//! This file only parses individual OSC 72 events. Reassembly of chunked
-//! transfers and event semantics (drag state machine, file I/O for the
-//! remote machine subprotocols, etc.) are responsibilities of the
-//! action/dispatch layer above.
 
 const std = @import("std");
 
@@ -26,14 +12,11 @@ const Terminator = @import("../../osc.zig").Terminator;
 const log = std.log.scoped(.kitty_dnd_protocol);
 
 pub const OSC = struct {
-    /// The raw metadata that was received. Parse individual values with
-    /// the `readOption` method.
+    /// The raw metadata that was received. Parse individual values with `readOption`.
     metadata: []const u8,
-    /// The raw payload. Its meaning depends on the event type (`t` key)
-    /// and may be base64 encoded.
+    /// The raw payload. Its meaning and encoding depend on the event type (`t` key).
     payload: ?[]const u8,
-    /// The terminator used for the inbound OSC, recorded so that any
-    /// response we emit can match it.
+    /// The terminator used for this OSC, so any response can match it.
     terminator: Terminator,
 
     pub fn readOption(self: OSC, comptime key: Option) ?key.Type() {
@@ -41,34 +24,20 @@ pub const OSC = struct {
     }
 };
 
-/// The set of values the `t` (event type) key may take. Each variant maps
-/// to a single ASCII character per the spec.
+/// Values for the `t` (event type) metadata key.
 pub const EventType = enum {
-    /// `t=a` — client begins accepting drops, payload is space-separated MIME list.
     accept_drops,
-    /// `t=A` — client no longer wishes to accept drops.
     stop_accepting_drops,
-    /// `t=m` — drop move event (terminal → client).
     drop_move,
-    /// `t=M` — drop committed event (terminal → client).
     drop_dropped,
-    /// `t=r` — request data (or response data, or end-of-drop sentinel).
     request_data,
-    /// `t=R` — error response for a data request.
     request_error,
-    /// `t=o` — start offering drags / drag-start gesture.
     offer_drag,
-    /// `t=p` — pre-send data for an offered MIME type or drag image.
     present_data,
-    /// `t=P` — change drag image or finalize start-drag.
     change_drag_image,
-    /// `t=e` — drag offer status event (terminal → client).
     drag_offer_event,
-    /// `t=E` — drag offer error or cancel.
     drag_offer_error,
-    /// `t=k` — data for entries in the offered text/uri-list (drag-out).
     uri_list_data,
-    /// `t=q` — query protocol support.
     query,
 
     pub fn init(str: []const u8) ?EventType {
@@ -92,26 +61,15 @@ pub const EventType = enum {
     }
 };
 
-/// All metadata keys defined by the protocol. Keys are case-sensitive —
-/// `x` and `X` (and `y`/`Y`, `m`/no `M` key but `M` is only a `t` value)
-/// are distinct.
+/// Metadata keys defined by the protocol. Keys are case-sensitive: `x` and `X` are distinct.
 pub const Option = enum {
-    /// Event type.
     t,
-    /// Chunking indicator: 0 or 1 (1 means more chunks follow).
     m,
-    /// Multiplexer id, echoed in all replies for that session.
     i,
-    /// Operation: 0 reject, 1 copy, 2 move, 3 either; also reused for
-    /// other meanings (e.g. opacity scaled by 1024 in drag images).
     o,
-    /// Cell column (or generic 1-based index in request/data events).
     x,
-    /// Cell row (or generic 1-based sub-index in request/data events).
     y,
-    /// Pixel column (or flag, or directory handle depending on event).
     X,
-    /// Pixel row (or directory handle, or image dimension depending on event).
     Y,
 
     pub fn Type(comptime key: Option) type {
@@ -124,18 +82,12 @@ pub const Option = enum {
         };
     }
 
-    /// Look up an option in the metadata string. Returns null if the key
-    /// is absent, malformed, or its value cannot be parsed as the target
-    /// type. The default values from the spec are *not* substituted here;
-    /// callers should apply defaults via `orelse` so missing-vs-present
-    /// can still be distinguished where it matters.
     pub fn read(comptime key: Option, metadata: []const u8) ?key.Type() {
         const name = @tagName(key);
 
         const value: []const u8 = value: {
             var pos: usize = 0;
             while (pos < metadata.len) {
-                // Skip whitespace between options.
                 while (pos < metadata.len and std.ascii.isWhitespace(metadata[pos])) pos += 1;
                 if (pos >= metadata.len) return null;
 
@@ -164,6 +116,195 @@ pub const Option = enum {
         };
     }
 };
+
+test "OSC 72: metadata only, no payload" {
+    const testing = std.testing;
+
+    var p: Parser = .init(testing.allocator);
+    defer p.deinit();
+
+    const input = "72;t=a";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?.*;
+    try testing.expect(cmd == .kitty_dnd_protocol);
+    try testing.expectEqualStrings("t=a", cmd.kitty_dnd_protocol.metadata);
+    try testing.expect(cmd.kitty_dnd_protocol.payload == null);
+}
+
+test "OSC 72: metadata and empty payload" {
+    const testing = std.testing;
+
+    var p: Parser = .init(testing.allocator);
+    defer p.deinit();
+
+    const input = "72;t=a;";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?.*;
+    try testing.expect(cmd == .kitty_dnd_protocol);
+    try testing.expectEqualStrings("t=a", cmd.kitty_dnd_protocol.metadata);
+    try testing.expectEqualStrings("", cmd.kitty_dnd_protocol.payload.?);
+}
+
+test "OSC 72: metadata and non-empty payload" {
+    const testing = std.testing;
+
+    var p: Parser = .init(testing.allocator);
+    defer p.deinit();
+
+    const input = "72;t=a:i=5;text/plain text/uri-list";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?.*;
+    try testing.expect(cmd == .kitty_dnd_protocol);
+    try testing.expectEqualStrings("t=a:i=5", cmd.kitty_dnd_protocol.metadata);
+    try testing.expectEqualStrings("text/plain text/uri-list", cmd.kitty_dnd_protocol.payload.?);
+}
+
+test "OSC 72: readOption .t valid event types" {
+    const testing = std.testing;
+
+    var p: Parser = .init(testing.allocator);
+    defer p.deinit();
+
+    const cases = .{
+        .{ "72;t=a", EventType.accept_drops },
+        .{ "72;t=A", EventType.stop_accepting_drops },
+        .{ "72;t=m", EventType.drop_move },
+        .{ "72;t=M", EventType.drop_dropped },
+        .{ "72;t=r", EventType.request_data },
+        .{ "72;t=R", EventType.request_error },
+        .{ "72;t=o", EventType.offer_drag },
+        .{ "72;t=p", EventType.present_data },
+        .{ "72;t=P", EventType.change_drag_image },
+        .{ "72;t=e", EventType.drag_offer_event },
+        .{ "72;t=E", EventType.drag_offer_error },
+        .{ "72;t=k", EventType.uri_list_data },
+        .{ "72;t=q", EventType.query },
+    };
+
+    inline for (cases) |case| {
+        p.deinit();
+        p = .init(testing.allocator);
+        for (case[0]) |ch| p.next(ch);
+        const cmd = p.end('\x1b').?.*;
+        try testing.expect(cmd == .kitty_dnd_protocol);
+        try testing.expectEqual(case[1], cmd.kitty_dnd_protocol.readOption(.t).?);
+    }
+}
+
+test "OSC 72: readOption .t unknown value returns null" {
+    const testing = std.testing;
+
+    var p: Parser = .init(testing.allocator);
+    defer p.deinit();
+
+    const input = "72;t=z";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?.*;
+    try testing.expect(cmd == .kitty_dnd_protocol);
+    try testing.expect(cmd.kitty_dnd_protocol.readOption(.t) == null);
+}
+
+test "OSC 72: readOption integer keys" {
+    const testing = std.testing;
+
+    var p: Parser = .init(testing.allocator);
+    defer p.deinit();
+
+    const input = "72;t=m:i=3:x=10:y=5:X=320:Y=200:o=1:m=0";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?.*;
+    try testing.expect(cmd == .kitty_dnd_protocol);
+    try testing.expectEqual(@as(i32, 3), cmd.kitty_dnd_protocol.readOption(.i).?);
+    try testing.expectEqual(@as(i32, 10), cmd.kitty_dnd_protocol.readOption(.x).?);
+    try testing.expectEqual(@as(i32, 5), cmd.kitty_dnd_protocol.readOption(.y).?);
+    try testing.expectEqual(@as(i32, 320), cmd.kitty_dnd_protocol.readOption(.X).?);
+    try testing.expectEqual(@as(i32, 200), cmd.kitty_dnd_protocol.readOption(.Y).?);
+    try testing.expectEqual(@as(i32, 1), cmd.kitty_dnd_protocol.readOption(.o).?);
+    try testing.expectEqual(@as(i32, 0), cmd.kitty_dnd_protocol.readOption(.m).?);
+}
+
+test "OSC 72: readOption negative sentinel (-1 for drag leave)" {
+    const testing = std.testing;
+
+    var p: Parser = .init(testing.allocator);
+    defer p.deinit();
+
+    const input = "72;t=m:x=-1:y=-1";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?.*;
+    try testing.expect(cmd == .kitty_dnd_protocol);
+    try testing.expectEqual(@as(i32, -1), cmd.kitty_dnd_protocol.readOption(.x).?);
+    try testing.expectEqual(@as(i32, -1), cmd.kitty_dnd_protocol.readOption(.y).?);
+}
+
+test "OSC 72: readOption case-sensitive key matching" {
+    const testing = std.testing;
+
+    var p: Parser = .init(testing.allocator);
+    defer p.deinit();
+
+    // x=10 must not be returned when asking for .X
+    const input = "72;x=10:Y=200";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?.*;
+    try testing.expect(cmd == .kitty_dnd_protocol);
+    try testing.expectEqual(@as(i32, 10), cmd.kitty_dnd_protocol.readOption(.x).?);
+    try testing.expect(cmd.kitty_dnd_protocol.readOption(.X) == null);
+    try testing.expectEqual(@as(i32, 200), cmd.kitty_dnd_protocol.readOption(.Y).?);
+    try testing.expect(cmd.kitty_dnd_protocol.readOption(.y) == null);
+}
+
+test "OSC 72: readOption absent key returns null" {
+    const testing = std.testing;
+
+    var p: Parser = .init(testing.allocator);
+    defer p.deinit();
+
+    const input = "72;t=a";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?.*;
+    try testing.expect(cmd == .kitty_dnd_protocol);
+    try testing.expect(cmd.kitty_dnd_protocol.readOption(.i) == null);
+    try testing.expect(cmd.kitty_dnd_protocol.readOption(.x) == null);
+    try testing.expect(cmd.kitty_dnd_protocol.readOption(.X) == null);
+    try testing.expect(cmd.kitty_dnd_protocol.readOption(.m) == null);
+}
+
+test "OSC 72: readOption malformed integer returns null" {
+    const testing = std.testing;
+
+    var p: Parser = .init(testing.allocator);
+    defer p.deinit();
+
+    const input = "72;x=notanumber";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?.*;
+    try testing.expect(cmd == .kitty_dnd_protocol);
+    try testing.expect(cmd.kitty_dnd_protocol.readOption(.x) == null);
+}
+
+test "OSC 72: BEL terminator recorded" {
+    const testing = std.testing;
+
+    var p: Parser = .init(testing.allocator);
+    defer p.deinit();
+
+    const input = "72;t=q";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end(0x07).?.*;
+    try testing.expect(cmd == .kitty_dnd_protocol);
+    try testing.expect(cmd.kitty_dnd_protocol.terminator == .bel);
+}
 
 pub fn parse(parser: *Parser, terminator_ch: ?u8) ?*Command {
     assert(parser.state == .@"72");
