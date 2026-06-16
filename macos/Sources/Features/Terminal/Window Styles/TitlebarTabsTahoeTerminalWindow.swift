@@ -54,7 +54,12 @@ class TitlebarTabsTahoeTerminalWindow: TransparentTitlebarTerminalWindow, NSTool
     // Called after new tab finishes adjusting and setupTabBar is called in order to prevent Tab Bar hiding/size bug that occurs with some interactions with Mac UI
     override func syncAppearance(_ surfaceConfig: Ghostty.SurfaceView.DerivedConfig) {
         super.syncAppearance(surfaceConfig)
-        setupTabBar()
+        DispatchQueue.main.async {
+            // HACK: wait a tick before doing anything, to avoid edge cases during startup... :/
+            // If we don't do this then on launch windows with restored state with tabs will end
+            // up with messed up tab bars that don't show all tabs.
+            self.setupTabBar()
+        }
     }
 
     override func becomeMain() {
