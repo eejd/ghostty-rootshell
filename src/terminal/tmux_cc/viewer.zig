@@ -16,6 +16,7 @@ const ScreenSet = @import("../ScreenSet.zig");
 const Terminal = @import("../Terminal.zig");
 const color = @import("../color.zig");
 const mouse = @import("../mouse.zig");
+const osc = @import("../osc.zig"); // ROOTSHELL-TMUX (id=viewer-pane-osc): OSC 9;4 progress report type
 const TerminalStream = @import("../stream_terminal.zig").Stream;
 const TerminalStreamHandler = @import("../stream_terminal.zig").Handler;
 const Layout = @import("layout.zig").Layout;
@@ -597,6 +598,16 @@ pub const Viewer = struct {
             name: []const u8,
         },
 
+        /// A pane requested an OSC 52 clipboard SET. The caller should write
+        /// `data` (still base64-encoded) to the system clipboard. `kind` is the
+        /// selection ('c'/'s'/'p'). `data` is stored on the action arena — valid
+        /// only until the next call to `next()`. ROOTSHELL-TMUX
+        /// (id=viewer-clipboard)
+        pane_clipboard_write: struct {
+            kind: u8,
+            data: []const u8,
+        },
+
         pub fn format(self: Action, writer: *std.Io.Writer) !void {
             const T = Action;
             const info = @typeInfo(T).@"union";
@@ -650,6 +661,18 @@ pub const Viewer = struct {
         name: []const u8 = "",
     };
 
+    /// ROOTSHELL-TMUX (id=viewer-pane-osc): a per-pane OSC event captured from
+    /// live `%output` and forwarded to the pane's OWN child surface (progress
+    /// OSC 9;4, pwd OSC 7, desktop notification OSC 9/777). Terminal-layer type
+    /// (no apprt dependency); `termio/Tmux.zig` turns it into the matching
+    /// `apprt.surface.Message`. Strings are borrowed for the duration of the
+    /// post call only (the message-builder copies them synchronously).
+    pub const PaneOscEvent = union(enum) {
+        progress: osc.Command.ProgressReport,
+        pwd: []const u8,
+        notification: struct { title: []const u8, body: []const u8 },
+    };
+
     pub const Pane = struct {
         terminal: Terminal,
         stream: TerminalStream,
@@ -675,6 +698,15 @@ pub const Viewer = struct {
         /// terminal layer stays decoupled from the IO/renderer/xev layer.
         wake_ctx: ?*anyopaque = null,
         wake_fn: ?*const fn (?*anyopaque) void = null,
+
+        /// ROOTSHELL-TMUX (id=viewer-pane-osc): cross-thread post of a per-pane
+        /// OSC event to THIS pane's own child surface mailbox. Published by the
+        /// child in `attachRenderer` and cleared in `detachRenderer`, exactly
+        /// like `wake_ctx`/`wake_fn` — the gateway loads them with acquire inside
+        /// a `lockRenderer` window and the `renderer_users` drain keeps `ctx`
+        /// (the child's io) valid for the call. Null when no child is attached.
+        osc_post_ctx: ?*anyopaque = null,
+        osc_post_fn: ?*const fn (?*anyopaque, PaneOscEvent) void = null,
 
         /// True from the moment this pane's terminal is created (io thread,
         /// `initLayout`) until a child surface attaches its renderer
@@ -771,6 +803,17 @@ pub const Viewer = struct {
         /// queries in history never produce replies.
         responses: std.ArrayList([]const u8) = .empty,
 
+        /// OSC 52 clipboard SET requests captured from this pane's live
+        /// `%output`. ROOTSHELL-TMUX (id=viewer-clipboard): tmux relays the
+        /// app's raw OSC 52 bytes (a control client has no tty for tmux to set
+        /// the clipboard itself), so the pane stream's `clipboard_write` effect
+        /// buffers each here. Drained after every `%output` feed and emitted as
+        /// `pane_clipboard_write` actions routed to the app's clipboard. Each
+        /// `data` is an owned copy of the still-base64-encoded payload. Only
+        /// `pane.stream` (live output) installs the effect; capture-pane replays
+        /// use throwaway readonly streams so stale OSC 52 in history is ignored.
+        clipboard_writes: std.ArrayList(struct { kind: u8, data: []const u8 }) = .empty,
+
         /// Child IO thread (`Tmux.threadEnter`): publish the attach handshake.
         /// Stores the wake context/fn and renderer mutex with release ordering,
         /// then clears `pending_attach` LAST, so a gateway acquire-load that sees
@@ -782,9 +825,16 @@ pub const Viewer = struct {
             mutex: *std.Thread.Mutex,
             wake_ctx: *anyopaque,
             wake_fn: *const fn (?*anyopaque) void,
+            osc_post_ctx: *anyopaque,
+            osc_post_fn: *const fn (?*anyopaque, PaneOscEvent) void,
         ) void {
             @atomicStore(?*anyopaque, &self.wake_ctx, wake_ctx, .release);
             @atomicStore(?*const fn (?*anyopaque) void, &self.wake_fn, wake_fn, .release);
+            // Same publish ordering as wake (ctx before fn): a gateway that
+            // acquire-loads a non-null fn is guaranteed to see ctx.
+            // ROOTSHELL-TMUX (id=viewer-pane-osc)
+            @atomicStore(?*anyopaque, &self.osc_post_ctx, osc_post_ctx, .release);
+            @atomicStore(?*const fn (?*anyopaque, PaneOscEvent) void, &self.osc_post_fn, osc_post_fn, .release);
             @atomicStore(?*std.Thread.Mutex, &self.renderer_mutex, mutex, .release);
             @atomicStore(bool, &self.pending_attach, false, .release);
         }
@@ -829,6 +879,10 @@ pub const Viewer = struct {
             }
             @atomicStore(?*const fn (?*anyopaque) void, &self.wake_fn, null, .release);
             @atomicStore(?*anyopaque, &self.wake_ctx, null, .release);
+            // Clear the OSC post handshake the same way (fn first), so a
+            // concurrent gateway post skips. ROOTSHELL-TMUX (id=viewer-pane-osc)
+            @atomicStore(?*const fn (?*anyopaque, PaneOscEvent) void, &self.osc_post_fn, null, .release);
+            @atomicStore(?*anyopaque, &self.osc_post_ctx, null, .release);
             @atomicStore(?*std.Thread.Mutex, &self.renderer_mutex, null, .seq_cst);
             while (@atomicLoad(usize, &self.renderer_users, .seq_cst) > 0) {
                 std.atomic.spinLoopHint();
@@ -880,6 +934,17 @@ pub const Viewer = struct {
             if (f) |func| func(@atomicLoad(?*anyopaque, &self.wake_ctx, .acquire));
         }
 
+        /// Gateway IO thread: forward a per-pane OSC event to the child surface's
+        /// mailbox if a child is attached. MUST be called inside a
+        /// `lockRenderer`/`unlockRenderer` window so the `renderer_users` drain
+        /// keeps the child io (`ctx`) alive for the call (the effect that calls
+        /// this fires during `receivedOutput`'s `nextSlice`, which holds it).
+        /// ROOTSHELL-TMUX (id=viewer-pane-osc)
+        pub fn postOscEvent(self: *const Pane, event: PaneOscEvent) void {
+            const f = @atomicLoad(?*const fn (?*anyopaque, PaneOscEvent) void, &self.osc_post_fn, .acquire);
+            if (f) |func| func(@atomicLoad(?*anyopaque, &self.osc_post_ctx, .acquire), event);
+        }
+
         /// Gateway IO thread: clear the en-route flag (reset paths). The
         /// creation-time `pending_attach = true` initializer runs before the pane
         /// is published into `panes`, so it stays a plain store.
@@ -921,6 +986,8 @@ pub const Viewer = struct {
         pub fn deinit(self: *Pane, alloc: Allocator) void {
             for (self.responses.items) |chunk| alloc.free(chunk);
             self.responses.deinit(alloc);
+            for (self.clipboard_writes.items) |cw| alloc.free(cw.data);
+            self.clipboard_writes.deinit(alloc);
             self.stream.deinit();
             self.terminal.deinit(alloc);
         }
@@ -1386,6 +1453,9 @@ pub const Viewer = struct {
                 const pane = kv.value_ptr.*;
                 for (pane.responses.items) |chunk| self.alloc.free(chunk);
                 pane.responses.clearRetainingCapacity();
+                // Same rationale for buffered OSC 52 clipboard SETs (id=viewer-clipboard).
+                for (pane.clipboard_writes.items) |cw| self.alloc.free(cw.data);
+                pane.clipboard_writes.clearRetainingCapacity();
             }
         }
 
@@ -3193,6 +3263,11 @@ pub const Viewer = struct {
             log.warn("failed to flush pane {} query replies err={}", .{ id, err });
         };
 
+        // Route any OSC 52 clipboard SETs the pane app emitted to the system
+        // clipboard via a `pane_clipboard_write` action (tmux never sets the
+        // clipboard for a -CC client). ROOTSHELL-TMUX (id=viewer-clipboard)
+        self.flushPaneClipboard(actions, pane);
+
         wakePane(pane);
     }
 
@@ -3205,6 +3280,68 @@ pub const Viewer = struct {
         const alloc = handler.terminal.gpa();
         const copy = alloc.dupe(u8, data) catch return;
         pane.responses.append(alloc, copy) catch alloc.free(copy);
+    }
+
+    /// `clipboard_write` effect installed on each pane's live stream: buffer one
+    /// OSC 52 SET per call for emission as a `pane_clipboard_write` action after
+    /// the `%output` feed (see `flushPaneClipboard`). Recovers the owning `Pane`
+    /// from the handler's terminal pointer (always `pane.terminal`, set by
+    /// `vtStream`). The base64 stays encoded; the app side decodes it.
+    /// ROOTSHELL-TMUX (id=viewer-clipboard)
+    fn paneClipboardWrite(handler: *TerminalStreamHandler, kind: u8, data: []const u8) void {
+        const pane: *Pane = @fieldParentPtr("terminal", handler.terminal);
+        const alloc = handler.terminal.gpa();
+        const copy = alloc.dupe(u8, data) catch return;
+        pane.clipboard_writes.append(alloc, .{ .kind = kind, .data = copy }) catch alloc.free(copy);
+    }
+
+    /// `progress_report` / `pwd_report` / `desktop_notification` effects installed
+    /// on each pane's live stream. Unlike clipboard (global → gateway), these are
+    /// per-pane: forward them straight to the pane's OWN child surface via
+    /// `postOscEvent` (no buffering / no gateway round-trip). The borrowed strings
+    /// are copied synchronously by the message-builder in `termio/Tmux.zig`.
+    /// ROOTSHELL-TMUX (id=viewer-pane-osc)
+    fn paneProgressReport(handler: *TerminalStreamHandler, report: osc.Command.ProgressReport) void {
+        const pane: *Pane = @fieldParentPtr("terminal", handler.terminal);
+        pane.postOscEvent(.{ .progress = report });
+    }
+
+    fn panePwdReport(handler: *TerminalStreamHandler, pwd: []const u8) void {
+        const pane: *Pane = @fieldParentPtr("terminal", handler.terminal);
+        pane.postOscEvent(.{ .pwd = pwd });
+    }
+
+    fn paneDesktopNotification(handler: *TerminalStreamHandler, title: []const u8, body: []const u8) void {
+        const pane: *Pane = @fieldParentPtr("terminal", handler.terminal);
+        pane.postOscEvent(.{ .notification = .{ .title = title, .body = body } });
+    }
+
+    /// Drain the pane's buffered OSC 52 clipboard SETs into
+    /// `pane_clipboard_write` actions (payload duplicated onto the action arena,
+    /// valid until the next `next()`), then free the buffer. The gateway's full
+    /// StreamHandler turns each action into a `clipboard_write` surface message.
+    /// ROOTSHELL-TMUX (id=viewer-clipboard)
+    fn flushPaneClipboard(self: *Viewer, actions: *std.ArrayList(Action), pane: *Pane) void {
+        if (pane.clipboard_writes.items.len == 0) return;
+        defer {
+            for (pane.clipboard_writes.items) |cw| self.alloc.free(cw.data);
+            pane.clipboard_writes.clearRetainingCapacity();
+        }
+
+        var act_arena = self.action_arena.promote(self.alloc);
+        defer self.action_arena = act_arena.state;
+        for (pane.clipboard_writes.items) |cw| {
+            const data = act_arena.allocator().dupe(u8, cw.data) catch {
+                log.warn("failed to allocate clipboard write payload", .{});
+                continue;
+            };
+            actions.append(act_arena.allocator(), .{ .pane_clipboard_write = .{
+                .kind = cw.kind,
+                .data = data,
+            } }) catch {
+                log.warn("failed to queue clipboard write action", .{});
+            };
+        }
     }
 
     /// Drain the pane's buffered query replies, drop the ones tmux answers
@@ -3397,6 +3534,16 @@ pub const Viewer = struct {
                 // replies. (vtStream defaults to readonly, so capture replays
                 // and other vtStream users are unaffected.)
                 pane.stream.handler.effects.write_pty = &paneWritePty;
+                // Forward OSC 52 clipboard SETs from this pane to the app's
+                // system clipboard — tmux never sets the clipboard for a -CC
+                // client (no tty). ROOTSHELL-TMUX (id=viewer-clipboard)
+                pane.stream.handler.effects.clipboard_write = &paneClipboardWrite;
+                // Forward OSC 9;4 progress / OSC 7 pwd / OSC 9 notifications to
+                // this pane's own child surface (the normal terminal-surface
+                // path handles them downstream). ROOTSHELL-TMUX (id=viewer-pane-osc)
+                pane.stream.handler.effects.progress_report = &paneProgressReport;
+                pane.stream.handler.effects.pwd_report = &panePwdReport;
+                pane.stream.handler.effects.desktop_notification = &paneDesktopNotification;
                 gop.value_ptr.* = pane;
             },
         }
@@ -6862,6 +7009,58 @@ test "forceResync drops buffered pane responses" {
     viewer.forceResync();
     try testing.expect(viewer.isResyncing());
     try testing.expectEqual(@as(usize, 0), pane.responses.items.len);
+}
+
+test "pane OSC 52 emits a pane_clipboard_write action" {
+    // ROOTSHELL-TMUX (id=viewer-clipboard): a -CC pane app that emits OSC 52
+    // (relayed raw by tmux in %output — tmux never sets the clipboard itself for
+    // a control client) must surface a clipboard write action to the app.
+    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    defer viewer.deinit();
+
+    try testViewer(&viewer, &.{
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{
+            .input = .{ .tmux = .{ .session_changed = .{ .id = 1, .name = "test" } } },
+            .contains_command = "refresh-client",
+        },
+        .{ .input = .{ .tmux = blockEnd("") }, .contains_command = "display-message" },
+        .{ .input = .{ .tmux = blockEnd("3.5a") }, .contains_command = "list-windows" },
+        .{
+            .input = .{ .tmux = blockEnd(
+                \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
+            ) },
+            .contains_tags = &.{ .windows, .command },
+        },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+    });
+
+    // Mark the pane initialized so live %output is processed (capture-pane
+    // completion normally does this).
+    const pane = viewer.panes.get(0).?;
+    pane.initialized = true;
+
+    // tmux octal-escapes control bytes in %output: ESC=\033, BEL=\007.
+    // "aGVsbG8=" is base64("hello"); it must reach the action still encoded.
+    const actions = viewer.next(.{ .tmux = .{ .output = .{
+        .pane_id = 0,
+        .data = "\\033]52;c;aGVsbG8=\\007",
+    } } });
+
+    var found = false;
+    for (actions) |action| {
+        if (action == .pane_clipboard_write) {
+            found = true;
+            try testing.expectEqual(@as(u8, 'c'), action.pane_clipboard_write.kind);
+            try testing.expectEqualStrings("aGVsbG8=", action.pane_clipboard_write.data);
+        }
+    }
+    try testing.expect(found);
 }
 
 test "Action.format handles focus action" {

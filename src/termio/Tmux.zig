@@ -238,6 +238,11 @@ pub fn threadEnter(
             io.renderer_state.mutex,
             @ptrCast(&io.renderer_wakeup),
             &wakeRenderer,
+            // OSC post context = this child's io, giving postOscEvent access to
+            // io.surface_mailbox (+ io.alloc). Cleared by detachRenderer.
+            // ROOTSHELL-TMUX (id=viewer-pane-osc)
+            @ptrCast(io),
+            &postOscEvent,
         );
     }
 
@@ -290,6 +295,59 @@ fn wakeRenderer(ctx: ?*anyopaque) void {
     // here too rather than deref a null/torn context.
     const wakeup: *xev.Async = @ptrCast(@alignCast(ctx orelse return));
     wakeup.notify() catch {};
+}
+
+/// Per-pane OSC post callback registered on the viewer pane (see
+/// `Viewer.Pane.osc_post_fn`). `ctx` is THIS child surface's `*termio.Termio`,
+/// stable for the child IO lifetime like the wake context. Invoked by the viewer
+/// (parent gateway) IO thread inside its `lockRenderer` window — the
+/// `renderer_users` drain keeps this `io` alive for the call. Builds the matching
+/// `apprt.surface.Message` (mirroring `stream_handler.zig`'s
+/// `reportPwd`/`showDesktopNotification`/`progressReport`) and posts it to THIS
+/// pane surface's mailbox, so the normal `Surface.handleMessage` → `performAction`
+/// path attributes progress / pwd / notification to the correct pane — reusing the
+/// per-surface handlers with no new action. Borrowed strings are copied into the
+/// message synchronously here. ROOTSHELL-TMUX (id=viewer-pane-osc)
+/// Reduce an OSC 7 value to a bare path for display in the pane. ROOTSHELL-TMUX
+/// (id=viewer-pane-osc): the normal `reportPwd` parses the URL and gates on
+/// `isLocal`, but a tmux pane is typically a REMOTE shell (SSH) whose pwd host is
+/// never local, so we skip that gate and just strip a leading `file://host` (or
+/// `kitty-shell-cwd://host`) to the path. Bare paths and unknown forms pass
+/// through unchanged. (Percent-decoding is intentionally skipped — rare in cwd
+/// reports; revisit if a path with `%xx` shows up.)
+fn pwdPath(raw: []const u8) []const u8 {
+    const schemes = [_][]const u8{ "file://", "kitty-shell-cwd://" };
+    for (schemes) |scheme| {
+        if (std.mem.startsWith(u8, raw, scheme)) {
+            const after = raw[scheme.len..];
+            // `after` = "host/path…"; the path starts at the first '/'.
+            return if (std.mem.indexOfScalar(u8, after, '/')) |slash| after[slash..] else "/";
+        }
+    }
+    return raw;
+}
+
+fn postOscEvent(ctx: ?*anyopaque, event: terminal.tmux.Viewer.PaneOscEvent) void {
+    const io: *termio.Termio = @ptrCast(@alignCast(ctx orelse return));
+    const msg: apprt.surface.Message = switch (event) {
+        .progress => |report| .{ .progress_report = report },
+        .pwd => |raw| .{ .pwd_change = apprt.surface.Message.WriteReq.init(io.alloc, pwdPath(raw)) catch return },
+        .notification => |n| msg: {
+            var m = apprt.surface.Message{ .desktop_notification = undefined };
+            const tlen = @min(n.title.len, m.desktop_notification.title.len);
+            @memcpy(m.desktop_notification.title[0..tlen], n.title[0..tlen]);
+            m.desktop_notification.title[tlen] = 0;
+            const blen = @min(n.body.len, m.desktop_notification.body.len);
+            @memcpy(m.desktop_notification.body[0..blen], n.body[0..blen]);
+            m.desktop_notification.body[blen] = 0;
+            break :msg m;
+        },
+    };
+    // Mirror StreamHandler.surfaceMessageWriter: try instant, fall back to
+    // blocking so the event isn't silently dropped under back-pressure.
+    if (io.surface_mailbox.push(msg, .{ .instant = {} }) == 0) {
+        _ = io.surface_mailbox.push(msg, .{ .forever = {} });
+    }
 }
 
 /// Focus gained/lost notification. The tmux backend deliberately sends
@@ -602,6 +660,15 @@ fn testThreadData() termio.Termio.ThreadData {
     var td: termio.Termio.ThreadData = undefined;
     td.backend = .{ .tmux = .{} };
     return td;
+}
+
+test "pwdPath strips file scheme + host" {
+    // ROOTSHELL-TMUX (id=viewer-pane-osc)
+    try testing.expectEqualStrings("/home/kit", pwdPath("file://host/home/kit"));
+    try testing.expectEqualStrings("/home/kit", pwdPath("file:///home/kit")); // empty host
+    try testing.expectEqualStrings("/", pwdPath("file://hostonly")); // host, no path
+    try testing.expectEqualStrings("/bare/path", pwdPath("/bare/path")); // already a path
+    try testing.expectEqualStrings("", pwdPath("")); // empty
 }
 
 test "init sets pane_id and initial sizes" {

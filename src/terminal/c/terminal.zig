@@ -265,6 +265,16 @@ fn new_(
     handler.effects = .{
         .write_pty = &Effects.writePtyTrampoline,
         .bell = &Effects.bellTrampoline,
+        // libghostty-vt has no OSC 52 clipboard callback (only the tmux viewer
+        // routes clipboard SETs); leave it unhandled, as it was before the
+        // effect existed. ROOTSHELL-TMUX (id=streamterm-clipboard)
+        .clipboard_write = null,
+        // libghostty-vt has no per-pane surface to forward these to; leave
+        // unhandled as before the effects existed (only the tmux viewer routes
+        // them). ROOTSHELL-TMUX (id=streamterm-pane-osc)
+        .progress_report = null,
+        .pwd_report = null,
+        .desktop_notification = null,
         .color_scheme = &Effects.colorSchemeTrampoline,
         .device_attributes = &Effects.deviceAttributesTrampoline,
         .enquiry = &Effects.enquiryTrampoline,

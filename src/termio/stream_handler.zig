@@ -1746,6 +1746,34 @@ pub const StreamHandler = struct {
                                 ),
                             });
                         },
+
+                        .pane_clipboard_write => |cw| {
+                            // A pane inside tmux -CC emitted OSC 52. tmux never
+                            // forwards the clipboard to a control client (no tty),
+                            // so the viewer captured the raw bytes; route them to
+                            // the system clipboard via the SAME surface message the
+                            // normal (non-tmux) OSC 52 path uses (see
+                            // `clipboardContents`). The base64 stays encoded —
+                            // `Surface.clipboardWrite` decodes it. ROOTSHELL-TMUX
+                            // (id=streamhandler-pane-clipboard)
+                            const clipboard_type: apprt.Clipboard = switch (cw.kind) {
+                                'c' => .standard,
+                                's' => .selection,
+                                'p' => .primary,
+                                else => .standard,
+                            };
+                            const req = apprt.surface.Message.WriteReq.init(
+                                self.alloc,
+                                cw.data,
+                            ) catch |err| {
+                                log.warn("failed to allocate tmux clipboard write req err={}", .{err});
+                                continue;
+                            };
+                            self.surfaceMessageWriter(.{ .clipboard_write = .{
+                                .req = req,
+                                .clipboard_type = clipboard_type,
+                            } });
+                        },
                     }
                 }
 

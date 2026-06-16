@@ -69,6 +69,27 @@ pub const Handler = struct {
         /// Called when the bell is rung (BEL).
         bell: ?*const fn (*Handler) void,
 
+        /// ROOTSHELL-TMUX (id=streamterm-clipboard): called when the pane
+        /// requests an OSC 52 clipboard SET. `kind` is the selection
+        /// ('c'/'s'/'p'); `data` is the base64-encoded payload (still encoded —
+        /// the app side decodes it). Both are only valid for the duration of
+        /// the call, so the callee must copy. Null (the readonly default) makes
+        /// OSC 52 a no-op, matching prior behavior for non-tmux vtStream users.
+        clipboard_write: ?*const fn (*Handler, kind: u8, data: []const u8) void,
+
+        /// ROOTSHELL-TMUX (id=streamterm-pane-osc): OSC 9;4 progress report
+        /// (the build progress bar). Forwarded so tmux -CC panes drive per-tab
+        /// progress UI. Null (readonly default) makes it a no-op.
+        progress_report: ?*const fn (*Handler, report: osc.Command.ProgressReport) void,
+
+        /// ROOTSHELL-TMUX (id=streamterm-pane-osc): OSC 7 working-directory
+        /// report. `pwd` is valid only during the call; the callee must copy.
+        pwd_report: ?*const fn (*Handler, pwd: []const u8) void,
+
+        /// ROOTSHELL-TMUX (id=streamterm-pane-osc): OSC 9 / OSC 777 desktop
+        /// notification. `title`/`body` are valid only during the call.
+        desktop_notification: ?*const fn (*Handler, title: []const u8, body: []const u8) void,
+
         /// Called in response to a color scheme DSR query (CSI ? 996 n).
         /// Returns the current color scheme. Return null to silently
         /// ignore the query.
@@ -105,9 +126,13 @@ pub const Handler = struct {
         /// effects beyond that.
         pub const readonly: Effects = .{
             .bell = null,
+            .clipboard_write = null,
             .color_scheme = null,
+            .desktop_notification = null,
             .device_attributes = null,
             .enquiry = null,
+            .progress_report = null,
+            .pwd_report = null,
             .size = null,
             .title_changed = null,
             .write_pty = null,
@@ -278,11 +303,18 @@ pub const Handler = struct {
             .dcs_put => self.dcsDetectSt(value),
             .dcs_unhook => self.dcs_pending_esc = false,
 
+            // OSC 52 clipboard SET — forwarded to the app via the
+            // `clipboard_write` effect. ROOTSHELL-TMUX (id=streamterm-clipboard)
+            .clipboard_contents => self.clipboardWrite(value.kind, value.data),
+
+            // ROOTSHELL-TMUX (id=streamterm-pane-osc): forwarded to the app via
+            // effects so they work inside tmux -CC panes (the viewer installs
+            // them; readonly vtStream users leave them null and these no-op).
+            .report_pwd => self.pwdReport(value.url),
+            .show_desktop_notification => self.desktopNotification(value.title, value.body),
+            .progress_report => self.progressReport(value),
+
             // Have no terminal-modifying effect
-            .report_pwd,
-            .show_desktop_notification,
-            .progress_report,
-            .clipboard_contents,
             .title_push,
             .title_pop,
             => {},
@@ -292,6 +324,43 @@ pub const Handler = struct {
     inline fn writePty(self: *Handler, data: [:0]const u8) void {
         const func = self.effects.write_pty orelse return;
         func(self, data);
+    }
+
+    /// OSC 52 clipboard SET for tmux panes. ROOTSHELL-TMUX
+    /// (id=streamterm-clipboard): tmux relays the app's raw OSC 52 bytes in
+    /// %output, so the pane stream sees them here. A control client (-CC) has no
+    /// tty, so tmux never forwards the clipboard itself (its `tty_set_selection`
+    /// path is gated off for control clients); we route the write to the app via
+    /// the `clipboard_write` effect (installed by the viewer in `initLayout`),
+    /// which turns it into a `clipboard_write` surface message on the gateway.
+    /// Other (readonly) vtStream users leave the effect null, so this stays a
+    /// no-op. The clipboard READ (`data == "?"`) is a deliberate gap — it needs
+    /// an async app round-trip and a reply routed back into the pane — so we
+    /// ignore it here.
+    fn clipboardWrite(self: *Handler, kind: u8, data: []const u8) void {
+        const func = self.effects.clipboard_write orelse return;
+        if (data.len == 1 and data[0] == '?') return;
+        func(self, kind, data);
+    }
+
+    /// ROOTSHELL-TMUX (id=streamterm-pane-osc): OSC 9;4 progress report. The
+    /// tmux viewer installs the effect to forward this to the pane's surface;
+    /// readonly users leave it null and this is a no-op.
+    fn progressReport(self: *Handler, report: osc.Command.ProgressReport) void {
+        const func = self.effects.progress_report orelse return;
+        func(self, report);
+    }
+
+    /// ROOTSHELL-TMUX (id=streamterm-pane-osc): OSC 7 working-directory report.
+    fn pwdReport(self: *Handler, pwd: []const u8) void {
+        const func = self.effects.pwd_report orelse return;
+        func(self, pwd);
+    }
+
+    /// ROOTSHELL-TMUX (id=streamterm-pane-osc): OSC 9 / OSC 777 notification.
+    fn desktopNotification(self: *Handler, title: []const u8, body: []const u8) void {
+        const func = self.effects.desktop_notification orelse return;
+        func(self, title, body);
     }
 
     /// Watch a DCS-passthrough byte for the string terminator. Because the
@@ -1039,6 +1108,108 @@ test "ignores query actions" {
     const str = try t.plainString(testing.allocator);
     defer testing.allocator.free(str);
     try testing.expectEqualStrings("Test", str);
+}
+
+test "OSC 52 clipboard write effect forwards SET, ignores read" {
+    // ROOTSHELL-TMUX (id=streamterm-clipboard)
+    var t: Terminal = try .init(testing.allocator, .{ .cols = 10, .rows = 10 });
+    defer t.deinit(testing.allocator);
+
+    const S = struct {
+        var kind: u8 = 0;
+        var buf: [256]u8 = undefined;
+        var len: usize = 0;
+        var calls: usize = 0;
+        fn cb(_: *Handler, k: u8, d: []const u8) void {
+            kind = k;
+            @memcpy(buf[0..d.len], d);
+            len = d.len;
+            calls += 1;
+        }
+    };
+    S.calls = 0;
+
+    var s: Stream = .initAlloc(testing.allocator, .init(&t));
+    defer s.deinit();
+    s.handler.effects.clipboard_write = &S.cb;
+
+    // SET: data stays base64-encoded (the app side decodes). "aGVsbG8=" = "hello".
+    s.nextSlice("\x1b]52;c;aGVsbG8=\x07");
+    try testing.expectEqual(@as(usize, 1), S.calls);
+    try testing.expectEqual(@as(u8, 'c'), S.kind);
+    try testing.expectEqualStrings("aGVsbG8=", S.buf[0..S.len]);
+
+    // READ ("?") is a deliberate no-op: the callback must not fire.
+    s.nextSlice("\x1b]52;c;?\x07");
+    try testing.expectEqual(@as(usize, 1), S.calls);
+}
+
+test "OSC 52 clipboard write is a no-op with readonly effects" {
+    // ROOTSHELL-TMUX (id=streamterm-clipboard): the default (readonly) effects
+    // leave clipboard_write null; OSC 52 must be silently dropped, not crash.
+    var t: Terminal = try .init(testing.allocator, .{ .cols = 10, .rows = 10 });
+    defer t.deinit(testing.allocator);
+
+    var s: Stream = .initAlloc(testing.allocator, .init(&t));
+    defer s.deinit();
+
+    s.nextSlice("\x1b]52;c;aGVsbG8=\x07");
+    s.nextSlice("After");
+    const str = try t.plainString(testing.allocator);
+    defer testing.allocator.free(str);
+    try testing.expectEqualStrings("After", str);
+}
+
+test "OSC 9;4 progress / OSC 7 pwd / OSC 9 notification forward to effects" {
+    // ROOTSHELL-TMUX (id=streamterm-pane-osc)
+    var t: Terminal = try .init(testing.allocator, .{ .cols = 10, .rows = 10 });
+    defer t.deinit(testing.allocator);
+
+    const S = struct {
+        var progress_calls: usize = 0;
+        var state: osc.Command.ProgressReport.State = .remove;
+        var pct: ?u8 = null;
+        var pwd_buf: [256]u8 = undefined;
+        var pwd_len: usize = 0;
+        var notif_calls: usize = 0;
+        fn onProgress(_: *Handler, report: osc.Command.ProgressReport) void {
+            progress_calls += 1;
+            state = report.state;
+            pct = report.progress;
+        }
+        fn onPwd(_: *Handler, pwd: []const u8) void {
+            @memcpy(pwd_buf[0..pwd.len], pwd);
+            pwd_len = pwd.len;
+        }
+        fn onNotif(_: *Handler, t_: []const u8, b_: []const u8) void {
+            _ = t_;
+            _ = b_;
+            notif_calls += 1;
+        }
+    };
+    S.progress_calls = 0;
+    S.notif_calls = 0;
+
+    var s: Stream = .initAlloc(testing.allocator, .init(&t));
+    defer s.deinit();
+    s.handler.effects.progress_report = &S.onProgress;
+    s.handler.effects.pwd_report = &S.onPwd;
+    s.handler.effects.desktop_notification = &S.onNotif;
+
+    // OSC 9;4;1;50 — progress "set" at 50%.
+    s.nextSlice("\x1b]9;4;1;50\x07");
+    try testing.expectEqual(@as(usize, 1), S.progress_calls);
+    try testing.expectEqual(osc.Command.ProgressReport.State.set, S.state);
+    try testing.expectEqual(@as(?u8, 50), S.pct);
+
+    // OSC 7 — pwd: the raw URL value is forwarded here; the file://host strip
+    // happens later in termio/Tmux.zig (pwdPath).
+    s.nextSlice("\x1b]7;file://host/home/kit\x07");
+    try testing.expectEqualStrings("file://host/home/kit", S.pwd_buf[0..S.pwd_len]);
+
+    // OSC 9 — desktop notification.
+    s.nextSlice("\x1b]9;hello\x07");
+    try testing.expectEqual(@as(usize, 1), S.notif_calls);
 }
 
 test "OSC 4 set and reset palette" {
