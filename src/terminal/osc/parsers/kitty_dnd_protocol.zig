@@ -34,17 +34,17 @@ pub const EventType = enum {
     /// Carries `x`/`y` cursor position; -1 signals the drag left the window.
     drop_move,
     /// ('M') Items were dropped onto the terminal.
-    /// Carries `x`/`y` drop position and `i` (drop ID).
+    /// Carries `x`/`y` drop position and `i` (multiplexer session ID).
     drop_dropped,
     /// ('r') Terminal requests data for a specific MIME type from the drag source.
-    /// Carries `i` (drop ID) and `m` (MIME type index).
+    /// Carries `i` (multiplexer session ID) and `y` (1-based MIME type index).
     request_data,
     /// ('R') Error response to a `request_data` event.
     request_error,
     /// ('o') Terminal offers data for an outgoing drag (drag-out from terminal).
     offer_drag,
     /// ('p') Drag source presents the actual payload for a previously requested MIME type.
-    /// Carries `i` (drop ID), `m` (MIME type index), and `o` (chunk offset).
+    /// Carries `i` (multiplexer session ID), `o` (operation), and `m` (chunking flag).
     present_data,
     /// ('P') Replace the current drag image with a new one.
     /// Payload is the image data; `X`/`Y` carry image dimensions in pixels.
@@ -83,22 +83,23 @@ pub const EventType = enum {
 pub const Option = enum {
     /// Event type. Maps to `EventType`; present in every OSC 72 sequence.
     t,
-    /// MIME type index. Identifies which MIME type (from the offered list) is being
-    /// requested or transferred. Zero-based integer.
+    /// Chunking flag. `0` = this is the final (or only) chunk; `1` = more chunks follow.
     m,
-    /// Drop ID. An integer that uniquely identifies a drag-and-drop operation for its
-    /// lifetime. The same ID is used across the request/present exchange for one drop.
+    /// Multiplexer session ID. Echoed back in responses so a terminal multiplexer
+    /// (e.g. tmux) can route data to the correct pane.
     i,
-    /// Chunk offset. Used when payload data is split across multiple `present_data`
-    /// messages; indicates which chunk this message carries (zero-based).
+    /// Drop operation. `0` = reject, `1` = copy, `2` = move, `3` = copy or move.
     o,
-    /// Cursor column (zero-based cell units). -1 signals the drag has left the window.
+    /// Cursor column in cell units (zero-based). -1 signals the drag has left the window.
     x,
-    /// Cursor row (zero-based cell units). -1 signals the drag has left the window.
+    /// Cursor row in cell units (zero-based). Also used as a 1-based MIME type index
+    /// in some events (e.g. `request_data`). -1 signals the drag has left the window.
     y,
-    /// Drag image width in pixels (used with `change_drag_image`).
+    /// Pixel offset from the left edge of the cell; also used as image width
+    /// (with `change_drag_image`) or as a symlink/directory marker.
     X,
-    /// Drag image height in pixels (used with `change_drag_image`).
+    /// Pixel offset from the top edge of the cell; also used as image height
+    /// (with `change_drag_image`) or as a parent directory handle.
     Y,
 
     pub fn Type(comptime key: Option) type {
