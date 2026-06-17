@@ -275,6 +275,10 @@ fn new_(
         .progress_report = null,
         .pwd_report = null,
         .desktop_notification = null,
+        // libghostty-vt has no tmux viewer to replay unwrapped passthrough
+        // through, so the inner sequence is dropped as before. ROOTSHELL-TMUX
+        // (id=streamterm-tmux-passthrough)
+        .dcs_passthrough = null,
         .color_scheme = &Effects.colorSchemeTrampoline,
         .device_attributes = &Effects.deviceAttributesTrampoline,
         .enquiry = &Effects.enquiryTrampoline,

@@ -17,6 +17,8 @@ const Terminal = @import("../Terminal.zig");
 const color = @import("../color.zig");
 const mouse = @import("../mouse.zig");
 const osc = @import("../osc.zig"); // ROOTSHELL-TMUX (id=viewer-pane-osc): OSC 9;4 progress report type
+const device_attributes = @import("../device_attributes.zig"); // ROOTSHELL-TMUX (id=streamterm-tmux-passthrough): DA reply for wrapped queries
+const size_report = @import("../size_report.zig"); // ROOTSHELL-TMUX (id=streamterm-tmux-passthrough): pixel-size reply for wrapped queries
 const TerminalStream = @import("../stream_terminal.zig").Stream;
 const TerminalStreamHandler = @import("../stream_terminal.zig").Handler;
 const Layout = @import("layout.zig").Layout;
@@ -814,6 +816,16 @@ pub const Viewer = struct {
         /// use throwaway readonly streams so stale OSC 52 in history is ignored.
         clipboard_writes: std.ArrayList(struct { kind: u8, data: []const u8 }) = .empty,
 
+        /// ROOTSHELL-TMUX (id=streamterm-tmux-passthrough): inner bytes recovered
+        /// from `ESC P tmux; ...` passthrough envelopes seen in this pane's live
+        /// `%output` (e.g. yazi's wrapped Kitty graphics). The pane handler can
+        /// only buffer (it has no Stream reference), so it appends here via the
+        /// `dcs_passthrough` effect; `receivedOutput` re-feeds them through the
+        /// pane stream after the `%output` feed so the wrapped sequence takes
+        /// effect. Only `pane.stream` (live output) installs the effect; capture
+        /// replays use throwaway readonly streams, so history is unaffected.
+        replay: std.ArrayList(u8) = .empty,
+
         /// Child IO thread (`Tmux.threadEnter`): publish the attach handshake.
         /// Stores the wake context/fn and renderer mutex with release ordering,
         /// then clears `pending_attach` LAST, so a gateway acquire-load that sees
@@ -988,6 +1000,7 @@ pub const Viewer = struct {
             self.responses.deinit(alloc);
             for (self.clipboard_writes.items) |cw| alloc.free(cw.data);
             self.clipboard_writes.deinit(alloc);
+            self.replay.deinit(alloc);
             self.stream.deinit();
             self.terminal.deinit(alloc);
         }
@@ -1456,6 +1469,8 @@ pub const Viewer = struct {
                 // Same rationale for buffered OSC 52 clipboard SETs (id=viewer-clipboard).
                 for (pane.clipboard_writes.items) |cw| self.alloc.free(cw.data);
                 pane.clipboard_writes.clearRetainingCapacity();
+                // ...and for un-replayed passthrough inner bytes (id=streamterm-tmux-passthrough).
+                pane.replay.clearRetainingCapacity();
             }
         }
 
@@ -3255,6 +3270,63 @@ pub const Viewer = struct {
             self.emitPaneTitle(actions, id, title);
         }
 
+        // ROOTSHELL-TMUX (id=streamterm-tmux-passthrough): replay inner sequences
+        // recovered from `ESC P tmux; ...` passthrough envelopes (e.g. yazi's
+        // wrapped Kitty graphics). The pane handler can only buffer (no Stream
+        // ref), so we re-feed the recovered bytes through the pane stream HERE,
+        // outside the original nextSlice, so it is not re-entrant.
+        //
+        // CRITICAL: only replay when the stream is at a fully clean boundary —
+        // the VT parser is at ground AND the UTF-8 decoder has no half-decoded
+        // multibyte character pending (`utf8decoder.state == 0`). The recovered
+        // bytes are fed back through the SAME stream; injecting them mid-sequence
+        // corrupts it. Two distinct mid-sequence cases, both common because tmux
+        // does NOT align `%output` chunk boundaries to anything:
+        //   1. Mid-envelope: a large image's `%output` ends inside an open
+        //      `ESC Ptmux;` passthrough (parser parked in dcs_passthrough). The
+        //      old `mux;`/garbage leak + never-loaded image.
+        //   2. Mid-multibyte: a `%output` ends inside a UTF-8 character — and
+        //      `parser.state` is STILL `.ground` then (the scalar UTF-8 decoder
+        //      buffers the partial char separately). Feeding the recovered APC's
+        //      ESC into the pending decode corrupts that cell (yazi's Kitty
+        //      Unicode placeholder cells are multibyte: U+10EEEE + diacritics) →
+        //      the "random diamonds" that got worse under fragmentation/SSH.
+        // When not clean we defer: the recovered bytes stay buffered and drain on
+        // a later `%output` once the stream returns to a clean boundary. A small
+        // single-`%output` query always ends clean, which is why it always worked.
+        //
+        // Bounded so a pathological nested envelope can't loop forever; snapshot+
+        // clear each round so re-entrant appends land in a fresh buffer next round.
+        // Done BEFORE flushPaneResponses so replies the inner sequence generates
+        // (a wrapped DECRQM, a Kitty graphics response) are routed too.
+        {
+            const max_rounds = 8;
+            var rounds: usize = 0;
+            while (pane.replay.items.len > 0 and
+                pane.stream.parser.state == .ground and
+                pane.stream.utf8decoder.state == 0) : (rounds += 1)
+            {
+                if (rounds >= max_rounds) {
+                    const left = pane.replay.items.len;
+                    log.warn("pane {} passthrough replay exceeded {} rounds; dropping {} bytes", .{ id, max_rounds, left });
+                    pane.replay.clearRetainingCapacity();
+                    break;
+                }
+                // Any replies this wrapped query generates (e.g. yazi's primary-DA
+                // sentinel) must bypass the tmuxAnswersResponse drop: tmux never
+                // saw the wrapped query, so we are the only responder. Capture the
+                // responses base, replay, then route the new replies unfiltered so
+                // flushPaneResponses (filtered) only handles raw-feed replies.
+                const resp_base = pane.responses.items.len;
+                const chunk = pane.replay.toOwnedSlice(self.alloc) catch break;
+                defer self.alloc.free(chunk);
+                pane.stream.nextSlice(chunk);
+                self.routePaneResponsesUnfiltered(id, pane, resp_base) catch |err| {
+                    log.warn("failed to route pane {} passthrough replies err={}", .{ id, err });
+                };
+            }
+        }
+
         // Route any query replies the pane terminal generated (kitty-keyboard,
         // DECRQM, OSC 4/12, ...) back to the app via send-keys. tmux relays the
         // app's raw queries in %output, so the pane terminal sees and answers
@@ -3293,6 +3365,48 @@ pub const Viewer = struct {
         const alloc = handler.terminal.gpa();
         const copy = alloc.dupe(u8, data) catch return;
         pane.clipboard_writes.append(alloc, .{ .kind = kind, .data = copy }) catch alloc.free(copy);
+    }
+
+    /// `dcs_passthrough` effect installed on each pane's live stream: buffer the
+    /// recovered (un-doubled) inner bytes of an `ESC P tmux; ...` envelope for
+    /// replay through the pane stream after the `%output` feed (see the drain
+    /// in `receivedOutput`). Recovers the owning `Pane` from the handler's
+    /// terminal pointer (always `pane.terminal`, set by `vtStream`).
+    /// ROOTSHELL-TMUX (id=streamterm-tmux-passthrough)
+    fn paneDcsPassthrough(handler: *TerminalStreamHandler, data: []const u8) void {
+        const pane: *Pane = @fieldParentPtr("terminal", handler.terminal);
+        const alloc = handler.terminal.gpa();
+        pane.replay.appendSlice(alloc, data) catch {};
+    }
+
+    /// `device_attributes` effect: answer a pane app's DA query. Apps that detect
+    /// $TMUX (yazi, etc.) send their terminal-probe — XTVERSION + a Kitty query +
+    /// a primary DA — WRAPPED in `ESC P tmux;` passthrough, and wait for the DA
+    /// reply as the sentinel that all responses arrived. tmux does NOT answer the
+    /// wrapped DA, so the unwrapped query reaches this pane terminal and we must.
+    /// The reply is routed UNFILTERED (see `routePaneResponsesUnfiltered`) since
+    /// tmux never saw it. Default `Attributes{}` encodes the standard primary DA
+    /// `\e[?62;22c`. A RAW (unwrapped) DA still gets dropped by
+    /// `tmuxAnswersResponse` (tmux answers those), so no double reply.
+    /// ROOTSHELL-TMUX (id=streamterm-tmux-passthrough)
+    fn paneDeviceAttributes(_: *TerminalStreamHandler) device_attributes.Attributes {
+        return .{};
+    }
+
+    /// `size` effect: report the pane's pixel geometry for CSI 14/16/18 t queries
+    /// (yazi needs the cell pixel size to scale images). Returns null until the
+    /// child surface has reported pixel dimensions (width_px/height_px), so the
+    /// query is simply unanswered rather than reporting a bogus zero size.
+    /// ROOTSHELL-TMUX (id=streamterm-tmux-passthrough)
+    fn paneSize(handler: *TerminalStreamHandler) ?size_report.Size {
+        const t = handler.terminal;
+        if (t.width_px == 0 or t.height_px == 0 or t.cols == 0 or t.rows == 0) return null;
+        return .{
+            .rows = t.rows,
+            .columns = t.cols,
+            .cell_width = t.width_px / @as(u32, @intCast(t.cols)),
+            .cell_height = t.height_px / @as(u32, @intCast(t.rows)),
+        };
     }
 
     /// `progress_report` / `pwd_report` / `desktop_notification` effects installed
@@ -3369,6 +3483,33 @@ pub const Viewer = struct {
         };
     }
 
+    /// Route `pane.responses[from..]` back to the pane UNFILTERED (bypassing the
+    /// `tmuxAnswersResponse` double-reply drop), then free and remove them. Used
+    /// for replies generated while replaying an `ESC P tmux;` passthrough query:
+    /// tmux never saw the wrapped query, so it answered nothing and every reply
+    /// (primary DA, XTVERSION, ...) must reach the app. ROOTSHELL-TMUX
+    /// (id=streamterm-tmux-passthrough)
+    fn routePaneResponsesUnfiltered(self: *Viewer, pane_id: usize, pane: *Pane, from: usize) !void {
+        if (pane.responses.items.len <= from) return;
+        defer {
+            for (pane.responses.items[from..]) |chunk| self.alloc.free(chunk);
+            pane.responses.shrinkRetainingCapacity(from);
+        }
+
+        var payload: std.ArrayList(u8) = .empty;
+        defer payload.deinit(self.alloc);
+        for (pane.responses.items[from..]) |chunk| {
+            try payload.appendSlice(self.alloc, chunk);
+        }
+        if (payload.items.len == 0) return;
+
+        const cmd = try formatSendKeys(self.alloc, pane_id, payload.items);
+        self.queueCommands(&.{.{ .user = cmd }}) catch |err| {
+            self.alloc.free(cmd);
+            return err;
+        };
+    }
+
     /// Format `send-keys -H -t %<id> XX XX ...\n` (space-separated uppercase
     /// hex) for `data`. Caller owns the returned slice. Matches the encoding in
     /// `termio/Tmux.zig` so relayed bytes reach the pane app's stdin intact.
@@ -3404,6 +3545,26 @@ pub const Viewer = struct {
             const last = resp[resp.len - 1];
             // DSR cursor position report: CSI <row> ; <col> R
             if (last == 'R') return true;
+            // Primary/secondary DA report: CSI ? ... c  /  CSI > ... c. tmux
+            // answers DA for RAW pane queries; we also install a
+            // device_attributes effect on the pane (to answer WRAPPED
+            // `ESC Ptmux;` queries — e.g. yazi's primary-DA sentinel), so the
+            // raw-feed copy must be dropped here to avoid a double reply that
+            // echoes to the screen. The wrapped-DA reply bypasses this filter
+            // via routePaneResponsesUnfiltered. ROOTSHELL-TMUX
+            // (id=streamterm-tmux-passthrough)
+            if (last == 'c' and resp.len >= 3 and (resp[2] == '?' or resp[2] == '>')) return true;
+            // XTWINOPS size report: CSI 4 ; H ; W t (pixels) / CSI 6 ; H ; W t
+            // (cell px) / CSI 8 ; rows ; cols t (chars). We install a `.size`
+            // effect on every pane so a WRAPPED passthrough size query is
+            // answered (yazi needs the cell pixel size to scale images), which
+            // means a RAW size query now also produces a local reply. tmux
+            // answers raw XTWINOPS itself, so drop our duplicate here; the
+            // wrapped reply still bypasses this filter via
+            // routePaneResponsesUnfiltered. ROOTSHELL-TMUX
+            // (id=streamterm-tmux-passthrough)
+            if (last == 't' and resp.len >= 4 and resp[3] == ';' and
+                (resp[2] == '4' or resp[2] == '6' or resp[2] == '8')) return true;
             // DECRQM report: CSI ? <mode> ; <val> $ y. tmux answers a fixed set.
             if (last == 'y' and resp.len >= 4 and resp[2] == '?') {
                 var i: usize = 3;
@@ -3538,6 +3699,23 @@ pub const Viewer = struct {
                 // system clipboard — tmux never sets the clipboard for a -CC
                 // client (no tty). ROOTSHELL-TMUX (id=viewer-clipboard)
                 pane.stream.handler.effects.clipboard_write = &paneClipboardWrite;
+                // Unwrap+replay `ESC P tmux; ...` passthrough DCS (wrapped Kitty
+                // graphics / OSC / queries from apps that detect $TMUX). The
+                // handler buffers recovered bytes onto `pane.replay`; the drain
+                // in `receivedOutput` re-feeds them. ROOTSHELL-TMUX
+                // (id=streamterm-tmux-passthrough)
+                pane.stream.handler.effects.dcs_passthrough = &paneDcsPassthrough;
+                // Answer DA / pixel-size queries the pane app sends. These matter
+                // for apps (yazi) that wrap their terminal probe in `ESC Ptmux;`
+                // passthrough: tmux doesn't answer the wrapped query, so the
+                // unwrapped copy must be answered here and routed unfiltered (the
+                // primary-DA reply is yazi's response-batch sentinel — without it
+                // yazi reports "Terminal response timeout"). RAW (unwrapped)
+                // DA/size replies are still dropped by `tmuxAnswersResponse` to
+                // avoid double-answering what tmux already handles. ROOTSHELL-TMUX
+                // (id=streamterm-tmux-passthrough)
+                pane.stream.handler.effects.device_attributes = &paneDeviceAttributes;
+                pane.stream.handler.effects.size = &paneSize;
                 // Forward OSC 9;4 progress / OSC 7 pwd / OSC 9 notifications to
                 // this pane's own child surface (the normal terminal-surface
                 // path handles them downstream). ROOTSHELL-TMUX (id=viewer-pane-osc)
@@ -4476,6 +4654,11 @@ test "tmuxAnswersResponse drops tmux-handled replies, forwards the rest" {
     try testing.expect(Viewer.tmuxAnswersResponse("\x1bP>|tmux 3.6\x1b\\")); // XTVERSION
     try testing.expect(Viewer.tmuxAnswersResponse("\x1b[?2004;1$y")); // DECRQM bracketed paste
     try testing.expect(Viewer.tmuxAnswersResponse("\x1b[?12;1$y")); // DECRQM cursor blink
+    try testing.expect(Viewer.tmuxAnswersResponse("\x1b[?62;22c")); // primary DA
+    try testing.expect(Viewer.tmuxAnswersResponse("\x1b[>1;95;0c")); // secondary DA
+    try testing.expect(Viewer.tmuxAnswersResponse("\x1b[8;24;80t")); // XTWINOPS text-area (chars)
+    try testing.expect(Viewer.tmuxAnswersResponse("\x1b[6;18;9t")); // XTWINOPS cell size (px)
+    try testing.expect(Viewer.tmuxAnswersResponse("\x1b[4;432;720t")); // XTWINOPS text-area (px)
 
     // Forwarded: tmux ignores these for a -CC client, so we must deliver them.
     try testing.expect(!Viewer.tmuxAnswersResponse("\x1b[?2026;2$y")); // DECRQM synchronized output

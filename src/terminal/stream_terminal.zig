@@ -21,6 +21,62 @@ const log = std.log.scoped(.stream_terminal);
 /// a Terminal and updates the Terminal state.
 pub const Stream = stream.Stream(Handler);
 
+/// ROOTSHELL-TMUX (id=streamterm-tmux-passthrough): unwrap state for an
+/// `ESC P tmux ; <payload> ESC \` passthrough DCS forwarded verbatim in a
+/// pane's %output. A program that detects $TMUX (e.g. yazi, kitten icat) wraps
+/// its Kitty-graphics / OSC / query escape in this envelope with every inner
+/// ESC DOUBLED; tmux relays it unchanged to a -CC control client. We recognize
+/// the envelope, un-double the escapes, find the real (single) `ESC \`
+/// terminator, and hand the recovered inner bytes to the `dcs_passthrough`
+/// effect so the owner can replay them through the pane's own VT stream.
+/// Without this the inner sequence was silently dropped (blank images). All use
+/// is gated on build_options.tmux_control_mode; the handler field is `void` in
+/// a non-tmux build so that path stays byte-for-byte stock.
+const TmuxPassthrough = struct {
+    /// The bytes that follow the `t` DCS final and confirm a tmux envelope.
+    const confirm = "mux;";
+
+    /// Hard cap on the recovered buffer so an unterminated envelope can't grow
+    /// without bound. Matches dcs.zig's per-block recover bound; a single Kitty
+    /// transmit chunk is ~4 KiB, so this is enormous headroom for real images.
+    const max_bytes: usize = 16 * 1024 * 1024;
+
+    const Phase = enum {
+        /// Not inside a tmux-candidate DCS.
+        inactive,
+        /// Saw the `t` final; no payload byte seen yet.
+        maybe,
+        /// Matching the `mux;` confirm prefix.
+        confirming,
+        /// Confirmed; un-doubling the inner payload.
+        active,
+    };
+
+    phase: Phase = .inactive,
+    /// Index into `confirm` while matching the prefix.
+    match: usize = 0,
+    /// Greedy un-doubling: saw one ESC, awaiting ESC (-> one literal ESC) or
+    /// `\` (-> real ST). Distinct from the handler's `dcs_pending_esc`, which is
+    /// the naive detector that would false-trigger on a doubled `ESC ESC \`.
+    pending_esc: bool = false,
+    /// True once we hit the byte cap and bailed; swallow until reset.
+    overflowed: bool = false,
+    /// Recovered (un-doubled) inner bytes, lazily allocated from terminal.gpa().
+    recovered: std.ArrayList(u8) = .empty,
+
+    fn reset(self: *TmuxPassthrough) void {
+        self.phase = .inactive;
+        self.match = 0;
+        self.pending_esc = false;
+        self.overflowed = false;
+        self.recovered.clearRetainingCapacity();
+    }
+
+    fn deinit(self: *TmuxPassthrough, alloc: std.mem.Allocator) void {
+        self.recovered.deinit(alloc);
+    }
+};
+
 /// A stream handler that updates terminal state. By default, it is
 /// readonly in the sense that it only updates terminal state and ignores
 /// all other sequences that require a response or otherwise have side
@@ -58,6 +114,14 @@ pub const Handler = struct {
     /// pane renders blank. `dcs_pending_esc` tracks a seen ESC awaiting `\`.
     dcs_pending_esc: bool = false,
     dcs_ground_request: bool = false,
+
+    /// ROOTSHELL-TMUX (id=streamterm-tmux-passthrough): unwrap state for an
+    /// `ESC P tmux; ...` passthrough DCS. `void` (and unused) in a non-tmux
+    /// build. See `TmuxPassthrough`.
+    tmux_passthrough: if (build_options.tmux_control_mode)
+        TmuxPassthrough
+    else
+        void = if (build_options.tmux_control_mode) .{} else {},
 
     pub const Effects = struct {
         /// Called when the terminal needs to write data back to the pty,
@@ -121,6 +185,16 @@ pub const Handler = struct {
         /// is 256 bytes; longer strings will be silently ignored.
         xtversion: ?*const fn (*Handler) []const u8,
 
+        /// ROOTSHELL-TMUX (id=streamterm-tmux-passthrough): called with the
+        /// recovered (un-doubled) inner bytes of an `ESC P tmux; ...`
+        /// passthrough DCS. The handler has no Stream reference, so the owner
+        /// (the tmux viewer) replays these through the pane's own VT stream so
+        /// the wrapped Kitty graphics / OSC / query takes effect. The bytes are
+        /// valid only for the duration of the call, so the callee must copy.
+        /// Null (the readonly default) drops the inner sequence, matching prior
+        /// behavior for non-tmux vtStream users.
+        dcs_passthrough: ?*const fn (*Handler, []const u8) void,
+
         /// No effects means that the stream effectively becomes readonly
         /// that only affects pure terminal state and ignores all side
         /// effects beyond that.
@@ -128,6 +202,7 @@ pub const Handler = struct {
             .bell = null,
             .clipboard_write = null,
             .color_scheme = null,
+            .dcs_passthrough = null,
             .desktop_notification = null,
             .device_attributes = null,
             .enquiry = null,
@@ -148,6 +223,9 @@ pub const Handler = struct {
 
     pub fn deinit(self: *Handler) void {
         self.apc_handler.deinit();
+        if (comptime build_options.tmux_control_mode) {
+            self.tmux_passthrough.deinit(self.terminal.gpa());
+        }
     }
 
     pub fn vt(
@@ -299,9 +377,26 @@ pub const Handler = struct {
             // have terminal-modifying effects, but we must watch for the string
             // terminator ourselves (the parse table won't leave dcs_passthrough)
             // so a pane's DCS doesn't run on forever (see `dcs_pending_esc`).
-            .dcs_hook => self.dcs_pending_esc = false,
-            .dcs_put => self.dcsDetectSt(value),
-            .dcs_unhook => self.dcs_pending_esc = false,
+            // ROOTSHELL-TMUX (id=streamterm-tmux-passthrough): additionally, a
+            // confirmed `ESC P tmux; ...` envelope is un-doubled and replayed
+            // (see `dcsPut` / `TmuxPassthrough`) instead of dropped.
+            .dcs_hook => {
+                self.dcs_pending_esc = false;
+                if (comptime build_options.tmux_control_mode) {
+                    self.tmux_passthrough.reset();
+                    // `ESC P tmux; ...` arrives as DCS final 't' with no params
+                    // or intermediates; the `mux;` prefix is confirmed over the
+                    // following put bytes (the parser keeps them in passthrough).
+                    if (value.final == 't' and value.params.len == 0 and value.intermediates.len == 0) {
+                        self.tmux_passthrough.phase = .maybe;
+                    }
+                }
+            },
+            .dcs_put => self.dcsPut(value),
+            .dcs_unhook => {
+                self.dcs_pending_esc = false;
+                if (comptime build_options.tmux_control_mode) self.tmux_passthrough.reset();
+            },
 
             // OSC 52 clipboard SET — forwarded to the app via the
             // `clipboard_write` effect. ROOTSHELL-TMUX (id=streamterm-clipboard)
@@ -406,6 +501,126 @@ pub const Handler = struct {
     pub fn dcsConsumeGroundRequest(self: *Handler) bool {
         defer self.dcs_ground_request = false;
         return self.dcs_ground_request;
+    }
+
+    /// ROOTSHELL-TMUX (id=streamterm-tmux-passthrough): route a DCS-passthrough
+    /// byte. While unwrapping an `ESC P tmux; ...` envelope we drive our own
+    /// un-doubling/termination state machine; otherwise we fall back to the
+    /// plain ST detection (`dcsDetectSt`). In a non-tmux build this is just
+    /// `dcsDetectSt`, byte-for-byte stock.
+    fn dcsPut(self: *Handler, byte: u8) void {
+        if (comptime build_options.tmux_control_mode) {
+            switch (self.tmux_passthrough.phase) {
+                .inactive => {},
+                .maybe, .confirming => return self.tmuxPassthroughConfirm(byte),
+                .active => return self.tmuxPassthroughPut(byte),
+            }
+        }
+        self.dcsDetectSt(byte);
+    }
+
+    /// Match the `mux;` prefix that confirms a tmux passthrough envelope. We
+    /// keep `dcsDetectSt` live as a fallback because `mux;` carries no string
+    /// terminator, so a non-tmux DCS whose final is also 't' (or a bare
+    /// `ESC Pt`) still terminates correctly the instant the prefix mismatches.
+    fn tmuxPassthroughConfirm(self: *Handler, byte: u8) void {
+        const pt = &self.tmux_passthrough;
+        self.dcsDetectSt(byte);
+        if (byte == TmuxPassthrough.confirm[pt.match]) {
+            pt.match += 1;
+            if (pt.match == TmuxPassthrough.confirm.len) {
+                // Confirmed. Switch to un-doubling. `mux;` cannot have set a
+                // ground request or pending ESC, but clear defensively so a
+                // stray bit can't tear down the envelope we're about to unwrap.
+                pt.phase = .active;
+                self.dcs_ground_request = false;
+                self.dcs_pending_esc = false;
+            } else {
+                pt.phase = .confirming;
+            }
+        } else {
+            // Not a tmux envelope; let dcsDetectSt drive from here (it has
+            // already seen this byte and every prior prefix byte).
+            pt.phase = .inactive;
+        }
+    }
+
+    /// Un-double one inner byte of a confirmed tmux passthrough payload. tmux
+    /// doubles every inner ESC, so `ESC ESC` -> one literal ESC and a lone
+    /// `ESC \` is the real string terminator (NOT a doubled `ESC ESC \`).
+    fn tmuxPassthroughPut(self: *Handler, byte: u8) void {
+        const pt = &self.tmux_passthrough;
+        if (pt.overflowed) return; // bailed; swallow until the next reset
+        // ECMA-48 control-string controls, mirrored from `dcsDetectSt` so a
+        // passthrough that is aborted or terminated with an 8-bit ST (rather than
+        // the usual 7-bit `ESC \`) recovers instead of wedging the parser in
+        // dcs_passthrough — swallowing later pane output up to the byte cap. CAN
+        // (0x18) / SUB (0x1A) abort the string (discard the partial payload); the
+        // 8-bit ST (0x9C) terminates it like `ESC \`. These bytes can't be part
+        // of a doubled escape (only ESC is doubled) and never occur in a Kitty
+        // base64 payload, so honoring them here is safe. ROOTSHELL-TMUX
+        // (id=streamterm-tmux-passthrough)
+        switch (byte) {
+            0x18, 0x1A => {
+                self.dcs_ground_request = true;
+                pt.reset();
+                return;
+            },
+            0x9C => return self.tmuxPassthroughFinish(),
+            else => {},
+        }
+        if (pt.pending_esc) {
+            pt.pending_esc = false;
+            switch (byte) {
+                0x1B => self.tmuxPassthroughEmit(0x1B), // doubled ESC -> literal
+                0x5C => return self.tmuxPassthroughFinish(), // lone ESC \ = real ST
+                else => {
+                    // Malformed: an undoubled lone ESC mid-payload. Keep both
+                    // bytes rather than silently lose data.
+                    self.tmuxPassthroughEmit(0x1B);
+                    self.tmuxPassthroughEmit(byte);
+                },
+            }
+            return;
+        }
+        if (byte == 0x1B) {
+            pt.pending_esc = true;
+            return;
+        }
+        self.tmuxPassthroughEmit(byte);
+    }
+
+    /// Append one recovered byte, enforcing the size cap. On overflow we
+    /// discard, return the parser to ground, and stop accumulating: the rest of
+    /// the oversize payload is then parsed as ground content rather than
+    /// wedging the pane in dcs_passthrough forever.
+    fn tmuxPassthroughEmit(self: *Handler, byte: u8) void {
+        const pt = &self.tmux_passthrough;
+        const gpa = self.terminal.gpa();
+        if (pt.recovered.items.len >= TmuxPassthrough.max_bytes) {
+            log.warn("tmux passthrough payload exceeded {} bytes; dropping", .{TmuxPassthrough.max_bytes});
+            pt.recovered.clearAndFree(gpa);
+            pt.overflowed = true;
+            self.dcs_ground_request = true;
+            return;
+        }
+        pt.recovered.append(gpa, byte) catch {
+            pt.recovered.clearAndFree(gpa);
+            pt.overflowed = true;
+            self.dcs_ground_request = true;
+        };
+    }
+
+    /// The real `ESC \` terminator was found: hand the recovered inner bytes to
+    /// the `dcs_passthrough` effect (the owner replays them through the pane
+    /// stream) and return the parser to ground.
+    fn tmuxPassthroughFinish(self: *Handler) void {
+        const pt = &self.tmux_passthrough;
+        self.dcs_ground_request = true;
+        if (!pt.overflowed and pt.recovered.items.len > 0) {
+            if (self.effects.dcs_passthrough) |func| func(self, pt.recovered.items);
+        }
+        pt.reset();
     }
 
     fn bell(self: *Handler) void {
@@ -2429,4 +2644,229 @@ test "kitty graphics via APC" {
     const storage = &t.screens.active.kitty_images;
     const img = storage.imageById(1).?;
     try testing.expectEqual(.rgb, img.format);
+}
+
+// ROOTSHELL-TMUX (id=streamterm-tmux-passthrough): unwrap+replay of an
+// `ESC P tmux; <doubled> ESC \` passthrough DCS (yazi/kitten icat wrap their
+// Kitty graphics this way under $TMUX; tmux relays the envelope verbatim in a
+// -CC client's %output). The recovery runs in the pane Handler; the owner
+// (viewer) replays via the `dcs_passthrough` effect, which these tests model.
+
+test "tmux passthrough: wrapped kitty graphics is unwrapped and replayed" {
+    if (comptime !build_options.tmux_control_mode or !build_options.kitty_graphics) return error.SkipZigTest;
+
+    var t: Terminal = try .init(testing.allocator, .{ .cols = 10, .rows = 10 });
+    defer t.deinit(testing.allocator);
+
+    const S = struct {
+        var recovered: std.ArrayList(u8) = .empty;
+        fn cb(_: *Handler, data: []const u8) void {
+            recovered.appendSlice(testing.allocator, data) catch @panic("OOM");
+        }
+    };
+    S.recovered = .empty;
+    defer S.recovered.deinit(testing.allocator);
+
+    var handler: Handler = .init(&t);
+    handler.effects.dcs_passthrough = &S.cb;
+    var s: Stream = .initAlloc(testing.allocator, handler);
+    defer s.deinit();
+
+    // The same transmit as "kitty graphics via APC", wrapped: every inner ESC
+    // is doubled and the envelope is closed by a single (real) ESC \.
+    const inner = "\x1b_Ga=t,t=d,f=24,i=1,s=1,v=2,c=10,r=1;////////\x1b\\";
+    s.nextSlice("\x1bPtmux;\x1b\x1b_Ga=t,t=d,f=24,i=1,s=1,v=2,c=10,r=1;////////\x1b\x1b\\\x1b\\");
+
+    // The handler recovered exactly the original inner APC.
+    try testing.expectEqualStrings(inner, S.recovered.items);
+
+    // Replaying it (as receivedOutput does) stores the image.
+    s.nextSlice(S.recovered.items);
+    const storage = &t.screens.active.kitty_images;
+    const img = storage.imageById(1).?;
+    try testing.expectEqual(.rgb, img.format);
+}
+
+test "tmux passthrough: doubled ESC ESC backslash does not terminate early" {
+    if (comptime !build_options.tmux_control_mode) return error.SkipZigTest;
+
+    var t: Terminal = try .init(testing.allocator, .{ .cols = 10, .rows = 10 });
+    defer t.deinit(testing.allocator);
+
+    const S = struct {
+        var recovered: std.ArrayList(u8) = .empty;
+        fn cb(_: *Handler, data: []const u8) void {
+            recovered.appendSlice(testing.allocator, data) catch @panic("OOM");
+        }
+    };
+    S.recovered = .empty;
+    defer S.recovered.deinit(testing.allocator);
+
+    var handler: Handler = .init(&t);
+    handler.effects.dcs_passthrough = &S.cb;
+    var s: Stream = .initAlloc(testing.allocator, handler);
+    defer s.deinit();
+
+    // Payload holds a doubled inner ST (`ESC ESC \` -> literal `ESC \`) followed
+    // by `Z`, then the real `ESC \`. The naive ST detector would have stopped at
+    // the doubled `\`; the un-doubler must keep going to the real terminator.
+    s.nextSlice("\x1bPtmux;\x1b\x1b\\Z\x1b\\");
+    try testing.expectEqualStrings("\x1b\\Z", S.recovered.items);
+}
+
+test "tmux passthrough: split across feeds reassembles" {
+    if (comptime !build_options.tmux_control_mode or !build_options.kitty_graphics) return error.SkipZigTest;
+
+    var t: Terminal = try .init(testing.allocator, .{ .cols = 10, .rows = 10 });
+    defer t.deinit(testing.allocator);
+
+    const S = struct {
+        var recovered: std.ArrayList(u8) = .empty;
+        fn cb(_: *Handler, data: []const u8) void {
+            recovered.appendSlice(testing.allocator, data) catch @panic("OOM");
+        }
+    };
+    S.recovered = .empty;
+    defer S.recovered.deinit(testing.allocator);
+
+    var handler: Handler = .init(&t);
+    handler.effects.dcs_passthrough = &S.cb;
+    var s: Stream = .initAlloc(testing.allocator, handler);
+    defer s.deinit();
+
+    // Split lands BETWEEN the two ESCs of the leading doubled pair, exercising
+    // the cross-call `pending_esc` state.
+    s.nextSlice("\x1bPtmux;\x1b");
+    s.nextSlice("\x1b_Ga=t,t=d,f=24,i=1,s=1,v=2,c=10,r=1;////////\x1b\x1b\\\x1b\\");
+
+    try testing.expectEqualStrings("\x1b_Ga=t,t=d,f=24,i=1,s=1,v=2,c=10,r=1;////////\x1b\\", S.recovered.items);
+    s.nextSlice(S.recovered.items);
+    try testing.expect(t.screens.active.kitty_images.imageById(1) != null);
+}
+
+test "tmux passthrough: overflow returns the parser to ground" {
+    if (comptime !build_options.tmux_control_mode) return error.SkipZigTest;
+
+    var t: Terminal = try .init(testing.allocator, .{ .cols = 10, .rows = 10 });
+    defer t.deinit(testing.allocator);
+
+    // No dcs_passthrough effect: an overflowing, unterminated envelope must not
+    // wedge the pane in dcs_passthrough — the parser returns to ground so the
+    // following mode-set + print still take effect.
+    var s: Stream = .initAlloc(testing.allocator, .init(&t));
+    defer s.deinit();
+
+    s.nextSlice("\x1bPtmux;");
+    const big = try testing.allocator.alloc(u8, 16 * 1024 * 1024 + 16);
+    defer testing.allocator.free(big);
+    @memset(big, 'A');
+    s.nextSlice(big);
+
+    s.nextSlice("\x1b[?1049h");
+    try testing.expectEqual(.alternate, t.screens.active_key);
+    s.nextSlice("XYZ");
+    const str = try t.plainString(testing.allocator);
+    defer testing.allocator.free(str);
+    try testing.expect(std.mem.indexOf(u8, str, "XYZ") != null);
+}
+
+test "tmux passthrough: wrapped primary DA query is answered" {
+    if (comptime !build_options.tmux_control_mode) return error.SkipZigTest;
+
+    var t: Terminal = try .init(testing.allocator, .{ .cols = 10, .rows = 10 });
+    defer t.deinit(testing.allocator);
+
+    // yazi wraps its terminal probe (XTVERSION + Kitty query + primary DA) in
+    // `ESC Ptmux;` passthrough and waits for the DA reply as its sentinel. The
+    // pane must unwrap and answer it (the viewer routes the reply unfiltered).
+    const S = struct {
+        var recovered: std.ArrayList(u8) = .empty;
+        var written: ?[]const u8 = null;
+        fn pt(_: *Handler, data: []const u8) void {
+            recovered.appendSlice(testing.allocator, data) catch @panic("OOM");
+        }
+        fn writePty(_: *Handler, data: [:0]const u8) void {
+            if (written) |old| testing.allocator.free(old);
+            written = testing.allocator.dupe(u8, data) catch @panic("OOM");
+        }
+        fn da(_: *Handler) device_attributes.Attributes {
+            return .{};
+        }
+    };
+    S.recovered = .empty;
+    S.written = null;
+    defer S.recovered.deinit(testing.allocator);
+    defer if (S.written) |w| testing.allocator.free(w);
+
+    var handler: Handler = .init(&t);
+    handler.effects.dcs_passthrough = &S.pt;
+    handler.effects.write_pty = &S.writePty;
+    handler.effects.device_attributes = &S.da;
+    var s: Stream = .initAlloc(testing.allocator, handler);
+    defer s.deinit();
+
+    // Wrapped primary DA: ESC P tmux; <ESC ESC> [ c <ESC \>
+    s.nextSlice("\x1bPtmux;\x1b\x1b[c\x1b\\");
+    try testing.expectEqualStrings("\x1b[c", S.recovered.items);
+
+    // Replaying it makes the pane answer the DA query (yazi's sentinel).
+    s.nextSlice(S.recovered.items);
+    try testing.expectEqualStrings("\x1b[?62;22c", S.written.?);
+}
+
+test "tmux passthrough: 8-bit ST terminates, CAN/SUB aborts (no wedge)" {
+    if (comptime !build_options.tmux_control_mode) return error.SkipZigTest;
+
+    // 8-bit ST (0x9C) terminates the envelope like `ESC \`: the recovered inner
+    // is delivered and the parser returns to ground so following input works.
+    {
+        var t: Terminal = try .init(testing.allocator, .{ .cols = 10, .rows = 10 });
+        defer t.deinit(testing.allocator);
+        const S = struct {
+            var recovered: std.ArrayList(u8) = .empty;
+            fn cb(_: *Handler, data: []const u8) void {
+                recovered.appendSlice(testing.allocator, data) catch @panic("OOM");
+            }
+        };
+        S.recovered = .empty;
+        defer S.recovered.deinit(testing.allocator);
+        var handler: Handler = .init(&t);
+        handler.effects.dcs_passthrough = &S.cb;
+        var s: Stream = .initAlloc(testing.allocator, handler);
+        defer s.deinit();
+
+        s.nextSlice("\x1bPtmux;AB\x9c"); // ESC Ptmux; A B <8-bit ST>
+        try testing.expectEqualStrings("AB", S.recovered.items);
+        s.nextSlice("XYZ"); // parser back at ground -> print takes effect
+        const str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expect(std.mem.indexOf(u8, str, "XYZ") != null);
+    }
+
+    // CAN (0x18) aborts: the partial payload is discarded (no replay) and the
+    // parser returns to ground so following input still works (no wedge).
+    {
+        var t: Terminal = try .init(testing.allocator, .{ .cols = 10, .rows = 10 });
+        defer t.deinit(testing.allocator);
+        const S = struct {
+            var called: bool = false;
+            fn cb(_: *Handler, _: []const u8) void {
+                called = true;
+            }
+        };
+        S.called = false;
+        var handler: Handler = .init(&t);
+        handler.effects.dcs_passthrough = &S.cb;
+        var s: Stream = .initAlloc(testing.allocator, handler);
+        defer s.deinit();
+
+        s.nextSlice("\x1bPtmux;AB\x18"); // ESC Ptmux; A B <CAN> -> abort
+        try testing.expect(!S.called); // aborted: nothing delivered
+        s.nextSlice("\x1b[?1049h");
+        try testing.expectEqual(.alternate, t.screens.active_key);
+        s.nextSlice("ABC");
+        const str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expect(std.mem.indexOf(u8, str, "ABC") != null);
+    }
 }
