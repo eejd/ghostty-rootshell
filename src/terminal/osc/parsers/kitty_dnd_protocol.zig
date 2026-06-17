@@ -26,18 +26,36 @@ pub const OSC = struct {
 
 /// Values for the `t` (event type) metadata key.
 pub const EventType = enum {
+    /// ('a') Terminal registers itself as willing to accept drops.
     accept_drops,
+    /// ('A') Terminal unregisters itself; drops should no longer be forwarded.
     stop_accepting_drops,
+    /// ('m') Pointer is moving over the terminal while a drag is in progress.
+    /// Carries `x`/`y` cursor position; -1 signals the drag left the window.
     drop_move,
+    /// ('M') Items were dropped onto the terminal.
+    /// Carries `x`/`y` drop position and `i` (drop ID).
     drop_dropped,
+    /// ('r') Terminal requests data for a specific MIME type from the drag source.
+    /// Carries `i` (drop ID) and `m` (MIME type index).
     request_data,
+    /// ('R') Error response to a `request_data` event.
     request_error,
+    /// ('o') Terminal offers data for an outgoing drag (drag-out from terminal).
     offer_drag,
+    /// ('p') Drag source presents the actual payload for a previously requested MIME type.
+    /// Carries `i` (drop ID), `m` (MIME type index), and `o` (chunk offset).
     present_data,
+    /// ('P') Replace the current drag image with a new one.
+    /// Payload is the image data; `X`/`Y` carry image dimensions in pixels.
     change_drag_image,
+    /// ('e') Notification of an event on an outgoing drag offer (e.g., accepted or rejected).
     drag_offer_event,
+    /// ('E') Error on an outgoing drag offer.
     drag_offer_error,
+    /// ('k') URI list data delivered as part of a drag or clipboard transfer.
     uri_list_data,
+    /// ('q') Query terminal capabilities related to the drag-and-drop protocol.
     query,
 
     pub fn init(str: []const u8) ?EventType {
@@ -63,13 +81,24 @@ pub const EventType = enum {
 
 /// Metadata keys defined by the protocol. Keys are case-sensitive: `x` and `X` are distinct.
 pub const Option = enum {
+    /// Event type. Maps to `EventType`; present in every OSC 72 sequence.
     t,
+    /// MIME type index. Identifies which MIME type (from the offered list) is being
+    /// requested or transferred. Zero-based integer.
     m,
+    /// Drop ID. An integer that uniquely identifies a drag-and-drop operation for its
+    /// lifetime. The same ID is used across the request/present exchange for one drop.
     i,
+    /// Chunk offset. Used when payload data is split across multiple `present_data`
+    /// messages; indicates which chunk this message carries (zero-based).
     o,
+    /// Cursor column (zero-based cell units). -1 signals the drag has left the window.
     x,
+    /// Cursor row (zero-based cell units). -1 signals the drag has left the window.
     y,
+    /// Drag image width in pixels (used with `change_drag_image`).
     X,
+    /// Drag image height in pixels (used with `change_drag_image`).
     Y,
 
     pub fn Type(comptime key: Option) type {
