@@ -1382,13 +1382,18 @@ pub const StreamHandler = struct {
         if (comptime !tmux_enabled) return;
         const viewer = self.tmux_viewer orelse return;
         if (!viewer.isResyncing()) return;
-        self.messageWriter(termio.Message.writeReq(
+        const queued = self.messageWriterChecked(termio.Message.writeReq(
             self.alloc,
             terminal.tmux.Viewer.resync_probe_command,
         ) catch return);
-        // Count this probe so a later stray response is dropped by count, not by
-        // an unconditional sentinel scan. ROOTSHELL-TMUX (id=viewer-resync-probe-count)
-        viewer.recordResyncProbeSent();
+        // Count the probe ONLY if it was actually queued. On the unlocked-IO path
+        // sendBounded can DROP the message under sustained mailbox backpressure;
+        // recording a phantom outstanding probe would leave the viewer waiting for
+        // a marker that was never written (wedged in resync). A dropped probe just
+        // retries on the next cadence tick (this fn is the cadence). Counting a
+        // queued probe also lets a later stray response be dropped by count rather
+        // than an unconditional sentinel scan. ROOTSHELL-TMUX (id=viewer-resync-probe-count)
+        if (queued) viewer.recordResyncProbeSent();
     }
 
     /// Drive a LIVE re-resync of the control channel: reset the viewer's command
@@ -1424,10 +1429,22 @@ pub const StreamHandler = struct {
         // Realign the parser to a clean line boundary (the live stream may resume
         // mid-line after data loss) so it does not break on the next byte.
         self.dcs.beginTmuxResync();
-        self.messageWriter(probe_msg);
-        viewer.recordResyncProbeSent();
-        // Surface the new state immediately (no-op unless the app opted in).
-        self.refreshTmuxDebug();
+        // Count the probe ONLY if it was actually queued. On the unlocked-IO path
+        // sendBounded can DROP it under sustained mailbox backpressure; a phantom
+        // outstanding probe would wedge the viewer in resync (already entered
+        // above) with no marker ever coming. Unlike the resume/resend paths there
+        // is no external cadence re-driving this one-shot live recovery, so on a
+        // drop exit control mode cleanly NOW (the IO path is overwhelmed) rather
+        // than wedge until the app's 15s resync-stuck watchdog — mirrors the
+        // alloc-failure branch above. ROOTSHELL-TMUX (id=viewer-resync-probe-count)
+        if (self.messageWriterChecked(probe_msg)) {
+            viewer.recordResyncProbeSent();
+            // Surface the new state immediately (no-op unless the app opted in).
+            self.refreshTmuxDebug();
+        } else {
+            log.warn("tmux resync probe dropped (mailbox backpressure); forcing control-mode exit", .{});
+            self.tmuxForceExit();
+        }
     }
 
     /// After feeding control-mode bytes, consume the parser's recover edge and
@@ -1807,12 +1824,17 @@ pub const StreamHandler = struct {
                             // first reattach byte (→ defunct → tabs torn down).
                             self.dcs.beginTmuxResync();
                             log.info("tmux control mode resuming (re-entered after reattach)", .{});
-                            self.messageWriter(termio.Message.writeReq(
+                            const probe_queued = self.messageWriterChecked(termio.Message.writeReq(
                                 self.alloc,
                                 terminal.tmux.Viewer.resync_probe_command,
                             ) catch break :tmux);
-                            // Count this probe (see id=viewer-resync-probe-count).
-                            viewer.recordResyncProbeSent();
+                            // Count only if actually queued: sendBounded can drop
+                            // under backpressure, and a phantom outstanding probe
+                            // would wedge resume in resync. The app's resume
+                            // watchdog re-sends on a cadence (tmuxResumeResendProbe),
+                            // so a dropped probe retries. ROOTSHELL-TMUX
+                            // (id=viewer-resync-probe-count)
+                            if (probe_queued) viewer.recordResyncProbeSent();
                         }
                         break :tmux;
                     },
