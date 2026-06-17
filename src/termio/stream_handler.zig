@@ -32,7 +32,8 @@ const log = std.log.scoped(.io_handler);
 // it by C layout). Mirrored byte-for-byte in include/ghostty.h. See
 // docs/tmux-control-mode-fork.md.
 pub const TmuxDebugSnapshot = extern struct {
-    /// Snapshot ABI version. Bumped when fields are appended. Currently 1.
+    /// Snapshot ABI version. Bumped when fields are appended. Currently 2
+    /// (v2 appended the read-thread progress fields at the tail).
     abi_version: u32,
 
     // --- liveness / state (booleans are 0/1) ---
@@ -91,6 +92,25 @@ pub const TmuxDebugSnapshot = extern struct {
     total_blocks: u64,
     total_output_events: u64,
     total_commands_sent: u64,
+
+    // --- ABI v2 appendix: read-thread progress (id=tmux-debug-read-progress).
+    //     Diagnoses bytes vanishing between the transport and the tmux parser:
+    //     `gw_read_enter_bytes` counts bytes entering Termio.processOutput for
+    //     this surface (stamped BEFORE any lock), `gw_read_done_bytes` after
+    //     the parse completes, `gw_tmux_put_bytes` bytes that reached the tmux
+    //     DCS put path. When enter > done and `ms_since_read_enter` grows, the
+    //     read thread is BLOCKED; `read_thread_site` (TmuxReadSite: 0 idle,
+    //     1 awaiting-gateway-lock, 2 parsing, 3 pane-lock, 4 mailbox-send,
+    //     5 surface-mailbox-send) and `read_site_pane_id` name where. ---
+    gw_read_enter_bytes: u64,
+    gw_read_done_bytes: u64,
+    gw_tmux_put_bytes: u64,
+    ms_since_read_enter: u64,
+    ms_since_read_done: u64,
+    pane_lock_timeouts: u64,
+    read_site_pane_id: u32,
+    read_thread_site: u8,
+    _reserved_v2: [3]u8,
 };
 // ROOTSHELL-TMUX END FROZEN-ABI (id=tmux-debug-snapshot-struct)
 
@@ -144,6 +164,39 @@ const TmuxDebugMirror = struct {
     total_blocks: std.atomic.Value(u64) = .init(0),
     total_output_events: std.atomic.Value(u64) = .init(0),
     total_commands_sent: std.atomic.Value(u64) = .init(0),
+
+    // ROOTSHELL-TMUX (id=tmux-debug-read-progress): read-thread progress
+    // gauges, written DIRECTLY at the byte sites (not via refreshTmuxDebug —
+    // a wedged read thread never reaches the event-site refresh, which is the
+    // exact case these exist to diagnose). `read_site` says where the read
+    // thread last was (see TmuxReadSite); when it is nonzero and
+    // `read_enter_ms` is old, the thread is BLOCKED at that site.
+    read_enter_bytes: std.atomic.Value(u64) = .init(0),
+    read_done_bytes: std.atomic.Value(u64) = .init(0),
+    tmux_put_bytes: std.atomic.Value(u64) = .init(0),
+    read_enter_ms: std.atomic.Value(i64) = .init(0),
+    read_done_ms: std.atomic.Value(i64) = .init(0),
+    read_site: std.atomic.Value(u8) = .init(0),
+    read_site_pane: std.atomic.Value(u32) = .init(0),
+    pane_lock_timeouts: std.atomic.Value(u64) = .init(0),
+};
+
+/// ROOTSHELL-TMUX (id=tmux-debug-read-progress): where the gateway's
+/// byte-processing thread last was. Written by the read thread (and, for the
+/// mailbox/pane sites, occasionally the IO event-loop thread running viewer
+/// code under tmux_mutex) — last-writer-wins is fine for a diagnostic.
+pub const TmuxReadSite = enum(u8) {
+    idle = 0,
+    /// Waiting to acquire the gateway parse lock (renderer or tmux mutex).
+    awaiting_gateway_lock = 1,
+    /// Inside the stream parse.
+    parsing = 2,
+    /// Waiting on a pane child surface's renderer mutex (pane id alongside).
+    pane_lock = 3,
+    /// Inside a termio mailbox send.
+    mailbox_send = 4,
+    /// Inside a surface (app) mailbox send.
+    surface_mailbox_send = 5,
 };
 
 /// This is used as the handler for the terminal.Stream type. This is
@@ -242,6 +295,41 @@ pub const StreamHandler = struct {
     /// to wake up the termio thread.
     termio_messaged: bool = false,
 
+    /// ROOTSHELL-TMUX (id=streamhandler-unlocked-io): true while the current
+    /// thread is executing handler/viewer code while HOLDING
+    /// `Termio.tmux_mutex` (with or without the renderer mutex). While set,
+    /// `messageWriter` / `surfaceMessageWriter` / `rendererMessageWriter`
+    /// must use bounded no-unlock sends. The queue-full slow paths otherwise
+    /// unlock/relock the renderer mutex, which is (a) UB when it isn't held
+    /// (tmux-only paths) and (b) an ABBA deadlock when it IS held: re-locking
+    /// renderer while holding tmux violates the renderer -> tmux lock order
+    /// against any thread doing renderer -> tmux. Always read/written under
+    /// tmux_mutex, so a plain bool is sound.
+    tmux_unlocked_io: bool = false,
+
+    /// ROOTSHELL-TMUX (id=streamhandler-unlocked-io): fork-only analog of
+    /// `termio_messaged` for sends made on the unlocked control-mode path.
+    /// Atomic because it is set under tmux_mutex but consumed (swap) by
+    /// `Termio.processOutputTmuxPrefix` which then notifies the mailbox after
+    /// unlocking. Upstream's `termio_messaged` field and its call sites stay
+    /// byte-identical.
+    tmux_termio_messaged: std.atomic.Value(bool) = .init(false),
+
+    /// ROOTSHELL-TMUX (id=streamhandler-unlocked-io): a tmux topology
+    /// snapshot (possibly the non-rederivable empty teardown snapshot) was
+    /// dropped under app-mailbox backpressure; `tmuxFlushDeferred` re-sends
+    /// it. Accessed only under tmux_mutex.
+    tmux_topology_retry: bool = false,
+
+    /// ROOTSHELL-TMUX (id=streamhandler-post-exit-drain): armed ONLY by
+    /// `tmuxForceExit` (never on a clean `%exit`). While set, inbound bytes are
+    /// discarded up to the real `%exit` + ST boundary (bounded by budget and
+    /// deadline) so a swallowed control-mode backlog that floods in after the
+    /// force-exit teardown doesn't paint raw protocol garbage into the revealed
+    /// shell. Accessed only under tmux_mutex.
+    tmux_post_exit_drain: if (tmux_enabled) ?terminal.tmux.ExitDrain else void =
+        if (tmux_enabled) null else {},
+
     /// This is set to true when we've seen a title escape sequence. We use
     /// this to determine if we need to default the window title.
     seen_title: bool = false,
@@ -335,12 +423,136 @@ pub const StreamHandler = struct {
         self: *StreamHandler,
         msg: apprt.surface.Message,
     ) void {
+        // ROOTSHELL-TMUX (id=streamhandler-unlocked-io): on the unlocked
+        // control-mode path the renderer mutex is NOT held, so the
+        // unlock/relock slow path below would be UB. Use bounded timed
+        // retries instead; on sustained backpressure free the message and
+        // drop it (topology snapshots are re-derivable from the viewer and
+        // query responses are backstopped by the app-side timeout).
+        if (comptime tmux_enabled) {
+            if (self.tmux_unlocked_io) {
+                self.tmuxDbgReadSite(.surface_mailbox_send, 0);
+                defer self.tmuxDbgReadSite(.parsing, 0);
+                if (self.surface_mailbox.push(msg, .{ .instant = {} }) > 0) return;
+                var attempts: usize = 0;
+                while (attempts < 50) : (attempts += 1) {
+                    if (self.surface_mailbox.push(
+                        msg,
+                        .{ .ns = 2 * std.time.ns_per_ms },
+                    ) > 0) return;
+                }
+                log.warn(
+                    "dropping surface message after sustained backpressure tag={s}",
+                    .{@tagName(msg)},
+                );
+                self.dropSurfaceMessage(msg);
+                return;
+            }
+        }
+
         // See messageWriter which has similar logic and explains why
         // we may have to do this.
         if (self.surface_mailbox.push(msg, .{ .instant = {} }) == 0) {
             self.renderer_state.mutex.unlock();
             defer self.renderer_state.mutex.lock();
             _ = self.surface_mailbox.push(msg, .{ .forever = {} });
+        }
+    }
+
+    /// Free the heap-carrying payload of a surface message we are dropping
+    /// instead of delivering (bounded-backpressure path above). Only the
+    /// tmux message kinds can reach the drop path; value-type messages need
+    /// no cleanup. A dropped TOPOLOGY snapshot is not always re-derivable
+    /// later (the empty teardown snapshot's viewer is gone immediately
+    /// after), so flag a retry; the heartbeat-driven `tmuxFlushDeferred`
+    /// re-sends it. ROOTSHELL-TMUX (id=streamhandler-unlocked-io)
+    fn dropSurfaceMessage(self: *StreamHandler, msg: apprt.surface.Message) void {
+        switch (msg) {
+            // Pointer payloads own heap memory (and topology snapshots hold
+            // pane refs that MUST be released or panes leak forever).
+            .tmux_topology_changed => |snapshot| {
+                snapshot.deinit();
+                if (comptime tmux_enabled) self.tmux_topology_retry = true;
+            },
+            .tmux_command_response => |resp| resp.deinit(),
+            // Ordinary messages reach the bounded drop path too (the
+            // unhooked parse also runs with the flag set): WriteReq payloads
+            // may be `.alloc` and own heap memory (OSC 52 clipboard writes,
+            // OSC 7 pwd changes, tmux write relays).
+            .clipboard_write => |v| v.req.deinit(),
+            .pwd_change => |req| req.deinit(),
+            .tmux_write_command => |req| req.deinit(),
+            else => {},
+        }
+    }
+
+    /// Retry work deferred by the unlocked control-mode path: pane writes
+    /// deferred by bounded renderer-lock timeouts, and a topology snapshot
+    /// dropped under app-mailbox backpressure. Driven by the app's heartbeat
+    /// (idle-session nudge) via the `.tmux_flush_deferred` message; also safe
+    /// to call any time on the IO thread under tmux_mutex. Idempotent and
+    /// cheap when nothing is deferred. ROOTSHELL-TMUX
+    /// (id=termio-msg-flush-deferred)
+    pub fn tmuxFlushDeferred(self: *StreamHandler) void {
+        if (comptime !tmux_enabled) return;
+
+        if (self.tmux_topology_retry) {
+            self.tmux_topology_retry = false;
+            if (self.tmux_viewer) |viewer| {
+                // Viewer alive: the authoritative topology lives in tmux —
+                // re-derive (and re-emit) it via a queued list-windows.
+                viewer.queueTopologyRefresh() catch |err| {
+                    log.warn("failed to queue topology refresh err={}", .{err});
+                    self.tmux_topology_retry = true;
+                };
+            } else {
+                // Viewer gone (teardown snapshot was the one dropped):
+                // re-send the empty snapshot so the app prunes the orphaned
+                // tabs. A re-drop re-sets the flag for the next nudge.
+                self.sendEmptyTopologySnapshot();
+            }
+        }
+
+        if (self.tmux_viewer) |viewer| {
+            // Collect deferred OSC 52 clipboard writes so we deliver them NOW: on
+            // an idle session this nudge is the only path that flushes deferred
+            // pane work, and without delivery a pane's clipboard SET buffered in
+            // deferred output would strand (or land late on a later unrelated
+            // %output). The action payloads live on the viewer's action arena
+            // (valid until the next `next()`); we forward them to the surface
+            // mailbox immediately below, which copies the bytes into a WriteReq.
+            // The list backing is arena-allocated by flushPaneClipboard, so it
+            // needs no separate deinit. ROOTSHELL-TMUX
+            // (id=streamhandler-flush-deferred-clipboard)
+            var clip_actions: std.ArrayList(terminal.tmux.Viewer.Action) = .empty;
+            viewer.flushAllDeferredPanes(&clip_actions, 2 * std.time.ns_per_ms);
+            for (clip_actions.items) |action| {
+                const cw = switch (action) {
+                    .pane_clipboard_write => |w| w,
+                    else => continue,
+                };
+                const clipboard_type: apprt.Clipboard = switch (cw.kind) {
+                    'c' => .standard,
+                    's' => .selection,
+                    'p' => .primary,
+                    else => .standard,
+                };
+                const req = apprt.surface.Message.WriteReq.init(self.alloc, cw.data) catch |err| {
+                    log.warn("failed to allocate deferred tmux clipboard write req err={}", .{err});
+                    continue;
+                };
+                self.surfaceMessageWriter(.{ .clipboard_write = .{
+                    .req = req,
+                    .clipboard_type = clipboard_type,
+                } });
+            }
+            // The flush (and the topology retry above) may have QUEUED
+            // commands (pane_visible re-fetches, buffered pane responses,
+            // list-windows); the queue is pull-based, so on an idle session
+            // nothing else would ever send them. Pump exactly once at the
+            // end so everything queued here goes out now.
+            // ROOTSHELL-TMUX (id=termio-msg-flush-deferred)
+            self.pumpTmuxCommandQueue(viewer);
         }
     }
 
@@ -387,8 +599,97 @@ pub const StreamHandler = struct {
     }
 
     inline fn messageWriter(self: *StreamHandler, msg: termio.Message) void {
+        _ = self.messageWriterChecked(msg);
+    }
+
+    /// Like `messageWriter` but reports whether the message was actually
+    /// queued. Callers whose correctness depends on delivery (tracked tmux
+    /// commands — a drop must roll back the viewer's in-flight state) use
+    /// this; fire-and-forget callers use `messageWriter`.
+    /// ROOTSHELL-TMUX (id=streamhandler-unlocked-io)
+    inline fn messageWriterChecked(self: *StreamHandler, msg: termio.Message) bool {
+        // ROOTSHELL-TMUX (id=streamhandler-unlocked-io): on the unlocked
+        // control-mode path the renderer mutex is NOT held, so Mailbox.send's
+        // unlock/relock slow path would be UB. sendBounded does the bounded
+        // retry without any mutex and reports drops. The wake flag goes to the
+        // fork-only atomic (consumed by Termio.processOutputTmuxPrefix after
+        // unlocking) so upstream's `termio_messaged` sites stay untouched.
+        if (comptime tmux_enabled) {
+            if (self.tmux_unlocked_io) {
+                self.tmuxDbgReadSite(.mailbox_send, 0);
+                defer self.tmuxDbgReadSite(.parsing, 0);
+                const ok = self.termio_mailbox.sendBounded(msg);
+                if (ok) self.tmux_termio_messaged.store(true, .monotonic);
+                return ok;
+            }
+        }
+        // Upstream path: send() has its own bounded drop but doesn't report
+        // it; that exposure predates the fork and is unchanged here.
         self.termio_mailbox.send(msg, self.renderer_state.mutex);
         self.termio_messaged = true;
+        return true;
+    }
+
+    /// Whether the tmux control channel is hooked on this surface (the DCS
+    /// handler routes every byte to the control parser). Callers must hold
+    /// `Termio.tmux_mutex`. ROOTSHELL-TMUX (id=termio-tmux-process-output)
+    pub inline fn tmuxControlHooked(self: *const StreamHandler) bool {
+        if (comptime !tmux_enabled) return false;
+        return self.dcs.state == .tmux;
+    }
+
+    /// Feed `buf` through the post-force-exit drain if one is armed,
+    /// returning the suffix that must be processed normally (the whole `buf`
+    /// when no drain is active). Caller must hold `Termio.tmux_mutex`.
+    /// ROOTSHELL-TMUX (id=streamhandler-post-exit-drain)
+    pub fn tmuxPostExitDrainFeed(self: *StreamHandler, buf: []const u8) []const u8 {
+        if (comptime !tmux_enabled) return buf;
+        const drain = if (self.tmux_post_exit_drain) |*d| d else return buf;
+        const consumed = drain.feed(buf, std.time.milliTimestamp());
+        if (drain.isDone()) {
+            log.info(
+                "tmux post-exit drain finished (consumed {} trailing bytes)",
+                .{consumed},
+            );
+            self.tmux_post_exit_drain = null;
+        }
+        return buf[consumed..];
+    }
+
+    // ROOTSHELL-TMUX (id=tmux-debug-read-progress): read-thread progress
+    // stamps. Written directly at the byte sites (NOT via refreshTmuxDebug —
+    // a blocked read thread never reaches the event-site refresh, which is
+    // the exact case these diagnose). All no-ops until the gateway's debug
+    // mirror is enabled, so non-gateway surfaces pay one relaxed load.
+
+    pub inline fn tmuxDbgReadEnter(self: *StreamHandler, len: usize) void {
+        if (comptime !tmux_enabled) return;
+        const m = &self.tmux_debug;
+        if (!m.enabled.load(.monotonic)) return;
+        _ = m.read_enter_bytes.fetchAdd(len, .monotonic);
+        m.read_enter_ms.store(std.time.milliTimestamp(), .monotonic);
+    }
+
+    pub inline fn tmuxDbgReadDone(self: *StreamHandler, len: usize) void {
+        if (comptime !tmux_enabled) return;
+        const m = &self.tmux_debug;
+        if (!m.enabled.load(.monotonic)) return;
+        _ = m.read_done_bytes.fetchAdd(len, .monotonic);
+        m.read_done_ms.store(std.time.milliTimestamp(), .monotonic);
+        m.read_site.store(@intFromEnum(TmuxReadSite.idle), .monotonic);
+        m.read_site_pane.store(0, .monotonic);
+    }
+
+    pub inline fn tmuxDbgReadSite(
+        self: *StreamHandler,
+        site: TmuxReadSite,
+        pane_id: u32,
+    ) void {
+        if (comptime !tmux_enabled) return;
+        const m = &self.tmux_debug;
+        if (!m.enabled.load(.monotonic)) return;
+        m.read_site.store(@intFromEnum(site), .monotonic);
+        m.read_site_pane.store(pane_id, .monotonic);
     }
 
     // ROOTSHELL-TMUX (id=streamhandler-suppress-gateway-reports): iTerm2-style report suppression while this surface is the tmux control-mode gateway.
@@ -415,6 +716,28 @@ pub const StreamHandler = struct {
         // Try instant first. If it works then we can return.
         if (self.renderer_mailbox.push(msg, .{ .instant = {} }) > 0) {
             return;
+        }
+
+        // ROOTSHELL-TMUX (id=streamhandler-unlocked-io): while tmux_mutex is
+        // held we must NOT unlock/relock the renderer mutex (lock-order
+        // violation / UB — see tmux_unlocked_io). Bounded timed retries, then
+        // drop: renderer messages are repaint hints and lossy-tolerant.
+        if (comptime tmux_enabled) {
+            if (self.tmux_unlocked_io) {
+                self.renderer_wakeup.notify() catch {};
+                var attempts: usize = 0;
+                while (attempts < 50) : (attempts += 1) {
+                    if (self.renderer_mailbox.push(
+                        msg,
+                        .{ .ns = 2 * std.time.ns_per_ms },
+                    ) > 0) return;
+                }
+                log.warn(
+                    "dropping renderer message under tmux lock backpressure tag={s}",
+                    .{@tagName(msg)},
+                );
+                return;
+            }
         }
 
         // Instant would have blocked. Release the renderer mutex,
@@ -684,21 +1007,26 @@ pub const StreamHandler = struct {
 
     /// Write a tracked tmux command (the viewer's own commands) to the pty via a
     /// `.tmux_track_command` message rather than a raw `.write_*`. The IO thread
-    /// records a `.tracked` marker in the viewer's sent-FIFO AFTER writing, so the
-    /// marker order matches the actual pty write order (which the SPSC mailbox can
-    /// reorder relative to the viewer enqueue order — that's why recording must
-    /// happen at the drain point, not here). `cmd` is copied. ROOTSHELL-TMUX
+    /// records a `.tracked` marker in the viewer's sent-FIFO at the drain point
+    /// (just before writing, under tmux_mutex — see Thread
+    /// id=thread-tmux-write-record-atomic), so the marker order matches the
+    /// actual pty write order (which the SPSC mailbox can reorder relative to
+    /// the viewer enqueue order — that's why recording must happen at the drain
+    /// point, not here). `cmd` is copied. ROOTSHELL-TMUX
     /// (id=streamhandler-write-tracked-command)
     fn writeTrackedTmuxCommand(self: *StreamHandler, cmd: []const u8) bool {
         const copy = self.alloc.dupe(u8, cmd) catch {
             log.warn("failed to dupe tracked tmux command", .{});
             return false;
         };
-        self.messageWriter(.{ .tmux_track_command = .{
+        // Checked send: a drop under mailbox backpressure must report false
+        // so the caller rolls back command_in_flight — otherwise the viewer
+        // waits forever for a %begin/%end that can never come.
+        // ROOTSHELL-TMUX (id=streamhandler-unlocked-io)
+        return self.messageWriterChecked(.{ .tmux_track_command = .{
             .alloc = self.alloc,
             .data = copy,
         } });
-        return true;
     }
 
     /// Record (on the IO thread, at the drain/write point) that a tracked tmux
@@ -781,6 +1109,15 @@ pub const StreamHandler = struct {
         m.total_commands_sent.store(0, .monotonic);
         m.parser_last_error.store(0, .monotonic);
         m.viewer_last_error.store(0, .monotonic);
+        // Read-progress gauges (id=tmux-debug-read-progress).
+        m.read_enter_bytes.store(0, .monotonic);
+        m.read_done_bytes.store(0, .monotonic);
+        m.tmux_put_bytes.store(0, .monotonic);
+        m.read_enter_ms.store(0, .monotonic);
+        m.read_done_ms.store(0, .monotonic);
+        m.read_site.store(0, .monotonic);
+        m.read_site_pane.store(0, .monotonic);
+        m.pane_lock_timeouts.store(0, .monotonic);
         m.enabled.store(true, .monotonic);
         self.refreshTmuxDebug(); // populate immediately so an idle session is warm
     }
@@ -950,7 +1287,7 @@ pub const StreamHandler = struct {
     /// isn't a live tmux gateway. ROOTSHELL-TMUX (id=tmux-debug-snapshot)
     pub fn tmuxDebugSnapshot(self: *StreamHandler, out: *TmuxDebugSnapshot) bool {
         out.* = std.mem.zeroes(TmuxDebugSnapshot);
-        out.abi_version = 1;
+        out.abi_version = 2;
         if (comptime !tmux_enabled) return false;
         const m = &self.tmux_debug;
         if (!self.tmux_active_flag.load(.monotonic)) return false;
@@ -996,6 +1333,16 @@ pub const StreamHandler = struct {
         out.total_blocks = m.total_blocks.load(.monotonic);
         out.total_output_events = m.total_output_events.load(.monotonic);
         out.total_commands_sent = m.total_commands_sent.load(.monotonic);
+
+        // ABI v2 appendix. ROOTSHELL-TMUX (id=tmux-debug-read-progress)
+        out.gw_read_enter_bytes = m.read_enter_bytes.load(.monotonic);
+        out.gw_read_done_bytes = m.read_done_bytes.load(.monotonic);
+        out.gw_tmux_put_bytes = m.tmux_put_bytes.load(.monotonic);
+        out.ms_since_read_enter = msSince(now, m.read_enter_ms.load(.monotonic));
+        out.ms_since_read_done = msSince(now, m.read_done_ms.load(.monotonic));
+        out.pane_lock_timeouts = m.pane_lock_timeouts.load(.monotonic);
+        out.read_site_pane_id = m.read_site_pane.load(.monotonic);
+        out.read_thread_site = m.read_site.load(.monotonic);
 
         return true;
     }
@@ -1161,6 +1508,12 @@ pub const StreamHandler = struct {
         if (comptime !tmux_enabled) return;
         if (self.tmux_viewer == null) return;
         log.warn("tmux recovery gave up; forcing local control-mode exit", .{});
+        // Arm the post-exit drain: the remote `tmux -CC` client is still
+        // attached, so the transport may deliver a swallowed control backlog
+        // plus (after our best-effort detach-client) a real `%exit` + ST.
+        // Discard up to that boundary instead of painting raw protocol bytes
+        // into the revealed shell. ROOTSHELL-TMUX (id=streamhandler-post-exit-drain)
+        self.tmux_post_exit_drain = terminal.tmux.ExitDrain.init(std.time.milliTimestamp());
         // Emits the empty-topology snapshot (the app prunes via the reconcile
         // path) and frees the viewer + clears the active flag.
         self.tmuxTeardownViewer();
@@ -1325,6 +1678,16 @@ pub const StreamHandler = struct {
     }
 
     pub inline fn dcsPut(self: *StreamHandler, byte: u8) !void {
+        // Count bytes that actually reach the tmux control channel, so a log
+        // can distinguish "transport delivered but the parser never saw it"
+        // from "the parser saw it". ROOTSHELL-TMUX (id=tmux-debug-read-progress)
+        if (comptime tmux_enabled) {
+            if (self.dcs.state == .tmux and
+                self.tmux_debug.enabled.load(.monotonic))
+            {
+                _ = self.tmux_debug.tmux_put_bytes.fetchAdd(1, .monotonic);
+            }
+        }
         const maybe = self.dcs.put(byte);
         if (comptime tmux_enabled) self.tmuxMaybeRecover(); // ROOTSHELL-TMUX (id=streamhandler-force-resync)
         var cmd = maybe orelse return;
@@ -1408,6 +1771,14 @@ pub const StreamHandler = struct {
                         // snapshot taken after a hang (logging enabled late) is
                         // populated. ROOTSHELL-TMUX (id=tmux-debug-mirror)
                         self.tmuxDebugOnViewerCreated();
+                        // Hand the viewer pointers into the read-progress
+                        // gauges so its pane-lock waits are visible in the
+                        // snapshot. ROOTSHELL-TMUX (id=tmux-debug-read-progress)
+                        viewer.debug_progress = .{
+                            .site = &self.tmux_debug.read_site,
+                            .pane = &self.tmux_debug.read_site_pane,
+                            .pane_lock_timeouts = &self.tmux_debug.pane_lock_timeouts,
+                        };
 
                         // Print a minimal in-TUI menu into the gateway terminal so
                         // the user has a discoverable, safe way to leave control

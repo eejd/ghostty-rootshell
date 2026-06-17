@@ -87,6 +87,24 @@ pub const MAX_TOTAL_PANES = 512;
 /// to leave a pane paused. ROOTSHELL-TMUX (id=pause-after-seconds)
 const PAUSE_AFTER_SECONDS = 200;
 
+// ROOTSHELL-TMUX (id=viewer-pane-bounded-lock): renderer-lock budgets for
+// pane writes driven from the control channel. The channel must never block
+// indefinitely on a pane renderer; on timeout the work spills/re-queues.
+/// Live `%output` writes: short — output spills losslessly to `pending_vt`.
+const PANE_LOCK_OUTPUT_BUDGET_NS: u64 = 20 * std.time.ns_per_ms;
+/// Capture-reply application (history/visible/state): longer — a timeout
+/// costs a re-fetch round trip to tmux.
+const PANE_LOCK_CAPTURE_BUDGET_NS: u64 = 250 * std.time.ns_per_ms;
+/// Cosmetic/re-driven work (theme refresh, layout resize): short — a timeout
+/// just defers to the next opportunity.
+const PANE_LOCK_QUICK_BUDGET_NS: u64 = 10 * std.time.ns_per_ms;
+/// Cap on per-pane spilled live output. On overflow the spill is discarded
+/// and the pane's visible content is re-fetched from tmux instead.
+const PANE_PENDING_VT_MAX: usize = 1024 * 1024;
+/// Max capture-reply re-queues after lock timeouts per pane (resets on a
+/// successful application) so a permanently-stuck renderer can't loop.
+const PANE_CAPTURE_RETRY_MAX: u8 = 3;
+
 /// Maximum scrollback lines replayed per pane at attach (`capture-pane
 /// -S -<N>`; tmux clamps to available history, so shorter panes are
 /// unaffected). Previously `-S -` (unbounded), which made the attach replay
@@ -442,6 +460,22 @@ pub const Viewer = struct {
     /// which would drop a real tracked block whose content happens to contain it.
     outstanding_resync_probes: usize = 0,
 
+    /// ROOTSHELL-TMUX (id=tmux-debug-read-progress): optional pointers into
+    /// the gateway's debug mirror so pane-lock waits and timeouts are visible
+    /// in the iOS debug snapshot. Wired by the stream handler at viewer
+    /// creation; null in tests / when the mirror is absent.
+    debug_progress: ?DebugProgress = null,
+
+    pub const DebugProgress = struct {
+        site: *std.atomic.Value(u8),
+        pane: *std.atomic.Value(u32),
+        pane_lock_timeouts: *std.atomic.Value(u64),
+
+        /// Values mirror stream_handler.TmuxReadSite.
+        pub const site_parsing: u8 = 2;
+        pub const site_pane_lock: u8 = 3;
+    };
+
     pub const CommandQueue = CircBuf(Command, undefined);
 
     /// Sentinel printed by the resync probe (`display-message -p`) on a
@@ -784,6 +818,59 @@ pub const Viewer = struct {
         /// partial/stale data before the capture-pane sequence completes.
         initialized: bool = false,
 
+        // ROOTSHELL-TMUX (id=viewer-pane-bounded-lock): deferred work for a
+        // pane whose renderer mutex was contended past its budget. The
+        // control channel must NEVER block indefinitely on a pane renderer
+        // (a stuck pane renderer would starve every other pane AND all
+        // command replies — the attach-wedge bug), so contended writes spill
+        // here and are applied at the next successful lock window
+        // (`flushPaneDeferred`). All fields are touched only by the thread
+        // holding `Termio.tmux_mutex`, so they stay plain (non-atomic).
+
+        /// Live `%output` bytes (already unescaped) that couldn't be written
+        /// under the renderer mutex in time. Flushed before any newer data.
+        pending_vt: std.ArrayList(u8) = .empty,
+
+        /// The spill overflowed its cap and content was discarded; the next
+        /// successful lock window re-fetches the pane's visible content from
+        /// tmux (the source of truth) instead of replaying a hole.
+        pending_dropped: bool = false,
+
+        /// A terminal resize that timed out on the renderer mutex; applied
+        /// at the next successful lock window.
+        pending_resize: ?struct {
+            cols: size.CellCountInt,
+            rows: size.CellCountInt,
+        } = null,
+
+        /// Capture-reply retries consumed after renderer-lock timeouts
+        /// (capture replies are re-queued rather than copied; bounded so a
+        /// permanently-stuck pane renderer can't loop forever).
+        capture_retries: u8 = 0,
+
+        /// This pane's slice of the last session-scoped pane_state reply
+        /// timed out on the renderer lock; the completion arm must not mark
+        /// it initialized (the alt-screen swap is gated on !initialized) and
+        /// re-queues a pane_state to revisit it.
+        state_pending: bool = false,
+
+        /// A history/visible capture for this pane timed out on the renderer
+        /// lock and its retry suffix (capture(s) + trailing pane_state) is
+        /// still queued. The completion arm must not mark the pane
+        /// initialized off an EARLIER pane_state — live %output would
+        /// interleave before the retry replay. Cleared when a capture for
+        /// this pane succeeds or gives up.
+        ///
+        /// KNOWN IMPRECISION (accepted): an already-queued OLDER capture for
+        /// this pane can succeed first and clear the flag before the retry
+        /// suffix lands, letting an earlier pane_state initialize the pane.
+        /// This is convergent, not corrupting: retried captures are FRESH
+        /// (tmux re-captures at execution, including any interleaved live
+        /// output) and receivedPaneHistory clears screen+scrollback before
+        /// replaying, so the suffix re-establishes a consistent state. Cost
+        /// is a brief redraw, vs. generation-tracking complexity.
+        capture_pending: bool = false,
+
         /// Whether this pane is currently paused by tmux. When true,
         /// tmux is buffering output server-side and not sending
         /// `%output` for this pane. Set by `%pause` notification,
@@ -928,6 +1015,43 @@ pub const Viewer = struct {
             _ = @atomicRmw(usize, &self.renderer_users, .Sub, 1, .seq_cst);
         }
 
+        /// Result of a bounded renderer-lock attempt. `.acquired` (with the
+        /// possibly-null mutex) must be paired with `unlockRenderer`;
+        /// `.timeout` has already dropped the `renderer_users` registration
+        /// and must NOT be unlocked. ROOTSHELL-TMUX (id=viewer-pane-bounded-lock)
+        pub const BoundedLock = union(enum) {
+            acquired: ?*std.Thread.Mutex,
+            timeout,
+        };
+
+        /// Like `lockRenderer` but gives up after `budget_ns` instead of
+        /// blocking indefinitely. The control channel calls this for every
+        /// pane-terminal write so a stuck pane renderer (holding its mutex
+        /// across a blocked frame) can never starve the channel; contended
+        /// work spills to the pane's pending state instead. Preserves the
+        /// `renderer_users` retain/drain protocol: the registration is held
+        /// for the whole attempt (so `detachRenderer` cannot free the mutex
+        /// under our tryLock) and dropped on timeout. ROOTSHELL-TMUX
+        /// (id=viewer-pane-bounded-lock)
+        pub fn lockRendererBounded(self: *Pane, budget_ns: u64) BoundedLock {
+            _ = @atomicRmw(usize, &self.renderer_users, .Add, 1, .seq_cst);
+            const m = @atomicLoad(?*std.Thread.Mutex, &self.renderer_mutex, .seq_cst);
+            const mu = m orelse return .{ .acquired = null };
+            if (mu.tryLock()) return .{ .acquired = m };
+            var timer = std.time.Timer.start() catch {
+                // No monotonic clock (cannot happen on shipping targets):
+                // fall back to the blocking lock rather than spinning blind.
+                mu.lock();
+                return .{ .acquired = m };
+            };
+            while (timer.read() < budget_ns) {
+                std.Thread.sleep(1 * std.time.ns_per_ms);
+                if (mu.tryLock()) return .{ .acquired = m };
+            }
+            _ = @atomicRmw(usize, &self.renderer_users, .Sub, 1, .seq_cst);
+            return .timeout;
+        }
+
         /// Gateway IO thread: whether a child renderer is attached OR en route,
         /// in which case this pane's terminal must NOT be freed. Loads
         /// `pending_attach` with acquire FIRST: if the child has cleared it, the
@@ -1001,6 +1125,7 @@ pub const Viewer = struct {
             for (self.clipboard_writes.items) |cw| alloc.free(cw.data);
             self.clipboard_writes.deinit(alloc);
             self.replay.deinit(alloc);
+            self.pending_vt.deinit(alloc); // ROOTSHELL-TMUX (id=viewer-pane-bounded-lock)
             self.stream.deinit();
             self.terminal.deinit(alloc);
         }
@@ -1227,8 +1352,14 @@ pub const Viewer = struct {
                 // Hold the child's renderer mutex (if a child is attached)
                 // while mutating the terminal the child's renderer thread
                 // reads, the same discipline as the `initLayout` resize path.
-                // `lockRenderer` no-ops when no child is attached.
-                const m = pane.lockRenderer();
+                // Bounded: a contended pane just keeps its stale theme until
+                // the next theme change or lock window — never worth blocking
+                // the control channel. ROOTSHELL-TMUX (id=viewer-pane-bounded-lock)
+                const m = self.lockPaneBounded(
+                    pane,
+                    kv.key_ptr.*,
+                    PANE_LOCK_QUICK_BUDGET_NS,
+                ) orelse continue;
                 defer pane.unlockRenderer(m);
                 if (fg) |c| pane.terminal.colors.foreground.default = c;
                 if (bg) |c| pane.terminal.colors.background.default = c;
@@ -1391,9 +1522,75 @@ pub const Viewer = struct {
         // Developer note: this function must never return an error. If
         // an error occurs we must go into a defunct state or some other
         // state to gracefully handle it.
+
+        // Retry pane work deferred by bounded-lock timeouts on every inbound
+        // event (a cheap field sweep when nothing is deferred). Budget 0 =
+        // pure tryLock: a still-stuck pane must not tax every event with a
+        // sleep-retry loop. The idle-session case (no further events) is
+        // covered by the app's heartbeat nudge via
+        // ghostty_surface_tmux_flush_deferred, which uses a real budget.
+        // Null action sink: clipboard from any pane flushed here is delivered by
+        // the subsequent receivedOutput drain (or the idle ABI flush below).
+        // ROOTSHELL-TMUX (id=viewer-pane-bounded-lock)
+        self.flushAllDeferredPanes(null, 0);
+
         return switch (input) {
             .tmux => self.nextTmux(input.tmux),
         };
+    }
+
+    /// Queue a list-windows so tmux re-derives (and the viewer re-emits) the
+    /// full window topology. Used to recover a topology snapshot dropped
+    /// under app-mailbox backpressure. ROOTSHELL-TMUX
+    /// (id=termio-msg-flush-deferred)
+    pub fn queueTopologyRefresh(self: *Viewer) !void {
+        try self.queueCommands(&.{.list_windows});
+    }
+
+    /// Retry deferred pane work (spilled output, deferred resize, dropped-
+    /// spill re-fetch) for every pane that has any, with a short bounded
+    /// lock. Spilled output is invisible until applied, and applying it
+    /// requires a lock window that may never come on its own if the pane
+    /// goes quiet — so this runs on every viewer event and on the app's
+    /// heartbeat nudge. O(1) when nothing is deferred. ROOTSHELL-TMUX
+    /// (id=viewer-pane-bounded-lock)
+    pub fn flushAllDeferredPanes(self: *Viewer, actions: ?*std.ArrayList(Action), budget_ns: u64) void {
+        var it = self.panes.iterator();
+        while (it.next()) |kv| {
+            const pane = kv.value_ptr.*;
+            // clipboard_writes / replay are included so a pane whose pending_vt
+            // was already drained by the null-sink live pre-pass (`next`, which
+            // buffers OSC 52 / wrapped-passthrough bytes but cannot emit/replay
+            // them) stays eligible for the sink-bearing idle flush. Otherwise
+            // those side effects strand whenever the NEXT inbound event is not a
+            // %output drain for this pane. ROOTSHELL-TMUX (id=viewer-clipboard)
+            const has_deferred = pane.pending_vt.items.len > 0 or
+                pane.pending_dropped or pane.pending_resize != null or
+                pane.clipboard_writes.items.len > 0 or
+                pane.replay.items.len > 0;
+            if (!has_deferred) continue;
+            const m = self.lockPaneBounded(
+                pane,
+                kv.key_ptr.*,
+                budget_ns,
+            ) orelse continue;
+            defer pane.unlockRenderer(m);
+            self.flushPaneDeferred(pane, kv.key_ptr.*);
+            // Replay any passthrough (wrapped Kitty graphics) the just-flushed
+            // deferred bytes buffered, so deferred image data is not stranded on
+            // an idle session until the next %output. Shares the live path's
+            // clean-boundary replay. ROOTSHELL-TMUX (id=streamterm-tmux-passthrough)
+            self.replayPanePassthrough(pane, kv.key_ptr.*);
+            // Deliver any deferred OSC 52 clipboard writes when the caller gave an
+            // action sink (the idle-flush ABI path) — otherwise a clipboard SET in
+            // deferred output would strand on an idle pane or be delivered late on
+            // a later unrelated %output. The live `next()` path passes null: it
+            // drains clipboard via the subsequent receivedOutput. Title still
+            // self-heals via the #{pane_title} subscription. ROOTSHELL-TMUX
+            // (id=viewer-clipboard)
+            if (actions) |a| self.flushPaneClipboard(a, pane);
+            wakePane(pane);
+        }
     }
 
     fn nextTmux(
@@ -2638,9 +2835,45 @@ pub const Viewer = struct {
                 // The pane_state command is the last in the capture
                 // sequence. Mark all panes as initialized so they
                 // can start receiving live output notifications.
+                // Panes whose state application timed out on the renderer
+                // lock stay uninitialized (their alt-screen swap is gated on
+                // !initialized). While uninitialized, their live %output is
+                // suppressed and pane_state does not carry content — so
+                // re-fetch each affected pane's visible area (covers output
+                // dropped in the window) and THEN re-run pane_state, in the
+                // startup sequence's order. ROOTSHELL-TMUX
+                // (id=viewer-pane-bounded-lock)
+                var requeue_state = false;
                 var panes_it = self.panes.iterator();
                 while (panes_it.next()) |kv| {
-                    kv.value_ptr.*.initialized = true;
+                    const pane = kv.value_ptr.*;
+                    if (pane.state_pending) {
+                        requeue_state = true;
+                        try self.queueCommands(&.{
+                            .{ .pane_visible = .{
+                                .id = kv.key_ptr.*,
+                                .screen_key = .primary,
+                            } },
+                            .{ .pane_visible = .{
+                                .id = kv.key_ptr.*,
+                                .screen_key = .alternate,
+                            } },
+                        });
+                        continue;
+                    }
+                    if (pane.capture_pending) {
+                        // A capture retry suffix (with its own trailing
+                        // pane_state) is still queued for this pane; keep it
+                        // uninitialized until that lands so live %output
+                        // can't interleave before the replay.
+                        continue;
+                    }
+                    pane.initialized = true;
+                }
+                if (requeue_state) {
+                    try self.queueCommands(&.{
+                        .{ .pane_state = self.session_id },
+                    });
                 }
             },
 
@@ -2912,8 +3145,35 @@ pub const Viewer = struct {
             };
             const pane: *Pane = entry.value_ptr.*;
 
-            const render_mutex = pane.lockRenderer();
+            // Bounded lock: on timeout, flag the pane so the completion arm
+            // skips marking it initialized and re-queues a pane_state (the
+            // alt-screen swap is gated on !initialized and must not be
+            // skipped). ROOTSHELL-TMUX (id=viewer-pane-bounded-lock)
+            const render_mutex = self.lockPaneBounded(
+                pane,
+                data.pane_id,
+                PANE_LOCK_CAPTURE_BUDGET_NS,
+            ) orelse {
+                if (pane.capture_retries < PANE_CAPTURE_RETRY_MAX) {
+                    pane.capture_retries += 1;
+                    pane.state_pending = true;
+                } else {
+                    // Retries exhausted: clear the flag so the completion arm
+                    // marks the pane initialized (degraded — possibly wrong
+                    // alt-screen mapping) instead of requeueing pane_state
+                    // forever. ROOTSHELL-TMUX (id=viewer-pane-bounded-lock)
+                    pane.state_pending = false;
+                    log.warn(
+                        "pane {} state application dropped after retries",
+                        .{data.pane_id},
+                    );
+                }
+                continue;
+            };
             defer pane.unlockRenderer(render_mutex);
+            pane.capture_retries = 0;
+            pane.state_pending = false;
+            self.flushPaneDeferred(pane, data.pane_id);
 
             const t: *Terminal = &pane.terminal;
 
@@ -3098,11 +3358,57 @@ pub const Viewer = struct {
         };
         const pane: *Pane = entry.value_ptr.*;
 
-        const render_mutex = pane.lockRenderer();
+        // Bounded lock: on timeout, re-queue the capture (tmux re-sends the
+        // content) instead of blocking the control channel; bounded retries
+        // so a permanently-stuck pane renderer degrades instead of looping.
+        // The retry goes to the queue TAIL, behind this pane's possibly
+        // already-applied visible/state — and a late history replay BLANKS
+        // the active area — so the retry re-queues the full ordered suffix
+        // (history -> visible -> state) to restore the capture invariants.
+        // ROOTSHELL-TMUX (id=viewer-pane-bounded-lock)
+        const render_mutex = self.lockPaneBounded(
+            pane,
+            id,
+            PANE_LOCK_CAPTURE_BUDGET_NS,
+        ) orelse {
+            if (pane.capture_retries < PANE_CAPTURE_RETRY_MAX) {
+                pane.capture_retries += 1;
+                // Keep the pane uninitialized until the RETRY's pane_state:
+                // if the original pane_state (already queued) marked it
+                // initialized, live %output would interleave before the late
+                // history replay and corrupt the screen/scrollback. A
+                // SEPARATE flag from state_pending so a successful earlier
+                // pane_state can't release the hold while this retry is
+                // still queued.
+                pane.capture_pending = true;
+                try self.queueCommands(&.{
+                    .{ .pane_history = .{ .id = id, .screen_key = screen_key } },
+                    .{ .pane_visible = .{ .id = id, .screen_key = screen_key } },
+                    .{ .pane_state = self.session_id },
+                });
+            } else {
+                pane.capture_pending = false;
+                log.warn("pane {} history capture dropped after retries", .{id});
+            }
+            return;
+        };
         defer pane.unlockRenderer(render_mutex);
+        pane.capture_retries = 0;
+        pane.capture_pending = false;
+        self.flushPaneDeferred(pane, id);
 
         const t: *Terminal = &pane.terminal;
         _ = try t.switchScreen(screen_key);
+
+        // Make the history apply idempotent: a RETRIED history (after a lock
+        // timeout) lands on a screen that may already hold visible content,
+        // which the replay below would otherwise push into scrollback as
+        // duplicated lines. Clearing is a no-op for the normal flow (fresh
+        // terminal). ROOTSHELL-TMUX (id=viewer-pane-bounded-lock)
+        t.eraseDisplay(.scrollback, false);
+        t.eraseDisplay(.complete, false);
+        t.setCursorPos(1, 1);
+
         const screen: *Screen = t.screens.active;
 
         // Get a VT stream from the terminal so we can send data as-is into
@@ -3145,8 +3451,34 @@ pub const Viewer = struct {
         };
         const pane: *Pane = entry.value_ptr.*;
 
-        const render_mutex = pane.lockRenderer();
+        // Bounded lock with re-queue, same rationale as receivedPaneHistory.
+        // A late visible rewrite leaves the cursor at the content end, so a
+        // pane_state follows to restore cursor/modes from the live truth.
+        // ROOTSHELL-TMUX (id=viewer-pane-bounded-lock)
+        const render_mutex = self.lockPaneBounded(
+            pane,
+            id,
+            PANE_LOCK_CAPTURE_BUDGET_NS,
+        ) orelse {
+            if (pane.capture_retries < PANE_CAPTURE_RETRY_MAX) {
+                pane.capture_retries += 1;
+                // Same initialization gate as the history retry: live output
+                // must not interleave before the late visible rewrite.
+                pane.capture_pending = true;
+                try self.queueCommands(&.{
+                    .{ .pane_visible = .{ .id = id, .screen_key = screen_key } },
+                    .{ .pane_state = self.session_id },
+                });
+            } else {
+                pane.capture_pending = false;
+                log.warn("pane {} visible capture dropped after retries", .{id});
+            }
+            return;
+        };
         defer pane.unlockRenderer(render_mutex);
+        pane.capture_retries = 0;
+        pane.capture_pending = false;
+        self.flushPaneDeferred(pane, id);
 
         const t: *Terminal = &pane.terminal;
         _ = try t.switchScreen(screen_key);
@@ -3177,6 +3509,137 @@ pub const Viewer = struct {
         pane.wake();
     }
 
+    /// Bounded pane renderer-lock with debug-progress stamping. Returns the
+    /// (possibly null) locked mutex to pass to `unlockRenderer`, or null on
+    /// timeout (the registration is already dropped; the caller must defer
+    /// its work via the pane's pending state instead of blocking).
+    /// ROOTSHELL-TMUX (id=viewer-pane-bounded-lock)
+    fn lockPaneBounded(
+        self: *Viewer,
+        pane: *Pane,
+        pane_id: usize,
+        budget_ns: u64,
+    ) ??*std.Thread.Mutex {
+        if (self.debug_progress) |dp| {
+            dp.site.store(DebugProgress.site_pane_lock, .monotonic);
+            dp.pane.store(
+                @intCast(@min(pane_id, std.math.maxInt(u32))),
+                .monotonic,
+            );
+        }
+        defer if (self.debug_progress) |dp| {
+            dp.site.store(DebugProgress.site_parsing, .monotonic);
+            dp.pane.store(0, .monotonic);
+        };
+        switch (pane.lockRendererBounded(budget_ns)) {
+            .acquired => |m| return m,
+            .timeout => {
+                if (self.debug_progress) |dp|
+                    _ = dp.pane_lock_timeouts.fetchAdd(1, .monotonic);
+                log.warn(
+                    "pane {} renderer lock contended past {}ms; deferring write",
+                    .{ pane_id, budget_ns / std.time.ns_per_ms },
+                );
+                return null;
+            },
+        }
+    }
+
+    /// Apply work deferred by earlier renderer-lock timeouts. Called at the
+    /// START of every successful pane lock window so deferred state lands
+    /// before any newer data: pending resize first (the spilled bytes were
+    /// produced for the new grid), then either the re-fetch for a dropped
+    /// spill or the spilled bytes themselves. ROOTSHELL-TMUX
+    /// (id=viewer-pane-bounded-lock)
+    fn flushPaneDeferred(self: *Viewer, pane: *Pane, pane_id: usize) void {
+        if (pane.pending_resize) |pr| {
+            pane.pending_resize = null;
+            pane.terminal.resize(self.alloc, pr.cols, pr.rows) catch |err| {
+                log.warn("deferred pane {} resize failed err={}", .{ pane_id, err });
+            };
+        }
+
+        if (pane.pending_dropped) {
+            pane.pending_dropped = false;
+            pane.pending_vt.clearRetainingCapacity();
+            // Content was lost; tmux is the source of truth — re-fetch the
+            // visible area for both screens rather than replaying a hole,
+            // then pane_state to restore the active screen/cursor/modes
+            // (receivedPaneVisible leaves the terminal on the last refreshed
+            // screen with the cursor at the content end). Pane titles
+            // self-heal via the title subscription.
+            self.queueCommands(&.{
+                .{ .pane_visible = .{ .id = pane_id, .screen_key = .primary } },
+                .{ .pane_visible = .{ .id = pane_id, .screen_key = .alternate } },
+                .{ .pane_state = self.session_id },
+            }) catch |err| {
+                log.warn("failed to queue dropped-spill refresh for pane {} err={}", .{ pane_id, err });
+            };
+            return;
+        }
+
+        if (pane.pending_vt.items.len > 0) {
+            pane.stream.nextSlice(pane.pending_vt.items);
+            pane.pending_vt.clearRetainingCapacity();
+            // Mirror the live-output path's side effect: the replayed bytes
+            // can contain terminal queries whose replies the pane terminal
+            // buffered via write_pty — route them back now, not at some
+            // unrelated future output. (Queued as a send-keys command; the
+            // pull-based queue sends it on the next block reply, or the
+            // heartbeat's pump on an idle session.) Title changes are NOT
+            // re-detected here: the #{pane_title} subscription is the
+            // authoritative title source and self-heals on its own cadence.
+            // ROOTSHELL-TMUX (id=viewer-pane-bounded-lock)
+            self.flushPaneResponses(pane_id, pane) catch |err| {
+                log.warn(
+                    "failed to flush pane {} deferred query replies err={}",
+                    .{ pane_id, err },
+                );
+            };
+        }
+    }
+
+    /// Replay inner sequences recovered from `ESC P tmux; ...` passthrough
+    /// envelopes (e.g. yazi's wrapped Kitty graphics) back through the pane
+    /// stream. The pane handler can only buffer (no Stream ref), so the recovered
+    /// bytes are re-fed HERE, outside the original nextSlice (not re-entrant).
+    /// CRITICAL: only replay at a fully clean boundary — VT parser at ground AND
+    /// the UTF-8 decoder idle (`utf8decoder.state == 0`) — else injecting the
+    /// recovered bytes mid-sequence corrupts the stream (a mid-envelope or
+    /// mid-multibyte `%output` split; the "random diamonds"). When not clean we
+    /// defer: bytes stay buffered and drain on a later clean boundary. Bounded so
+    /// a pathological nested envelope can't loop forever. Shared by the live
+    /// `receivedOutput` path and the idle `flushAllDeferredPanes` path so deferred
+    /// image data is not stranded on an idle session. ROOTSHELL-TMUX
+    /// (id=streamterm-tmux-passthrough)
+    fn replayPanePassthrough(self: *Viewer, pane: *Pane, id: usize) void {
+        const max_rounds = 8;
+        var rounds: usize = 0;
+        while (pane.replay.items.len > 0 and
+            pane.stream.parser.state == .ground and
+            pane.stream.utf8decoder.state == 0) : (rounds += 1)
+        {
+            if (rounds >= max_rounds) {
+                const left = pane.replay.items.len;
+                log.warn("pane {} passthrough replay exceeded {} rounds; dropping {} bytes", .{ id, max_rounds, left });
+                pane.replay.clearRetainingCapacity();
+                break;
+            }
+            // Any replies this wrapped query generates (e.g. yazi's primary-DA
+            // sentinel) must bypass the tmuxAnswersResponse drop: tmux never saw
+            // the wrapped query, so we are the only responder. Capture the
+            // responses base, replay, then route the new replies unfiltered so
+            // flushPaneResponses (filtered) only handles raw-feed replies.
+            const resp_base = pane.responses.items.len;
+            const chunk = pane.replay.toOwnedSlice(self.alloc) catch break;
+            defer self.alloc.free(chunk);
+            pane.stream.nextSlice(chunk);
+            self.routePaneResponsesUnfiltered(id, pane, resp_base) catch |err| {
+                log.warn("failed to route pane {} passthrough replies err={}", .{ id, err });
+            };
+        }
+    }
+
     fn titleFingerprint(title: ?[:0]const u8) u64 {
         const slice: []const u8 = title orelse "";
         var hasher = std.hash.Wyhash.init(slice.len);
@@ -3195,12 +3658,6 @@ pub const Viewer = struct {
             return;
         };
         const pane: *Pane = entry.value_ptr.*;
-
-        // Lock the renderer mutex if a child surface has registered one.
-        // This coordinates with the child's renderer thread which reads
-        // from the same terminal under this mutex.
-        const render_mutex = pane.lockRenderer();
-        defer pane.unlockRenderer(render_mutex);
 
         // tmux escapes control bytes (< 0x20) and the backslash itself as
         // `\ooo` (a backslash followed by exactly three octal digits) in
@@ -3263,6 +3720,39 @@ pub const Viewer = struct {
                 i += 1;
             }
         }
+
+        // Bounded renderer lock: the control channel must never block
+        // indefinitely on a pane renderer. On timeout, spill the unescaped
+        // bytes to the pane's pending buffer (flushed in order at the next
+        // successful lock window); on overflow, drop the spill and re-fetch
+        // from tmux. ROOTSHELL-TMUX (id=viewer-pane-bounded-lock)
+        const render_mutex = self.lockPaneBounded(
+            pane,
+            id,
+            PANE_LOCK_OUTPUT_BUDGET_NS,
+        ) orelse {
+            if (!pane.pending_dropped) {
+                if (pane.pending_vt.items.len + n > PANE_PENDING_VT_MAX) {
+                    pane.pending_dropped = true;
+                    pane.pending_vt.clearRetainingCapacity();
+                    log.warn(
+                        "pane {} spill overflowed; will re-fetch visible content",
+                        .{id},
+                    );
+                } else {
+                    pane.pending_vt.appendSlice(self.alloc, buf[0..n]) catch {
+                        pane.pending_dropped = true;
+                        pane.pending_vt.clearRetainingCapacity();
+                    };
+                }
+            }
+            return;
+        };
+        defer pane.unlockRenderer(render_mutex);
+
+        // Apply work deferred by earlier lock timeouts BEFORE the new data.
+        self.flushPaneDeferred(pane, id);
+
         const title_before = titleFingerprint(pane.terminal.getTitle());
         pane.stream.nextSlice(buf[0..n]);
         if (titleFingerprint(pane.terminal.getTitle()) != title_before) {
@@ -3298,34 +3788,9 @@ pub const Viewer = struct {
         // Bounded so a pathological nested envelope can't loop forever; snapshot+
         // clear each round so re-entrant appends land in a fresh buffer next round.
         // Done BEFORE flushPaneResponses so replies the inner sequence generates
-        // (a wrapped DECRQM, a Kitty graphics response) are routed too.
-        {
-            const max_rounds = 8;
-            var rounds: usize = 0;
-            while (pane.replay.items.len > 0 and
-                pane.stream.parser.state == .ground and
-                pane.stream.utf8decoder.state == 0) : (rounds += 1)
-            {
-                if (rounds >= max_rounds) {
-                    const left = pane.replay.items.len;
-                    log.warn("pane {} passthrough replay exceeded {} rounds; dropping {} bytes", .{ id, max_rounds, left });
-                    pane.replay.clearRetainingCapacity();
-                    break;
-                }
-                // Any replies this wrapped query generates (e.g. yazi's primary-DA
-                // sentinel) must bypass the tmuxAnswersResponse drop: tmux never
-                // saw the wrapped query, so we are the only responder. Capture the
-                // responses base, replay, then route the new replies unfiltered so
-                // flushPaneResponses (filtered) only handles raw-feed replies.
-                const resp_base = pane.responses.items.len;
-                const chunk = pane.replay.toOwnedSlice(self.alloc) catch break;
-                defer self.alloc.free(chunk);
-                pane.stream.nextSlice(chunk);
-                self.routePaneResponsesUnfiltered(id, pane, resp_base) catch |err| {
-                    log.warn("failed to route pane {} passthrough replies err={}", .{ id, err });
-                };
-            }
-        }
+        // (a wrapped DECRQM, a Kitty graphics response) are routed too. Shared
+        // with the idle-flush path so deferred image data still replays.
+        self.replayPanePassthrough(pane, id);
 
         // Route any query replies the pane terminal generated (kitty-keyboard,
         // DECRQM, OSC 4/12, ...) back to the app via send-keys. tmux relays the
@@ -3637,8 +4102,26 @@ pub const Viewer = struct {
                     // terminal under that mutex. Without this lock a relayout
                     // during heavy output (e.g. running btop in a pane) races
                     // the renderer and crashes in updateFrame/updateExtraRows.
-                    const render_mutex = pane.lockRenderer();
+                    // Bounded: on timeout, stash the target size so the next
+                    // successful lock window applies it (flushPaneDeferred) —
+                    // never block the control channel on a pane renderer.
+                    // ROOTSHELL-TMUX (id=viewer-pane-bounded-lock)
+                    const render_mutex = switch (pane.lockRendererBounded(
+                        PANE_LOCK_QUICK_BUDGET_NS,
+                    )) {
+                        .acquired => |m| m,
+                        .timeout => {
+                            log.warn(
+                                "pane {} renderer lock contended; deferring resize to {}x{}",
+                                .{ id, cols, rows },
+                            );
+                            pane.pending_resize = .{ .cols = cols, .rows = rows };
+                            wakePane(pane);
+                            break :pane;
+                        },
+                    };
                     defer pane.unlockRenderer(render_mutex);
+                    pane.pending_resize = null;
                     try pane.terminal.resize(
                         gpa_alloc,
                         cols,
@@ -8876,4 +9359,84 @@ test "forceResync yields pending user_query tags" {
     viewer.forceResync();
     try testing.expect(viewer.command_queue.empty());
     try testing.expect(viewer.isResyncing());
+}
+
+test "bounded pane lock: contended renderer spills output, flushes on next event" {
+    // ROOTSHELL-TMUX (id=viewer-pane-bounded-lock): the control channel must
+    // never block indefinitely on a pane renderer mutex. With the mutex held
+    // (as a stuck pane renderer would), live %output spills to pending_vt
+    // within the bounded budget; the next viewer event flushes it.
+    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    defer viewer.deinit();
+    try driveStartupOneWindow(&viewer);
+
+    const pane = viewer.panes.get(0).?;
+    var render_mutex: std.Thread.Mutex = .{};
+    var dummy_ctx: u8 = 0;
+    const wake_fn = struct {
+        fn wake(_: ?*anyopaque) void {}
+    }.wake;
+    const osc_post_fn = struct {
+        fn post(_: ?*anyopaque, _: Viewer.PaneOscEvent) void {}
+    }.post;
+    pane.attachRenderer(&render_mutex, &dummy_ctx, wake_fn, &dummy_ctx, osc_post_fn);
+    defer pane.detachRenderer();
+
+    // Hold the renderer mutex like a wedged pane renderer.
+    render_mutex.lock();
+    _ = viewer.next(.{ .tmux = .{ .output = .{ .pane_id = 0, .data = "hello" } } });
+    // The write spilled instead of deadlocking.
+    try testing.expectEqualStrings("hello", pane.pending_vt.items);
+    try testing.expect(!pane.pending_dropped);
+    render_mutex.unlock();
+
+    // Any subsequent viewer event retries deferred work first, so the spill
+    // lands before the new data.
+    _ = viewer.next(.{ .tmux = .{ .output = .{ .pane_id = 0, .data = " world" } } });
+    try testing.expectEqual(@as(usize, 0), pane.pending_vt.items.len);
+    try testing.expect(!pane.pending_dropped);
+}
+
+test "bounded pane lock: spill overflow drops and queues a visible re-fetch" {
+    // ROOTSHELL-TMUX (id=viewer-pane-bounded-lock): when the spill exceeds its
+    // cap, the content is dropped and the next lock window re-fetches the
+    // pane's visible content from tmux instead of replaying a hole.
+    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    defer viewer.deinit();
+    try driveStartupOneWindow(&viewer);
+
+    const pane = viewer.panes.get(0).?;
+    var render_mutex: std.Thread.Mutex = .{};
+    var dummy_ctx: u8 = 0;
+    const wake_fn = struct {
+        fn wake(_: ?*anyopaque) void {}
+    }.wake;
+    const osc_post_fn = struct {
+        fn post(_: ?*anyopaque, _: Viewer.PaneOscEvent) void {}
+    }.post;
+    pane.attachRenderer(&render_mutex, &dummy_ctx, wake_fn, &dummy_ctx, osc_post_fn);
+    defer pane.detachRenderer();
+
+    const big = try testing.allocator.alloc(u8, 600 * 1024);
+    defer testing.allocator.free(big);
+    @memset(big, 'x');
+
+    render_mutex.lock();
+    _ = viewer.next(.{ .tmux = .{ .output = .{ .pane_id = 0, .data = big } } });
+    try testing.expect(!pane.pending_dropped);
+    _ = viewer.next(.{ .tmux = .{ .output = .{ .pane_id = 0, .data = big } } });
+    // Second spill exceeded PANE_PENDING_VT_MAX: dropped, buffer cleared.
+    try testing.expect(pane.pending_dropped);
+    try testing.expectEqual(@as(usize, 0), pane.pending_vt.items.len);
+    render_mutex.unlock();
+
+    // The next event's deferred flush queues the visible re-fetch.
+    _ = viewer.next(.{ .tmux = .{ .output = .{ .pane_id = 0, .data = "y" } } });
+    try testing.expect(!pane.pending_dropped);
+    var found_visible = false;
+    var it = viewer.command_queue.iterator(.forward);
+    while (it.next()) |cmd| {
+        if (cmd.* == .pane_visible) found_visible = true;
+    }
+    try testing.expect(found_visible);
 }

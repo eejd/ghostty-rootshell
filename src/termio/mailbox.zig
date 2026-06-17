@@ -119,6 +119,39 @@ pub const Mailbox = union(enum) {
         }
     }
 
+    /// ROOTSHELL-TMUX (id=mailbox-send-bounded): like `send(msg, null)` but
+    /// reports whether the message was actually queued. The tmux unlocked
+    /// control path needs the result: a dropped `.tmux_track_command` must
+    /// roll back the viewer's in-flight state or the command pipeline wedges
+    /// (the viewer waits forever for a %begin/%end that can never come).
+    /// Frees the message payload on drop, exactly like `send`.
+    pub fn sendBounded(self: *Mailbox, msg: termio.Message) bool {
+        switch (self.*) {
+            .spsc => |*mb| {
+                if (mb.queue.push(msg, .{ .instant = {} }) > 0) return true;
+
+                mb.wakeup.notify() catch |err| {
+                    log.warn("failed to wake up writer, data will be dropped err={}", .{err});
+                    msg.deinitDropped();
+                    return false;
+                };
+
+                var attempts: usize = 0;
+                while (attempts < send_retry_attempts) : (attempts += 1) {
+                    if (mb.queue.push(msg, .{ .ns = send_retry_ns }) > 0) return true;
+                    mb.wakeup.notify() catch break;
+                }
+
+                log.warn(
+                    "dropping termio mailbox message after sustained backpressure tag={s} attempts={}",
+                    .{ @tagName(msg), attempts },
+                );
+                msg.deinitDropped();
+                return false;
+            },
+        }
+    }
+
     /// Notify that there are new messages. This may be a noop depending
     /// on the writer type.
     pub fn notify(self: *Mailbox) void {

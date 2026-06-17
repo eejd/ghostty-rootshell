@@ -2478,6 +2478,21 @@ pub const CAPI = struct {
     }
     // ROOTSHELL-TMUX END FROZEN-ABI (id=embedded-tmux-recover)
 
+    // ROOTSHELL-TMUX BEGIN FROZEN-ABI (id=embedded-tmux-flush-deferred)
+    // ghostty_surface_tmux_flush_deferred retries tmux pane work deferred by
+    // bounded renderer-lock timeouts (spilled %output, deferred resizes,
+    // dropped-spill re-fetch) and re-sends a topology snapshot dropped under
+    // app-mailbox backpressure. The iOS app calls it on its gateway heartbeat
+    // as an idle-session nudge (an active session retries on every inbound
+    // event by itself). Cheap and idempotent when nothing is deferred; no-op
+    // without a live viewer (except the teardown-snapshot retry). Keep the
+    // signature stable. reapply: re-add this export inside the CAPI struct.
+    // See docs/tmux-control-mode-fork.md.
+    export fn ghostty_surface_tmux_flush_deferred(surface: *Surface) void {
+        surface.core_surface.io.queueMessage(.{ .tmux_flush_deferred = {} }, .unlocked);
+    }
+    // ROOTSHELL-TMUX END FROZEN-ABI (id=embedded-tmux-flush-deferred)
+
     // ROOTSHELL-TMUX BEGIN FROZEN-ABI (id=embedded-tmux-force-exit)
     // ghostty_surface_tmux_force_exit forcibly exits control mode LOCALLY on a
     // live gateway when the app's recovery watchdog gives up on a wedge it cannot

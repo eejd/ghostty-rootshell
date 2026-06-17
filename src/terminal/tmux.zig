@@ -16,8 +16,10 @@ pub const ControlNotification = control.Notification;
 pub const ControlWriter = @import("tmux_cc/control_writer.zig").ControlWriter;
 pub const Layout = layout.Layout;
 pub const Viewer = @import("tmux_cc/viewer.zig").Viewer;
+pub const ExitDrain = @import("tmux_cc/exit_drain.zig").ExitDrain;
 
 test {
     @import("std").testing.refAllDecls(@This());
     _ = @import("tmux_cc/integration_test.zig");
+    _ = @import("tmux_cc/exit_drain.zig");
 }

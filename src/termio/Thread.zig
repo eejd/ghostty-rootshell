@@ -331,29 +331,32 @@ fn drainMailbox(
             },
             .jump_to_prompt => |v| try io.jumpToPrompt(v),
             .tmux_set_client_size => |v| { // ROOTSHELL-TMUX (id=thread-set-client-size)
-                // Hold the renderer mutex around the arm: tmuxSetClientSize pumps
-                // the tmux command queue, and messageWriter's queue-full slow path
-                // unlocks then re-locks the renderer mutex (mailbox.zig). drainMailbox
-                // does NOT hold it (each Termio handler locks it itself), so without
-                // locking here a full mailbox would unlock an unheld mutex and return
-                // with it LOCKED (renderer deadlock). Same rationale as .tmux_resume.
-                io.renderer_state.mutex.lock();
-                defer io.renderer_state.mutex.unlock();
+                // Hold tmux_mutex (NOT the renderer mutex) around the arm: it
+                // touches viewer state only, and the control channel must stay
+                // independent of the renderer (id=termio-tmux-mutex). The
+                // unlocked-io flag makes messageWriter use bounded no-mutex
+                // sends instead of the renderer unlock/relock slow path.
+                io.tmux_mutex.lock();
+                defer io.tmux_mutex.unlock();
+                io.terminal_stream.handler.tmux_unlocked_io = true;
+                defer io.terminal_stream.handler.tmux_unlocked_io = false;
                 io.terminal_stream.handler.tmuxSetClientSize(v.cols, v.rows);
             },
             .tmux_pane_command => |v| { // ROOTSHELL-TMUX (id=thread-pane-command)
-                // See .tmux_set_client_size: tmuxQueuePaneCommand can reach
-                // messageWriter, whose queue-full slow path requires the renderer
-                // mutex be held by the caller.
-                io.renderer_state.mutex.lock();
-                defer io.renderer_state.mutex.unlock();
+                // Same locking rationale as .tmux_set_client_size.
+                io.tmux_mutex.lock();
+                defer io.tmux_mutex.unlock();
+                io.terminal_stream.handler.tmux_unlocked_io = true;
+                defer io.terminal_stream.handler.tmux_unlocked_io = false;
                 defer v.alloc.free(v.data);
                 io.terminal_stream.handler.tmuxQueuePaneCommand(v.data);
             },
             .tmux_query_command => |v| { // ROOTSHELL-TMUX (id=thread-query-command)
-                // Same locking rationale as .tmux_pane_command.
-                io.renderer_state.mutex.lock();
-                defer io.renderer_state.mutex.unlock();
+                // Same locking rationale as .tmux_set_client_size.
+                io.tmux_mutex.lock();
+                defer io.tmux_mutex.unlock();
+                io.terminal_stream.handler.tmux_unlocked_io = true;
+                defer io.terminal_stream.handler.tmux_unlocked_io = false;
                 defer {
                     v.alloc.free(v.data);
                     v.alloc.destroy(v);
@@ -361,53 +364,91 @@ fn drainMailbox(
                 io.terminal_stream.handler.tmuxQueueQueryCommand(v.data, v.tag);
             },
             .tmux_send_keys => |v| { // ROOTSHELL-TMUX (id=thread-send-keys)
-                // Write the untracked send-keys straight to the tmux pty (no
-                // command-queue gating, so keystroke latency is unchanged), THEN
-                // record an `.untracked` marker. Record-after-write makes the
-                // sent-FIFO order match the pty write order so its %begin/%end ack
-                // is matched/swallowed in order (not mis-attributed to an in-flight
-                // tracked command).
+                // Record the `.untracked` marker BEFORE writing, under
+                // tmux_mutex, then write OUTSIDE the lock:
+                //
+                //  - Marker-before-write closes the parse race: the control
+                //    parse runs under tmux_mutex (not the renderer mutex) and
+                //    mutexes are not fair, so write-then-record could let a
+                //    busy read thread parse the command's %begin/%end ack
+                //    before the marker exists (FIFO desync). The ack can only
+                //    arrive after the write, so recording first is always
+                //    safe.
+                //  - Marker ORDER still equals pty write order: all gateway
+                //    writes happen on this thread in drain order, and markers
+                //    are recorded in the same order.
+                //  - The write stays outside tmux_mutex because the pipe
+                //    backend's queueWrite can block on a full response pipe;
+                //    holding the lock there would wedge the read path behind
+                //    a blocked write.
+                //
+                // A failed write after recording leaves one stray marker; the
+                // block-mismatch self-heal recovers, and a queueWrite error
+                // aborts the IO thread anyway. ROOTSHELL-TMUX
+                // (id=thread-tmux-write-record-atomic)
                 defer v.alloc.free(v.data);
-                try io.queueWrite(data, v.data, self.flags.linefeed_mode);
-                // Hold the renderer mutex for the record: it appends to the
-                // viewer's sent FIFO and refreshes the debug mirror (which
-                // iterates viewer.panes), both of which the io-reader thread
-                // mutates under this mutex while parsing control-mode events.
-                // The write stays outside the lock (queueWrite may block on a
-                // full response pipe) and record-after-write order is kept.
-                io.renderer_state.mutex.lock();
-                defer io.renderer_state.mutex.unlock();
-                io.terminal_stream.handler.recordTmuxUntrackedSend();
+                {
+                    io.tmux_mutex.lock();
+                    defer io.tmux_mutex.unlock();
+                    io.terminal_stream.handler.recordTmuxUntrackedSend();
+                }
+                io.queueWrite(data, v.data, self.flags.linefeed_mode) catch |err| {
+                    // The marker above is now stale (nothing was written, so
+                    // no ack will consume it) and the drain loop does NOT
+                    // abort on errors — a later block would be misclassified
+                    // against it. A live resync resets the sent-FIFO and the
+                    // command pipeline cleanly.
+                    log.warn("tmux send-keys write failed err={}; forcing resync", .{err});
+                    io.tmux_mutex.lock();
+                    defer io.tmux_mutex.unlock();
+                    io.terminal_stream.handler.tmux_unlocked_io = true;
+                    defer io.terminal_stream.handler.tmux_unlocked_io = false;
+                    io.terminal_stream.handler.tmuxForceResync();
+                };
             },
             .tmux_track_command => |v| { // ROOTSHELL-TMUX (id=thread-track-command)
-                // Write the tracked command, THEN record a `.tracked` marker
-                // (same record-after-write ordering rationale as send-keys).
+                // Record the `.tracked` marker before writing (same
+                // rationale as send-keys; id=thread-tmux-write-record-atomic).
                 defer v.alloc.free(v.data);
-                try io.queueWrite(data, v.data, self.flags.linefeed_mode);
-                // Same locking rationale as .tmux_send_keys: the record
-                // touches viewer state the io-reader thread mutates under the
-                // renderer mutex.
-                io.renderer_state.mutex.lock();
-                defer io.renderer_state.mutex.unlock();
-                io.terminal_stream.handler.recordTmuxTrackedSend();
+                {
+                    io.tmux_mutex.lock();
+                    defer io.tmux_mutex.unlock();
+                    io.terminal_stream.handler.recordTmuxTrackedSend();
+                }
+                io.queueWrite(data, v.data, self.flags.linefeed_mode) catch |err| {
+                    // Same stale-marker rationale as send-keys above.
+                    log.warn("tmux tracked-command write failed err={}; forcing resync", .{err});
+                    io.tmux_mutex.lock();
+                    defer io.tmux_mutex.unlock();
+                    io.terminal_stream.handler.tmux_unlocked_io = true;
+                    defer io.terminal_stream.handler.tmux_unlocked_io = false;
+                    io.terminal_stream.handler.tmuxForceResync();
+                };
             },
             .tmux_detach => { // ROOTSHELL-TMUX (id=thread-detach)
-                // See .tmux_set_client_size: tmuxDetach pumps the command queue and
-                // can reach messageWriter's queue-full slow path, which needs the
-                // renderer mutex held.
-                io.renderer_state.mutex.lock();
-                defer io.renderer_state.mutex.unlock();
+                // Same locking rationale as .tmux_set_client_size.
+                io.tmux_mutex.lock();
+                defer io.tmux_mutex.unlock();
+                io.terminal_stream.handler.tmux_unlocked_io = true;
+                defer io.terminal_stream.handler.tmux_unlocked_io = false;
                 io.terminal_stream.handler.tmuxDetach();
             },
             .tmux_resume => { // ROOTSHELL-TMUX (id=thread-resume)
                 // Hold the renderer mutex around the whole arm, exactly like the
-                // read path (Exec.zig processOutput): the `.enter` dispatch
-                // mutates the gateway terminal (prints the gateway menu) and
-                // messageWriter's queue-full path requires the mutex be locked.
-                // drainMailbox does NOT hold it (each Termio handler locks it
-                // itself), so we must.
+                // read path's unhooked branch: the `.enter` dispatch mutates the
+                // gateway terminal (prints the gateway menu) and messageWriter's
+                // queue-full path requires the mutex be locked. drainMailbox does
+                // NOT hold it (each Termio handler locks it itself), so we must.
+                // tmux_mutex nests inside (renderer -> tmux order) because the
+                // arm mutates viewer/dcs state (id=termio-tmux-mutex).
                 io.renderer_state.mutex.lock();
                 defer io.renderer_state.mutex.unlock();
+                io.tmux_mutex.lock();
+                defer io.tmux_mutex.unlock();
+                // Bounded sends while tmux_mutex is held (lock-order rule;
+                // id=streamhandler-unlocked-io).
+                io.terminal_stream.handler.tmux_unlocked_io = true;
+                defer io.terminal_stream.handler.tmux_unlocked_io = false;
                 if (io.terminal_stream.handler.tmuxResumeShouldEnter()) {
                     // First resume: synthesize control-mode entry. Feeding
                     // `ESC P 1000 p` drives the VT parser into DCS passthrough and
@@ -422,30 +463,58 @@ fn drainMailbox(
             },
             .tmux_resume_abort => { // ROOTSHELL-TMUX (id=thread-resume-abort)
                 // Same locking rationale as `.tmux_resume`: tearing down the
-                // viewer / resetting the parser touches state the renderer reads.
+                // viewer / resetting the parser touches state the renderer reads,
+                // and the viewer/dcs/parser pokes need tmux_mutex (renderer ->
+                // tmux order).
                 io.renderer_state.mutex.lock();
                 defer io.renderer_state.mutex.unlock();
+                io.tmux_mutex.lock();
+                defer io.tmux_mutex.unlock();
+                // Bounded sends while tmux_mutex is held (lock-order rule;
+                // id=streamhandler-unlocked-io).
+                io.terminal_stream.handler.tmux_unlocked_io = true;
+                defer io.terminal_stream.handler.tmux_unlocked_io = false;
                 io.terminal_stream.handler.tmuxResumeAbort();
                 // Force the VT parser out of DCS passthrough back to ground so
                 // the gateway's shell output renders normally; on abort there may
                 // be no further bytes to trigger dcsConsumeGroundRequest.
                 io.terminal_stream.parser.state = .ground;
             },
+            .tmux_flush_deferred => { // ROOTSHELL-TMUX (id=termio-msg-flush-deferred)
+                // Heartbeat nudge: retry deferred pane writes / re-send a
+                // dropped topology snapshot. Viewer state only — tmux_mutex
+                // with the unlocked-io flag, same as .tmux_set_client_size.
+                io.tmux_mutex.lock();
+                defer io.tmux_mutex.unlock();
+                io.terminal_stream.handler.tmux_unlocked_io = true;
+                defer io.terminal_stream.handler.tmux_unlocked_io = false;
+                io.terminal_stream.handler.tmuxFlushDeferred();
+            },
             .tmux_recover => { // ROOTSHELL-TMUX (id=thread-recover)
-                // Same locking rationale as `.tmux_resume`: forceResync resets
-                // the viewer command pipeline, realigns the control parser, and
-                // uses messageWriter (queue-full path needs the mutex held). Stay
+                // forceResync resets the viewer command pipeline and realigns
+                // the control parser — viewer/dcs state only, serialized by
+                // tmux_mutex (id=termio-tmux-mutex); the unlocked-io flag makes
+                // its messageWriter sends use the bounded no-mutex path. Stay
                 // in DCS passthrough — unlike abort, the channel keeps running.
-                io.renderer_state.mutex.lock();
-                defer io.renderer_state.mutex.unlock();
+                io.tmux_mutex.lock();
+                defer io.tmux_mutex.unlock();
+                io.terminal_stream.handler.tmux_unlocked_io = true;
+                defer io.terminal_stream.handler.tmux_unlocked_io = false;
                 io.terminal_stream.handler.tmuxForceResync();
             },
             .tmux_force_exit => { // ROOTSHELL-TMUX (id=thread-force-exit)
                 // Same locking rationale as `.tmux_resume_abort`: tearing down the
                 // viewer + emitting the empty-topology snapshot touches state the
-                // renderer reads, and uses messageWriter.
+                // renderer reads, uses messageWriter, and pokes the VT parser
+                // (renderer -> tmux order).
                 io.renderer_state.mutex.lock();
                 defer io.renderer_state.mutex.unlock();
+                io.tmux_mutex.lock();
+                defer io.tmux_mutex.unlock();
+                // Bounded sends while tmux_mutex is held (lock-order rule;
+                // id=streamhandler-unlocked-io).
+                io.terminal_stream.handler.tmux_unlocked_io = true;
+                defer io.terminal_stream.handler.tmux_unlocked_io = false;
                 io.terminal_stream.handler.tmuxForceExit();
                 // Force the VT parser out of DCS passthrough back to ground so the
                 // gateway's shell output renders normally (same as resume_abort);

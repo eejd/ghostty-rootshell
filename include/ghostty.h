@@ -1321,6 +1321,25 @@ typedef struct {
   uint64_t total_blocks;
   uint64_t total_output_events;
   uint64_t total_commands_sent;
+
+  // --- ABI v2 appendix: read-thread progress (id=tmux-debug-read-progress).
+  // gw_read_enter_bytes counts bytes entering the gateway's byte-processing
+  // path (stamped BEFORE any lock), gw_read_done_bytes after the parse
+  // completes, gw_tmux_put_bytes bytes that reached the tmux DCS put path.
+  // enter > done with ms_since_read_enter growing means the read thread is
+  // BLOCKED; read_thread_site names where: 0 idle, 1 awaiting-gateway-lock,
+  // 2 parsing, 3 pane-lock (read_site_pane_id = pane), 4 mailbox-send,
+  // 5 surface-mailbox-send. pane_lock_timeouts counts bounded pane-lock
+  // budget expiries (deferred writes).
+  uint64_t gw_read_enter_bytes;
+  uint64_t gw_read_done_bytes;
+  uint64_t gw_tmux_put_bytes;
+  uint64_t ms_since_read_enter;
+  uint64_t ms_since_read_done;
+  uint64_t pane_lock_timeouts;
+  uint32_t read_site_pane_id;
+  uint8_t read_thread_site;
+  uint8_t _reserved_v2[3];
 } ghostty_tmux_debug_snapshot_s;
 
 GHOSTTY_API bool ghostty_surface_tmux_debug_snapshot(ghostty_surface_t, ghostty_tmux_debug_snapshot_s*); // ROOTSHELL-TMUX FROZEN-ABI (id=ghostty-h-tmux-debug-snapshot)
@@ -1334,6 +1353,9 @@ GHOSTTY_API bool ghostty_surface_tmux_active(ghostty_surface_t); // ROOTSHELL-TM
 GHOSTTY_API void ghostty_surface_tmux_resume(ghostty_surface_t); // ROOTSHELL-TMUX FROZEN-ABI (id=ghostty-h-tmux-resume)
 GHOSTTY_API void ghostty_surface_tmux_resume_abort(ghostty_surface_t); // ROOTSHELL-TMUX FROZEN-ABI (id=ghostty-h-tmux-resume-abort)
 GHOSTTY_API void ghostty_surface_tmux_recover(ghostty_surface_t); // ROOTSHELL-TMUX FROZEN-ABI (id=ghostty-h-tmux-recover)
+// Heartbeat nudge: retry pane work deferred by bounded renderer-lock timeouts
+// and re-send a dropped topology snapshot. Cheap/idempotent when idle.
+GHOSTTY_API void ghostty_surface_tmux_flush_deferred(ghostty_surface_t); // ROOTSHELL-TMUX FROZEN-ABI (id=ghostty-h-tmux-flush-deferred)
 GHOSTTY_API void ghostty_surface_tmux_force_exit(ghostty_surface_t); // ROOTSHELL-TMUX FROZEN-ABI (id=ghostty-h-tmux-force-exit)
 GHOSTTY_API void ghostty_surface_preedit(ghostty_surface_t, const char*, uintptr_t);
 GHOSTTY_API bool ghostty_surface_mouse_captured(ghostty_surface_t);

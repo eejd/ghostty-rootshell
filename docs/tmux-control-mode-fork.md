@@ -166,6 +166,32 @@ Expect 15 `T` (defined text) symbols:
 
 ---
 
+## Locking model (id=termio-tmux-mutex / id=streamhandler-unlocked-io)
+
+The control channel's liveness must never depend on the gateway renderer or
+any pane renderer (the 2026-06 attach-wedge root cause: the read thread held
+`renderer_state.mutex` across the whole stream parse and nested pane renderer
+mutexes inside, so one stuck pane renderer starved every command reply).
+
+- `Termio.tmux_mutex` serializes ALL tmux state on a surface: the viewer,
+  `handler.dcs` while `.tmux`, parser-state pokes, force-unhook/resume/drain
+  flags.
+- **Lock order: `renderer_state.mutex` → `tmux_mutex` → pane renderer mutex.**
+  Never take the renderer mutex while holding `tmux_mutex`.
+- While HOOKED, `Termio.processOutput` parses control bytes under `tmux_mutex`
+  only (`processOutputTmuxPrefix`). Unhooked chunks parse under renderer →
+  tmux (the chunk may hook mid-stream).
+- Whenever `tmux_mutex` is held, `handler.tmux_unlocked_io` is set; all three
+  mailbox writers (`messageWriter`, `surfaceMessageWriter`,
+  `rendererMessageWriter`) then use bounded no-unlock sends — the upstream
+  queue-full slow paths unlock/relock the renderer mutex, which is UB when it
+  isn't held and an ABBA when it is.
+- Pane writes from the viewer use bounded locks (`lockRendererBounded`,
+  id=viewer-pane-bounded-lock) with spill/re-fetch fallbacks; nothing on the
+  control path blocks indefinitely on a pane.
+- Sent-FIFO markers are recorded BEFORE the pty write, under `tmux_mutex`
+  (Thread id=thread-tmux-write-record-atomic).
+
 ## Banner convention
 
 ```zig
@@ -199,20 +225,21 @@ grep -rn 'ROOTSHELL-TMUX' src/ include/ | grep -oE 'id=[a-z0-9-]+' | sort -u
 | File | ids |
 |------|-----|
 | `src/apprt/action.zig` | `action-reconcile-variant` (FROZEN), `action-key-variant` (FROZEN), `action-reconcile-struct` (FROZEN) |
-| `src/apprt/embedded.zig` | `embedded-capi-reconcile` (FROZEN), `embedded-new-tmux-pane` (FROZEN), `embedded-set-client-size` (FROZEN), `embedded-tmux-detach` (FROZEN), `embedded-tmux-command` (FROZEN), `embedded-tmux-active` (FROZEN), `embedded-tmux-resume-abort` (FROZEN), `embedded-tmux-recover` (FROZEN), `embedded-tmux-force-exit` (FROZEN), `embedded-new-tmux-pane-fn`, `embedded-init-tmux-pane-fn`, `embedded-relay-field`, `embedded-relay-deinit`, `embedded-ui-terminal-arm` |
+| `src/apprt/embedded.zig` | `embedded-capi-reconcile` (FROZEN), `embedded-new-tmux-pane` (FROZEN), `embedded-set-client-size` (FROZEN), `embedded-tmux-detach` (FROZEN), `embedded-tmux-command` (FROZEN), `embedded-tmux-active` (FROZEN), `embedded-tmux-resume-abort` (FROZEN), `embedded-tmux-recover` (FROZEN), `embedded-tmux-force-exit` (FROZEN), `embedded-tmux-flush-deferred` (FROZEN), `embedded-new-tmux-pane-fn`, `embedded-init-tmux-pane-fn`, `embedded-relay-field`, `embedded-relay-deinit`, `embedded-ui-terminal-arm` |
 | `src/apprt/surface.zig` | `apprt-surface-tmux-types-extracted`, `apprt-msg-topology`, `apprt-msg-write`, `apprt-msg-focus`, `apprt-msg-title`, `apprt-relay-writer` |
 | `src/Surface.zig` | `surface-reconcile-extracted`, `surface-initoptions-backend`, `surface-init-backend-select`, `surface-arm-topology`, `surface-arm-write`, `surface-send-keys-untracked`, `surface-arm-focus`, `surface-arm-title` |
-| `src/termio/stream_handler.zig` | `streamhandler-viewer-field`, `streamhandler-force-unhook-field`, `streamhandler-deinit-viewer`, `streamhandler-changeconfig-disable`, `streamhandler-changeconfig-colors`, `streamhandler-set-client-size`, `streamhandler-pump-command-queue`, `streamhandler-write-tracked-command`, `streamhandler-record-tracked`, `streamhandler-record-untracked`, `streamhandler-pane-command`, `streamhandler-detach`, `streamhandler-tmux-active`, `streamhandler-tmux-active-flag`, `streamhandler-dcs-ground`, `streamhandler-block-fifo-filter`, `streamhandler-command-tracked`, `streamhandler-windows-empty-guard`, `streamhandler-dcs-dispatch`, `streamhandler-broken-control-unhook`, `streamhandler-tmux-teardown`, `streamhandler-gateway-menu`, `streamhandler-suppress-gateway-reports`, `snapshot-feed-pane-titles`, `streamhandler-resume-resend-probe`, `streamhandler-resume-abort`, `streamhandler-force-resync`, `streamhandler-force-exit` |
+| `src/termio/stream_handler.zig` | `streamhandler-viewer-field`, `streamhandler-force-unhook-field`, `streamhandler-deinit-viewer`, `streamhandler-changeconfig-disable`, `streamhandler-changeconfig-colors`, `streamhandler-set-client-size`, `streamhandler-pump-command-queue`, `streamhandler-write-tracked-command`, `streamhandler-record-tracked`, `streamhandler-record-untracked`, `streamhandler-pane-command`, `streamhandler-detach`, `streamhandler-tmux-active`, `streamhandler-tmux-active-flag`, `streamhandler-dcs-ground`, `streamhandler-block-fifo-filter`, `streamhandler-command-tracked`, `streamhandler-windows-empty-guard`, `streamhandler-dcs-dispatch`, `streamhandler-broken-control-unhook`, `streamhandler-tmux-teardown`, `streamhandler-gateway-menu`, `streamhandler-suppress-gateway-reports`, `snapshot-feed-pane-titles`, `streamhandler-resume-resend-probe`, `streamhandler-resume-abort`, `streamhandler-force-resync`, `streamhandler-force-exit`, `streamhandler-unlocked-io`, `streamhandler-post-exit-drain`, `tmux-debug-mirror`, `tmux-debug-snapshot-struct` (FROZEN), `tmux-debug-read-progress` |
 | `src/termio/backend.zig` | `backend-kind`, `backend-config-tmux`, `backend-tmux`, `backend-threaddata-tmux` |
-| `src/termio/Termio.zig` | `termio-derived-config`, `termio-derived-init`, `termio-stream-config` |
+| `src/termio/Termio.zig` | `termio-derived-config`, `termio-derived-init`, `termio-stream-config`, `termio-tmux-mutex`, `termio-tmux-process-output` |
 | `src/terminal/dcs.zig` | `dcs-tmux-enter`, `dcs-can-sub-abort`, `dcs-is-inactive`, `dcs-begin-tmux-resync`, `dcs-tmux-take-recover`, `dcs-tmux-max-bytes` (tmux parser must NOT inherit the 1 MiB handler cap), `dcs-tmux-put-error` (parser failure → `.broken`, never silent `.ignore`) (rest gated by `build_options.tmux_control_mode`) |
 | `src/terminal/parse_table.zig` | `parsetable-dcs-utf8-passthrough`, `parsetable-dcs-utf8-test` |
 | `src/terminal/stream_terminal.zig` | `streamterm-dcs-st`, `streamterm-dcs-can-sub` |
-| `src/termio/message.zig` | `termio-msg-set-client-size`, `termio-msg-pane-command`, `termio-msg-send-keys`, `termio-msg-track-command`, `termio-msg-detach`, `termio-msg-resume`, `termio-msg-resume-abort`, `termio-msg-recover`, `termio-msg-force-exit` |
-| `src/termio/Thread.zig` | `thread-set-client-size`, `thread-pane-command`, `thread-send-keys`, `thread-track-command`, `thread-detach`, `thread-resume`, `thread-resume-abort`, `thread-recover`, `thread-force-exit` |
+| `src/termio/message.zig` | `termio-msg-set-client-size`, `termio-msg-pane-command`, `termio-msg-send-keys`, `termio-msg-track-command`, `termio-msg-detach`, `termio-msg-resume`, `termio-msg-resume-abort`, `termio-msg-recover`, `termio-msg-force-exit`, `termio-msg-flush-deferred` |
+| `src/termio/Thread.zig` | `thread-set-client-size`, `thread-pane-command`, `thread-send-keys`, `thread-track-command`, `thread-detach`, `thread-resume`, `thread-resume-abort`, `thread-recover`, `thread-force-exit`, `thread-tmux-write-record-atomic` |
 | `src/termio.zig` | `termio-tmux-export` |
+| `src/termio/mailbox.zig` | `mailbox-send-bounded` |
 | `src/config/Config.zig` | `config-tmux-control-mode` |
-| `include/ghostty.h` | `ghostty-h-action-enum` (FROZEN), `ghostty-h-reconcile` (FROZEN), `ghostty-h-set-client-size` (FROZEN), `ghostty-h-tmux-detach` (FROZEN), `ghostty-h-tmux-command` (FROZEN), `ghostty-h-tmux-active` (FROZEN), `ghostty-h-tmux-resume` (FROZEN), `ghostty-h-tmux-resume-abort` (FROZEN), `ghostty-h-tmux-recover` (FROZEN), `ghostty-h-tmux-force-exit` (FROZEN) |
+| `include/ghostty.h` | `ghostty-h-action-enum` (FROZEN), `ghostty-h-reconcile` (FROZEN), `ghostty-h-set-client-size` (FROZEN), `ghostty-h-tmux-detach` (FROZEN), `ghostty-h-tmux-command` (FROZEN), `ghostty-h-tmux-active` (FROZEN), `ghostty-h-tmux-resume` (FROZEN), `ghostty-h-tmux-resume-abort` (FROZEN), `ghostty-h-tmux-recover` (FROZEN), `ghostty-h-tmux-force-exit` (FROZEN), `ghostty-h-tmux-flush-deferred` (FROZEN), `ghostty-h-tmux-debug-snapshot` (FROZEN) |
 
 ---
 

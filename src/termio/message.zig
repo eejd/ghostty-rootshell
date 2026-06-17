@@ -99,24 +99,27 @@ pub const Message = union(enum) {
     tmux_query_command: *TmuxQueryCommand, // ROOTSHELL-TMUX (id=termio-msg-query-command)
 
     /// Untracked `send-keys` (typed input / paste / focus reports) relayed from a
-    /// child pane backend. Written straight to the `tmux -CC` pty (no command-
-    /// queue gating, so keystroke latency is unchanged) and then recorded as an
-    /// `.untracked` marker in the viewer's sent-FIFO so its `%begin/%end` ack is
-    /// matched/swallowed in order instead of being mis-attributed to an in-flight
-    /// tracked command (which would desync the response FIFO). `data` is owned and
-    /// freed after handling. See `StreamHandler.recordTmuxUntrackedSend`.
+    /// child pane backend. Recorded as an `.untracked` marker in the viewer's
+    /// sent-FIFO (under tmux_mutex, just before the write — see Thread
+    /// id=thread-tmux-write-record-atomic) and written straight to the
+    /// `tmux -CC` pty (no command-queue gating, so keystroke latency is
+    /// unchanged), so its `%begin/%end` ack is matched/swallowed in order
+    /// instead of being mis-attributed to an in-flight tracked command (which
+    /// would desync the response FIFO). `data` is owned and freed after
+    /// handling. See `StreamHandler.recordTmuxUntrackedSend`.
     tmux_send_keys: struct { // ROOTSHELL-TMUX (id=termio-msg-send-keys)
         alloc: Allocator,
         data: []const u8,
     },
 
     /// A tracked tmux command (already formatted, with trailing newline) emitted
-    /// by the viewer. Written to the pty and then recorded as a `.tracked` marker
-    /// in the viewer's sent-FIFO. Recording happens at this single drain/write
-    /// point (NOT at the viewer enqueue site) because the SPSC mailbox can reorder
-    /// the actual write behind a `send-keys` already queued ahead of it; recording
-    /// after the write guarantees marker order == pty write order == tmux block
-    /// order. `data` is owned and freed after handling. See
+    /// by the viewer. Recorded as a `.tracked` marker and written to the pty.
+    /// Recording happens at this single drain point (NOT at the viewer enqueue
+    /// site) because the SPSC mailbox can reorder the actual write behind a
+    /// `send-keys` already queued ahead of it; recording at the drain, in drain
+    /// order, guarantees marker order == pty write order == tmux block order
+    /// (see Thread id=thread-tmux-write-record-atomic for the record-before-
+    /// write rationale). `data` is owned and freed after handling. See
     /// `StreamHandler.recordTmuxTrackedSend`.
     tmux_track_command: struct { // ROOTSHELL-TMUX (id=termio-msg-track-command)
         alloc: Allocator,
@@ -169,6 +172,15 @@ pub const Message = union(enum) {
     /// server/session stays alive. See `Thread` `.tmux_force_exit` +
     /// `StreamHandler.tmuxForceExit`. ROOTSHELL-TMUX (id=termio-msg-force-exit)
     tmux_force_exit: void, // ROOTSHELL-TMUX (id=termio-msg-force-exit)
+
+    /// Retry tmux pane work deferred by bounded renderer-lock timeouts
+    /// (spilled %output, deferred resizes, dropped-spill re-fetch) and re-send
+    /// a topology snapshot that was dropped under app-mailbox backpressure.
+    /// Sent by the app's heartbeat as an idle-session nudge; cheap and
+    /// idempotent when nothing is deferred. See `Thread` `.tmux_flush_deferred`
+    /// + `StreamHandler.tmuxFlushDeferred`. ROOTSHELL-TMUX
+    /// (id=termio-msg-flush-deferred)
+    tmux_flush_deferred: void,
 
     /// Send this when a synchronized output mode is started. This will
     /// start the timer so that the output mode is disabled after a

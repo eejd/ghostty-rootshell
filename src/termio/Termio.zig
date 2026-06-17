@@ -63,6 +63,21 @@ mailbox: termio.Mailbox,
 /// from the child process and calls callbacks in the stream handler.
 terminal_stream: StreamHandler.Stream,
 
+/// ROOTSHELL-TMUX (id=termio-tmux-mutex): serializes ALL tmux control-mode
+/// state on this surface — the viewer, `handler.dcs` while it is `.tmux`,
+/// VT-parser-state pokes related to control mode, and the
+/// force-unhook/resume/post-exit-drain flags. While the control channel is
+/// hooked, `processOutput` parses control bytes under THIS mutex only (not
+/// `renderer_state.mutex`), so the control channel's liveness never depends
+/// on the gateway renderer or any pane renderer (the attach-wedge fix).
+///
+/// LOCK ORDER (must never be violated):
+///   renderer_state.mutex -> tmux_mutex -> pane renderer mutex
+/// i.e. it is legal to take tmux_mutex while holding the renderer mutex and
+/// to take a pane's renderer mutex while holding tmux_mutex, but NEVER take
+/// renderer_state.mutex while holding tmux_mutex.
+tmux_mutex: std.Thread.Mutex = .{},
+
 /// Last time the cursor was reset. This is used to prevent message
 /// flooding with cursor resets.
 last_cursor_reset: ?std.time.Instant = null,
@@ -436,7 +451,21 @@ pub fn changeConfig(self: *Termio, td: *ThreadData, config: *DerivedConfig) !voi
     // Update our stream handler. The stream handler uses the same
     // renderer mutex so this is safe to do despite being executed
     // from another thread.
-    self.terminal_stream.handler.changeConfig(&self.config);
+    // ROOTSHELL-TMUX (id=termio-tmux-mutex): handler.changeConfig reaches the
+    // tmux viewer (teardown-on-disable, updateColors, command-queue pump),
+    // which is serialized by tmux_mutex (renderer -> tmux lock order). The
+    // unlocked-io flag keeps its sends on the bounded no-unlock paths —
+    // unlocking/relocking the renderer mutex while holding tmux_mutex would
+    // violate the lock order (id=streamhandler-unlocked-io).
+    if (comptime StreamHandler.tmux_enabled) {
+        self.tmux_mutex.lock();
+        defer self.tmux_mutex.unlock();
+        self.terminal_stream.handler.tmux_unlocked_io = true;
+        defer self.terminal_stream.handler.tmux_unlocked_io = false;
+        self.terminal_stream.handler.changeConfig(&self.config);
+    } else {
+        self.terminal_stream.handler.changeConfig(&self.config);
+    }
     td.backend.changeConfig(&self.config);
 
     // Update the configuration that we know about.
@@ -648,11 +677,121 @@ pub fn focusGained(self: *Termio, td: *ThreadData, focused: bool) !void {
 /// call with pty data but it is also called by the read thread when using
 /// an exec subprocess.
 pub fn processOutput(self: *Termio, buf: []const u8) void {
+    // ROOTSHELL-TMUX (id=termio-tmux-process-output): while the tmux control
+    // channel is hooked, parse control bytes under tmux_mutex ONLY so the
+    // channel's liveness never depends on the gateway renderer mutex or any
+    // pane renderer. The helper consumes the control-mode prefix (and the
+    // post-force-exit drain) and returns any remainder that must go through
+    // the normal locked path (bytes after a clean unhook boundary). The
+    // enter/done byte stamps bracket the WHOLE chunk so a block anywhere in
+    // either path shows up as done lagging enter with an aging enter stamp.
+    if (comptime StreamHandler.tmux_enabled) {
+        const h = &self.terminal_stream.handler;
+        h.tmuxDbgReadEnter(buf.len);
+        defer h.tmuxDbgReadDone(buf.len);
+
+        const rest = self.processOutputTmuxPrefix(buf) orelse return;
+
+        var messaged = false;
+        {
+            h.tmuxDbgReadSite(.awaiting_gateway_lock, 0);
+            self.renderer_state.mutex.lock();
+            defer self.renderer_state.mutex.unlock();
+            // ROOTSHELL-TMUX (id=termio-tmux-mutex): the unhooked parse may
+            // HOOK the control channel mid-chunk (`ESC P 1000 p`) and then run
+            // viewer code, so it must also hold tmux_mutex (renderer -> tmux
+            // order). Uncontended cost for ordinary surfaces is one
+            // lock/unlock per chunk. The unlocked-io flag forces all mailbox
+            // writers onto bounded no-unlock sends: the slow paths' renderer
+            // unlock/relock while holding tmux_mutex would violate the lock
+            // order (ABBA against any renderer -> tmux taker). ROOTSHELL-TMUX
+            // (id=streamhandler-unlocked-io)
+            self.tmux_mutex.lock();
+            defer self.tmux_mutex.unlock();
+            h.tmux_unlocked_io = true;
+            defer h.tmux_unlocked_io = false;
+            h.tmuxDbgReadSite(.parsing, 0);
+            self.processOutputLocked(rest);
+            // With the flag set, messageWriter routed its wake signal to the
+            // fork-only atomic (upstream's termio_messaged check inside
+            // processOutputLocked sees false), so consume it here and notify
+            // below, outside the locks.
+            messaged = h.tmux_termio_messaged.swap(false, .monotonic);
+        }
+        if (messaged) self.mailbox.notify();
+        return;
+    }
+
     // We are modifying terminal state from here on out and we need
     // the lock to grab our read data.
     self.renderer_state.mutex.lock();
     defer self.renderer_state.mutex.unlock();
     self.processOutputLocked(buf);
+}
+
+/// ROOTSHELL-TMUX (id=termio-tmux-process-output): consume the tmux
+/// control-mode prefix of `buf` under tmux_mutex only (no renderer mutex):
+///
+///   1. If a post-force-exit drain is active, discard bytes until the real
+///      `%exit` + ST boundary (bounded by budget/deadline) so the swallowed
+///      control backlog doesn't paint raw garbage into the revealed shell.
+///   2. If the control channel is hooked (`dcs.state == .tmux`), feed bytes
+///      one at a time to the stream. Every byte in this state is a `dcs_put`
+///      (the fork's parse table pins `dcs_passthrough`), so no handler action
+///      can touch the gateway terminal — the renderer mutex is not needed.
+///      Pane writes nest pane renderer mutexes under tmux_mutex (lock order).
+///   3. On the unhook boundary (clean `%exit`, `.broken`, force-unhook), stop
+///      and return the remainder for the normal renderer-locked path.
+///
+/// Returns null when the chunk was fully consumed.
+fn processOutputTmuxPrefix(self: *Termio, buf: []const u8) ?[]const u8 {
+    const h = &self.terminal_stream.handler;
+    var rem: []const u8 = buf;
+    while (true) {
+        h.tmuxDbgReadSite(.awaiting_gateway_lock, 0);
+        self.tmux_mutex.lock();
+        h.tmuxDbgReadSite(.parsing, 0);
+
+        // Post-force-exit drain: swallow the wedged control backlog up to the
+        // %exit + ST boundary (or budget/deadline) before normal processing.
+        rem = h.tmuxPostExitDrainFeed(rem);
+        if (rem.len == 0) {
+            h.tmuxDbgReadSite(.idle, 0);
+            self.tmux_mutex.unlock();
+            return null;
+        }
+
+        if (!h.tmuxControlHooked()) {
+            h.tmuxDbgReadSite(.idle, 0);
+            self.tmux_mutex.unlock();
+            return rem;
+        }
+
+        // Hooked: parse byte-at-a-time under tmux_mutex only. The flag makes
+        // messageWriter/surfaceMessageWriter use bounded no-mutex sends (the
+        // renderer-mutex unlock/relock slow path would be UB here).
+        h.tmux_unlocked_io = true;
+        var i: usize = 0;
+        while (i < rem.len and h.tmuxControlHooked()) : (i += 1) {
+            self.terminal_stream.next(rem[i]);
+        }
+        h.tmux_unlocked_io = false;
+        const messaged = if (comptime StreamHandler.tmux_enabled)
+            h.tmux_termio_messaged.swap(false, .monotonic)
+        else
+            false;
+        h.tmuxDbgReadSite(.idle, 0);
+        self.tmux_mutex.unlock();
+
+        // Wake the termio thread outside the lock if the parse queued
+        // messages (mirrors processOutputLocked's termio_messaged handling).
+        if (messaged) self.mailbox.notify();
+
+        if (i >= rem.len) return null;
+        rem = rem[i..];
+        // Unhooked mid-chunk: loop re-checks the drain (a force-exit can have
+        // armed it) and hooked state; normally it returns the remainder.
+    }
 }
 
 /// Process output from readdata but the lock is already held.
