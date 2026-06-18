@@ -422,6 +422,22 @@ pub fn resize(
     try self.control_writer.write(cmd);
 }
 
+/// Forward this child surface's cell pixel size (font cell metrics) onto the
+/// viewer-owned pane terminal so its `width_px`/`height_px` track the cell
+/// grid. The gateway only ever sizes the pane terminal in cells, leaving its
+/// pixel geometry at zero; without this an auto-sized iTerm2 image (imgcat)
+/// collapses to a 0x0 placement and never renders, and `CSI 14/16/18 t`
+/// cell-size queries go unanswered. Called from `Termio.resize` inside the
+/// renderer-mutex critical section — the same mutex the viewer attached to this
+/// pane — so it is serialized against the gateway's pane-terminal writes/reads.
+/// ROOTSHELL-TMUX (id=tmux-pane-pixel-geometry)
+pub fn updateViewerPaneCell(self: *Tmux, cell_width: u32, cell_height: u32) void {
+    const pane = self.viewer_pane orelse return;
+    pane.cell_width = cell_width;
+    pane.cell_height = cell_height;
+    pane.recomputePixelSize();
+}
+
 /// Forward a raw command to the tmux control mode connection.
 /// This is the IO-thread entry point for commands that originate from
 /// user keybindings (split-window, kill-pane, etc.) and are queued via

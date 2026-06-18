@@ -713,6 +713,17 @@ pub const Viewer = struct {
         terminal: Terminal,
         stream: TerminalStream,
 
+        /// Cell pixel size reported by the child surface's renderer (its font
+        /// cell metrics), forwarded through `Tmux.updateViewerPaneCell` on every
+        /// child resize. Zero until a child has attached and reported. Used to
+        /// derive the pane terminal's `width_px`/`height_px` (see
+        /// `recomputePixelSize`) so auto-sized iTerm2 images (imgcat) and
+        /// `CSI 14/16/18 t` cell-size replies work — the gateway never sizes the
+        /// pane terminal in pixels, only in cells. ROOTSHELL-TMUX
+        /// (id=tmux-pane-pixel-geometry)
+        cell_width: u32 = 0,
+        cell_height: u32 = 0,
+
         /// Mutex protecting concurrent access to `terminal`. This is set
         /// by the child surface's tmux backend during `threadEnter` to
         /// point at the child's `renderer_state.mutex`. Before it is set
@@ -1013,6 +1024,21 @@ pub const Viewer = struct {
         pub fn unlockRenderer(self: *Pane, m: ?*std.Thread.Mutex) void {
             if (m) |mu| mu.unlock();
             _ = @atomicRmw(usize, &self.renderer_users, .Sub, 1, .seq_cst);
+        }
+
+        /// Recompute the pane terminal's pixel geometry from its current cell
+        /// grid and the child surface's reported cell size. No-op until a child
+        /// has reported a cell size. Without this the pane terminal has
+        /// `width_px == height_px == 0`, which makes an auto-sized Kitty/iTerm2
+        /// placement collapse to a 0x0 grid (`Placement.gridSize` divides by the
+        /// per-cell pixel size) — so imgcat images render invisibly. Caller must
+        /// hold the pane renderer lock (the gateway reads `width_px` while
+        /// dispatching images under the same lock). ROOTSHELL-TMUX
+        /// (id=tmux-pane-pixel-geometry)
+        pub fn recomputePixelSize(self: *Pane) void {
+            if (self.cell_width == 0 or self.cell_height == 0) return;
+            self.terminal.width_px = @as(u32, @intCast(self.terminal.cols)) * self.cell_width;
+            self.terminal.height_px = @as(u32, @intCast(self.terminal.rows)) * self.cell_height;
         }
 
         /// Result of a bounded renderer-lock attempt. `.acquired` (with the
@@ -3557,6 +3583,10 @@ pub const Viewer = struct {
             pane.terminal.resize(self.alloc, pr.cols, pr.rows) catch |err| {
                 log.warn("deferred pane {} resize failed err={}", .{ pane_id, err });
             };
+            // Keep pixel geometry consistent with the new cell grid so
+            // auto-sized images don't collapse. ROOTSHELL-TMUX
+            // (id=tmux-pane-pixel-geometry)
+            pane.recomputePixelSize();
         }
 
         if (pane.pending_dropped) {
@@ -4127,6 +4157,10 @@ pub const Viewer = struct {
                         cols,
                         rows,
                     );
+                    // Keep pixel geometry consistent with the new cell grid so
+                    // auto-sized images don't collapse. ROOTSHELL-TMUX
+                    // (id=tmux-pane-pixel-geometry)
+                    pane.recomputePixelSize();
                     // Wake the child surface's renderer so it repaints at the new
                     // size. Resizing the pane terminal reflows its content, but
                     // unlike the `%output` write paths this is NOT a write, so

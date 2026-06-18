@@ -827,6 +827,45 @@ fn trackPin(
     }).?);
 }
 
+test "Placement.gridSize: auto placement collapses to 0x0 without pixel geometry" {
+    // ROOTSHELL-TMUX (id=tmux-pane-pixel-geometry): tmux -CC pane terminals are
+    // sized only in cells, so width_px/height_px stay 0 unless propagated onto
+    // them. An auto-sized placement (columns=0, rows=0 — exactly what imgcat's
+    // default width=auto produces) then divides by a zero per-cell pixel size and
+    // collapses to a 0x0 grid, so the image occupies no cells and renders
+    // nothing. With real pixel geometry the same placement resolves normally.
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var t = try terminal.Terminal.init(alloc, .{ .cols = 10, .rows = 10 });
+    defer t.deinit(alloc);
+
+    var s: ImageStorage = .{};
+    defer s.deinit(alloc, t.screens.active);
+    try s.addImage(alloc, .{ .id = 1, .width = 40, .height = 40 });
+    // Default columns/rows = 0 => auto-sized (derive footprint from pixels).
+    try s.addPlacement(alloc, 1, 0, .{ .location = .{ .pin = try trackPin(&t, .{ .x = 0, .y = 0 }) } });
+
+    const img = s.imageById(1).?;
+    var it = s.placements.iterator();
+    const placement = it.next().?.value_ptr.*;
+
+    // No pixel geometry (the bug): per-cell size is 0, gridSize collapses to 0x0.
+    {
+        const g = placement.gridSize(img, &t);
+        try testing.expectEqual(@as(u32, 0), g.cols);
+        try testing.expectEqual(@as(u32, 0), g.rows);
+    }
+
+    // With pixel geometry (cell = 10x20 px): a 40x40 image resolves to 4x2 cells.
+    t.width_px = 100;
+    t.height_px = 200;
+    {
+        const g = placement.gridSize(img, &t);
+        try testing.expectEqual(@as(u32, 4), g.cols);
+        try testing.expectEqual(@as(u32, 2), g.rows);
+    }
+}
+
 test "storage: add placement with zero placement id" {
     const testing = std.testing;
     const alloc = testing.allocator;

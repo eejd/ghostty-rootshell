@@ -2870,3 +2870,53 @@ test "tmux passthrough: 8-bit ST terminates, CAN/SUB aborts (no wedge)" {
         try testing.expect(std.mem.indexOf(u8, str, "ABC") != null);
     }
 }
+
+// ROOTSHELL-TMUX (id=tmux-pane-pixel-geometry): the iTerm2 inline-image
+// protocol (OSC 1337 File=, used by imgcat) is wrapped in the same
+// `ESC P tmux; ...` passthrough envelope as Kitty graphics, terminated by the
+// OSC's BEL (0x07) then the passthrough's `ESC \`. The unwrap machine is
+// protocol-agnostic, so the recovered OSC must parse and store an image exactly
+// like the Kitty case.
+test "tmux passthrough: wrapped iTerm2 OSC 1337 image is unwrapped, replayed, and stored" {
+    if (comptime !build_options.tmux_control_mode or !build_options.kitty_graphics) return error.SkipZigTest;
+
+    var t: Terminal = try .init(testing.allocator, .{ .cols = 10, .rows = 10 });
+    defer t.deinit(testing.allocator);
+    // Pane terminals get pixel geometry via `Pane.recomputePixelSize`; model it
+    // here (cell = 10x20 px) so imgcat's default `width=auto` placement resolves
+    // to a non-zero cell footprint instead of collapsing to 0x0.
+    t.width_px = 100;
+    t.height_px = 200;
+
+    const S = struct {
+        var recovered: std.ArrayList(u8) = .empty;
+        fn cb(_: *Handler, data: []const u8) void {
+            recovered.appendSlice(testing.allocator, data) catch @panic("OOM");
+        }
+    };
+    S.recovered = .empty;
+    defer S.recovered.deinit(testing.allocator);
+
+    var handler: Handler = .init(&t);
+    handler.effects.dcs_passthrough = &S.cb;
+    var s: Stream = .initAlloc(testing.allocator, handler);
+    defer s.deinit();
+
+    // A 2x2 RGBA PNG, as imgcat emits it: OSC 1337 File=<args>:<base64> BEL,
+    // wrapped in the tmux passthrough envelope (the OSC introducer's ESC is
+    // doubled; the trailing `ESC \` closes the envelope).
+    const b64 = "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEUlEQVR4nGP4z8DwH4QZYAwAR8oH+WdZbrcAAAAASUVORK5CYII=";
+    const inner = "\x1b]1337;File=inline=1:" ++ b64 ++ "\x07";
+    s.nextSlice("\x1bPtmux;\x1b\x1b]1337;File=inline=1:" ++ b64 ++ "\x07\x1b\\");
+
+    // The handler recovered exactly the original inner OSC, BEL terminator kept.
+    try testing.expectEqualStrings(inner, S.recovered.items);
+
+    // Replaying it (as the viewer's `receivedOutput` drain does) parses the OSC
+    // 1337, decodes the PNG, and stores + places the image via the Kitty pipeline.
+    s.nextSlice(S.recovered.items);
+
+    const storage = &t.screens.active.kitty_images;
+    try testing.expectEqual(@as(usize, 1), storage.images.count());
+    try testing.expectEqual(@as(usize, 1), storage.placements.count());
+}

@@ -519,6 +519,18 @@ pub fn resize(
         self.terminal.width_px = grid_size.columns * self.size.cell.width;
         self.terminal.height_px = grid_size.rows * self.size.cell.height;
 
+        // For a tmux -CC pane child surface, also forward our exact cell pixel
+        // size onto the viewer-owned pane terminal (the one the gateway renders
+        // and dispatches images into). The gateway only sizes that terminal in
+        // cells, so without this its pixel geometry stays zero and auto-sized
+        // iTerm2 images (imgcat) collapse to a 0x0 placement. Done under the
+        // renderer mutex (this critical section), which is the pane's renderer
+        // mutex. ROOTSHELL-TMUX (id=tmux-pane-pixel-geometry)
+        if (self.backend == .tmux) self.backend.tmux.updateViewerPaneCell(
+            self.size.cell.width,
+            self.size.cell.height,
+        );
+
         // Disable synchronized output mode so that we show changes
         // immediately for a resize. This is allowed by the spec.
         self.terminal.modes.set(.synchronized_output, false);
