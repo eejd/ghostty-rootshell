@@ -7127,7 +7127,19 @@ fn completeClipboardPaste(
     const encode_opts: input.paste.Options = encode_opts: {
         self.renderer_state.mutex.lock();
         defer self.renderer_state.mutex.unlock();
-        var opts: input.paste.Options = .fromTerminal(&self.io.terminal);
+        // Read paste options (notably bracketed-paste mode) from the terminal
+        // the renderer actually displays, NOT `&self.io.terminal`. For a normal
+        // surface these are the same. For a tmux -CC pane they DIVERGE: the
+        // child surface's `io.terminal` is an empty, unused terminal — the pane's
+        // real VT state (fed from tmux `%output`, including the app's
+        // `\x1b[?2004h`/`l`) lives in the viewer-owned terminal that
+        // `Tmux.threadEnter` swaps into `renderer_state.terminal`. Reading
+        // `io.terminal` here always saw bracketed_paste=false, so every paste
+        // into a tmux pane went UN-bracketed and multi-line pastes executed.
+        // This mirrors iTerm2, whose `pasteHelperShouldBracket` reads its own
+        // per-pane screen mode. Safe under the held renderer mutex, which also
+        // guards the viewer pane terminal. ROOTSHELL-TMUX (id=tmux-pane-paste-terminal)
+        var opts: input.paste.Options = .fromTerminal(self.renderer_state.terminal);
         opts.bracketed_safe_newline = self.config.clipboard_paste_bracketed_safe_newline;
 
         // If we have paste protection enabled, we detect unsafe pastes and return

@@ -3324,9 +3324,17 @@ pub const Viewer = struct {
             else
                 .x10;
 
-            // Focus and bracketed paste
+            // Focus reporting.
             t.modes.set(.focus_event, data.focus_flag);
-            t.modes.set(.bracketed_paste, data.bracketed_paste);
+            // Bracketed paste is intentionally NOT synced from tmux. tmux
+            // exposes no `bracketed_paste` format variable — `#{bracketed_paste}`
+            // returns empty on every tmux through 3.6 — so syncing it would
+            // clobber the value the pane's own `%output` stream already tracks
+            // (from the app's `\033[?2004h`/`l`) down to a constant `false`,
+            // leaving every paste into the pane un-bracketed. The live stream is
+            // authoritative; mirror iTerm2, whose `pasteHelperShouldBracket`
+            // reads its own per-pane screen mode and never asks tmux.
+            // ROOTSHELL-TMUX (id=tmux-pane-bracketed-paste)
 
             // Scroll region (tmux uses 0-based, inclusive). Clamp to the pane's
             // current rows and require a valid (top < bottom) region, mirroring
@@ -4902,6 +4910,11 @@ const Format = struct {
             .mouse_sgr_flag,
             // Focus & special features
             .focus_flag,
+            // bracketed_paste is requested for format-shape stability but its
+            // value is deliberately IGNORED in receivedPaneState: tmux exposes
+            // no such variable (`#{bracketed_paste}` expands to empty on every
+            // tmux through 3.6), so applying it would clobber the pane's own
+            // live DECSET-2004 tracking. See id=tmux-pane-bracketed-paste.
             .bracketed_paste,
             // Scroll region
             .scroll_region_upper,
