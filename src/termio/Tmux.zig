@@ -343,11 +343,16 @@ fn postOscEvent(ctx: ?*anyopaque, event: terminal.tmux.Viewer.PaneOscEvent) void
             break :msg m;
         },
     };
-    // Mirror StreamHandler.surfaceMessageWriter: try instant, fall back to
-    // blocking so the event isn't silently dropped under back-pressure.
-    if (io.surface_mailbox.push(msg, .{ .instant = {} }) == 0) {
-        _ = io.surface_mailbox.push(msg, .{ .forever = {} });
-    }
+    // NEVER block here. postOscEvent runs on the viewer (gateway) IO thread inside
+    // its `lockRenderer`/`lockPaneBounded` window — i.e. while a renderer/pane mutex
+    // is held — and `surface_mailbox` is drained only by the main thread
+    // (ghostty_app_tick -> App.tick -> drainMailbox), which can itself be blocked
+    // acquiring that same renderer mutex (e.g. ghostty_surface_mouse_captured during
+    // a focus change). A `.forever` push under the lock therefore deadlocks the UI
+    // once the 64-slot queue fills under back-pressure. Drop on full instead: these
+    // OSC side-effects (progress / pwd / notification) are non-critical and
+    // coalesceable — a dropped progress report is harmless, a deadlock is not.
+    _ = io.surface_mailbox.push(msg, .{ .instant = {} });
 }
 
 /// Focus gained/lost notification. The tmux backend deliberately sends
