@@ -3007,8 +3007,18 @@ pub fn preeditCallback(self: *Surface, preedit_: ?[]const u8) !void {
         self.renderer_state.preedit = null;
     }
 
-    // Mark preedit dirty flag
-    self.io.terminal.flags.dirty.preedit = true;
+    // Mark preedit dirty flag.
+    // ROOTSHELL-TMUX (id=tmux-preedit-dirty): dirty the terminal the renderer
+    // actually reads, not io.terminal. For a tmux -CC pane these differ: the
+    // renderer reads the gateway-owned viewer pane terminal swapped in via
+    // Tmux.threadEnter (io.renderer_state.terminal = vt), while io.terminal is
+    // the child surface's own empty terminal that nothing renders. Dirtying
+    // io.terminal there never forces a rebuild of the viewer terminal, so the
+    // IME preedit overlay (e.g. Korean composition) never drew. For a regular
+    // surface renderer_state.terminal == &io.terminal, so this is identical.
+    // Safe under renderer_state.mutex (held above), the same mutex the gateway
+    // holds when writing the shared viewer terminal (id=tmux-attach-order).
+    self.renderer_state.terminal.flags.dirty.preedit = true;
 
     // If we have no text, we're done. We queue a render in case we cleared
     // a prior preedit (likely).
