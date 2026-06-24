@@ -243,6 +243,16 @@ pub const StreamHandler = struct {
     /// Whether tmux control mode is enabled at runtime.
     tmux_control_mode: bool = true,
 
+    /// Cached OS color scheme (true = dark), refreshed in changeConfig from
+    /// config.conditional_state.theme. Lets `sendColorSchemeReport` answer the
+    /// CSI ?996n / mode-2031 theme query INLINE on the read thread — under the
+    /// renderer lock we already hold while parsing — instead of deferring a
+    /// `color_scheme_report` message that the IO thread's drainMailbox must
+    /// re-acquire renderer_state.mutex to handle. That cross-thread re-lock
+    /// gets starved under a heavy-output flood (zellij), stalling the drain for
+    /// seconds and dropping write_small. (id=streamhandler-inline-reports)
+    color_scheme_is_dark: bool = true,
+
     //---------------------------------------------------------------
     // Internal state
 
@@ -363,6 +373,10 @@ pub const StreamHandler = struct {
         self.osc_color_report_format = config.osc_color_report_format;
         self.clipboard_write = config.clipboard_write;
         self.enquiry_response = config.enquiry_response;
+        // Cache the resolved theme so we can answer the color-scheme query
+        // inline (id=streamhandler-inline-reports). Must run before the
+        // color-scheme report emitted at the end of this function.
+        self.color_scheme_is_dark = config.conditional_state.theme == .dark;
         // If tmux control mode was just disabled and a viewer is active,
         // proactively tear down the viewer and close child surfaces so
         // they don't leak until the tmux server sends an exit.
@@ -413,10 +427,8 @@ pub const StreamHandler = struct {
         };
 
         // The config could have changed any of our colors so update mode 2031.
-        // ROOTSHELL-TMUX (id=streamhandler-suppress-gateway-reports): tmux control gateway must not emit raw terminal reports into tmux's command channel.
-        if (!self.suppressPtyReportForTmuxGateway("color scheme")) {
-            self.messageWriter(.{ .color_scheme_report = .{ .force = false } });
-        }
+        // (suppress-gateway + mode check live inside sendColorSchemeReport)
+        self.sendColorSchemeReport(false);
     }
 
     inline fn surfaceMessageWriter(
@@ -2496,7 +2508,7 @@ pub const StreamHandler = struct {
             .in_band_size_reports => if (enabled and
                 !self.suppressPtyReportForTmuxGateway("in-band size"))
             {
-                self.messageWriter(.{ .size_report = .mode_2048 });
+                self.emitSizeReport(.mode_2048);
             },
 
             // ROOTSHELL-TMUX (id=streamhandler-suppress-gateway-reports): drop report-generating replies on the tmux gateway.
@@ -2621,7 +2633,7 @@ pub const StreamHandler = struct {
                 self.messageWriter(msg);
             },
 
-            .color_scheme => self.messageWriter(.{ .color_scheme_report = .{ .force = true } }),
+            .color_scheme => self.sendColorSchemeReport(true),
         }
     }
 
@@ -2708,10 +2720,8 @@ pub const StreamHandler = struct {
         try self.setMouseShape(.text);
 
         // Reset resets our palette so we report it for mode 2031.
-        // ROOTSHELL-TMUX (id=streamhandler-suppress-gateway-reports): tmux control gateway must not emit raw terminal reports into tmux's command channel.
-        if (!self.suppressPtyReportForTmuxGateway("color scheme")) {
-            self.messageWriter(.{ .color_scheme_report = .{ .force = false } });
-        }
+        // (suppress-gateway + mode check live inside sendColorSchemeReport)
+        self.sendColorSchemeReport(false);
 
         // Clear the progress bar
         self.progressReport(.{ .state = .remove });
@@ -3213,14 +3223,55 @@ pub const StreamHandler = struct {
         self.surfaceMessageWriter(message);
     }
 
+    /// Answer the CSI ?996n / mode-2031 color-scheme query INLINE on the read
+    /// thread. We already hold renderer_state.mutex while parsing, so the mode
+    /// check + cached theme are free here, and the reply goes out as a plain
+    /// `write_stable` (static string, no alloc) that drainMailbox can flush
+    /// WITHOUT re-acquiring renderer_state.mutex. Routing this through a
+    /// `color_scheme_report` message instead made the IO thread re-lock — which
+    /// the read thread starves under a heavy-output flood (zellij), wedging the
+    /// drain for seconds and dropping write_small. (id=streamhandler-inline-reports)
+    fn sendColorSchemeReport(self: *StreamHandler, force: bool) void {
+        // ROOTSHELL-TMUX (id=streamhandler-suppress-gateway-reports): drop report-generating replies on the tmux gateway.
+        if (self.suppressPtyReportForTmuxGateway("color scheme")) return;
+        if (!force and !self.terminal.modes.get(.report_color_scheme)) return;
+        const output: []const u8 = if (self.color_scheme_is_dark)
+            "\x1B[?997;1n"
+        else
+            "\x1B[?997;2n";
+        self.messageWriter(.{ .write_stable = output });
+    }
+
+    /// Encode a size report INLINE (self.size is consistent under the renderer
+    /// lock we hold while parsing) and send it as a plain write, so the IO
+    /// thread never has to re-acquire renderer_state.mutex to answer it. Same
+    /// flood-starvation rationale as sendColorSchemeReport.
+    fn emitSizeReport(self: *StreamHandler, style: terminal.size_report.Style) void {
+        const grid_size = self.size.grid();
+        const report_size: terminal.size_report.Size = .{
+            .rows = grid_size.rows,
+            .columns = grid_size.columns,
+            .cell_width = self.size.cell.width,
+            .cell_height = self.size.cell.height,
+        };
+        var buf: [1024]u8 = undefined;
+        var writer: std.Io.Writer = .fixed(&buf);
+        terminal.size_report.encode(&writer, style, report_size) catch return;
+        const msg = termio.Message.writeReq(self.alloc, writer.buffered()) catch |err| {
+            log.warn("failed to build size report: {}", .{err});
+            return;
+        };
+        self.messageWriter(msg);
+    }
+
     /// Send a report to the pty.
     pub fn sendSizeReport(self: *StreamHandler, style: terminal.SizeReportStyle) void {
         // ROOTSHELL-TMUX (id=streamhandler-suppress-gateway-reports): drop report-generating replies on the tmux gateway.
         if (self.suppressPtyReportForTmuxGateway("size")) return;
         switch (style) {
-            .csi_14_t => self.messageWriter(.{ .size_report = .csi_14_t }),
-            .csi_16_t => self.messageWriter(.{ .size_report = .csi_16_t }),
-            .csi_18_t => self.messageWriter(.{ .size_report = .csi_18_t }),
+            .csi_14_t => self.emitSizeReport(.csi_14_t),
+            .csi_16_t => self.emitSizeReport(.csi_16_t),
+            .csi_18_t => self.emitSizeReport(.csi_18_t),
             .csi_21_t => self.surfaceMessageWriter(.{ .report_title = .csi_21_t }),
         }
     }

@@ -306,6 +306,9 @@ pub fn init(self: *Termio, alloc: Allocator, opts: termio.Options) !void {
         .enquiry_response = opts.config.enquiry_response,
         .default_cursor_style = opts.config.cursor_style,
         .default_cursor_blink = opts.config.cursor_blink,
+        // Seed from config so the CSI ?996n reply is correct before the first
+        // changeConfig (id=streamhandler-inline-reports).
+        .color_scheme_is_dark = opts.config.conditional_state.theme == .dark,
     };
 
     const thread_enter_state = try ThreadEnterState.create(
