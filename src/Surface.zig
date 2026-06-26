@@ -235,22 +235,8 @@ const Mouse = struct {
     /// pressed or release.
     mods: input.Mods = .{},
 
-    /// The point at which the left mouse click happened. This is in screen
-    /// coordinates so that scrolling preserves the location.
-    left_click_pin: ?*terminal.Pin = null,
-    left_click_screen: terminal.ScreenSet.Key = .primary,
-
-    /// The starting xpos/ypos of the left click. Note that if scrolling occurs,
-    /// these will point to different "cells", but the xpos/ypos will stay
-    /// stable during scrolling relative to the surface.
-    left_click_xpos: f64 = 0,
-    left_click_ypos: f64 = 0,
-
-    /// The count of clicks to count double and triple clicks and so on.
-    /// The left click time was the last time the left click was done. This
-    /// is always set on the first left click.
-    left_click_count: u8 = 0,
-    left_click_time: std.time.Instant = undefined,
+    /// Gesture state for text selection.
+    selection_gesture: terminal.SelectionGesture = .init,
 
     /// The last x/y sent for mouse reports.
     event_point: ?terminal.point.Coordinate = null,
@@ -272,6 +258,11 @@ const Mouse = struct {
     /// The last x/y in the cursor position for links. We use this to
     /// only process link hover events when the mouse actually moves cells.
     link_point: ?terminal.point.Coordinate = null,
+
+    /// Return the left-click pin only if it still belongs to the active screen.
+    fn activeLeftClickPin(self: *const Mouse, screens: *const terminal.ScreenSet) ?*terminal.Pin {
+        return self.selection_gesture.validatedLeftClickPin(screens);
+    }
 };
 
 /// Keyboard state for the surface.
@@ -920,6 +911,7 @@ pub fn deinit(self: *Surface) void {
     self.renderer_thread.deinit();
     self.renderer.deinit();
     self.io_thread.deinit();
+    self.mouse.selection_gesture.deinit(&self.io.terminal);
     self.io.deinit();
 
     if (self.inspector) |v| {
@@ -1463,48 +1455,62 @@ fn selectionScrollTick(self: *Surface) !void {
     // If we're no longer active then we don't do anything.
     if (!self.selection_scroll_active) return;
 
-    // If we don't have a left mouse button down then we
-    // don't do anything.
-    if (self.mouse.left_click_count == 0) return;
+    // If our gesture doesn't want autoscrolling then disable it.
+    const was_autoscrolling = self.mouse.selection_gesture.left_drag_autoscroll != .none;
+    if (!was_autoscrolling) {
+        self.queueIo(
+            .{ .selection_scroll = false },
+            .unlocked,
+        );
+        return;
+    }
 
     const pos = try self.rt_surface.getCursorPos();
-    const delta: isize = if (pos.y < 0) -1 else 1;
 
     // We need our locked state for the remainder
     self.renderer_state.mutex.lock();
     defer self.renderer_state.mutex.unlock();
     const t: *terminal.Terminal = self.renderer_state.terminal;
+    // rootshell(smooth-scroll): convert under the lock so the pixel offset is
+    // accounted for in the viewport coordinate used for autoscroll hit-testing.
     const pos_vp = self.posToViewportLocked(pos.x, pos.y);
 
-    // If our screen changed while this is happening, we stop our
-    // selection scroll.
-    if (self.mouse.left_click_screen != t.screens.active_key) {
+    const selection = self.mouse.selection_gesture.autoscrollTick(t, .{
+        .viewport = pos_vp,
+        .xpos = pos.x,
+        .ypos = pos.y,
+        .rectangle = SurfaceMouse.isRectangleSelectState(self.mouse.mods),
+        .word_boundary_codepoints = self.config.selection_word_chars,
+        .geometry = .{
+            .columns = @intCast(self.size.grid().columns),
+            .cell_width = self.size.cell.width,
+            .padding_left = self.size.padding.left,
+            .screen_height = self.size.screen.height,
+            // rootshell(iOS): keep the bottom autoscroll edge reachable.
+            .bottom_autoscroll_threshold = self.bottomAutoscrollThreshold(),
+        },
+    });
+
+    // rootshell(smooth-scroll): autoscroll jumps the viewport by whole lines,
+    // so clear any residual smooth-scroll pixel offset to keep the render aligned.
+    self.renderer_state.smooth_scroll_y_px = 0;
+    self.renderer_state.smooth_scroll_active = false;
+
+    // If we're no longer autoscrolling for whatever reason, disable it.
+    if (self.mouse.selection_gesture.left_drag_autoscroll == .none) {
         self.queueIo(
             .{ .selection_scroll = false },
             .locked,
         );
-        return;
     }
 
-    // Scroll the viewport as required
-    t.scrollViewport(.{ .delta = delta });
-    self.renderer_state.smooth_scroll_y_px = 0;
-    self.renderer_state.smooth_scroll_active = false;
-
-    // Next, trigger our drag behavior
-    const pin = t.screens.active.pages.pin(.{
-        .viewport = .{
-            .x = pos_vp.x,
-            .y = pos_vp.y,
-        },
-    }) orelse {
-        if (comptime std.debug.runtime_safety) unreachable;
-        return;
-    };
-    try self.dragLeftClickSingle(pin, pos.x);
+    // If our left click was invalidated, ignore the result. This isn't
+    // strictly necessary but its a nice to have.
+    if (self.mouse.selection_gesture.left_click_count == 0) return;
 
     // We modified our viewport and selection so we need to queue
     // a render.
+    try self.setSelection(selection);
     try self.queueRender();
 }
 
@@ -1880,7 +1886,7 @@ fn mouseRefreshLinks(
         // mouse actions.
         const left_idx = @intFromEnum(input.MouseButton.left);
         if (self.mouse.click_state[left_idx] == .press) click: {
-            const pin = self.mouse.left_click_pin orelse break :click;
+            const pin = self.mouse.activeLeftClickPin(&self.uiTerminalLocked().screens) orelse break :click;
             const click_pt = self.uiTerminalLocked().screens.active.pages.pointFromPin(
                 .viewport,
                 pin.*,
@@ -2653,23 +2659,49 @@ fn copySelectionToClipboards(
     };
 }
 
-/// Set the selection contents.
+/// Set the active selection and notify the apprt on a genuine state
+/// transition. All selection mutations route through here rather than
+/// `screen.select` directly so the notification fires consistently. To
+/// also copy per `copy_on_select`, use `setSelectionAndCopy`.
 ///
 /// This must be called with the renderer mutex held.
+///
+/// rootshell: kept `pub` (upstream made it private) so the embedded C API
+/// `ghostty_surface_set_selection` can route through here and pick up the
+/// use-after-free-safe transition + `selection_changed` notification.
 pub fn setSelection(self: *Surface, sel_: ?terminal.Selection) !void {
-    const screen: *terminal.Screen = self.uiTerminalLocked().screens.active;
-    const prev_ = screen.selection;
-    try screen.select(sel_);
+    // Compute the transition before `select` below, which untracks (frees)
+    // the previous selection's tracked pins; reading them after would be a
+    // use-after-free.
+    const prev_ = self.uiTerminalLocked().screens.active.selection;
+    const changed = changed: {
+        const prev = prev_ orelse break :changed sel_ != null;
+        const sel = sel_ orelse break :changed true;
+        break :changed !sel.eql(prev);
+    };
+
+    try self.uiTerminalLocked().screens.active.select(sel_);
+
+    if (changed) {
+        _ = self.rt_app.performAction(
+            .{ .surface = self },
+            .selection_changed,
+            {},
+        ) catch |err| {
+            log.warn("apprt failed selection_changed notification err={}", .{err});
+        };
+    }
+}
+
+/// Set a selection and, per `copy_on_select`, copy it to the clipboard.
+/// For committing selection gestures (mouse release, select-all binding).
+///
+/// This must be called with the renderer mutex held.
+fn setSelectionAndCopy(self: *Surface, sel: terminal.Selection) !void {
+    try self.setSelection(sel);
 
     // If copy on select is false then exit early.
     if (self.config.copy_on_select == .false) return;
-
-    // Set our selection clipboard. If the selection is cleared we do not
-    // clear the clipboard. If the selection is set, we only set the clipboard
-    // again if it changed, since setting the clipboard can be an expensive
-    // operation.
-    const sel = sel_ orelse return;
-    if (prev_) |prev| if (sel.eql(prev)) return;
 
     switch (self.config.copy_on_select) {
         .false => unreachable, // handled above with an early exit
@@ -4350,7 +4382,7 @@ pub fn mouseButtonCallback(
         // We could do all the conditionals in one but I find it more
         // readable as a human to break this one up.
         if (mods.shift and
-            self.mouse.left_click_count > 0 and
+            self.mouse.selection_gesture.left_click_count > 0 and
             !shift_capture)
         extend_selection: {
             // We split this conditional out on its own because this is the
@@ -4361,7 +4393,9 @@ pub fn mouseButtonCallback(
             // If we are within the interval that the click would register
             // an increment then we do not extend the selection.
             if (std.time.Instant.now()) |now| {
-                const since = now.since(self.mouse.left_click_time);
+                const click_time = self.mouse.selection_gesture.left_click_time orelse
+                    break :extend_selection;
+                const since = now.since(click_time);
                 if (since <= self.config.mouse_interval) {
                     // Click interval very short, we may be increasing
                     // click counts so we don't extend the selection.
@@ -4383,12 +4417,39 @@ pub fn mouseButtonCallback(
     }
 
     if (button == .left and action == .release) {
+        self.renderer_state.mutex.lock();
+        defer self.renderer_state.mutex.unlock();
+
+        // The selection gesture tracks whether a press became a drag by
+        // comparing the release cell to the original press cell. Resolve the
+        // release position and pin before notifying the gesture so later
+        // release handling can query that state.
+        const release_pos: ?apprt.CursorPos = self.rt_surface.getCursorPos() catch |err| pos: {
+            log.warn("error reading cursor position for mouse release err={}", .{err});
+            break :pos null;
+        };
+
+        // If we can't map the release position to a cell, pass null so the
+        // gesture can conservatively treat the release as having moved away
+        // from the pressed cell.
+        const release_pin: ?terminal.Pin = if (release_pos) |pos| pin: {
+            const release_vp = self.posToViewportLocked(pos.x, pos.y);
+            break :pin self.uiTerminalLocked().screens.active.pages.pin(.{ .viewport = .{
+                .x = release_vp.x,
+                .y = release_vp.y,
+            } });
+        } else null;
+        self.mouse.selection_gesture.release(
+            self.renderer_state.terminal,
+            .{ .pin = release_pin },
+        );
+
         // Stop selection scrolling when releasing the left mouse button
         // but only when selection scrolling is active.
         if (self.selection_scroll_active) {
             self.queueIo(
                 .{ .selection_scroll = false },
-                .unlocked,
+                .locked,
             );
         }
 
@@ -4396,12 +4457,9 @@ pub fn mouseButtonCallback(
         // the left button is released. This is to avoid the clipboard
         // being updated on every mouse move which would be noisy.
         if (self.config.copy_on_select != .false) {
-            self.renderer_state.mutex.lock();
-            defer self.renderer_state.mutex.unlock();
-            const screen: *terminal.Screen = self.uiTerminalLocked().screens.active;
-            const prev_ = screen.selection;
+            const prev_ = self.uiTerminalLocked().screens.active.selection;
             if (prev_) |prev| {
-                try self.setSelection(terminal.Selection.init(
+                try self.setSelectionAndCopy(terminal.Selection.init(
                     prev.start(),
                     prev.end(),
                     prev.rectangle,
@@ -4412,10 +4470,10 @@ pub fn mouseButtonCallback(
         // Handle link clicking. We want to do this before we do mouse
         // reporting or any other mouse handling because a successfully
         // clicked link will swallow the event.
-        if (self.mouse.over_link) {
-            const pos = try self.rt_surface.getCursorPos();
-            self.renderer_state.mutex.lock();
-            defer self.renderer_state.mutex.unlock();
+        if (self.mouse.over_link and !self.mouse.selection_gesture.left_click_dragged) {
+            // We are holding the renderer lock, but this should just be
+            // a cached value.
+            const pos = release_pos orelse try self.rt_surface.getCursorPos();
             if (self.processLinks(pos)) |processed| {
                 if (processed) return true;
             } else |err| {
@@ -4450,7 +4508,7 @@ pub fn mouseButtonCallback(
             // We also set the left click count to 0 so that if mouse reporting
             // is disabled in the middle of press (before release) we don't
             // suddenly start selecting text.
-            self.mouse.left_click_count = 0;
+            self.mouse.selection_gesture.reset(self.renderer_state.terminal);
 
             const pos = try self.rt_surface.getCursorPos();
 
@@ -4497,108 +4555,66 @@ pub fn mouseButtonCallback(
                 break :click;
             };
 
-            break :pin try screen.pages.trackPin(pin);
+            break :pin pin;
         };
-        errdefer screen.pages.untrackPin(pin);
 
-        // If we move our cursor too much between clicks then we reset
-        // the multi-click state.
-        if (self.mouse.left_click_count > 0) {
-            const max_distance: f64 = @floatFromInt(self.size.cell.width);
-            const distance = @sqrt(
-                std.math.pow(f64, pos.x - self.mouse.left_click_xpos, 2) +
-                    std.math.pow(f64, pos.y - self.mouse.left_click_ypos, 2),
-            );
-
-            if (distance > max_distance) self.mouse.left_click_count = 0;
-        }
-
-        if (self.mouse.left_click_pin) |prev| {
-            if (t.screens.get(self.mouse.left_click_screen)) |pin_screen| {
-                pin_screen.pages.untrackPin(prev);
-            }
-            self.mouse.left_click_pin = null;
-        }
-
-        // Store it
-        self.mouse.left_click_pin = pin;
-        self.mouse.left_click_screen = t.screens.active_key;
-        self.mouse.left_click_xpos = pos.x;
-        self.mouse.left_click_ypos = pos.y;
-
-        // Setup our click counter and timer
-        if (std.time.Instant.now()) |now| {
-            // If we have mouse clicks, then we check if the time elapsed
-            // is less than and our interval and if so, increase the count.
-            if (self.mouse.left_click_count > 0) {
-                const since = now.since(self.mouse.left_click_time);
-                if (since > self.config.mouse_interval) {
-                    self.mouse.left_click_count = 0;
-                }
-            }
-
-            self.mouse.left_click_time = now;
-            self.mouse.left_click_count += 1;
-
-            // We only support up to triple-clicks.
-            if (self.mouse.left_click_count > 3) self.mouse.left_click_count = 1;
-        } else |err| {
-            self.mouse.left_click_count = 1;
+        const time = std.time.Instant.now() catch |err| time: {
             log.err("error reading time, mouse multi-click won't work err={}", .{err});
-        }
-
-        // In all cases below, we set the selection directly rather than use
-        // `setSelection` because we want to avoid copying the selection
-        // to the selection clipboard. For left mouse clicks we only set
-        // the clipboard on release.
-        switch (self.mouse.left_click_count) {
-            // Single click
-            1 => {
-                // If we have a selection, clear it. This always happens.
-                if (screen.selection != null) {
-                    try screen.select(null);
-                    try self.queueRender();
-                }
+            break :time null;
+        };
+        var press_selection = try self.mouse.selection_gesture.press(t, .{
+            .time = time,
+            .pin = pin,
+            .xpos = pos.x,
+            .ypos = pos.y,
+            .max_distance = @floatFromInt(self.size.cell.width),
+            .repeat_interval = self.config.mouse_interval,
+            .word_boundary_codepoints = self.config.selection_word_chars,
+            .behaviors = &.{
+                .cell,
+                .word,
+                if (mods.ctrlOrSuper()) .output else .line,
             },
+        });
 
-            // Double click, select the word under our mouse.
-            // First try to detect if we're clicking on a URL to select the entire URL.
+        // The gesture owns the standard single/double/triple-click selection
+        // behavior. Surface keeps terminal-surface-specific overrides here.
+        switch (self.mouse.selection_gesture.left_click_count) {
+            1 => {},
+
+            // Double click on a URL selects the entire URL instead of the
+            // standard word selection returned by the gesture.
             2 => {
-                const sel_ = sel: {
-                    // Try link detection without requiring modifier keys
-                    if (self.linkAtPin(
-                        pin.*,
-                        null,
-                    )) |result_| {
-                        if (result_) |result| {
-                            break :sel result.selection;
-                        }
-                    } else |_| {
-                        // Ignore any errors, likely regex errors.
+                // Try link detection without requiring modifier keys.
+                if (self.linkAtPin(
+                    pin,
+                    null,
+                )) |result_| {
+                    if (result_) |result| {
+                        press_selection = result.selection;
                     }
-
-                    break :sel screen.selectWordOrIPv6(pin.*, self.config.selection_word_chars);
-                };
-                if (sel_) |sel| {
-                    try screen.select(sel);
-                    try self.queueRender();
+                } else |_| {
+                    // Ignore any errors, likely regex errors.
                 }
             },
 
-            // Triple click, select the line under our mouse
-            3 => {
-                const sel_ = if (mods.ctrlOrSuper())
-                    screen.selectOutput(pin.*)
-                else
-                    screen.selectLine(.{ .pin = pin.* });
-                if (sel_) |sel| {
-                    try screen.select(sel);
-                    try self.queueRender();
-                }
-            },
+            3 => {},
 
             // We should be bounded by 1 to 3
             else => unreachable,
+        }
+
+        // Use `setSelection` (not `setSelectionAndCopy`) here to avoid
+        // touching the selection clipboard: for left mouse clicks we only
+        // copy on release.
+        if (press_selection) |selection| {
+            try self.setSelection(selection);
+            try self.queueRender();
+        } else if (self.mouse.selection_gesture.left_click_count == 1 and
+            self.uiTerminalLocked().screens.active.selection != null)
+        {
+            try self.setSelection(null);
+            try self.queueRender();
         }
     }
 
@@ -4660,25 +4676,24 @@ pub fn mouseButtonCallback(
                     // word selection where we clicked.
                 }
 
-                // If there is a link at this position, we want to
-                // select the link. Otherwise, select the word.
-                // For multi-row extended links (link.url != null), the
-                // selection spans rows with padding so fall through to
-                // word selection instead.
+                // If there is a link at this position, we want to select the
+                // link. Otherwise, select the word. For multi-row extended
+                // links (link.url != null) the selection spans rows with
+                // padding, so fall through to word selection instead.
                 const link_sel: ?terminal.Selection = link_sel: {
                     const link = (try self.linkAtPos(pos)) orelse break :link_sel null;
                     defer if (link.url) |u| self.alloc.free(u);
                     if (link.url != null) break :link_sel null;
                     break :link_sel link.selection;
                 };
-                if (link_sel) |sel| {
-                    try self.setSelection(sel);
+                if (link_sel) |link_selection| {
+                    try self.setSelectionAndCopy(link_selection);
                 } else {
                     const sel = screen.selectWordOrIPv6(
                         pin,
                         self.config.selection_word_chars,
                     ) orelse break :sel;
-                    try self.setSelection(sel);
+                    try self.setSelectionAndCopy(sel);
                 }
                 try self.queueRender();
 
@@ -4736,9 +4751,8 @@ pub fn mouseButtonCallback(
     return false;
 }
 
+/// Requires the renderer state mutex is held.
 fn maybePromptClick(self: *Surface) !bool {
-    self.renderer_state.mutex.lock();
-    defer self.renderer_state.mutex.unlock();
     const t: *terminal.Terminal = self.renderer_state.terminal;
     const screen: *terminal.Screen = t.screens.active;
 
@@ -4753,11 +4767,12 @@ fn maybePromptClick(self: *Surface) !bool {
     // prompt clicks because we can't move if we're not in a prompt!
     if (!t.cursorIsAtPrompt()) return false;
 
-    // If we have a selection currently, then releasing the mouse
-    // completes the selection and we don't do prompt moving. I don't
-    // love this logic, I think it should be generalized to "if the
-    // mouse release was on a different cell than the mouse press" but
-    // our mouse state at the time of writing this doesn't support that.
+    // If the left click moved away from its pressed cell then releasing the
+    // mouse completes the drag gesture and we don't do prompt moving.
+    if (self.mouse.selection_gesture.left_click_dragged) return false;
+
+    // If we have a selection currently, then releasing the mouse completes
+    // the selection and we don't do prompt moving.
     if (screen.selection != null) return false;
 
     // Get the pin for our mouse click.
@@ -4807,20 +4822,24 @@ fn maybePromptClick(self: *Surface) !bool {
         // Guarded at the start of this function
         .none => unreachable,
 
-        .click_events => {
+        .click_events => |v| {
             // For the event, we always send a left-click press event.
             // This matches what Kitty sends.
+            const key: u8, const y: u32 = switch (v) {
+                .absolute => .{ 1, pos_vp.y +| 1 },
+                .relative => .{ 2, pos_vp.y -| prompt_pin.y +| 1 },
+            };
             var data: termio.Message.WriteReq.Small.Array = undefined;
             const resp = try std.fmt.bufPrint(
                 &data,
                 "\x1B[<0;{d};{d}M",
-                .{ pos_vp.x + 1, pos_vp.y + 1 },
+                .{ pos_vp.x + 1, y },
             );
 
             // Not that noisy since this only happens on prompt clicks.
             log.debug(
-                "sending click_events=1 event=ESC{s}",
-                .{resp[1..]},
+                "sending click_events={} event=ESC{s}",
+                .{ key, resp[1..] },
             );
 
             // Ask our IO thread to write the data
@@ -5369,9 +5388,11 @@ pub fn mousePressureCallback(
     // Update our pressure stage.
     self.mouse.pressure_stage = stage;
 
-    // If our left mouse button is pressed and we're entering a deep
-    // click then we want to start a selection. We treat this as a
-    // word selection since that is typical macOS behavior.
+    // A deep press is pressure-sensitive pointer input, such as macOS force
+    // click / deep click on a trackpad, that occurs while the left mouse
+    // button is already down. Treat it as the platform text-selection
+    // affordance: select the pressed word, then consume the active gesture so
+    // further cursor motion doesn't drag the selection.
     const left_idx = @intFromEnum(input.MouseButton.left);
     if (self.mouse.click_state[left_idx] == .press and
         stage == .deep)
@@ -5379,15 +5400,21 @@ pub fn mousePressureCallback(
         self.renderer_state.mutex.lock();
         defer self.renderer_state.mutex.unlock();
 
-        // This should always be set in this state but we don't want
-        // to handle state inconsistency here.
-        const pin = self.mouse.left_click_pin orelse break :select;
-        const screen: *terminal.Screen = self.uiTerminalLocked().screens.active;
-        const sel = screen.selectWordOrIPv6(
-            pin.*,
-            self.config.selection_word_chars,
-        ) orelse break :select;
-        try screen.select(sel);
+        const sel = self.mouse.selection_gesture.deepPress(
+            self.renderer_state.terminal,
+            .{ .word_boundary_codepoints = self.config.selection_word_chars },
+        );
+
+        // Deep press consumes the active drag gesture, so stop any pending
+        // selection autoscroll timer that may have been started by the drag.
+        if (self.selection_scroll_active) {
+            self.queueIo(
+                .{ .selection_scroll = false },
+                .locked,
+            );
+        }
+
+        try self.setSelection(sel orelse break :select);
         try self.queueRender();
     }
 }
@@ -5463,44 +5490,14 @@ pub fn cursorPosCallback(
     self.renderer_state.mutex.lock();
     defer self.renderer_state.mutex.unlock();
 
-    // The mouse position in the viewport.
-    const pos_vp = self.posToViewportLocked(pos.x, pos.y);
-
-    // Bottom edge of the last grid row, in pixels. Derived from the grid
-    // geometry rather than screen.height so it accounts for top/bottom padding,
-    // the reserved bottom inset (folded into padding.bottom), and the leftover
-    // from row rounding — screen.height overshoots the actual grid bottom.
-    const grid_size = self.size.grid();
-    const grid_bottom: f32 = @as(f32, @floatFromInt(self.size.padding.top)) +
-        @as(f32, @floatFromInt(grid_size.rows)) *
-            @as(f32, @floatFromInt(self.size.cell.height));
-
-    // Trigger tolerance for the bottom edge. The OS caps the reported pointer y
-    // ~1 logical point short of the drawable bottom, so an edge-exact bottom
-    // trigger is unreachable on iOS/Catalyst (the top works because y reaches
-    // 0, even going negative into the chrome above the surface). Allow a couple
-    // logical points of slop so the edge is reachable on every display scale,
-    // while staying far inside a row so selecting the last line on desktop
-    // doesn't spuriously auto-scroll.
-    const scale_y: f32 = (self.rt_surface.getContentScale() catch
-        .{ .x = 1, .y = 1 }).y;
-    const bottom_slop: f32 = 2 * scale_y;
-
-    // Stop selection scrolling once the cursor is back INSIDE the grid on the y
-    // axis — i.e. clear of BOTH activation zones (top: y <= 1, bottom:
-    // y >= grid_bottom - slop). This is the exact complement of the start
-    // condition below, so the two never fight in the activation region.
-    if (pos.y > 1 and pos.y < grid_bottom - bottom_slop and self.selection_scroll_active) {
-        self.queueIo(
-            .{ .selection_scroll = false },
-            .locked,
-        );
-    }
-
     // Update our mouse state. We set this to null initially because we only
     // want to set it when we're not selecting or doing any other mouse
     // event.
     self.renderer_state.mouse.point = null;
+
+    // The mouse position in the viewport. Computed under the renderer lock so
+    // the smooth-scroll pixel offset is accounted for (rootshell smooth scroll).
+    const pos_vp = self.posToViewportLocked(pos.x, pos.y);
 
     // If we have an inspector, we need to always record position information
     if (self.inspector) |insp| {
@@ -5568,36 +5565,17 @@ pub fn cursorPosCallback(
         // In this scenario, we mark the click state because we need that to
         // properly make some mouse reports, but we don't keep track of the
         // count because we don't want to handle selection.
-        if (self.mouse.left_click_count == 0) break :select;
+        if (self.mouse.selection_gesture.left_click_count == 0) break :select;
 
-        // If our terminal screen changed then we don't process this. We don't
-        // invalidate our pin or mouse state because if the screen switches
-        // back then we can continue our selection.
+        // If our left-click pin no longer belongs to the active screen then we
+        // don't process this. We don't invalidate our pin or mouse state
+        // because if the same screen switches back then we can continue our
+        // selection.
         const t: *terminal.Terminal = self.renderer_state.terminal;
-        if (self.mouse.left_click_screen != t.screens.active_key) break :select;
+        if (self.mouse.activeLeftClickPin(&t.screens) == null) break :select;
 
         // All roads lead to requiring a re-render at this point.
         try self.queueRender();
-
-        // If our y is negative, we're above the window. In this case, we scroll
-        // up. The amount we scroll up is dependent on how negative we are.
-        // We allow for a 1 pixel buffer at the top and bottom to detect
-        // scroll even in full screen windows.
-        // Note: one day, we can change this from distance to time based if we want.
-        //log.warn("CURSOR POS: {} {}", .{ pos, self.size.screen });
-
-        // If the mouse is outside the viewport and we have the left mouse
-        // button pressed then we need to start the scroll timer. Top edge: a
-        // 1px buffer (y is reachable down to 0). Bottom edge: grid_bottom minus
-        // a small slop (see above) because the drawable bottom is unreachable.
-        if ((pos.y <= 1 or pos.y >= grid_bottom - bottom_slop) and
-            !self.selection_scroll_active)
-        {
-            self.queueIo(
-                .{ .selection_scroll = true },
-                .locked,
-            );
-        }
 
         // Convert to points
         const screen: *terminal.Screen = t.screens.active;
@@ -5611,328 +5589,42 @@ pub fn cursorPosCallback(
             return;
         };
 
-        // Handle dragging depending on click count
-        switch (self.mouse.left_click_count) {
-            1 => try self.dragLeftClickSingle(pin, pos.x),
-            2 => try self.dragLeftClickDouble(pin),
-            3 => try self.dragLeftClickTriple(pin),
-            0 => unreachable, // handled above
-            else => unreachable,
+        // Perform our drag behavior in our gesture handler.
+        const drag_selection = self.mouse.selection_gesture.drag(t, .{
+            .pin = pin,
+            .xpos = pos.x,
+            .ypos = pos.y,
+            .rectangle = SurfaceMouse.isRectangleSelectState(self.mouse.mods),
+            .word_boundary_codepoints = self.config.selection_word_chars,
+            .geometry = .{
+                .columns = @intCast(self.size.grid().columns),
+                .cell_width = self.size.cell.width,
+                .padding_left = self.size.padding.left,
+                .screen_height = self.size.screen.height,
+                // rootshell(iOS): keep the bottom autoscroll edge reachable.
+                .bottom_autoscroll_threshold = self.bottomAutoscrollThreshold(),
+            },
+        });
+
+        // Update our autoscroll timer based on the gesture state
+        switch (self.mouse.selection_gesture.left_drag_autoscroll) {
+            .none => if (self.selection_scroll_active) {
+                self.queueIo(
+                    .{ .selection_scroll = false },
+                    .locked,
+                );
+            },
+            .up, .down => if (!self.selection_scroll_active) {
+                self.queueIo(
+                    .{ .selection_scroll = true },
+                    .locked,
+                );
+            },
         }
 
-        return;
+        // Update our selection based on the gesture state
+        try self.setSelection(drag_selection);
     }
-}
-
-/// Double-click dragging moves the selection one "word" at a time.
-fn dragLeftClickDouble(
-    self: *Surface,
-    drag_pin: terminal.Pin,
-) !void {
-    const screen: *terminal.Screen = self.uiTerminalLocked().screens.active;
-    const click_pin = self.mouse.left_click_pin.?.*;
-
-    // Get the word closest to our starting click.
-    const word_start = screen.selectWordBetween(
-        click_pin,
-        drag_pin,
-        self.config.selection_word_chars,
-    ) orelse {
-        try self.setSelection(null);
-        return;
-    };
-
-    // Get the word closest to our current point.
-    const word_current = screen.selectWordBetween(
-        drag_pin,
-        click_pin,
-        self.config.selection_word_chars,
-    ) orelse {
-        try self.setSelection(null);
-        return;
-    };
-
-    // If our current mouse position is before the starting position,
-    // then the selection start is the word nearest our current position.
-    if (drag_pin.before(click_pin)) {
-        try screen.select(.init(
-            word_current.start(),
-            word_start.end(),
-            false,
-        ));
-    } else {
-        try screen.select(.init(
-            word_start.start(),
-            word_current.end(),
-            false,
-        ));
-    }
-}
-
-/// Triple-click dragging moves the selection one "line" at a time.
-fn dragLeftClickTriple(
-    self: *Surface,
-    drag_pin: terminal.Pin,
-) !void {
-    const screen: *terminal.Screen = self.uiTerminalLocked().screens.active;
-    const click_pin = self.mouse.left_click_pin.?.*;
-
-    // Get the line selection under our current drag point. If there isn't a
-    // line, do nothing.
-    const line = screen.selectLine(.{ .pin = drag_pin }) orelse return;
-
-    // Get the selection under our click point. We first try to trim
-    // whitespace if we've selected a word. But if no word exists then
-    // we select the blank line.
-    const sel_ = screen.selectLine(.{ .pin = click_pin }) orelse
-        screen.selectLine(.{ .pin = click_pin, .whitespace = null });
-
-    var sel = sel_ orelse return;
-    if (drag_pin.before(click_pin)) {
-        sel.startPtr().* = line.start();
-    } else {
-        sel.endPtr().* = line.end();
-    }
-    try screen.select(sel);
-}
-
-fn dragLeftClickSingle(
-    self: *Surface,
-    drag_pin: terminal.Pin,
-    drag_x: f64,
-) !void {
-    // This logic is in a separate function so that it can be unit tested.
-    try self.uiTerminalLocked().screens.active.select(mouseSelection(
-        self.mouse.left_click_pin.?.*,
-        drag_pin,
-        @intFromFloat(@max(0.0, self.mouse.left_click_xpos)),
-        @intFromFloat(@max(0.0, drag_x)),
-        self.mouse.mods,
-        self.size,
-    ));
-}
-
-/// Begin a touch selection-handle drag. Anchors a left-button selection drag at
-/// the endpoint of the current selection OPPOSITE the handle being dragged, so
-/// that subsequent cursorPosCallback drags (driven by mouse_pos events) extend
-/// or contract the selection from that fixed endpoint. Because this reuses the
-/// native mouse-selection path it inherits smooth-scroll-correct hit-testing
-/// and auto-scroll past the viewport edge for free. The drag is ended by the
-/// normal left-button release.
-///
-/// Returns false if there is no active selection to drag.
-pub fn beginSelectionHandleDrag(self: *Surface, dragging_start: bool) bool {
-    self.renderer_state.mutex.lock();
-    defer self.renderer_state.mutex.unlock();
-
-    const t: *terminal.Terminal = self.renderer_state.terminal;
-    const screen: *terminal.Screen = t.screens.active;
-    const sel = screen.selection orelse return false;
-
-    // Keep the endpoint opposite the dragged handle fixed. The handles are
-    // placed in SCREEN order (the leading handle sits at the selection's
-    // top-left, the trailing handle at its bottom-right), so we must anchor by
-    // topLeft/bottomRight too — sel.start()/end() are storage order and would
-    // anchor at the wrong (or the same) endpoint for a reverse-ordered
-    // selection, collapsing the drag.
-    const fixed_pin = if (dragging_start)
-        sel.bottomRight(screen)
-    else
-        sel.topLeft(screen);
-    const tracked = screen.pages.trackPin(fixed_pin) catch return false;
-
-    // Replace any previous click anchor.
-    if (self.mouse.left_click_pin) |prev| {
-        if (t.screens.get(self.mouse.left_click_screen)) |s| s.pages.untrackPin(prev);
-    }
-    self.mouse.left_click_pin = tracked;
-    self.mouse.left_click_screen = t.screens.active_key;
-    self.mouse.left_click_count = 1;
-    self.mouse.click_state[@intCast(@intFromEnum(input.MouseButton.left))] = .press;
-
-    // Anchor the click-x at the outer edge of the fixed cell so that cell stays
-    // included for the natural drag direction: right edge when the fixed point is
-    // the selection's bottom-right (dragging the leading handle), left edge when
-    // it is the top-left (dragging the trailing handle). (pin.x equals the grid
-    // column on the active full-width screen.)
-    const cell_w: u32 = self.size.cell.width;
-    const edge: u32 = if (dragging_start) cell_w -| 1 else 0;
-    self.mouse.left_click_xpos = @floatFromInt(
-        self.size.padding.left + @as(u32, fixed_pin.x) * cell_w + edge,
-    );
-    self.mouse.left_click_ypos = 0;
-
-    return true;
-}
-
-/// Report whether each endpoint of the current selection currently falls within
-/// the viewport. This lets a touch UI show only the handle(s) for the visible
-/// endpoint(s) of a selection that spans more than one screen (the geometry from
-/// read_selection clamps off-screen endpoints to the viewport edge and so can't
-/// distinguish them on its own). Returns false if there is no active selection.
-pub fn selectionViewportVisibility(
-    self: *Surface,
-    start_visible: *bool,
-    end_visible: *bool,
-) bool {
-    self.renderer_state.mutex.lock();
-    defer self.renderer_state.mutex.unlock();
-
-    const screen = self.uiTerminalLocked().screens.active;
-    const sel = screen.selection orelse return false;
-
-    // pointFromPin(.viewport, ...) returns null when the pin is outside the
-    // viewport (above or below) — exactly the case where read_selection clamps
-    // that endpoint to the viewport edge.
-    start_visible.* = screen.pages.pointFromPin(.viewport, sel.topLeft(screen)) != null;
-    end_visible.* = screen.pages.pointFromPin(.viewport, sel.bottomRight(screen)) != null;
-
-    return true;
-}
-
-/// Calculates the appropriate selection given pins and pixel x positions for
-/// the click point and the drag point, as well as mouse mods and screen size.
-fn mouseSelection(
-    click_pin: terminal.Pin,
-    drag_pin: terminal.Pin,
-    click_x: u32,
-    drag_x: u32,
-    mods: input.Mods,
-    size: rendererpkg.Size,
-) ?terminal.Selection {
-    // Explanation:
-    //
-    // # Normal selections
-    //
-    // ## Left-to-right selections
-    // - The clicked cell is included if it was clicked to the left of its
-    //   threshold point and the drag location is right of the threshold point.
-    // - The cell under the cursor (the "drag cell") is included if the drag
-    //   location is right of its threshold point.
-    //
-    // ## Right-to-left selections
-    // - The clicked cell is included if it was clicked to the right of its
-    //   threshold point and the drag location is left of the threshold point.
-    // - The cell under the cursor (the "drag cell") is included if the drag
-    //   location is left of its threshold point.
-    //
-    // # Rectangular selections
-    //
-    // Rectangular selections are handled similarly, except that
-    // entire columns are considered rather than individual cells.
-
-    // We only include cells in the selection if the threshold point lies
-    // between the start and end points of the selection. A threshold of
-    // 60% of the cell width was chosen empirically because it felt good.
-    const threshold_point: u32 = @intFromFloat(@round(
-        @as(f64, @floatFromInt(size.cell.width)) * 0.6,
-    ));
-
-    // We use this to clamp the pixel positions below.
-    const max_x = size.grid().columns * size.cell.width - 1;
-
-    // We need to know how far across in the cell the drag pos is, so
-    // we subtract the padding and then take it modulo the cell width.
-    const drag_x_frac = @min(max_x, drag_x -| size.padding.left) % size.cell.width;
-
-    // We figure out the fractional part of the click x position similarly.
-    const click_x_frac = @min(max_x, click_x -| size.padding.left) % size.cell.width;
-
-    // Whether or not this is a rectangular selection.
-    const rectangle_selection = SurfaceMouse.isRectangleSelectState(mods);
-
-    // Whether the click pin and drag pin are equal.
-    const same_pin = drag_pin.eql(click_pin);
-
-    // Whether or not the end point of our selection is before the start point.
-    const end_before_start = ebs: {
-        if (same_pin) {
-            break :ebs drag_x_frac < click_x_frac;
-        }
-
-        // Special handling for rectangular selections, we only use x position.
-        if (rectangle_selection) {
-            break :ebs switch (std.math.order(drag_pin.x, click_pin.x)) {
-                .eq => drag_x_frac < click_x_frac,
-                .lt => true,
-                .gt => false,
-            };
-        }
-
-        break :ebs drag_pin.before(click_pin);
-    };
-
-    // Whether or not the click pin cell
-    // should be included in the selection.
-    const include_click_cell = if (end_before_start)
-        click_x_frac >= threshold_point
-    else
-        click_x_frac < threshold_point;
-
-    // Whether or not the drag pin cell
-    // should be included in the selection.
-    const include_drag_cell = if (end_before_start)
-        drag_x_frac < threshold_point
-    else
-        drag_x_frac >= threshold_point;
-
-    // If the click cell should be included in the selection then it's the
-    // start, otherwise we get the previous or next cell to it depending on
-    // the type and direction of the selection.
-    const start_pin =
-        if (include_click_cell)
-            click_pin
-        else if (end_before_start)
-            if (rectangle_selection)
-                click_pin.leftClamp(1)
-            else
-                click_pin.leftWrap(1) orelse click_pin
-        else if (rectangle_selection)
-            click_pin.rightClamp(1)
-        else
-            click_pin.rightWrap(1) orelse click_pin;
-
-    // Likewise for the end pin with the drag cell.
-    const end_pin =
-        if (include_drag_cell)
-            drag_pin
-        else if (end_before_start)
-            if (rectangle_selection)
-                drag_pin.rightClamp(1)
-            else
-                drag_pin.rightWrap(1) orelse drag_pin
-        else if (rectangle_selection)
-            drag_pin.leftClamp(1)
-        else
-            drag_pin.leftWrap(1) orelse drag_pin;
-
-    // If the click cell is the same as the drag cell and the click cell
-    // shouldn't be included, or if the cells are adjacent such that the
-    // start or end pin becomes the other cell, and that cell should not
-    // be included, then we have no selection, so we set it to null.
-    //
-    // If in rectangular selection mode, we compare columns as well.
-    //
-    // TODO(qwerasd): this can/should probably be refactored, it's a bit
-    //                repetitive and does excess work in rectangle mode.
-    if ((!include_click_cell and same_pin) or
-        (!include_click_cell and rectangle_selection and click_pin.x == drag_pin.x) or
-        (!include_click_cell and end_pin.eql(click_pin)) or
-        (!include_click_cell and rectangle_selection and end_pin.x == click_pin.x) or
-        (!include_drag_cell and start_pin.eql(drag_pin)) or
-        (!include_drag_cell and rectangle_selection and start_pin.x == drag_pin.x))
-    {
-        return null;
-    }
-
-    // TODO: Clamp selection to the screen area, don't
-    //       let it extend past the last written row.
-
-    return .init(
-        start_pin,
-        end_pin,
-        rectangle_selection,
-    );
 }
 
 /// Call to notify Ghostty that the color scheme for the terminal has
@@ -5999,6 +5691,106 @@ fn posToViewportWithSmoothOffset(
 /// render-only smooth scrollback translation.
 ///
 /// Precondition: the renderer_state mutex must be held.
+/// rootshell(iOS): the y position (in surface pixels) at or above which a
+/// downward selection autoscroll should trigger. Derived from the true grid
+/// bottom (top padding + rows * cell height) minus a small slop scaled by the
+/// display. The grid bottom is used instead of `size.screen.height` because the
+/// latter overshoots the drawable grid by the bottom padding / reserved inset /
+/// row-rounding leftover. The slop makes the bottom edge reachable on
+/// iOS / Mac Catalyst (where the OS caps the reported pointer y ~1 logical point
+/// short of the drawable bottom) while staying far enough inside a row that
+/// selecting the last line on desktop does not spuriously auto-scroll.
+fn bottomAutoscrollThreshold(self: *const Surface) f64 {
+    const grid_size = self.size.grid();
+    const grid_bottom: f32 = @as(f32, @floatFromInt(self.size.padding.top)) +
+        @as(f32, @floatFromInt(grid_size.rows)) *
+            @as(f32, @floatFromInt(self.size.cell.height));
+    const scale_y: f32 = (self.rt_surface.getContentScale() catch
+        .{ .x = 1, .y = 1 }).y;
+    const bottom_slop: f32 = 2 * scale_y;
+    return @floatCast(grid_bottom - bottom_slop);
+}
+
+/// rootshell(iOS touch selection): begin a drag from a selection handle.
+/// Seeds the selection gesture (upstream's `SelectionGesture` model) with a
+/// single-click anchor at the endpoint OPPOSITE the dragged handle so that
+/// subsequent `cursorPosCallback` drags extend the selection from the fixed end.
+pub fn beginSelectionHandleDrag(self: *Surface, dragging_start: bool) bool {
+    self.renderer_state.mutex.lock();
+    defer self.renderer_state.mutex.unlock();
+
+    const t: *terminal.Terminal = self.renderer_state.terminal;
+    const screen: *terminal.Screen = t.screens.active;
+    const sel = screen.selection orelse return false;
+
+    // Keep the endpoint opposite the dragged handle fixed. The handles are
+    // placed in SCREEN order (the leading handle sits at the selection's
+    // top-left, the trailing handle at its bottom-right), so we must anchor by
+    // topLeft/bottomRight too — sel.start()/end() are storage order and would
+    // anchor at the wrong (or the same) endpoint for a reverse-ordered
+    // selection, collapsing the drag.
+    const fixed_pin = if (dragging_start)
+        sel.bottomRight(screen)
+    else
+        sel.topLeft(screen);
+    const tracked = screen.pages.trackPin(fixed_pin) catch return false;
+
+    // Seed the gesture as if a single left click landed on the fixed endpoint.
+    // Replace any previous gesture anchor first (untrack its tracked pin).
+    const gesture = &self.mouse.selection_gesture;
+    if (gesture.left_click_pin) |prev| {
+        if (t.screens.get(gesture.left_click_screen)) |s| s.pages.untrackPin(prev);
+    }
+    gesture.left_click_pin = tracked;
+    gesture.left_click_screen = t.screens.active_key;
+    gesture.left_click_screen_generation = t.screens.generation(t.screens.active_key);
+    gesture.left_click_count = 1;
+    gesture.left_click_behavior = .cell;
+    gesture.left_click_time = null;
+    gesture.left_click_dragged = false;
+    gesture.left_drag_autoscroll = .none;
+    self.mouse.click_state[@intCast(@intFromEnum(input.MouseButton.left))] = .press;
+
+    // Anchor the click-x at the outer edge of the fixed cell so that cell stays
+    // included for the natural drag direction: right edge when the fixed point is
+    // the selection's bottom-right (dragging the leading handle), left edge when
+    // it is the top-left (dragging the trailing handle). (pin.x equals the grid
+    // column on the active full-width screen.)
+    const cell_w: u32 = self.size.cell.width;
+    const edge: u32 = if (dragging_start) cell_w -| 1 else 0;
+    gesture.left_click_xpos = @floatFromInt(
+        self.size.padding.left + @as(u32, fixed_pin.x) * cell_w + edge,
+    );
+    gesture.left_click_ypos = 0;
+
+    return true;
+}
+
+/// Report whether each endpoint of the current selection currently falls within
+/// the viewport. This lets a touch UI show only the handle(s) for the visible
+/// endpoint(s) of a selection that spans more than one screen (the geometry from
+/// read_selection clamps off-screen endpoints to the viewport edge and so can't
+/// distinguish them on its own). Returns false if there is no active selection.
+pub fn selectionViewportVisibility(
+    self: *Surface,
+    start_visible: *bool,
+    end_visible: *bool,
+) bool {
+    self.renderer_state.mutex.lock();
+    defer self.renderer_state.mutex.unlock();
+
+    const screen = self.uiTerminalLocked().screens.active;
+    const sel = screen.selection orelse return false;
+
+    // pointFromPin(.viewport, ...) returns null when the pin is outside the
+    // viewport (above or below) — exactly the case where read_selection clamps
+    // that endpoint to the viewport edge.
+    start_visible.* = screen.pages.pointFromPin(.viewport, sel.topLeft(screen)) != null;
+    end_visible.* = screen.pages.pointFromPin(.viewport, sel.bottomRight(screen)) != null;
+
+    return true;
+}
+
 fn posToViewportLocked(self: Surface, xpos: f64, ypos: f64) terminal.point.Coordinate {
     return self.posToViewportWithSmoothOffset(
         xpos,
@@ -6747,7 +6539,7 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
 
             const sel = self.uiTerminalLocked().screens.active.selectAll();
             if (sel) |s| {
-                try self.setSelection(s);
+                try self.setSelectionAndCopy(s);
                 try self.queueRender();
             }
         },
@@ -7344,436 +7136,9 @@ fn presentSurface(self: *Surface) !void {
     );
 }
 
-/// Utility function for the unit tests for mouse selection logic.
-///
-/// Tests a click and drag on a 10x5 cell grid, x positions are given in
-/// fractional cells, e.g. 3.1 would be 10% through the cell at x = 3.
-///
-/// NOTE: The size tested with has 10px wide cells, meaning only one digit
-///       after the decimal place has any meaning, e.g. 3.14 is equal to 3.1.
-///
-/// The provided start_x/y and end_x/y are the expected start and end points
-/// of the resulting selection.
-fn testMouseSelection(
-    click_x: f64,
-    click_y: u32,
-    drag_x: f64,
-    drag_y: u32,
-    start_x: terminal.size.CellCountInt,
-    start_y: u32,
-    end_x: terminal.size.CellCountInt,
-    end_y: u32,
-    rect: bool,
-) !void {
-    assert(builtin.is_test);
-
-    // Our screen size is 10x5 cells that are
-    // 10x20 px, with 5px padding on all sides.
-    const size: rendererpkg.Size = .{
-        .cell = .{ .width = 10, .height = 20 },
-        .padding = .{ .left = 5, .top = 5, .right = 5, .bottom = 5 },
-        .screen = .{ .width = 110, .height = 110 },
-    };
-    var screen = try terminal.Screen.init(std.testing.allocator, .{ .cols = 10, .rows = 5, .max_scrollback = 0 });
-    defer screen.deinit();
-
-    // We hold both ctrl and alt for rectangular
-    // select so that this test is platform agnostic.
-    const mods: input.Mods = .{
-        .ctrl = rect,
-        .alt = rect,
-    };
-
-    try std.testing.expectEqual(rect, SurfaceMouse.isRectangleSelectState(mods));
-
-    const click_pin = screen.pages.pin(.{
-        .viewport = .{ .x = @intFromFloat(@floor(click_x)), .y = click_y },
-    }) orelse unreachable;
-    const drag_pin = screen.pages.pin(.{
-        .viewport = .{ .x = @intFromFloat(@floor(drag_x)), .y = drag_y },
-    }) orelse unreachable;
-
-    const cell_width_f64: f64 = @floatFromInt(size.cell.width);
-    const click_x_pos: u32 =
-        @as(u32, @intFromFloat(@floor(click_x * cell_width_f64))) +
-        size.padding.left;
-    const drag_x_pos: u32 =
-        @as(u32, @intFromFloat(@floor(drag_x * cell_width_f64))) +
-        size.padding.left;
-
-    const start_pin = screen.pages.pin(.{
-        .viewport = .{ .x = start_x, .y = start_y },
-    }) orelse unreachable;
-    const end_pin = screen.pages.pin(.{
-        .viewport = .{ .x = end_x, .y = end_y },
-    }) orelse unreachable;
-
-    try std.testing.expectEqualDeep(terminal.Selection{
-        .bounds = .{ .untracked = .{
-            .start = start_pin,
-            .end = end_pin,
-        } },
-        .rectangle = rect,
-    }, mouseSelection(
-        click_pin,
-        drag_pin,
-        click_x_pos,
-        drag_x_pos,
-        mods,
-        size,
-    ));
-}
-
-/// Like `testMouseSelection` but checks that the resulting selection is null.
-///
-/// See `testMouseSelection` for more details.
-fn testMouseSelectionIsNull(
-    click_x: f64,
-    click_y: u32,
-    drag_x: f64,
-    drag_y: u32,
-    rect: bool,
-) !void {
-    assert(builtin.is_test);
-
-    // Our screen size is 10x5 cells that are
-    // 10x20 px, with 5px padding on all sides.
-    const size: rendererpkg.Size = .{
-        .cell = .{ .width = 10, .height = 20 },
-        .padding = .{ .left = 5, .top = 5, .right = 5, .bottom = 5 },
-        .screen = .{ .width = 110, .height = 110 },
-    };
-    var screen = try terminal.Screen.init(std.testing.allocator, .{ .cols = 10, .rows = 5, .max_scrollback = 0 });
-    defer screen.deinit();
-
-    // We hold both ctrl and alt for rectangular
-    // select so that this test is platform agnostic.
-    const mods: input.Mods = .{
-        .ctrl = rect,
-        .alt = rect,
-    };
-
-    try std.testing.expectEqual(rect, SurfaceMouse.isRectangleSelectState(mods));
-
-    const click_pin = screen.pages.pin(.{
-        .viewport = .{ .x = @intFromFloat(@floor(click_x)), .y = click_y },
-    }) orelse unreachable;
-    const drag_pin = screen.pages.pin(.{
-        .viewport = .{ .x = @intFromFloat(@floor(drag_x)), .y = drag_y },
-    }) orelse unreachable;
-
-    const cell_width_f64: f64 = @floatFromInt(size.cell.width);
-    const click_x_pos: u32 =
-        @as(u32, @intFromFloat(@floor(click_x * cell_width_f64))) +
-        size.padding.left;
-    const drag_x_pos: u32 =
-        @as(u32, @intFromFloat(@floor(drag_x * cell_width_f64))) +
-        size.padding.left;
-
-    try std.testing.expectEqual(
-        null,
-        mouseSelection(
-            click_pin,
-            drag_pin,
-            click_x_pos,
-            drag_x_pos,
-            mods,
-            size,
-        ),
-    );
-}
-
 /// Get information about the process(es) running within the surface. Returns
 /// `null` if there was an error getting the information or the information is
 /// not available on a particular platform.
 pub fn getProcessInfo(self: *Surface, comptime info: ProcessInfo) ?ProcessInfo.Type(info) {
     return self.io.getProcessInfo(info);
-}
-
-test "Surface: selection logic" {
-    // We disable format to make these easier to
-    // read by pairing sets of coordinates per line.
-    // zig fmt: off
-
-    // -- LTR
-    // single cell selection
-    try testMouseSelection(
-        3.0, 3, // click
-        3.9, 3, // drag
-        3, 3, // expected start
-        3, 3, // expected end
-        false, // regular selection
-    );
-    // including click and drag pin cells
-    try testMouseSelection(
-        3.0, 3, // click
-        5.9, 3, // drag
-        3, 3, // expected start
-        5, 3, // expected end
-        false, // regular selection
-    );
-    // including click pin cell but not drag pin cell
-    try testMouseSelection(
-        3.0, 3, // click
-        5.0, 3, // drag
-        3, 3, // expected start
-        4, 3, // expected end
-        false, // regular selection
-    );
-    // including drag pin cell but not click pin cell
-    try testMouseSelection(
-        3.9, 3, // click
-        5.9, 3, // drag
-        4, 3, // expected start
-        5, 3, // expected end
-        false, // regular selection
-    );
-    // including neither click nor drag pin cells
-    try testMouseSelection(
-        3.9, 3, // click
-        5.0, 3, // drag
-        4, 3, // expected start
-        4, 3, // expected end
-        false, // regular selection
-    );
-    // empty selection (single cell on only left half)
-    try testMouseSelectionIsNull(
-        3.0, 3, // click
-        3.1, 3, // drag
-        false, // regular selection
-    );
-    // empty selection (single cell on only right half)
-    try testMouseSelectionIsNull(
-        3.8, 3, // click
-        3.9, 3, // drag
-        false, // regular selection
-    );
-    // empty selection (between two cells, not crossing threshold)
-    try testMouseSelectionIsNull(
-        3.9, 3, // click
-        4.0, 3, // drag
-        false, // regular selection
-    );
-
-    // -- RTL
-    // single cell selection
-    try testMouseSelection(
-        3.9, 3, // click
-        3.0, 3, // drag
-        3, 3, // expected start
-        3, 3, // expected end
-        false, // regular selection
-    );
-    // including click and drag pin cells
-    try testMouseSelection(
-        5.9, 3, // click
-        3.0, 3, // drag
-        5, 3, // expected start
-        3, 3, // expected end
-        false, // regular selection
-    );
-    // including click pin cell but not drag pin cell
-    try testMouseSelection(
-        5.9, 3, // click
-        3.9, 3, // drag
-        5, 3, // expected start
-        4, 3, // expected end
-        false, // regular selection
-    );
-    // including drag pin cell but not click pin cell
-    try testMouseSelection(
-        5.0, 3, // click
-        3.0, 3, // drag
-        4, 3, // expected start
-        3, 3, // expected end
-        false, // regular selection
-    );
-    // including neither click nor drag pin cells
-    try testMouseSelection(
-        5.0, 3, // click
-        3.9, 3, // drag
-        4, 3, // expected start
-        4, 3, // expected end
-        false, // regular selection
-    );
-    // empty selection (single cell on only left half)
-    try testMouseSelectionIsNull(
-        3.1, 3, // click
-        3.0, 3, // drag
-        false, // regular selection
-    );
-    // empty selection (single cell on only right half)
-    try testMouseSelectionIsNull(
-        3.9, 3, // click
-        3.8, 3, // drag
-        false, // regular selection
-    );
-    // empty selection (between two cells, not crossing threshold)
-    try testMouseSelectionIsNull(
-        4.0, 3, // click
-        3.9, 3, // drag
-        false, // regular selection
-    );
-
-    // -- Wrapping
-    // LTR, wrap excluded cells
-    try testMouseSelection(
-        9.9, 2, // click
-        0.0, 4, // drag
-        0, 3, // expected start
-        9, 3, // expected end
-        false, // regular selection
-    );
-    // RTL, wrap excluded cells
-    try testMouseSelection(
-        0.0, 4, // click
-        9.9, 2, // drag
-        9, 3, // expected start
-        0, 3, // expected end
-        false, // regular selection
-    );
-}
-
-test "Surface: rectangle selection logic" {
-    // We disable format to make these easier to
-    // read by pairing sets of coordinates per line.
-    // zig fmt: off
-
-    // -- LTR
-    // single column selection
-    try testMouseSelection(
-        3.0, 2, // click
-        3.9, 4, // drag
-        3, 2, // expected start
-        3, 4, // expected end
-        true, //rectangle selection
-    );
-    // including click and drag pin columns
-    try testMouseSelection(
-        3.0, 2, // click
-        5.9, 4, // drag
-        3, 2, // expected start
-        5, 4, // expected end
-        true, //rectangle selection
-    );
-    // including click pin column but not drag pin column
-    try testMouseSelection(
-        3.0, 2, // click
-        5.0, 4, // drag
-        3, 2, // expected start
-        4, 4, // expected end
-        true, //rectangle selection
-    );
-    // including drag pin column but not click pin column
-    try testMouseSelection(
-        3.9, 2, // click
-        5.9, 4, // drag
-        4, 2, // expected start
-        5, 4, // expected end
-        true, //rectangle selection
-    );
-    // including neither click nor drag pin columns
-    try testMouseSelection(
-        3.9, 2, // click
-        5.0, 4, // drag
-        4, 2, // expected start
-        4, 4, // expected end
-        true, //rectangle selection
-    );
-    // empty selection (single column on only left half)
-    try testMouseSelectionIsNull(
-        3.0, 2, // click
-        3.1, 4, // drag
-        true, //rectangle selection
-    );
-    // empty selection (single column on only right half)
-    try testMouseSelectionIsNull(
-        3.8, 2, // click
-        3.9, 4, // drag
-        true, //rectangle selection
-    );
-    // empty selection (between two columns, not crossing threshold)
-    try testMouseSelectionIsNull(
-        3.9, 2, // click
-        4.0, 4, // drag
-        true, //rectangle selection
-    );
-
-    // -- RTL
-    // single column selection
-    try testMouseSelection(
-        3.9, 2, // click
-        3.0, 4, // drag
-        3, 2, // expected start
-        3, 4, // expected end
-        true, //rectangle selection
-    );
-    // including click and drag pin columns
-    try testMouseSelection(
-        5.9, 2, // click
-        3.0, 4, // drag
-        5, 2, // expected start
-        3, 4, // expected end
-        true, //rectangle selection
-    );
-    // including click pin column but not drag pin column
-    try testMouseSelection(
-        5.9, 2, // click
-        3.9, 4, // drag
-        5, 2, // expected start
-        4, 4, // expected end
-        true, //rectangle selection
-    );
-    // including drag pin column but not click pin column
-    try testMouseSelection(
-        5.0, 2, // click
-        3.0, 4, // drag
-        4, 2, // expected start
-        3, 4, // expected end
-        true, //rectangle selection
-    );
-    // including neither click nor drag pin columns
-    try testMouseSelection(
-        5.0, 2, // click
-        3.9, 4, // drag
-        4, 2, // expected start
-        4, 4, // expected end
-        true, //rectangle selection
-    );
-    // empty selection (single column on only left half)
-    try testMouseSelectionIsNull(
-        3.1, 2, // click
-        3.0, 4, // drag
-        true, //rectangle selection
-    );
-    // empty selection (single column on only right half)
-    try testMouseSelectionIsNull(
-        3.9, 2, // click
-        3.8, 4, // drag
-        true, //rectangle selection
-    );
-    // empty selection (between two columns, not crossing threshold)
-    try testMouseSelectionIsNull(
-        4.0, 2, // click
-        3.9, 4, // drag
-        true, //rectangle selection
-    );
-
-    // -- Wrapping
-    // LTR, do not wrap
-    try testMouseSelection(
-        9.9, 2, // click
-        0.0, 4, // drag
-        9, 2, // expected start
-        0, 4, // expected end
-        true, //rectangle selection
-    );
-    // RTL, do not wrap
-    try testMouseSelection(
-        0.0, 4, // click
-        9.9, 2, // drag
-        0, 4, // expected start
-        9, 2, // expected end
-        true, //rectangle selection
-    );
 }
