@@ -5466,9 +5466,31 @@ pub fn cursorPosCallback(
     // The mouse position in the viewport.
     const pos_vp = self.posToViewportLocked(pos.x, pos.y);
 
-    // Stop selection scrolling when inside the viewport within a 1px buffer
-    // for fullscreen windows, but only when selection scrolling is active.
-    if (pos.y >= 1 and self.selection_scroll_active) {
+    // Bottom edge of the last grid row, in pixels. Derived from the grid
+    // geometry rather than screen.height so it accounts for top/bottom padding,
+    // the reserved bottom inset (folded into padding.bottom), and the leftover
+    // from row rounding — screen.height overshoots the actual grid bottom.
+    const grid_size = self.size.grid();
+    const grid_bottom: f32 = @as(f32, @floatFromInt(self.size.padding.top)) +
+        @as(f32, @floatFromInt(grid_size.rows)) *
+            @as(f32, @floatFromInt(self.size.cell.height));
+
+    // Trigger tolerance for the bottom edge. The OS caps the reported pointer y
+    // ~1 logical point short of the drawable bottom, so an edge-exact bottom
+    // trigger is unreachable on iOS/Catalyst (the top works because y reaches
+    // 0, even going negative into the chrome above the surface). Allow a couple
+    // logical points of slop so the edge is reachable on every display scale,
+    // while staying far inside a row so selecting the last line on desktop
+    // doesn't spuriously auto-scroll.
+    const scale_y: f32 = (self.rt_surface.getContentScale() catch
+        .{ .x = 1, .y = 1 }).y;
+    const bottom_slop: f32 = 2 * scale_y;
+
+    // Stop selection scrolling once the cursor is back INSIDE the grid on the y
+    // axis — i.e. clear of BOTH activation zones (top: y <= 1, bottom:
+    // y >= grid_bottom - slop). This is the exact complement of the start
+    // condition below, so the two never fight in the activation region.
+    if (pos.y > 1 and pos.y < grid_bottom - bottom_slop and self.selection_scroll_active) {
         self.queueIo(
             .{ .selection_scroll = false },
             .locked,
@@ -5563,17 +5585,12 @@ pub fn cursorPosCallback(
         // scroll even in full screen windows.
         // Note: one day, we can change this from distance to time based if we want.
         //log.warn("CURSOR POS: {} {}", .{ pos, self.size.screen });
-        // The bottom inset (e.g. the iOS home-indicator safe-area strip) is
-        // reserved as bottom padding, so the visible grid ends at
-        // screen.height - bottom_inset_px, not at the drawable's bottom edge.
-        // Use that as the auto-scroll trigger so dragging a selection to the
-        // bottom of the *visible* grid still extends past the viewport, rather
-        // than requiring the finger to reach into the reserved strip below.
-        const max_y: f32 = @floatFromInt(self.size.screen.height -| self.bottom_inset_px);
 
-        // If the mouse is outside the viewport and we have the left
-        // mouse button pressed then we need to start the scroll timer.
-        if ((pos.y <= 1 or pos.y > max_y - 1) and
+        // If the mouse is outside the viewport and we have the left mouse
+        // button pressed then we need to start the scroll timer. Top edge: a
+        // 1px buffer (y is reachable down to 0). Bottom edge: grid_bottom minus
+        // a small slop (see above) because the drawable bottom is unreachable.
+        if ((pos.y <= 1 or pos.y >= grid_bottom - bottom_slop) and
             !self.selection_scroll_active)
         {
             self.queueIo(
