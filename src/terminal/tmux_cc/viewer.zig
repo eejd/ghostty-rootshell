@@ -882,6 +882,25 @@ pub const Viewer = struct {
         /// is a brief redraw, vs. generation-tracking complexity.
         capture_pending: bool = false,
 
+        /// A pause-after recapture is in flight for this pane: the `%pause`
+        /// handler parked it uninitialized and queued the
+        /// history/visible/state batch to recover the output tmux discarded
+        /// on pause. Distinguishes a pause-recapture uninit from a STARTUP
+        /// uninit (which never set this), so a re-pause mid-recapture can be
+        /// scheduled (`recapture_again`) instead of dropped. Cleared when the
+        /// pane is finally re-initialized. ROOTSHELL-TMUX
+        /// (id=pause-after-recover)
+        pause_recapture: bool = false,
+
+        /// The pane paused AGAIN while a pause-recapture was still in flight,
+        /// so tmux discarded a fresh gap that the in-flight batch may not
+        /// cover. The pane_state completion arm re-runs the recapture
+        /// (instead of initializing) when it would otherwise mark this pane
+        /// initialized, then clears this. Self-healing: as long as pauses
+        /// keep arriving, recaptures keep being scheduled; the final batch
+        /// initializes the pane. ROOTSHELL-TMUX (id=pause-after-recover)
+        recapture_again: bool = false,
+
         /// Whether this pane is currently paused by tmux. When true,
         /// tmux is buffering output server-side and not sending
         /// `%output` for this pane. Set by `%pause` notification,
@@ -2171,14 +2190,21 @@ pub const Viewer = struct {
                 }
             },
 
-            // Pause/continue relate to refresh-client -A pause-after
-            // functionality. When tmux pauses a pane, it stops sending
-            // %output for it (output is buffered server-side). The viewer
-            // tracks the state, emits an action for runtime UI feedback,
-            // and immediately queues a continue command to resume output.
+            // Pause/continue relate to refresh-client -A pause-after flow
+            // control. When a pane falls `pause-after` seconds behind (e.g.
+            // the iOS app was backgrounded and stopped draining the link),
+            // tmux PAUSES the pane: it DISCARDS that pane's queued output
+            // (tmux control.c control_pause_pane -> control_discard_pane,
+            // control_check_age) and sends %pause. %continue does NOT replay
+            // the discarded gap — control_continue_pane just resets the
+            // offset to the pane's CURRENT content — so the only way to
+            // recover the lost bytes is to re-capture the pane. We therefore
+            // auto-continue AND re-fetch the pane's history+visible state.
+            // ROOTSHELL-TMUX (id=pause-after-recover)
             .pause => |info| {
                 if (self.panes.getEntry(info.pane_id)) |entry| {
-                    entry.value_ptr.*.paused = true;
+                    const pane = entry.value_ptr.*;
+                    pane.paused = true;
                     var act_arena = self.action_arena.promote(self.alloc);
                     defer self.action_arena = act_arena.state;
                     actions.append(act_arena.allocator(), .{ .pane_paused = .{
@@ -2187,11 +2213,62 @@ pub const Viewer = struct {
                     } }) catch {
                         log.warn("failed to queue pane_paused action for pane={}", .{info.pane_id});
                     };
-                    // Auto-continue: immediately queue a continue command so
-                    // tmux flushes buffered output and resumes the pane.
+                    // Auto-continue: resume live %output. This resets tmux's
+                    // offset to the current pane content, so the bytes
+                    // discarded while paused are gone from the stream.
                     self.queueCommands(&.{.{ .continue_pane = info.pane_id }}) catch {
                         log.warn("failed to queue continue_pane for pane={}", .{info.pane_id});
                     };
+                    // Re-capture to recover the discarded gap, but ONLY when
+                    // the pane is already initialized: a still-capturing pane
+                    // is mid-startup-batch, and stacking another batch would
+                    // corrupt the command FIFO (we just re-send continue for
+                    // it). Park the pane uninitialized + capture_pending so
+                    // live %output is suppressed during the history replay
+                    // (which blanks the active area; see
+                    // id=viewer-pane-bounded-lock) and so the trailing
+                    // session-wide pane_state can't re-initialize OTHER panes
+                    // that are mid-recapture. The pane_state re-initializes
+                    // THIS pane (completion arm in receivedPaneState).
+                    if (pane.initialized) {
+                        log.info("tmux pane {} paused (pause-after); re-capturing to recover discarded output", .{info.pane_id});
+                        pane.initialized = false;
+                        pane.capture_pending = true;
+                        pane.pause_recapture = true;
+                        self.queueCommands(&.{
+                            .{ .pane_history = .{ .id = info.pane_id, .screen_key = .primary } },
+                            .{ .pane_visible = .{ .id = info.pane_id, .screen_key = .primary } },
+                            .{ .pane_history = .{ .id = info.pane_id, .screen_key = .alternate } },
+                            .{ .pane_visible = .{ .id = info.pane_id, .screen_key = .alternate } },
+                            .{ .pane_state = self.session_id },
+                        }) catch {
+                            // OOM: re-arm so live output isn't suppressed
+                            // forever (degrade to no-recapture, not a wedge).
+                            pane.initialized = true;
+                            pane.capture_pending = false;
+                            pane.pause_recapture = false;
+                            log.warn("failed to queue pause recapture for pane={}", .{info.pane_id});
+                        };
+                    } else if (pane.pause_recapture) {
+                        // Already mid pause-recapture and tmux discarded ANOTHER
+                        // gap (the link is still congested). The in-flight batch
+                        // may have captured BEFORE this newest gap, so schedule a
+                        // FRESH recapture to run after the current batch completes
+                        // (handled in the pane_state completion arm). We do NOT
+                        // stack a second batch now — that would corrupt the
+                        // command FIFO. Self-healing: pauses keep scheduling
+                        // recaptures until the link quiets. ROOTSHELL-TMUX
+                        // (id=pause-after-recover)
+                        pane.recapture_again = true;
+                        log.info("tmux pane {} re-paused mid-recapture; scheduling another recapture", .{info.pane_id});
+                    } else {
+                        // Uninitialized because of the STARTUP capture sequence,
+                        // not a pause recapture: the in-flight capture-pane will
+                        // fetch the current content, so just continue. (A real
+                        // %pause here is near-impossible — a freshly attached
+                        // pane has ~0s of lag — but handle it safely.)
+                        log.info("tmux pane {} paused (pause-after) during startup capture; continue only", .{info.pane_id});
+                    }
                 }
             },
             .@"continue" => |info| {
@@ -2817,9 +2894,49 @@ pub const Viewer = struct {
             // them stays suppressed (handlePaneOutput) and the projected panes are
             // blank/frozen until recreated. We only skip PARSING the error body as
             // pane state. ROOTSHELL-TMUX (id=viewer-command-error)
+            //
+            // BUT honor the same mid-batch guards as the success completion
+            // arm — even when erroring this pane_state must not strand a
+            // pane that still has recovery work pending:
+            //  - capture_pending/state_pending: a pane whose OWN capture/state
+            //    batch is still queued (e.g. a concurrent pause recapture)
+            //    must NOT be force-initialized off a FOREIGN pane's erroring
+            //    session-wide pane_state — live %output would interleave
+            //    before its history/visible replay and corrupt the screen. Its
+            //    own trailing pane_state (success or error, once its captures
+            //    cleared capture_pending) initializes it.
+            //  - recapture_again: the pane paused AGAIN mid-recapture, so tmux
+            //    discarded a fresh gap. Even though this pane_state errored, we
+            //    must re-run the recapture (NOT initialize) or that second gap
+            //    is lost. Mirrors the success arm: re-queue the history/visible
+            //    batch + a shared trailing pane_state.
+            // ROOTSHELL-TMUX (id=pause-after-recover)
             if (std.meta.activeTag(command) == .pane_state) {
+                var requeue_state = false;
                 var panes_it = self.panes.iterator();
-                while (panes_it.next()) |kv| kv.value_ptr.*.initialized = true;
+                while (panes_it.next()) |kv| {
+                    const pane = kv.value_ptr.*;
+                    if (pane.capture_pending or pane.state_pending) continue;
+                    if (pane.recapture_again) {
+                        try self.queueCommands(&.{
+                            .{ .pane_history = .{ .id = kv.key_ptr.*, .screen_key = .primary } },
+                            .{ .pane_visible = .{ .id = kv.key_ptr.*, .screen_key = .primary } },
+                            .{ .pane_history = .{ .id = kv.key_ptr.*, .screen_key = .alternate } },
+                            .{ .pane_visible = .{ .id = kv.key_ptr.*, .screen_key = .alternate } },
+                        });
+                        pane.recapture_again = false;
+                        pane.capture_pending = true;
+                        requeue_state = true;
+                        continue;
+                    }
+                    pane.initialized = true;
+                    pane.pause_recapture = false;
+                }
+                if (requeue_state) {
+                    try self.queueCommands(&.{
+                        .{ .pane_state = self.session_id },
+                    });
+                }
             }
             // An app-issued query still gets its answer: the %error body is
             // the human-readable failure (e.g. "duplicate session: x") that
@@ -2894,7 +3011,29 @@ pub const Viewer = struct {
                         // can't interleave before the replay.
                         continue;
                     }
+                    if (pane.recapture_again) {
+                        // The pane paused AGAIN while this pause-recapture was
+                        // in flight, so tmux discarded a fresh gap. Re-run the
+                        // recapture instead of initializing: re-queue the
+                        // history/visible batch and keep the pane uninitialized
+                        // + capture_pending (so live %output and foreign
+                        // pane_states can't init it mid-replay). The shared
+                        // trailing pane_state queued below (requeue_state)
+                        // re-initializes it once these captures land.
+                        // ROOTSHELL-TMUX (id=pause-after-recover)
+                        try self.queueCommands(&.{
+                            .{ .pane_history = .{ .id = kv.key_ptr.*, .screen_key = .primary } },
+                            .{ .pane_visible = .{ .id = kv.key_ptr.*, .screen_key = .primary } },
+                            .{ .pane_history = .{ .id = kv.key_ptr.*, .screen_key = .alternate } },
+                            .{ .pane_visible = .{ .id = kv.key_ptr.*, .screen_key = .alternate } },
+                        });
+                        pane.recapture_again = false;
+                        pane.capture_pending = true;
+                        requeue_state = true;
+                        continue;
+                    }
                     pane.initialized = true;
+                    pane.pause_recapture = false;
                 }
                 if (requeue_state) {
                     try self.queueCommands(&.{
@@ -8341,8 +8480,9 @@ test "pause notification triggers auto-continue and full pause cycle" {
         .{ .input = .{ .tmux = blockEnd("") } },
         .{ .input = .{ .tmux = blockEnd("") } },
         .{ .input = .{ .tmux = blockEnd("") } },
-        // Pause pane 0 — should set paused=true, emit pane_paused,
-        // and auto-queue a continue_pane command.
+        // Pause pane 0 — should set paused=true, emit pane_paused, auto-queue
+        // a continue_pane command, AND (because the pane is initialized) queue
+        // the recapture batch to recover the output tmux discarded on pause.
         .{
             .input = .{ .tmux = .{ .pause = .{ .pane_id = 0 } } },
             .contains_tags = &.{ .pane_paused, .command },
@@ -8351,6 +8491,17 @@ test "pause notification triggers auto-continue and full pause cycle" {
                     // Pane should be marked paused
                     const pane = v.panes.getEntry(0).?.value_ptr.*;
                     try testing.expect(pane.paused);
+                    // Recapture branch engaged: the pane is parked
+                    // uninitialized + capture_pending so live %output is
+                    // suppressed during the history replay and a session-wide
+                    // pane_state can't re-init other panes mid-recapture.
+                    // ROOTSHELL-TMUX (id=pause-after-recover)
+                    try testing.expect(!pane.initialized);
+                    try testing.expect(pane.capture_pending);
+                    // Queue holds the in-flight continue HEAD plus the 5-command
+                    // recapture batch (history/visible primary+alt, pane_state):
+                    // len is 6, NOT 5 — the in-flight head still counts.
+                    try testing.expectEqual(@as(usize, 6), v.command_queue.len());
                     // Action should indicate paused=true
                     var found_paused = false;
                     var found_continue = false;
@@ -8444,6 +8595,127 @@ test "pause for unknown pane is ignored" {
                             return error.UnexpectedAction;
                         }
                     }
+                }
+            }).check,
+        },
+    });
+}
+
+test "two paused panes: one pane's pane_state does not re-initialize the other" {
+    // Regression for the cross-pane re-init bug in pause recapture: when two
+    // panes pause and each queues its own recapture batch, the FIRST pane's
+    // session-wide pane_state (`list-panes -s`, covers every pane) must NOT
+    // mark the OTHER still-recapturing pane initialized — that would let live
+    // %output interleave before the second pane's history replay and corrupt
+    // its screen. The `capture_pending` flag set at pause entry is the guard.
+    // ROOTSHELL-TMUX (id=pause-after-recover)
+    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    defer viewer.deinit();
+
+    const pane_state_content =
+        \\%0;42;0;1;;;0;4294967295;4294967295;0;1;0;0;0;0;0;0;0;0;0;;;0;39;8,16,24,32,40,48,56,64,72,80,88,96,104,112,120,128,136,144,152,160
+        \\%4;10;5;1;;;0;4294967295;4294967295;0;1;0;0;0;0;0;0;0;0;0;;;0;37;8,16,24,32,40,48,56,64,72,80,88,96,104,112,120,128,136,144,152,160
+    ;
+
+    try testViewer(&viewer, &.{
+        // Standard startup with a 2-pane vertical split (panes %0 and %4).
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{
+            .input = .{ .tmux = .{ .session_changed = .{ .id = 0, .name = "0" } } },
+            .contains_command = "refresh-client",
+        },
+        .{ .input = .{ .tmux = blockEnd("") }, .contains_command = "display-message" },
+        .{ .input = .{ .tmux = blockEnd("3.5a") }, .contains_command = "list-windows" },
+        .{
+            .input = .{ .tmux = blockEnd(
+                \\$0 @0 1 0 0 %0 165 79 ca97,165x79,0,0[165x40,0,0,0,165x38,0,41,4] bash
+            ) },
+            .contains_tags = &.{ .windows, .command },
+            .check = (struct {
+                fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
+                    try testing.expectEqual(2, v.panes.count());
+                    try testing.expect(v.panes.contains(0));
+                    try testing.expect(v.panes.contains(4));
+                }
+            }).check,
+        },
+        // Drain the 8 capture responses (4 per pane), the trailing pane_state,
+        // and the title subscription so both panes are initialized and the
+        // command queue is empty before we pause.
+        .{ .input = .{ .tmux = blockEnd("") } }, // ph %0 primary
+        .{ .input = .{ .tmux = blockEnd("") } }, // pv %0 primary
+        .{ .input = .{ .tmux = blockEnd("") } }, // ph %0 alternate
+        .{ .input = .{ .tmux = blockEnd("") } }, // pv %0 alternate
+        .{ .input = .{ .tmux = blockEnd("") } }, // ph %4 primary
+        .{ .input = .{ .tmux = blockEnd("") } }, // pv %4 primary
+        .{ .input = .{ .tmux = blockEnd("") } }, // ph %4 alternate
+        .{ .input = .{ .tmux = blockEnd("") }, .contains_command = "list-panes -s -t $0" }, // pv %4 alternate -> pumps pane_state
+        .{ .input = .{ .tmux = blockEnd(pane_state_content) } }, // pane_state -> pumps subscribe_titles
+        .{
+            .input = .{ .tmux = blockEnd("") }, // subscribe_titles ack (drains the queue)
+            .check = (struct {
+                fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
+                    // Both panes initialized, queue drained.
+                    try testing.expect(v.panes.getEntry(0).?.value_ptr.*.initialized);
+                    try testing.expect(v.panes.getEntry(4).?.value_ptr.*.initialized);
+                    try testing.expectEqual(@as(usize, 0), v.command_queue.len());
+                }
+            }).check,
+        },
+        // Pause %0: parks %0 uninitialized + capture_pending, leaves %4 alone.
+        .{
+            .input = .{ .tmux = .{ .pause = .{ .pane_id = 0 } } },
+            .check = (struct {
+                fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
+                    const p0 = v.panes.getEntry(0).?.value_ptr.*;
+                    const p4 = v.panes.getEntry(4).?.value_ptr.*;
+                    try testing.expect(!p0.initialized);
+                    try testing.expect(p0.capture_pending);
+                    try testing.expect(p4.initialized);
+                    try testing.expect(!p4.capture_pending);
+                }
+            }).check,
+        },
+        // Pause %4: now both panes are parked + capture_pending.
+        .{
+            .input = .{ .tmux = .{ .pause = .{ .pane_id = 4 } } },
+            .check = (struct {
+                fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
+                    const p4 = v.panes.getEntry(4).?.value_ptr.*;
+                    try testing.expect(!p4.initialized);
+                    try testing.expect(p4.capture_pending);
+                }
+            }).check,
+        },
+        // Drive %0's recapture to completion. Its trailing session-wide
+        // pane_state covers BOTH %0 and %4 — but %4 is still capture_pending,
+        // so it must stay uninitialized.
+        .{ .input = .{ .tmux = blockEnd("") } }, // continue %0 ack
+        .{ .input = .{ .tmux = blockEnd("") } }, // ph %0 primary
+        .{ .input = .{ .tmux = blockEnd("") } }, // pv %0 primary
+        .{ .input = .{ .tmux = blockEnd("") } }, // ph %0 alternate
+        .{ .input = .{ .tmux = blockEnd("") } }, // pv %0 alternate
+        .{
+            .input = .{ .tmux = blockEnd(pane_state_content) }, // %0's pane_state
+            .check = (struct {
+                fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
+                    // %0 recaptured -> initialized; %4 still mid-recapture -> NOT.
+                    try testing.expect(v.panes.getEntry(0).?.value_ptr.*.initialized);
+                    try testing.expect(!v.panes.getEntry(4).?.value_ptr.*.initialized);
+                }
+            }).check,
+        },
+        // Drive %4's recapture; its own pane_state finally re-initializes it.
+        .{ .input = .{ .tmux = blockEnd("") } }, // continue %4 ack
+        .{ .input = .{ .tmux = blockEnd("") } }, // ph %4 primary
+        .{ .input = .{ .tmux = blockEnd("") } }, // pv %4 primary
+        .{ .input = .{ .tmux = blockEnd("") } }, // ph %4 alternate
+        .{ .input = .{ .tmux = blockEnd("") } }, // pv %4 alternate
+        .{
+            .input = .{ .tmux = blockEnd(pane_state_content) }, // %4's pane_state
+            .check = (struct {
+                fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
+                    try testing.expect(v.panes.getEntry(4).?.value_ptr.*.initialized);
                 }
             }).check,
         },

@@ -2088,10 +2088,12 @@ pub const StreamHandler = struct {
                         },
 
                         .pane_paused => |pp| {
-                            // Log the pause state change. The runtime
-                            // integration (auto-continue on focus, visual
-                            // indicator) will be added in a follow-up PR.
-                            log.debug("tmux pane {} {s}", .{
+                            // Log the pause state change at info level so it's
+                            // visible in ReleaseFast (log_level = .info): a
+                            // %pause over a backgrounded/slow link is the signal
+                            // that tmux discarded a pane's output, which the
+                            // viewer recovers via re-capture (id=pause-after-recover).
+                            log.info("tmux pane {} {s}", .{
                                 pp.pane_id,
                                 if (pp.paused) "paused" else "continued",
                             });
