@@ -162,6 +162,17 @@ pub const Message = union(enum) {
     /// (id=termio-msg-recover)
     tmux_recover: void, // ROOTSHELL-TMUX (id=termio-msg-recover)
 
+    /// Full RESET of a LIVE tmux control-mode gateway after a LOSSY reconnect (the
+    /// tsshd server discarded buffered output, dropping bytes mid-`%output`/control
+    /// block). Handled on the IO thread: like `tmux_recover` (re-resync + parser
+    /// realign + re-probe + list-windows rebuild) but ADDITIONALLY force-recaptures
+    /// EVERY pane so dropped content is rebuilt to a consistent state, and re-arms
+    /// the title subscription. Preserves the window/tab topology (no flicker).
+    /// No-op unless a viewer is live in the steady command-queue state. See `Thread`
+    /// `.tmux_reset` + `StreamHandler.tmuxForceReset`. ROOTSHELL-TMUX
+    /// (id=termio-msg-reset)
+    tmux_reset: void, // ROOTSHELL-TMUX (id=termio-msg-reset)
+
     /// Forcibly exit tmux control mode LOCALLY on a live gateway, equivalent to a
     /// `%exit`: tear down the viewer, emit an empty-topology snapshot (so the app
     /// prunes the projected tabs via the normal reconcile path, which also drops

@@ -1355,6 +1355,7 @@ GHOSTTY_API bool ghostty_surface_tmux_active(ghostty_surface_t); // ROOTSHELL-TM
 GHOSTTY_API void ghostty_surface_tmux_resume(ghostty_surface_t); // ROOTSHELL-TMUX FROZEN-ABI (id=ghostty-h-tmux-resume)
 GHOSTTY_API void ghostty_surface_tmux_resume_abort(ghostty_surface_t); // ROOTSHELL-TMUX FROZEN-ABI (id=ghostty-h-tmux-resume-abort)
 GHOSTTY_API void ghostty_surface_tmux_recover(ghostty_surface_t); // ROOTSHELL-TMUX FROZEN-ABI (id=ghostty-h-tmux-recover)
+GHOSTTY_API void ghostty_surface_tmux_reset(ghostty_surface_t); // ROOTSHELL-TMUX FROZEN-ABI (id=ghostty-h-tmux-reset)
 // Heartbeat nudge: retry pane work deferred by bounded renderer-lock timeouts
 // and re-send a dropped topology snapshot. Cheap/idempotent when idle.
 GHOSTTY_API void ghostty_surface_tmux_flush_deferred(ghostty_surface_t); // ROOTSHELL-TMUX FROZEN-ABI (id=ghostty-h-tmux-flush-deferred)

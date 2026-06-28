@@ -1459,6 +1459,58 @@ pub const StreamHandler = struct {
         }
     }
 
+    /// Drive a LIVE full RESET of the control channel for a LOSSY reconnect
+    /// (`ghostty_surface_tmux_reset`): like `tmuxForceResync`, but the viewer also
+    /// force-recaptures EVERY pane so dropped `%output` content is rebuilt to a
+    /// consistent state (and re-arms the title subscription). Used when the app
+    /// detects the tsshd server discarded buffered output on a reconnect — a
+    /// discard can drop bytes mid-block, so the cheaper reuse path would leave
+    /// gapped panes/scrollback. No-op unless a viewer is live in the steady
+    /// `.command_queue` state. Runs on the IO thread; the read path holds the
+    /// renderer mutex, so `messageWriter` is safe.
+    /// ROOTSHELL-TMUX (id=streamhandler-force-reset)
+    pub fn tmuxForceReset(self: *StreamHandler) void {
+        if (comptime !tmux_enabled) return;
+        const viewer = self.tmux_viewer orelse return;
+        // Always record the intent first. If a resync is ALREADY in flight (e.g. a
+        // cheaper wedge `forceResync`), `forceReset` can't start (it needs
+        // `.command_queue`); the in-flight rebuild's marker handler honors
+        // `reset_pending` and upgrades itself into a full recapture, so a discard
+        // landing during the resync probe window is never dropped. A real
+        // `forceReset` below clears the flag. ROOTSHELL-TMUX (id=streamhandler-force-reset)
+        viewer.requestReset();
+        if (!viewer.isCommandQueue()) return;
+        log.warn("tmux output discard detected; forcing full surface reset + recapture", .{});
+        const probe_msg = termio.Message.writeReq(
+            self.alloc,
+            terminal.tmux.Viewer.resync_probe_command,
+        ) catch |err| {
+            log.warn("failed to allocate tmux reset probe message: {}; forcing control-mode exit", .{err});
+            self.tmuxForceExit();
+            return;
+        };
+
+        // Error pending app queries back before forceReset clears the
+        // command queue. ROOTSHELL-TMUX (id=streamhandler-query-command)
+        self.failPendingTmuxQueries(viewer);
+        viewer.forceReset();
+        // Realign the parser to a clean line boundary (the live stream may resume
+        // mid-line after data loss) so it does not break on the next byte.
+        self.dcs.beginTmuxResync();
+        // Same one-shot probe-drop handling as tmuxForceResync: nothing external
+        // re-drives this recovery, so on a mailbox-backpressure drop exit control
+        // mode cleanly NOW rather than wedge until the app's 15s resync-stuck
+        // watchdog. ROOTSHELL-TMUX (id=viewer-resync-probe-count)
+        if (self.messageWriterChecked(probe_msg)) {
+            viewer.recordResyncProbeSent();
+            // Surface the new state immediately (no-op unless the app opted in).
+            self.refreshTmuxDebug();
+        } else {
+            log.warn("tmux reset probe dropped (mailbox backpressure); forcing control-mode exit", .{});
+            self.tmuxForceExit();
+        }
+    }
+
     /// After feeding control-mode bytes, consume the parser's recover edge and
     /// drive a live re-resync if it was raised (a stray byte, a run of mismatched
     /// block terminators, or a runaway block — all signatures of mid-stream data

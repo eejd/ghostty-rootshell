@@ -2479,6 +2479,24 @@ pub const CAPI = struct {
     }
     // ROOTSHELL-TMUX END FROZEN-ABI (id=embedded-tmux-recover)
 
+    // ROOTSHELL-TMUX BEGIN FROZEN-ABI (id=embedded-tmux-reset)
+    // ghostty_surface_tmux_reset fully RESETS a LIVE tmux control-mode gateway to
+    // a consistent state after a LOSSY reconnect: the tsshd server discarded
+    // buffered terminal output (back-pressure-free discard mode), which can drop
+    // bytes mid-`%output`/control block. Like ghostty_surface_tmux_recover it
+    // re-resyncs the command channel WITHOUT tearing down panes, but it ALSO
+    // force-recaptures every pane's grid/scrollback and re-arms the title
+    // subscription, so the gateway is rebuilt identical to a fresh `tmux -CC
+    // attach` plus full content — no duplicated scrollback, no tab flicker. The
+    // iOS app calls it when the tssh transport reports a non-recoverable output
+    // discard. No-op unless a viewer is live in the steady command-queue state.
+    // Keep the signature stable. reapply: re-add this export inside the CAPI
+    // struct. See docs/tmux-control-mode-fork.md.
+    export fn ghostty_surface_tmux_reset(surface: *Surface) void {
+        surface.core_surface.io.queueMessage(.{ .tmux_reset = {} }, .unlocked);
+    }
+    // ROOTSHELL-TMUX END FROZEN-ABI (id=embedded-tmux-reset)
+
     // ROOTSHELL-TMUX BEGIN FROZEN-ABI (id=embedded-tmux-flush-deferred)
     // ghostty_surface_tmux_flush_deferred retries tmux pane work deferred by
     // bounded renderer-lock timeouts (spilled %output, deferred resizes,

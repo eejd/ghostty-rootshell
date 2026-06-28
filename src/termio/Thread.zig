@@ -502,6 +502,20 @@ fn drainMailbox(
                 defer io.terminal_stream.handler.tmux_unlocked_io = false;
                 io.terminal_stream.handler.tmuxForceResync();
             },
+            .tmux_reset => { // ROOTSHELL-TMUX (id=thread-reset)
+                // forceReset does everything forceResync does (command pipeline +
+                // parser realign — viewer/dcs state only) PLUS flags every pane for
+                // recapture; the pane GRID itself is only rewritten LATER when the
+                // capture replies arrive on the locked read path, so like
+                // `.tmux_recover` this needs only tmux_mutex (id=termio-tmux-mutex)
+                // + the unlocked-io flag for its bounded messageWriter sends. Stay
+                // in DCS passthrough — the channel keeps running.
+                io.tmux_mutex.lock();
+                defer io.tmux_mutex.unlock();
+                io.terminal_stream.handler.tmux_unlocked_io = true;
+                defer io.terminal_stream.handler.tmux_unlocked_io = false;
+                io.terminal_stream.handler.tmuxForceReset();
+            },
             .tmux_force_exit => { // ROOTSHELL-TMUX (id=thread-force-exit)
                 // Same locking rationale as `.tmux_resume_abort`: tearing down the
                 // viewer + emitting the empty-topology snapshot touches state the
