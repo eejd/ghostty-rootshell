@@ -52,14 +52,15 @@ blending: configpkg.Config.AlphaBlending,
 /// (rgba16float + extendedLinearDisplayP3) and the layer can present values
 /// above 1.0.
 ///
-/// ALWAYS-FLOAT: this is now defaulted to `true` and never toggled. Every
-/// surface is born into the EDR target and stays there for its whole life, so a
-/// brightness boost is a pure `brightness_gain` uniform change with NO mid-life
-/// target swap — that swap is what corrupted the window's compositing for every
-/// surface in it. The cost is that we always render linear-corrected (an
-/// extended-linear target has no hardware sRGB write-encode); at gain 1.0 the
-/// content is all <= 1.0 so it's a visual no-op brightness-wise.
-hdr_boost: bool = true,
+/// Whether the EDR (half-float extended-linear) render target is engaged.
+///
+/// Defaults to `false` (8-bit SDR, native blending) so a non-boosted surface is
+/// byte-identical to a build without this feature. It flips to `true` only when
+/// the brightness gain crosses above 1.0 (see `Renderer.reconcileHDRBoost`),
+/// which triggers a per-surface target/shader rebuild. The layer itself is
+/// EDR-*capable* from birth (see `init`), so this content/target swap never
+/// performs the window-corrupting mid-life EDR *capability* transition.
+hdr_boost: bool = false,
 
 /// The default storage mode to use for resources created with our device.
 ///

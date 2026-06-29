@@ -760,12 +760,13 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     .bools = .{
                         .cursor_wide = false,
                         .use_display_p3 = options.config.colorspace == .@"display-p3",
-                        // ALWAYS-FLOAT (Metal): the target is always extended-linear,
-                        // which has no hardware sRGB write-encode, so we must emit
-                        // linear light. Force linear-corrected blending (keeps text
-                        // weight ~native) regardless of the configured mode.
-                        .use_linear_blending = if (comptime @hasDecl(GraphicsAPI, "setHDRBoost")) true else options.config.blending.isLinear(),
-                        .use_linear_correction = if (comptime @hasDecl(GraphicsAPI, "setHDRBoost")) true else options.config.blending == .@"linear-corrected",
+                        // Born SDR: the target starts 8-bit and honors the user's
+                        // configured blending exactly, so the non-boosted path
+                        // matches a build without the HDR feature. The blending is
+                        // re-forced to linear only while the EDR target is actually
+                        // engaged (see `reconcileHDRBoost` / `changeConfig`).
+                        .use_linear_blending = options.config.blending.isLinear(),
+                        .use_linear_correction = options.config.blending == .@"linear-corrected",
                     },
                 },
                 .custom_shader_uniforms = .{
@@ -2090,34 +2091,74 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         }
 
         /// Set the HDR brightness-boost gain. 1.0 is neutral; values above 1.0
-        /// drive fragment output past SDR white on an EDR display.
+        /// drive fragment output past SDR white on the half-float EDR target.
         ///
-        /// ALWAYS-FLOAT: the render target is permanently the half-float
-        /// extended-linear EDR surface (see `Metal.hdr_boost`), so this is now
-        /// purely a uniform update — NO target/format/layer transition. That
-        /// mid-life transition is what corrupted the window for every surface in
-        /// it; never doing it is the whole point. `visible` is unused (kept for
-        /// the call signature).
+        /// At gain 1.0 the render target stays 8-bit SDR with native blending, so
+        /// the non-boosted path is identical to a build without this feature.
+        /// Only when the gain crosses above 1.0 does the target/format/blending
+        /// switch to the half-float extended-linear EDR path. That content/target
+        /// swap happens inside a layer that is EDR-*capable* from birth
+        /// (`Metal.init`), so it never performs the window-corrupting mid-life EDR
+        /// *capability* transition.
+        ///
+        /// The swap can only run on a VISIBLE surface (an occluded surface's
+        /// render thread is parked and cannot rebuild); for an occluded surface we
+        /// just stash the gain and defer the swap to `reconcileBrightness` on the
+        /// next visibility regain.
         ///
         /// EDR-only; guarded so non-Metal backends still compile (and no-op).
         pub fn setBrightness(self: *Self, gain: f32, visible: bool) void {
-            _ = visible;
             if (comptime @hasDecl(GraphicsAPI, "setHDRBoost")) {
                 self.draw_mutex.lock();
                 defer self.draw_mutex.unlock();
 
-                const clamped = std.math.clamp(gain, 1.0, 16.0);
-                self.uniforms.brightness_gain = clamped;
+                self.uniforms.brightness_gain = std.math.clamp(gain, 1.0, 16.0);
+                if (visible) self.reconcileHDRBoostLocked();
                 self.markDirty();
             }
         }
 
-        /// Previously reconciled a deferred EDR transition on becoming visible.
-        /// With the always-float target there is no transition to apply, so this
-        /// is a no-op (kept so the renderer thread's visibility handler can call
-        /// it unconditionally).
+        /// Apply an EDR target transition that the current gain requires but that
+        /// was deferred while the surface was occluded. Called from the render
+        /// thread's visibility handler on visibility regain.
         pub fn reconcileBrightness(self: *Self) void {
-            _ = self;
+            if (comptime @hasDecl(GraphicsAPI, "setHDRBoost")) {
+                self.draw_mutex.lock();
+                defer self.draw_mutex.unlock();
+                self.reconcileHDRBoostLocked();
+            }
+        }
+
+        /// Engage/disengage the half-float EDR target to match the current gain
+        /// (>1.0 = boosted). No-op when already in the right state. Caller must
+        /// hold `draw_mutex` and must only call this for a VISIBLE surface,
+        /// because it triggers a target/shader rebuild. EDR-only.
+        fn reconcileHDRBoostLocked(self: *Self) void {
+            if (comptime @hasDecl(GraphicsAPI, "setHDRBoost")) {
+                const want = self.uniforms.brightness_gain > 1.0;
+                if (self.api.hdr_boost == want) return;
+
+                // Flip the format selector (8-bit SDR <-> half-float
+                // extended-linear EDR). The layer's EDR capability is constant.
+                self.api.setHDRBoost(want);
+
+                // The extended-linear float target has no hardware sRGB
+                // write-encode, so while boosted we emit linear light
+                // (linear-corrected keeps text weight ~native). When not boosted,
+                // restore the user's configured blending exactly.
+                if (want) {
+                    self.uniforms.bools.use_linear_blending = true;
+                    self.uniforms.bools.use_linear_correction = true;
+                } else {
+                    self.uniforms.bools.use_linear_blending = self.config.blending.isLinear();
+                    self.uniforms.bools.use_linear_correction = self.config.blending == .@"linear-corrected";
+                }
+
+                // Crossing 1.0 changes pixel format + colorspace: rebuild the
+                // shaders and recreate each swap-chain frame's target.
+                self.reinitialize_shaders = true;
+                self.target_config_modified +%= 1;
+            }
         }
 
         /// Resize the screen.
