@@ -96,10 +96,15 @@ pub inline fn setSurfaceSync(self: *IOSurfaceLayer, surface: *IOSurface) void {
 /// actively-presenting surface, so the CALayer mutation can't strand an
 /// uncommitted transaction on a parked render thread.
 pub fn setPreferredDynamicRange(self: IOSurfaceLayer, high: bool) void {
-    const value: *anyopaque = if (high)
-        macos.animation.CADynamicRangeHigh
+    // preferredDynamicRange + its CADynamicRange constants only exist on the
+    // 2025 OS releases ("26"+). The accessors resolve the constants at runtime
+    // (dlsym) and return null on older systems, so bail rather than touch the
+    // property at all (both the constant read and the setter selector are
+    // unsafe there).
+    const value: *anyopaque = (if (high)
+        macos.animation.caDynamicRangeHigh()
     else
-        macos.animation.CADynamicRangeStandard;
+        macos.animation.caDynamicRangeStandard()) orelse return;
 
     const NSThread = objc.getClass("NSThread").?;
     if (NSThread.msgSend(bool, "isMainThread", .{})) {
