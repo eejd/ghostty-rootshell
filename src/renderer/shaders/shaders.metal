@@ -94,6 +94,18 @@ float luminance(float3 color) {
   return dot(color, float3(0.2126f, 0.7152f, 0.0722f));
 }
 
+// Apply the HDR brightness-boost gain plus a vibrance compensation. Operates in
+// linear light. Pushing colors brighter on an EDR display perceptually
+// desaturates them ("washed out"), so we re-saturate by an amount that ramps
+// with the boost. At gain 1.0 this is an exact no-op, so the non-boosted / SDR
+// path is byte-identical. The 0.5 factor is the tunable strength.
+float3 apply_brightness(float3 rgb, float gain) {
+  rgb *= gain;
+  float amount = 1.0f + (gain - 1.0f) * 0.5f;
+  float luma = luminance(rgb);
+  return max(mix(float3(luma), rgb, amount), float3(0.0f));
+}
+
 // https://www.w3.org/TR/2008/REC-WCAG20-20081211/#contrast-ratiodef
 //
 // Takes colors in linear RGB space. If your colors are gamma
@@ -235,7 +247,7 @@ fragment float4 bg_color_fragment(
   // HDR brightness boost: scale rgb only (alpha is premultiplied). A no-op at
   // the default gain of 1.0; in EDR mode (linear output) this is a physically
   // correct exposure multiply.
-  color.rgb *= uniforms.brightness_gain;
+  color.rgb = apply_brightness(color.rgb, uniforms.brightness_gain);
   return color;
 }
 
@@ -448,7 +460,7 @@ fragment float4 bg_image_fragment(
   rgba *= in.bg_color.a;
 
   // HDR brightness boost (rgb only; no-op at gain 1.0).
-  rgba.rgb *= uniforms.brightness_gain;
+  rgba.rgb = apply_brightness(rgba.rgb, uniforms.brightness_gain);
 
   return rgba;
 }
@@ -516,7 +528,7 @@ fragment float4 cell_bg_fragment(
     uniforms.use_linear_blending
   );
   // HDR brightness boost (rgb only; no-op at gain 1.0).
-  color.rgb *= uniforms.brightness_gain;
+  color.rgb = apply_brightness(color.rgb, uniforms.brightness_gain);
   return color;
 }
 
@@ -754,7 +766,7 @@ fragment float4 cell_text_fragment(
       color *= a;
 
       // HDR brightness boost (rgb only; no-op at gain 1.0).
-      color.rgb *= uniforms.brightness_gain;
+      color.rgb = apply_brightness(color.rgb, uniforms.brightness_gain);
 
       return color;
     }
@@ -773,7 +785,7 @@ fragment float4 cell_text_fragment(
       }
 
       // HDR brightness boost (rgb only; no-op at gain 1.0).
-      color.rgb *= uniforms.brightness_gain;
+      color.rgb = apply_brightness(color.rgb, uniforms.brightness_gain);
 
       return color;
     }
@@ -871,7 +883,7 @@ fragment float4 image_fragment(
 
   // HDR brightness boost (rgb only; no-op at gain 1.0). Keeps Kitty/placeholder
   // images consistent with the rest of the boosted surface instead of staying SDR.
-  rgba.rgb *= uniforms.brightness_gain;
+  rgba.rgb = apply_brightness(rgba.rgb, uniforms.brightness_gain);
 
   return rgba;
 }
