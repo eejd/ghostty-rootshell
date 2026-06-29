@@ -964,6 +964,22 @@ pub const Viewer = struct {
         /// replays use throwaway readonly streams, so history is unaffected.
         replay: std.ArrayList(u8) = .empty,
 
+        /// ROOTSHELL-TMUX (id=alt-screen-fix): deferred `capture-pane` VISIBLE
+        /// captures, stashed by `receivedPaneVisible` and applied to the correct
+        /// FINAL terminal screen by `receivedPaneState` once `alternate_on` is
+        /// known. `*_primary` is the no-`-a` capture (the active grid: the
+        /// alt-screen app when the pane is in its alternate screen, else the
+        /// normal screen); `*_alternate` is the `-a` capture (the saved grid: the
+        /// normal screen's last visible row(s), empty when no alternate screen).
+        /// Routing them here — instead of the old whole-`Screen` pointer swap —
+        /// keeps the normal-screen scrollback (captured by the no-`-a`
+        /// `pane_history` into `.primary`, which has the real scrollback budget)
+        /// from being stranded on the 0-scrollback alternate screen. Each is an
+        /// owned copy of the still-encoded visible bytes; freed after application
+        /// in `receivedPaneState`, or in `Pane.deinit`.
+        captured_visible_primary: ?[]const u8 = null,
+        captured_visible_alternate: ?[]const u8 = null,
+
         /// Child IO thread (`Tmux.threadEnter`): publish the attach handshake.
         /// Stores the wake context/fn and renderer mutex with release ordering,
         /// then clears `pending_attach` LAST, so a gateway acquire-load that sees
@@ -1191,6 +1207,9 @@ pub const Viewer = struct {
             for (self.clipboard_writes.items) |cw| alloc.free(cw.data);
             self.clipboard_writes.deinit(alloc);
             self.replay.deinit(alloc);
+            // ROOTSHELL-TMUX (id=alt-screen-fix): deferred visible captures.
+            if (self.captured_visible_primary) |b| alloc.free(b);
+            if (self.captured_visible_alternate) |b| alloc.free(b);
             self.pending_vt.deinit(alloc); // ROOTSHELL-TMUX (id=viewer-pane-bounded-lock)
             self.stream.deinit();
             self.terminal.deinit(alloc);
@@ -1745,6 +1764,11 @@ pub const Viewer = struct {
                 pane.clipboard_writes.clearRetainingCapacity();
                 // ...and for un-replayed passthrough inner bytes (id=streamterm-tmux-passthrough).
                 pane.replay.clearRetainingCapacity();
+                // ...and for stashed VISIBLE captures: `forceResync` reuses panes
+                // WITHOUT recapture, so a `pane_visible` reply stashed before the
+                // desync would otherwise survive and be replayed by a later
+                // unrelated session-wide pane_state. ROOTSHELL-TMUX (id=alt-screen-fix)
+                self.freeStashedVisibles(pane);
             }
         }
 
@@ -1841,6 +1865,11 @@ pub const Viewer = struct {
             // that can race with live output after the pane re-initializes).
             pane.pending_vt.clearRetainingCapacity();
             pane.pending_dropped = false;
+            // Drop any stashed VISIBLE captures: the recapture re-stashes fresh
+            // before its trailing pane_state re-applies, so an old buffer left here
+            // could be replayed stale in the window before the recapture lands.
+            // ROOTSHELL-TMUX (id=alt-screen-fix)
+            self.freeStashedVisibles(pane);
         }
         // Force a title re-push (see id=viewer-force-reset-titles): titles come
         // from the `@*:#{pane_title}` subscription, cached in `pane_titles`
@@ -3088,6 +3117,37 @@ pub const Viewer = struct {
                         requeue_state = true;
                         continue;
                     }
+                    // ROOTSHELL-TMUX (id=alt-screen-fix): receivedPaneState was
+                    // SKIPPED for this %error (the error body is not pane state), so
+                    // this pane's stashed visible captures were never applied. Apply
+                    // them best-effort to their own capture screen (no alternate_on
+                    // available on error, so no alt-aware crossing — this mirrors the
+                    // pre-defer eager behavior) before initializing, else the active
+                    // area is blank with live %output resumed on top. Lock like the
+                    // success path; on a lock timeout drop the stash (degraded — this
+                    // is already the error path).
+                    if (pane.captured_visible_primary != null or
+                        pane.captured_visible_alternate != null)
+                    {
+                        var applied = false;
+                        if (self.lockPaneBounded(
+                            pane,
+                            kv.key_ptr.*,
+                            PANE_LOCK_CAPTURE_BUDGET_NS,
+                        )) |rm| {
+                            defer pane.unlockRenderer(rm);
+                            const t: *Terminal = &pane.terminal;
+                            applyCapturedVisible(t, .primary, pane.captured_visible_primary) catch {};
+                            applyCapturedVisible(t, .alternate, pane.captured_visible_alternate) catch {};
+                            applied = true;
+                        }
+                        self.freeStashedVisibles(pane);
+                        // Wake the child renderer so the just-applied capture is
+                        // drawn — an attached idle child won't redraw on its own.
+                        // Mirrors the success path's wakePane. ROOTSHELL-TMUX
+                        // (id=alt-screen-fix)
+                        if (applied) wakePane(pane);
+                    }
                     pane.initialized = true;
                     pane.pause_recapture = false;
                 }
@@ -3487,6 +3547,12 @@ pub const Viewer = struct {
                     // alt-screen mapping) instead of requeueing pane_state
                     // forever. ROOTSHELL-TMUX (id=viewer-pane-bounded-lock)
                     pane.state_pending = false;
+                    // We never acquired the lock to apply this pane's stashed
+                    // visibles, and the completion arm is about to initialize it.
+                    // DROP the stash so a later session-wide pane_state (gated only
+                    // on !capture_pending) can't replay this stale capture content
+                    // over the now-live pane. ROOTSHELL-TMUX (id=alt-screen-fix)
+                    self.freeStashedVisibles(pane);
                     log.warn(
                         "pane {} state application dropped after retries",
                         .{data.pane_id},
@@ -3501,29 +3567,52 @@ pub const Viewer = struct {
 
             const t: *Terminal = &pane.terminal;
 
-            // ROOTSHELL-TMUX (id=alt-screen-fix): when a NEWLY captured pane is in
-            // its alternate screen, tmux's `capture-pane` (no `-a`) returned the
-            // ACTIVE grid (the alt-screen app, e.g. vim) and `capture-pane -a` the
-            // SAVED grid (the normal/shell screen) — so they landed in the OPPOSITE
-            // terminal screens (active grid -> our .primary, saved grid -> our
-            // .alternate). Swap them so .primary holds the normal screen and
-            // .alternate the alt app; the switchScreen below (to .alternate, since
-            // alternate_on) then shows the alt app instead of the shell behind it.
-            // Gate on !initialized so this runs ONCE per new pane: pane_state is
-            // session-wide, so it also revisits already-restored panes — whose own
-            // live %output stream drives their alt-screen transitions — and those
-            // must not be re-swapped. When alternate_on is false the capture->screen
-            // mapping is already correct, so no swap.
-            if (data.alternate_on and !pane.initialized) {
-                t.screens.swapPrimaryAlternate();
+            // ROOTSHELL-TMUX (id=alt-screen-fix): apply the deferred VISIBLE
+            // captures (stashed by `receivedPaneVisible`) to their FINAL screens
+            // now that `alternate_on` is known. tmux's `capture-pane` (no `-a`)
+            // returns the ACTIVE grid and `-a` the SAVED grid; when a pane is in
+            // its alternate screen the alt-screen app is the no-`-a` visible and
+            // the normal screen's last visible row(s) are the `-a` visible — they
+            // belong to OPPOSITE terminal screens. The normal-screen SCROLLBACK is
+            // the no-`-a` `pane_history`, already replayed into `.primary` (which
+            // keeps the real scrollback budget). We DO NOT swap the `Screen`
+            // objects (the old approach): that moved the scrollback onto the
+            // 0-scrollback alternate screen (history lost when the app exits) AND
+            // made that 0-scrollback object the live primary ("rubber band": no
+            // new scrollback could ever accumulate). Routing the visibles here
+            // instead keeps `.primary` as the real scrollback-bearing screen.
+            //
+            // This applies to BOTH a fresh capture/recapture (uninitialized pane)
+            // AND a live `pending_dropped` visible re-fetch of an already-initialized
+            // pane (`flushPaneDeferred` re-fetches visible+state) — in both cases the
+            // freshly stashed buffers must reach the screen, so the gate is "captures
+            // done", NOT "!initialized". Gate on `!capture_pending` so a pane whose
+            // capture suffix is still being retried waits for its FINAL trailing
+            // pane_state (when both screens' visibles are stashed together); else a
+            // partial re-stash could drop one screen. `applyCapturedVisible` no-ops on
+            // a null buffer, so a session-wide pane_state revisiting a pane with
+            // nothing freshly stashed does nothing. Free the buffers once applied; a
+            // pause/force-reset recapture re-stashes fresh before re-applying.
+            if (!pane.capture_pending) {
+                if (data.alternate_on) {
+                    // normal-screen visible = the `-a` capture -> .primary;
+                    // alt-screen app = the no-`-a` capture -> .alternate.
+                    try applyCapturedVisible(t, .primary, pane.captured_visible_alternate);
+                    try applyCapturedVisible(t, .alternate, pane.captured_visible_primary);
+                } else {
+                    // No alternate screen: the no-`-a` capture is the normal
+                    // screen's visible -> .primary.
+                    try applyCapturedVisible(t, .primary, pane.captured_visible_primary);
+                }
+                self.freeStashedVisibles(pane);
             }
 
             // Determine which screen to use based on alternate_on
             const screen_key: ScreenSet.Key = if (data.alternate_on) .alternate else .primary;
 
-            // Switch the terminal to the correct active screen. The
-            // capture sequence processes primary then alternate, so the
-            // terminal may be left on the wrong screen without this.
+            // Switch the terminal to the correct active screen. The visible
+            // application above and the capture sequence may leave the terminal
+            // on either screen, so pin it here.
             _ = try t.switchScreen(screen_key);
 
             // Set cursor position on the appropriate screen (tmux uses 0-based)
@@ -3555,14 +3644,20 @@ pub const Viewer = struct {
                 // "default" or unknown: leave as-is
             }
 
-            // Set saved cursor position on the inactive screen.
+            // Restore the saved cursor for the INACTIVE screen.
             //
-            // tmux's alternate_saved_x/y represents the cursor that was
-            // saved when switching screen modes (mode 1049). When alternate_on
-            // is true, this is the primary screen's cursor that was saved on
-            // entry to alternate mode. When alternate_on is false, this would
-            // apply to the alternate screen (though tmux typically sends
-            // MAX_INT when there's no saved position).
+            // tmux's alternate_saved_x/y is the cursor that was saved when the
+            // pane entered the alternate screen via mode 1049 — i.e. the primary
+            // screen's cursor to restore when the alt-screen app exits. When
+            // alternate_on we must seed the primary screen's DECSC saved-cursor
+            // SLOT (not just its live cursor): the live `ESC[?1049l` the app emits
+            // on exit calls `restoreCursor()`, which reads `saved_cursor` and
+            // DEFAULTS TO (0,0) when it is null — so without this the cursor snaps
+            // to the top-left after the app quits (the wrong-location report on
+            // detach/reattach). ROOTSHELL-TMUX (id=alt-screen-cursor-restore). We
+            // also set the live cursor so the position is right if the screen is
+            // shown by a non-1049 path. When alternate_on is false this targets the
+            // alternate screen (tmux usually sends MAX_INT — no saved position).
             {
                 const saved_screen_key: ScreenSet.Key = if (data.alternate_on) .primary else .alternate;
                 if (t.screens.get(saved_screen_key)) |saved_screen| cursor: {
@@ -3582,6 +3677,19 @@ pub const Viewer = struct {
                         alt_y >= saved_screen.pages.rows) break :cursor;
 
                     saved_screen.cursorAbsolute(alt_x, alt_y);
+                    // Seed the DECSC saved-cursor slot the app's exit `1049l`
+                    // restoreCursor() reads (mirrors Terminal.saveCursor; pen/
+                    // charset from the just-replayed screen, pending_wrap cleared
+                    // since we positioned absolutely).
+                    saved_screen.saved_cursor = .{
+                        .x = alt_x,
+                        .y = alt_y,
+                        .style = saved_screen.cursor.style,
+                        .protected = saved_screen.cursor.protected,
+                        .pending_wrap = false,
+                        .origin = t.modes.get(.origin),
+                        .charset = saved_screen.charset,
+                    };
                 }
             }
 
@@ -3783,50 +3891,66 @@ pub const Viewer = struct {
         };
         const pane: *Pane = entry.value_ptr.*;
 
-        // Bounded lock with re-queue, same rationale as receivedPaneHistory.
-        // A late visible rewrite leaves the cursor at the content end, so a
-        // pane_state follows to restore cursor/modes from the live truth.
-        // ROOTSHELL-TMUX (id=viewer-pane-bounded-lock)
-        const render_mutex = self.lockPaneBounded(
-            pane,
-            id,
-            PANE_LOCK_CAPTURE_BUDGET_NS,
-        ) orelse {
-            if (pane.capture_retries < PANE_CAPTURE_RETRY_MAX) {
-                pane.capture_retries += 1;
-                // Same initialization gate as the history retry: live output
-                // must not interleave before the late visible rewrite.
-                pane.capture_pending = true;
-                try self.queueCommands(&.{
-                    .{ .pane_visible = .{ .id = id, .screen_key = screen_key } },
-                    .{ .pane_state = self.session_id },
-                });
-            } else {
-                pane.capture_pending = false;
-                log.warn("pane {} visible capture dropped after retries", .{id});
-            }
-            return;
-        };
-        defer pane.unlockRenderer(render_mutex);
-        pane.capture_retries = 0;
-        pane.capture_pending = false;
-        self.flushPaneDeferred(pane, id);
+        // ROOTSHELL-TMUX (id=alt-screen-fix): STASH the visible capture; do not
+        // replay it into the terminal here. Which terminal screen a visible
+        // capture belongs to depends on the pane's `alternate_on` state, which
+        // isn't known until the trailing session-wide `pane_state` reply — so
+        // `receivedPaneState` applies these to the correct FINAL screens (no
+        // more whole-`Screen` swap, which used to strand the normal-screen
+        // scrollback on the 0-scrollback alternate screen). Because we don't
+        // touch the terminal here, no renderer lock / bounded-lock retry is
+        // needed (the stash can't fail on a lock). Dup so the bytes survive past
+        // this control block; freed in `receivedPaneState` or `Pane.deinit`. A
+        // re-queued capture (history/state lock-timeout retry) simply overwrites
+        // the prior stash.
+        const buf = try self.alloc.dupe(u8, content);
+        switch (screen_key) {
+            .primary => {
+                if (pane.captured_visible_primary) |old| self.alloc.free(old);
+                pane.captured_visible_primary = buf;
+            },
+            .alternate => {
+                if (pane.captured_visible_alternate) |old| self.alloc.free(old);
+                pane.captured_visible_alternate = buf;
+            },
+        }
+    }
 
-        const t: *Terminal = &pane.terminal;
-        _ = try t.switchScreen(screen_key);
-
-        // Erase the active area and reset the cursor to the top-left
-        // before writing the visible content.
+    /// ROOTSHELL-TMUX (id=alt-screen-fix): replay a stashed VISIBLE `capture-pane`
+    /// reply into the given terminal screen's active area. No-op when `content` is
+    /// null (the capture was absent — e.g. the `-a` visible of a pane with no
+    /// alternate screen, or a capture dropped after retries). Mirrors the
+    /// erase-active + `vtStream` replay the inline `receivedPaneVisible` used
+    /// before the visible application was deferred to `receivedPaneState` (so the
+    /// correct final screen could be chosen from `alternate_on`).
+    fn applyCapturedVisible(
+        t: *Terminal,
+        key: ScreenSet.Key,
+        content: ?[]const u8,
+    ) !void {
+        const bytes = content orelse return;
+        _ = try t.switchScreen(key);
         t.eraseDisplay(.complete, false);
         t.setCursorPos(1, 1);
-
         var stream = t.vtStream();
         defer stream.deinit();
         stream.nextSlice("\x1b[0m");
-        stream.nextSlice(content);
+        stream.nextSlice(bytes);
         stream.nextSlice("\x1b[0m");
+    }
 
-        wakePane(pane);
+    /// ROOTSHELL-TMUX (id=alt-screen-fix): free + null a pane's stashed VISIBLE
+    /// captures after they've been applied (success path in `receivedPaneState`,
+    /// degraded path in the `%error` arm). Safe on already-null buffers.
+    fn freeStashedVisibles(self: *Viewer, pane: *Pane) void {
+        if (pane.captured_visible_primary) |b| {
+            self.alloc.free(b);
+            pane.captured_visible_primary = null;
+        }
+        if (pane.captured_visible_alternate) |b| {
+            self.alloc.free(b);
+            pane.captured_visible_alternate = null;
+        }
     }
 
     /// Returns true if `c` is an octal digit (0-7).
@@ -7617,7 +7741,11 @@ test "two pane flow with pane state" {
                             .{ .active = .{} },
                         );
                         defer testing.allocator.free(str);
-                        try testing.expectEqualStrings("prompt %", str);
+                        // ROOTSHELL-TMUX (id=alt-screen-fix): the visible capture is
+                        // now STASHED, not replayed here — it is applied to the
+                        // correct screen by the trailing pane_state once alternate_on
+                        // is known. So the active area is still empty at this point.
+                        try testing.expectEqualStrings("", str);
                     }
                 }
             }).check,
@@ -7655,8 +7783,10 @@ test "two pane flow with pane state" {
                             .{ .active = .{} },
                         );
                         defer testing.allocator.free(str);
-                        // Active screen starts with "prompt %" at beginning
-                        try testing.expect(std.mem.startsWith(u8, str, "prompt %"));
+                        // ROOTSHELL-TMUX (id=alt-screen-fix): the visible capture is
+                        // now STASHED, not replayed here — applied by the trailing
+                        // pane_state. So the active area is still empty at this point.
+                        try testing.expectEqualStrings("", str);
                     }
                 }
             }).check,
@@ -7695,6 +7825,16 @@ test "two pane flow with pane state" {
                         try testing.expect(!t.modes.get(.origin));
                         try testing.expect(!t.modes.get(.keypad_keys));
                         try testing.expect(!t.modes.get(.cursor_keys));
+                        // The deferred primary visible is applied to the active
+                        // primary screen once pane_state lands (alternate_on=0).
+                        // ROOTSHELL-TMUX (id=alt-screen-fix)
+                        try testing.expectEqual(ScreenSet.Key.primary, t.screens.active_key);
+                        const vis = try screen.dumpStringAlloc(
+                            testing.allocator,
+                            .{ .active = .{} },
+                        );
+                        defer testing.allocator.free(vis);
+                        try testing.expectEqualStrings("prompt %", vis);
                     }
                     // Pane 4: cursor at (10, 5), cursor visible, wraparound on
                     {
@@ -7709,6 +7849,16 @@ test "two pane flow with pane state" {
                         try testing.expect(!t.modes.get(.origin));
                         try testing.expect(!t.modes.get(.keypad_keys));
                         try testing.expect(!t.modes.get(.cursor_keys));
+                        // The deferred primary visible is applied to the active
+                        // primary screen once pane_state lands (alternate_on=0).
+                        // ROOTSHELL-TMUX (id=alt-screen-fix)
+                        try testing.expectEqual(ScreenSet.Key.primary, t.screens.active_key);
+                        const vis = try screen.dumpStringAlloc(
+                            testing.allocator,
+                            .{ .active = .{} },
+                        );
+                        defer testing.allocator.free(vis);
+                        try testing.expectEqualStrings("prompt %", vis);
                     }
                 }
             }).check,
@@ -9455,12 +9605,19 @@ test "pane state alternate_saved cursor applies to primary screen" {
     });
 }
 
-test "pane state alternate_on swaps captured screens so the alt app is shown" {
+test "pane state alternate_on keeps the normal-screen scrollback on the primary" {
     // ROOTSHELL-TMUX (id=alt-screen-fix): a pane in its alternate screen has, in
-    // tmux, the ACTIVE grid = the alt-screen app (captured WITHOUT -a) and the
-    // SAVED grid = the normal/shell screen (captured WITH -a). The viewer must end
-    // up DISPLAYING the alt app on the alternate screen, with the normal screen
-    // behind it on the primary — not the other way around.
+    // tmux: ACTIVE grid = the alt-screen app (captured WITHOUT -a); SAVED grid =
+    // the normal screen's last visible row(s) with ZERO history (captured WITH
+    // -a). The normal screen's SCROLLBACK stays in the main grid, so the no-`-a`
+    // `pane_history` (-S) carries it. The viewer must:
+    //   * DISPLAY the alt app on the alternate screen, normal screen on primary;
+    //   * keep the normal-screen scrollback on the PRIMARY (real-budget) screen so
+    //     it survives the app exiting (`\x1b[?1049l` -> switchScreen(.primary)),
+    //     AND the primary keeps a non-zero scrollback budget (no "rubber band").
+    // The old code pointer-swapped the two Screen objects, which stranded the
+    // scrollback on the 0-budget alternate screen AND made that 0-budget object
+    // the live primary — both symptoms this test guards against.
     var viewer = try Viewer.init(testing.allocator, 80, 24);
     defer viewer.deinit();
 
@@ -9484,13 +9641,18 @@ test "pane state alternate_on swaps captured screens so the alt app is shown" {
             ) },
             .contains_tags = &.{ .windows, .command },
         },
-        // capture-pane primary history (no -a) = the ACTIVE grid (alt app)
-        .{ .input = .{ .tmux = blockEnd("") } },
-        // capture-pane primary visible (no -a) = the ACTIVE grid (alt app)
+        // capture-pane primary history (no -a) = the main grid's HISTORY = the
+        // NORMAL screen's scrollback (tmux keeps history in the main grid even
+        // while the alt app draws into its visible region).
+        .{ .input = .{ .tmux = blockEnd("OLD-HISTORY-LINE") } },
+        // capture-pane primary visible (no -a) = the main grid's VISIBLE = the
+        // alt-screen app.
         .{ .input = .{ .tmux = blockEnd("VIM") } },
-        // capture-pane alternate history (-a) = the SAVED grid (normal screen)
+        // capture-pane alternate history (-a) = the saved grid = EMPTY (tmux
+        // creates saved_grid with 0 history).
         .{ .input = .{ .tmux = blockEnd("") } },
-        // capture-pane alternate visible (-a) = the SAVED grid (normal screen)
+        // capture-pane alternate visible (-a) = the saved grid's visible = the
+        // normal screen's last visible row(s).
         .{ .input = .{ .tmux = blockEnd("SHELL") } },
         // pane_state: alternate_on=1 (this pane is in the alternate screen).
         .{
@@ -9511,9 +9673,9 @@ test "pane state alternate_on swaps captured screens so the alt app is shown" {
                         defer testing.allocator.free(str);
                         try testing.expectEqualStrings("VIM", str);
                     }
+                    const pri = t.screens.get(.primary).?;
                     // The normal/shell screen sits behind it on the primary.
                     {
-                        const pri = t.screens.get(.primary).?;
                         const str = try pri.dumpStringAlloc(
                             testing.allocator,
                             .{ .active = .{} },
@@ -9521,6 +9683,54 @@ test "pane state alternate_on swaps captured screens so the alt app is shown" {
                         defer testing.allocator.free(str);
                         try testing.expectEqualStrings("SHELL", str);
                     }
+                    // The normal-screen scrollback is on the PRIMARY (the old swap
+                    // stranded it on the alternate, where it was lost on app exit).
+                    {
+                        const str = try pri.dumpStringAlloc(
+                            testing.allocator,
+                            .{ .history = .{} },
+                        );
+                        defer testing.allocator.free(str);
+                        try testing.expectEqualStrings("OLD-HISTORY-LINE", str);
+                    }
+                    // Rubber-band guard: the live primary is the real
+                    // scrollback-bearing screen (non-zero budget) and the alternate
+                    // stays the 0-budget ephemeral screen. The old swap inverted
+                    // these, so the primary could never accumulate scrollback.
+                    try testing.expect(pri.pages.explicit_max_size > 0);
+                    try testing.expectEqual(
+                        @as(usize, 0),
+                        t.screens.get(.alternate).?.pages.explicit_max_size,
+                    );
+                }
+            }).check,
+        },
+        // The alt-screen app exits: tmux relays its `ESC [?1049l` as live output.
+        // In the %output wire format tmux escapes the ESC control byte as the
+        // backslash-octal `\033` (a raw 0x1b would be stripped as line-driver
+        // noise by receivedOutput). This switches the pane back to the primary.
+        .{
+            .input = .{ .tmux = .{ .output = .{ .pane_id = 0, .data = "\\033[?1049l" } } },
+            .check = (struct {
+                fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
+                    const pane: *Viewer.Pane = v.panes.getEntry(0).?.value_ptr.*;
+                    const t: *Terminal = &pane.terminal;
+                    // Back on the primary (normal) screen...
+                    try testing.expectEqual(ScreenSet.Key.primary, t.screens.active_key);
+                    // ...with the cursor restored to tmux's alternate_saved_x/y
+                    // (5,3 from the pane_state line), NOT snapped to (0,0). The
+                    // app's exit 1049l runs restoreCursor(), which reads the
+                    // saved-cursor slot we seeded. ROOTSHELL-TMUX
+                    // (id=alt-screen-cursor-restore)
+                    try testing.expectEqual(5, t.screens.active.cursor.x);
+                    try testing.expectEqual(3, t.screens.active.cursor.y);
+                    // ...with the scrollback history STILL present (the bug lost it).
+                    const str = try t.screens.active.dumpStringAlloc(
+                        testing.allocator,
+                        .{ .history = .{} },
+                    );
+                    defer testing.allocator.free(str);
+                    try testing.expectEqualStrings("OLD-HISTORY-LINE", str);
                 }
             }).check,
         },
