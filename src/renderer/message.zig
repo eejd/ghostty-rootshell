@@ -108,6 +108,10 @@ pub const Message = union(enum) {
     /// The macOS display ID has changed for the window.
     macos_display_id: u32,
 
+    /// Set the HDR brightness-boost gain (1.0 = SDR, >1.0 drives the surface
+    /// above SDR white via the EDR render path).
+    set_brightness: f32,
+
     pub const SearchMatches = struct {
         arena: ArenaAllocator,
         matches: []const terminal.highlight.Flattened,

@@ -42,20 +42,26 @@ width: usize,
 height: usize,
 
 pub fn init(opts: Options) !Self {
-    // We set our surface's color space to Display P3.
-    // This allows us to have "Apple-style" alpha blending,
-    // since it seems to be the case that Apple apps like
-    // Terminal and TextEdit render text in the display's
-    // color space using converted colors, which reduces,
-    // but does not fully eliminate blending artifacts.
-    const colorspace = try graphics.ColorSpace.createNamed(.displayP3);
+    // When rendering EDR (half-float) we need an extended-range, linear color
+    // space so the compositor interprets the buffer's >1.0 values as
+    // extended-range light. Otherwise we use Display P3, which gives us
+    // "Apple-style" alpha blending, since it seems to be the case that Apple
+    // apps like Terminal and TextEdit render text in the display's color space
+    // using converted colors, which reduces, but does not fully eliminate
+    // blending artifacts.
+    const edr = opts.pixel_format == .rgba16float;
+    const colorspace = try graphics.ColorSpace.createNamed(
+        if (edr) .extendedLinearDisplayP3 else .displayP3,
+    );
     defer colorspace.release();
 
     const surface = try IOSurface.init(.{
         .width = @intCast(opts.width),
         .height = @intCast(opts.height),
-        .pixel_format = .@"32BGRA",
-        .bytes_per_element = 4,
+        // EDR uses 64-bit RGBA half-float (8 bytes/element) to match the
+        // rgba16float MTLTexture; SDR uses 32-bit BGRA (4 bytes/element).
+        .pixel_format = if (edr) .@"64RGBAHalf" else .@"32BGRA",
+        .bytes_per_element = if (edr) 8 else 4,
         .colorspace = colorspace,
     });
 

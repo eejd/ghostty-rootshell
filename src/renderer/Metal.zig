@@ -48,6 +48,19 @@ queue: objc.Object,
 /// Alpha blending mode
 blending: configpkg.Config.AlphaBlending,
 
+/// When true, the render target is a half-float, extended-linear EDR surface
+/// (rgba16float + extendedLinearDisplayP3) and the layer can present values
+/// above 1.0.
+///
+/// ALWAYS-FLOAT: this is now defaulted to `true` and never toggled. Every
+/// surface is born into the EDR target and stays there for its whole life, so a
+/// brightness boost is a pure `brightness_gain` uniform change with NO mid-life
+/// target swap — that swap is what corrupted the window's compositing for every
+/// surface in it. The cost is that we always render linear-corrected (an
+/// extended-linear target has no hardware sRGB write-encode); at gain 1.0 the
+/// content is all <= 1.0 so it's a visual no-op brightness-wise.
+hdr_boost: bool = true,
+
 /// The default storage mode to use for resources created with our device.
 ///
 /// This is based on whether the device is a discrete GPU or not, since
@@ -154,6 +167,27 @@ pub fn init(alloc: Allocator, opts: rendererpkg.Options) !Metal {
     // This makes it so that our display callback will actually be called.
     layer.layer.setProperty("needsDisplayOnBoundsChange", true);
 
+    // Declare the layer EDR-CAPABLE for its whole lifetime, once, here at
+    // creation (on the main thread, before the surface ever presents). This is
+    // the cheap per-layer `preferredDynamicRange` flag — NOT a float target and
+    // NOT linear blending. The render target stays 8-bit SDR (native blending)
+    // until the user actually boosts; only then does the *content* switch to the
+    // half-float EDR target, inside an already-capable layer/window.
+    //
+    // Why born-capable rather than toggled on demand: transitioning a window
+    // from standard to EDR mid-life corrupts that window's compositing for ALL
+    // its surfaces — existing, occluded, even tabs created afterward — until the
+    // app restarts. A window that's EDR-capable from birth shows EDR content
+    // without any such transition (this is why brand-new windows work). Keeping
+    // the flag constant means a boost is just a per-surface content/target swap
+    // inside a window that was already prepared for it.
+    //
+    // At gain 1.0 nothing exceeds 1.0, so the display's EDR headroom never ramps
+    // and this is a visual + power no-op; on SDR panels the flag is inert. It's
+    // per-layer (unlike the deprecated screen-wide `wantsExtendedDynamicRange-
+    // Content`), so it doesn't tone-map or grey sibling/other-app content.
+    layer.setPreferredDynamicRange(true);
+
     return .{
         .layer = layer,
         .device = device,
@@ -169,6 +203,24 @@ pub fn deinit(self: *Metal) void {
     self.queue.release();
     self.device.release();
     self.layer.release();
+}
+
+/// Enable or disable the EDR (extended dynamic range) render path for the HDR
+/// brightness boost. When enabled, subsequent target/shader rebuilds use a
+/// half-float extended-linear surface (so fragment output can exceed 1.0);
+/// when disabled we fall back to the normal 8-bit SDR target.
+///
+/// This ONLY flips the format selector. The layer's `preferredDynamicRange` is
+/// set once at creation and left on (see `init`) — we never toggle the layer's
+/// EDR capability mid-life, because that transition corrupts the whole window's
+/// compositing. So a boost is purely a per-surface content/target swap inside a
+/// window that's already EDR-capable.
+///
+/// Callers must also trigger a shader + target rebuild (the generic renderer
+/// does this by setting `reinitialize_shaders` and bumping
+/// `target_config_modified`).
+pub fn setHDRBoost(self: *Metal, enabled: bool) void {
+    self.hdr_boost = enabled;
 }
 
 pub fn loopEnter(self: *Metal) void {
@@ -233,11 +285,15 @@ pub fn initShaders(
         alloc,
         self.device,
         custom_shaders,
-        // Using an `*_srgb` pixel format makes Metal gamma encode
-        // the pixels written to it *after* blending, which means
-        // we get linear alpha blending rather than gamma-incorrect
-        // blending.
-        if (self.blending.isLinear())
+        // In EDR mode the target is half-float so fragment output can exceed
+        // 1.0; the shaders emit linear light (see `setBrightness`).
+        if (self.hdr_boost)
+            mtl.MTLPixelFormat.rgba16float
+            // Using an `*_srgb` pixel format makes Metal gamma encode
+            // the pixels written to it *after* blending, which means
+            // we get linear alpha blending rather than gamma-incorrect
+            // blending.
+        else if (self.blending.isLinear())
             mtl.MTLPixelFormat.bgra8unorm_srgb
         else
             mtl.MTLPixelFormat.bgra8unorm,
@@ -268,10 +324,18 @@ pub fn surfaceSize(self: *const Metal) !struct { width: u32, height: u32 } {
 pub fn initTarget(self: *const Metal, width: usize, height: usize) !Target {
     return Target.init(.{
         .device = self.device,
-        // Using an `*_srgb` pixel format makes Metal gamma encode the pixels
-        // written to it *after* blending, which means we get linear alpha
-        // blending rather than gamma-incorrect blending.
-        .pixel_format = if (self.blending.isLinear())
+        // In EDR mode the target is half-float so it can store values >1.0;
+        // Target.init derives the IOSurface format + extended-linear colorspace
+        // from this. Otherwise an `*_srgb` pixel format makes Metal gamma encode
+        // the pixels written to it *after* blending, which means we get linear
+        // alpha blending rather than gamma-incorrect blending.
+        //
+        // The layer's `preferredDynamicRange` is updated alongside this in
+        // `setHDRBoost`, only ever for a visible surface (see the renderer's
+        // visibility-gated reconcile).
+        .pixel_format = if (self.hdr_boost)
+            .rgba16float
+        else if (self.blending.isLinear())
             .bgra8unorm_srgb
         else
             .bgra8unorm,
@@ -315,13 +379,22 @@ pub const imageBufferOptions = bufferOptions;
 pub const bgImageBufferOptions = bufferOptions;
 
 /// Returns the options to use when constructing textures.
+///
+/// These are the custom-shader intermediate (front/back) textures. The main
+/// Ghostty pass renders into one of them when custom shaders are enabled, so
+/// the format MUST match the pipeline format chosen in `initShaders` — in EDR
+/// mode that's `rgba16float`, otherwise binding the half-float pipeline against
+/// an 8-bit texture trips Metal validation.
 pub inline fn textureOptions(self: Metal) Texture.Options {
     return .{
         .device = self.device,
-        // Using an `*_srgb` pixel format makes Metal gamma encode the pixels
-        // written to it *after* blending, which means we get linear alpha
-        // blending rather than gamma-incorrect blending.
-        .pixel_format = if (self.blending.isLinear())
+        // In EDR mode the intermediate is half-float to match the rgba16float
+        // pipelines. Otherwise an `*_srgb` pixel format makes Metal gamma encode
+        // the pixels written to it *after* blending, which means we get linear
+        // alpha blending rather than gamma-incorrect blending.
+        .pixel_format = if (self.hdr_boost)
+            .rgba16float
+        else if (self.blending.isLinear())
             .bgra8unorm_srgb
         else
             .bgra8unorm,

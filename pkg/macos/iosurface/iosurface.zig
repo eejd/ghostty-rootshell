@@ -71,16 +71,30 @@ pub const IOSurface = opaque {
     }
 
     pub fn setColorSpace(self: *IOSurface, colorspace: *graphics.ColorSpace) void {
-        const serialized_colorspace = graphics.c.CGColorSpaceCopyPropertyList(
-            @ptrCast(colorspace),
-        ).?;
-        defer foundation.CFRelease(@constCast(serialized_colorspace));
+        // Preferred path: serialize the colorspace to a property list and
+        // attach that to the surface.
+        if (graphics.c.CGColorSpaceCopyPropertyList(@ptrCast(colorspace))) |serialized| {
+            defer foundation.CFRelease(@constCast(serialized));
+            c.IOSurfaceSetValue(
+                @ptrCast(self),
+                c.kIOSurfaceColorSpace,
+                @ptrCast(serialized),
+            );
+            return;
+        }
 
-        c.IOSurfaceSetValue(
-            @ptrCast(self),
-            c.kIOSurfaceColorSpace,
-            @ptrCast(serialized_colorspace),
-        );
+        // Fallback: some color spaces (notably the extended-linear ones used
+        // for EDR) don't serialize to a property list, so CopyPropertyList
+        // returns null. Attach the canonical name CFString instead, which
+        // kIOSurfaceColorSpace also accepts. `CGColorSpaceGetName` is a "Get"
+        // (no ownership), so we must not release the returned string.
+        if (graphics.c.CGColorSpaceGetName(@ptrCast(colorspace))) |name| {
+            c.IOSurfaceSetValue(
+                @ptrCast(self),
+                c.kIOSurfaceColorSpace,
+                @ptrCast(name),
+            );
+        }
     }
 
     pub inline fn lock(self: *IOSurface) void {

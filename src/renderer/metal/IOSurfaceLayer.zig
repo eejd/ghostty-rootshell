@@ -87,6 +87,56 @@ pub inline fn setSurfaceSync(self: *IOSurfaceLayer, surface: *IOSurface) void {
     self.layer.setProperty("contents", surface);
 }
 
+/// Sets the layer's `preferredDynamicRange` (the modern per-layer EDR control,
+/// iOS/macOS 26+) to `.high` when `high` is true, else `.standard`. Always on
+/// the main thread.
+///
+/// This is per-layer (unlike the deprecated screen-wide
+/// `wantsExtendedDynamicRangeContent`), and we only ever call it for a VISIBLE,
+/// actively-presenting surface, so the CALayer mutation can't strand an
+/// uncommitted transaction on a parked render thread.
+pub fn setPreferredDynamicRange(self: IOSurfaceLayer, high: bool) void {
+    const value: *anyopaque = if (high)
+        macos.animation.CADynamicRangeHigh
+    else
+        macos.animation.CADynamicRangeStandard;
+
+    const NSThread = objc.getClass("NSThread").?;
+    if (NSThread.msgSend(bool, "isMainThread", .{})) {
+        self.layer.setProperty("preferredDynamicRange", value);
+        return;
+    }
+
+    // Retain the layer so it survives until the async block runs; released in
+    // the callback.
+    _ = self.layer.retain();
+
+    var block = SetDynamicRangeBlock.init(.{
+        .layer = self.layer.value,
+        .value = value,
+    }, &setDynamicRangeCallback);
+
+    // dispatch_async copies the block; the objc runtime frees the copy after it
+    // runs, so the stack `block` going out of scope here is fine.
+    macos.dispatch.dispatch_async(
+        @ptrCast(macos.dispatch.queue.getMain()),
+        @ptrCast(&block),
+    );
+}
+
+const SetDynamicRangeBlock = objc.Block(struct {
+    layer: objc.c.id,
+    value: *anyopaque,
+}, .{}, void);
+
+fn setDynamicRangeCallback(
+    block: *const SetDynamicRangeBlock.Context,
+) callconv(.c) void {
+    const layer = objc.Object.fromId(block.layer);
+    defer layer.release();
+    layer.setProperty("preferredDynamicRange", block.value);
+}
+
 const SetSurfaceBlock = objc.Block(struct {
     layer: objc.c.id,
     surface: *IOSurface,

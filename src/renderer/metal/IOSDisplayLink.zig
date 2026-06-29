@@ -221,9 +221,16 @@ pub const IOSDisplayLink = struct {
         self.target.setInstanceVariable("callback_fn", null_obj);
         self.target.setInstanceVariable("callback_ctx", null_obj);
 
-        // Then stop and invalidate. CADisplayLink.invalidate detaches
-        // synchronously from the run loop, so no more ticks can fire.
-        self.stopOnMain();
+        // Actually invalidate + release the link (true teardown). Unlike
+        // stop(), which now only pauses the link, this fully detaches it from
+        // the run loop so no more ticks can ever fire. CADisplayLink.invalidate
+        // is synchronous.
+        if (self.link) |link| {
+            link.msgSend(void, objc.sel("invalidate"), .{});
+            link.release();
+            self.link = null;
+        }
+        self.running = false;
     }
 
     /// Main-thread implementation of `start()`. Caller must guarantee
@@ -231,7 +238,14 @@ pub const IOSDisplayLink = struct {
     fn startOnMain(self: *IOSDisplayLink) Error!void {
         if (self.running) return;
 
-        // Create the CADisplayLink if we haven't already
+        // Create the CADisplayLink AND add it to the run loop exactly once,
+        // then keep it alive for the link's lifetime. We pause/unpause on
+        // stop/start rather than invalidate/recreate. The occlusion+focus
+        // machinery can toggle visibility/focus a dozen-plus times in a single
+        // tab switch; rapid invalidate+recreate of a main-run-loop CADisplayLink
+        // wedges it (it reports running but never delivers ticks → a frozen tab
+        // that the render thread defers to forever via hasVsync). Pausing is the
+        // documented, cheap, race-free way to gate a CADisplayLink.
         const link = self.link orelse link: {
             const CADisplayLink = objc.getClass("CADisplayLink") orelse return error.ObjCFailed;
             const new_link = CADisplayLink.msgSend(
@@ -255,22 +269,25 @@ pub const IOSDisplayLink = struct {
             const range: CAFrameRateRange = .{ .minimum = 60, .maximum = 120, .preferred = 120 };
             retained.msgSend(void, objc.sel("setPreferredFrameRateRange:"), .{range});
 
+            // Add to the main run loop once. The link stays attached and we
+            // gate it via `paused` from here on.
+            const NSRunLoop = objc.getClass("NSRunLoop") orelse return error.ObjCFailed;
+            const mainLoop = NSRunLoop.msgSend(objc.Object, objc.sel("mainRunLoop"), .{});
+            retained.msgSend(
+                void,
+                objc.sel("addToRunLoop:forMode:"),
+                .{ mainLoop.value, NSRunLoopCommonModes },
+            );
+
             self.link = retained;
             break :link retained;
         };
 
-        // Add to the main run loop
-        const NSRunLoop = objc.getClass("NSRunLoop") orelse return error.ObjCFailed;
-        const mainLoop = NSRunLoop.msgSend(objc.Object, objc.sel("mainRunLoop"), .{});
-
-        link.msgSend(
-            void,
-            objc.sel("addToRunLoop:forMode:"),
-            .{ mainLoop.value, NSRunLoopCommonModes },
-        );
+        // Resume ticking.
+        link.msgSend(void, objc.sel("setPaused:"), .{false});
 
         self.running = true;
-        log.debug("CADisplayLink started", .{});
+        log.debug("CADisplayLink started (unpaused)", .{});
     }
 
     /// Main-thread implementation of `stop()`. Caller must guarantee
@@ -278,14 +295,15 @@ pub const IOSDisplayLink = struct {
     fn stopOnMain(self: *IOSDisplayLink) void {
         if (!self.running) return;
 
+        // Pause rather than invalidate so the link can be resumed cheaply and
+        // can't be wedged by rapid start/stop. True teardown happens only in
+        // invalidateOnMain (deinit).
         if (self.link) |link| {
-            link.msgSend(void, objc.sel("invalidate"), .{});
-            link.release();
-            self.link = null; // Must create new link on next start()
+            link.msgSend(void, objc.sel("setPaused:"), .{true});
         }
 
         self.running = false;
-        log.debug("CADisplayLink stopped", .{});
+        log.debug("CADisplayLink stopped (paused)", .{});
     }
 
     const StartStopBlock = objc.Block(struct {

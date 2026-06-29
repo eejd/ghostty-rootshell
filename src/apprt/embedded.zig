@@ -1937,6 +1937,19 @@ pub const CAPI = struct {
         };
     }
 
+    /// Set the HDR brightness-boost gain for this surface. 1.0 = SDR (no
+    /// boost); values >1.0 drive the surface above SDR white via the EDR
+    /// render path (half-float extended-linear target). Crossing the 1.0
+    /// boundary recreates the render target/pipeline on the renderer thread.
+    export fn ghostty_surface_set_brightness(surface: *Surface, gain: f32) void {
+        const core = &surface.core_surface;
+        _ = core.renderer_thread.mailbox.push(
+            .{ .set_brightness = gain },
+            .{ .forever = {} },
+        );
+        core.renderer_thread.wakeup.notify() catch {};
+    }
+
     /// Set a render-only signed rubber-band offset in pixels.
     export fn ghostty_surface_set_rubber_band_offset(
         surface: *Surface,

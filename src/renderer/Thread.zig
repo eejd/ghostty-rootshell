@@ -382,6 +382,11 @@ fn drainMailbox(self: *Thread) !void {
                 // If we became visible then we immediately rebuild cells
                 // (renderCallback skips updateFrame while invisible) and draw.
                 if (v) {
+                    // Apply any HDR brightness transition that was deferred while
+                    // we were occluded, BEFORE the draw below so the rebuild it
+                    // schedules is consumed by this same frame.
+                    self.renderer.reconcileBrightness();
+
                     self.renderer.updateFrame(
                         self.state,
                         self.flags.cursor_blink_visible,
@@ -517,6 +522,11 @@ fn drainMailbox(self: *Thread) !void {
                     try self.renderer.setMacOSDisplayID(v);
                 }
             },
+
+            // Pass the current visibility: the renderer only performs the EDR
+            // target transition while visible, and defers it otherwise (occluded
+            // surfaces can't rebuild — their render thread is parked).
+            .set_brightness => |v| self.renderer.setBrightness(v, self.flags.visible),
         }
     }
 }

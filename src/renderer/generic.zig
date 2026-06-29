@@ -760,8 +760,12 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     .bools = .{
                         .cursor_wide = false,
                         .use_display_p3 = options.config.colorspace == .@"display-p3",
-                        .use_linear_blending = options.config.blending.isLinear(),
-                        .use_linear_correction = options.config.blending == .@"linear-corrected",
+                        // ALWAYS-FLOAT (Metal): the target is always extended-linear,
+                        // which has no hardware sRGB write-encode, so we must emit
+                        // linear light. Force linear-corrected blending (keeps text
+                        // weight ~native) regardless of the configured mode.
+                        .use_linear_blending = if (comptime @hasDecl(GraphicsAPI, "setHDRBoost")) true else options.config.blending.isLinear(),
+                        .use_linear_correction = if (comptime @hasDecl(GraphicsAPI, "setHDRBoost")) true else options.config.blending == .@"linear-corrected",
                     },
                 },
                 .custom_shader_uniforms = .{
@@ -2023,6 +2027,21 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             self.uniforms.bools.use_linear_blending = config.blending.isLinear();
             self.uniforms.bools.use_linear_correction = config.blending == .@"linear-corrected";
 
+            // While the EDR target is actually active we always render linear
+            // light into the extended-linear surface, regardless of the
+            // configured blending — so re-force linear output here in case the
+            // config change reset it above. Key off the *applied* state
+            // (`api.hdr_boost`), not the desired gain: an occluded surface may
+            // have a >1.0 gain stashed but still be on the SDR target until it's
+            // reconciled on becoming visible. (Metal-only; guarded so other
+            // backends still compile.)
+            if (comptime @hasDecl(GraphicsAPI, "setHDRBoost")) {
+                if (self.api.hdr_boost) {
+                    self.uniforms.bools.use_linear_blending = true;
+                    self.uniforms.bools.use_linear_correction = true;
+                }
+            }
+
             const bg_image_config_changed =
                 self.config.bg_image_fit != config.bg_image_fit or
                 self.config.bg_image_position != config.bg_image_position or
@@ -2068,6 +2087,37 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             if (custom_shaders_changed) {
                 self.reinitialize_shaders = true;
             }
+        }
+
+        /// Set the HDR brightness-boost gain. 1.0 is neutral; values above 1.0
+        /// drive fragment output past SDR white on an EDR display.
+        ///
+        /// ALWAYS-FLOAT: the render target is permanently the half-float
+        /// extended-linear EDR surface (see `Metal.hdr_boost`), so this is now
+        /// purely a uniform update — NO target/format/layer transition. That
+        /// mid-life transition is what corrupted the window for every surface in
+        /// it; never doing it is the whole point. `visible` is unused (kept for
+        /// the call signature).
+        ///
+        /// EDR-only; guarded so non-Metal backends still compile (and no-op).
+        pub fn setBrightness(self: *Self, gain: f32, visible: bool) void {
+            _ = visible;
+            if (comptime @hasDecl(GraphicsAPI, "setHDRBoost")) {
+                self.draw_mutex.lock();
+                defer self.draw_mutex.unlock();
+
+                const clamped = std.math.clamp(gain, 1.0, 16.0);
+                self.uniforms.brightness_gain = clamped;
+                self.markDirty();
+            }
+        }
+
+        /// Previously reconciled a deferred EDR transition on becoming visible.
+        /// With the always-float target there is no transition to apply, so this
+        /// is a no-op (kept so the renderer thread's visibility handler can call
+        /// it unconditionally).
+        pub fn reconcileBrightness(self: *Self) void {
+            _ = self;
         }
 
         /// Resize the screen.

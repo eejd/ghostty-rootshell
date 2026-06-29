@@ -223,6 +223,11 @@ pub const Uniforms = extern struct {
     /// according to the WCAG 2.0 spec.
     min_contrast: f32 align(4),
 
+    /// Linear-space exposure multiplier for the HDR brightness boost. 1.0 means
+    /// no boost (SDR). Values >1.0 push output above SDR white on an EDR target.
+    /// Applied to fragment `.rgb` only (alpha is premultiplied).
+    brightness_gain: f32 align(4) = 1.0,
+
     /// The cursor position and color.
     cursor_pos: [2]u16 align(4),
     cursor_color: [4]u8 align(4),

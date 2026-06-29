@@ -18,6 +18,7 @@ struct Uniforms {
   float4 grid_padding;
   uint8_t padding_extend;
   float min_contrast;
+  float brightness_gain;
   ushort2 cursor_pos;
   uchar4 cursor_color;
   uchar4 bg_color;
@@ -226,11 +227,16 @@ fragment float4 bg_color_fragment(
   FullScreenVertexOut in [[stage_in]],
   constant Uniforms& uniforms [[buffer(1)]]
 ) {
-  return load_color(
+  float4 color = load_color(
     uniforms.bg_color,
     uniforms.use_display_p3,
     uniforms.use_linear_blending
   );
+  // HDR brightness boost: scale rgb only (alpha is premultiplied). A no-op at
+  // the default gain of 1.0; in EDR mode (linear output) this is a physically
+  // correct exposure multiply.
+  color.rgb *= uniforms.brightness_gain;
+  return color;
 }
 
 //-------------------------------------------------------------------
@@ -441,6 +447,9 @@ fragment float4 bg_image_fragment(
   // Multiply everything by the background color alpha.
   rgba *= in.bg_color.a;
 
+  // HDR brightness boost (rgb only; no-op at gain 1.0).
+  rgba.rgb *= uniforms.brightness_gain;
+
   return rgba;
 }
 
@@ -501,11 +510,14 @@ fragment float4 cell_bg_fragment(
   //       a bunch of work converting the cell color in every
   //       fragment of each cell. It's not the most epxensive
   //       operation, but it is still wasted work.
-  return load_color(
+  float4 color = load_color(
     cell_color,
     uniforms.use_display_p3,
     uniforms.use_linear_blending
   );
+  // HDR brightness boost (rgb only; no-op at gain 1.0).
+  color.rgb *= uniforms.brightness_gain;
+  return color;
 }
 
 //-------------------------------------------------------------------
@@ -741,6 +753,9 @@ fragment float4 cell_text_fragment(
       // the correct way to apply the mask.
       color *= a;
 
+      // HDR brightness boost (rgb only; no-op at gain 1.0).
+      color.rgb *= uniforms.brightness_gain;
+
       return color;
     }
 
@@ -749,16 +764,16 @@ fragment float4 cell_text_fragment(
       // are already premultiplied linear colors.
       float4 color = textureColor.sample(textureSampler, in.tex_coord);
 
-      // If we're doing linear blending, we can return this right away.
-      if (uniforms.use_linear_blending) {
-        return color;
+      // If we're not doing linear blending, unlinearize the color. Since the
+      // alpha is premultiplied, we need to divide it out before unlinearizing.
+      if (!uniforms.use_linear_blending) {
+        color.rgb /= color.a;
+        color = unlinearize(color);
+        color.rgb *= color.a;
       }
 
-      // Otherwise we need to unlinearize the color. Since the alpha is
-      // premultiplied, we need to divide it out before unlinearizing.
-      color.rgb /= color.a;
-      color = unlinearize(color);
-      color.rgb *= color.a;
+      // HDR brightness boost (rgb only; no-op at gain 1.0).
+      color.rgb *= uniforms.brightness_gain;
 
       return color;
     }
@@ -853,6 +868,10 @@ fragment float4 image_fragment(
   }
 
   rgba.rgb *= rgba.a;
+
+  // HDR brightness boost (rgb only; no-op at gain 1.0). Keeps Kitty/placeholder
+  // images consistent with the rest of the boosted surface instead of staying SDR.
+  rgba.rgb *= uniforms.brightness_gain;
 
   return rgba;
 }
