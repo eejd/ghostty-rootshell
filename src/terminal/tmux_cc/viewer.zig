@@ -364,6 +364,16 @@ pub const Viewer = struct {
     /// `sessionChanged` carries it forward to the replacement viewer.
     colors: Terminal.Colors = .default,
 
+    /// Configured cursor style/blink, set by the stream handler from the
+    /// gateway's config (mirrors `colors` above) so tmux -CC panes honor
+    /// `cursor-style`/`cursor-style-blink`. Blink is `?bool`: null means the
+    /// user did not configure it, so tmux's reported blink is honored rather
+    /// than forced (matches a normal surface, which only overrides DEC mode 12
+    /// when blink is explicitly set). Defaults match the bare `init` so tests
+    /// are unchanged. ROOTSHELL-TMUX (id=viewer-cursor-style-default)
+    default_cursor_style: Screen.CursorStyle = .block,
+    default_cursor_blink: ?bool = null,
+
     /// Whether a command has been sent to tmux and we're awaiting its
     /// `%begin`/`%end` response block. This disambiguates "queue is
     /// empty because nothing was queued" from "queue has entries but
@@ -1475,6 +1485,45 @@ pub const Viewer = struct {
         }
     }
 
+    /// Apply a live `cursor-style`/`cursor-style-blink` config change to the
+    /// viewer default and to existing panes (new panes inherit via `initLayout`).
+    /// Only panes still showing the default cursor follow the change — a pane
+    /// that set its own shape via DECSCUSR keeps it, matching how a normal
+    /// surface's `changeConfig` reapplies only when `default_cursor` is set.
+    /// ROOTSHELL-TMUX (id=viewer-cursor-style-default)
+    pub fn updateCursorDefaults(
+        self: *Viewer,
+        style: Screen.CursorStyle,
+        blink: ?bool,
+    ) void {
+        self.default_cursor_style = style;
+        self.default_cursor_blink = blink;
+
+        var it = self.panes.iterator();
+        while (it.next()) |kv| {
+            const pane = kv.value_ptr.*;
+            // Bounded renderer-mutex hold, same discipline as updateColors.
+            const m = self.lockPaneBounded(
+                pane,
+                kv.key_ptr.*,
+                PANE_LOCK_QUICK_BUDGET_NS,
+            ) orelse continue;
+            defer pane.unlockRenderer(m);
+            pane.stream.handler.default_cursor_style = style;
+            // `orelse true` mirrors how a normal surface resolves DECSCUSR 0.
+            pane.stream.handler.default_cursor_blink = blink orelse true;
+            if (pane.stream.handler.default_cursor) {
+                pane.terminal.screens.active.cursor.cursor_style = style;
+                // Only force blink when explicitly configured; an unset blink
+                // leaves the pane's current value (don't flip steady->blinking).
+                if (blink) |b| pane.terminal.modes.set(.cursor_blinking, b);
+                // Cursor is an overlay redrawn each frame, so a wake is enough —
+                // no cell rebuild needed.
+                wakePane(pane);
+            }
+        }
+    }
+
     /// Format the head command for sending IF it is queued-but-unsent, and
     /// mark it in flight. Returns the formatted command (owned by `arena_alloc`,
     /// including its trailing newline) or null when there is nothing to send.
@@ -1857,7 +1906,7 @@ pub const Viewer = struct {
             // until the recapture completes, so nothing feeds this stream meanwhile.
             pane.stream.deinit();
             pane.stream = pane.terminal.vtStream();
-            installPaneStreamEffects(pane);
+            installPaneStreamEffects(pane, self.default_cursor_style, self.default_cursor_blink);
             // Drop spilled pre-discard `%output`; the recapture replaces content.
             // Also clear `pending_dropped`: the full reset already re-fetches every
             // screen + state, so leaving it set would make the first recapture
@@ -2793,6 +2842,8 @@ pub const Viewer = struct {
         for (windows) |window| try initLayout(
             self.alloc,
             self.colors,
+            self.default_cursor_style,
+            self.default_cursor_blink,
             &self.panes,
             &panes,
             window.layout,
@@ -3615,6 +3666,24 @@ pub const Viewer = struct {
             // on either screen, so pin it here.
             _ = try t.switchScreen(screen_key);
 
+            // Classify the cursor shape tmux reports for this pane. tmux encodes
+            // a default cursor (app set no DECSCUSR) as empty OR literal
+            // "default"; an explicit block/underline/bar means the app chose it.
+            // A default follows the configured `cursor-style`/`cursor-style-blink`.
+            // Recording this on the handler's `default_cursor` flag keeps a later
+            // config reload (`updateCursorDefaults`) from clobbering an app-set
+            // cursor — the capture replay never re-emits DECSCUSR, so the flag
+            // must be reconstructed here. ROOTSHELL-TMUX (id=viewer-cursor-style-default)
+            const shape_is_default = data.cursor_shape.len == 0 or
+                std.mem.eql(u8, data.cursor_shape, "default");
+            const shape_is_explicit =
+                std.mem.eql(u8, data.cursor_shape, "block") or
+                std.mem.eql(u8, data.cursor_shape, "underline") or
+                std.mem.eql(u8, data.cursor_shape, "bar");
+            if (shape_is_default or shape_is_explicit) {
+                pane.stream.handler.default_cursor = shape_is_default;
+            }
+
             // Set cursor position on the appropriate screen (tmux uses 0-based)
             if (t.screens.get(screen_key)) |screen| {
                 cursor: {
@@ -3631,17 +3700,18 @@ pub const Viewer = struct {
                     screen.cursorAbsolute(cursor_x, cursor_y);
                 }
 
-                // Set cursor shape on this screen
-                if (data.cursor_shape.len > 0) {
-                    if (std.mem.eql(u8, data.cursor_shape, "block")) {
-                        screen.cursor.cursor_style = .block;
-                    } else if (std.mem.eql(u8, data.cursor_shape, "underline")) {
-                        screen.cursor.cursor_style = .underline;
-                    } else if (std.mem.eql(u8, data.cursor_shape, "bar")) {
-                        screen.cursor.cursor_style = .bar;
-                    }
+                // Set cursor shape on this screen; "default" follows the config.
+                // ROOTSHELL-TMUX (id=viewer-cursor-style-default)
+                if (std.mem.eql(u8, data.cursor_shape, "block")) {
+                    screen.cursor.cursor_style = .block;
+                } else if (std.mem.eql(u8, data.cursor_shape, "underline")) {
+                    screen.cursor.cursor_style = .underline;
+                } else if (std.mem.eql(u8, data.cursor_shape, "bar")) {
+                    screen.cursor.cursor_style = .bar;
+                } else if (shape_is_default) {
+                    screen.cursor.cursor_style = self.default_cursor_style;
                 }
-                // "default" or unknown: leave as-is
+                // unrecognized non-empty shape: leave the live cursor as-is
             }
 
             // Restore the saved cursor for the INACTIVE screen.
@@ -3696,8 +3766,18 @@ pub const Viewer = struct {
             // Set cursor visibility
             t.modes.set(.cursor_visible, data.cursor_flag);
 
-            // Set cursor blinking
-            t.modes.set(.cursor_blinking, data.cursor_blinking);
+            // Set cursor blinking. A default-shape cursor uses the configured
+            // blink only when explicitly set; otherwise (and for an explicit
+            // shape) it honors tmux's reported blink — so an unconfigured default
+            // doesn't force a steady cursor to blink on attach/recapture.
+            // ROOTSHELL-TMUX (id=viewer-cursor-style-default)
+            t.modes.set(
+                .cursor_blinking,
+                if (shape_is_default)
+                    (self.default_cursor_blink orelse data.cursor_blinking)
+                else
+                    data.cursor_blinking,
+            );
 
             // Terminal modes
             t.modes.set(.insert, data.insert_flag);
@@ -4509,6 +4589,8 @@ pub const Viewer = struct {
     fn initLayout(
         gpa_alloc: Allocator,
         colors: Terminal.Colors,
+        default_cursor_style: Screen.CursorStyle,
+        default_cursor_blink: ?bool,
         panes_old: *const PanesMap,
         panes_new: *PanesMap,
         layout: Layout,
@@ -4520,6 +4602,8 @@ pub const Viewer = struct {
                     try initLayout(
                         gpa_alloc,
                         colors,
+                        default_cursor_style,
+                        default_cursor_blink,
                         panes_old,
                         panes_new,
                         l,
@@ -4622,6 +4706,15 @@ pub const Viewer = struct {
                 });
                 errdefer t.deinit(gpa_alloc);
 
+                // Seed the configured cursor style/blink so a fresh pane honors
+                // `cursor-style`/`cursor-style-blink` (the handler default is
+                // seeded in installPaneStreamEffects, below). Only set blink when
+                // configured; otherwise leave the Terminal default until the
+                // pane_state replay supplies tmux's value. ROOTSHELL-TMUX
+                // (id=viewer-cursor-style-default)
+                t.screens.active.cursor.cursor_style = default_cursor_style;
+                if (default_cursor_blink) |b| t.modes.set(.cursor_blinking, b);
+
                 const pane = try gpa_alloc.create(Pane);
                 errdefer gpa_alloc.destroy(pane);
                 pane.* = .{
@@ -4633,17 +4726,26 @@ pub const Viewer = struct {
                     .pending_attach = true,
                 };
                 pane.stream = pane.terminal.vtStream();
-                installPaneStreamEffects(pane);
+                installPaneStreamEffects(pane, default_cursor_style, default_cursor_blink);
                 gop.value_ptr.* = pane;
             },
         }
     }
 
-    /// Install the per-pane effect routers on a freshly-created `pane.stream`.
-    /// Shared by `initLayout` (new pane) and the discard-reset stream re-creation
+    /// Install the per-pane effect routers on a freshly-created `pane.stream`,
+    /// and seed the handler's configured cursor defaults so DECSCUSR reset
+    /// (`CSI 0 q`) returns to `cursor-style` rather than hardcoded block. Shared
+    /// by `initLayout` (new pane) and the discard-reset stream re-creation
     /// (`flagAllPanesForReset`) so the two never drift. ROOTSHELL-TMUX
-    /// (id=viewer-force-reset)
-    fn installPaneStreamEffects(pane: *Pane) void {
+    /// (id=viewer-force-reset, id=viewer-cursor-style-default)
+    fn installPaneStreamEffects(
+        pane: *Pane,
+        default_cursor_style: Screen.CursorStyle,
+        default_cursor_blink: ?bool,
+    ) void {
+        pane.stream.handler.default_cursor_style = default_cursor_style;
+        // `orelse true` mirrors how a normal surface resolves DECSCUSR 0.
+        pane.stream.handler.default_cursor_blink = default_cursor_blink orelse true;
         // Query-reply router: this pane answers the terminal queries tmux does NOT
         // handle for a control client (kitty-keyboard, DECRQM of unknown modes,
         // OSC 4/12, etc.). Replies are buffered on the pane and routed back to the

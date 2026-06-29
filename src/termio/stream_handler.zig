@@ -416,6 +416,12 @@ pub const StreamHandler = struct {
                 );
                 // Flush the queued color reports now (the queue may be idle).
                 self.pumpTmuxCommandQueue(viewer);
+                // Push the cursor style/blink to existing panes too.
+                // ROOTSHELL-TMUX (id=viewer-cursor-style-default)
+                viewer.updateCursorDefaults(
+                    config.cursor_style,
+                    config.cursor_blink,
+                );
             }
         }
         self.default_cursor_style = config.cursor_style;
@@ -1846,6 +1852,13 @@ pub const StreamHandler = struct {
                         // terminal's colors so default-background cells match the
                         // app theme instead of the built-in dark default.
                         viewer.colors = self.terminal.colors;
+                        // Configured cursor style/blink, so panes honor
+                        // `cursor-style`/`cursor-style-blink` like a normal
+                        // surface. Blink stays nullable: null = honor tmux's
+                        // reported blink, not forced.
+                        // ROOTSHELL-TMUX (id=viewer-cursor-style-default)
+                        viewer.default_cursor_style = self.default_cursor_style;
+                        viewer.default_cursor_blink = self.default_cursor_blink;
                         self.tmux_viewer = viewer;
                         self.tmux_active_flag.store(true, .monotonic); // ROOTSHELL-TMUX (id=streamhandler-tmux-active-flag)
                         // Warm the debug mirror for this gateway's lifetime so a
