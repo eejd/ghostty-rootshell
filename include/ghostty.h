@@ -1237,6 +1237,11 @@ GHOSTTY_API void ghostty_surface_draw(ghostty_surface_t);
 GHOSTTY_API void ghostty_surface_set_smooth_scroll_offset(ghostty_surface_t, double);
 GHOSTTY_API void ghostty_surface_set_rubber_band_offset(ghostty_surface_t, double);
 GHOSTTY_API void ghostty_surface_set_brightness(ghostty_surface_t, float);
+// Render display-link health diagnostics (iOS/visionOS). _running reports the
+// link's running flag; _last_tick_age_ms is ms since its last tick (-1 if never
+// / unavailable). running==true with a large tick age == a wedged link.
+GHOSTTY_API bool ghostty_surface_vsync_running(ghostty_surface_t);
+GHOSTTY_API int64_t ghostty_surface_vsync_last_tick_age_ms(ghostty_surface_t);
 GHOSTTY_API void ghostty_surface_scroll_to_row_smooth(ghostty_surface_t, uintptr_t, double);
 GHOSTTY_API void ghostty_surface_set_bottom_inset(ghostty_surface_t, double);
 GHOSTTY_API bool ghostty_surface_selection_handle_drag_begin(ghostty_surface_t, bool);

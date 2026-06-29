@@ -370,8 +370,21 @@ fn drainMailbox(self: *Thread) !void {
             },
 
             .visible => |v| visible: {
-                // If our state didn't change we do nothing.
-                if (self.flags.visible == v) break :visible;
+                // If our state didn't change we normally do nothing — but for
+                // the visible case we still re-assert the display link. Its
+                // start/stop is dispatched async to the main run loop and can
+                // diverge from these synchronously-updated flags during rapid
+                // tab-switch / cold-restore churn, leaving a genuinely
+                // visible+focused surface with a STOPPED link (change-driven,
+                // no vsync). setVisible re-issues display_link.start() iff
+                // visible && focused (a no-op otherwise), recovering that case.
+                // The complementary running-but-wedged case is handled by
+                // drawFrame's stale-vsync fallback. This is exactly the work the
+                // app's occlusion(true) reassert backstop expects to trigger.
+                if (self.flags.visible == v) {
+                    if (v) self.renderer.setVisible(v);
+                    break :visible;
+                }
 
                 // Set our visible state
                 self.flags.visible = v;
@@ -541,9 +554,18 @@ fn drawFrame(self: *Thread, now: bool) void {
     // If we're invisible, we do not draw.
     if (!self.flags.visible) return;
 
-    // If the renderer is managing a vsync on its own, we only draw
-    // when we're forced to via `now`.
-    if (!now and self.renderer.hasVsync()) return;
+    // If the renderer is managing a vsync on its own, we normally only draw
+    // when forced via `now` (the display link drives presents). BUT if the link
+    // claims to be running yet has stopped delivering ticks (the iOS
+    // CADisplayLink "wedge"), deferring to it would freeze the surface forever —
+    // every wakeup defers to a link that never fires drawNowCallback. Detect
+    // the stale link, stop trusting it for this frame (fall through and draw
+    // directly), and request a forced re-kick to restore vsync. On macOS and a
+    // healthy iOS link, vsyncTicking() == hasVsync(), so this defers as before.
+    if (!now and self.renderer.hasVsync()) {
+        if (self.renderer.vsyncTicking()) return;
+        self.renderer.requestVsyncKick();
+    }
 
     if (must_draw_from_app_thread) {
         _ = self.app_mailbox.push(

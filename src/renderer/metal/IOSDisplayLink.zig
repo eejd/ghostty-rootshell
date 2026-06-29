@@ -32,6 +32,10 @@ const CAFrameRateRange = extern struct {
 /// Singleton subclass for the CADisplayLink target.
 var TargetClass: ?objc.Class = null;
 
+/// Minimum spacing between forced re-kicks, so a wedged-link self-heal can't
+/// spam run-loop re-registration on every frame the link is stale.
+const kick_min_interval_ms: i64 = 250;
+
 pub const IOSDisplayLink = struct {
     /// The CADisplayLink instance (null until start() is called)
     link: ?objc.Object,
@@ -39,8 +43,34 @@ pub const IOSDisplayLink = struct {
     /// The target object that receives the callback
     target: objc.Object,
 
-    /// Whether the display link is currently running
-    running: bool = false,
+    /// Whether the display link is currently running. Atomic: written on the
+    /// main run loop (start/stop/kick/invalidate OnMain), read on the render
+    /// thread (isRunning via hasVsync, isTicking) and the app thread (the vsync
+    /// diagnostics ABI).
+    running: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+
+    /// The CALLER's intended running state, committed synchronously at the
+    /// (render-thread) start()/stop() call site — distinct from `running`, which
+    /// reflects the ACTUAL state only after the async main-thread handler runs.
+    /// A forced re-kick consults this so a stale self-heal kick that lands after
+    /// a later stop() can't resurrect an intentionally hidden/unfocused link.
+    desired_running: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+
+    /// Monotonic epoch captured at init; all tick/kick timestamps are ms
+    /// relative to it (see nowMs). Immutable after init, so reads are race-free.
+    epoch: std.time.Instant,
+
+    /// Monotonic ms (since `epoch`) of the most recent CADisplayLink tick (and
+    /// of the last start(), as a grace period). Written on the main run loop
+    /// (tick / start / kick), read on the render thread (isTicking /
+    /// lastTickAgeMs). Atomic so the cross-thread read is well-defined; a
+    /// monotonic source keeps a clock adjustment from skewing staleness. 0 =
+    /// never ticked.
+    last_tick_ms: std.atomic.Value(i64) = std.atomic.Value(i64).init(0),
+
+    /// Monotonic ms (since `epoch`) of the last forced re-kick, for rate-limiting
+    /// requestKick.
+    last_kick_ms: std.atomic.Value(i64) = std.atomic.Value(i64).init(0),
 
     pub const Error = error{
         ObjCFailed,
@@ -79,10 +109,23 @@ pub const IOSDisplayLink = struct {
         self.* = .{
             .link = null,
             .target = target,
-            .running = false,
+            // running / desired_running / last_tick_ms / last_kick_ms use their
+            // atomic defaults.
+            .epoch = std.time.Instant.now() catch return error.ObjCFailed,
         };
 
         return self;
+    }
+
+    /// Monotonic milliseconds since `epoch`. A monotonic source (not wall clock)
+    /// keeps a clock adjustment from making a healthy link look stale or a
+    /// wedged one look healthy. On the (effectively never) error path we return
+    /// the last tick stamp, so age computes to ~0 and we don't self-heal a
+    /// healthy link.
+    fn nowMs(self: *const IOSDisplayLink) i64 {
+        const now = std.time.Instant.now() catch
+            return self.last_tick_ms.load(.monotonic);
+        return @intCast(now.since(self.epoch) / std.time.ns_per_ms);
     }
 
     pub fn release(self: *IOSDisplayLink) void {
@@ -144,6 +187,9 @@ pub const IOSDisplayLink = struct {
     /// the renderer thread continue, the main thread will run the
     /// addToRunLoop/invalidate block as soon as it's free.
     pub fn start(self: *IOSDisplayLink) Error!void {
+        // Commit intent synchronously (callers are render-thread serialized) so
+        // a concurrently-queued kick/stop reconciles against the latest wish.
+        self.desired_running.store(true, .monotonic);
         const NSThread = objc.getClass("NSThread") orelse return error.ObjCFailed;
         if (NSThread.msgSend(bool, "isMainThread", .{})) {
             return self.startOnMain();
@@ -163,6 +209,9 @@ pub const IOSDisplayLink = struct {
     /// Safe to call from any thread (see `start()` for rationale, including
     /// why we use dispatch_async rather than dispatch_sync).
     pub fn stop(self: *IOSDisplayLink) Error!void {
+        // Commit intent synchronously so a later kick (queued before this stop
+        // executes on main) sees desired_running=false and refuses to resurrect.
+        self.desired_running.store(false, .monotonic);
         const NSThread = objc.getClass("NSThread") orelse return error.ObjCFailed;
         if (NSThread.msgSend(bool, "isMainThread", .{})) {
             self.stopOnMain();
@@ -230,13 +279,21 @@ pub const IOSDisplayLink = struct {
             link.release();
             self.link = null;
         }
-        self.running = false;
+        self.desired_running.store(false, .monotonic);
+        self.running.store(false, .monotonic);
     }
 
     /// Main-thread implementation of `start()`. Caller must guarantee
     /// they're on the main thread.
     fn startOnMain(self: *IOSDisplayLink) Error!void {
-        if (self.running) return;
+        if (self.running.load(.monotonic)) return;
+
+        // Re-check intent on main: a stop() committed after this start was
+        // queued must win, else a stale queued start resurrects a link that
+        // should now be stopped. start()/stop() are "safe from any thread", so
+        // an off-main start() can be overtaken by an on-main stop() whose
+        // stopOnMain no-ops (running still false) before this handler runs.
+        if (!self.desired_running.load(.monotonic)) return;
 
         // Create the CADisplayLink AND add it to the run loop exactly once,
         // then keep it alive for the link's lifetime. We pause/unpause on
@@ -286,14 +343,26 @@ pub const IOSDisplayLink = struct {
         // Resume ticking.
         link.msgSend(void, objc.sel("setPaused:"), .{false});
 
-        self.running = true;
+        self.running.store(true, .monotonic);
+        // Grace stamp: treat a freshly started link as "ticking" until real
+        // ticks begin, so the stale-vsync self-heal doesn't fire on startup.
+        self.last_tick_ms.store(self.nowMs(), .monotonic);
         log.debug("CADisplayLink started (unpaused)", .{});
     }
 
     /// Main-thread implementation of `stop()`. Caller must guarantee
     /// they're on the main thread.
     fn stopOnMain(self: *IOSDisplayLink) void {
-        if (!self.running) return;
+        if (!self.running.load(.monotonic)) return;
+
+        // Symmetric to startOnMain: if a start() committed after this stop was
+        // queued, honor it — don't pause a link that should now be running (a
+        // stale queued stop pausing a desired-running link would re-introduce
+        // the freeze). With all three OnMain handlers gated on desired_running,
+        // the final running state always converges to the latest intent
+        // regardless of main-queue execution order. (invalidateOnMain is the
+        // teardown path and intentionally ignores intent.)
+        if (self.desired_running.load(.monotonic)) return;
 
         // Pause rather than invalidate so the link can be resumed cheaply and
         // can't be wedged by rapid start/stop. True teardown happens only in
@@ -302,7 +371,7 @@ pub const IOSDisplayLink = struct {
             link.msgSend(void, objc.sel("setPaused:"), .{true});
         }
 
-        self.running = false;
+        self.running.store(false, .monotonic);
         log.debug("CADisplayLink stopped (paused)", .{});
     }
 
@@ -320,13 +389,102 @@ pub const IOSDisplayLink = struct {
         block.self.stopOnMain();
     }
 
+    fn kickCallback(block: *const StartStopBlock.Context) callconv(.c) void {
+        block.self.kickOnMain();
+    }
+
     fn invalidateCallback(block: *const StartStopBlock.Context) callconv(.c) void {
         block.self.invalidateOnMain();
     }
 
-    /// Check if the display link is running.
+    /// Check if the display link is running. Safe to call from any thread.
     pub fn isRunning(self: *const IOSDisplayLink) bool {
-        return self.running;
+        return self.running.load(.monotonic);
+    }
+
+    /// Monotonic ms since the last CADisplayLink tick, or -1 if it has never
+    /// ticked / was never started. Safe to call from any thread.
+    pub fn lastTickAgeMs(self: *const IOSDisplayLink) i64 {
+        const last = self.last_tick_ms.load(.monotonic);
+        if (last == 0) return -1;
+        return self.nowMs() - last;
+    }
+
+    /// True if the link is running AND has ticked within `threshold_ms`. A link
+    /// that reports running but has stopped delivering ticks (the CADisplayLink
+    /// "wedge") returns false, so the render thread can stop trusting it. Safe
+    /// to call from any thread.
+    pub fn isTicking(self: *const IOSDisplayLink, threshold_ms: i64) bool {
+        if (!self.running.load(.monotonic)) return false;
+        const last = self.last_tick_ms.load(.monotonic);
+        if (last == 0) return false;
+        return (self.nowMs() - last) <= threshold_ms;
+    }
+
+    /// Force a wedged link to resume ticking. Unlike start(), this works even
+    /// when `running` is already true — startOnMain early-returns in that case
+    /// and so cannot recover a wedge. Rate-limited, and safe to call from the
+    /// render thread on every stale frame. No-op if the link is intended to be
+    /// stopped (a later stop()/setVisible(false)/setFocus(false) won) so a stale
+    /// kick can't resurrect a hidden/unfocused surface.
+    pub fn requestKick(self: *IOSDisplayLink) void {
+        if (!self.desired_running.load(.monotonic)) return;
+        const now = self.nowMs();
+        const last = self.last_kick_ms.load(.monotonic);
+        if (last != 0 and now - last < kick_min_interval_ms) return;
+        self.last_kick_ms.store(now, .monotonic);
+        self.kick() catch |err| {
+            log.warn("CADisplayLink kick dispatch failed err={}", .{err});
+        };
+    }
+
+    /// Dispatch a forced re-kick onto the main thread (see `start()` for the
+    /// off-main dispatch rationale).
+    fn kick(self: *IOSDisplayLink) Error!void {
+        const NSThread = objc.getClass("NSThread") orelse return error.ObjCFailed;
+        if (NSThread.msgSend(bool, "isMainThread", .{})) {
+            self.kickOnMain();
+            return;
+        }
+
+        var block = StartStopBlock.init(.{ .self = self }, &kickCallback);
+        macos.dispatch.dispatch_async(
+            @ptrCast(macos.dispatch.queue.getMain()),
+            @ptrCast(&block),
+        );
+    }
+
+    /// Main-thread implementation of `kick()`. Re-registers the (already
+    /// created) link with the run loop and unpauses it. We reuse the SAME link
+    /// object — it is rapid invalidate+RECREATE that wedges a CADisplayLink, not
+    /// a remove+re-add of an existing one. Only ever fires on detected
+    /// staleness, never on routine start/stop, so it can't itself wedge.
+    fn kickOnMain(self: *IOSDisplayLink) void {
+        const link = self.link orelse return;
+
+        // Re-check intent at execution time: a stop()/setVisible(false)/
+        // setFocus(false) may have been queued AFTER this kick was requested but
+        // run BEFORE it. Honoring the latest intent prevents resurrecting an
+        // intentionally hidden/unfocused (or torn-down) link.
+        if (!self.desired_running.load(.monotonic)) return;
+
+        const NSRunLoop = objc.getClass("NSRunLoop") orelse return;
+        const mainLoop = NSRunLoop.msgSend(objc.Object, objc.sel("mainRunLoop"), .{});
+        link.msgSend(
+            void,
+            objc.sel("removeFromRunLoop:forMode:"),
+            .{ mainLoop.value, NSRunLoopCommonModes },
+        );
+        link.msgSend(
+            void,
+            objc.sel("addToRunLoop:forMode:"),
+            .{ mainLoop.value, NSRunLoopCommonModes },
+        );
+        link.msgSend(void, objc.sel("setPaused:"), .{false});
+
+        self.running.store(true, .monotonic);
+        self.last_tick_ms.store(self.nowMs(), .monotonic);
+        log.warn("CADisplayLink re-kicked (wedge recovery: re-registered with run loop)", .{});
     }
 
     /// Get the target class, creating it if necessary.
@@ -368,6 +526,10 @@ pub const IOSDisplayLink = struct {
                 );
 
                 if (link_ptr) |link| {
+                    // Record liveness for the wedge self-heal: the render thread
+                    // treats a link that reports `running` but hasn't ticked
+                    // recently as dead and stops deferring presents to it.
+                    link.last_tick_ms.store(link.nowMs(), .monotonic);
                     if (callback_fn) |cb| {
                         cb(link, callback_ctx);
                     }

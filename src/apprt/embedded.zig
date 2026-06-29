@@ -1950,6 +1950,22 @@ pub const CAPI = struct {
         core.renderer_thread.wakeup.notify() catch {};
     }
 
+    /// Diagnostics: true if this surface's render display link reports running.
+    /// Pairs with ghostty_surface_vsync_last_tick_age_ms to detect a wedged link
+    /// (running but not delivering ticks) from the app side. Lockless atomic
+    /// read on the app thread — valid even while the render thread is stalled.
+    export fn ghostty_surface_vsync_running(surface: *Surface) bool {
+        return surface.core_surface.renderer.displayLinkRunning();
+    }
+
+    /// Diagnostics: milliseconds since this surface's render display link last
+    /// ticked, or -1 if it has never ticked / is unavailable. A large value
+    /// while ghostty_surface_vsync_running() is true indicates a wedged link.
+    /// iOS/visionOS only; -1 on macOS.
+    export fn ghostty_surface_vsync_last_tick_age_ms(surface: *Surface) i64 {
+        return surface.core_surface.renderer.displayLinkLastTickAgeMs();
+    }
+
     /// Set a render-only signed rubber-band offset in pixels.
     export fn ghostty_surface_set_rubber_band_offset(
         surface: *Surface,

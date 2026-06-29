@@ -1112,6 +1112,55 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             return display_link.isRunning();
         }
 
+        /// iOS/visionOS wedge self-heal threshold: a CADisplayLink that reports
+        /// `running` but hasn't delivered a tick in this long is treated as
+        /// dead. Generous vs the 8–16ms healthy cadence so brief hitches (or a
+        /// busy main thread mid tab-switch) don't trip it.
+        const vsync_stale_ms: i64 = 100;
+
+        /// True if vsync is not just "running" but actually delivering ticks.
+        /// On macOS (CVDisplayLink) there is no CADisplayLink wedge, so this is
+        /// equivalent to hasVsync(); on iOS/visionOS it additionally requires a
+        /// recent tick, letting the render thread detect and stop trusting a
+        /// wedged link (which would otherwise freeze the surface forever).
+        pub fn vsyncTicking(self: *const Self) bool {
+            if (comptime DisplayLink == void) return false;
+            const display_link = self.display_link orelse return false;
+            return switch (builtin.os.tag) {
+                .ios, .visionos => display_link.isTicking(vsync_stale_ms),
+                else => display_link.isRunning(),
+            };
+        }
+
+        /// Force a wedged display link to resume ticking. iOS/visionOS only
+        /// (the wedge is a CADisplayLink phenomenon); no-op elsewhere. The link
+        /// rate-limits the actual re-kick internally.
+        pub fn requestVsyncKick(self: *Self) void {
+            if (comptime DisplayLink == void) return;
+            if (comptime builtin.os.tag != .ios and builtin.os.tag != .visionos) return;
+            const display_link = self.display_link orelse return;
+            display_link.requestKick();
+        }
+
+        /// Diagnostics: is the display link's `running` flag set?
+        pub fn displayLinkRunning(self: *const Self) bool {
+            if (comptime DisplayLink == void) return false;
+            const display_link = self.display_link orelse return false;
+            return display_link.isRunning();
+        }
+
+        /// Diagnostics: ms since the last display-link tick, or -1 if
+        /// unavailable. iOS/visionOS only (macOS CVDisplayLink doesn't track
+        /// per-tick time); returns -1 elsewhere.
+        pub fn displayLinkLastTickAgeMs(self: *const Self) i64 {
+            if (comptime DisplayLink == void) return -1;
+            const display_link = self.display_link orelse return -1;
+            return switch (builtin.os.tag) {
+                .ios, .visionos => display_link.lastTickAgeMs(),
+                else => -1,
+            };
+        }
+
         /// Callback when the focus changes for the terminal this is rendering.
         ///
         /// Must be called on the render thread.
