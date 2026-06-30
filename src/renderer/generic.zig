@@ -587,6 +587,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             blending: configpkg.Config.AlphaBlending,
             background_blur: configpkg.Config.BackgroundBlur,
             scroll_to_bottom_on_output: bool,
+            custom_shader_animation: configpkg.CustomShaderAnimation,
 
             pub fn init(
                 alloc_gpa: Allocator,
@@ -662,6 +663,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     .blending = config.@"alpha-blending",
                     .background_blur = config.@"background-blur",
                     .scroll_to_bottom_on_output = config.@"scroll-to-bottom".output,
+                    .custom_shader_animation = config.@"custom-shader-animation",
                     .arena = arena,
                 };
             }
@@ -1103,6 +1105,23 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             return self.cursor_animation_active;
         }
 
+        /// Whether continuous animation should drive a full redraw right now,
+        /// honoring the custom-shader-animation policy. Mirrors the gate in
+        /// Thread.syncDrawTimer so that a display link kept running on an
+        /// unfocused-but-visible surface (iOS, where the link is decoupled from
+        /// focus to avoid the render-freeze) does NOT animate custom shaders
+        /// against the documented default (custom-shader-animation = true →
+        /// animate only when focused). On macOS the link only runs while focused,
+        /// so this is equivalent to hasAnimations() there.
+        fn shouldAnimate(self: *const Self) bool {
+            if (!self.hasAnimations()) return false;
+            return switch (self.config.custom_shader_animation) {
+                .always => true,
+                .true => self.focused,
+                .false => false,
+            };
+        }
+
         /// True if our renderer is using vsync. If true, the renderer or apprt
         /// is responsible for triggering draw_now calls to the render thread.
         /// That is the only way to trigger a drawFrame.
@@ -1172,10 +1191,15 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             // Flag that we need to update our custom shaders
             self.custom_shader_focused_changed = true;
 
-            // If we're not focused, then we want to stop the display link
-            // because it is a waste of resources and we can move to pure
-            // change-driven updates.
-            if (comptime DisplayLink != void) link: {
+            // macOS (CVDisplayLink): the link runs only while focused, to move
+            // to change-driven updates when unfocused. iOS/visionOS deliberately
+            // do NOT gate the link on focus — visibility owns it (see setVisible)
+            // — because iOS focus delivery is gated/droppable and a focus change
+            // must never strand a still-visible surface with a stopped link (the
+            // permanent render-freeze). So this block is macOS-only.
+            if (comptime DisplayLink != void and
+                builtin.os.tag != .ios and builtin.os.tag != .visionos)
+            link: {
                 const display_link = self.display_link orelse break :link;
                 if (focus) {
                     display_link.start() catch {};
@@ -1189,12 +1213,21 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         ///
         /// Must be called on the render thread.
         pub fn setVisible(self: *Self, visible: bool) void {
-            // If we're not visible, then we want to stop the display link
-            // because it is a waste of resources and we can move to pure
-            // change-driven updates.
             if (comptime DisplayLink != void) link: {
                 const display_link = self.display_link orelse break :link;
-                if (visible and self.focused) {
+                const running = switch (builtin.os.tag) {
+                    // iOS/visionOS: occlusion is the reliable, non-droppable
+                    // signal; focus delivery is gated and droppable. A visible
+                    // surface keeps its link running REGARDLESS of focus — else a
+                    // dropped/raced focus(true) leaves it stopped-while-visible →
+                    // the permanent freeze. Only one tab is normally on-screen so
+                    // the cost of an unfocused-but-visible link is negligible, and
+                    // split panes render smoothly.
+                    .ios, .visionos => visible,
+                    // macOS (CVDisplayLink): unchanged — visible AND focused.
+                    else => visible and self.focused,
+                };
+                if (running) {
                     display_link.start() catch {};
                 } else {
                     display_link.stop() catch {};
@@ -1685,7 +1718,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             const needs_redraw =
                 size_changed or
                 self.cells_rebuilt or
-                self.hasAnimations();
+                self.shouldAnimate();
 
             if (!needs_redraw) {
                 // We still need to present the last target again, because the

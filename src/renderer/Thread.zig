@@ -369,31 +369,25 @@ fn drainMailbox(self: *Thread) !void {
                 handle.release(self.alloc);
             },
 
-            .visible => |v| visible: {
-                // If our state didn't change we normally do nothing — but for
-                // the visible case we still re-assert the display link. Its
-                // start/stop is dispatched async to the main run loop and can
-                // diverge from these synchronously-updated flags during rapid
-                // tab-switch / cold-restore churn, leaving a genuinely
-                // visible+focused surface with a STOPPED link (change-driven,
-                // no vsync). setVisible re-issues display_link.start() iff
-                // visible && focused (a no-op otherwise), recovering that case.
-                // The complementary running-but-wedged case is handled by
-                // drawFrame's stale-vsync fallback. This is exactly the work the
-                // app's occlusion(true) reassert backstop expects to trigger.
-                if (self.flags.visible == v) {
-                    if (v) self.renderer.setVisible(v);
-                    break :visible;
+            .visible => |v| {
+                // State bookkeeping only on an ACTUAL transition.
+                if (self.flags.visible != v) {
+                    self.flags.visible = v;
+
+                    // Visibility affects our QoS class
+                    self.setQosClass();
                 }
 
-                // Set our visible state
-                self.flags.visible = v;
-
-                // Visibility affects our QoS class
-                self.setQosClass();
-
-                // If we became visible then we immediately rebuild cells
-                // (renderCallback skips updateFrame while invisible) and draw.
+                // On ANY occlusion(true) — transition OR redundant — rebuild
+                // cells and FORCE a present. The app re-asserts occlusion(true)
+                // (a reliable, non-droppable core push) to recover a surface it
+                // believes is on-screen. A redundant assert that only reconciled
+                // the link but never drew would leave a stranded-visible surface
+                // (a dropped occlusion(false) left flags.visible stuck true) BLANK
+                // forever: every other redraw path funnels through renderCallback,
+                // which hard-stops while !visible, and the recovery message no-ops
+                // at the flag check. Forcing updateFrame + drawFrame here
+                // guarantees a fresh frame whenever the app says we're visible.
                 if (v) {
                     // Apply any HDR brightness transition that was deferred while
                     // we were occluded, BEFORE the draw below so the rebuild it
@@ -405,11 +399,18 @@ fn drainMailbox(self: *Thread) !void {
                         self.flags.cursor_blink_visible,
                         self.cursor_blink_alpha,
                     ) catch |err|
-                        log.warn("error rendering on visibility regain err={}", .{err});
+                        log.warn("error rendering on visibility assert err={}", .{err});
+
+                    // drawFrame(false): with a stopped link (the freeze case) this
+                    // draws directly; on a healthy ticking link it still defers to
+                    // vsync (no wasted present); on a wedged link it re-kicks.
                     self.drawFrame(false);
                 }
 
-                // Notify the renderer so it can update any state.
+                // Reconcile the display link from the authoritative flags. On iOS
+                // setVisible(true) starts the link for any visible surface
+                // regardless of focus; on macOS it preserves the visible&&focused
+                // gate. Idempotent (start/stop no-op when already in that state).
                 self.renderer.setVisible(v);
 
                 // Note that we're explicitly today not stopping any
