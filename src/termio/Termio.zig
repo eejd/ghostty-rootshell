@@ -489,6 +489,23 @@ pub fn changeConfig(self: *Termio, td: *ThreadData, config: *DerivedConfig) !voi
         break :cursor color.toTerminalRGB() orelse break :cursor null;
     };
 
+    // ROOTSHELL-TMUX (id=termio-tmux-pane-theme): a tmux pane renders from the
+    // gateway-owned viewer_terminal (threadEnter swaps renderer_state.terminal
+    // to it), not self.terminal, so mirror the theme colors there too. Safe
+    // under renderer_state.mutex (held above) = this pane's renderer_mutex.
+    if (self.backend == .tmux) {
+        if (self.backend.tmux.viewer_terminal) |vt| {
+            vt.colors.palette.changeDefault(config.palette);
+            vt.flags.dirty.palette = true;
+            vt.colors.background.default = config.background.toTerminalRGB();
+            vt.colors.foreground.default = config.foreground.toTerminalRGB();
+            vt.colors.cursor.default = cursor: {
+                const color = config.cursor_color orelse break :cursor null;
+                break :cursor color.toTerminalRGB() orelse break :cursor null;
+            };
+        }
+    }
+
     // Set the image limits
     try self.terminal.setKittyGraphicsSizeLimit(self.alloc, config.image_storage_limit);
     self.terminal.setKittyGraphicsLoadingLimits(.all);
