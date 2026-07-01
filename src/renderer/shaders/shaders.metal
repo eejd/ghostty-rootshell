@@ -94,23 +94,35 @@ float luminance(float3 color) {
   return dot(color, float3(0.2126f, 0.7152f, 0.0722f));
 }
 
-// Apply the HDR brightness-boost gain plus a vibrance compensation. Operates in
-// linear light. The boost is intentionally not a flat exposure multiply: a flat
-// multiply lifts dark text on light themes, making gray/black foregrounds look
-// thin and harder to read. Instead, protect shadows and ramp the boost into
-// highlights so bright paper/text can use EDR while dark ink stays anchored.
+// Apply the HDR brightness-boost gain plus a vibrance compensation. Operates
+// in linear light on premultiplied colors; `alpha` is the premultiplication
+// factor (coverage and/or opacity) already baked into `rgb`. The boost is
+// intentionally not a flat exposure multiply: a flat multiply lifts dark text
+// on light themes, making gray/black foregrounds look thin and harder to read.
+// Instead, protect shadows and ramp the boost into highlights so bright
+// paper/text can use EDR while dark ink stays anchored.
+//
+// The highlight weight must be computed on the UNpremultiplied color: the
+// curve is nonlinear, so weighting the premultiplied value would give the
+// antialiased edges of a bright glyph less gain than its interior (dark
+// fringes) and would scale the whole-window boost with background-opacity.
+// The weight is driven by the max component rather than luminance so that
+// full-intensity saturated colors (pure blue/red ANSI text) boost alongside
+// white instead of being anchored like ink; for grayscale the two are
+// identical, so dark/gray text keeps the same protection.
 //
 // Pushing colors brighter on an EDR display perceptually desaturates them
 // ("washed out"), so we re-saturate by an amount that ramps with the applied
 // boost. At gain 1.0 this is an exact no-op, so the non-boosted / SDR path is
 // byte-identical. The 0.5 factor is the tunable strength.
-float3 apply_brightness(float3 rgb, float gain) {
+float3 apply_brightness(float3 rgb, float alpha, float gain) {
   if (gain <= 1.0f) {
     return rgb;
   }
 
-  float input_luma = luminance(rgb);
-  float highlight_weight = smoothstep(0.18f, 0.82f, input_luma);
+  float3 base = rgb / max(alpha, 0.0001f);
+  float brightness = max(base.r, max(base.g, base.b));
+  float highlight_weight = smoothstep(0.18f, 0.82f, brightness);
   float applied_gain = mix(1.0f, gain, highlight_weight);
   rgb *= applied_gain;
 
@@ -259,7 +271,7 @@ fragment float4 bg_color_fragment(
   );
   // HDR brightness boost: tone-curve rgb only (alpha is premultiplied). A no-op
   // at the default gain of 1.0.
-  color.rgb = apply_brightness(color.rgb, uniforms.brightness_gain);
+  color.rgb = apply_brightness(color.rgb, color.a, uniforms.brightness_gain);
   return color;
 }
 
@@ -472,7 +484,7 @@ fragment float4 bg_image_fragment(
   rgba *= in.bg_color.a;
 
   // HDR brightness boost (tone-curve rgb only; no-op at gain 1.0).
-  rgba.rgb = apply_brightness(rgba.rgb, uniforms.brightness_gain);
+  rgba.rgb = apply_brightness(rgba.rgb, rgba.a, uniforms.brightness_gain);
 
   return rgba;
 }
@@ -540,7 +552,7 @@ fragment float4 cell_bg_fragment(
     uniforms.use_linear_blending
   );
   // HDR brightness boost (tone-curve rgb only; no-op at gain 1.0).
-  color.rgb = apply_brightness(color.rgb, uniforms.brightness_gain);
+  color.rgb = apply_brightness(color.rgb, color.a, uniforms.brightness_gain);
   return color;
 }
 
@@ -778,7 +790,7 @@ fragment float4 cell_text_fragment(
       color *= a;
 
       // HDR brightness boost (tone-curve rgb only; no-op at gain 1.0).
-      color.rgb = apply_brightness(color.rgb, uniforms.brightness_gain);
+      color.rgb = apply_brightness(color.rgb, color.a, uniforms.brightness_gain);
 
       return color;
     }
@@ -797,7 +809,7 @@ fragment float4 cell_text_fragment(
       }
 
       // HDR brightness boost (tone-curve rgb only; no-op at gain 1.0).
-      color.rgb = apply_brightness(color.rgb, uniforms.brightness_gain);
+      color.rgb = apply_brightness(color.rgb, color.a, uniforms.brightness_gain);
 
       return color;
     }
@@ -896,7 +908,7 @@ fragment float4 image_fragment(
   // HDR brightness boost (tone-curve rgb only; no-op at gain 1.0). Keeps
   // Kitty/placeholder images consistent with the rest of the boosted surface
   // instead of staying SDR.
-  rgba.rgb = apply_brightness(rgba.rgb, uniforms.brightness_gain);
+  rgba.rgb = apply_brightness(rgba.rgb, rgba.a, uniforms.brightness_gain);
 
   return rgba;
 }
