@@ -71,6 +71,7 @@ pub const RenderState = terminal.RenderState;
 pub const Screen = terminal.Screen;
 pub const ScreenSet = terminal.ScreenSet;
 pub const Selection = terminal.Selection;
+pub const SelectionGesture = terminal.SelectionGesture;
 pub const size_report = terminal.size_report;
 pub const SizeReportStyle = terminal.SizeReportStyle;
 pub const StringMap = terminal.StringMap;
