@@ -1053,28 +1053,30 @@ pub const StreamHandler = struct {
         if (comptime !tmux_enabled) return;
         const viewer = self.tmux_viewer orelse return;
         viewer.recordTrackedSend();
-        self.tmuxDebugNoteCommandSent(); // ROOTSHELL-TMUX (id=tmux-debug-mirror)
+        self.tmuxDebugNoteCommandsSent(1); // ROOTSHELL-TMUX (id=tmux-debug-mirror)
     }
 
-    /// Record (on the IO thread, at the drain/write point) that an untracked
-    /// `send-keys` was just written. ROOTSHELL-TMUX
-    /// (id=streamhandler-record-untracked)
-    pub fn recordTmuxUntrackedSend(self: *StreamHandler) void {
+    /// Record (on the IO thread, at the drain/write point) that `n` untracked
+    /// `send-keys` command lines were just written. A batched write carries
+    /// several `\n`-terminated lines in one message and tmux acks each line
+    /// with its own `%begin/%end` block, so one marker per line keeps the
+    /// sent-FIFO aligned. ROOTSHELL-TMUX (id=streamhandler-record-untracked)
+    pub fn recordTmuxUntrackedSend(self: *StreamHandler, n: usize) void {
         if (comptime !tmux_enabled) return;
         const viewer = self.tmux_viewer orelse return;
-        viewer.recordUntrackedSend();
-        self.tmuxDebugNoteCommandSent(); // ROOTSHELL-TMUX (id=tmux-debug-mirror)
+        viewer.recordUntrackedSends(n);
+        self.tmuxDebugNoteCommandsSent(n); // ROOTSHELL-TMUX (id=tmux-debug-mirror)
     }
 
-    /// Stamp "a command was just written to tmux" into the debug mirror, then
+    /// Stamp "commands were just written to tmux" into the debug mirror, then
     /// refresh so the in-flight/FIFO depth reflects the send. No-op until the app
     /// opts in. ROOTSHELL-TMUX (id=tmux-debug-mirror)
-    fn tmuxDebugNoteCommandSent(self: *StreamHandler) void {
+    fn tmuxDebugNoteCommandsSent(self: *StreamHandler, n: usize) void {
         if (comptime !tmux_enabled) return;
         const m = &self.tmux_debug;
         if (m.enabled.load(.monotonic)) {
             m.last_command_ms.store(std.time.milliTimestamp(), .monotonic);
-            _ = m.total_commands_sent.fetchAdd(1, .monotonic);
+            _ = m.total_commands_sent.fetchAdd(n, .monotonic);
         }
         self.refreshTmuxDebug();
     }

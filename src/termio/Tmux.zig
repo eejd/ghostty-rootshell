@@ -470,6 +470,17 @@ pub fn tmuxCommand(self: *Tmux, cmd: []const u8) void {
 /// limit in control mode, chunking avoids blocking the control channel
 /// with a single massive command and maintains compatibility with older
 /// tmux versions.
+///
+/// All command lines for one call are emitted as a SINGLE
+/// `control_writer.write`. For a child pane the control writer relays
+/// through the app mailbox and the gateway's termio mailbox (both
+/// fixed-capacity with drop-on-sustained-backpressure); one write per
+/// chunk let a large paste fan out into ~100 independent messages, and
+/// any dropped chunk tore the bracketed paste apart (lost `ESC[201~`
+/// = remote app stuck in an open paste). Batching keeps a paste
+/// all-or-nothing through every queue. The parent IO thread records one
+/// untracked ack marker per `\n` in the payload, so the batch MUST
+/// contain only complete send-keys lines. ROOTSHELL-TMUX (id=tmux-send-keys-batch)
 pub fn queueWrite(
     self: *Tmux,
     alloc: Allocator,
@@ -506,34 +517,67 @@ pub fn queueWrite(
         alloc.free(effective_data);
     };
 
-    // Allocate a reusable buffer large enough for one max-sized chunk.
-    // Per chunk: prefix + id_digits + space + hex(max_send_keys_bytes) + newline
-    const prefix = "send-keys -H -t %";
     const id_digits = digitCount(self.pane_id);
-    const max_hex_len = max_send_keys_bytes * 3 - 1; // "XX " per byte, last byte "XX"
-    const max_cmd_len = prefix.len + id_digits + 1 + max_hex_len + 1;
 
-    const buf = try alloc.alloc(u8, max_cmd_len);
+    // Fast path: fits one command (every keystroke, small pastes).
+    // Format on the stack — no allocation, one write.
+    if (effective_data.len <= max_send_keys_bytes) {
+        var sbuf: [max_single_cmd_len]u8 = undefined;
+        const cmd_len = writeSendKeysCmd(&sbuf, send_keys_prefix, self.pane_id, id_digits, effective_data);
+        try self.control_writer.write(sbuf[0..cmd_len]);
+        return;
+    }
+
+    // Batch path: format every command line into one exactly-sized buffer
+    // and issue a single write. Per command the formatted size is exactly
+    // prefix + id_digits + space + 3*chunk_len (each input byte becomes
+    // two hex chars plus a separator space or the final newline).
+    const n_chunks = (effective_data.len + max_send_keys_bytes - 1) / max_send_keys_bytes;
+    const total_len = n_chunks * (send_keys_prefix.len + id_digits + 1) + 3 * effective_data.len;
+
+    const buf = alloc.alloc(u8, total_len) catch {
+        // OOM: degrade to one write per chunk (the pre-batch behavior)
+        // using the allocation-free stack buffer. Correctness only drops
+        // back to multi-message delivery.
+        var sbuf: [max_single_cmd_len]u8 = undefined;
+        var offset: usize = 0;
+        while (offset < effective_data.len) {
+            const chunk_len = @min(effective_data.len - offset, max_send_keys_bytes);
+            const chunk = effective_data[offset..][0..chunk_len];
+            const cmd_len = writeSendKeysCmd(&sbuf, send_keys_prefix, self.pane_id, id_digits, chunk);
+            try self.control_writer.write(sbuf[0..cmd_len]);
+            offset += chunk_len;
+        }
+        return;
+    };
     defer alloc.free(buf);
 
-    // Send chunks of effective_data as separate send-keys commands.
+    var pos: usize = 0;
     var offset: usize = 0;
     while (offset < effective_data.len) {
-        const remaining = effective_data.len - offset;
-        const chunk_len = @min(remaining, max_send_keys_bytes);
+        const chunk_len = @min(effective_data.len - offset, max_send_keys_bytes);
         const chunk = effective_data[offset..][0..chunk_len];
-
-        const cmd_len = writeSendKeysCmd(buf, prefix, self.pane_id, id_digits, chunk);
-        try self.control_writer.write(buf[0..cmd_len]);
-
+        pos += writeSendKeysCmd(buf[pos..], send_keys_prefix, self.pane_id, id_digits, chunk);
         offset += chunk_len;
     }
+    assert(pos == total_len);
+    try self.control_writer.write(buf[0..pos]);
 }
 
 /// Maximum number of input bytes per send-keys command. Each input
 /// byte becomes 3 hex characters ("XX "), so 1024 bytes produce a
 /// command of ~3.1KB — well within any practical limit.
 const max_send_keys_bytes = 1024;
+
+const send_keys_prefix = "send-keys -H -t %";
+
+/// Maximum decimal digits of a pane id (usize max on 64-bit).
+const max_pane_id_digits = 20;
+
+/// Exact formatted size of one full-chunk send-keys command with the
+/// largest possible pane id; sizes the stack buffer used by the
+/// single-command fast path and the OOM fallback.
+const max_single_cmd_len = send_keys_prefix.len + max_pane_id_digits + 1 + 3 * max_send_keys_bytes;
 
 /// Format a `send-keys -H -t %<id> <hex>...\n` command into `buf`.
 /// Returns the number of bytes written. The caller must ensure `buf`
@@ -959,7 +1003,7 @@ test "queueWrite large pane_id" {
     try testing.expectEqualStrings("send-keys -H -t %99999 58\n", writer.lastCommand().?);
 }
 
-test "queueWrite chunks large input into multiple commands" {
+test "queueWrite chunks large input into one batched write" {
     const alloc = testing.allocator;
     var writer = TestControlWriter.init(alloc);
     defer writer.deinit();
@@ -979,17 +1023,18 @@ test "queueWrite chunks large input into multiple commands" {
     var td = testThreadData();
     try tmux.queueWrite(alloc, &td, input, false);
 
-    // Should produce exactly 2 commands: one full chunk + 1 remaining byte.
-    try testing.expectEqual(@as(usize, 2), writer.commands.items.len);
+    // Two command lines batched into a SINGLE write.
+    try testing.expectEqual(@as(usize, 1), writer.commands.items.len);
+    const batch = writer.commands.items[0];
+    try testing.expectEqual(@as(usize, 2), std.mem.count(u8, batch, "\n"));
 
-    // First command: max_send_keys_bytes worth of "41" hex values
-    const cmd1 = writer.commands.items[0];
-    try testing.expect(std.mem.startsWith(u8, cmd1, "send-keys -H -t %5 "));
-    try testing.expect(std.mem.endsWith(u8, cmd1, "\n"));
+    var lines = std.mem.splitScalar(u8, batch, '\n');
+    const line1 = lines.next().?;
+    try testing.expect(std.mem.startsWith(u8, line1, "send-keys -H -t %5 "));
 
-    // Second command: 1 byte
-    const cmd2 = writer.commands.items[1];
-    try testing.expectEqualStrings("send-keys -H -t %5 41\n", cmd2);
+    // Second command line: the 1 remaining byte.
+    try testing.expectEqualStrings("send-keys -H -t %5 41", lines.next().?);
+    try testing.expectEqualStrings("", lines.next().?);
 }
 
 test "queueWrite exactly max_send_keys_bytes is single command" {
@@ -1036,8 +1081,25 @@ test "queueWrite large input with linefeed mode chunks correctly" {
     try tmux.queueWrite(alloc, &td, input, true);
 
     // After expansion: (max_send_keys_bytes / 2 + 1) * 2 = max_send_keys_bytes + 2
-    // Should produce 2 commands.
-    try testing.expectEqual(@as(usize, 2), writer.commands.items.len);
+    // Two command lines, batched into a single write.
+    try testing.expectEqual(@as(usize, 1), writer.commands.items.len);
+    const batch = writer.commands.items[0];
+    try testing.expectEqual(@as(usize, 2), std.mem.count(u8, batch, "\n"));
+
+    // Every expanded byte is \r or \n — verify the full hex round-trip
+    // across the chunk boundary: alternating 0D 0A pairs.
+    var decoded: usize = 0;
+    var lines = std.mem.splitScalar(u8, batch, '\n');
+    while (lines.next()) |line| {
+        if (line.len == 0) continue;
+        var it = std.mem.tokenizeScalar(u8, line["send-keys -H -t %1 ".len..], ' ');
+        while (it.next()) |pair| {
+            const byte = try std.fmt.parseInt(u8, pair, 16);
+            try testing.expectEqual(@as(u8, if (decoded % 2 == 0) '\r' else '\n'), byte);
+            decoded += 1;
+        }
+    }
+    try testing.expectEqual(@as(usize, max_send_keys_bytes + 2), decoded);
 }
 
 test "queueWrite multiple full chunks" {
@@ -1060,7 +1122,77 @@ test "queueWrite multiple full chunks" {
     var td = testThreadData();
     try tmux.queueWrite(alloc, &td, input, false);
 
+    // 3 command lines, one write.
+    try testing.expectEqual(@as(usize, 1), writer.commands.items.len);
+    try testing.expectEqual(
+        @as(usize, 3),
+        std.mem.count(u8, writer.commands.items[0], "\n"),
+    );
+}
+
+test "queueWrite batch hex round-trips to input" {
+    const alloc = testing.allocator;
+    var writer = TestControlWriter.init(alloc);
+    defer writer.deinit();
+
+    var tmux = Tmux.init(.{
+        .pane_id = 12,
+        .window_id = 0,
+        .control_writer = writer.controlWriter(),
+    });
+
+    // ~2.5 chunks of a repeating byte pattern.
+    const input_len = max_send_keys_bytes * 5 / 2;
+    const input = try alloc.alloc(u8, input_len);
+    defer alloc.free(input);
+    for (input, 0..) |*b, i| b.* = @truncate(i);
+
+    var td = testThreadData();
+    try tmux.queueWrite(alloc, &td, input, false);
+
+    try testing.expectEqual(@as(usize, 1), writer.commands.items.len);
+    const batch = writer.commands.items[0];
+    try testing.expectEqual(@as(usize, 3), std.mem.count(u8, batch, "\n"));
+
+    // Decode every hex pair back and compare against the input.
+    var decoded: std.ArrayListUnmanaged(u8) = .{};
+    defer decoded.deinit(alloc);
+    var lines = std.mem.splitScalar(u8, batch, '\n');
+    while (lines.next()) |line| {
+        if (line.len == 0) continue;
+        try testing.expect(std.mem.startsWith(u8, line, "send-keys -H -t %12 "));
+        var it = std.mem.tokenizeScalar(u8, line["send-keys -H -t %12 ".len..], ' ');
+        while (it.next()) |pair| {
+            try decoded.append(alloc, try std.fmt.parseInt(u8, pair, 16));
+        }
+    }
+    try testing.expectEqualSlices(u8, input, decoded.items);
+}
+
+test "queueWrite batch alloc failure falls back to per-chunk writes" {
+    const alloc = testing.allocator;
+    var writer = TestControlWriter.init(alloc);
+    defer writer.deinit();
+
+    var tmux = Tmux.init(.{
+        .pane_id = 5,
+        .window_id = 0,
+        .control_writer = writer.controlWriter(),
+    });
+
+    const input = try alloc.alloc(u8, max_send_keys_bytes * 2 + 1);
+    defer alloc.free(input);
+    @memset(input, 'A');
+
+    // With linefeed=false the batch buffer is the only allocation in
+    // queueWrite, so failing the first allocation exercises the fallback.
+    var failing = std.testing.FailingAllocator.init(alloc, .{ .fail_index = 0 });
+    var td = testThreadData();
+    try tmux.queueWrite(failing.allocator(), &td, input, false);
+
+    // Fallback degrades to one write per chunk.
     try testing.expectEqual(@as(usize, 3), writer.commands.items.len);
+    try testing.expectEqualStrings("send-keys -H -t %5 41\n", writer.commands.items[2]);
 }
 
 test "deinit resets state" {

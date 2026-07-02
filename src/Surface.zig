@@ -1353,9 +1353,12 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
             // command's %begin/%end ack is matched/swallowed in send-order rather
             // than mis-attributed to an in-flight tracked command (which would
             // desync the response FIFO → garbled list-windows → all tabs pruned).
-            // Dupe onto self.alloc (mirrors the .tmux_pane_command branch); the IO
-            // thread frees it. The dupe is tiny (a keystroke / one ~3 KB paste
-            // chunk) and uniform across WriteReq variants.
+            // The IO thread records one marker per `\n`-terminated command line
+            // (a batched paste carries many lines in one message; see
+            // Tmux.queueWrite id=tmux-send-keys-batch). Dupe onto self.alloc
+            // (mirrors the .tmux_pane_command branch); the IO thread frees it.
+            // Usually a keystroke; can be a full batched paste (~3.1x the
+            // pasted bytes), transient and freed after the pty write.
             const sk_copy = self.alloc.dupe(u8, bytes) catch null;
             switch (w) {
                 .alloc => |v| v.alloc.free(v.data),
@@ -7019,6 +7022,27 @@ fn completeClipboardPaste(
         // We must free it.
         self.alloc.free(v);
     };
+
+    // ROOTSHELL-TMUX BEGIN (id=surface-paste-atomic)
+    // For a tmux pane, ship the whole paste (bracket prefix + body + suffix)
+    // as ONE termio message. The upstream three-vec loop below queues three
+    // independent messages; under mailbox backpressure a bracket marker can
+    // be dropped separately from the body, tearing the bracketed paste apart
+    // at the remote app (a lost ESC[201~ strands it inside an open paste).
+    // One message keeps delivery all-or-nothing, and the tmux backend batches
+    // the resulting send-keys lines into one relay write (Tmux.queueWrite).
+    // reapply: keep this branch above the upstream vec loop; the helper lives
+    // in the fork-owned Surface_tmux.zig sidecar.
+    if (self.io.backend == .tmux) {
+        if (try tmux_reconcile.combinePasteVecs(self.alloc, vecs)) |buf| {
+            self.queueIo(.{ .write_alloc = .{
+                .alloc = self.alloc,
+                .data = buf,
+            } }, .unlocked);
+        }
+        return;
+    }
+    // ROOTSHELL-TMUX END (id=surface-paste-atomic)
 
     for (vecs) |vec| if (vec.len > 0) {
         self.queueIo(try termio.Message.writeReq(

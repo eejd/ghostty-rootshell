@@ -1571,17 +1571,20 @@ pub const Viewer = struct {
     /// drain/write point after the bytes are written). ROOTSHELL-TMUX
     /// (id=viewer-sent-fifo)
     pub fn recordTrackedSend(self: *Viewer) void {
-        self.recordSent(.tracked);
+        self.recordSent(.tracked, 1);
     }
 
-    /// Record that an untracked `send-keys` was written to the tmux pty (called
-    /// at the drain/write point after the bytes are written). ROOTSHELL-TMUX
-    /// (id=viewer-sent-fifo)
-    pub fn recordUntrackedSend(self: *Viewer) void {
-        self.recordSent(.untracked);
+    /// Record that untracked `send-keys` command lines were written to the tmux
+    /// pty (called at the drain/write point after the bytes are written). A
+    /// batched send-keys write carries several `\n`-terminated command lines in
+    /// one message, and tmux acks EACH line with one `%begin/%end` block — so
+    /// the caller passes the line count. ROOTSHELL-TMUX (id=viewer-sent-fifo)
+    pub fn recordUntrackedSends(self: *Viewer, n: usize) void {
+        self.recordSent(.untracked, n);
     }
 
-    fn recordSent(self: *Viewer, kind: SentKind) void {
+    fn recordSent(self: *Viewer, kind: SentKind, n: usize) void {
+        if (n == 0) return;
         // Always grow + append — never drop/clear a marker. Dropping one would
         // misalign the block matcher and let a later untracked ack fall through to
         // `next`, reintroducing the desync this FIFO exists to prevent. Outstanding
@@ -1590,17 +1593,19 @@ pub const Viewer = struct {
         // byte each so even a large in-flight paste is cheap. Only genuine
         // allocator exhaustion can drop a marker, and there's nothing better to do
         // then.
-        self.sent_fifo.ensureUnusedCapacity(self.alloc, 1) catch {
+        self.sent_fifo.ensureUnusedCapacity(self.alloc, n) catch {
             self.last_error = .sent_fifo_oom; // ROOTSHELL-TMUX (id=control-error-code)
-            log.warn("tmux sent-FIFO out of memory; dropping marker (may desync)", .{});
+            log.warn("tmux sent-FIFO out of memory; dropping markers (may desync)", .{});
             return;
         };
-        self.sent_fifo.appendAssumeCapacity(kind);
+        const old_len = self.sent_fifo.len();
+        for (0..n) |_| self.sent_fifo.appendAssumeCapacity(kind);
         // Diagnostic only (not a cap): surface an unusually deep FIFO once, e.g. a
         // huge paste in flight or tmux acking very slowly. It drains as acks arrive.
-        if (self.sent_fifo.len() == SENT_FIFO_WARN) {
-            const depth = self.sent_fifo.len();
-            log.warn("tmux sent-FIFO deep ({} outstanding); large paste or slow acks", .{depth});
+        // Crossing check, not equality — a bulk append can jump the threshold.
+        const new_len = self.sent_fifo.len();
+        if (old_len < SENT_FIFO_WARN and new_len >= SENT_FIFO_WARN) {
+            log.warn("tmux sent-FIFO deep ({} outstanding); large paste or slow acks", .{new_len});
         }
     }
 
@@ -5958,7 +5963,7 @@ test "untracked send-keys ack is swallowed, not matched to a tracked command" {
     // Reproduce the tab-switch ordering: a focus-report send-keys is written
     // first (untracked), THEN a tracked command is sent and goes in flight. tmux
     // acks in write order: [send-keys block, tracked block].
-    viewer.recordUntrackedSend();
+    viewer.recordUntrackedSends(1);
     try viewer.queueUserCommand("select-window -t @0\n");
     {
         var arena: ArenaAllocator = .init(testing.allocator);
@@ -6026,7 +6031,7 @@ test "window list survives a send-keys block landing before list-windows" {
 
     // A focus-report send-keys is written (untracked); then a topology change
     // queues + sends a tracked list-windows. tmux acks send-keys first.
-    viewer.recordUntrackedSend();
+    viewer.recordUntrackedSends(1);
     _ = viewer.next(.{ .tmux = .{ .window_add = .{ .id = 1 } } });
     try testing.expect(viewer.command_in_flight); // list-windows in flight
     viewer.recordTrackedSend();
@@ -6095,10 +6100,9 @@ test "paste produces multiple untracked markers, all swallowed" {
     defer viewer.deinit();
     try driveStartupOneWindow(&viewer);
 
-    // A paste splits into multiple send-keys chunks → multiple untracked markers.
-    viewer.recordUntrackedSend();
-    viewer.recordUntrackedSend();
-    viewer.recordUntrackedSend();
+    // A paste batches multiple send-keys command lines into one write; the
+    // drain point records one marker per line in a single bulk call.
+    viewer.recordUntrackedSends(3);
     try testing.expectEqual(Viewer.BlockClass.untracked, viewer.classifyBlock());
     try testing.expectEqual(Viewer.BlockClass.untracked, viewer.classifyBlock());
     try testing.expectEqual(Viewer.BlockClass.untracked, viewer.classifyBlock());
@@ -6106,6 +6110,37 @@ test "paste produces multiple untracked markers, all swallowed" {
     try testing.expect(viewer.command_queue.empty());
     try testing.expect(!viewer.command_in_flight);
     try testing.expectEqual(@as(usize, 1), viewer.windows.items.len);
+}
+
+test "bulk untracked markers interleave correctly with a tracked command" {
+    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    defer viewer.deinit();
+    try driveStartupOneWindow(&viewer);
+
+    // A batched paste (2 command lines) is written, then a tracked command
+    // goes in flight. tmux acks in write order.
+    viewer.recordUntrackedSends(2);
+    try viewer.queueUserCommand("select-window -t @0\n");
+    {
+        var arena: ArenaAllocator = .init(testing.allocator);
+        defer arena.deinit();
+        _ = (try viewer.takePendingCommand(arena.allocator())).?;
+    }
+    viewer.recordTrackedSend();
+
+    try testing.expectEqual(Viewer.BlockClass.untracked, viewer.classifyBlock());
+    try testing.expectEqual(Viewer.BlockClass.untracked, viewer.classifyBlock());
+    try testing.expectEqual(Viewer.BlockClass.tracked, viewer.classifyBlock());
+    try testing.expectEqual(Viewer.BlockClass.empty, viewer.classifyBlock());
+}
+
+test "recordUntrackedSends zero is a no-op" {
+    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    defer viewer.deinit();
+    try driveStartupOneWindow(&viewer);
+
+    viewer.recordUntrackedSends(0);
+    try testing.expectEqual(Viewer.BlockClass.empty, viewer.classifyBlock());
 }
 
 test "classifyBlock on empty FIFO returns empty and startup still completes" {
@@ -6181,7 +6216,7 @@ test "session change resets the sent-FIFO" {
     try driveStartupOneWindow(&viewer);
 
     // Outstanding markers at the moment a session change rebuilds the viewer.
-    viewer.recordUntrackedSend();
+    viewer.recordUntrackedSends(1);
     viewer.recordTrackedSend();
 
     // sessionChanged deinits the old viewer (freeing the old FIFO) and starts a

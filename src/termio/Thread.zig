@@ -382,15 +382,21 @@ fn drainMailbox(
                 //    holding the lock there would wedge the read path behind
                 //    a blocked write.
                 //
-                // A failed write after recording leaves one stray marker; the
-                // block-mismatch self-heal recovers, and a queueWrite error
-                // aborts the IO thread anyway. ROOTSHELL-TMUX
-                // (id=thread-tmux-write-record-atomic)
+                // A failed write after recording leaves stray markers (one
+                // per unwritten command line); the block-mismatch self-heal
+                // recovers, and a queueWrite error aborts the IO thread
+                // anyway. ROOTSHELL-TMUX (id=thread-tmux-write-record-atomic)
                 defer v.alloc.free(v.data);
+                // One marker per command line: a batched payload carries
+                // several `\n`-terminated send-keys lines and tmux acks EACH
+                // line with one %begin/%end block. Hex bodies cannot contain
+                // a literal '\n' (0x0A encodes as "0A"), so the newline count
+                // is exactly the line count.
+                const line_count = std.mem.count(u8, v.data, "\n");
                 {
                     io.tmux_mutex.lock();
                     defer io.tmux_mutex.unlock();
-                    io.terminal_stream.handler.recordTmuxUntrackedSend();
+                    io.terminal_stream.handler.recordTmuxUntrackedSend(@max(1, line_count));
                 }
                 io.queueWrite(data, v.data, self.flags.linefeed_mode) catch |err| {
                     // The marker above is now stale (nothing was written, so

@@ -386,6 +386,49 @@ pub fn titleTmuxReconcile(
     return payload;
 }
 
+/// Concatenate the paste encode vecs (bracket prefix / body / bracket suffix)
+/// into one owned buffer so a tmux pane paste travels as ONE termio message.
+/// Queued as three separate messages, the bracket markers can be dropped
+/// independently of the body under mailbox backpressure, tearing the
+/// bracketed paste apart at the remote app (a lost `ESC[201~` strands it in
+/// an open paste). Returns null when all vecs are empty. Caller owns the
+/// buffer (ownership normally transfers to a `write_alloc` termio message).
+/// ROOTSHELL-TMUX (id=surface-tmux-paste-combine)
+pub fn combinePasteVecs(alloc: Allocator, vecs: [3][]const u8) Allocator.Error!?[]u8 {
+    var total: usize = 0;
+    for (vecs) |v| total += v.len;
+    if (total == 0) return null;
+
+    const buf = try alloc.alloc(u8, total);
+    var pos: usize = 0;
+    for (vecs) |v| {
+        @memcpy(buf[pos..][0..v.len], v);
+        pos += v.len;
+    }
+    return buf;
+}
+
+test "combinePasteVecs joins bracketed paste vecs" {
+    const alloc = std.testing.allocator;
+    const buf = (try combinePasteVecs(alloc, .{ "\x1b[200~", "hello", "\x1b[201~" })).?;
+    defer alloc.free(buf);
+    try std.testing.expectEqualStrings("\x1b[200~hello\x1b[201~", buf);
+}
+
+test "combinePasteVecs joins unbracketed body-only vecs" {
+    const alloc = std.testing.allocator;
+    const buf = (try combinePasteVecs(alloc, .{ "", "plain", "" })).?;
+    defer alloc.free(buf);
+    try std.testing.expectEqualStrings("plain", buf);
+}
+
+test "combinePasteVecs returns null for all-empty vecs" {
+    try std.testing.expectEqual(
+        @as(?[]u8, null),
+        try combinePasteVecs(std.testing.allocator, .{ "", "", "" }),
+    );
+}
+
 test "planTmuxReconcile uses pane-title precedence from the snapshot" {
     // ROOTSHELL-TMUX (id=test-plan-reconcile-title-precedence): a topology
     // rebuild must preserve the active-pane title (`#T`) for EVERY window, not
