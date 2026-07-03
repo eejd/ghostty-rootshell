@@ -24,17 +24,44 @@ const log = std.log.scoped(.kitty_gfx);
 /// terminals. This lets consumers use a generation value alone as a
 /// cache key without any ambiguity.
 ///
-/// Atomic because separate terminals may mutate their storages from
-/// different threads. On single-threaded targets (e.g. wasm without
-/// atomics) this lowers to plain operations.
-var generation_counter: std.atomic.Value(u64) = .init(0);
+/// Thread-safe because separate terminals may mutate their storages
+/// from different threads. On single-threaded targets this lowers to
+/// plain operations.
+var generation_counter: GenerationCounter = .{};
 
 /// Returns the next generation stamp. Stamps are unique and strictly
 /// monotonically increasing process-wide, starting at 1 (0 is reserved
 /// to mean "never stamped").
 pub fn nextGeneration() u64 {
-    return generation_counter.fetchAdd(1, .monotonic) + 1;
+    return generation_counter.next();
 }
+
+/// Backing implementation for the generation counter. We use a
+/// lock-free atomic counter where we can, but not all targets support
+/// 64-bit atomic operations (e.g. 32-bit ARM Android), so we fall back
+/// to a mutex-protected counter on those. This is a cold path (only
+/// invoked on content mutations) so the mutex cost is irrelevant.
+///
+/// The pointer-width check is a conservative proxy for 64-bit atomic
+/// support: every 64-bit target supports 64-bit atomics, while 32-bit
+/// targets may not (per the compiler's atomic operand validation).
+const GenerationCounter = if (@bitSizeOf(usize) >= 64) struct {
+    value: std.atomic.Value(u64) = .init(0),
+
+    fn next(self: *@This()) u64 {
+        return self.value.fetchAdd(1, .monotonic) + 1;
+    }
+} else struct {
+    mutex: std.Thread.Mutex = .{},
+    value: u64 = 0,
+
+    fn next(self: *@This()) u64 {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.value += 1;
+        return self.value;
+    }
+};
 
 /// An image storage is associated with a terminal screen (i.e. main
 /// screen, alt screen) and contains all the transmitted images and
