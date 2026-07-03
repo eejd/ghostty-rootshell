@@ -78,6 +78,18 @@ terminal_stream: StreamHandler.Stream,
 /// renderer_state.mutex while holding tmux_mutex.
 tmux_mutex: std.Thread.Mutex = .{},
 
+/// ROOTSHELL-TMUX (id=termio-tmux-reset-barrier): an app-requested full reset
+/// (`ghostty_surface_tmux_reset`) that has not been executed yet. The API sets
+/// this BEFORE queueing the `.tmux_reset` mailbox message; the read thread
+/// consumes it (CAS) under tmux_mutex right before parsing hooked control
+/// bytes, and the mailbox arm consumes it if the read thread hasn't. This
+/// gives the app a call-order guarantee the mailbox alone cannot: any bytes
+/// written to the pty AFTER the API call are parsed AFTER the reset, so a
+/// foreground replay of known-gapped buffered output is dropped as resync
+/// pre-marker noise instead of desyncing the old parser first (the mailbox
+/// message and the pipe read otherwise race to tmux_mutex in either order).
+tmux_reset_pending: std.atomic.Value(bool) = .init(false),
+
 /// Last time the cursor was reset. This is used to prevent message
 /// flooding with cursor resets.
 last_cursor_reset: ?std.time.Instant = null,
@@ -797,6 +809,22 @@ fn processOutputTmuxPrefix(self: *Termio, buf: []const u8) ?[]const u8 {
             h.tmuxDbgReadSite(.idle, 0);
             self.tmux_mutex.unlock();
             return rem;
+        }
+
+        // Consume a pending app-requested reset BEFORE parsing new bytes, so
+        // the reset happens-before any byte written after the API call —
+        // regardless of whether the `.tmux_reset` mailbox message has been
+        // drained yet. Same lock environment as the mailbox arm (tmux_mutex +
+        // unlocked-io). If tmuxForceReset force-exits (probe drop), the loop
+        // below sees the unhook and re-enters the drain path. The plain load
+        // keeps the per-chunk hot path free of an atomic RMW.
+        // ROOTSHELL-TMUX (id=termio-tmux-reset-barrier)
+        if (self.tmux_reset_pending.load(.monotonic) and
+            self.tmux_reset_pending.cmpxchgStrong(true, false, .acquire, .monotonic) == null)
+        {
+            h.tmux_unlocked_io = true;
+            h.tmuxForceReset();
+            h.tmux_unlocked_io = false;
         }
 
         // Hooked: parse byte-at-a-time under tmux_mutex only. The flag makes

@@ -1767,8 +1767,14 @@ pub const Viewer = struct {
     /// drops a byte chunk, so command replies are lost and the block stream
     /// shifts). Resets ONLY the command pipeline; it deliberately PRESERVES
     /// `panes`/`windows` (and their child surfaces / per-pane VT decoders) so the
-    /// post-marker `list-windows` rebuild reuses them with no recapture and no
-    /// flicker — `initLayout`/`syncLayouts` reuse a pane by id. The caller
+    /// post-marker `list-windows` rebuild reuses INITIALIZED panes with no
+    /// recapture and no flicker — `initLayout`/`syncLayouts` reuse a pane by id.
+    /// UNINITIALIZED panes are the exception: they were mid-capture (a reset
+    /// recapture, a new pane's initial capture, or a retry/pause recapture) and
+    /// the pipeline reset just dropped their queued captures, so their recapture
+    /// intent must be restored — otherwise the rebuild's syncLayouts skips them
+    /// (their `reset_recapture` was already consumed at queue time) and they are
+    /// stranded uninitialized forever with live `%output` suppressed. The caller
     /// (stream handler) realigns the parser (`beginTmuxResync`) and sends the
     /// resync probe, exactly like the resume path. No-op unless we are in
     /// `.command_queue` (a fresh startup/resume drives its own resync).
@@ -1776,6 +1782,14 @@ pub const Viewer = struct {
     pub fn forceResync(self: *Viewer) void {
         if (self.state != .command_queue) return;
         self.resetCommandPipeline();
+        // Restore recapture intent for panes whose captures were just dropped.
+        // Initialized panes keep the wedge path's reuse-without-recapture
+        // semantics. ROOTSHELL-TMUX (id=viewer-force-resync-reflag)
+        var it = self.panes.iterator();
+        while (it.next()) |kv| {
+            const pane = kv.value_ptr.*;
+            if (!pane.initialized) self.flagPaneForReset(pane);
+        }
         self.state = .resync;
     }
 
@@ -1865,66 +1879,70 @@ pub const Viewer = struct {
         self.reset_pending = true;
     }
 
-    /// Flag every pane for full recapture AND reset its live VT parser. Shared by
-    /// `forceReset` (immediate) and the `reset_pending` honor in `nextResync`
-    /// (deferred). `initialized=false` suppresses live `%output` between the
+    /// Flag ONE pane for full recapture AND reset its live VT parser. Called for
+    /// every pane by `flagAllPanesForReset` (full reset) and for still-capturing
+    /// panes by `forceResync` (whose pipeline reset just dropped their queued
+    /// captures). `initialized=false` suppresses live `%output` between the
     /// resync marker and capture completion; the transient capture flags are
     /// normalized (the in-flight capture suffix, if any, was dropped with the
-    /// command queue); the pane_state completion arm re-initializes each pane once
+    /// command queue); the pane_state completion arm re-initializes the pane once
     /// its captures land.
     ///
     /// The capture REPLAY uses a throwaway `vtStream`, but live `%output` resumes
     /// through the long-lived `pane.stream`, whose parser a discard can strand
     /// mid-escape/DCS/UTF-8 (the dropped bytes were the rest of the sequence) —
     /// the first post-recovery `%output` would then be misparsed. Reset that
-    /// parser + UTF-8 decoder to ground (both are fixed-buffer: no heap, no
-    /// deinit, and the installed effects/handler are preserved) and drop any
-    /// spilled pre-discard bytes. Also re-arm the title subscription so tmux
-    /// re-pushes titles that changed during the outage (they're cached and only
-    /// re-sent on change). ROOTSHELL-TMUX (id=viewer-force-reset)
+    /// parser + UTF-8 decoder to ground and drop any spilled pre-discard bytes.
+    /// ROOTSHELL-TMUX (id=viewer-force-reset)
+    fn flagPaneForReset(self: *Viewer, pane: *Pane) void {
+        pane.initialized = false;
+        pane.reset_recapture = true;
+        pane.capture_pending = false;
+        pane.state_pending = false;
+        pane.recapture_again = false;
+        pane.pause_recapture = false;
+        pane.capture_retries = 0;
+        // A dropped `%pause`/`%continue` can't be trusted; the recapture
+        // fetches current content. (Moot over tssh — discard mode keeps the
+        // link drained so tmux never pause-afters — but safe.)
+        pane.paused = false;
+        // Fully RE-CREATE the live stream so a discard that truncated an
+        // OSC/DCS/APC/UTF-8 sequence can't leak buffered parser/handler state
+        // into the first post-recovery `%output`. A field poke (`parser =
+        // .init()`) is WRONG: it drops the OSC allocator (vtStream uses
+        // `initAlloc` for large OSC), skips `Parser.deinit()` (leaks an active
+        // OSC capture buffer), and leaves the handler's persistent
+        // apc_handler / dcs_pending_esc / dcs_ground_request / tmux_passthrough
+        // state live. `deinit` frees all of that; `vtStream` re-creates with
+        // the terminal's allocator; effects are re-installed. pane.terminal
+        // (the grid the recapture rebuilds) and the child binding are
+        // preserved. Safe here: live `%output` is suppressed (initialized=false)
+        // until the recapture completes, so nothing feeds this stream meanwhile.
+        pane.stream.deinit();
+        pane.stream = pane.terminal.vtStream();
+        installPaneStreamEffects(pane, self.default_cursor_style, self.default_cursor_blink);
+        // Drop spilled pre-discard `%output`; the recapture replaces content.
+        // Also clear `pending_dropped`: the recapture already re-fetches every
+        // screen + state, so leaving it set would make the first recapture
+        // handler queue ANOTHER visible/state refresh behind ours (stale work
+        // that can race with live output after the pane re-initializes).
+        pane.pending_vt.clearRetainingCapacity();
+        pane.pending_dropped = false;
+        // Drop any stashed VISIBLE captures: the recapture re-stashes fresh
+        // before its trailing pane_state re-applies, so an old buffer left here
+        // could be replayed stale in the window before the recapture lands.
+        // ROOTSHELL-TMUX (id=alt-screen-fix)
+        self.freeStashedVisibles(pane);
+    }
+
+    /// Flag every pane for full recapture. Shared by `forceReset` (immediate)
+    /// and the `reset_pending` honor in `nextResync` (deferred). Also re-arms
+    /// the title subscription so tmux re-pushes titles that changed during the
+    /// outage (they're cached and only re-sent on change).
+    /// ROOTSHELL-TMUX (id=viewer-force-reset)
     fn flagAllPanesForReset(self: *Viewer) void {
         var panes_it = self.panes.iterator();
-        while (panes_it.next()) |kv| {
-            const pane = kv.value_ptr.*;
-            pane.initialized = false;
-            pane.reset_recapture = true;
-            pane.capture_pending = false;
-            pane.state_pending = false;
-            pane.recapture_again = false;
-            pane.pause_recapture = false;
-            pane.capture_retries = 0;
-            // A dropped `%pause`/`%continue` can't be trusted; the recapture
-            // fetches current content. (Moot over tssh — discard mode keeps the
-            // link drained so tmux never pause-afters — but safe.)
-            pane.paused = false;
-            // Fully RE-CREATE the live stream so a discard that truncated an
-            // OSC/DCS/APC/UTF-8 sequence can't leak buffered parser/handler state
-            // into the first post-recovery `%output`. A field poke (`parser =
-            // .init()`) is WRONG: it drops the OSC allocator (vtStream uses
-            // `initAlloc` for large OSC), skips `Parser.deinit()` (leaks an active
-            // OSC capture buffer), and leaves the handler's persistent
-            // apc_handler / dcs_pending_esc / dcs_ground_request / tmux_passthrough
-            // state live. `deinit` frees all of that; `vtStream` re-creates with
-            // the terminal's allocator; effects are re-installed. pane.terminal
-            // (the grid the recapture rebuilds) and the child binding are
-            // preserved. Safe here: live `%output` is suppressed (initialized=false)
-            // until the recapture completes, so nothing feeds this stream meanwhile.
-            pane.stream.deinit();
-            pane.stream = pane.terminal.vtStream();
-            installPaneStreamEffects(pane, self.default_cursor_style, self.default_cursor_blink);
-            // Drop spilled pre-discard `%output`; the recapture replaces content.
-            // Also clear `pending_dropped`: the full reset already re-fetches every
-            // screen + state, so leaving it set would make the first recapture
-            // handler queue ANOTHER visible/state refresh behind ours (stale work
-            // that can race with live output after the pane re-initializes).
-            pane.pending_vt.clearRetainingCapacity();
-            pane.pending_dropped = false;
-            // Drop any stashed VISIBLE captures: the recapture re-stashes fresh
-            // before its trailing pane_state re-applies, so an old buffer left here
-            // could be replayed stale in the window before the recapture lands.
-            // ROOTSHELL-TMUX (id=alt-screen-fix)
-            self.freeStashedVisibles(pane);
-        }
+        while (panes_it.next()) |kv| self.flagPaneForReset(kv.value_ptr.*);
         // Force a title re-push (see id=viewer-force-reset-titles): titles come
         // from the `@*:#{pane_title}` subscription, cached in `pane_titles`
         // because tmux re-sends a subscribed value only when it CHANGES. A title
@@ -8463,6 +8481,157 @@ test "reset requested during an in-flight resync upgrades the rebuild to recaptu
             }).check,
         },
     });
+}
+
+test "forceResync interrupting a reset's captures re-flags stranded panes" {
+    // ROOTSHELL-TMUX (id=viewer-force-resync-reflag): a desync landing DURING a
+    // reset's own capture stream (common — the reset was itself caused by a
+    // lossy link) drops the queued captures via resetCommandPipeline. But
+    // syncLayouts already consumed the pane's reset_recapture flag when it
+    // queued them, so without the re-flag the follow-up rebuild would reuse the
+    // pane WITHOUT recapture, stranding it uninitialized forever (live %output
+    // suppressed) — the frozen/blank background-tab bug.
+    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    defer viewer.deinit();
+    try driveStartupOneWindow(&viewer);
+
+    // A lossy-discard reset, then its rebuild through list-windows: the reused
+    // pane's captures are queued and its reset_recapture flag is consumed.
+    viewer.forceReset();
+    try testing.expect(viewer.isResyncing());
+    _ = viewer.next(.{ .tmux = blockEnd(Viewer.resync_marker ++ " $0") });
+    try testing.expectEqual(.command_queue, viewer.state);
+    try testViewer(&viewer, &.{
+        .{ .input = .{ .tmux = blockEnd("") }, .contains_command = "display-message" },
+        .{ .input = .{ .tmux = blockEnd("3.5a") }, .contains_command = "list-windows" },
+        .{
+            .input = .{ .tmux = blockEnd("$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash") },
+            .check = (struct {
+                fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
+                    // Mid-capture: flag consumed, pane not yet initialized.
+                    try testing.expect(!v.panes.get(0).?.reset_recapture);
+                    try testing.expect(!v.panes.get(0).?.initialized);
+                }
+            }).check,
+        },
+    });
+
+    // A second loss event interrupts the capture stream. The pipeline reset
+    // drops the queued captures; the still-uninitialized pane must be
+    // re-flagged for recapture (this is the fix; it was stranded before).
+    viewer.forceResync();
+    try testing.expect(viewer.isResyncing());
+    try testing.expect(!viewer.panes.get(0).?.initialized);
+    try testing.expect(viewer.panes.get(0).?.reset_recapture);
+
+    // The follow-up rebuild recaptures it...
+    _ = viewer.next(.{ .tmux = blockEnd(Viewer.resync_marker ++ " $0") });
+    try testing.expectEqual(.command_queue, viewer.state);
+    try testViewer(&viewer, &.{
+        .{ .input = .{ .tmux = blockEnd("") }, .contains_command = "display-message" },
+        .{ .input = .{ .tmux = blockEnd("3.5a") }, .contains_command = "list-windows" },
+        .{
+            .input = .{ .tmux = blockEnd("$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash") },
+            .check = (struct {
+                fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
+                    try testing.expect(!v.panes.get(0).?.reset_recapture);
+                    var it = v.command_queue.iterator(.forward);
+                    var has_capture = false;
+                    while (it.next()) |cmd| switch (cmd.*) {
+                        .pane_history, .pane_visible => has_capture = true,
+                        else => {},
+                    };
+                    try testing.expect(has_capture);
+                }
+            }).check,
+        },
+    });
+
+    // ...and once the captures + pane_state land, the pane is live again.
+    var guard: usize = 0;
+    while (!viewer.command_queue.empty() or viewer.command_in_flight) {
+        _ = viewer.next(.{ .tmux = blockEnd("") });
+        guard += 1;
+        if (guard > 50) return error.TestDrainStuck;
+    }
+    try testing.expect(viewer.panes.get(0).?.initialized);
+    _ = viewer.next(.{ .tmux = .{ .output = .{ .pane_id = 0, .data = "post-reset output" } } });
+    {
+        const pane0: *Viewer.Pane = viewer.panes.getEntry(0).?.value_ptr.*;
+        const screen: *Screen = pane0.terminal.screens.active;
+        const str = try screen.dumpStringAlloc(
+            testing.allocator,
+            .{ .active = .{} },
+        );
+        defer testing.allocator.free(str);
+        try testing.expect(std.mem.containsAtLeast(u8, str, 1, "post-reset output"));
+    }
+}
+
+test "forceResync interrupting a new pane's initial captures re-flags only that pane" {
+    // ROOTSHELL-TMUX (id=viewer-force-resync-reflag): steady-state variant — a
+    // wedge resync drops a NEW pane's initial captures. The new pane must be
+    // re-flagged (else stranded uninitialized); the already-initialized pane
+    // keeps the wedge path's reuse-without-recapture (no flicker).
+    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    defer viewer.deinit();
+    try driveStartupOneWindow(&viewer);
+
+    // Split: new pane %2 appears; its captures are queued; %0 stays initialized.
+    _ = viewer.next(.{ .tmux = .{ .layout_change = .{
+        .window_id = 0,
+        .layout = "e07b,83x44,0,0[83x22,0,0,0,83x21,0,23,2]",
+        .visible_layout = "e07b,83x44,0,0[83x22,0,0,0,83x21,0,23,2]",
+        .raw_flags = "*",
+    } } });
+    try testing.expectEqual(2, viewer.panes.count());
+    try testing.expect(viewer.panes.get(0).?.initialized);
+    try testing.expect(!viewer.panes.get(2).?.initialized);
+
+    // Desync mid-capture: only the uninitialized pane is re-flagged.
+    viewer.forceResync();
+    try testing.expect(viewer.isResyncing());
+    try testing.expect(viewer.panes.get(2).?.reset_recapture);
+    try testing.expect(viewer.panes.get(0).?.initialized);
+    try testing.expect(!viewer.panes.get(0).?.reset_recapture);
+
+    // Rebuild: captures are re-queued for %2 only.
+    _ = viewer.next(.{ .tmux = blockEnd(Viewer.resync_marker ++ " $0") });
+    try testing.expectEqual(.command_queue, viewer.state);
+    try testViewer(&viewer, &.{
+        .{ .input = .{ .tmux = blockEnd("") }, .contains_command = "display-message" },
+        .{ .input = .{ .tmux = blockEnd("3.5a") }, .contains_command = "list-windows" },
+        .{
+            .input = .{ .tmux = blockEnd("$0 @0 1 0 0 %0 83 44 e07b,83x44,0,0[83x22,0,0,0,83x21,0,23,2] bash") },
+            .check = (struct {
+                fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
+                    var it = v.command_queue.iterator(.forward);
+                    var has_capture = false;
+                    while (it.next()) |cmd| switch (cmd.*) {
+                        .pane_history => |c| {
+                            try testing.expectEqual(2, c.id);
+                            has_capture = true;
+                        },
+                        .pane_visible => |c| {
+                            try testing.expectEqual(2, c.id);
+                            has_capture = true;
+                        },
+                        else => {},
+                    };
+                    try testing.expect(has_capture);
+                }
+            }).check,
+        },
+    });
+
+    // Drain; %2 initializes.
+    var guard: usize = 0;
+    while (!viewer.command_queue.empty() or viewer.command_in_flight) {
+        _ = viewer.next(.{ .tmux = blockEnd("") });
+        guard += 1;
+        if (guard > 50) return error.TestDrainStuck;
+    }
+    try testing.expect(viewer.panes.get(2).?.initialized);
 }
 
 test "pane OSC 52 emits a pane_clipboard_write action" {

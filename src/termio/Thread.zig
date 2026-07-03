@@ -518,9 +518,20 @@ fn drainMailbox(
                 // in DCS passthrough — the channel keeps running.
                 io.tmux_mutex.lock();
                 defer io.tmux_mutex.unlock();
-                io.terminal_stream.handler.tmux_unlocked_io = true;
-                defer io.terminal_stream.handler.tmux_unlocked_io = false;
-                io.terminal_stream.handler.tmuxForceReset();
+                // Fallback executor for the reset barrier: the read thread may
+                // have already consumed the flag (reset-before-parse ordering);
+                // in that case this message is a no-op instead of a double
+                // reset. ROOTSHELL-TMUX (id=termio-tmux-reset-barrier)
+                if (io.tmux_reset_pending.cmpxchgStrong(
+                    true,
+                    false,
+                    .acquire,
+                    .monotonic,
+                ) == null) {
+                    io.terminal_stream.handler.tmux_unlocked_io = true;
+                    defer io.terminal_stream.handler.tmux_unlocked_io = false;
+                    io.terminal_stream.handler.tmuxForceReset();
+                }
             },
             .tmux_force_exit => { // ROOTSHELL-TMUX (id=thread-force-exit)
                 // Same locking rationale as `.tmux_resume_abort`: tearing down the

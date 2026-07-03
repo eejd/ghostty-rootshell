@@ -2522,6 +2522,12 @@ pub const CAPI = struct {
     // Keep the signature stable. reapply: re-add this export inside the CAPI
     // struct. See docs/tmux-control-mode-fork.md.
     export fn ghostty_surface_tmux_reset(surface: *Surface) void {
+        // Set the barrier flag FIRST (id=termio-tmux-reset-barrier): the read
+        // thread consumes it before parsing any bytes written after this call,
+        // so the reset is ordered ahead of a foreground replay of gapped
+        // output. The mailbox message remains the fallback executor when no
+        // further bytes arrive to trigger the read-side consume.
+        surface.core_surface.io.tmux_reset_pending.store(true, .release);
         surface.core_surface.io.queueMessage(.{ .tmux_reset = {} }, .unlocked);
     }
     // ROOTSHELL-TMUX END FROZEN-ABI (id=embedded-tmux-reset)
