@@ -1739,10 +1739,18 @@ pub const ScrollViewport = union(Tag) {
     /// Scroll by some delta amount, up is negative.
     delta: isize,
 
+    /// Scroll to the given absolute row offset from the top of the
+    /// scrollable area. A value of zero is the top row. The requested
+    /// row becomes the first visible row of the viewport, clamped so
+    /// the viewport never scrolls beyond the top of the active area.
+    /// This is the same row space as PageList.Scrollbar offset.
+    row: usize,
+
     pub const Tag = lib.Enum(lib.target, &.{
         "top",
         "bottom",
         "delta",
+        "row",
     });
 
     const c_union = lib.TaggedUnion(
@@ -1763,6 +1771,7 @@ pub fn scrollViewport(self: *Terminal, behavior: ScrollViewport) void {
         .top => .{ .top = {} },
         .bottom => .{ .active = {} },
         .delta => |delta| .{ .delta_row = delta },
+        .row => |row| .{ .row = row },
     });
 }
 
