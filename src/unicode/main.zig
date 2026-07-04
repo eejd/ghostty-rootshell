@@ -3,7 +3,11 @@ pub const lut = @import("lut.zig");
 const grapheme = @import("grapheme.zig");
 pub const table = @import("props_table.zig").table;
 pub const Properties = @import("props.zig").Properties;
+pub const GraphemeWidthEffect = grapheme.GraphemeWidthEffect;
+pub const GraphemeWidth = grapheme.GraphemeWidth;
 pub const graphemeBreak = grapheme.graphemeBreak;
+pub const graphemeWidth = grapheme.graphemeWidth;
+pub const graphemeWidthEffect = grapheme.graphemeWidthEffect;
 
 /// Returns the terminal display width of a codepoint in terminal
 /// grid cells: 0, 1, or 2.
@@ -16,8 +20,9 @@ pub const graphemeBreak = grapheme.graphemeBreak;
 ///
 /// This operates on a single codepoint and cannot account for
 /// grapheme-cluster-level width rules (VS16, combining sequences);
-/// callers needing cluster-accurate widths must segment into
-/// grapheme clusters and combine per-codepoint widths.
+/// callers needing cluster-accurate widths should use graphemeWidth().
+/// Summing per-codepoint widths is only correct when mode 2027 is
+/// disabled.
 pub fn codepointWidth(cp: u21) u2 {
     return table.get(cp).width;
 }

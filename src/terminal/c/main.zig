@@ -200,6 +200,7 @@ pub const terminal_point_from_grid_ref = terminal.point_from_grid_ref;
 pub const type_json = types.get_json;
 
 pub const unicode_codepoint_width = unicode.codepoint_width;
+pub const unicode_grapheme_width = unicode.grapheme_width;
 
 pub const grid_ref_cell = grid_ref.grid_ref_cell;
 pub const grid_ref_row = grid_ref.grid_ref_row;
