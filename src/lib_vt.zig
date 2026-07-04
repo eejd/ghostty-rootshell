@@ -138,6 +138,7 @@ pub const unicode = struct {
     const unicode_pkg = @import("unicode/main.zig");
 
     pub const codepointWidth = unicode_pkg.codepointWidth;
+    pub const graphemeWidth = unicode_pkg.graphemeWidth;
 };
 
 comptime {
@@ -195,6 +196,7 @@ comptime {
         @export(&c.paste_is_safe, .{ .name = "ghostty_paste_is_safe" });
         @export(&c.paste_encode, .{ .name = "ghostty_paste_encode" });
         @export(&c.unicode_codepoint_width, .{ .name = "ghostty_unicode_codepoint_width" });
+        @export(&c.unicode_grapheme_width, .{ .name = "ghostty_unicode_grapheme_width" });
         @export(&c.size_report_encode, .{ .name = "ghostty_size_report_encode" });
         @export(&c.style_default, .{ .name = "ghostty_style_default" });
         @export(&c.style_is_default, .{ .name = "ghostty_style_is_default" });
