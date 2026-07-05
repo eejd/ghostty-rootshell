@@ -57,6 +57,16 @@ pub const osc_command_type = osc.commandType;
 pub const osc_command_data = osc.commandData;
 
 pub const color_rgb_get = color.rgb_get;
+pub const color_contrast = color.contrast;
+pub const color_luminance = color.luminance;
+pub const color_parse = color.parse;
+pub const color_parse_palette_entry = color.parse_palette_entry;
+pub const color_parse_x11 = color.parse_x11;
+pub const color_palette_default = color.palette_default;
+pub const color_palette_generate = color.palette_generate;
+pub const color_perceived_luminance = color.perceived_luminance;
+pub const color_x11_name_count = color.x11_name_count;
+pub const color_x11_names = color.x11_names;
 
 pub const focus_encode = focus.encode;
 
