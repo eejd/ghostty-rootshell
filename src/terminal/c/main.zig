@@ -5,6 +5,7 @@ const buildpkg = @import("build_info.zig");
 pub const allocator = @import("allocator.zig");
 pub const cell = @import("cell.zig");
 pub const color = @import("color.zig");
+pub const color_scheme = @import("color_scheme.zig");
 pub const focus = @import("focus.zig");
 pub const formatter = @import("formatter.zig");
 pub const grid_ref = @import("grid_ref.zig");
@@ -57,6 +58,8 @@ pub const osc_command_type = osc.commandType;
 pub const osc_command_data = osc.commandData;
 
 pub const color_rgb_get = color.rgb_get;
+
+pub const color_scheme_report_encode = color_scheme.report_encode;
 
 pub const focus_encode = focus.encode;
 
@@ -218,6 +221,7 @@ test {
     _ = buildpkg;
     _ = cell;
     _ = color;
+    _ = color_scheme;
     _ = grid_ref;
     _ = grid_ref_tracked;
     _ = kitty_graphics;
