@@ -208,6 +208,16 @@ comptime {
         @export(&c.row_get, .{ .name = "ghostty_row_get" });
         @export(&c.row_get_multi, .{ .name = "ghostty_row_get_multi" });
         @export(&c.color_rgb_get, .{ .name = "ghostty_color_rgb_get" });
+        @export(&c.color_contrast, .{ .name = "ghostty_color_contrast" });
+        @export(&c.color_luminance, .{ .name = "ghostty_color_luminance" });
+        @export(&c.color_parse, .{ .name = "ghostty_color_parse" });
+        @export(&c.color_parse_palette_entry, .{ .name = "ghostty_color_parse_palette_entry" });
+        @export(&c.color_parse_x11, .{ .name = "ghostty_color_parse_x11" });
+        @export(&c.color_palette_default, .{ .name = "ghostty_color_palette_default" });
+        @export(&c.color_palette_generate, .{ .name = "ghostty_color_palette_generate" });
+        @export(&c.color_perceived_luminance, .{ .name = "ghostty_color_perceived_luminance" });
+        @export(&c.color_x11_name_count, .{ .name = "ghostty_color_x11_name_count" });
+        @export(&c.color_x11_names, .{ .name = "ghostty_color_x11_names" });
         @export(&c.sgr_new, .{ .name = "ghostty_sgr_new" });
         @export(&c.sgr_free, .{ .name = "ghostty_sgr_free" });
         @export(&c.sgr_reset, .{ .name = "ghostty_sgr_reset" });
