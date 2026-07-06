@@ -612,10 +612,27 @@ pub fn Stream(comptime H: type) type {
             while (self.parser.state != .ground) {
                 if (offset >= input.len) return input.len;
 
-                // Bulk-consume CSI parameter bytes. This can't be used
-                // for handlers with a vtRaw hook because it dispatches
-                // the CSI directly (see nextNonUtf8).
+                // Fast path for CSI entry: "ESC [" is by far the most
+                // common escape sequence prefix, so handle the '[' and
+                // the byte that follows it here rather than paying a
+                // nextNonUtf8 call for each.
+                if (self.parser.state == .escape and input[offset] == '[') {
+                    self.parser.state = .csi_entry;
+                    offset += 1;
+                    continue;
+                }
+
                 if (comptime !@hasDecl(T, "vtRaw")) {
+                    if (self.parser.state == .csi_entry) {
+                        if (self.csiEntryByte(input[offset])) {
+                            offset += 1;
+                            continue;
+                        }
+                    }
+
+                    // Bulk-consume CSI parameter bytes. This can't be
+                    // used for handlers with a vtRaw hook because it
+                    // dispatches the CSI directly (see nextNonUtf8).
                     if (self.parser.state == .csi_param) {
                         offset += self.consumeCsiParams(input[offset..]);
                         if (offset >= input.len) return input.len;
@@ -630,6 +647,47 @@ pub fn Stream(comptime H: type) type {
                 offset += 1;
             }
             return offset;
+        }
+
+        /// Fast path for a byte in the csi_entry state, the state right
+        /// after "ESC [". Virtually every CSI sequence spends exactly
+        /// one byte in this state, on either a digit, a private marker,
+        /// or a final byte. Returns true if the byte was fully handled;
+        /// false means the caller must process it through the general
+        /// state machine.
+        ///
+        /// Must not be used by handlers with a vtRaw hook because the
+        /// final byte case dispatches the CSI directly.
+        inline fn csiEntryByte(self: *Self, c: u8) bool {
+            comptime assert(!@hasDecl(T, "vtRaw"));
+            assert(self.parser.state == .csi_entry);
+            switch (c) {
+                // First parameter digit.
+                '0'...'9' => {
+                    self.parser.state = .csi_param;
+                    // param_acc is zero (cleared on escape entry)
+                    // so accumulating is just the digit value.
+                    self.parser.param_acc = c - '0';
+                    self.parser.param_acc_idx = 1;
+                },
+                // An empty first parameter.
+                ';' => {
+                    self.parser.state = .csi_param;
+                    self.parser.params[0] = 0;
+                    self.parser.params_idx = 1;
+                },
+                // Private marker (e.g. '?' in "ESC [ ? 2004 h").
+                0x3C...0x3F => {
+                    self.parser.state = .csi_param;
+                    self.parser.collect(c);
+                },
+                // A final byte: a parameterless CSI.
+                0x40...0x7E => self.csiDispatchFinal(c),
+                // Defer to the state machine for anything else
+                // (C0 controls, intermediates, colon).
+                else => return false,
+            }
+            return true;
         }
 
         /// Bulk-consume CSI parameter bytes (digits and separators)
@@ -828,38 +886,9 @@ pub fn Stream(comptime H: type) type {
             }
 
             // Fast path for CSI entry, the state right after "ESC [".
-            // Virtually every CSI sequence spends exactly one byte in
-            // this state, on either a digit, a private marker, or a
-            // final byte.
             if (comptime !has_vt_raw) {
-                if (self.parser.state == .csi_entry) csi_entry: {
-                    switch (c) {
-                        // First parameter digit.
-                        '0'...'9' => {
-                            self.parser.state = .csi_param;
-                            // param_acc is zero (cleared on escape entry)
-                            // so accumulating is just the digit value.
-                            self.parser.param_acc = c - '0';
-                            self.parser.param_acc_idx = 1;
-                        },
-                        // An empty first parameter.
-                        ';' => {
-                            self.parser.state = .csi_param;
-                            self.parser.params[0] = 0;
-                            self.parser.params_idx = 1;
-                        },
-                        // Private marker (e.g. '?' in "ESC [ ? 2004 h").
-                        0x3C...0x3F => {
-                            self.parser.state = .csi_param;
-                            self.parser.collect(c);
-                        },
-                        // A final byte: a parameterless CSI.
-                        0x40...0x7E => self.csiDispatchFinal(c),
-                        // Defer to the state machine for anything else
-                        // (C0 controls, intermediates, colon).
-                        else => break :csi_entry,
-                    }
-                    return;
+                if (self.parser.state == .csi_entry) {
+                    if (self.csiEntryByte(c)) return;
                 }
             }
 
