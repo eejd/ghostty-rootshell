@@ -33,6 +33,7 @@ const debug = false;
 /// function for handling.
 pub const Action = union(Key) {
     print: Print,
+    print_slice: PrintSlice,
     print_repeat: usize,
     bell,
     backspace,
@@ -130,6 +131,7 @@ pub const Action = union(Key) {
         lib.target,
         &.{
             "print",
+            "print_slice",
             "print_repeat",
             "bell",
             "backspace",
@@ -249,6 +251,27 @@ pub const Action = union(Key) {
 
         pub fn cval(self: Print) Print.C {
             return .{ .cp = @intCast(self.cp) };
+        }
+    };
+
+    /// A run of printable codepoints. This is emitted instead of
+    /// individual print actions when the stream can decode multiple
+    /// printable codepoints at once, so handlers can process them in
+    /// batch with per-run rather than per-codepoint overhead (see
+    /// Terminal.printSlice). A naive handler can simply loop and
+    /// handle each codepoint like a print action.
+    ///
+    /// The slice is only valid for the duration of the handler call.
+    pub const PrintSlice = struct {
+        cps: []const u32,
+
+        pub const C = extern struct {
+            cps: [*]const u32,
+            len: usize,
+        };
+
+        pub fn cval(self: PrintSlice) PrintSlice.C {
+            return .{ .cps = self.cps.ptr, .len = self.cps.len };
         }
     };
 
@@ -411,6 +434,11 @@ pub const Action = union(Key) {
 /// about in its pursuit of implementing a terminal emulator or other
 /// functionality.
 ///
+/// Note that printable text is delivered via `print_slice` actions
+/// (runs of codepoints) whenever the stream can decode multiple
+/// codepoints at once, and via `print` actions otherwise. Handlers
+/// that care about text must handle both.
+///
 /// The Handler type must also have a `deinit` function.
 ///
 /// The "comptime" key is on purpose (vs. a standard Zig tagged union)
@@ -521,12 +549,25 @@ pub fn Stream(comptime H: type) type {
             // up to that point are just UTF-8.
             while (self.parser.state == .ground and offset < input.len) {
                 const res = simd.vt.utf8DecodeUntilControlSeq(input[offset..], cp_buf);
-                for (cp_buf[0..res.decoded]) |cp| {
+                const cps = cp_buf[0..res.decoded];
+
+                // Hand runs of printable codepoints to the handler as
+                // print_slice actions so it can process them with
+                // per-run rather than per-codepoint overhead.
+                var i: usize = 0;
+                while (i < cps.len) {
+                    const cp = cps[i];
                     if (cp <= 0xF) {
+                        @branchHint(.unlikely);
                         self.execute(@intCast(cp));
-                    } else {
-                        self.print(@intCast(cp));
+                        i += 1;
+                        continue;
                     }
+
+                    var end = i + 1;
+                    while (end < cps.len and cps[end] > 0xF) end += 1;
+                    self.handler.vt(.print_slice, .{ .cps = cps[i..end] });
+                    i = end;
                 }
                 // Consume the bytes we just processed.
                 offset += res.consumed;
@@ -2415,6 +2456,7 @@ test "simd: print invalid utf-8" {
         ) void {
             switch (action) {
                 .print => self.c = value.cp,
+                .print_slice => self.c = @intCast(value.cps[value.cps.len - 1]),
                 else => {},
             }
         }
@@ -2436,6 +2478,7 @@ test "simd: complete incomplete utf-8" {
         ) void {
             switch (action) {
                 .print => self.c = value.cp,
+                .print_slice => self.c = @intCast(value.cps[value.cps.len - 1]),
                 else => {},
             }
         }
