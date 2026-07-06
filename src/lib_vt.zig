@@ -235,6 +235,8 @@ comptime {
         @export(&c.terminal_selection_format_alloc, .{ .name = "ghostty_terminal_selection_format_alloc" });
         @export(&c.render_state_new, .{ .name = "ghostty_render_state_new" });
         @export(&c.render_state_update, .{ .name = "ghostty_render_state_update" });
+        @export(&c.render_state_begin_update, .{ .name = "ghostty_render_state_begin_update" });
+        @export(&c.render_state_end_update, .{ .name = "ghostty_render_state_end_update" });
         @export(&c.render_state_get, .{ .name = "ghostty_render_state_get" });
         @export(&c.render_state_get_multi, .{ .name = "ghostty_render_state_get_multi" });
         @export(&c.render_state_set, .{ .name = "ghostty_render_state_set" });
