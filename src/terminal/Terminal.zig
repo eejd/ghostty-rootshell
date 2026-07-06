@@ -528,7 +528,32 @@ fn printSliceFill(
     // in the run is always written as a fresh, single-codepoint cell,
     // so the grapheme break check against it is exact.
     const run_len: usize = run: {
-        for (1..cps.len) |idx| {
+        var idx: usize = 1;
+
+        // Vectorized scan for the narrow class: codepoints in
+        // [0x10, 0xFF] are always eligible with no further checks
+        // and dominate real-world input, so scan for the first
+        // codepoint outside that range several lanes at a time.
+        // Anything else (including eligible unicode) proceeds via
+        // the scalar loop below.
+        if (comptime width == .narrow) {
+            const lanes = 8;
+            const V = @Vector(lanes, u32);
+            const lo: V = @splat(0x10);
+            const hi: V = @splat(0xFF);
+            while (idx + lanes <= cps.len) {
+                const v: V = cps[idx..][0..lanes].*;
+                const in_range = (v >= lo) & (v <= hi);
+                if (!@reduce(.And, in_range)) {
+                    const bits: std.meta.Int(.unsigned, lanes) = @bitCast(in_range);
+                    idx += @ctz(~bits);
+                    break;
+                }
+                idx += lanes;
+            }
+        }
+
+        while (idx < cps.len) : (idx += 1) {
             const cp = cps[idx];
             if (comptime width == .narrow) {
                 if (cp >= 0x10 and cp <= 0xFF) continue;
@@ -630,11 +655,31 @@ fn printSliceFill(
         var k: usize = 0; // cells written
         fill: while (k < cell_count) {
             // Find the run of simple cells so the store loop below is
-            // branch-free (and vectorizable).
+            // branch-free (and vectorizable). This is an early-exit
+            // search loop that LLVM won't auto-vectorize, and reused
+            // rows typically match the whole way through, so scan
+            // several cells at a time manually.
             var simple = k;
-            while (simple < cell_count) : (simple += 1) {
-                const bits: u64 = @bitCast(cells[simple]);
-                if ((bits & simple_mask) != check_expected) break;
+            simple: {
+                const lanes = 4;
+                const V = @Vector(lanes, u64);
+                const mask_v: V = @splat(simple_mask);
+                const expect_v: V = @splat(check_expected);
+                const cells64: [*]const u64 = @ptrCast(cells);
+                while (simple + lanes <= cell_count) {
+                    const v: V = cells64[simple..][0..lanes].*;
+                    const ok = (v & mask_v) == expect_v;
+                    if (!@reduce(.And, ok)) {
+                        const bits: std.meta.Int(.unsigned, lanes) = @bitCast(ok);
+                        simple += @ctz(~bits);
+                        break :simple;
+                    }
+                    simple += lanes;
+                }
+                while (simple < cell_count) : (simple += 1) {
+                    const bits: u64 = @bitCast(cells[simple]);
+                    if ((bits & simple_mask) != check_expected) break;
+                }
             }
 
             if (comptime width == .wide) {
@@ -664,6 +709,68 @@ fn printSliceFill(
                 k = simple;
             }
             if (k >= cell_count) break;
+
+            // Bulk path for runs of cells that differ from the
+            // expected simple cell only by their style: this is the
+            // common case when styled text overwrites previously
+            // styled (or default-styled) rows, e.g. TUI redraws.
+            // These runs are handled wholesale: one scan to find the
+            // run of identical old styles, two ref-count updates,
+            // and a branch-free fill.
+            if (comptime width == .narrow) bulk: {
+                const cells64: [*]const u64 = @ptrCast(cells);
+                const first = cells64[k] & simple_mask;
+
+                // The old cell must be a plain narrow codepoint cell
+                // with no hyperlink whose only difference is the
+                // style id (see printSliceCheckExpected: every other
+                // masked field must be zero).
+                const style_shift = @bitOffsetOf(Cell, "style_id");
+                const old_style: style.Id = @truncate(first >> style_shift);
+                if (first != printSliceCheckExpected(old_style)) break :bulk;
+                assert(old_style != style_id); // it failed the simple check
+
+                // Find the run of cells with identical masked bits.
+                var m = k + 1;
+                scan: {
+                    const lanes = 4;
+                    const V = @Vector(lanes, u64);
+                    const mask_v: V = @splat(simple_mask);
+                    const first_v: V = @splat(first);
+                    while (m + lanes <= cell_count) {
+                        const v: V = cells64[m..][0..lanes].*;
+                        const ok = (v & mask_v) == first_v;
+                        if (!@reduce(.And, ok)) {
+                            const bits: std.meta.Int(.unsigned, lanes) = @bitCast(ok);
+                            m += @ctz(~bits);
+                            break :scan;
+                        }
+                        m += lanes;
+                    }
+                    while (m < cell_count) : (m += 1) {
+                        if ((cells64[m] & simple_mask) != first) break;
+                    }
+                }
+
+                // Fix up the style ref counts for the whole run at
+                // once. Each of the old cells held a reference to
+                // old_style so the release is safe by construction.
+                const n = m - k;
+                if (old_style != style.default_id) {
+                    page.styles.releaseMultiple(page.memory, old_style, @intCast(n));
+                }
+                if (style_id != style.default_id) {
+                    page.styles.useMultiple(page.memory, style_id, @intCast(n));
+                }
+
+                for (k..m) |idx| {
+                    cells[idx] = @bitCast(
+                        template_bits | (@as(u64, cps[printed + idx]) << cp_shift),
+                    );
+                }
+                k = m;
+                continue :fill;
+            }
 
             // General path for cells that failed the masked check:
             // style-only mismatches are handled inline; anything that
