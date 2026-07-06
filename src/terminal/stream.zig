@@ -695,6 +695,13 @@ pub fn Stream(comptime H: type) type {
                 self.parser.state = .csi_entry;
                 return;
             }
+
+            // The fast paths below dispatch actions directly rather than
+            // going through Parser.next, so they'd bypass a handler's
+            // vtRaw hook. Handlers with vtRaw (e.g. the inspector) use
+            // the general path for anything that produces an action.
+            const has_vt_raw = comptime @hasDecl(T, "vtRaw");
+
             // Fast path for CSI params.
             if (self.parser.state == .csi_param) csi_param: {
                 // csi_param is the most common parser state
@@ -731,6 +738,10 @@ pub fn Stream(comptime H: type) type {
                         self.parser.param_acc = 0;
                         self.parser.param_acc_idx = 0;
                     },
+                    // A final byte: dispatch the CSI directly.
+                    0x40...0x7E => if (comptime !has_vt_raw) {
+                        self.csiDispatchFinal(c);
+                    } else break :csi_param,
                     // Explicitly ignored:
                     0x7F => {},
                     // Defer to the state machine to
@@ -738,6 +749,42 @@ pub fn Stream(comptime H: type) type {
                     else => break :csi_param,
                 }
                 return;
+            }
+
+            // Fast path for CSI entry, the state right after "ESC [".
+            // Virtually every CSI sequence spends exactly one byte in
+            // this state, on either a digit, a private marker, or a
+            // final byte.
+            if (comptime !has_vt_raw) {
+                if (self.parser.state == .csi_entry) csi_entry: {
+                    switch (c) {
+                        // First parameter digit.
+                        '0'...'9' => {
+                            self.parser.state = .csi_param;
+                            // param_acc is zero (cleared on escape entry)
+                            // so accumulating is just the digit value.
+                            self.parser.param_acc = c - '0';
+                            self.parser.param_acc_idx = 1;
+                        },
+                        // An empty first parameter.
+                        ';' => {
+                            self.parser.state = .csi_param;
+                            self.parser.params[0] = 0;
+                            self.parser.params_idx = 1;
+                        },
+                        // Private marker (e.g. '?' in "ESC [ ? 2004 h").
+                        0x3C...0x3F => {
+                            self.parser.state = .csi_param;
+                            self.parser.collect(c);
+                        },
+                        // A final byte: a parameterless CSI.
+                        0x40...0x7E => self.csiDispatchFinal(c),
+                        // Defer to the state machine for anything else
+                        // (C0 controls, intermediates, colon).
+                        else => break :csi_entry,
+                    }
+                    return;
+                }
             }
 
             // We explicitly inline this call here for performance reasons.
@@ -783,6 +830,48 @@ pub fn Stream(comptime H: type) type {
                     .apc_end => self.handler.vt(.apc_end, {}),
                 }
             }
+        }
+
+        /// Finalize and dispatch a CSI directly from parser state for
+        /// the fast paths in nextNonUtf8, without going through
+        /// Parser.next. This must match the behavior of the parser's
+        /// csi_dispatch action.
+        fn csiDispatchFinal(self: *Self, c: u8) void {
+            const p = &self.parser;
+            p.state = .ground;
+
+            // Ignore sequences with too many parameters, matching the
+            // parser's behavior of dropping the dispatch entirely.
+            if (p.params_idx >= Parser.MAX_PARAMS) {
+                @branchHint(.unlikely);
+                return;
+            }
+
+            // Finalize the last parameter if we have one.
+            if (p.param_acc_idx > 0) {
+                p.params[p.params_idx] = p.param_acc;
+                p.params_idx += 1;
+            }
+
+            const action: Parser.Action.CSI = .{
+                .intermediates = p.intermediates[0..p.intermediates_idx],
+                .params = p.params[0..p.params_idx],
+                .params_sep = p.params_sep,
+                .final = c,
+            };
+
+            // We only allow colon or mixed separators for the 'm' command.
+            if (c != 'm' and p.params_sep.count() > 0) {
+                @branchHint(.cold);
+                log.warn(
+                    "CSI colon or mixed separators only allowed for 'm' command, got: {f}",
+                    .{action},
+                );
+                return;
+            }
+
+            if (comptime debug) log.info("action: {f}", .{Parser.Action{ .csi_dispatch = action }});
+            self.csiDispatch(action);
         }
 
         inline fn print(self: *Self, c: u21) void {
