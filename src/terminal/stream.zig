@@ -33,6 +33,7 @@ const debug = false;
 /// function for handling.
 pub const Action = union(Key) {
     print: Print,
+    print_slice: PrintSlice,
     print_repeat: usize,
     bell,
     backspace,
@@ -130,6 +131,7 @@ pub const Action = union(Key) {
         lib.target,
         &.{
             "print",
+            "print_slice",
             "print_repeat",
             "bell",
             "backspace",
@@ -249,6 +251,27 @@ pub const Action = union(Key) {
 
         pub fn cval(self: Print) Print.C {
             return .{ .cp = @intCast(self.cp) };
+        }
+    };
+
+    /// A run of printable codepoints. This is emitted instead of
+    /// individual print actions when the stream can decode multiple
+    /// printable codepoints at once, so handlers can process them in
+    /// batch with per-run rather than per-codepoint overhead (see
+    /// Terminal.printSlice). A naive handler can simply loop and
+    /// handle each codepoint like a print action.
+    ///
+    /// The slice is only valid for the duration of the handler call.
+    pub const PrintSlice = struct {
+        cps: []const u32,
+
+        pub const C = extern struct {
+            cps: [*]const u32,
+            len: usize,
+        };
+
+        pub fn cval(self: PrintSlice) PrintSlice.C {
+            return .{ .cps = self.cps.ptr, .len = self.cps.len };
         }
     };
 
@@ -411,6 +434,11 @@ pub const Action = union(Key) {
 /// about in its pursuit of implementing a terminal emulator or other
 /// functionality.
 ///
+/// Note that printable text is delivered via `print_slice` actions
+/// (runs of codepoints) whenever the stream can decode multiple
+/// codepoints at once, and via `print` actions otherwise. Handlers
+/// that care about text must handle both.
+///
 /// The Handler type must also have a `deinit` function.
 ///
 /// The "comptime" key is on purpose (vs. a standard Zig tagged union)
@@ -521,12 +549,25 @@ pub fn Stream(comptime H: type) type {
             // up to that point are just UTF-8.
             while (self.parser.state == .ground and offset < input.len) {
                 const res = simd.vt.utf8DecodeUntilControlSeq(input[offset..], cp_buf);
-                for (cp_buf[0..res.decoded]) |cp| {
+                const cps = cp_buf[0..res.decoded];
+
+                // Hand runs of printable codepoints to the handler as
+                // print_slice actions so it can process them with
+                // per-run rather than per-codepoint overhead.
+                var i: usize = 0;
+                while (i < cps.len) {
+                    const cp = cps[i];
                     if (cp <= 0xF) {
+                        @branchHint(.unlikely);
                         self.execute(@intCast(cp));
-                    } else {
-                        self.print(@intCast(cp));
+                        i += 1;
+                        continue;
                     }
+
+                    var end = i + 1;
+                    while (end < cps.len and cps[end] > 0xF) end += 1;
+                    self.handler.vt(.print_slice, .{ .cps = cps[i..end] });
+                    i = end;
                 }
                 // Consume the bytes we just processed.
                 offset += res.consumed;
@@ -570,9 +611,85 @@ pub fn Stream(comptime H: type) type {
             var offset: usize = 0;
             while (self.parser.state != .ground) {
                 if (offset >= input.len) return input.len;
+
+                // Bulk-consume CSI parameter bytes. This can't be used
+                // for handlers with a vtRaw hook because it dispatches
+                // the CSI directly (see nextNonUtf8).
+                if (comptime !@hasDecl(T, "vtRaw")) {
+                    if (self.parser.state == .csi_param) {
+                        offset += self.consumeCsiParams(input[offset..]);
+                        if (offset >= input.len) return input.len;
+                        // If we're still in csi_param then the next byte
+                        // isn't a parameter byte; let nextNonUtf8 below
+                        // handle it. Otherwise re-check our state.
+                        if (self.parser.state != .csi_param) continue;
+                    }
+                }
+
                 self.nextNonUtf8(input[offset]);
                 offset += 1;
             }
+            return offset;
+        }
+
+        /// Bulk-consume CSI parameter bytes (digits and separators)
+        /// and, if reached, the final byte (dispatching the CSI).
+        /// Returns the number of bytes consumed. Stops at the first
+        /// byte that isn't handled here, leaving the parser in the
+        /// csi_param state so the caller can process that byte.
+        fn consumeCsiParams(self: *Self, input: []const u8) usize {
+            const p = &self.parser;
+            assert(p.state == .csi_param);
+
+            // Accumulate parser state in locals for the hot loop.
+            var acc = p.param_acc;
+            var acc_idx = p.param_acc_idx;
+            var idx = p.params_idx;
+
+            var offset: usize = 0;
+            while (offset < input.len) {
+                const c = input[offset];
+                switch (c) {
+                    // A parameter digit.
+                    '0'...'9' => {
+                        if (idx < Parser.MAX_PARAMS) {
+                            acc *|= 10;
+                            acc +|= c - '0';
+                            acc_idx |= 1;
+                        }
+                        offset += 1;
+                    },
+
+                    // A parameter separator.
+                    ':', ';' => {
+                        if (idx < Parser.MAX_PARAMS) {
+                            p.params[idx] = acc;
+                            if (c == ':') p.params_sep.set(idx);
+                            idx += 1;
+                            acc = 0;
+                            acc_idx = 0;
+                        }
+                        offset += 1;
+                    },
+
+                    // A final byte: dispatch the CSI.
+                    0x40...0x7E => {
+                        p.param_acc = acc;
+                        p.param_acc_idx = acc_idx;
+                        p.params_idx = idx;
+                        self.csiDispatchFinal(c);
+                        return offset + 1;
+                    },
+
+                    // Anything else (C0 controls, intermediates, etc.)
+                    // is handled by the caller.
+                    else => break,
+                }
+            }
+
+            p.param_acc = acc;
+            p.param_acc_idx = acc_idx;
+            p.params_idx = idx;
             return offset;
         }
 
@@ -654,6 +771,13 @@ pub fn Stream(comptime H: type) type {
                 self.parser.state = .csi_entry;
                 return;
             }
+
+            // The fast paths below dispatch actions directly rather than
+            // going through Parser.next, so they'd bypass a handler's
+            // vtRaw hook. Handlers with vtRaw (e.g. the inspector) use
+            // the general path for anything that produces an action.
+            const has_vt_raw = comptime @hasDecl(T, "vtRaw");
+
             // Fast path for CSI params.
             if (self.parser.state == .csi_param) csi_param: {
                 // csi_param is the most common parser state
@@ -690,6 +814,10 @@ pub fn Stream(comptime H: type) type {
                         self.parser.param_acc = 0;
                         self.parser.param_acc_idx = 0;
                     },
+                    // A final byte: dispatch the CSI directly.
+                    0x40...0x7E => if (comptime !has_vt_raw) {
+                        self.csiDispatchFinal(c);
+                    } else break :csi_param,
                     // Explicitly ignored:
                     0x7F => {},
                     // Defer to the state machine to
@@ -697,6 +825,42 @@ pub fn Stream(comptime H: type) type {
                     else => break :csi_param,
                 }
                 return;
+            }
+
+            // Fast path for CSI entry, the state right after "ESC [".
+            // Virtually every CSI sequence spends exactly one byte in
+            // this state, on either a digit, a private marker, or a
+            // final byte.
+            if (comptime !has_vt_raw) {
+                if (self.parser.state == .csi_entry) csi_entry: {
+                    switch (c) {
+                        // First parameter digit.
+                        '0'...'9' => {
+                            self.parser.state = .csi_param;
+                            // param_acc is zero (cleared on escape entry)
+                            // so accumulating is just the digit value.
+                            self.parser.param_acc = c - '0';
+                            self.parser.param_acc_idx = 1;
+                        },
+                        // An empty first parameter.
+                        ';' => {
+                            self.parser.state = .csi_param;
+                            self.parser.params[0] = 0;
+                            self.parser.params_idx = 1;
+                        },
+                        // Private marker (e.g. '?' in "ESC [ ? 2004 h").
+                        0x3C...0x3F => {
+                            self.parser.state = .csi_param;
+                            self.parser.collect(c);
+                        },
+                        // A final byte: a parameterless CSI.
+                        0x40...0x7E => self.csiDispatchFinal(c),
+                        // Defer to the state machine for anything else
+                        // (C0 controls, intermediates, colon).
+                        else => break :csi_entry,
+                    }
+                    return;
+                }
             }
 
             // We explicitly inline this call here for performance reasons.
@@ -742,6 +906,48 @@ pub fn Stream(comptime H: type) type {
                     .apc_end => self.handler.vt(.apc_end, {}),
                 }
             }
+        }
+
+        /// Finalize and dispatch a CSI directly from parser state for
+        /// the fast paths in nextNonUtf8, without going through
+        /// Parser.next. This must match the behavior of the parser's
+        /// csi_dispatch action.
+        fn csiDispatchFinal(self: *Self, c: u8) void {
+            const p = &self.parser;
+            p.state = .ground;
+
+            // Ignore sequences with too many parameters, matching the
+            // parser's behavior of dropping the dispatch entirely.
+            if (p.params_idx >= Parser.MAX_PARAMS) {
+                @branchHint(.unlikely);
+                return;
+            }
+
+            // Finalize the last parameter if we have one.
+            if (p.param_acc_idx > 0) {
+                p.params[p.params_idx] = p.param_acc;
+                p.params_idx += 1;
+            }
+
+            const action: Parser.Action.CSI = .{
+                .intermediates = p.intermediates[0..p.intermediates_idx],
+                .params = p.params[0..p.params_idx],
+                .params_sep = p.params_sep,
+                .final = c,
+            };
+
+            // We only allow colon or mixed separators for the 'm' command.
+            if (c != 'm' and p.params_sep.count() > 0) {
+                @branchHint(.cold);
+                log.warn(
+                    "CSI colon or mixed separators only allowed for 'm' command, got: {f}",
+                    .{action},
+                );
+                return;
+            }
+
+            if (comptime debug) log.info("action: {f}", .{Parser.Action{ .csi_dispatch = action }});
+            self.csiDispatch(action);
         }
 
         inline fn print(self: *Self, c: u21) void {
@@ -2415,6 +2621,7 @@ test "simd: print invalid utf-8" {
         ) void {
             switch (action) {
                 .print => self.c = value.cp,
+                .print_slice => self.c = @intCast(value.cps[value.cps.len - 1]),
                 else => {},
             }
         }
@@ -2436,6 +2643,7 @@ test "simd: complete incomplete utf-8" {
         ) void {
             switch (action) {
                 .print => self.c = value.cp,
+                .print_slice => self.c = @intCast(value.cps[value.cps.len - 1]),
                 else => {},
             }
         }

@@ -137,6 +137,7 @@ pub const Handler = struct {
     ) !void {
         switch (action) {
             .print => try self.terminal.print(value.cp),
+            .print_slice => try self.terminal.printSlice(value.cps),
             .print_repeat => try self.terminal.printRepeat(value),
             .backspace => self.terminal.backspace(),
             .carriage_return => self.terminal.carriageReturn(),
