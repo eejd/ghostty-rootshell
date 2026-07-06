@@ -112,11 +112,14 @@ fn step(ptr: *anyopaque) Benchmark.Error!void {
     // aren't currently IO bound.
     const f = self.data_f orelse return;
 
-    var read_buf: [4096]u8 align(std.atomic.cache_line) = undefined;
+    var read_buf: [64 * 1024]u8 align(std.atomic.cache_line) = undefined;
     var f_reader = f.reader(&read_buf);
     const r = &f_reader.interface;
 
-    var buf: [4096]u8 = undefined;
+    // This buffer size matches the read buffer size used by the
+    // real IO thread (see termio Exec.zig buffer_capacity) so that
+    // the benchmark exercises the stream with realistic chunk sizes.
+    var buf: [64 * 1024]u8 = undefined;
     while (true) {
         const n = r.readSliceShort(&buf) catch {
             log.warn("error reading data file err={?}", .{f_reader.err});
