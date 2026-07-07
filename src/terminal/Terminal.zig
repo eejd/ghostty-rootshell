@@ -512,12 +512,12 @@ fn printSliceFill(
     // a codepoint cell (no grapheme data or bg-color tag), narrow, and
     // not a hyperlink. The mask covers every field that must match
     // the expected value (see printSliceCheckExpected) exactly.
-    const simple_mask = comptime fieldMask(Cell, &.{
+    const SimpleMask = pagepkg.Mask(Cell, &.{
         "content_tag",
         "style_id",
         "wide",
         "hyperlink",
-    });
+    }, 4);
 
     // The bit offset of the codepoint content within a Cell, used to
     // construct cell values from a template without field assignments.
@@ -619,8 +619,7 @@ fn printSliceFill(
                 // spacer head (or a blank narrow cell if we're inside
                 // a right margin) and wraps. We require a simple cell,
                 // otherwise fall back to print() for the cleanup.
-                const bits: u64 = @bitCast(cells[0]);
-                if ((bits & simple_mask) != check_expected) break;
+                if (!SimpleMask.eqlScalar(cells[0], check_expected)) break;
 
                 var spacer = template;
                 if (right_limit == self.cols) {
@@ -661,24 +660,20 @@ fn printSliceFill(
             // several cells at a time manually.
             var simple = k;
             simple: {
-                const lanes = 4;
-                const V = @Vector(lanes, u64);
-                const mask_v: V = @splat(simple_mask);
-                const expect_v: V = @splat(check_expected);
-                const cells64: [*]const u64 = @ptrCast(cells);
-                while (simple + lanes <= cell_count) {
-                    const v: V = cells64[simple..][0..lanes].*;
-                    const ok = (v & mask_v) == expect_v;
-                    if (!@reduce(.And, ok)) {
-                        const bits: std.meta.Int(.unsigned, lanes) = @bitCast(ok);
-                        simple += @ctz(~bits);
-                        break :simple;
-                    }
-                    simple += lanes;
+                while (simple + SimpleMask.group_len <= cell_count) {
+                    const p = SimpleMask.eqlPrefix(
+                        cells[0..cell_count],
+                        simple,
+                        check_expected,
+                    );
+                    simple += p;
+                    if (p != SimpleMask.group_len) break :simple;
                 }
                 while (simple < cell_count) : (simple += 1) {
-                    const bits: u64 = @bitCast(cells[simple]);
-                    if ((bits & simple_mask) != check_expected) break;
+                    if (!SimpleMask.eqlScalar(
+                        cells[simple],
+                        check_expected,
+                    )) break;
                 }
             }
 
@@ -718,8 +713,7 @@ fn printSliceFill(
             // run of identical old styles, two ref-count updates,
             // and a branch-free fill.
             if (comptime width == .narrow) bulk: {
-                const cells64: [*]const u64 = @ptrCast(cells);
-                const first = cells64[k] & simple_mask;
+                const first = SimpleMask.pattern(cells[k]);
 
                 // The old cell must be a plain narrow codepoint cell
                 // with no hyperlink whose only difference is the
@@ -733,22 +727,17 @@ fn printSliceFill(
                 // Find the run of cells with identical masked bits.
                 var m = k + 1;
                 scan: {
-                    const lanes = 4;
-                    const V = @Vector(lanes, u64);
-                    const mask_v: V = @splat(simple_mask);
-                    const first_v: V = @splat(first);
-                    while (m + lanes <= cell_count) {
-                        const v: V = cells64[m..][0..lanes].*;
-                        const ok = (v & mask_v) == first_v;
-                        if (!@reduce(.And, ok)) {
-                            const bits: std.meta.Int(.unsigned, lanes) = @bitCast(ok);
-                            m += @ctz(~bits);
-                            break :scan;
-                        }
-                        m += lanes;
+                    while (m + SimpleMask.group_len <= cell_count) {
+                        const p = SimpleMask.eqlPrefix(
+                            cells[0..cell_count],
+                            m,
+                            first,
+                        );
+                        m += p;
+                        if (p != SimpleMask.group_len) break :scan;
                     }
                     while (m < cell_count) : (m += 1) {
-                        if ((cells64[m] & simple_mask) != first) break;
+                        if (!SimpleMask.eqlScalar(cells[m], first)) break;
                     }
                 }
 
@@ -835,9 +824,9 @@ fn printSliceFill(
     return printed;
 }
 
-/// The expected value of a simple cell (per the check mask built from
-/// fieldMask in printSliceFill) that already has the given style
-/// (so no ref-counting is needed).
+/// The expected value of a simple cell (per SimpleMask in
+/// printSliceFill) that already has the given style (so no
+/// ref-counting is needed).
 inline fn printSliceCheckExpected(style_id: style.Id) u64 {
     var e: Cell = @bitCast(@as(u64, 0));
     e.style_id = style_id;
@@ -3723,30 +3712,6 @@ fn isDirty(t: *const Terminal, pt: point.Point) bool {
 /// Clear all dirty bits. Testing only.
 fn clearDirty(t: *Terminal) void {
     t.screens.active.pages.clearDirty();
-}
-
-/// Returns a mask with all bits set for the given fields of the packed
-/// struct T, used for masked compares of raw backing-integer values.
-fn fieldMask(
-    comptime T: type,
-    comptime fields: []const []const u8,
-) @typeInfo(T).@"struct".backing_integer.? {
-    // Backing int of the packed struct
-    const Int = @typeInfo(T).@"struct".backing_integer.?;
-
-    var mask: Int = 0;
-    inline for (fields) |field| {
-        // The type that fits all the bits we need to set.
-        const Ones = std.meta.Int(
-            .unsigned,
-            @bitSizeOf(@FieldType(T, field)),
-        );
-
-        // Mask out the ones
-        mask |= @as(Int, std.math.maxInt(Ones)) << @bitOffsetOf(T, field);
-    }
-
-    return mask;
 }
 
 test "Terminal: input with no control characters" {
