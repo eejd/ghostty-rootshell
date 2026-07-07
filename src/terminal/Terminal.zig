@@ -150,6 +150,49 @@ pub const Colors = struct {
     };
 };
 
+/// Returns the current color for an xterm OSC color target.
+///
+/// Unsupported dynamic and special colors return null. The cursor color
+/// follows xterm-style reporting and falls back to the foreground color when
+/// no explicit cursor color is set.
+pub fn colorForXterm(self: *const Terminal, target: osc.color.Target) ?color.RGB {
+    return switch (target) {
+        .palette => |i| self.colors.palette.current[i],
+        .dynamic => |dynamic| switch (dynamic) {
+            .foreground => self.colors.foreground.get(),
+            .background => self.colors.background.get(),
+            .cursor => self.colors.cursor.get() orelse
+                self.colors.foreground.get(),
+            .pointer_foreground,
+            .pointer_background,
+            .tektronix_foreground,
+            .tektronix_background,
+            .highlight_background,
+            .tektronix_cursor,
+            .highlight_foreground,
+            => null,
+        },
+        .special => null,
+    };
+}
+
+/// Returns the current color for a Kitty color protocol key.
+///
+/// Only palette, foreground, background, and cursor colors are backed by
+/// Terminal state. Unsupported keys, or supported dynamic colors without a
+/// value, return null.
+pub fn colorForKitty(self: *const Terminal, key: kitty.color.Kind) ?color.RGB {
+    return switch (key) {
+        .palette => |palette| self.colors.palette.current[palette],
+        .special => |special| switch (special) {
+            .foreground => self.colors.foreground.get(),
+            .background => self.colors.background.get(),
+            .cursor => self.colors.cursor.get(),
+            else => null,
+        },
+    };
+}
+
 /// This is a set of dirty flags the renderer can use to determine
 /// what parts of the screen need to be redrawn. It is up to the renderer
 /// to clear these flags.

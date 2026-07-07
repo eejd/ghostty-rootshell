@@ -516,6 +516,24 @@ pub const RGB = packed struct(u24) {
         return self.r == other.r and self.g == other.g and self.b == other.b;
     }
 
+    pub fn encodeRgb8(self: RGB, writer: *std.Io.Writer) !void {
+        try writer.print(
+            "rgb:{x:0>2}/{x:0>2}/{x:0>2}",
+            .{ self.r, self.g, self.b },
+        );
+    }
+
+    pub fn encodeRgb16(self: RGB, writer: *std.Io.Writer) !void {
+        try writer.print(
+            "rgb:{x:0>4}/{x:0>4}/{x:0>4}",
+            .{
+                @as(u16, self.r) * 257,
+                @as(u16, self.g) * 257,
+                @as(u16, self.b) * 257,
+            },
+        );
+    }
+
     /// Calculates the contrast ratio between two colors. The contrast
     /// ration is a value between 1 and 21 where 1 is the lowest contrast
     /// and 21 is the highest contrast.
@@ -911,6 +929,19 @@ test "RGB.parse" {
     try testing.expectError(error.InvalidFormat, RGB.parse("#12345"));
     try testing.expectError(error.InvalidFormat, RGB.parse("12345"));
     try testing.expectError(error.InvalidFormat, RGB.parse("nosuchcolor"));
+}
+
+test "RGB: encode" {
+    const rgb: RGB = .{ .r = 0x01, .g = 0x23, .b = 0xff };
+
+    var buf: [64]u8 = undefined;
+    var writer: std.Io.Writer = .fixed(&buf);
+    try rgb.encodeRgb8(&writer);
+    try std.testing.expectEqualStrings("rgb:01/23/ff", writer.buffered());
+
+    writer = .fixed(&buf);
+    try rgb.encodeRgb16(&writer);
+    try std.testing.expectEqualStrings("rgb:0101/2323/ffff", writer.buffered());
 }
 
 test "DynamicPalette: init" {
