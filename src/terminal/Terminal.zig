@@ -1974,10 +1974,19 @@ pub fn index(self: *Terminal) !void {
             screen.kitty_images.dirty = true;
         }
 
-        // If our scrolling region is at the top, we create scrollback.
+        // If our scrolling region is at the top, we create scrollback,
+        // but only if our screen retains scrollback. If our screen
+        // doesn't retain scrollback (e.g. the alternate screen) then
+        // creating scrollback is pure overhead: the rows are never
+        // visible and are simply pruned later. In that case we use the
+        // in-place region scroll below, unless the region is a single
+        // row (a one row screen) which cursorScrollRegionUp can't
+        // handle (and cursorDownScroll special-cases).
         if (self.scrolling_region.top == 0 and
             self.scrolling_region.left == 0 and
-            self.scrolling_region.right == self.cols - 1)
+            self.scrolling_region.right == self.cols - 1 and
+            (!screen.no_scrollback or
+                self.scrolling_region.bottom == 0))
         {
             try screen.cursorScrollAbove();
             return;
@@ -1985,48 +1994,17 @@ pub fn index(self: *Terminal) !void {
 
         // Slow path for left and right scrolling region margins.
         if (self.scrolling_region.left != 0 or
-            self.scrolling_region.right != self.cols - 1 or
-
-            // PERF(mitchellh): If we have an SGR background set then
-            // we need to preserve that background in our erased rows.
-            // scrollUp does that but eraseRowBounded below does not.
-            // However, scrollUp is WAY slower. We should optimize this
-            // case to work in the eraseRowBounded codepath and remove
-            // this check.
-            !screen.blankCell().isZero())
+            self.scrolling_region.right != self.cols - 1)
         {
             try self.scrollUp(1);
             return;
         }
 
-        // Otherwise use a fast path function from PageList to efficiently
-        // scroll the contents of the scrolling region.
-
-        // Preserve old cursor just for assertions
-        const old_cursor = screen.cursor;
-
-        try screen.pages.eraseRowBounded(
-            .{ .active = .{ .y = self.scrolling_region.top } },
+        // Otherwise use a fast path function to efficiently scroll
+        // the contents of the scrolling region.
+        try screen.cursorScrollRegionUp(
             self.scrolling_region.bottom - self.scrolling_region.top,
         );
-
-        // eraseRow and eraseRowBounded will end up moving the cursor pin
-        // up by 1, so we need to move it back down. A `cursorReload`
-        // would be better option but this is more efficient and this is
-        // a super hot path so we do this instead.
-        assert(screen.cursor.x == old_cursor.x);
-        assert(screen.cursor.y == old_cursor.y);
-        screen.cursor.y -= 1;
-        screen.cursorDown(1);
-
-        // The operations above can prune our cursor style so we need to
-        // update. This should never fail because the above can only FREE
-        // memory.
-        screen.manualStyleUpdate() catch |err| {
-            std.log.warn("deleteLines manualStyleUpdate err={}", .{err});
-            screen.cursor.style = .{};
-            screen.manualStyleUpdate() catch unreachable;
-        };
 
         return;
     }
@@ -2186,9 +2164,17 @@ pub fn scrollUp(self: *Terminal, count: usize) !void {
 
     // If our scroll region is at the top and we have no left/right
     // margins then we move the scrolled out text into the scrollback.
+    //
+    // If our screen doesn't retain scrollback (e.g. the alternate
+    // screen) then creating scrollback is pure overhead, so we use the
+    // deleteLines path below instead, unless the region is the full
+    // screen where cursorScrollAbove has a specialized fast path
+    // (cursorDownScroll) for scrolling without scrollback.
     if (self.scrolling_region.top == 0 and
         self.scrolling_region.left == 0 and
-        self.scrolling_region.right == self.cols - 1)
+        self.scrolling_region.right == self.cols - 1 and
+        (!self.screens.active.no_scrollback or
+            self.scrolling_region.bottom == self.rows - 1))
     {
         // Scrolling dirties the images because it updates their placements pins.
         if (comptime build_options.kitty_graphics) {
@@ -8937,6 +8923,128 @@ test "Terminal: index bottom of scroll region blank line preserves SGR" {
             .g = 0,
             .b = 0,
         }, list_cell.cell.content.color_rgb);
+    }
+}
+
+test "Terminal: index bottom of scroll region with top margin and background SGR" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, .{ .rows = 5, .cols = 5 });
+    defer t.deinit(alloc);
+
+    try t.printString("1\n2\n3\n4\n5");
+    t.setTopAndBottomMargin(2, 4);
+    t.setCursorPos(4, 1);
+    try t.setAttribute(.{ .direct_color_bg = .{
+        .r = 0xFF,
+        .g = 0,
+        .b = 0,
+    } });
+    try t.index();
+
+    // The region (rows 2-4) scrolled up, rows outside are unchanged.
+    {
+        const str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("1\n3\n4\n\n5", str);
+    }
+
+    // The cursor is on the new blank row.
+    try testing.expectEqual(@as(usize, 3), t.screens.active.cursor.y);
+
+    // The new blank row must be filled with our background color.
+    for (0..t.cols) |x| {
+        const list_cell = t.screens.active.pages.getCell(.{ .active = .{
+            .x = @intCast(x),
+            .y = 3,
+        } }).?;
+        try testing.expect(list_cell.cell.content_tag == .bg_color_rgb);
+        try testing.expectEqual(Cell.RGB{
+            .r = 0xFF,
+            .g = 0,
+            .b = 0,
+        }, list_cell.cell.content.color_rgb);
+    }
+}
+
+test "Terminal: index bottom of alt screen full region" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, .{ .rows = 3, .cols = 5 });
+    defer t.deinit(alloc);
+
+    try t.switchScreenMode(.@"1049", true);
+    try t.printString("A\nB\nC");
+    try t.index();
+    t.carriageReturn();
+    try t.print('D');
+
+    // Content scrolled up and the scrolled-out row is discarded, NOT
+    // moved into scrollback (the alt screen has none).
+    {
+        const str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("B\nC\nD", str);
+    }
+    {
+        const str = try t.screens.active.dumpStringAlloc(alloc, .{ .screen = .{} });
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("B\nC\nD", str);
+    }
+
+    // Primary screen is untouched.
+    try t.switchScreenMode(.@"1049", false);
+    {
+        const str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("", str);
+    }
+}
+
+test "Terminal: index bottom of alt screen top region" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, .{ .rows = 5, .cols = 5 });
+    defer t.deinit(alloc);
+
+    try t.switchScreenMode(.@"1049", true);
+    try t.printString("1\n2\n3\n4\n5");
+
+    // Region at the top of the screen, excluding the last row. On the
+    // alt screen this must NOT create scrollback.
+    t.setTopAndBottomMargin(1, 4);
+    t.setCursorPos(4, 1);
+    try t.index();
+    try t.print('X');
+
+    {
+        const str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("2\n3\n4\nX\n5", str);
+    }
+    {
+        const str = try t.screens.active.dumpStringAlloc(alloc, .{ .screen = .{} });
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("2\n3\n4\nX\n5", str);
+    }
+}
+
+test "Terminal: scrollUp top region no scrollback" {
+    const alloc = testing.allocator;
+    var t = try init(alloc, .{ .rows = 5, .cols = 5, .max_scrollback = 0 });
+    defer t.deinit(alloc);
+
+    try t.printString("A\nB\nC\nD\nE");
+    t.setTopAndBottomMargin(1, 3);
+    try t.scrollUp(1);
+
+    // The region scrolled and the scrolled-out row is discarded.
+    {
+        const str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("B\nC\n\nD\nE", str);
+    }
+    {
+        const str = try t.screens.active.dumpStringAlloc(alloc, .{ .screen = .{} });
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("B\nC\n\nD\nE", str);
     }
 }
 
