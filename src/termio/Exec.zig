@@ -1363,6 +1363,23 @@ pub const ReadThread = struct {
         tail: usize = 0,
         count: usize = 0,
 
+        /// Set by the gather stage (under the mutex) while it sleeps
+        /// in a bridge poll. The parse stage only writes to the idle
+        /// pipe when this is set, so an interactive terminal never
+        /// pays the pipe syscalls.
+        bridging: bool = false,
+
+        /// A self-pipe the parse stage uses to interrupt the gather
+        /// stage's bridge poll the moment it runs out of batches.
+        /// Bridging a refill gap is only free while the parse stage
+        /// is busy; once it goes idle, every additional microsecond
+        /// spent bridging is added straight to output latency. The
+        /// write end is used by the parse stage, the read end is
+        /// polled by the gather stage. -1 when unavailable, in which
+        /// case bridge polls are bounded by their timeout only.
+        idle_read_fd: posix.fd_t = -1,
+        idle_write_fd: posix.fd_t = -1,
+
         /// Set by the gather stage when the stream is over (quit
         /// signal, EOF, or pty error). The parse stage drains any
         /// remaining batches and then exits.
@@ -1403,6 +1420,25 @@ pub const ReadThread = struct {
 
         // Shared pipeline
         var pipeline: Pipeline = .{};
+
+        // The idle self-pipe (see the Pipeline field docs). If we
+        // can't create it we still run correctly, bridge polls are
+        // just bounded by their timeout instead of being interrupted
+        // when the parse stage goes idle.
+        if (posix.pipe2(.{
+            .CLOEXEC = true,
+            .NONBLOCK = true,
+        })) |fds| {
+            pipeline.idle_read_fd = fds[0];
+            pipeline.idle_write_fd = fds[1];
+        } else |err| {
+            log.warn("read thread failed to create idle pipe err={}", .{err});
+        }
+        defer if (pipeline.idle_read_fd >= 0) {
+            posix.close(pipeline.idle_read_fd);
+            posix.close(pipeline.idle_write_fd);
+        };
+
         const gather_thread = std.Thread.spawn(
             .{},
             gatherMainPosix,
@@ -1440,10 +1476,21 @@ pub const ReadThread = struct {
 
             {
                 pipeline.mutex.lock();
-                defer pipeline.mutex.unlock();
                 pipeline.tail = (pipeline.tail + 1) % buffer_count;
                 pipeline.count -= 1;
+                const wake = pipeline.count == 0 and
+                    pipeline.bridging and
+                    pipeline.idle_write_fd >= 0;
+                pipeline.mutex.unlock();
                 pipeline.slot_free.signal();
+
+                // We ran out of batches while the gather stage is
+                // bridging a refill gap: interrupt its poll so it
+                // delivers what it has instead of sleeping out the
+                // timeout while we sit idle.
+                if (wake) {
+                    _ = posix.write(pipeline.idle_write_fd, "i") catch {};
+                }
             }
         }
     }
@@ -1467,10 +1514,14 @@ pub const ReadThread = struct {
             pipeline.batch_ready.signal();
         }
 
-        // The fds we poll: data on the pty and our quit notification.
-        var pollfds: [2]posix.pollfd = .{
+        // The fds we poll: data on the pty, our quit notification,
+        // and the parse stage's idle wake. The idle fd only
+        // participates in bridge polls (the parse stage only writes
+        // while we're bridging), so the outer poll slices it off.
+        var pollfds: [3]posix.pollfd = .{
             .{ .fd = fd, .events = posix.POLL.IN, .revents = undefined },
             .{ .fd = quit, .events = posix.POLL.IN, .revents = undefined },
+            .{ .fd = pipeline.idle_read_fd, .events = posix.POLL.IN, .revents = undefined },
         };
 
         while (true) {
@@ -1515,7 +1566,8 @@ pub const ReadThread = struct {
                             continue :gather;
                         }
 
-                        // Still dry, so sleep in poll within our latency budget.
+                        // Still dry, so we want to sleep in poll for
+                        // the next refill, within our latency budget.
                         const now = std.time.Instant.now() catch
                             break :gather;
                         if (bridge_start) |start| {
@@ -1523,10 +1575,35 @@ pub const ReadThread = struct {
                                 break :gather;
                         } else bridge_start = now;
 
+                        // Bridging a refill gap is only free while the
+                        // parse stage is busy, since the wait hides
+                        // behind parse time. Once the parser is idle,
+                        // every microsecond we hold this batch is
+                        // added straight to output latency, and for a
+                        // request/response producer (a burst ending
+                        // in a query, e.g. frame + cursor position
+                        // report) the writer is blocked on a reply to
+                        // data sitting in this buffer, so a poll here
+                        // would always sleep its full timeout. Deliver
+                        // now if the parser is idle, and otherwise arm
+                        // the idle wake so it can interrupt our poll
+                        // the moment that changes.
+                        {
+                            pipeline.mutex.lock();
+                            defer pipeline.mutex.unlock();
+                            if (pipeline.count == 0) break :gather;
+                            pipeline.bridging = true;
+                        }
+
                         const r = posix.poll(
                             &pollfds,
                             bridge_poll_timeout_ms,
-                        ) catch break :gather;
+                        ) catch |poll_err| {
+                            clearBridging(pipeline);
+                            log.warn("bridge poll failed err={}", .{poll_err});
+                            break :gather;
+                        };
+                        clearBridging(pipeline);
 
                         // Quiet for a full timeout means the burst
                         // ended.
@@ -1537,6 +1614,23 @@ pub const ReadThread = struct {
                         if (pollfds[1].revents & posix.POLL.IN != 0) {
                             log.info("read thread got quit signal", .{});
                             fatal = true;
+                            break :gather;
+                        }
+
+                        // The parse stage went idle: drain the wake
+                        // and deliver what we have. The pty may have
+                        // data as well, but the next batch can pick
+                        // that up; an idle parser means delivery must
+                        // not wait.
+                        if (pollfds[2].revents & posix.POLL.IN != 0) {
+                            var trash: [16]u8 = undefined;
+                            while (true) {
+                                const drained = posix.read(
+                                    pipeline.idle_read_fd,
+                                    &trash,
+                                ) catch break;
+                                if (drained < trash.len) break;
+                            }
                             break :gather;
                         }
 
@@ -1593,8 +1687,9 @@ pub const ReadThread = struct {
             // claim the next buffer without an intervening poll.
             if (total == buffer_capacity) continue;
 
-            // Wait for data.
-            _ = posix.poll(&pollfds, -1) catch |err| {
+            // Wait for data. The idle fd is sliced off: the parse
+            // stage only writes to it while we're bridging.
+            _ = posix.poll(pollfds[0..2], -1) catch |err| {
                 log.warn("poll failed on read thread, exiting early err={}", .{err});
                 return;
             };
@@ -1612,6 +1707,14 @@ pub const ReadThread = struct {
                 return;
             }
         }
+    }
+
+    /// Clears the bridging flag armed before a bridge poll, closing
+    /// the window in which the parse stage writes idle wakes.
+    fn clearBridging(pipeline: *Pipeline) void {
+        pipeline.mutex.lock();
+        defer pipeline.mutex.unlock();
+        pipeline.bridging = false;
     }
 
     /// Sets the QoS class of the calling thread for the read pipeline
