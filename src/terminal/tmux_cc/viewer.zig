@@ -1921,6 +1921,12 @@ pub const Viewer = struct {
         pane.stream.deinit();
         pane.stream = pane.terminal.vtStream();
         installPaneStreamEffects(pane, self.default_cursor_style, self.default_cursor_blink);
+        // A stranded synchronized-output (DECSET 2026) bit is NOT cleared here:
+        // this bookkeeping path holds no pane renderer lock and issues no wake,
+        // so a `terminal.modes` write would race the child renderer and repaint
+        // nothing anyway. The recapture this reset triggers always ends in a
+        // pane_state, and receivedPaneState clears the bit under the pane lock +
+        // wakePane. ROOTSHELL-TMUX (id=viewer-sync-output-attach-clear)
         // Drop spilled pre-discard `%output`; the recapture replaces content.
         // Also clear `pending_dropped`: the recapture already re-fetches every
         // screen + state, so leaving it set would make the first recapture
@@ -3835,6 +3841,17 @@ pub const Viewer = struct {
 
             // Focus reporting.
             t.modes.set(.focus_event, data.focus_flag);
+
+            // Force synchronized output (DECSET 2026) off. A completed
+            // capture-pane snapshot is a settled, non-synchronized frame —
+            // tmux has no persistent sync flag, it's transient. During attach
+            // the balancing `2026l` can be dropped (uninitialized-pane output
+            // suppression / spill overflow), latching the bit ON with no live
+            // stream to clear it; the renderer then skips every frame and the
+            // pane stays blank. Mirrors the resize-path clear in c/terminal.zig.
+            // ROOTSHELL-TMUX (id=viewer-sync-output-attach-clear)
+            t.modes.set(.synchronized_output, false);
+
             // Bracketed paste is intentionally NOT synced from tmux. tmux
             // exposes no `bracketed_paste` format variable — `#{bracketed_paste}`
             // returns empty on every tmux through 3.6 — so syncing it would
