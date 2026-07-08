@@ -1417,7 +1417,12 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     const need: u32 = (bottom_region + cell_h - 1) / cell_h + 2;
                     break :rows @intCast(@min(@max(need, 2), 255));
                 };
-                try self.terminal_state.updateExtraRows(
+                // Begin the update of our terminal state. Work that
+                // doesn't require terminal access (e.g. style
+                // denormalization) is deferred to the endUpdate call
+                // outside of this critical section, keeping our lock
+                // hold time as short as possible.
+                try self.terminal_state.beginUpdateExtraRows(
                     self.alloc,
                     state.terminal,
                     scrollbar,
@@ -1495,6 +1500,11 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     .rubber_band_y_px = rubber_band_y_px,
                 };
             };
+
+            // Outside the critical area, complete the update we began
+            // within it. This must be done before anything reads the
+            // render state (e.g. rebuildCells).
+            self.terminal_state.endUpdate();
 
             // Snap the smooth-scroll offset to a whole device pixel. The cell
             // text shader samples the glyph atlas with nearest-neighbor
