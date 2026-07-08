@@ -1471,6 +1471,7 @@ pub const Viewer = struct {
         }
 
         if (self.state != .command_queue) return;
+        if (!self.supportsPaneColorReport()) return;
         const rfg = self.colors.foreground.get() orelse return;
         const rbg = self.colors.background.get() orelse return;
         var it = self.panes.iterator();
@@ -2950,19 +2951,21 @@ pub const Viewer = struct {
                 // `.default` (unset) colors and correctly skip the report.
                 // Foreground (10) and background (11) go as two separate
                 // commands: tmux parses only one OSC sequence per report.
-                if (self.colors.foreground.get()) |fg| {
-                    try self.queueCommands(&.{.{ .pane_color_report = .{
-                        .pane_id = pane_id,
-                        .code = 10,
-                        .color = fg,
-                    } }});
-                }
-                if (self.colors.background.get()) |bg| {
-                    try self.queueCommands(&.{.{ .pane_color_report = .{
-                        .pane_id = pane_id,
-                        .code = 11,
-                        .color = bg,
-                    } }});
+                if (self.supportsPaneColorReport()) {
+                    if (self.colors.foreground.get()) |fg| {
+                        try self.queueCommands(&.{.{ .pane_color_report = .{
+                            .pane_id = pane_id,
+                            .code = 10,
+                            .color = fg,
+                        } }});
+                    }
+                    if (self.colors.background.get()) |bg| {
+                        try self.queueCommands(&.{.{ .pane_color_report = .{
+                            .pane_id = pane_id,
+                            .code = 11,
+                            .color = bg,
+                        } }});
+                    }
                 }
 
                 // Other terminal queries an app makes inside the pane (kitty
@@ -3397,6 +3400,12 @@ pub const Viewer = struct {
         self.tmux_version = dup;
     }
 
+    fn supportsPaneColorReport(self: *const Viewer) bool {
+        // `refresh-client -r` landed in tmux 3.5. Older servers reject the
+        // command with %error, so skip OSC 10/11 pre-answering there.
+        return tmuxVersionAtLeast(self.tmux_version, 3, 5);
+    }
+
     fn receivedPaneMode(
         self: *Viewer,
         arena_alloc: Allocator,
@@ -3601,6 +3610,11 @@ pub const Viewer = struct {
                 log.info("failed to parse list-panes line: {s}", .{line});
                 continue;
             };
+            const focus_flag_present = delimitedFieldNonEmpty(
+                line,
+                Format.list_panes.delim,
+                comptime formatFieldIndex(Format.list_panes, .focus_flag),
+            );
 
             // Get the pane for this ID
             const entry = self.panes.getEntry(data.pane_id) orelse {
@@ -3641,7 +3655,7 @@ pub const Viewer = struct {
                 continue;
             };
             defer pane.unlockRenderer(render_mutex);
-            pane.capture_retries = 0;
+            if (!pane.capture_pending) pane.capture_retries = 0;
             pane.state_pending = false;
             self.flushPaneDeferred(pane, data.pane_id);
 
@@ -3839,8 +3853,12 @@ pub const Viewer = struct {
             else
                 .x10;
 
-            // Focus reporting.
-            t.modes.set(.focus_event, data.focus_flag);
+            // Focus reporting. tmux < 3.5 lacks `focus_flag`, so the format
+            // field expands empty and parses as false. Do not let that clobber
+            // the pane's live focus-event mode.
+            if (focus_flag_present) {
+                t.modes.set(.focus_event, data.focus_flag);
+            }
 
             // Force synchronized output (DECSET 2026) off. A completed
             // capture-pane snapshot is a settled, non-synchronized frame —
@@ -3948,6 +3966,7 @@ pub const Viewer = struct {
                 });
             } else {
                 pane.capture_pending = false;
+                self.freeStashedVisibles(pane);
                 log.warn("pane {} history capture dropped after retries", .{id});
             }
             return;
@@ -5615,6 +5634,51 @@ fn serverBlockEnd(content: []const u8) control.Notification {
     return .{ .block_end = testBlock(content, 0) };
 }
 
+fn delimitedFieldNonEmpty(line: []const u8, delim: u8, index: usize) bool {
+    var it = std.mem.splitScalar(u8, line, delim);
+    var i: usize = 0;
+    while (it.next()) |field| : (i += 1) {
+        if (i == index) return field.len > 0;
+    }
+    return false;
+}
+
+fn formatFieldIndex(comptime format: Format, comptime variable: output.Variable) usize {
+    inline for (format.vars, 0..) |field, i| {
+        if (field == variable) return i;
+    }
+    @compileError("format does not contain requested variable");
+}
+
+fn parseLeadingVersionNumber(s: []const u8, start: *usize) ?u32 {
+    var i = start.*;
+    if (i >= s.len or !std.ascii.isDigit(s[i])) return null;
+
+    var value: u32 = 0;
+    while (i < s.len and std.ascii.isDigit(s[i])) : (i += 1) {
+        const digit: u32 = @intCast(s[i] - '0');
+        value = std.math.mul(u32, value, 10) catch return null;
+        value = std.math.add(u32, value, digit) catch return null;
+    }
+    start.* = i;
+    return value;
+}
+
+fn tmuxVersionAtLeast(version: []const u8, min_major: u32, min_minor: u32) bool {
+    const trimmed = std.mem.trim(u8, version, " \t\r\n");
+    var i = std.mem.indexOfAny(u8, trimmed, "0123456789") orelse return false;
+    const major = parseLeadingVersionNumber(trimmed, &i) orelse return false;
+
+    var minor: u32 = 0;
+    if (i < trimmed.len and trimmed[i] == '.') {
+        i += 1;
+        minor = parseLeadingVersionNumber(trimmed, &i) orelse 0;
+    }
+
+    if (major != min_major) return major > min_major;
+    return minor >= min_minor;
+}
+
 test "client_size command formats refresh-client" {
     const cmd: Command = .{ .client_size = .{ .cols = 120, .rows = 36 } };
     var builder: std.Io.Writer.Allocating = .init(testing.allocator);
@@ -5818,6 +5882,15 @@ test "pane_color_report contains no raw ESC so it survives the gateway strip" {
     try testing.expect(std.mem.indexOfScalar(u8, result, 0x1b) == null);
 }
 
+test "pane_color_report is gated to tmux versions with refresh-client -r" {
+    try testing.expect(!tmuxVersionAtLeast("3.4", 3, 5));
+    try testing.expect(!tmuxVersionAtLeast("3.4a", 3, 5));
+    try testing.expect(tmuxVersionAtLeast("3.5", 3, 5));
+    try testing.expect(tmuxVersionAtLeast("3.5a", 3, 5));
+    try testing.expect(tmuxVersionAtLeast("next-3.5", 3, 5));
+    try testing.expect(tmuxVersionAtLeast("3.10", 3, 5));
+}
+
 test "setClientSize queues command in command_queue state" {
     var viewer = try Viewer.init(testing.allocator, 80, 24);
     defer viewer.deinit();
@@ -5988,6 +6061,102 @@ fn driveStartupOneWindow(viewer: *Viewer) !void {
     }
     try testing.expectEqual(.command_queue, viewer.state);
     try testing.expectEqual(@as(usize, 1), viewer.windows.items.len);
+}
+
+fn firstCommandAction(actions: []const Viewer.Action) ?[]const u8 {
+    for (actions) |action| {
+        if (action == .command) return action.command;
+    }
+    return null;
+}
+
+test "pane_state leaves focus_event unchanged when tmux omits focus_flag" {
+    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    defer viewer.deinit();
+    try driveStartupOneWindow(&viewer);
+
+    const pane = viewer.panes.get(0).?;
+    const t: *Terminal = &pane.terminal;
+    t.modes.set(.focus_event, true);
+
+    try viewer.receivedPaneState(
+        \\%0;10;2;0;;0;1;4294967295;4294967295;0;1;0;0;0;0;0;0;0;0;0;;0;0;23;8,16
+    );
+    try testing.expect(t.modes.get(.focus_event));
+
+    try viewer.receivedPaneState(
+        \\%0;10;2;0;;0;1;4294967295;4294967295;0;1;0;0;0;0;0;0;0;0;0;0;0;0;23;8,16
+    );
+    try testing.expect(!t.modes.get(.focus_event));
+}
+
+test "pane history retry cap survives capture-pending pane_state acquires" {
+    // Regression for a livelock where a timed-out pane_history set
+    // capture_pending, then an interleaved pane_state acquired the pane lock
+    // and reset capture_retries without applying capture content. With the
+    // counter reset defeated, repeated history lock timeouts reach the cap,
+    // drop the stale capture, and the trailing pane_state initializes the pane.
+    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    defer viewer.deinit();
+
+    _ = viewer.next(.{ .tmux = blockEnd("") });
+    _ = viewer.next(.{ .tmux = .{ .session_changed = .{ .id = 1, .name = "test" } } });
+    _ = viewer.next(.{ .tmux = blockEnd("") });
+    _ = viewer.next(.{ .tmux = blockEnd("3.5a") });
+    var actions = viewer.next(.{ .tmux = blockEnd(
+        \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
+    ) });
+    var panes_it = viewer.panes.iterator();
+    while (panes_it.next()) |kv| kv.value_ptr.*.clearPendingAttach();
+
+    const pane = viewer.panes.get(0).?;
+    try testing.expect(!pane.initialized);
+
+    var render_mutex: std.Thread.Mutex = .{};
+    var dummy_ctx: u8 = 0;
+    const wake_fn = struct {
+        fn wake(_: ?*anyopaque) void {}
+    }.wake;
+    const osc_post_fn = struct {
+        fn post(_: ?*anyopaque, _: Viewer.PaneOscEvent) void {}
+    }.post;
+    pane.attachRenderer(&render_mutex, &dummy_ctx, wake_fn, &dummy_ctx, osc_post_fn);
+    defer pane.detachRenderer();
+
+    var current_command = firstCommandAction(actions) orelse return error.MissingCommand;
+    var history_timeouts: usize = 0;
+    var guard: usize = 0;
+    while ((!viewer.command_queue.empty() or viewer.command_in_flight) and guard < 80) : (guard += 1) {
+        const is_history =
+            std.mem.containsAtLeast(u8, current_command, 1, "capture-pane") and
+            std.mem.containsAtLeast(u8, current_command, 1, "-S -10000");
+        const is_state = std.mem.startsWith(u8, current_command, "list-panes -s");
+
+        if (is_history) {
+            render_mutex.lock();
+            history_timeouts += 1;
+        }
+        actions = viewer.next(.{ .tmux = blockEnd(if (is_state)
+            \\%0;10;2;0;;0;1;4294967295;4294967295;0;1;0;0;0;0;0;0;0;0;0;0;0;0;23;8,16
+        else if (is_history)
+            "HISTORY"
+        else
+            "VISIBLE") });
+        if (is_history) render_mutex.unlock();
+
+        current_command = firstCommandAction(actions) orelse "";
+        if (current_command.len == 0 and viewer.command_in_flight) {
+            return error.MissingCommand;
+        }
+    }
+
+    try testing.expect(guard < 80);
+    try testing.expect(history_timeouts >= PANE_CAPTURE_RETRY_MAX + 1);
+    try testing.expect(pane.initialized);
+    try testing.expect(!pane.capture_pending);
+    try testing.expectEqual(@as(u8, 0), pane.capture_retries);
+    try testing.expect(pane.captured_visible_primary == null);
+    try testing.expect(pane.captured_visible_alternate == null);
 }
 
 test "untracked send-keys ack is swallowed, not matched to a tracked command" {
