@@ -9,6 +9,8 @@ const assert = @import("../../quirks.zig").inlineAssert;
 
 const log = std.log.scoped(.terminal_tmux);
 
+const ProbeEchoMatcher = @import("probe_echo.zig").ProbeEchoMatcher;
+
 /// The `refresh-client -B` subscription name the viewer uses to track each
 /// window's active-pane title (`#{pane_title}`). `%subscription-changed`
 /// notifications carrying this name deliver a window id plus the title value.
@@ -42,6 +44,9 @@ pub const ErrorCode = enum(u8) {
     resync_rebuild_failed = 8,
     /// A recognized notification line was malformed; request live resync.
     malformed_notification = 9,
+    /// The recovery probe's shell ECHO was detected: the remote is a plain
+    /// shell (tmux exited but its `%exit` was lost to data loss).
+    probe_echo_detach = 10,
 };
 
 /// Parsed tokens from a %begin, %end, or %error guard line.
@@ -137,6 +142,27 @@ pub const Parser = struct {
     /// channel survives even if the recover request races. ROOTSHELL-TMUX
     /// (id=control-recover-request)
     recover_pending: bool = false,
+
+    /// Armed while a recovery-resync probe is outstanding: scans the bytes
+    /// `.idle` skips for the probe's shell ECHO (the literal UNEXPANDED
+    /// needle, see probe_echo.zig) — positive proof the remote is a plain
+    /// shell, i.e. tmux exited but its `%exit` was lost to data loss. Null =
+    /// disarmed. Armed by the stream handler right after it writes a probe
+    /// (never on restore-resume, which the app's resume watchdog owns);
+    /// disarmed on block completion (the remote provably speaks protocol),
+    /// on `beginResync` (fresh episode; arm follows the probe send), and on
+    /// budget exhaustion (the app watchdog is the backstop). Deliberately
+    /// scans ONLY `.idle` bytes — block/notification content is the realistic
+    /// false-positive surface (a capture replay or %output can contain a
+    /// previous episode's on-screen echo). ROOTSHELL-TMUX
+    /// (id=control-probe-echo)
+    probe_echo: ?ProbeEchoMatcher = null,
+
+    /// Edge-triggered "the remote is a dead shell" detection (same
+    /// take-and-clear contract as `recover_pending`). The stream handler
+    /// consumes this via `takeDetachRequest` and performs the same teardown
+    /// as a clean `%exit`. ROOTSHELL-TMUX (id=control-probe-echo-edge)
+    detach_pending: bool = false,
 
     /// Whether a `%exit` notification has been parsed. tmux's real closing ST
     /// (7-bit `ESC \` or 8-bit 0x9C) always FOLLOWS `%exit`, so this is the
@@ -236,6 +262,24 @@ pub const Parser = struct {
         // the field for the NEXT byte. ROOTSHELL-TMUX (id=control-resync-line-start)
         const at_line_start = self.resync_at_line_start;
         self.resync_at_line_start = (byte == '\n');
+
+        // Probe-echo detach scan over `.idle` bytes only (see the field doc).
+        // Runs BEFORE the state switch so `.drain_line` sees the CR/LF bytes
+        // the `.idle` arm treats as framing noise. Two documented misses, both
+        // covered by the app watchdog: an echo swallowed into a bogus
+        // notification (a line-start '%' shell prompt), and an echo inside a
+        // stale unterminated block. ROOTSHELL-TMUX (id=control-probe-echo)
+        if (self.state == .idle) {
+            if (self.probe_echo) |*matcher| switch (matcher.feed(byte)) {
+                .matched => {
+                    self.last_error = .probe_echo_detach; // ROOTSHELL-TMUX (id=control-error-code)
+                    self.detach_pending = true;
+                    self.probe_echo = null;
+                },
+                .exhausted => self.probe_echo = null,
+                .pending => {},
+            };
+        }
 
         switch (self.state) {
             // Drop because we're in a broken state.
@@ -357,6 +401,11 @@ pub const Parser = struct {
                         // restored. The resume probe's response is always a block.
                         // ROOTSHELL-TMUX (id=control-resync-tolerant)
                         self.tolerant = false;
+                        // The remote provably speaks the control protocol; keeping
+                        // the echo matcher armed past this point only adds
+                        // false-positive surface. A later re-probe re-arms it.
+                        // ROOTSHELL-TMUX (id=control-probe-echo)
+                        self.probe_echo = null;
                         // NOTE: we deliberately do NOT swallow server-originated blocks
                         // (begin/end flags bit 0 clear) at the parser. The STARTUP attach
                         // block (`tmux -CC new`/attach) is itself server-originated
@@ -451,6 +500,11 @@ pub const Parser = struct {
         self.block_begin = null;
         self.mismatched_terminators = 0;
         self.buffer.clearRetainingCapacity();
+        // Fresh episode: arming follows the probe send (the stream handler
+        // arms right after it queues a probe, which is always after this).
+        // ROOTSHELL-TMUX (id=control-probe-echo)
+        self.probe_echo = null;
+        self.detach_pending = false;
     }
 
     /// Self-heal a framing desync without breaking the channel: enter
@@ -473,6 +527,27 @@ pub const Parser = struct {
     pub fn takeRecoverRequest(self: *Parser) bool {
         const v = self.recover_pending;
         self.recover_pending = false;
+        return v;
+    }
+
+    /// Arm the probe-echo detach scan (see the `probe_echo` field) with the
+    /// nonce carried by the probe that was just written — the matcher only
+    /// fires on THAT probe's echo. Called by the stream handler right after a
+    /// recovery-resync probe was actually queued for a viewer with projected
+    /// topology. ROOTSHELL-TMUX (id=control-probe-echo)
+    pub fn armProbeEcho(self: *Parser, nonce: [ProbeEchoMatcher.nonce_len]u8) void {
+        if (self.state == .broken) return;
+        self.probe_echo = .init(nonce);
+    }
+
+    /// Take-and-clear the dead-shell detach edge (see `detach_pending`). A
+    /// true result means the remote echoed our resync probe back as plain
+    /// text — it is a shell, not tmux — and the stream handler should tear
+    /// down exactly like a clean `%exit`. ROOTSHELL-TMUX
+    /// (id=control-probe-echo-edge)
+    pub fn takeDetachRequest(self: *Parser) bool {
+        const v = self.detach_pending;
+        self.detach_pending = false;
         return v;
     }
 
@@ -1996,4 +2071,123 @@ test "tmux message" {
     const n = (try c.put('\n')).?;
     try testing.expect(n == .message);
     try testing.expectEqualStrings("Session created session 1", n.message.text);
+}
+
+test "tmux probe echo while armed raises detach edge" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var c: Parser = .{ .buffer = .init(alloc) };
+    defer c.deinit();
+
+    // Simulate the dead-shell scenario: a stray byte self-heals into
+    // resync-tolerant idle, the stream handler writes a probe and arms the
+    // matcher, then the shell echoes the probe back.
+    try testing.expect(try c.put('x') == null);
+    try testing.expect(c.takeRecoverRequest());
+    c.armProbeEcho("ab12cd34".*);
+
+    const echo = "\r\nuser@host:~$ display-message -p '__ROOTSHELL_TMUX_RESYNC__ #{session_id} ab12cd34'\r\n";
+    for (echo) |byte| try testing.expect(try c.put(byte) == null);
+
+    try testing.expect(c.takeDetachRequest());
+    // Edge is take-and-clear.
+    try testing.expect(!c.takeDetachRequest());
+    // Detection never breaks the parser; the stream handler owns teardown.
+    try testing.expect(c.state == .idle);
+    try testing.expect(c.last_error == .probe_echo_detach);
+}
+
+test "tmux probe echo wrapped at terminal width still detected" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var c: Parser = .{ .buffer = .init(alloc) };
+    defer c.deinit();
+
+    try testing.expect(try c.put('x') == null);
+    _ = c.takeRecoverRequest();
+    c.armProbeEcho("ab12cd34".*);
+
+    // Terminal echo wraps the line mid-marker.
+    const echo = "\n$ display-message -p '__ROOTSHELL_TM" ++ "\r\n" ++ "UX_RESYNC__ #{session_id} ab12cd34'\r\n";
+    for (echo) |byte| try testing.expect(try c.put(byte) == null);
+    try testing.expect(c.takeDetachRequest());
+}
+
+test "tmux probe echo: expanded marker inside block raises NO edge" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var c: Parser = .{ .buffer = .init(alloc) };
+    defer c.deinit();
+
+    try testing.expect(try c.put('x') == null);
+    _ = c.takeRecoverRequest();
+    c.armProbeEcho("ab12cd34".*);
+
+    // A genuine probe reply: expanded marker (and even the nonce) inside a
+    // %begin/%end block.
+    for ("\n%begin 1 1 1\n__ROOTSHELL_TMUX_RESYNC__ $3 ab12cd34\n%end 1 1 1") |byte|
+        try testing.expect(try c.put(byte) == null);
+    const n = (try c.put('\n')).?;
+    try testing.expect(n == .block_end);
+    try testing.expect(!c.takeDetachRequest());
+}
+
+test "tmux probe echo: marker without arming raises NO edge" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var c: Parser = .{ .buffer = .init(alloc) };
+    defer c.deinit();
+
+    // Tolerant skip of the literal needle with the matcher disarmed.
+    try testing.expect(try c.put('x') == null);
+    _ = c.takeRecoverRequest();
+
+    const echo = "\n$ display-message -p '__ROOTSHELL_TMUX_RESYNC__ #{session_id} ab12cd34'\r\n";
+    for (echo) |byte| try testing.expect(try c.put(byte) == null);
+    try testing.expect(!c.takeDetachRequest());
+}
+
+test "tmux probe echo: block completion disarms the matcher" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var c: Parser = .{ .buffer = .init(alloc) };
+    defer c.deinit();
+
+    try testing.expect(try c.put('x') == null);
+    _ = c.takeRecoverRequest();
+    c.armProbeEcho("ab12cd34".*);
+
+    // A completed block proves the remote speaks protocol → disarm.
+    for ("\n%begin 1 1 1\nok\n%end 1 1 1") |byte| try testing.expect(try c.put(byte) == null);
+    const n = (try c.put('\n')).?;
+    try testing.expect(n == .block_end);
+
+    // A later echo (even with the correct nonce, e.g. stale scrollback
+    // replayed) no longer detaches.
+    for ("stray '__ROOTSHELL_TMUX_RESYNC__ #{session_id} ab12cd34'\n") |byte| _ = try c.put(byte);
+    try testing.expect(!c.takeDetachRequest());
+}
+
+test "tmux probe echo: line-start %-prompt swallows echo, NO edge (documented miss)" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var c: Parser = .{ .buffer = .init(alloc) };
+    defer c.deinit();
+
+    try testing.expect(try c.put('x') == null);
+    _ = c.takeRecoverRequest();
+    c.armProbeEcho("ab12cd34".*);
+
+    // A zsh-style '%' prompt at a line start opens a bogus notification that
+    // swallows the echo — the matcher only scans .idle bytes, so no edge.
+    // The app-side watchdog owns this miss (id=tmux-resync-dead-shell).
+    const echo = "\n% display-message -p '__ROOTSHELL_TMUX_RESYNC__ #{session_id} ab12cd34'";
+    for (echo) |byte| _ = try c.put(byte);
+    try testing.expect(!c.takeDetachRequest());
 }

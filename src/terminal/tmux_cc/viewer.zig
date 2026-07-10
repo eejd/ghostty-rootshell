@@ -508,16 +508,35 @@ pub const Viewer = struct {
     /// (id=viewer-resync-marker)
     pub const resync_marker = "__ROOTSHELL_TMUX_RESYNC__";
 
-    /// The probe command sent on resume. `#{session_id}` is evaluated by tmux
-    /// at runtime (the literal string carries no per-session value), so the
-    /// probe's output gives us the attached session id alongside the marker. We
-    /// need that id for the session-scoped `list-panes -s -t $<id>` pane_state
-    /// command (otherwise learned only from a `%session-changed`, which does not
-    /// arrive on a resume). Plain ASCII (no raw ESC) so the gateway report
-    /// stripper leaves it intact. Typed as `[]const u8` (NOT the inferred
-    /// `*const [N:0]u8`) so it can be passed to `termio.Message.writeReq`, whose
-    /// `MessageData.init` asserts a slice. ROOTSHELL-TMUX (id=viewer-resync-probe)
-    pub const resync_probe_command: []const u8 = "display-message -p '" ++ resync_marker ++ " #{session_id}'\n";
+    /// The probe command sent on resume, split around a per-probe random
+    /// nonce: the full command is `resync_probe_prefix ++ <nonce> ++
+    /// resync_probe_suffix` (built by the stream handler at each write).
+    /// `#{session_id}` is evaluated by tmux at runtime (the literal string
+    /// carries no per-session value), so the probe's output gives us the
+    /// attached session id alongside the marker. We need that id for the
+    /// session-scoped `list-panes -s -t $<id>` pane_state command (otherwise
+    /// learned only from a `%session-changed`, which does not arrive on a
+    /// resume). The nonce rides inside the quoted string AFTER the session id
+    /// so `parseResyncSessionId` (which stops at the first non-digit) is
+    /// unaffected; its only consumer is the probe-echo detach matcher, which
+    /// needs a token that public text can never contain. Plain ASCII (no raw
+    /// ESC) so the gateway report stripper leaves it intact. Typed as
+    /// `[]const u8` (NOT the inferred `*const [N:0]u8`) so slices concatenate
+    /// cleanly for `termio.Message.writeReq`. ROOTSHELL-TMUX
+    /// (id=viewer-resync-probe)
+    pub const resync_probe_prefix: []const u8 = "display-message -p '" ++ resync_marker ++ " #{session_id} ";
+    pub const resync_probe_suffix: []const u8 = "'\n";
+
+    // The probe-echo detach matcher (id=probe-echo-detach) recognizes this
+    // probe's shell ECHO as its static needle_prefix followed immediately by
+    // the nonce and closing quote; a probe edit that breaks that shape would
+    // silently disable dead-shell detach detection. ROOTSHELL-TMUX
+    // (id=control-probe-echo)
+    comptime {
+        const ProbeEchoMatcher = @import("probe_echo.zig").ProbeEchoMatcher;
+        assert(std.mem.endsWith(u8, resync_probe_prefix, ProbeEchoMatcher.needle_prefix));
+        assert(resync_probe_suffix[0] == '\'');
+    }
 
     /// Whether a written-but-unacked command was tracked (issued by the viewer
     /// through the command_queue) or untracked (a `send-keys` written directly).

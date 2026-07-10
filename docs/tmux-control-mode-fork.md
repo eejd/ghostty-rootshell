@@ -139,6 +139,28 @@ These must remain byte-stable. Mirror any change in `ghostty-ios`.
   reconcile path AND drops the controller, returns the parser to ground). Unlike
   `..._detach` it does not wait for tmux to answer `detach-client`, so it works
   when tmux/the link is unresponsive. Server session stays alive.
+- **Dead-shell detach detection (`id=probe-echo-detach`, core-internal, no ABI):**
+  when a recovery resync's probe is written into a remote that is actually a
+  plain shell (tmux exited but its `%exit` was lost to data loss), the shell
+  ECHOES the probe back verbatim — including the literal UNEXPANDED
+  `#{session_id}`, which a genuine reply can never contain (tmux expands it to
+  `$N`, inside a `%begin` block), AND a per-probe random nonce
+  (`buildResyncProbe`), so pane output quoting the PUBLIC marker text (these
+  sources/docs) whose `%output` framing was lost cannot forge a match.
+  `ProbeEchoMatcher` (`src/terminal/tmux_cc/probe_echo.zig`) scans the control
+  parser's tolerant-`.idle` skipped bytes for `needle_prefix ++ nonce ++ "'"`
+  while armed (`id=control-probe-echo`, armed with the just-written probe's
+  nonce right after each recovery/reset/re-probe write; never on
+  restore-resume, which the app's 12s resume watchdog owns; disarmed on block
+  completion). On match the parser
+  raises a take-and-clear detach edge (`id=control-probe-echo-edge`, dcs
+  passthroughs `id=dcs-tmux-probe-echo`) and `tmuxDetachEchoExit`
+  (`id=streamhandler-detach-echo`) tears down exactly like a clean `%exit`
+  (teardown + deferred force-unhook). Deliberately does NOT engage the
+  post-force-exit `ExitDrain` (`id=streamhandler-post-exit-drain`): the echo is
+  by construction past the shell transition, no `%exit` will ever arrive, and
+  draining would eat the shell's real output — the echoed line's own tail is
+  consumed by the matcher's drain_line state instead.
 - **Debug snapshot (`id=embedded-tmux-debug-snapshot`, FROZEN):**
   `ghostty_surface_tmux_debug_snapshot` fills a privacy-safe scalar
   `ghostty_tmux_debug_snapshot_s` (viewer/parser state, command-queue + sent-FIFO
@@ -227,7 +249,7 @@ REORDER` note; behavioral hooks in `dcs.zig` / `stream_handler.zig` / `parse_tab
 
 ### `id` registry
 
-220 hook ids across 29 files (the table below enumerates the Tier C/D upstream-hooked
+227 hook ids across 30 files (the table below enumerates the Tier C/D upstream-hooked
 files; the fork-owned sidecars `src/Surface_tmux.zig`, `src/apprt/surface_tmux.zig`,
 `src/termio/Tmux.zig`, and the `src/terminal/tmux_cc/*` parser also carry `id=`-tagged hooks
 but are carried forward verbatim, so they are not re-listed here). Regenerate the full list
@@ -242,10 +264,10 @@ grep -rn 'ROOTSHELL-TMUX' src/ include/ | grep -oE 'id=[a-z0-9-]+' | sort -u
 | `src/apprt/embedded.zig` | `embedded-capi-reconcile` (FROZEN), `embedded-new-tmux-pane` (FROZEN), `embedded-set-client-size` (FROZEN), `embedded-tmux-detach` (FROZEN), `embedded-tmux-command` (FROZEN), `embedded-tmux-active` (FROZEN), `embedded-tmux-resume-abort` (FROZEN), `embedded-tmux-recover` (FROZEN), `embedded-tmux-reset` (FROZEN), `embedded-tmux-force-exit` (FROZEN), `embedded-tmux-flush-deferred` (FROZEN), `embedded-new-tmux-pane-fn`, `embedded-init-tmux-pane-fn`, `embedded-relay-field`, `embedded-relay-deinit`, `embedded-ui-terminal-arm` |
 | `src/apprt/surface.zig` | `apprt-surface-tmux-types-extracted`, `apprt-msg-topology`, `apprt-msg-write`, `apprt-msg-focus`, `apprt-msg-title`, `apprt-relay-writer` |
 | `src/Surface.zig` | `surface-reconcile-extracted`, `surface-initoptions-backend`, `surface-init-backend-select`, `surface-arm-topology`, `surface-arm-write`, `surface-send-keys-untracked`, `surface-paste-atomic`, `surface-arm-focus`, `surface-arm-title` |
-| `src/termio/stream_handler.zig` | `streamhandler-viewer-field`, `streamhandler-force-unhook-field`, `streamhandler-deinit-viewer`, `streamhandler-changeconfig-disable`, `streamhandler-changeconfig-colors`, `streamhandler-set-client-size`, `streamhandler-pump-command-queue`, `streamhandler-write-tracked-command`, `streamhandler-record-tracked`, `streamhandler-record-untracked`, `streamhandler-pane-command`, `streamhandler-detach`, `streamhandler-tmux-active`, `streamhandler-tmux-active-flag`, `streamhandler-dcs-ground`, `streamhandler-block-fifo-filter`, `streamhandler-command-tracked`, `streamhandler-windows-empty-guard`, `streamhandler-dcs-dispatch`, `streamhandler-broken-control-unhook`, `streamhandler-tmux-teardown`, `streamhandler-gateway-menu`, `streamhandler-suppress-gateway-reports`, `snapshot-feed-pane-titles`, `streamhandler-resume-resend-probe`, `streamhandler-resume-abort`, `streamhandler-force-resync`, `streamhandler-force-reset`, `streamhandler-force-exit`, `streamhandler-unlocked-io`, `streamhandler-post-exit-drain`, `tmux-debug-mirror`, `tmux-debug-snapshot-struct` (FROZEN), `tmux-debug-read-progress`, `viewer-cursor-style-default` |
+| `src/termio/stream_handler.zig` | `streamhandler-viewer-field`, `streamhandler-force-unhook-field`, `streamhandler-deinit-viewer`, `streamhandler-changeconfig-disable`, `streamhandler-changeconfig-colors`, `streamhandler-set-client-size`, `streamhandler-pump-command-queue`, `streamhandler-write-tracked-command`, `streamhandler-record-tracked`, `streamhandler-record-untracked`, `streamhandler-pane-command`, `streamhandler-detach`, `streamhandler-tmux-active`, `streamhandler-tmux-active-flag`, `streamhandler-dcs-ground`, `streamhandler-block-fifo-filter`, `streamhandler-command-tracked`, `streamhandler-windows-empty-guard`, `streamhandler-dcs-dispatch`, `streamhandler-broken-control-unhook`, `streamhandler-tmux-teardown`, `streamhandler-gateway-menu`, `streamhandler-suppress-gateway-reports`, `snapshot-feed-pane-titles`, `streamhandler-resume-resend-probe`, `streamhandler-resume-abort`, `streamhandler-force-resync`, `streamhandler-force-reset`, `streamhandler-force-exit`, `streamhandler-unlocked-io`, `streamhandler-post-exit-drain`, `tmux-debug-mirror`, `tmux-debug-snapshot-struct` (FROZEN), `tmux-debug-read-progress`, `viewer-cursor-style-default`, `streamhandler-detach-echo` |
 | `src/termio/backend.zig` | `backend-kind`, `backend-config-tmux`, `backend-tmux`, `backend-threaddata-tmux` |
 | `src/termio/Termio.zig` | `termio-derived-config`, `termio-derived-init`, `termio-stream-config`, `termio-tmux-mutex`, `termio-tmux-process-output` |
-| `src/terminal/dcs.zig` | `dcs-tmux-enter`, `dcs-can-sub-abort`, `dcs-is-inactive`, `dcs-begin-tmux-resync`, `dcs-tmux-take-recover`, `dcs-tmux-max-bytes` (tmux parser must NOT inherit the 1 MiB handler cap), `dcs-tmux-put-error` (parser failure → `.broken`, never silent `.ignore`) (rest gated by `build_options.tmux_control_mode`) |
+| `src/terminal/dcs.zig` | `dcs-tmux-enter`, `dcs-can-sub-abort`, `dcs-is-inactive`, `dcs-begin-tmux-resync`, `dcs-tmux-take-recover`, `dcs-tmux-probe-echo`, `dcs-tmux-max-bytes` (tmux parser must NOT inherit the 1 MiB handler cap), `dcs-tmux-put-error` (parser failure → `.broken`, never silent `.ignore`) (rest gated by `build_options.tmux_control_mode`) |
 | `src/terminal/parse_table.zig` | `parsetable-dcs-utf8-passthrough`, `parsetable-dcs-utf8-test` |
 | `src/terminal/stream_terminal.zig` | `streamterm-dcs-st`, `streamterm-dcs-can-sub` |
 | `src/termio/message.zig` | `termio-msg-set-client-size`, `termio-msg-pane-command`, `termio-msg-send-keys`, `termio-msg-track-command`, `termio-msg-detach`, `termio-msg-resume`, `termio-msg-resume-abort`, `termio-msg-recover`, `termio-msg-reset`, `termio-msg-force-exit`, `termio-msg-flush-deferred` |

@@ -331,6 +331,36 @@ pub const Handler = struct {
         };
     }
 
+    /// Arm the control parser's probe-echo detach scan (see
+    /// `control.Parser.probe_echo`) with the just-written probe's nonce.
+    /// Called by the stream handler right after a recovery-resync probe was
+    /// queued for a viewer with projected topology. No-op unless currently in
+    /// the tmux DCS state. ROOTSHELL-TMUX (id=dcs-tmux-probe-echo)
+    pub fn armTmuxProbeEcho(
+        self: *Handler,
+        nonce: [@import("tmux_cc/probe_echo.zig").ProbeEchoMatcher.nonce_len]u8,
+    ) void {
+        if (comptime !build_options.tmux_control_mode) return;
+        switch (self.state) {
+            .tmux => |*tmux| tmux.armProbeEcho(nonce),
+            else => {},
+        }
+    }
+
+    /// Take-and-clear the control parser's dead-shell detach edge (see
+    /// `control.Parser.detach_pending`). A true result means our resync probe
+    /// was echoed back by a plain shell — tmux exited but its `%exit` was
+    /// lost — and the gateway should tear down exactly like a clean `%exit`.
+    /// No-op (false) unless currently in the tmux DCS state. ROOTSHELL-TMUX
+    /// (id=dcs-tmux-probe-echo)
+    pub fn tmuxTakeDetachRequest(self: *Handler) bool {
+        if (comptime !build_options.tmux_control_mode) return false;
+        return switch (self.state) {
+            .tmux => |*tmux| tmux.takeDetachRequest(),
+            else => false,
+        };
+    }
+
     pub fn unhook(self: *Handler) ?Command {
         // Note: we do NOT call deinit here on purpose because some commands
         // transfer memory ownership. If state needs cleanup, the switch

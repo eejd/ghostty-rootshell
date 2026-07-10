@@ -1395,6 +1395,34 @@ pub const StreamHandler = struct {
         return true;
     }
 
+    /// Per-probe nonce for the dead-shell echo matcher. ROOTSHELL-TMUX
+    /// (id=streamhandler-detach-echo)
+    const ProbeNonce = [terminal.tmux.ProbeEchoMatcher.nonce_len]u8;
+    const ResyncProbeBuf = [terminal.tmux.Viewer.resync_probe_prefix.len +
+        terminal.tmux.ProbeEchoMatcher.nonce_len +
+        terminal.tmux.Viewer.resync_probe_suffix.len]u8;
+
+    /// Build a resync probe command carrying a fresh random nonce into `buf`,
+    /// returning the full command slice (writeReq copies it, so the stack
+    /// buffer is fine) and the nonce for arming the echo matcher. The nonce is
+    /// what makes the probe's shell ECHO unforgeable: the PUBLIC marker text
+    /// can legitimately appear in pane output (these sources, docs, a user
+    /// echoing the marker) whose %output framing was lost to the same
+    /// corruption that started the resync — but this token exists only in the
+    /// one command string just written. ROOTSHELL-TMUX
+    /// (id=streamhandler-detach-echo)
+    fn buildResyncProbe(buf: *ResyncProbeBuf, nonce_out: *ProbeNonce) []const u8 {
+        var raw: [terminal.tmux.ProbeEchoMatcher.nonce_len / 2]u8 = undefined;
+        std.crypto.random.bytes(&raw);
+        nonce_out.* = std.fmt.bytesToHex(raw, .lower);
+        const prefix = terminal.tmux.Viewer.resync_probe_prefix;
+        const suffix = terminal.tmux.Viewer.resync_probe_suffix;
+        @memcpy(buf[0..prefix.len], prefix);
+        @memcpy(buf[prefix.len..][0..nonce_out.len], nonce_out);
+        @memcpy(buf[prefix.len + nonce_out.len ..][0..suffix.len], suffix);
+        return buf;
+    }
+
     /// Re-send the resync probe to tmux. Called when a viewer already exists and
     /// is still resyncing (the app retries the probe on a cadence). The first
     /// probe can be lost if it is written before the tssh transport finished
@@ -1406,9 +1434,11 @@ pub const StreamHandler = struct {
         if (comptime !tmux_enabled) return;
         const viewer = self.tmux_viewer orelse return;
         if (!viewer.isResyncing()) return;
+        var probe_buf: ResyncProbeBuf = undefined;
+        var nonce: ProbeNonce = undefined;
         const queued = self.messageWriterChecked(termio.Message.writeReq(
             self.alloc,
-            terminal.tmux.Viewer.resync_probe_command,
+            buildResyncProbe(&probe_buf, &nonce),
         ) catch return);
         // Count the probe ONLY if it was actually queued. On the unlocked-IO path
         // sendBounded can DROP the message under sustained mailbox backpressure;
@@ -1417,7 +1447,17 @@ pub const StreamHandler = struct {
         // retries on the next cadence tick (this fn is the cadence). Counting a
         // queued probe also lets a later stray response be dropped by count rather
         // than an unconditional sentinel scan. ROOTSHELL-TMUX (id=viewer-resync-probe-count)
-        if (queued) viewer.recordResyncProbeSent();
+        if (queued) {
+            viewer.recordResyncProbeSent();
+            // Arm dead-shell detach detection only for a viewer with projected
+            // topology (the app watchdog re-probing a wedged LIVE gateway). A
+            // restore-resume retry (no windows yet) is deliberately excluded:
+            // there is no Swift controller yet, so our empty-topology snapshot
+            // would be ignored and the resume watchdog would churn re-entries —
+            // its 12s abort already owns that path. ROOTSHELL-TMUX
+            // (id=streamhandler-detach-echo)
+            if (viewer.windows.items.len > 0) self.dcs.armTmuxProbeEcho(nonce);
+        }
     }
 
     /// Drive a LIVE re-resync of the control channel: reset the viewer's command
@@ -1437,9 +1477,11 @@ pub const StreamHandler = struct {
         const viewer = self.tmux_viewer orelse return;
         if (!viewer.isCommandQueue()) return;
         log.warn("tmux control desync/data-loss detected; forcing live re-resync", .{});
+        var probe_buf: ResyncProbeBuf = undefined;
+        var nonce: ProbeNonce = undefined;
         const probe_msg = termio.Message.writeReq(
             self.alloc,
-            terminal.tmux.Viewer.resync_probe_command,
+            buildResyncProbe(&probe_buf, &nonce),
         ) catch |err| {
             log.warn("failed to allocate tmux resync probe message: {}; forcing control-mode exit", .{err});
             self.tmuxForceExit();
@@ -1463,6 +1505,12 @@ pub const StreamHandler = struct {
         // alloc-failure branch above. ROOTSHELL-TMUX (id=viewer-resync-probe-count)
         if (self.messageWriterChecked(probe_msg)) {
             viewer.recordResyncProbeSent();
+            // If the remote is actually a plain shell (tmux exited but its
+            // `%exit` was lost to the same data loss that got us here), this
+            // probe is typed at the prompt and ECHOED back — arm the detach
+            // scan so that echo converts into a clean exit instead of a
+            // wedged resync. ROOTSHELL-TMUX (id=streamhandler-detach-echo)
+            self.dcs.armTmuxProbeEcho(nonce);
             // Surface the new state immediately (no-op unless the app opted in).
             self.refreshTmuxDebug();
         } else {
@@ -1493,9 +1541,11 @@ pub const StreamHandler = struct {
         viewer.requestReset();
         if (!viewer.isCommandQueue()) return;
         log.warn("tmux output discard detected; forcing full surface reset + recapture", .{});
+        var probe_buf: ResyncProbeBuf = undefined;
+        var nonce: ProbeNonce = undefined;
         const probe_msg = termio.Message.writeReq(
             self.alloc,
-            terminal.tmux.Viewer.resync_probe_command,
+            buildResyncProbe(&probe_buf, &nonce),
         ) catch |err| {
             log.warn("failed to allocate tmux reset probe message: {}; forcing control-mode exit", .{err});
             self.tmuxForceExit();
@@ -1515,6 +1565,10 @@ pub const StreamHandler = struct {
         // watchdog. ROOTSHELL-TMUX (id=viewer-resync-probe-count)
         if (self.messageWriterChecked(probe_msg)) {
             viewer.recordResyncProbeSent();
+            // Same dead-shell detach arming as tmuxForceResync: a discard that
+            // also swallowed `%exit` leaves a plain shell that echoes this
+            // probe back. ROOTSHELL-TMUX (id=streamhandler-detach-echo)
+            self.dcs.armTmuxProbeEcho(nonce);
             // Surface the new state immediately (no-op unless the app opted in).
             self.refreshTmuxDebug();
         } else {
@@ -1530,7 +1584,38 @@ pub const StreamHandler = struct {
     /// ROOTSHELL-TMUX (id=streamhandler-force-resync)
     inline fn tmuxMaybeRecover(self: *StreamHandler) void {
         if (comptime !tmux_enabled) return;
+        // Detach beats recover: the echo is positive proof the remote is a
+        // plain shell, so a re-resync would only type another command into it.
+        // ROOTSHELL-TMUX (id=streamhandler-detach-echo)
+        if (self.dcs.tmuxTakeDetachRequest()) {
+            self.tmuxDetachEchoExit();
+            return;
+        }
         if (self.dcs.tmuxTakeRecoverRequest()) self.tmuxForceResync();
+    }
+
+    /// The recovery probe was ECHOED back by a plain shell: tmux exited but
+    /// its `%exit` was lost to mid-stream data loss, and the remote pty is at
+    /// a prompt. Tear down exactly like a clean `%exit` (see the `.exit`
+    /// handler): prune child surfaces, free the viewer, and request the
+    /// deferred DCS unhook. The deferred flag (not a synchronous
+    /// `dcs.unhook()`) is correct here because bytes ARE flowing — the byte
+    /// that completed the match is a `dcs_put`, and the stream consumes the
+    /// ground request immediately after it returns, so the parser grounds
+    /// within the same byte and the shell's following output ("command not
+    /// found", the prompt) paints normally. Deliberately NO ExitDrain: the
+    /// echo is by construction past the shell transition — the remote client
+    /// already exited, no `%exit` will ever arrive, and draining would eat
+    /// real shell output; the echoed line's own tail is consumed by the
+    /// matcher's drain_line state instead. ROOTSHELL-TMUX
+    /// (id=streamhandler-detach-echo)
+    fn tmuxDetachEchoExit(self: *StreamHandler) void {
+        if (comptime !tmux_enabled) return;
+        if (self.tmux_viewer == null) return;
+        log.warn("tmux resync probe echoed by a plain shell; remote detached — exiting control mode", .{});
+        self.tmuxTeardownViewer();
+        self.tmux_force_unhook = true;
+        self.refreshTmuxDebug();
     }
 
     /// Abort an in-progress control-mode resume (see `Viewer.enterResync`).
@@ -1907,9 +1992,16 @@ pub const StreamHandler = struct {
                             // first reattach byte (→ defunct → tabs torn down).
                             self.dcs.beginTmuxResync();
                             log.info("tmux control mode resuming (re-entered after reattach)", .{});
+                            // Nonce'd for a uniform probe shape; the echo
+                            // matcher is deliberately NOT armed on the resume
+                            // path (see tmuxResumeResendProbe), so the nonce
+                            // is unused here. ROOTSHELL-TMUX
+                            // (id=streamhandler-detach-echo)
+                            var probe_buf: ResyncProbeBuf = undefined;
+                            var probe_nonce: ProbeNonce = undefined;
                             const probe_queued = self.messageWriterChecked(termio.Message.writeReq(
                                 self.alloc,
-                                terminal.tmux.Viewer.resync_probe_command,
+                                buildResyncProbe(&probe_buf, &probe_nonce),
                             ) catch break :tmux);
                             // Count only if actually queued: sendBounded can drop
                             // under backpressure, and a phantom outstanding probe
