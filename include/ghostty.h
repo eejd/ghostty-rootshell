@@ -1237,6 +1237,16 @@ GHOSTTY_API void ghostty_surface_draw(ghostty_surface_t);
 GHOSTTY_API void ghostty_surface_set_smooth_scroll_offset(ghostty_surface_t, double);
 GHOSTTY_API void ghostty_surface_set_rubber_band_offset(ghostty_surface_t, double);
 GHOSTTY_API void ghostty_surface_set_brightness(ghostty_surface_t, float);
+// Set the preferred frame-rate range for this surface's render display link
+// (iOS/visionOS CADisplayLink only; no-op on macOS, whose CVDisplayLink always
+// follows the display). Values are clamped to 1...240 and reordered so
+// min <= preferred <= max. max == 0 resets to the built-in default
+// (min 60, max 120, preferred 120). Safe to call from any thread, any time
+// after ghostty_surface_new.
+GHOSTTY_API void ghostty_surface_set_frame_rate_range(ghostty_surface_t,
+                                                      uint16_t min,
+                                                      uint16_t max,
+                                                      uint16_t preferred);
 // Render display-link health diagnostics (iOS/visionOS). _running reports the
 // link's running flag; _last_tick_age_ms is ms since its last tick (-1 if never
 // / unavailable). running==true with a large tick age == a wedged link.

@@ -541,6 +541,8 @@ fn drainMailbox(self: *Thread) !void {
             // target transition while visible, and defers it otherwise (occluded
             // surfaces can't rebuild — their render thread is parked).
             .set_brightness => |v| self.renderer.setBrightness(v, self.flags.visible),
+
+            .set_frame_rate => |v| self.renderer.setFrameRateRange(v),
         }
     }
 }

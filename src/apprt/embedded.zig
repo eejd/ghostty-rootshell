@@ -1950,6 +1950,41 @@ pub const CAPI = struct {
         core.renderer_thread.wakeup.notify() catch {};
     }
 
+    /// Set the preferred frame-rate range for this surface's render display
+    /// link (iOS/visionOS CADisplayLink only; no-op on macOS, whose
+    /// CVDisplayLink always follows the display). The power/battery lever:
+    /// a lower range lets ProMotion panels idle down and caps GPU presents
+    /// during output bursts. Values are clamped to 1...240 and reordered so
+    /// min <= preferred <= max; max == 0 resets to the built-in default
+    /// (min 60, max 120, preferred 120 — keep in sync with the
+    /// default_rate_* constants in IOSDisplayLink.zig). Safe to call from
+    /// any thread, any time after surface creation.
+    export fn ghostty_surface_set_frame_rate_range(
+        surface: *Surface,
+        min: u16,
+        max: u16,
+        preferred: u16,
+    ) void {
+        const range: renderer.Message.FrameRateRange = range: {
+            if (max == 0) break :range .{ .min = 60, .max = 120, .preferred = 120 };
+            const max_c = std.math.clamp(max, 1, 240);
+            const min_c = std.math.clamp(min, 1, max_c);
+            const pref_c = std.math.clamp(
+                if (preferred == 0) max_c else preferred,
+                min_c,
+                max_c,
+            );
+            break :range .{ .min = min_c, .max = max_c, .preferred = pref_c };
+        };
+
+        const core = &surface.core_surface;
+        _ = core.renderer_thread.mailbox.push(
+            .{ .set_frame_rate = range },
+            .{ .forever = {} },
+        );
+        core.renderer_thread.wakeup.notify() catch {};
+    }
+
     /// Diagnostics: true if this surface's render display link reports running.
     /// Pairs with ghostty_surface_vsync_last_tick_age_ms to detect a wedged link
     /// (running but not delivering ticks) from the app side. Lockless atomic

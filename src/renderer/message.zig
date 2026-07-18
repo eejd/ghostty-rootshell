@@ -112,6 +112,17 @@ pub const Message = union(enum) {
     /// above SDR white via the EDR render path).
     set_brightness: f32,
 
+    /// Set the preferred frame-rate range for the render display link
+    /// (iOS/visionOS CADisplayLink only; ignored elsewhere). Values arrive
+    /// pre-normalized from the apprt: 1 <= min <= preferred <= max.
+    set_frame_rate: FrameRateRange,
+
+    pub const FrameRateRange = struct {
+        min: u16,
+        max: u16,
+        preferred: u16,
+    };
+
     pub const SearchMatches = struct {
         arena: ArenaAllocator,
         matches: []const terminal.highlight.Flattened,

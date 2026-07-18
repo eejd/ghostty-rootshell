@@ -205,6 +205,12 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         /// don't support a display link.
         display_link: ?DisplayLink = null,
 
+        /// Timestamp of the most recent damage-driven render-thread draw.
+        /// iOS/visionOS display-link idle-pause bookkeeping (see
+        /// reconcileLinkIdleLocked); unused elsewhere. Protected by
+        /// draw_mutex. null until the first damage frame.
+        last_damage: ?std.time.Instant = null,
+
         /// Health of the most recently completed frame.
         health: std.atomic.Value(Health) = .{ .raw = .healthy },
 
@@ -1161,6 +1167,67 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             display_link.requestKick();
         }
 
+        /// Set the preferred frame-rate range on the display link.
+        /// iOS/visionOS only (CADisplayLink); no-op on macOS, whose
+        /// CVDisplayLink always follows the display. Values arrive
+        /// pre-normalized from the apprt.
+        pub fn setFrameRateRange(self: *Self, range: renderer.Message.FrameRateRange) void {
+            if (comptime DisplayLink == void) return;
+            if (comptime builtin.os.tag != .ios and builtin.os.tag != .visionos) return;
+            const display_link = self.display_link orelse return;
+            display_link.setFrameRateRange(range.min, range.max, range.preferred);
+        }
+
+        /// No render-thread damage for this long pauses the display link.
+        /// Kept below the 600ms cursor-blink interval so an idle prompt with
+        /// a blinking cursor fully parks the link — each blink toggle becomes
+        /// a single direct draw instead of sustaining a 60-120Hz tick stream.
+        const link_idle_pause_ms: u64 = 500;
+
+        /// Two damage frames within this window restart a paused link:
+        /// sustained output/scrolling is smoother on vsync pacing, while
+        /// isolated damage (keystrokes at typing speed, blink toggles) stays
+        /// on cheap direct draws.
+        const link_restart_burst_ms: u64 = 100;
+
+        /// Display-link idle-pause bookkeeping, called from every
+        /// render-thread drawFrame on iOS/visionOS (caller holds draw_mutex).
+        /// Damage frames stamp activity and may restart a paused link;
+        /// damage-free re-presents (only reachable from link ticks) pause a
+        /// link that has gone idle past the threshold.
+        ///
+        /// Safety: rendering never DEPENDS on the restart firing — while the
+        /// link is paused, hasVsync() is false and every renderer wakeup
+        /// falls through to a direct draw (Thread.drawFrame), so a missed
+        /// restart costs pacing, not frames. The wedge self-heal cannot
+        /// fight the pause: requestVsyncKick is only reached when hasVsync()
+        /// is true, and requestKick itself refuses while desired_running is
+        /// false. setVisible(true) still starts the link unconditionally,
+        /// which also resets any idle pause.
+        fn reconcileLinkIdleLocked(self: *Self, damaged: bool) void {
+            const display_link = self.display_link orelse return;
+            const now = std.time.Instant.now() catch return;
+
+            if (damaged) {
+                defer self.last_damage = now;
+                if (display_link.desiredRunning()) return;
+                const last = self.last_damage orelse return;
+                if (now.since(last) / std.time.ns_per_ms <= link_restart_burst_ms)
+                    display_link.start() catch {};
+                return;
+            }
+
+            if (!display_link.desiredRunning()) return;
+            const last = self.last_damage orelse {
+                // No damage observed through this path yet (fresh link):
+                // start the idle countdown from the first idle tick.
+                self.last_damage = now;
+                return;
+            };
+            if (now.since(last) / std.time.ns_per_ms > link_idle_pause_ms)
+                display_link.stop() catch {};
+        }
+
         /// Diagnostics: is the display link's `running` flag set?
         pub fn displayLinkRunning(self: *const Self) bool {
             if (comptime DisplayLink == void) return false;
@@ -1729,6 +1796,13 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 size_changed or
                 self.cells_rebuilt or
                 self.shouldAnimate();
+
+            // Display-link idle-pause. Only render-thread draws participate:
+            // sync == true means an app-thread caller (resize, the app-side
+            // shader tick) drove this draw, and those must not toggle the link.
+            if (comptime builtin.os.tag == .ios or builtin.os.tag == .visionos) {
+                if (!sync) self.reconcileLinkIdleLocked(needs_redraw);
+            }
 
             if (!needs_redraw) {
                 // We still need to present the last target again, because the

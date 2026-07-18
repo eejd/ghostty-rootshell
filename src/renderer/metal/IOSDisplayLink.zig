@@ -36,6 +36,17 @@ var TargetClass: ?objc.Class = null;
 /// spam run-loop re-registration on every frame the link is stale.
 const kick_min_interval_ms: i64 = 250;
 
+/// Default preferred frame-rate range. Opting into ProMotion explicitly is
+/// required: without a range an iPhone caps the link at 60Hz even with
+/// `CADisableMinimumFrameDurationOnPhone` set. The system clamps the range
+/// to the panel's real maximum, so 120 is safe on 60Hz iPhones and 90Hz
+/// visionOS alike. minimum=60 lets Core Animation settle to a steady 60
+/// when content is static. These are the reset values for
+/// ghostty_surface_set_frame_rate_range(_, 0, 0, 0).
+const default_rate_min: u16 = 60;
+const default_rate_max: u16 = 120;
+const default_rate_preferred: u16 = 120;
+
 pub const IOSDisplayLink = struct {
     /// The CADisplayLink instance (null until start() is called)
     link: ?objc.Object,
@@ -71,6 +82,13 @@ pub const IOSDisplayLink = struct {
     /// Monotonic ms (since `epoch`) of the last forced re-kick, for rate-limiting
     /// requestKick.
     last_kick_ms: std.atomic.Value(i64) = std.atomic.Value(i64).init(0),
+
+    /// Runtime-adjustable preferred frame-rate range (the power/battery
+    /// lever). Atomic: written from the render thread via setFrameRateRange,
+    /// read on the main run loop when (re)applying the range to the link.
+    rate_min: std.atomic.Value(u16) = std.atomic.Value(u16).init(default_rate_min),
+    rate_max: std.atomic.Value(u16) = std.atomic.Value(u16).init(default_rate_max),
+    rate_preferred: std.atomic.Value(u16) = std.atomic.Value(u16).init(default_rate_preferred),
 
     pub const Error = error{
         ObjCFailed,
@@ -316,15 +334,9 @@ pub const IOSDisplayLink = struct {
             // Retain the link since displayLinkWithTarget returns autoreleased
             const retained = new_link.retain();
 
-            // Opt into ProMotion. Without an explicit frame-rate range an
-            // iPhone caps the display link at 60Hz even when the app sets
-            // `CADisableMinimumFrameDurationOnPhone` (iPad runs the same link
-            // at 120Hz by default, hence the iPhone-only stutter). The system
-            // clamps this range to the panel's real maximum, so hardcoding
-            // 120 is safe on 60Hz iPhones and 90Hz visionOS alike. minimum=60
-            // lets Core Animation settle to a steady 60 when content is static.
-            const range: CAFrameRateRange = .{ .minimum = 60, .maximum = 120, .preferred = 120 };
-            retained.msgSend(void, objc.sel("setPreferredFrameRateRange:"), .{range});
+            // Apply the current frame-rate range (defaults opt into ProMotion;
+            // see default_rate_* for why an explicit range is required).
+            retained.msgSend(void, objc.sel("setPreferredFrameRateRange:"), .{self.currentRange()});
 
             // Add to the main run loop once. The link stays attached and we
             // gate it via `paused` from here on.
@@ -393,6 +405,10 @@ pub const IOSDisplayLink = struct {
         block.self.kickOnMain();
     }
 
+    fn rateCallback(block: *const StartStopBlock.Context) callconv(.c) void {
+        block.self.applyRateOnMain();
+    }
+
     fn invalidateCallback(block: *const StartStopBlock.Context) callconv(.c) void {
         block.self.invalidateOnMain();
     }
@@ -400,6 +416,59 @@ pub const IOSDisplayLink = struct {
     /// Check if the display link is running. Safe to call from any thread.
     pub fn isRunning(self: *const IOSDisplayLink) bool {
         return self.running.load(.monotonic);
+    }
+
+    /// The caller's intended running state — the value committed
+    /// synchronously by the latest start()/stop() call. Unlike isRunning(),
+    /// this does not lag behind while the async main-thread handler is
+    /// queued, so it's the right signal for "should I start this link?"
+    /// decisions on the render thread. Safe to call from any thread.
+    pub fn desiredRunning(self: *const IOSDisplayLink) bool {
+        return self.desired_running.load(.monotonic);
+    }
+
+    /// The stored frame-rate range as the Core Animation struct.
+    fn currentRange(self: *const IOSDisplayLink) CAFrameRateRange {
+        return .{
+            .minimum = @floatFromInt(self.rate_min.load(.monotonic)),
+            .maximum = @floatFromInt(self.rate_max.load(.monotonic)),
+            .preferred = @floatFromInt(self.rate_preferred.load(.monotonic)),
+        };
+    }
+
+    /// Set the preferred frame-rate range. Caller must pass normalized
+    /// values (1 <= min <= preferred <= max). Applied to a live link via a
+    /// main-queue dispatch (CADisplayLink properties are not thread-safe);
+    /// a not-yet-created or paused link picks the values up on its next
+    /// startOnMain. Safe to call from any thread.
+    pub fn setFrameRateRange(
+        self: *IOSDisplayLink,
+        min: u16,
+        max: u16,
+        preferred: u16,
+    ) void {
+        self.rate_min.store(min, .monotonic);
+        self.rate_max.store(max, .monotonic);
+        self.rate_preferred.store(preferred, .monotonic);
+
+        const NSThread = objc.getClass("NSThread") orelse return;
+        if (NSThread.msgSend(bool, "isMainThread", .{})) {
+            self.applyRateOnMain();
+            return;
+        }
+
+        var block = StartStopBlock.init(.{ .self = self }, &rateCallback);
+        macos.dispatch.dispatch_async(
+            @ptrCast(macos.dispatch.queue.getMain()),
+            @ptrCast(&block),
+        );
+    }
+
+    /// Main-thread application of the stored frame-rate range to the live
+    /// link, if one exists.
+    fn applyRateOnMain(self: *IOSDisplayLink) void {
+        const link = self.link orelse return;
+        link.msgSend(void, objc.sel("setPreferredFrameRateRange:"), .{self.currentRange()});
     }
 
     /// Monotonic ms since the last CADisplayLink tick, or -1 if it has never
