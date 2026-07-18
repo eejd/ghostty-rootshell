@@ -47,6 +47,14 @@ const default_rate_min: u16 = 60;
 const default_rate_max: u16 = 120;
 const default_rate_preferred: u16 = 120;
 
+/// Pack a frame-rate range into one u64 (min<<32 | max<<16 | preferred) so
+/// it can live in a single atomic: a main-thread reader can then never
+/// observe a torn mixture of two updates (e.g. preferred > max, which Core
+/// Animation rejects as an invalid CAFrameRateRange).
+fn packRange(min: u16, max: u16, preferred: u16) u64 {
+    return (@as(u64, min) << 32) | (@as(u64, max) << 16) | @as(u64, preferred);
+}
+
 pub const IOSDisplayLink = struct {
     /// The CADisplayLink instance (null until start() is called)
     link: ?objc.Object,
@@ -84,11 +92,13 @@ pub const IOSDisplayLink = struct {
     last_kick_ms: std.atomic.Value(i64) = std.atomic.Value(i64).init(0),
 
     /// Runtime-adjustable preferred frame-rate range (the power/battery
-    /// lever). Atomic: written from the render thread via setFrameRateRange,
-    /// read on the main run loop when (re)applying the range to the link.
-    rate_min: std.atomic.Value(u16) = std.atomic.Value(u16).init(default_rate_min),
-    rate_max: std.atomic.Value(u16) = std.atomic.Value(u16).init(default_rate_max),
-    rate_preferred: std.atomic.Value(u16) = std.atomic.Value(u16).init(default_rate_preferred),
+    /// lever), packed via packRange. One atomic, not three: written from the
+    /// render thread via setFrameRateRange, read on the main run loop when
+    /// (re)applying the range to the link — a single load can't tear across
+    /// an in-progress update.
+    rate_packed: std.atomic.Value(u64) = std.atomic.Value(u64).init(
+        packRange(default_rate_min, default_rate_max, default_rate_preferred),
+    ),
 
     pub const Error = error{
         ObjCFailed,
@@ -429,10 +439,11 @@ pub const IOSDisplayLink = struct {
 
     /// The stored frame-rate range as the Core Animation struct.
     fn currentRange(self: *const IOSDisplayLink) CAFrameRateRange {
+        const bits = self.rate_packed.load(.monotonic);
         return .{
-            .minimum = @floatFromInt(self.rate_min.load(.monotonic)),
-            .maximum = @floatFromInt(self.rate_max.load(.monotonic)),
-            .preferred = @floatFromInt(self.rate_preferred.load(.monotonic)),
+            .minimum = @floatFromInt(@as(u16, @truncate(bits >> 32))),
+            .maximum = @floatFromInt(@as(u16, @truncate(bits >> 16))),
+            .preferred = @floatFromInt(@as(u16, @truncate(bits))),
         };
     }
 
@@ -447,9 +458,7 @@ pub const IOSDisplayLink = struct {
         max: u16,
         preferred: u16,
     ) void {
-        self.rate_min.store(min, .monotonic);
-        self.rate_max.store(max, .monotonic);
-        self.rate_preferred.store(preferred, .monotonic);
+        self.rate_packed.store(packRange(min, max, preferred), .monotonic);
 
         const NSThread = objc.getClass("NSThread") orelse return;
         if (NSThread.msgSend(bool, "isMainThread", .{})) {
