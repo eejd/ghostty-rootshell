@@ -2896,6 +2896,18 @@ pub const Viewer = struct {
             &self.panes,
             &panes,
             window.layout,
+            // When the window is zoomed, tmux renders the active pane at the
+            // full window content size, but window_layout still reports the
+            // saved (unzoomed) leaf dims. Override that one pane's grid to the
+            // layout root size (= window content size) so output doesn't wrap
+            // at the pre-zoom width. The hidden panes keep their saved dims,
+            // matching tmux's actual pane sizes. ROOTSHELL-TMUX
+            // (id=tmux-zoom-grid-size)
+            if (window.zoomed) .{
+                .pane_id = window.active_pane_id,
+                .width = window.layout.width,
+                .height = window.layout.height,
+            } else null,
         );
 
         // Build up the list of removed panes.
@@ -4664,6 +4676,16 @@ pub const Viewer = struct {
         return false;
     }
 
+    /// Grid-size override for the zoomed pane of a zoomed window: tmux shows
+    /// that pane at the full window content size while `window_layout` (which
+    /// ignores zoom) still carries its saved leaf dims. ROOTSHELL-TMUX
+    /// (id=tmux-zoom-grid-size)
+    const ZoomOverride = struct {
+        pane_id: usize,
+        width: usize,
+        height: usize,
+    };
+
     fn initLayout(
         gpa_alloc: Allocator,
         colors: Terminal.Colors,
@@ -4672,6 +4694,7 @@ pub const Viewer = struct {
         panes_old: *const PanesMap,
         panes_new: *PanesMap,
         layout: Layout,
+        zoom: ?ZoomOverride,
     ) !void {
         switch (layout.content) {
             // Nested layouts, continue going.
@@ -4685,20 +4708,31 @@ pub const Viewer = struct {
                         panes_old,
                         panes_new,
                         l,
+                        zoom,
                     );
                 }
             },
 
             // A leaf! Initialize.
             .pane => |id| pane: {
+                // The zoomed pane's real grid is the full window content
+                // size, not the saved layout's leaf dims. ROOTSHELL-TMUX
+                // (id=tmux-zoom-grid-size)
+                var width = layout.width;
+                var height = layout.height;
+                if (zoom) |z| if (z.pane_id == id) {
+                    width = z.width;
+                    height = z.height;
+                };
+
                 // Validate dimensions before inserting into the map to
                 // avoid leaving an uninitialized entry on overflow.
-                const cols: size.CellCountInt = std.math.cast(size.CellCountInt, layout.width) orelse {
-                    log.info("pane {} width {} overflows CellCountInt, skipping", .{ id, layout.width });
+                const cols: size.CellCountInt = std.math.cast(size.CellCountInt, width) orelse {
+                    log.info("pane {} width {} overflows CellCountInt, skipping", .{ id, width });
                     break :pane;
                 };
-                const rows: size.CellCountInt = std.math.cast(size.CellCountInt, layout.height) orelse {
-                    log.info("pane {} height {} overflows CellCountInt, skipping", .{ id, layout.height });
+                const rows: size.CellCountInt = std.math.cast(size.CellCountInt, height) orelse {
+                    log.info("pane {} height {} overflows CellCountInt, skipping", .{ id, height });
                     break :pane;
                 };
 
