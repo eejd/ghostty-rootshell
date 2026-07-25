@@ -2246,9 +2246,12 @@ pub const CAPI = struct {
         /// ensure_window: tmux window display index. ROOTSHELL-TMUX
         /// (id=tmux-window-order)
         window_index: usize = 0,
-        /// set_layout: the pane id shown fullscreen when zoomed, else 0.
-        /// ROOTSHELL-TMUX (id=tmux-zoom)
+        /// set_layout: the pane id shown fullscreen when the window is zoomed.
+        /// Only meaningful when has_zoomed_pane_id is true: `%0` is a real
+        /// pane, so 0 cannot double as "not zoomed" (the same reason
+        /// window_id carries has_window_id). ROOTSHELL-TMUX (id=tmux-zoom)
         zoomed_pane_id: usize = 0,
+        has_zoomed_pane_id: bool = false,
     };
 
     export fn ghostty_tmux_reconcile_op_count(payload: *TmuxReconcilePayload) usize {
@@ -2285,7 +2288,8 @@ pub const CAPI = struct {
                 .window_id = s.tmux_window_id,
                 .has_window_id = true,
                 .layout = @ptrCast(s.layout),
-                .zoomed_pane_id = s.zoomed_pane_id,
+                .zoomed_pane_id = s.zoomed_pane_id orelse 0,
+                .has_zoomed_pane_id = s.zoomed_pane_id != null,
             },
             .set_focus => |f| out.* = .{
                 .tag = .set_focus,

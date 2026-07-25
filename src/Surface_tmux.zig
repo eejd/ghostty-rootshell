@@ -68,9 +68,11 @@ pub const TmuxReconcileOp = union(enum) {
     set_layout: struct {
         tmux_window_id: usize,
         layout: *const terminal.tmux.Layout,
-        /// The pane id shown fullscreen when the window is zoomed, or 0 when the
-        /// window is not zoomed. ROOTSHELL-TMUX (id=tmux-zoom)
-        zoomed_pane_id: usize = 0,
+        /// The pane id shown fullscreen when the window is zoomed, null when the
+        /// window is not zoomed. Optional rather than a 0 sentinel: `%0` is a
+        /// real pane (the first pane of the first window). ROOTSHELL-TMUX
+        /// (id=tmux-zoom)
+        zoomed_pane_id: ?usize = null,
     },
 
     /// Move focus to the specified tmux window and pane.
@@ -221,7 +223,7 @@ pub fn planTmuxReconcile(
             .layout = layout_ptr,
             // When zoomed, tmux shows the window's active pane fullscreen.
             // ROOTSHELL-TMUX (id=tmux-zoom)
-            .zoomed_pane_id = if (window.zoomed) window.active_pane_id else 0,
+            .zoomed_pane_id = if (window.zoomed) window.active_pane_id else null,
         } };
         op_idx += 1;
 
@@ -475,6 +477,54 @@ test "planTmuxReconcile uses pane-title precedence from the snapshot" {
     // Window 1: pane title wins. Window 2: falls back to the window name.
     try testing.expectEqualStrings("vim - main.zig", title_for_1 orelse return error.MissingTitle);
     try testing.expectEqualStrings("bash", title_for_2 orelse return error.MissingTitle);
+}
+
+test "planTmuxReconcile reports a zoomed pane %0 as zoomed" {
+    // ROOTSHELL-TMUX (id=tmux-zoom): the zoomed pane id must be optional, not a
+    // 0 sentinel. %0 is a real pane (the first pane of the first window), so
+    // encoding "not zoomed" as 0 made zooming it a no-op app-side (#266).
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    const Snapshot = @import("apprt/surface_tmux.zig").TmuxTopologySnapshot;
+
+    // Window 1 is zoomed on pane %0; window 2 is not zoomed.
+    const leaf_a: terminal.tmux.Layout = .{ .width = 80, .height = 24, .x = 0, .y = 0, .content = .{ .pane = 0 } };
+    const leaf_b: terminal.tmux.Layout = .{ .width = 80, .height = 24, .x = 0, .y = 0, .content = .{ .pane = 1 } };
+    const windows = [_]terminal.tmux.Viewer.Window{
+        .{ .id = 1, .width = 80, .height = 24, .layout = leaf_a, .active_pane_id = 0, .zoomed = true },
+        .{ .id = 2, .width = 80, .height = 24, .layout = leaf_b, .active_pane_id = 1, .zoomed = false },
+    };
+
+    var pane_titles: terminal.tmux.Viewer.PaneTitlesMap = .empty;
+    defer pane_titles.deinit(alloc);
+
+    const snapshot = try Snapshot.initFromWindows(alloc, &windows, null, &pane_titles);
+    defer snapshot.deinit();
+
+    const payload = try planTmuxReconcile(alloc, snapshot.windows, snapshot.panes, snapshot.titles);
+    defer payload.deinit();
+
+    var zoom_for_1: ??usize = null;
+    var zoom_for_2: ??usize = null;
+    for (payload.ops) |op| {
+        switch (op) {
+            .set_layout => |s| {
+                if (s.tmux_window_id == 1) zoom_for_1 = s.zoomed_pane_id;
+                if (s.tmux_window_id == 2) zoom_for_2 = s.zoomed_pane_id;
+            },
+            else => {},
+        }
+    }
+
+    // Window 1: zoomed on %0 (present, value 0). Window 2: null.
+    try testing.expectEqual(
+        @as(?usize, 0),
+        zoom_for_1 orelse return error.MissingSetLayout,
+    );
+    try testing.expectEqual(
+        @as(?usize, null),
+        zoom_for_2 orelse return error.MissingSetLayout,
+    );
 }
 
 test {
