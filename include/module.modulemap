@@ -2,6 +2,11 @@
 // We append "Kit" to it not to be cute, but because targets have to have
 // unique names and we use Ghostty for other things.
 module GhosttyKit {
-    umbrella header "ghostty.h"
+    // `header` rather than `umbrella header`: ghostty.h pulls in nothing but
+    // system headers, and Xcode merges every static-library xcframework's
+    // Headers/ into one flat include/ dir. An umbrella there makes Clang scan
+    // the whole directory and warn about libgit2/HelixKit headers it doesn't
+    // include (-Wincomplete-umbrella).
+    header "ghostty.h"
     export *
 }
