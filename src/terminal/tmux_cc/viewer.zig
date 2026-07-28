@@ -5463,9 +5463,28 @@ const Command = union(enum) {
             // it constantly. tmux re-evaluates the subscription whenever
             // either input changes, so renames and pane-title updates both
             // stream in live. ROOTSHELL-TMUX (id=viewer-title-subscription-rename)
+            //
+            // `#T` is never EMPTY, so the `resolveWindowTitle` fallback can't
+            // catch an untitled pane: window_pane_create seeds every pane's
+            // title with gethostname(), and a plain shell under tmux never
+            // overwrites it (the macOS /etc/{bash,zsh}rc title hooks are gated
+            // on an xterm*-class TERM, and TERM is screen-256color in tmux). A
+            // fresh window therefore reported the tmux SERVER's host name as
+            // its tab title instead of the running command. Detect that default
+            // and fall through to `#W`, which under automatic-rename is
+            // `#{pane_current_command}`. We match `#{host_short}` and
+            // `#{host_short}.*` rather than plain `#{host}` because macOS
+            // flips its host name between `Name.local` and `Name.localdomain`
+            // as the network changes, and a pane created under the old suffix
+            // would no longer compare equal to the current `#{host}`.
+            // ROOTSHELL-TMUX (id=viewer-title-subscription-host-default)
             .subscribe_titles => try writer.writeAll(
                 "refresh-client -B '" ++ control.title_subscription_name ++
-                    ":@*:#{?automatic-rename,#{pane_title},#{window_name}}'\n",
+                    ":@*:#{?automatic-rename," ++
+                    "#{?#{||:#{==:#{pane_title},#{host_short}}," ++
+                    "#{m:#{host_short}.*,#{pane_title}}}," ++
+                    "#{window_name},#{pane_title}}," ++
+                    "#{window_name}}'\n",
             ),
 
             .pane_mode_query => |pane_id| try writer.print(
@@ -5791,7 +5810,11 @@ test "subscribe_titles command formats refresh-client -B" {
     try cmd.formatCommand(&builder.writer);
     const result = builder.writer.buffered();
     try testing.expectEqualStrings(
-        "refresh-client -B 'ghostty_title:@*:#{?automatic-rename,#{pane_title},#{window_name}}'\n",
+        "refresh-client -B 'ghostty_title:@*:#{?automatic-rename," ++
+            "#{?#{||:#{==:#{pane_title},#{host_short}}," ++
+            "#{m:#{host_short}.*,#{pane_title}}}," ++
+            "#{window_name},#{pane_title}}," ++
+            "#{window_name}}'\n",
         result,
     );
 }
