@@ -236,7 +236,7 @@ pub fn threadEnter(
     if (self.viewer_pane) |pane| {
         pane.attachRenderer(
             io.renderer_state.mutex,
-            @ptrCast(&io.renderer_wakeup),
+            @ptrCast(io),
             &wakeRenderer,
             // OSC post context = this child's io, giving postOscEvent access to
             // io.surface_mailbox (+ io.alloc). Cleared by detachRenderer.
@@ -284,17 +284,18 @@ pub fn threadExit(self: *Tmux, td: *termio.Termio.ThreadData) void {
 }
 
 /// Wake callback registered on the viewer pane (see `Viewer.Pane.wake_fn`).
-/// `ctx` is this child surface's `renderer_wakeup` async handle; notifying it
-/// wakes the child's renderer thread to draw the freshly-written pane content.
+/// `ctx` is this child surface's termio. It wakes the renderer and emits one
+/// coalesced content edge for this exact tmux pane.
 /// Safe to call from the viewer's (parent gateway) IO thread because
 /// `xev.Async` is purpose-built for cross-thread notification.
 fn wakeRenderer(ctx: ?*anyopaque) void {
+    const io: *termio.Termio = @ptrCast(@alignCast(ctx orelse return));
     // Null-tolerant: a concurrent threadExit may have cleared wake_ctx between
     // the gateway's wake_fn load and this call. `Pane.detachRenderer` clears
     // wake_fn before wake_ctx, so the gateway usually skips entirely, but guard
     // here too rather than deref a null/torn context.
-    const wakeup: *xev.Async = @ptrCast(@alignCast(ctx orelse return));
-    wakeup.notify() catch {};
+    io.renderer_wakeup.notify() catch {};
+    io.surface_mailbox.contentChanged();
 }
 
 /// Per-pane OSC post callback registered on the viewer pane (see

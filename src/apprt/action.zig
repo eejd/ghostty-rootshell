@@ -381,6 +381,10 @@ pub const Action = union(Key) {
     /// body pointer is borrowed for the callback's duration only.
     tmux_command_response: TmuxCommandResponse,
 
+    /// The active terminal content for one exact surface changed. The target
+    /// is always a surface; render-only animation does not emit this.
+    surface_content_changed,
+
     /// Sync with: ghostty_action_tag_e
     pub const Key = enum(c_int) {
         quit,
@@ -457,6 +461,7 @@ pub const Action = union(Key) {
         tmux_sessions_changed,
         tmux_session_changed,
         tmux_command_response,
+        surface_content_changed,
 
         test "ghostty.h Action.Key" {
             try lib.checkGhosttyHEnum(Key, "GHOSTTY_ACTION_");

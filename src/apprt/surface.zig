@@ -27,6 +27,10 @@ pub const Message = union(enum) {
     /// of any length
     set_title: [256]u8,
 
+    /// Coalesced notification that the active terminal content changed.
+    /// Carries no data; the mailbox already identifies the exact surface.
+    surface_content_changed,
+
     /// Report the window title back to the terminal
     report_title: ReportTitleStyle,
 
@@ -285,6 +289,10 @@ pub const Mailbox = struct {
                 .message = msg,
             },
         }, timeout);
+    }
+    /// Queue one coalesced content edge for this exact surface.
+    pub fn contentChanged(self: Mailbox) void {
+        self.surface.queueContentChanged();
     }
 };
 

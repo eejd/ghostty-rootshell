@@ -1611,6 +1611,14 @@ pub const CAPI = struct {
         core_app.destroy();
     }
 
+    /// Enable or disable coalesced per-surface content-change actions.
+    export fn ghostty_app_set_surface_content_events_enabled(
+        app: *App,
+        enabled: bool,
+    ) void {
+        app.core_app.setSurfaceContentEventsEnabled(enabled);
+    }
+
     /// Update the focused state of the app.
     export fn ghostty_app_set_focus(
         app: *App,

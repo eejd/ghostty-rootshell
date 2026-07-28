@@ -45,6 +45,11 @@ focused: bool = true,
 /// you must always call hasSurface to validate it.
 focused_surface: ?*Surface = null,
 
+/// Whether terminal-content mutations should be forwarded to the embedded
+/// runtime. Atomic because surface IO threads consult it on their hot path.
+/// Disabled by default so embedders that do not use the signal pay nothing.
+surface_content_events_enabled: std.atomic.Value(bool) = .init(false),
+
 /// The mailbox that can be used to send this thread messages. Note
 /// this is a blocking queue so if it is full you will get errors (or block).
 mailbox: Mailbox.Queue,
@@ -129,6 +134,17 @@ pub fn destroy(self: *App) void {
 pub fn tick(self: *App, rt_app: *apprt.App) !void {
     // Drain our mailbox
     try self.drainMailbox(rt_app);
+}
+
+/// Enable or disable coalesced per-surface content-change actions.
+pub fn setSurfaceContentEventsEnabled(self: *App, enabled: bool) void {
+    self.surface_content_events_enabled.store(enabled, .release);
+}
+
+/// Thread-safe query used by surface IO threads before they enqueue a
+/// content-change message.
+pub fn surfaceContentEventsEnabled(self: *const App) bool {
+    return self.surface_content_events_enabled.load(.acquire);
 }
 
 /// Update the configuration associated with the app. This can only be

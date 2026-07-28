@@ -898,6 +898,10 @@ fn processOutputLocked(self: *Termio, buf: []const u8) void {
         self.terminal_stream.nextSlice(buf);
     }
 
+    // Terminal content changed on this exact surface. The surface-level
+    // pending bit makes this O(1) and coalesces bursts before the app drains.
+    self.surface_mailbox.contentChanged();
+
     // If our stream handling caused messages to be sent to the mailbox
     // thread, then we need to wake it up so that it processes them.
     if (self.terminal_stream.handler.termio_messaged) {

@@ -961,6 +961,9 @@ typedef enum {
   GHOSTTY_ACTION_TMUX_SESSIONS_CHANGED,
   GHOSTTY_ACTION_TMUX_SESSION_CHANGED,
   GHOSTTY_ACTION_TMUX_COMMAND_RESPONSE,
+  // Emitted after terminal content changes for one exact surface. Render-only
+  // work such as cursor blinking does not emit this action.
+  GHOSTTY_ACTION_SURFACE_CONTENT_CHANGED,
 } ghostty_action_tag_e;
 
 // ROOTSHELL-TMUX FROZEN-ABI (id=ghostty-h-session-actions): tmux session
@@ -1223,6 +1226,9 @@ GHOSTTY_API void ghostty_app_update_config(ghostty_app_t, ghostty_config_t);
 GHOSTTY_API bool ghostty_app_needs_confirm_quit(ghostty_app_t);
 GHOSTTY_API bool ghostty_app_has_global_keybinds(ghostty_app_t);
 GHOSTTY_API void ghostty_app_set_color_scheme(ghostty_app_t, ghostty_color_scheme_e);
+
+// Enable coalesced per-surface terminal-content actions. Disabled by default.
+GHOSTTY_API void ghostty_app_set_surface_content_events_enabled(ghostty_app_t, bool);
 
 GHOSTTY_API ghostty_surface_config_s ghostty_surface_config_new();
 

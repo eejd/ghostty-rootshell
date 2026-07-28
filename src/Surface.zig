@@ -81,6 +81,10 @@ font_grid_key: font.SharedGridSet.Key,
 font_size: font.face.DesiredSize,
 font_metrics: font.Metrics,
 
+/// Coalesces terminal-content notifications at the source. At most one
+/// undrained app-mailbox message exists for a surface at a time.
+content_change_pending: std.atomic.Value(bool) = .init(false),
+
 /// This keeps track of if the font size was ever modified. If it wasn't,
 /// then config reloading will change the font. If it was manually adjusted,
 /// we don't change it on config reload since we assume the user wants
@@ -1053,11 +1057,48 @@ pub fn needsConfirmQuit(self: *Surface) bool {
     };
 }
 
+/// Called from a surface IO thread after terminal content changes. This is
+/// deliberately nonblocking because callers may hold the renderer mutex.
+pub fn queueContentChanged(self: *Surface) void {
+    if (!self.app.surfaceContentEventsEnabled()) return;
+
+    if (self.content_change_pending.cmpxchgStrong(
+        false,
+        true,
+        .acq_rel,
+        .monotonic,
+    ) != null) return;
+
+    const mailbox: Mailbox = .{
+        .surface = self,
+        .app = .{
+            .rt_app = self.rt_app,
+            .mailbox = &self.app.mailbox,
+        },
+    };
+    if (mailbox.push(.surface_content_changed, .{ .instant = {} }) == 0) {
+        self.content_change_pending.store(false, .release);
+    }
+}
+
 /// Called from the app thread to handle mailbox messages to our specific
 /// surface.
 pub fn handleMessage(self: *Surface, msg: Message) !void {
     switch (msg) {
         .change_config => |config| try self.updateConfig(config),
+
+        .surface_content_changed => {
+            // Clear before dispatch so output arriving during the callback can
+            // enqueue the next edge. Re-check the gate because the message may
+            // have been queued immediately before detection was disabled.
+            self.content_change_pending.store(false, .release);
+            if (!self.app.surfaceContentEventsEnabled()) return;
+            _ = try self.rt_app.performAction(
+                .{ .surface = self },
+                .surface_content_changed,
+                {},
+            );
+        },
 
         .set_title => |*v| {
             // We ignore the message in case the title was set via config.
