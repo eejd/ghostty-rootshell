@@ -869,13 +869,16 @@ pub const Parser = struct {
             // control_notify_session_renamed: "%%session-renamed $%u %s"); the
             // man page's older `<name>`-only form is stale. Strip the id like
             // %session-changed does, otherwise the id leaks into the title.
+            // The id also identifies WHICH session was renamed: tmux
+            // broadcasts this to every control client, not just the one
+            // attached to that session.
             const after = afterCmd(line, cmd) orelse break :cmd;
             const id = parseSigilInt(after, '$') orelse break :cmd;
             const name = afterSpace(id.rest) orelse break :cmd;
 
             // Important: do not clear buffer here since name points to it
             self.state = .idle;
-            return .{ .session_renamed = .{ .name = name } };
+            return .{ .session_renamed = .{ .id = id.value, .name = name } };
         } else if (std.mem.eql(u8, cmd, "%pause")) cmd: {
             // Format: %pause %<pane-id>
             const after = afterCmd(line, cmd) orelse break :cmd;
@@ -1127,8 +1130,11 @@ pub const Notification = union(enum) {
         pane_id: usize,
     },
 
-    /// The current session was renamed to name.
+    /// A session on this server was renamed to name. tmux broadcasts this
+    /// to every control client, so `id` may name a session this client is
+    /// NOT attached to.
     session_renamed: struct {
+        id: usize,
         name: []const u8,
     },
 
@@ -1644,10 +1650,12 @@ test "tmux session-renamed" {
 
     var c: Parser = .{ .buffer = .init(alloc) };
     defer c.deinit();
-    // tmux emits a leading `$<id>` which must be stripped from the title.
+    // tmux emits a leading `$<id>` which must be stripped from the title,
+    // but kept as the identity of the renamed session.
     for ("%session-renamed $3 my-session") |byte| try testing.expect(try c.put(byte) == null);
     const n = (try c.put('\n')).?;
     try testing.expect(n == .session_renamed);
+    try testing.expectEqual(@as(usize, 3), n.session_renamed.id);
     try testing.expectEqualStrings("my-session", n.session_renamed.name);
 }
 

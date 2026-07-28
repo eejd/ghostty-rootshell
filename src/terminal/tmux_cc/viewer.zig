@@ -2411,7 +2411,27 @@ pub const Viewer = struct {
             // update the Ghostty window title. The old name leaks on
             // windows_arena until the next receivedListWindows reset
             // (see window_renamed for the same bounded-leak rationale).
+            //
+            // tmux BROADCASTS this to every control client with no session
+            // gate (control-notify.c control_notify_session_renamed, unlike
+            // control_notify_window_renamed just above it), so a rename of
+            // ANY session on the server lands here. Applying a foreign one
+            // would relabel this gateway with another session's name and
+            // corrupt the attached-session identity the app's tab-menu
+            // "Rename Session" then targets. Those only get the list-churn
+            // nudge. ROOTSHELL-TMUX (id=viewer-session-renamed-scope)
             .session_renamed => |info| {
+                var act_arena = self.action_arena.promote(self.alloc);
+                defer self.action_arena = act_arena.state;
+                const act_alloc = act_arena.allocator();
+
+                if (info.id != self.session_id) {
+                    actions.append(act_alloc, .sessions_changed) catch {
+                        log.warn("failed to queue sessions_changed action", .{});
+                    };
+                    return actions.items;
+                }
+
                 var win_arena = self.windows_arena.promote(self.alloc);
                 defer self.windows_arena = win_arena.state;
                 const win_alloc = win_arena.allocator();
@@ -2420,9 +2440,6 @@ pub const Viewer = struct {
                     log.warn("failed to dupe session name for rename", .{});
                     return actions.items;
                 };
-                var act_arena = self.action_arena.promote(self.alloc);
-                defer self.action_arena = act_arena.state;
-                const act_alloc = act_arena.allocator();
                 actions.append(act_alloc, .{ .session_title = .{
                     .name = self.session_name,
                 } }) catch {
@@ -2436,6 +2453,11 @@ pub const Viewer = struct {
                     .name = self.session_name,
                 } }) catch {
                     log.warn("failed to queue session_info action", .{});
+                };
+                // A dashboard open on THIS gateway lists every session on the
+                // server, so its row for us is now stale too.
+                actions.append(act_alloc, .sessions_changed) catch {
+                    log.warn("failed to queue sessions_changed action", .{});
                 };
                 return actions.items;
             },
@@ -9392,6 +9414,7 @@ test "session_renamed produces session_title action" {
         // Rename session — should produce .session_title action
         .{
             .input = .{ .tmux = .{ .session_renamed = .{
+                .id = 1,
                 .name = "renamed-session",
             } } },
             .contains_tags = &.{.session_title},
@@ -10802,8 +10825,8 @@ test "session rename emits session_title and session_info" {
 
     try testViewer(&viewer, &.{
         .{
-            .input = .{ .tmux = .{ .session_renamed = .{ .name = "renamed" } } },
-            .contains_tags = &.{ .session_title, .session_info },
+            .input = .{ .tmux = .{ .session_renamed = .{ .id = 1, .name = "renamed" } } },
+            .contains_tags = &.{ .session_title, .session_info, .sessions_changed },
             .check = (struct {
                 fn check(v: *Viewer, actions: []const Viewer.Action) anyerror!void {
                     try testing.expectEqualStrings("renamed", v.session_name);
@@ -10811,6 +10834,36 @@ test "session rename emits session_title and session_info" {
                         if (a == .session_info) {
                             try testing.expectEqualStrings("renamed", a.session_info.name);
                         }
+                    }
+                }
+            }).check,
+        },
+    });
+}
+
+// tmux broadcasts %session-renamed to EVERY control client, so a rename of
+// another session on the same server must not relabel this gateway (it used
+// to, which renamed the wrong session from a second gateway's tab menu).
+// ROOTSHELL-TMUX (id=viewer-session-renamed-scope)
+test "session rename of another session leaves our identity alone" {
+    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    defer viewer.deinit();
+    try driveStartupOneWindow(&viewer);
+    try testing.expectEqual(@as(usize, 1), viewer.session_id);
+
+    try testViewer(&viewer, &.{
+        .{
+            .input = .{ .tmux = .{ .session_renamed = .{ .id = 2, .name = "other" } } },
+            .contains_tags = &.{.sessions_changed},
+            .check = (struct {
+                fn check(v: *Viewer, actions: []const Viewer.Action) anyerror!void {
+                    // Our own name and id are untouched...
+                    try testing.expectEqualStrings("test", v.session_name);
+                    try testing.expectEqual(@as(usize, 1), v.session_id);
+                    // ...and no title/identity action reaches the app.
+                    for (actions) |a| {
+                        try testing.expect(a != .session_title);
+                        try testing.expect(a != .session_info);
                     }
                 }
             }).check,
