@@ -2579,6 +2579,26 @@ pub const CAPI = struct {
     }
     // ROOTSHELL-TMUX END FROZEN-ABI (id=embedded-tmux-reset)
 
+    // ROOTSHELL-TMUX BEGIN FROZEN-ABI (id=embedded-tmux-reprobe)
+    // ghostty_surface_tmux_reprobe re-sends the resync probe on a gateway that is
+    // ALREADY waiting for its marker, and does nothing else. The iOS app's resync
+    // watchdog calls it on a cadence when a resync is overdue: the first probe can
+    // be swallowed (the tsshd server discards pending INPUT across a reconnect),
+    // and because a resyncing viewer sends nothing on its own, the stall cannot
+    // self-heal — the re-send is what recovers it.
+    //
+    // Distinct from ghostty_surface_tmux_resume, whose no-viewer branch synthesizes
+    // control-mode entry: a resume queued by that watchdog and drained AFTER the
+    // viewer went away would RESURRECT the gateway over the revealed shell. This
+    // entry point is a strict no-op unless a viewer exists and is resyncing, so the
+    // app may queue it without tracking in-flight messages.
+    // Keep the signature stable. reapply: re-add this export inside the CAPI
+    // struct. See docs/tmux-control-mode-fork.md.
+    export fn ghostty_surface_tmux_reprobe(surface: *Surface) void {
+        surface.core_surface.io.queueMessage(.{ .tmux_reprobe = {} }, .unlocked);
+    }
+    // ROOTSHELL-TMUX END FROZEN-ABI (id=embedded-tmux-reprobe)
+
     // ROOTSHELL-TMUX BEGIN FROZEN-ABI (id=embedded-tmux-flush-deferred)
     // ghostty_surface_tmux_flush_deferred retries tmux pane work deferred by
     // bounded renderer-lock timeouts (spilled %output, deferred resizes,

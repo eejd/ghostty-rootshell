@@ -1381,6 +1381,10 @@ GHOSTTY_API void ghostty_surface_tmux_resume(ghostty_surface_t); // ROOTSHELL-TM
 GHOSTTY_API void ghostty_surface_tmux_resume_abort(ghostty_surface_t); // ROOTSHELL-TMUX FROZEN-ABI (id=ghostty-h-tmux-resume-abort)
 GHOSTTY_API void ghostty_surface_tmux_recover(ghostty_surface_t); // ROOTSHELL-TMUX FROZEN-ABI (id=ghostty-h-tmux-recover)
 GHOSTTY_API void ghostty_surface_tmux_reset(ghostty_surface_t); // ROOTSHELL-TMUX FROZEN-ABI (id=ghostty-h-tmux-reset)
+// Re-send the resync probe on a gateway already waiting for its marker; no-op
+// otherwise. Unlike tmux_resume this NEVER creates a viewer or enters control
+// mode, so it is safe to queue on a cadence without tracking in-flight messages.
+GHOSTTY_API void ghostty_surface_tmux_reprobe(ghostty_surface_t); // ROOTSHELL-TMUX FROZEN-ABI (id=ghostty-h-tmux-reprobe)
 // Heartbeat nudge: retry pane work deferred by bounded renderer-lock timeouts
 // and re-send a dropped topology snapshot. Cheap/idempotent when idle.
 GHOSTTY_API void ghostty_surface_tmux_flush_deferred(ghostty_surface_t); // ROOTSHELL-TMUX FROZEN-ABI (id=ghostty-h-tmux-flush-deferred)

@@ -508,6 +508,20 @@ fn drainMailbox(
                 defer io.terminal_stream.handler.tmux_unlocked_io = false;
                 io.terminal_stream.handler.tmuxForceResync();
             },
+            .tmux_reprobe => { // ROOTSHELL-TMUX (id=thread-reprobe)
+                // Re-send the resync probe ONLY. tmuxResumeResendProbe touches
+                // viewer/dcs state and does bounded messageWriter sends, so it
+                // needs tmux_mutex (id=termio-tmux-mutex) + the unlocked-io flag,
+                // exactly like `.tmux_recover`. It self-guards on a live viewer in
+                // `.resync`, so a message draining after the gateway is gone is a
+                // plain no-op — unlike `.tmux_resume`, whose no-viewer branch would
+                // re-enter control mode. Stay in DCS passthrough.
+                io.tmux_mutex.lock();
+                defer io.tmux_mutex.unlock();
+                io.terminal_stream.handler.tmux_unlocked_io = true;
+                defer io.terminal_stream.handler.tmux_unlocked_io = false;
+                io.terminal_stream.handler.tmuxResumeResendProbe();
+            },
             .tmux_reset => { // ROOTSHELL-TMUX (id=thread-reset)
                 // forceReset does everything forceResync does (command pipeline +
                 // parser realign — viewer/dcs state only) PLUS flags every pane for

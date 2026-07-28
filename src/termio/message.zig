@@ -173,6 +173,17 @@ pub const Message = union(enum) {
     /// (id=termio-msg-reset)
     tmux_reset: void, // ROOTSHELL-TMUX (id=termio-msg-reset)
 
+    /// Re-send the resync probe on a gateway ALREADY waiting for its marker.
+    /// Handled on the IO thread by `StreamHandler.tmuxResumeResendProbe` and
+    /// NOTHING else — no viewer creation, no control-mode entry. This is the
+    /// difference from `tmux_resume`, whose no-viewer branch synthesizes `ESC P
+    /// 1000 p` and would RESURRECT a gateway that has since gone away; the app's
+    /// resync watchdog re-probes on a cadence and cannot know whether a queued
+    /// message will drain before or after the viewer disappears. Strictly a no-op
+    /// unless a viewer exists AND is resyncing. See `Thread` `.tmux_reprobe`.
+    /// ROOTSHELL-TMUX (id=termio-msg-reprobe)
+    tmux_reprobe: void, // ROOTSHELL-TMUX (id=termio-msg-reprobe)
+
     /// Forcibly exit tmux control mode LOCALLY on a live gateway, equivalent to a
     /// `%exit`: tear down the viewer, emit an empty-topology snapshot (so the app
     /// prunes the projected tabs via the normal reconcile path, which also drops
