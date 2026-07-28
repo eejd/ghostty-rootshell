@@ -365,7 +365,12 @@ pub fn titleTmuxReconcile(
     errdefer arena.deinit();
     const arena_alloc = arena.allocator();
 
-    const title_copy = try arena_alloc.dupe(u8, title);
+    // The live title route (%window-renamed, %session-renamed, and the
+    // #{pane_title} subscription via emitWindowTitle) lands here, NOT in the
+    // topology snapshot — so this needs the same validation, or invalid bytes
+    // reach Swift and decode to U+FFFD in the tab bar.
+    // ROOTSHELL-TMUX (id=snapshot-title-validate)
+    const title_copy = try arena_alloc.dupe(u8, surface_tmux.validTitleOrEmpty(title));
     const ops = try arena_alloc.alloc(TmuxReconcileOp, 1);
 
     if (tmux_window_id) |wid| {

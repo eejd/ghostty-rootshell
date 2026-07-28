@@ -2695,6 +2695,18 @@ pub const Viewer = struct {
         const tmp_alloc = tmp_arena.allocator();
 
         for (self.windows.items) |*w| {
+            // Window names live on the SAME shared arena (receivedListWindows
+            // and %window-renamed both dupe onto it), so the reset below
+            // invalidates them too — including the changed window's, which is
+            // why this is unconditional while the layout clone skips it.
+            // A dangling name silently becomes whatever the fresh layout
+            // allocations overwrite it with, and resolveWindowTitle hands it
+            // straight to the tab title for any window whose #{pane_title} is
+            // empty: the garbage tab titles seen when a second, smaller client
+            // attaches and floods %layout-change with no list-windows between.
+            // ROOTSHELL-TMUX (id=layout-change-preserve-window-name)
+            w.name = try tmp_alloc.dupe(u8, w.name);
+
             if (w.id == window_id) continue;
             w.layout = try w.layout.clone(tmp_alloc);
         }
@@ -2722,10 +2734,23 @@ pub const Viewer = struct {
         const new_layout: Layout = try Layout.parseWithChecksum(win_alloc, layout_str);
         window.layout = new_layout;
 
+        // Track the size tmux actually resolved. Without this, width/height are
+        // only ever written by receivedListWindows, so after a foreign client
+        // clamps the session the ensure_window op keeps reporting the old, larger
+        // size. The app reads that as the window having GROWN and re-pushes its
+        // own size, tmux clamps it again, and the resulting %layout-change
+        // sustains the loop. ROOTSHELL-TMUX (id=layout-change-track-window-size)
+        window.width = new_layout.width;
+        window.height = new_layout.height;
+
         // Re-clone unchanged windows' layouts from the temporary arena
         // onto the fresh shared arena. The tmp_arena data is still valid
         // since we haven't freed it yet (deferred above).
         for (self.windows.items) |*w| {
+            // Re-dupe from the tmp_arena copy taken above; unconditional for
+            // the same reason. ROOTSHELL-TMUX (id=layout-change-preserve-window-name)
+            w.name = try win_alloc.dupe(u8, w.name);
+
             if (w.id == window_id) continue;
             w.layout = try w.layout.clone(win_alloc);
         }
@@ -8266,9 +8291,26 @@ test "two pane flow with pane state" {
 
 test "layout change preserves other windows on shared arena" {
     // Validates that the shared windows_arena correctly preserves
-    // layout data for unchanged windows when layoutChanged rebuilds.
+    // layout data AND window names for unchanged windows when layoutChanged
+    // rebuilds. Names live on the same arena as layouts, so the reset in
+    // layoutChanged invalidates them too unless they're carried across.
+    // ROOTSHELL-TMUX (id=layout-change-preserve-window-name)
     var viewer = try Viewer.init(testing.allocator, 80, 24);
     defer viewer.deinit();
+
+    // Static storage for the pre-reset name pointers. Comparing CONTENTS alone
+    // can't fail reliably: a dangling slice keeps pointing into the arena's
+    // retained pages, and whether the reused bytes actually land on the old
+    // name depends on allocation alignment (in this two-window fixture the
+    // 8-aligned Layout allocations happen to skip the byte-aligned names).
+    // The invariant we actually need is that each name was RE-HOMED onto the
+    // fresh arena, which the pointer check tests directly and deterministically.
+    const Captured = struct {
+        var ptr0: usize = 0;
+        var ptr1: usize = 0;
+    };
+    Captured.ptr0 = 0;
+    Captured.ptr1 = 0;
 
     try testViewer(&viewer, &.{
         // Initial startup
@@ -8302,6 +8344,10 @@ test "layout change preserves other windows on shared arena" {
                     try testing.expectEqual(0, v.windows.items[0].id);
                     try testing.expectEqual(1, v.windows.items[1].id);
                     try testing.expectEqual(2, v.panes.count());
+                    try testing.expectEqualStrings("bash", v.windows.items[0].name);
+                    try testing.expectEqualStrings("vim", v.windows.items[1].name);
+                    Captured.ptr0 = @intFromPtr(v.windows.items[0].name.ptr);
+                    Captured.ptr1 = @intFromPtr(v.windows.items[1].name.ptr);
                 }
             }).check,
         },
@@ -8334,6 +8380,29 @@ test "layout change preserves other windows on shared arena" {
                     try testing.expectEqual(1, v.windows.items[1].layout.content.pane);
                     // Pane count should now be 3 (0, 1, 2)
                     try testing.expectEqual(3, v.panes.count());
+
+                    // Both names must survive the arena reset, and must have
+                    // been re-homed onto the fresh arena rather than left
+                    // pointing at the retained (now reusable) pages. The
+                    // pointer check is the load-bearing one; see the comment
+                    // at the top of this test.
+                    // ROOTSHELL-TMUX (id=layout-change-preserve-window-name)
+                    try testing.expectEqualStrings("bash", v.windows.items[0].name);
+                    try testing.expectEqualStrings("vim", v.windows.items[1].name);
+                    try testing.expect(Captured.ptr0 != 0 and Captured.ptr1 != 0);
+                    try testing.expect(
+                        @intFromPtr(v.windows.items[0].name.ptr) != Captured.ptr0,
+                    );
+                    try testing.expect(
+                        @intFromPtr(v.windows.items[1].name.ptr) != Captured.ptr1,
+                    );
+
+                    // The changed window tracks the size tmux resolved, so the
+                    // ensure_window op stops reporting a stale (larger) size
+                    // after a foreign client clamps the session.
+                    // ROOTSHELL-TMUX (id=layout-change-track-window-size)
+                    try testing.expectEqual(83, v.windows.items[0].width);
+                    try testing.expectEqual(44, v.windows.items[0].height);
                 }
             }).check,
         },

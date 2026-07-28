@@ -26,6 +26,22 @@ pub const TmuxFocusChanged = struct {
     pane_id: usize,
 };
 
+/// A tab title we're willing to hand to the apprt, or `""` meaning "leave the
+/// tab's current title alone".
+///
+/// Swift decodes op titles with `String(decoding:as: UTF8.self)`, which
+/// SUBSTITUTES U+FFFD rather than failing, and reconcile is the SOLE title
+/// writer for tmux window tabs — so invalid bytes become permanent replacement
+/// characters in the tab bar. Empty is the app-side no-op signal.
+///
+/// Every path that builds a title op must funnel through here: the topology
+/// snapshot below AND `Surface_tmux.titleTmuxReconcile` (the live
+/// `%window-renamed` / `%subscription-changed` route, which does not touch the
+/// snapshot). ROOTSHELL-TMUX (id=snapshot-title-validate)
+pub fn validTitleOrEmpty(title: []const u8) []const u8 {
+    return if (std.unicode.utf8ValidateSlice(title)) title else "";
+}
+
 /// Carries a title change from a tmux `%window-renamed` or
 /// `%session-renamed` notification. Fixed-size buffer following
 /// the `set_title: [256]u8` pattern.
@@ -42,9 +58,22 @@ pub const TmuxTitleChanged = struct {
         var result: TmuxTitleChanged = .{
             .tmux_window_id = tmux_window_id,
         };
-        const len: u8 = @intCast(@min(name.len, result.title_buf.len - 1));
+        var len: usize = @min(name.len, result.title_buf.len - 1);
+
+        // Cutting a long title at a fixed byte count can land mid-character,
+        // and a trailing partial UTF-8 sequence decodes to U+FFFD on the Swift
+        // side (the validator can't save it — a truncated title is otherwise
+        // perfectly good text). Back off to the last character boundary:
+        // name[len] is the first byte NOT copied, so while it's a continuation
+        // byte (0b10xxxxxx) the cut is inside a character. Only when we
+        // actually truncated; a full copy stays byte-exact.
+        // ROOTSHELL-TMUX (id=title-truncate-utf8-boundary)
+        if (len < name.len) {
+            while (len > 0 and name[len] & 0xC0 == 0x80) len -= 1;
+        }
+
         @memcpy(result.title_buf[0..len], name[0..len]);
-        result.title_len = len;
+        result.title_len = @intCast(len);
         return result;
     }
 
@@ -213,7 +242,10 @@ pub const TmuxTopologySnapshot = struct {
                 (if (pt.get(window.id)) |t| (if (t.len > 0) t else window.name) else window.name)
             else
                 window.name;
-            cloned_titles[i] = try arena_alloc.dupe(u8, resolved);
+            // `planTmuxReconcile` emits set_tab_title unconditionally (op counts
+            // are pre-computed), so a bad value here sticks until the next
+            // topology rebuild. ROOTSHELL-TMUX (id=snapshot-title-validate)
+            cloned_titles[i] = try arena_alloc.dupe(u8, validTitleOrEmpty(resolved));
         }
 
         // Snapshot the (pane_id -> *Pane) mapping into the arena. Read the live
@@ -264,4 +296,47 @@ pub const TmuxTopologySnapshot = struct {
 
 test {
     std.testing.refAllDecls(@This());
+}
+
+test "validTitleOrEmpty rejects invalid UTF-8" {
+    const testing = std.testing;
+    try testing.expectEqualStrings("ok", validTitleOrEmpty("ok"));
+    try testing.expectEqualStrings("", validTitleOrEmpty(""));
+    // A braille spinner + text, the shape claude-code puts in #{pane_title}.
+    try testing.expectEqualStrings("\u{2802} Debug", validTitleOrEmpty("\u{2802} Debug"));
+    // Lone continuation byte, and a lead byte with its tail cut off.
+    try testing.expectEqualStrings("", validTitleOrEmpty("\x82 oops"));
+    try testing.expectEqualStrings("", validTitleOrEmpty("bad\xE2\xA0"));
+}
+
+test "TmuxTitleChanged truncates on a UTF-8 boundary" {
+    const testing = std.testing;
+
+    // Short titles are untouched.
+    const short = TmuxTitleChanged.init(1, "\u{2802} Debug tmux");
+    try testing.expectEqualStrings("\u{2802} Debug tmux", short.title());
+
+    // 254 ASCII bytes + one 3-byte char = 257 bytes. The 255-byte cut lands
+    // inside that final character, so it must be dropped whole rather than
+    // leaving a 1-byte partial sequence behind.
+    var buf: [257]u8 = undefined;
+    @memset(buf[0..254], 'a');
+    @memcpy(buf[254..257], "\u{2802}");
+    const cut = TmuxTitleChanged.init(1, &buf);
+    try testing.expectEqual(254, cut.title().len);
+    try testing.expect(std.unicode.utf8ValidateSlice(cut.title()));
+
+    // A 3-byte char ending exactly at 255 is kept intact.
+    var buf2: [300]u8 = undefined;
+    @memset(&buf2, 'a');
+    @memcpy(buf2[252..255], "\u{2802}");
+    const exact = TmuxTitleChanged.init(1, &buf2);
+    try testing.expectEqual(255, exact.title().len);
+    try testing.expect(std.unicode.utf8ValidateSlice(exact.title()));
+
+    // Pathological all-continuation input degrades to empty, not a partial.
+    var buf3: [300]u8 = undefined;
+    @memset(&buf3, 0x82);
+    const junk = TmuxTitleChanged.init(1, &buf3);
+    try testing.expectEqual(0, junk.title().len);
 }
