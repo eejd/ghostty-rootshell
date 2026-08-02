@@ -117,6 +117,13 @@ pub const Message = union(enum) {
     /// pre-normalized from the apprt: 1 <= min <= preferred <= max.
     set_frame_rate: FrameRateRange,
 
+    /// ROOTSHELL-REDACT: replace the display-only redaction set. Null
+    /// disables redaction and clears any prior needles. The Set owns
+    /// its memory via an internal arena; the renderer thread adopts it
+    /// (freeing any previous set) and forces a full viewport re-copy so
+    /// prior masking is discarded or new needles apply everywhere.
+    set_redact: ?renderer.redact.Set,
+
     pub const FrameRateRange = struct {
         min: u16,
         max: u16,
@@ -159,6 +166,12 @@ pub const Message = union(enum) {
                 v.impl.deinit();
                 v.alloc.destroy(v.impl);
                 v.alloc.destroy(v.thread);
+            },
+
+            // ROOTSHELL-REDACT: free an unadopted redaction set.
+            .set_redact => |v| if (v) |set| {
+                var copy = set;
+                copy.deinit();
             },
 
             else => {},

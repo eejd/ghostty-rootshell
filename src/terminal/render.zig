@@ -768,6 +768,51 @@ pub const RenderState = struct {
         self.pending_styles.clearRetainingCapacity();
     }
 
+    /// ROOTSHELL-REDACT: rebuild a single viewport row's copy from page
+    /// memory and mark it dirty. Used by the redaction pass to refresh
+    /// non-dirty rows of a soft-wrap chain whose sibling rows changed,
+    /// so needle matching always sees fresh page text for the whole
+    /// logical line (a stale row could still hold masked content).
+    ///
+    /// Contract: must be called with the terminal lock held, after a
+    /// beginUpdate* call and before the terminal can mutate again (the
+    /// stored row pins are only valid in that window). Appends pending
+    /// style runs that the next endUpdate call denormalizes, exactly
+    /// like rows rebuilt by beginUpdate itself.
+    ///
+    /// The row's selection bounds are preserved: the page content is
+    /// unchanged (the row wasn't dirty), and the selection pass in
+    /// beginUpdateExtraRows already ran for this update.
+    pub fn rebuildViewportRow(
+        self: *RenderState,
+        alloc: Allocator,
+        y: usize,
+    ) Allocator.Error!void {
+        assert(y < self.row_data.len);
+        const row_data = self.row_data.slice();
+        const builder: RowBuilder = .{
+            .alloc = alloc,
+            .cols = self.cols,
+            .arenas = row_data.items(.arena),
+            .raws = row_data.items(.raw),
+            .cells = row_data.items(.cells),
+            .sels = row_data.items(.selection),
+            .highlights = row_data.items(.highlights),
+            .dirties = row_data.items(.dirty),
+            .pending_styles = &self.pending_styles,
+        };
+
+        const pin = row_data.items(.pin)[y];
+        const p: *page.Page = &pin.node.data;
+        const page_row = &p.rows.ptr(p.memory)[pin.y];
+
+        const sel = row_data.items(.selection)[y];
+        try builder.row(p, page_row, y);
+        row_data.items(.selection)[y] = sel;
+
+        if (self.dirty == .false) self.dirty = .partial;
+    }
+
     /// Update the highlights in the render state from the given flattened
     /// highlights. Because this uses flattened highlights, it does not require
     /// reading from the terminal state so it should be done outside of

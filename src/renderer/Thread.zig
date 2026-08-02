@@ -543,6 +543,22 @@ fn drainMailbox(self: *Thread) !void {
             .set_brightness => |v| self.renderer.setBrightness(v, self.flags.visible),
 
             .set_frame_rate => |v| self.renderer.setFrameRateRange(v),
+
+            // ROOTSHELL-REDACT: adopt the new redaction set (we don't
+            // free the new value because we expect our allocators to
+            // match) and force a full re-copy of the viewport from page
+            // memory. The re-copy is what un-masks on disable: masked
+            // rows are otherwise never refreshed while clean. Same
+            // mechanism as Surface.modsChanged.
+            .set_redact => |v| {
+                if (self.renderer.redact) |*old| old.deinit();
+                self.renderer.redact = v;
+                {
+                    self.state.mutex.lock();
+                    defer self.state.mutex.unlock();
+                    self.state.terminal.flags.dirty.clear = true;
+                }
+            },
         }
     }
 }

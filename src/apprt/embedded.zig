@@ -1958,6 +1958,73 @@ pub const CAPI = struct {
         core.renderer_thread.wakeup.notify() catch {};
     }
 
+    // ROOTSHELL-REDACT BEGIN FROZEN-ABI (id=embedded-set-redact)
+    // ghostty_surface_set_redact replaces this surface's display-only
+    // redaction set ("auto redact"): every occurrence of a needle string in
+    // the rendered viewport is drawn as a mask codepoint at the original
+    // cell widths. Display-only by construction — it masks the renderer's
+    // private row copies, so selection, copy, scrollback, search, and text
+    // dumps still see the real content.
+    //
+    // needles: UTF-8, NUL-terminated strings. Fully copied before return;
+    // the caller may free them immediately, and every element must be
+    // non-NULL. count == 0 (or NULL array) disables redaction and clears
+    // any prior needles — the app holds the source of truth and re-sends
+    // the full list to re-enable. A set that fails to build falls back to
+    // masking ALL text until a valid set arrives (fail closed; only an
+    // explicit count == 0 disables). mask_codepoint == 0
+    // selects the default U+2022 BULLET; a non-width-1 mask falls back to
+    // the default. flags bit0 = case-insensitive matching.
+    //
+    // The needle strings are never persisted by libghostty; they live only
+    // in renderer-thread memory. Call from the same serial queue that
+    // calls ghostty_surface_free. Safe to call immediately after
+    // ghostty_surface_new; applies within one frame.
+    // Keep the signature stable. reapply: re-add this export inside the
+    // CAPI struct. The renderer-side implementation is
+    // src/renderer/redact.zig.
+    export fn ghostty_surface_set_redact(
+        surface: *Surface,
+        needles: ?[*]const [*:0]const u8,
+        count: usize,
+        mask_codepoint: u32,
+        flags: u32,
+    ) void {
+        const set: ?renderer.redact.Set = set: {
+            const ptr = needles orelse break :set null;
+            if (count == 0) break :set null;
+
+            // A failed build must NOT be pushed as null: null means
+            // "disable", and silently disabling on an allocation failure
+            // would drop existing protection. Keeping the previous set is
+            // not enough either — a just-added entry would render in the
+            // clear while the app reports it protected. The allocation-
+            // free fallback masks ALL text until a valid set arrives:
+            // over-masked and obvious beats silently leaked.
+            const built = renderer.redact.Set.init(
+                global.alloc,
+                ptr[0..count],
+                mask_codepoint,
+                flags,
+            ) catch |err| {
+                log.warn("error building redact set, masking everything err={}", .{err});
+                break :set renderer.redact.Set.maskAllFallback(global.alloc);
+            };
+            break :set built orelse {
+                log.warn("redact set has no valid needles, masking everything", .{});
+                break :set renderer.redact.Set.maskAllFallback(global.alloc);
+            };
+        };
+
+        const core = &surface.core_surface;
+        _ = core.renderer_thread.mailbox.push(
+            .{ .set_redact = set },
+            .{ .forever = {} },
+        );
+        core.renderer_thread.wakeup.notify() catch {};
+    }
+    // ROOTSHELL-REDACT END FROZEN-ABI (id=embedded-set-redact)
+
     /// Set the preferred frame-rate range for this surface's render display
     /// link (iOS/visionOS CADisplayLink only; no-op on macOS, whose
     /// CVDisplayLink always follows the display). The power/battery lever:

@@ -12,6 +12,7 @@ const renderer = @import("../renderer.zig");
 const math = @import("../math.zig");
 const Surface = @import("../Surface.zig");
 const link = @import("link.zig");
+const redactpkg = @import("redact.zig");
 const cellpkg = @import("cell.zig");
 const noMinContrast = cellpkg.noMinContrast;
 const constraintWidth = cellpkg.constraintWidth;
@@ -147,6 +148,13 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         search_matches: ?renderer.Message.SearchMatches,
         search_selected_match: ?renderer.Message.SearchMatch,
         search_matches_dirty: bool,
+
+        /// ROOTSHELL-REDACT: the active redaction needle set, or null
+        /// when redaction is disabled (the default; the only writer is
+        /// the set_redact mailbox handler on this same thread). Null
+        /// means the redaction passes in updateFrame cost exactly one
+        /// branch each.
+        redact: ?redactpkg.Set = null,
 
         /// The current set of cells to render. This is rebuilt on every frame
         /// but we keep this around so that we don't reallocate. Each set of
@@ -855,6 +863,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             self.terminal_state.deinit(self.alloc);
             if (self.search_selected_match) |*m| m.arena.deinit();
             if (self.search_matches) |*m| m.arena.deinit();
+            if (self.redact) |*r| r.deinit();
             self.swap_chain.deinit();
 
             if (DisplayLink != void) {
@@ -1496,6 +1505,20 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     extra_rows,
                 );
 
+                // ROOTSHELL-REDACT: refresh the non-dirty rows of any
+                // partially-dirty soft-wrap chain from page memory so
+                // the redaction scan below sees a consistent logical
+                // line (a stale row could still hold masked content).
+                // Must happen here: it needs the terminal lock (row
+                // pins) and appends pending style runs consumed by the
+                // endUpdate call after this critical section. Fails
+                // closed internally (masks wholesale on error).
+                if (self.redact) |*r| redactpkg.extendWrapDirty(
+                    r,
+                    &self.terminal_state,
+                    self.alloc,
+                );
+
                 // If our terminal state is dirty at all we need to redo
                 // the viewport search.
                 if (self.terminal_state.dirty != .false) {
@@ -1572,6 +1595,12 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             // within it. This must be done before anything reads the
             // render state (e.g. rebuildCells).
             self.terminal_state.endUpdate();
+
+            // ROOTSHELL-REDACT: mask sensitive strings in the freshly
+            // copied rows. This runs before the regex link pass below on
+            // purpose: links must match the masked text so a redacted
+            // email/URL is never highlighted as a link.
+            if (self.redact) |*r| r.apply(&self.terminal_state, arena_alloc);
 
             // Snap the smooth-scroll offset to a whole device pixel. The cell
             // text shader samples the glyph atlas with nearest-neighbor

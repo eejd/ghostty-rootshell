@@ -1389,6 +1389,25 @@ GHOSTTY_API void ghostty_surface_tmux_reprobe(ghostty_surface_t); // ROOTSHELL-T
 // and re-send a dropped topology snapshot. Cheap/idempotent when idle.
 GHOSTTY_API void ghostty_surface_tmux_flush_deferred(ghostty_surface_t); // ROOTSHELL-TMUX FROZEN-ABI (id=ghostty-h-tmux-flush-deferred)
 GHOSTTY_API void ghostty_surface_tmux_force_exit(ghostty_surface_t); // ROOTSHELL-TMUX FROZEN-ABI (id=ghostty-h-tmux-force-exit)
+
+// ROOTSHELL-REDACT BEGIN FROZEN-ABI (id=ghostty-h-set-redact)
+// Display-only redaction ("auto redact"): occurrences of the needle strings
+// in the rendered viewport are drawn as a mask codepoint at the original
+// cell widths. Masks only the renderer's private row copies — selection,
+// copy, scrollback, search, and text dumps still see the real content.
+// needles are UTF-8, NUL-terminated, fully copied before return (caller may
+// free immediately); every element must be non-NULL. count == 0 (or NULL
+// array) disables and clears; re-send the full list to re-enable.
+// mask_codepoint == 0 selects the default U+2022; a non-width-1 mask falls
+// back to the default. flags bit0 = case-insensitive. Strings are never
+// persisted by libghostty. Call from the same serial queue that calls
+// ghostty_surface_free; safe immediately after ghostty_surface_new.
+// Applies within one frame. If the new set cannot be built (allocation
+// failure, no valid needles), the surface falls back to masking ALL text
+// until a valid set arrives — only an explicit count==0 disables.
+GHOSTTY_API void ghostty_surface_set_redact(ghostty_surface_t, const char* const*, uintptr_t, uint32_t, uint32_t);
+// ROOTSHELL-REDACT END FROZEN-ABI (id=ghostty-h-set-redact)
+
 GHOSTTY_API void ghostty_surface_preedit(ghostty_surface_t, const char*, uintptr_t);
 GHOSTTY_API bool ghostty_surface_mouse_captured(ghostty_surface_t);
 GHOSTTY_API bool ghostty_surface_mouse_button(ghostty_surface_t,
