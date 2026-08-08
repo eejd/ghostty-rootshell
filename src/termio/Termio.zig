@@ -754,6 +754,18 @@ pub fn processOutput(self: *Termio, buf: []const u8) void {
             defer self.tmux_mutex.unlock();
             h.tmux_unlocked_io = true;
             defer h.tmux_unlocked_io = false;
+            // ROOTSHELL-TMUX (id=streamhandler-parse-liveness): this block is
+            // the only unlocked-io context that holds the renderer mutex.
+            // Mark it (and expose tmux_mutex) so the send helpers can fall
+            // back to the upstream release-and-wait slow path on a full
+            // queue while the channel is not hooked, instead of burning
+            // bounded retries with the renderer mutex held — the consumers
+            // that would drain the queues need that mutex, so the bounded
+            // waits can never succeed and the main thread starves.
+            h.tmux_renderer_held = true;
+            defer h.tmux_renderer_held = false;
+            h.tmux_mutex = &self.tmux_mutex;
+            defer h.tmux_mutex = null;
             h.tmuxDbgReadSite(.parsing, 0);
             self.processOutputLocked(rest);
             // With the flag set, messageWriter routed its wake signal to the

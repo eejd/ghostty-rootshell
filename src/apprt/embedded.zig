@@ -1872,6 +1872,33 @@ pub const CAPI = struct {
         return readTextLocked(surface, core_sel, result);
     }
 
+    /// Non-blocking variant of ghostty_surface_read_text for background
+    /// scanners: if the renderer state mutex is contended, returns false
+    /// immediately with `busy` set to true and `result` untouched, so the
+    /// caller can reschedule instead of parking its thread behind a parse
+    /// in progress. On an uncontended read, `busy` is false and the return
+    /// value matches ghostty_surface_read_text.
+    export fn ghostty_surface_try_read_text(
+        surface: *Surface,
+        sel: Selection,
+        result: *Text,
+        busy: *bool,
+    ) bool {
+        const mutex = surface.core_surface.renderer_state.mutex;
+        if (!mutex.tryLock()) {
+            busy.* = true;
+            return false;
+        }
+        defer mutex.unlock();
+        busy.* = false;
+
+        const core_sel = sel.core(
+            surface.core_surface.renderer_state.terminal.screens.active,
+        ) orelse return false;
+
+        return readTextLocked(surface, core_sel, result);
+    }
+
     /// Replace the active user selection with an explicit selection range.
     export fn ghostty_surface_set_selection(
         surface: *Surface,
@@ -3078,6 +3105,21 @@ pub const CAPI = struct {
         core_surface.renderer_state.mutex.lock();
         defer core_surface.renderer_state.mutex.unlock();
         return uiTerminalLocked(core_surface).screens.active_key == .alternate;
+    }
+
+    /// Non-blocking variant of ghostty_surface_is_alternate_active for
+    /// background scanners: returns false without writing `out` when the
+    /// renderer state mutex is contended, true with `out` filled otherwise.
+    export fn ghostty_surface_try_is_alternate_active(
+        surface: *Surface,
+        out: *bool,
+    ) bool {
+        const core_surface = &surface.core_surface;
+        const mutex = core_surface.renderer_state.mutex;
+        if (!mutex.tryLock()) return false;
+        defer mutex.unlock();
+        out.* = uiTerminalLocked(core_surface).screens.active_key == .alternate;
+        return true;
     }
 
     /// Free text returned by ghostty_surface_dump_primary_screen.

@@ -317,6 +317,29 @@ pub const StreamHandler = struct {
     /// tmux_mutex, so a plain bool is sound.
     tmux_unlocked_io: bool = false,
 
+    /// ROOTSHELL-TMUX (id=streamhandler-parse-liveness): true only while the
+    /// current parse holds the renderer mutex (the ordinary-surface block in
+    /// `Termio.processOutput`). Together with `!tmuxControlHooked()` it marks
+    /// the state where a queue-full send may safely release BOTH mutexes and
+    /// wait for the consumer (upstream behavior): no tmux state is in flight
+    /// pre-hook, and hook state only changes on this parsing thread so it
+    /// cannot flip while we wait. Without this escape hatch the bounded
+    /// no-unlock sends hold the renderer mutex through every full-queue
+    /// retry, while the consumers that would drain the queues (termio
+    /// thread, app thread) need that same mutex — a livelock that starves
+    /// the main thread indefinitely and ends in a 0x8BADF00D watchdog kill.
+    /// Set/reset under both mutexes. The liveness sends MUST clear it before
+    /// releasing the locks and restore it after reacquiring: it is shared
+    /// handler state, and another tmux_mutex holder seeing it set would
+    /// unlock a renderer mutex it does not own.
+    tmux_renderer_held: bool = false,
+
+    /// ROOTSHELL-TMUX (id=streamhandler-parse-liveness): pointer to
+    /// `Termio.tmux_mutex` so the send helpers can release/reacquire it on
+    /// the liveness path. Assigned per-chunk by `Termio.processOutput`
+    /// alongside `tmux_renderer_held`.
+    tmux_mutex: ?*std.Thread.Mutex = null,
+
     /// ROOTSHELL-TMUX (id=streamhandler-unlocked-io): fork-only analog of
     /// `termio_messaged` for sends made on the unlocked control-mode path.
     /// Atomic because it is set under tmux_mutex but consumed (swap) by
@@ -437,6 +460,20 @@ pub const StreamHandler = struct {
         self.sendColorSchemeReport(false);
     }
 
+    /// ROOTSHELL-TMUX (id=streamhandler-parse-liveness): whether an
+    /// unlocked-io send may fall back to the upstream release-and-wait slow
+    /// path on a full queue: the ordinary-surface parse holds the renderer
+    /// mutex and the control channel is not hooked, so no tmux state is in
+    /// flight and hook state cannot change while we wait (only this thread
+    /// hooks). Releasing both mutexes (relocked in renderer -> tmux order)
+    /// lets the termio and app threads drain the queues, which the bounded
+    /// no-unlock retries can never achieve — those consumers need the
+    /// renderer mutex we'd be holding.
+    inline fn tmuxParseMayUnlock(self: *const StreamHandler) bool {
+        if (comptime !tmux_enabled) return false;
+        return self.tmux_renderer_held and !self.tmuxControlHooked();
+    }
+
     inline fn surfaceMessageWriter(
         self: *StreamHandler,
         msg: apprt.surface.Message,
@@ -452,6 +489,31 @@ pub const StreamHandler = struct {
                 self.tmuxDbgReadSite(.surface_mailbox_send, 0);
                 defer self.tmuxDbgReadSite(.parsing, 0);
                 if (self.surface_mailbox.push(msg, .{ .instant = {} }) > 0) return;
+                // ROOTSHELL-TMUX (id=streamhandler-parse-liveness): full
+                // queue on the not-hooked renderer-held parse — release
+                // both mutexes and wait for the app thread to drain, like
+                // upstream. No drops, no renderer-held stall.
+                if (self.tmuxParseMayUnlock()) {
+                    const tmux_mutex = self.tmux_mutex.?;
+                    // Clear the ownership marker before releasing: it is
+                    // shared handler state, and another tmux_mutex holder
+                    // (io-thread arms run unlocked-io sends too) must not
+                    // satisfy tmuxParseMayUnlock() and unlock a renderer
+                    // mutex it does not hold while we wait.
+                    self.tmux_renderer_held = false;
+                    tmux_mutex.unlock();
+                    self.renderer_state.mutex.unlock();
+                    _ = self.surface_mailbox.push(msg, .{ .forever = {} });
+                    self.renderer_state.mutex.lock();
+                    tmux_mutex.lock();
+                    // Another tmux_mutex holder (e.g. the termio thread's
+                    // tmux_reset arm) toggles tmux_unlocked_io around its
+                    // own work; we are still inside the unlocked-io parse
+                    // with both locks held again, so reassert both flags.
+                    self.tmux_unlocked_io = true;
+                    self.tmux_renderer_held = true;
+                    return;
+                }
                 var attempts: usize = 0;
                 while (attempts < 50) : (attempts += 1) {
                     if (self.surface_mailbox.push(
@@ -636,6 +698,33 @@ pub const StreamHandler = struct {
             if (self.tmux_unlocked_io) {
                 self.tmuxDbgReadSite(.mailbox_send, 0);
                 defer self.tmuxDbgReadSite(.parsing, 0);
+                // ROOTSHELL-TMUX (id=streamhandler-parse-liveness): on the
+                // not-hooked renderer-held parse, use the upstream send
+                // (instant fast path; on a full queue it releases the
+                // renderer mutex around its wait so the termio thread can
+                // drain). Release tmux_mutex across the call so the wait
+                // never holds it; send relocks renderer before returning
+                // and tmux is relocked after, preserving the lock order.
+                if (self.tmuxParseMayUnlock()) {
+                    const tmux_mutex = self.tmux_mutex.?;
+                    // Clear the ownership marker before releasing: it is
+                    // shared handler state, and another tmux_mutex holder
+                    // (io-thread arms run unlocked-io sends too) must not
+                    // satisfy tmuxParseMayUnlock() and unlock a renderer
+                    // mutex it does not hold while we wait.
+                    self.tmux_renderer_held = false;
+                    tmux_mutex.unlock();
+                    self.termio_mailbox.send(msg, self.renderer_state.mutex);
+                    tmux_mutex.lock();
+                    // Another tmux_mutex holder (e.g. the termio thread's
+                    // tmux_reset arm) toggles tmux_unlocked_io around its
+                    // own work; we are still inside the unlocked-io parse
+                    // with both locks held again, so reassert both flags.
+                    self.tmux_unlocked_io = true;
+                    self.tmux_renderer_held = true;
+                    self.tmux_termio_messaged.store(true, .monotonic);
+                    return true;
+                }
                 const ok = self.termio_mailbox.sendBounded(msg);
                 if (ok) self.tmux_termio_messaged.store(true, .monotonic);
                 return ok;
@@ -742,6 +831,37 @@ pub const StreamHandler = struct {
         // drop: renderer messages are repaint hints and lossy-tolerant.
         if (comptime tmux_enabled) {
             if (self.tmux_unlocked_io) {
+                // ROOTSHELL-TMUX (id=streamhandler-parse-liveness): on the
+                // not-hooked renderer-held parse, mirror the upstream slow
+                // path below but release tmux_mutex too (relocked renderer
+                // first, then tmux — lock order preserved).
+                if (self.tmuxParseMayUnlock()) {
+                    const tmux_mutex = self.tmux_mutex.?;
+                    // Clear the ownership marker before releasing: it is
+                    // shared handler state, and another tmux_mutex holder
+                    // (io-thread arms run unlocked-io sends too) must not
+                    // satisfy tmuxParseMayUnlock() and unlock a renderer
+                    // mutex it does not hold while we wait.
+                    self.tmux_renderer_held = false;
+                    tmux_mutex.unlock();
+                    self.renderer_state.mutex.unlock();
+                    self.renderer_wakeup.notify() catch |err| {
+                        log.warn(
+                            "failed to notify renderer, may deadlock err={}",
+                            .{err},
+                        );
+                    };
+                    _ = self.renderer_mailbox.push(msg, .{ .forever = {} });
+                    self.renderer_state.mutex.lock();
+                    tmux_mutex.lock();
+                    // Another tmux_mutex holder (e.g. the termio thread's
+                    // tmux_reset arm) toggles tmux_unlocked_io around its
+                    // own work; we are still inside the unlocked-io parse
+                    // with both locks held again, so reassert both flags.
+                    self.tmux_unlocked_io = true;
+                    self.tmux_renderer_held = true;
+                    return;
+                }
                 self.renderer_wakeup.notify() catch {};
                 var attempts: usize = 0;
                 while (attempts < 50) : (attempts += 1) {

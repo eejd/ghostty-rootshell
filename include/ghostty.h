@@ -1442,6 +1442,10 @@ GHOSTTY_API bool ghostty_surface_read_selection(ghostty_surface_t, ghostty_text_
 GHOSTTY_API bool ghostty_surface_read_text(ghostty_surface_t,
                                               ghostty_selection_s,
                                               ghostty_text_s*);
+GHOSTTY_API bool ghostty_surface_try_read_text(ghostty_surface_t,
+                                               ghostty_selection_s,
+                                               ghostty_text_s*,
+                                               bool*);
 GHOSTTY_API bool ghostty_surface_set_selection(ghostty_surface_t, ghostty_selection_s);
 GHOSTTY_API void ghostty_surface_free_text(ghostty_surface_t, ghostty_text_s*);
 GHOSTTY_API uintptr_t ghostty_surface_total_rows(ghostty_surface_t);
@@ -1450,6 +1454,7 @@ GHOSTTY_API bool ghostty_surface_display_scrollbar(ghostty_surface_t,
 GHOSTTY_API const char* ghostty_surface_dump_primary_screen(ghostty_surface_t, uintptr_t*);
 GHOSTTY_API void ghostty_surface_free_dump(const char*, uintptr_t);
 GHOSTTY_API bool ghostty_surface_is_alternate_active(ghostty_surface_t);
+GHOSTTY_API bool ghostty_surface_try_is_alternate_active(ghostty_surface_t, bool*);
 
 #ifdef __APPLE__
 GHOSTTY_API void ghostty_surface_set_display_id(ghostty_surface_t, uint32_t);
