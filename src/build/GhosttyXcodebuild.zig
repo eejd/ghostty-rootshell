@@ -37,7 +37,10 @@ pub fn init(
     const xc_arch: ?[]const u8 = switch (deps.xcframework.target) {
         // Universal is our default target, so we don't have to
         // add anything.
-        .universal => null,
+        .universal,
+        .rootshell_appstore,
+        .rootshell_standalone,
+        => null,
 
         // Native we need to override the architecture in the Xcode
         // project with the -arch flag.

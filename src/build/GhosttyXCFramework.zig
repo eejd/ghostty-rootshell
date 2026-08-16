@@ -133,7 +133,11 @@ pub fn init(
     // it to the final app built with Swift.
     const xcframework = XCFrameworkStep.create(b, .{
         .name = "GhosttyKit",
-        .out_path = "macos/GhosttyKit.xcframework",
+        .out_path = switch (target) {
+            .native, .universal => "macos/GhosttyKit.xcframework",
+            .rootshell_appstore => "macos/GhosttyKitAppStore.xcframework",
+            .rootshell_standalone => "macos/GhosttyKitStandalone.xcframework",
+        },
         .libraries = switch (target) {
             .universal => &.{
                 .{
@@ -172,6 +176,40 @@ pub fn init(
                 .library = macos_native.output,
                 .headers = headers,
                 .dsym = macos_native.dsym,
+            }},
+
+            .rootshell_appstore => &.{
+                .{
+                    .library = ios.output,
+                    .headers = headers,
+                    .dsym = ios.dsym,
+                },
+                .{
+                    .library = ios_sim.output,
+                    .headers = headers,
+                    .dsym = ios_sim.dsym,
+                },
+                .{
+                    .library = visionos.output,
+                    .headers = headers,
+                    .dsym = visionos.dsym,
+                },
+                .{
+                    .library = visionos_sim.output,
+                    .headers = headers,
+                    .dsym = visionos_sim.dsym,
+                },
+                .{
+                    .library = catalyst_universal.output,
+                    .headers = headers,
+                    .dsym = catalyst_universal.dsym,
+                },
+            },
+
+            .rootshell_standalone => &.{.{
+                .library = catalyst_universal.output,
+                .headers = headers,
+                .dsym = catalyst_universal.dsym,
             }},
         },
     });
