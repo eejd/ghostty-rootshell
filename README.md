@@ -21,6 +21,27 @@
   </p>
 </p>
 
+## rootshell downstream fork
+
+This repository is the public downstream fork of
+[Ghostty](https://github.com/ghostty-org/ghostty) used by
+[rootshell](https://github.com/kitknox/rootshell-app). It carries the iOS,
+visionOS, Mac Catalyst, and rootshell-specific API and rendering changes that
+are not yet available in upstream Ghostty.
+
+Applications should consume the prebuilt
+[`ghosttykit-rootshell`](https://github.com/kitknox/ghosttykit-rootshell)
+Swift package. To build GhosttyKit locally from a rootshell checkout, place
+this repository alongside it and run:
+
+```bash
+./scripts/build-framework.sh all --ghostty-source ../ghostty-rootshell
+```
+
+The rootshell build script creates an ignored local Swift package containing
+the App Store and Standalone GhosttyKit variants. General Ghostty development
+and contribution guidance below remains inherited from upstream.
+
 ## About
 
 Ghostty is a terminal emulator that differentiates itself by being
