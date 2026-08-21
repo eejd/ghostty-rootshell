@@ -1420,8 +1420,10 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 //     std.log.err("[updateFrame critical time] start={}\tduration={} us", .{ start_micro, end.since(start) / std.time.ns_per_us });
                 // }
 
-                state.mutex.lock();
-                defer state.mutex.unlock();
+                // Lock while signaling demand so the IO parse thread
+                // can't starve us. See renderer.State.lockDemand.
+                state.lockDemand();
+                defer state.unlockDemand();
 
                 // If we're in a synchronized output state, we pause all rendering.
                 if (state.terminal.modes.get(.synchronized_output)) {

@@ -1305,21 +1305,15 @@ pub const ReadThread = struct {
     /// stages. The gather stage can run at most this many batches
     /// ahead of the parse stage before it blocks, which (via the
     /// kernel pty queue) is also what preserves flow control to the
-    /// child.
-    ///
-    /// The Darwin value was empirically chosen through measurements on
-    /// an M4 Max. Less than 4 there are minor slowdowns, above 4 there
-    /// are no improvements.
-    ///
-    /// Other POSIX platforms keep fewer batches in flight so terminal
-    /// parsing applies backpressure to bulk writers before frame-style
-    /// output can queue stale frames.
-    const buffer_count = if (builtin.os.tag.isDarwin()) 4 else 2;
+    /// child. Empirically chosen through measurements on an M4 Max.
+    /// Less than 4 there are minor slowdowns, above 4 there are no
+    /// improvements.
+    const buffer_count = 4;
 
     /// The capacity of each gather buffer. One batch is also the unit
     /// of work the parse stage does per terminal lock acquisition, so
     /// this bounds both gather latency and lock hold time.
-    const buffer_capacity = if (builtin.os.tag.isDarwin()) 64 * 1024 else 8 * 1024;
+    const buffer_capacity = 64 * 1024;
 
     /// How many gathered bytes mark a stream as saturated. The macOS
     /// kernel tty output queue hands the master at most about 1 KiB
@@ -1516,6 +1510,10 @@ pub const ReadThread = struct {
                     _ = posix.write(pipeline.idle_write_fd, "i") catch {};
                 }
             }
+
+            // Batch boundary: hand the renderer state mutex off if
+            // the renderer is waiting. See renderer.State.lockDemand.
+            io.renderer_state.yieldToDemand();
         }
     }
 
@@ -1806,6 +1804,11 @@ pub const ReadThread = struct {
                 }
 
                 @call(.always_inline, termio.Termio.processOutput, .{ io, buf[0..n] });
+
+                // See threadMainPosix: hand the renderer state mutex
+                // off if the renderer is waiting, since this loop
+                // would otherwise starve it under heavy output.
+                io.renderer_state.yieldToDemand();
             }
 
             var quit_bytes: windows.DWORD = 0;

@@ -5040,7 +5040,7 @@ fn linkAtPinExtended(
 
     // Detect column window at mouse position.
     const all_cells = mouse_pin.cells(.all);
-    const cols = mouse_pin.node.data.size.cols;
+    const cols = mouse_pin.node.cols();
     const window = link_ext.detectColumnWindow(all_cells, mouse_pin.x, cols);
 
     // Don't try extension if mouse is on a divider.
@@ -5405,7 +5405,7 @@ fn openUrl(
 /// if there is no hyperlink.
 fn osc8URI(self: *Surface, pin: terminal.Pin) ?[]const u8 {
     _ = self;
-    const page = &pin.node.data;
+    const page = pin.node.page();
     const cell = pin.rowAndCell().cell;
     const link_id = page.lookupHyperlink(cell) orelse return null;
     const entry = page.hyperlink_set.get(page.memory, link_id);

@@ -2,6 +2,7 @@ const std = @import("std");
 const build_options = @import("terminal_options");
 const testing = std.testing;
 const apc = @import("apc.zig");
+const clipboard = @import("clipboard.zig");
 const csi = @import("csi.zig");
 const device_attributes = @import("device_attributes.zig");
 const device_status = @import("device_status.zig");
@@ -89,6 +90,20 @@ pub const Handler = struct {
     /// The terminal state to modify.
     terminal: *Terminal,
 
+    /// True after an error prevented a terminal-owned semantic update.
+    ///
+    /// When an error happens during terminal processing, streams continue
+    /// forward and remain best-effort. A terminal can't really stop in
+    /// the middle it must go on. But this is flagged to true to let
+    /// consumers know some sort of unhandle-able error state happened
+    /// (e.g. an allocation failure).
+    ///
+    /// Only non-handled outcomes set this. Gracefully handled outcomes
+    /// that don't meaningfully negatively impact the terminal state
+    /// such as hitting Kitty image limits, failure to write a response,
+    /// do not flag this.
+    semantic_failure: bool = false,
+
     /// Callbacks for certain effects that handlers may have. These
     /// may or may not fully replace internal handling of certain effects,
     /// but they allow for the handler to trigger or query external
@@ -124,11 +139,6 @@ pub const Handler = struct {
     else
         void = if (build_options.tmux_control_mode) .{} else {},
 
-    /// Default cursor style used by DECSCUSR reset (CSI 0 q).
-    default_cursor: bool = true,
-    default_cursor_style: Screen.CursorStyle = .block,
-    default_cursor_blink: bool = false,
-
     pub const Effects = struct {
         /// Called when the terminal needs to write data back to the pty,
         /// e.g. in response to a DECRQM query. The data is only valid
@@ -138,14 +148,6 @@ pub const Handler = struct {
 
         /// Called when the bell is rung (BEL).
         bell: ?*const fn (*Handler) void,
-
-        /// ROOTSHELL-TMUX (id=streamterm-clipboard): called when the pane
-        /// requests an OSC 52 clipboard SET. `kind` is the selection
-        /// ('c'/'s'/'p'); `data` is the base64-encoded payload (still encoded —
-        /// the app side decodes it). Both are only valid for the duration of
-        /// the call, so the callee must copy. Null (the readonly default) makes
-        /// OSC 52 a no-op, matching prior behavior for non-tmux vtStream users.
-        clipboard_write: ?*const fn (*Handler, kind: u8, data: []const u8) void,
 
         /// ROOTSHELL-TMUX (id=streamterm-pane-osc): OSC 9;4 progress report
         /// (the build progress bar). Forwarded so tmux -CC panes drive per-tab
@@ -189,6 +191,20 @@ pub const Handler = struct {
         /// (e.g. OSC 7). The new pwd can be queried via
         /// handler.terminal.getPwd().
         pwd_changed: ?*const fn (*Handler) void,
+
+        /// Called when the running program writes to a clipboard. The write
+        /// has a normalized destination and one or more decoded MIME
+        /// representations. All request, MIME, and data memory is borrowed
+        /// and only valid for the duration of the callback.
+        ///
+        /// A write with no contents clears the destination. A content entry
+        /// with empty data is a distinct empty representation.
+        ///
+        /// Clipboard read requests (OSC 52 with a "?" payload) are never
+        /// forwarded: answering one would let any program running in the
+        /// terminal silently read the user's clipboard, and a VT state
+        /// library has no way to mediate that with user consent.
+        clipboard_write: ?*const fn (*Handler, clipboard.Write) clipboard.WriteResult,
 
         /// Called in response to an XTVERSION query. Returns the version
         /// string to report (e.g. "ghostty 1.2.3"). The returned memory
@@ -240,12 +256,45 @@ pub const Handler = struct {
         }
     }
 
+    /// Resize the terminal and apply any side effects (if supported)
+    /// as a result of that.
+    ///
+    /// This is different than a direct `Terminal.resize` operation
+    /// because it also handles the side effects like mode 2048 in-band
+    /// size reports if write_pty is set.
+    pub fn resize(self: *Handler, value: Terminal.Resize) !void {
+        try self.terminal.resize(self.terminal.gpa(), value);
+
+        // Mode 2048 reports require complete, current cell pixel geometry.
+        const cell_size = value.cell_size_px orelse return;
+
+        // If we have no in-band size reports enabled then do nothing.
+        if (!self.terminal.modes.get(.in_band_size_reports)) return;
+
+        // If we have no write_pty effect, do nothing.
+        const write_pty = self.effects.write_pty orelse return;
+
+        // The maximum mode-2048 response is covered by size_report's maximum
+        // value test. Reserve the final byte for the callback's sentinel.
+        var buf: [128]u8 = undefined;
+        var writer: std.Io.Writer = .fixed(buf[0 .. buf.len - 1]);
+        size_report.encode(&writer, .mode_2048, .{
+            .rows = value.rows,
+            .columns = value.cols,
+            .cell_width = cell_size.width,
+            .cell_height = cell_size.height,
+        }) catch unreachable;
+        buf[writer.end] = 0;
+        write_pty(self, buf[0..writer.end :0]);
+    }
+
     pub fn vt(
         self: *Handler,
         comptime action: Action.Tag,
         value: Action.Value(action),
     ) void {
         self.vtFallible(action, value) catch |err| {
+            self.semantic_failure = true;
             log.warn("error handling VT action action={} err={}", .{ action, err });
         };
     }
@@ -283,26 +332,7 @@ pub const Handler = struct {
                 self.terminal.screens.active.cursor.y + 1 +| value.value,
                 self.terminal.screens.active.cursor.x + 1,
             ),
-            .cursor_style => {
-                self.default_cursor = false;
-
-                const blink = switch (value) {
-                    .default => self.default_cursor_blink,
-                    .steady_block, .steady_bar, .steady_underline => false,
-                    .blinking_block, .blinking_bar, .blinking_underline => true,
-                };
-                const style: Screen.CursorStyle = switch (value) {
-                    .default => style: {
-                        self.default_cursor = true;
-                        break :style self.default_cursor_style;
-                    },
-                    .blinking_block, .steady_block => .block,
-                    .blinking_bar, .steady_bar => .bar,
-                    .blinking_underline, .steady_underline => .underline,
-                };
-                self.terminal.modes.set(.cursor_blinking, blink);
-                self.terminal.screens.active.cursor.cursor_style = style;
-            },
+            .cursor_style => self.terminal.setCursorStyle(value),
             .erase_display_below => self.terminal.eraseDisplay(.below, value),
             .erase_display_above => self.terminal.eraseDisplay(.above, value),
             .erase_display_complete => self.terminal.eraseDisplay(.complete, value),
@@ -347,7 +377,7 @@ pub const Handler = struct {
             .configure_charset => self.terminal.configureCharset(value.slot, value.charset),
             .set_attribute => switch (value) {
                 .unknown => {},
-                else => self.terminal.setAttribute(value) catch {},
+                else => try self.terminal.setAttribute(value),
             },
             .protected_mode_off => self.terminal.setProtectedMode(.off),
             .protected_mode_iso => self.terminal.setProtectedMode(.iso),
@@ -367,23 +397,24 @@ pub const Handler = struct {
             },
             .active_status_display => self.terminal.status_display = value,
             .decaln => try self.terminal.decaln(),
-            .full_reset => {
-                self.terminal.fullReset();
-                self.default_cursor = true;
-                self.terminal.modes.set(.cursor_blinking, self.default_cursor_blink);
-                self.terminal.screens.active.cursor.cursor_style = self.default_cursor_style;
-            },
+            .full_reset => self.terminal.fullReset(),
             .start_hyperlink => try self.terminal.screens.active.startHyperlink(value.uri, value.id),
             .end_hyperlink => self.terminal.screens.active.endHyperlink(),
             .semantic_prompt => try self.terminal.semanticPrompt(value),
             .mouse_shape => self.terminal.mouse_shape = value,
-            .color_operation => try self.colorOperation(&value.requests, value.terminator),
-            .kitty_color_report => try self.kittyColorOperation(value),
+            .color_operation => self.colorOperation(
+                &value.requests,
+                value.terminator,
+            ) catch |err| log.warn("error reporting OSC color err={}", .{err}),
+            .kitty_color_report => self.kittyColorOperation(value) catch |err| {
+                log.warn("error reporting Kitty colors err={}", .{err});
+            },
             .iterm2_image => self.terminal.iterm2Image(self.terminal.gpa(), value),
 
             // APC
             .apc_start => self.apc_handler.start(),
             .apc_put => self.apc_handler.feed(self.terminal.gpa(), value),
+            .apc_put_slice => self.apc_handler.feedSlice(self.terminal.gpa(), value.bytes),
             .apc_end => self.apcEnd(),
 
             // Effect-based handlers
@@ -395,9 +426,16 @@ pub const Handler = struct {
             .request_mode => self.requestMode(value.mode),
             .request_mode_unknown => self.requestModeUnknown(value.mode, value.ansi),
             .size_report => self.reportSize(value),
-            .window_title => self.windowTitle(value.title),
-            .report_pwd => self.reportPwd(value.url),
+            .window_title => try self.windowTitle(value.title),
+            .report_pwd => try self.reportPwd(value.url),
             .xtversion => self.reportXtversion(),
+            .clipboard_contents => self.clipboardContents(
+                value.kind,
+                value.data,
+            ) catch |err| {
+                // Clipboard writes are external effects, not terminal state.
+                log.warn("error handling clipboard write err={}", .{err});
+            },
 
             // ROOTSHELL-TMUX (id=streamterm-dcs-st): no supported DCS commands
             // have terminal-modifying effects, but we must watch for the string
@@ -424,10 +462,6 @@ pub const Handler = struct {
                 if (comptime build_options.tmux_control_mode) self.tmux_passthrough.reset();
             },
 
-            // OSC 52 clipboard SET — forwarded to the app via the
-            // `clipboard_write` effect. ROOTSHELL-TMUX (id=streamterm-clipboard)
-            .clipboard_contents => self.clipboardWrite(value.kind, value.data),
-
             // ROOTSHELL-TMUX (id=streamterm-pane-osc): forwarded to the app via
             // effects so they work inside tmux -CC panes (the viewer installs
             // them; readonly vtStream users leave them null and these no-op).
@@ -446,23 +480,6 @@ pub const Handler = struct {
     inline fn writePty(self: *Handler, data: [:0]const u8) void {
         const func = self.effects.write_pty orelse return;
         func(self, data);
-    }
-
-    /// OSC 52 clipboard SET for tmux panes. ROOTSHELL-TMUX
-    /// (id=streamterm-clipboard): tmux relays the app's raw OSC 52 bytes in
-    /// %output, so the pane stream sees them here. A control client (-CC) has no
-    /// tty, so tmux never forwards the clipboard itself (its `tty_set_selection`
-    /// path is gated off for control clients); we route the write to the app via
-    /// the `clipboard_write` effect (installed by the viewer in `initLayout`),
-    /// which turns it into a `clipboard_write` surface message on the gateway.
-    /// Other (readonly) vtStream users leave the effect null, so this stays a
-    /// no-op. The clipboard READ (`data == "?"`) is a deliberate gap — it needs
-    /// an async app round-trip and a reply routed back into the pane — so we
-    /// ignore it here.
-    fn clipboardWrite(self: *Handler, kind: u8, data: []const u8) void {
-        const func = self.effects.clipboard_write orelse return;
-        if (data.len == 1 and data[0] == '?') return;
-        func(self, kind, data);
     }
 
     /// ROOTSHELL-TMUX (id=streamterm-pane-osc): OSC 9;4 progress report. The
@@ -650,6 +667,44 @@ pub const Handler = struct {
         func(self);
     }
 
+    fn clipboardContents(self: *Handler, kind: u8, data: []const u8) !void {
+        const func = self.effects.clipboard_write orelse return;
+
+        // Read requests are deliberately not forwarded; see the effect docs.
+        if (data.len == 1 and data[0] == '?') return;
+
+        const location: clipboard.Location = switch (kind) {
+            's' => .selection,
+            'p' => .primary,
+            else => .standard,
+        };
+
+        // OSC 52 uses an empty payload to clear the selected clipboard.
+        if (data.len == 0) {
+            _ = func(self, .{
+                .location = location,
+                .contents = &.{},
+            });
+            return;
+        }
+
+        const decoder = std.base64.standard.Decoder;
+        const decoded_len = try decoder.calcSizeForSlice(data);
+        const alloc = self.terminal.gpa();
+        const decoded = try alloc.alloc(u8, decoded_len);
+        defer alloc.free(decoded);
+        try decoder.decode(decoded, data);
+
+        const contents = [_]clipboard.Content{.{
+            .mime = "text/plain",
+            .data = decoded,
+        }};
+        _ = func(self, .{
+            .location = location,
+            .contents = &contents,
+        });
+    }
+
     fn reportDeviceAttributes(self: *Handler, req: device_attributes.Req) void {
         const func = self.effects.device_attributes orelse return;
         const attrs = func(self);
@@ -770,7 +825,7 @@ pub const Handler = struct {
         self.writePty(resp);
     }
 
-    fn windowTitle(self: *Handler, title_raw: []const u8) void {
+    fn windowTitle(self: *Handler, title_raw: []const u8) !void {
         // Prevent DoS attacks by limiting title length.
         const max_title_len = 1024;
         const title = if (title_raw.len > max_title_len) title: {
@@ -781,16 +836,13 @@ pub const Handler = struct {
             break :title title_raw[0..max_title_len];
         } else title_raw;
 
-        self.terminal.setTitle(title) catch |err| {
-            log.warn("error setting title err={}", .{err});
-            return;
-        };
+        try self.terminal.setTitle(title);
 
         const func = self.effects.title_changed orelse return;
         func(self);
     }
 
-    fn reportPwd(self: *Handler, url_raw: []const u8) void {
+    fn reportPwd(self: *Handler, url_raw: []const u8) !void {
         // Prevent DoS attacks by limiting url length. Headroom for
         // Linux PATH_MAX (4096) plus URI scheme/host and percent-encoding.
         const max_url_len = 4096;
@@ -804,10 +856,7 @@ pub const Handler = struct {
 
         // We store the raw payload unparsed. Embedders read it via
         // getPwd() and are responsible for decoding any URI scheme.
-        self.terminal.setPwd(url) catch |err| {
-            log.warn("error setting pwd err={}", .{err});
-            return;
-        };
+        try self.terminal.setPwd(url);
 
         // ROOTSHELL-TMUX (id=streamterm-pane-osc): also forward to the app via
         // the fork's pwd_report effect so tmux -CC viewer panes update pane cwd
@@ -1202,6 +1251,193 @@ pub const Handler = struct {
     }
 };
 
+test "resize clears synchronized output on unchanged cell dimensions" {
+    var t: Terminal = try .init(testing.allocator, .{ .cols = 80, .rows = 24 });
+    defer t.deinit(testing.allocator);
+
+    var s: Stream = .initAlloc(testing.allocator, .init(&t));
+    defer s.deinit();
+
+    t.modes.set(.synchronized_output, true);
+    try s.handler.resize(.{
+        .cols = 80,
+        .rows = 24,
+        .cell_size_px = .{ .width = 9, .height = 18 },
+    });
+
+    try testing.expect(!t.modes.get(.synchronized_output));
+    try testing.expectEqual(@as(u32, 720), t.width_px);
+    try testing.expectEqual(@as(u32, 432), t.height_px);
+}
+
+test "resize reports mode 2048 geometry" {
+    var t: Terminal = try .init(testing.allocator, .{ .cols = 80, .rows = 24 });
+    defer t.deinit(testing.allocator);
+
+    const S = struct {
+        var response: [128]u8 = undefined;
+        var response_len: usize = 0;
+
+        fn writePty(_: *Handler, data: [:0]const u8) void {
+            @memcpy(response[0..data.len], data);
+            response_len = data.len;
+        }
+    };
+    S.response_len = 0;
+
+    var handler: Handler = .init(&t);
+    handler.effects.write_pty = &S.writePty;
+    var s: Stream = .initAlloc(testing.allocator, handler);
+    defer s.deinit();
+
+    t.modes.set(.in_band_size_reports, true);
+    try s.handler.resize(.{
+        .cols = 100,
+        .rows = 40,
+        .cell_size_px = .{ .width = 9, .height = 18 },
+    });
+
+    try testing.expectEqualStrings(
+        "\x1B[48;40;100;720;900t",
+        S.response[0..S.response_len],
+    );
+}
+
+test "resize suppresses mode 2048 reports" {
+    const S = struct {
+        var calls: usize = 0;
+
+        fn writePty(_: *Handler, _: [:0]const u8) void {
+            calls += 1;
+        }
+    };
+    S.calls = 0;
+
+    var t: Terminal = try .init(testing.allocator, .{ .cols = 80, .rows = 24 });
+    defer t.deinit(testing.allocator);
+    var handler: Handler = .init(&t);
+    handler.effects.write_pty = &S.writePty;
+    var s: Stream = .initAlloc(testing.allocator, handler);
+    defer s.deinit();
+
+    // Disabled mode suppresses a report even with pixels and a callback.
+    try s.handler.resize(.{
+        .cols = 80,
+        .rows = 24,
+        .cell_size_px = .{ .width = 9, .height = 18 },
+    });
+    try testing.expectEqual(@as(usize, 0), S.calls);
+
+    // Missing pixel geometry suppresses a report even with the mode enabled.
+    t.modes.set(.in_band_size_reports, true);
+    try s.handler.resize(.{ .cols = 80, .rows = 24 });
+    try testing.expectEqual(@as(usize, 0), S.calls);
+
+    // A read-only stream has no write effect and remains successful.
+    var readonly_terminal: Terminal = try .init(
+        testing.allocator,
+        .{ .cols = 80, .rows = 24 },
+    );
+    defer readonly_terminal.deinit(testing.allocator);
+    readonly_terminal.modes.set(.in_band_size_reports, true);
+    var readonly_stream: Stream = .initAlloc(
+        testing.allocator,
+        .init(&readonly_terminal),
+    );
+    defer readonly_stream.deinit();
+    try readonly_stream.handler.resize(.{
+        .cols = 80,
+        .rows = 24,
+        .cell_size_px = .{ .width = 9, .height = 18 },
+    });
+    try testing.expectEqual(@as(usize, 0), S.calls);
+}
+
+test "resize failure preserves terminal state and does not write" {
+    var failing = testing.FailingAllocator.init(testing.allocator, .{});
+    const alloc = failing.allocator();
+    var t: Terminal = try .init(alloc, .{ .cols = 10, .rows = 1 });
+    defer t.deinit(alloc);
+
+    const S = struct {
+        var called: bool = false;
+
+        fn writePty(_: *Handler, _: [:0]const u8) void {
+            called = true;
+        }
+    };
+    S.called = false;
+
+    var handler: Handler = .init(&t);
+    handler.effects.write_pty = &S.writePty;
+    var s: Stream = .initAlloc(alloc, handler);
+    defer s.deinit();
+
+    t.modes.set(.synchronized_output, true);
+    t.modes.set(.in_band_size_reports, true);
+    failing.fail_index = failing.alloc_index;
+    try testing.expectError(error.OutOfMemory, s.handler.resize(.{
+        .cols = 513,
+        .rows = 1,
+        .cell_size_px = .{ .width = 9, .height = 18 },
+    }));
+
+    try testing.expect(t.modes.get(.synchronized_output));
+    try testing.expect(!S.called);
+    try testing.expectEqual(@as(@TypeOf(t.cols), 10), t.cols);
+    try testing.expectEqual(@as(u32, 0), t.width_px);
+    try testing.expectEqual(@as(u32, 0), t.height_px);
+}
+
+test "resize effects do not change canonical terminal state" {
+    var authoritative: Terminal = try .init(
+        testing.allocator,
+        .{ .cols = 10, .rows = 5 },
+    );
+    defer authoritative.deinit(testing.allocator);
+    var readonly: Terminal = try .init(
+        testing.allocator,
+        .{ .cols = 10, .rows = 5 },
+    );
+    defer readonly.deinit(testing.allocator);
+
+    const S = struct {
+        fn writePty(_: *Handler, _: [:0]const u8) void {}
+    };
+    var authoritative_handler: Handler = .init(&authoritative);
+    authoritative_handler.effects.write_pty = &S.writePty;
+    var authoritative_stream: Stream = .initAlloc(
+        testing.allocator,
+        authoritative_handler,
+    );
+    defer authoritative_stream.deinit();
+    var readonly_stream: Stream = .initAlloc(
+        testing.allocator,
+        .init(&readonly),
+    );
+    defer readonly_stream.deinit();
+
+    authoritative.modes.set(.in_band_size_reports, true);
+    readonly.modes.set(.in_band_size_reports, true);
+    const value: Terminal.Resize = .{
+        .cols = 20,
+        .rows = 10,
+        .cell_size_px = .{ .width = 9, .height = 18 },
+    };
+    try authoritative_stream.handler.resize(value);
+    try readonly_stream.handler.resize(value);
+
+    try testing.expectEqual(authoritative.cols, readonly.cols);
+    try testing.expectEqual(authoritative.rows, readonly.rows);
+    try testing.expectEqual(authoritative.width_px, readonly.width_px);
+    try testing.expectEqual(authoritative.height_px, readonly.height_px);
+    try testing.expect(std.meta.eql(authoritative.modes, readonly.modes));
+    try testing.expect(std.meta.eql(
+        authoritative.scrolling_region,
+        readonly.scrolling_region,
+    ));
+}
+
 test "basic print" {
     var t: Terminal = try .init(testing.allocator, .{ .cols = 10, .rows = 10 });
     defer t.deinit(testing.allocator);
@@ -1216,6 +1452,39 @@ test "basic print" {
     const str = try t.plainString(testing.allocator);
     defer testing.allocator.free(str);
     try testing.expectEqualStrings("Hello", str);
+}
+
+test "semantic failure is sticky while processing continues" {
+    var failing = testing.FailingAllocator.init(testing.allocator, .{});
+    const alloc = failing.allocator();
+    var t: Terminal = try .init(alloc, .{ .cols = 10, .rows = 2 });
+    defer t.deinit(alloc);
+
+    var s: Stream = .initAlloc(alloc, .init(&t));
+    defer s.deinit();
+    try testing.expect(!s.handler.semantic_failure);
+
+    // Setting the title is a terminal-owned semantic update. Force its
+    // allocation to fail at the central vtFallible boundary.
+    failing.fail_index = failing.alloc_index;
+    s.nextSlice("\x1B]2;unavailable\x1B\\");
+    try testing.expect(s.handler.semantic_failure);
+
+    // Later input and RIS remain best-effort and never clear the diagnostic.
+    failing.fail_index = std.math.maxInt(usize);
+    s.nextSlice("ignored");
+    s.nextSlice("\x1Bc");
+    s.nextSlice("OK");
+    try testing.expect(s.handler.semantic_failure);
+
+    const str = try t.plainString(testing.allocator);
+    defer testing.allocator.free(str);
+    try testing.expectEqualStrings("OK", str);
+
+    // A new execution root starts without inheriting the diagnostic.
+    var fresh = Handler.init(&t);
+    defer fresh.deinit();
+    try testing.expect(!fresh.semantic_failure);
 }
 
 test "cursor movement" {
@@ -1475,6 +1744,13 @@ test "ignores query actions" {
     s.nextSlice("\x1B[6n"); // Cursor position report
     s.nextSlice("\x1B]4;0;?\x1B\\"); // OSC color query
     s.nextSlice("\x1B]21;foreground=?\x1B\\"); // Kitty color query
+    s.nextSlice("\x1B]52;c;%%%invalid-base64%%%\x1B\\");
+    s.nextSlice("\x1B_Ga=p,i=999\x1B\\"); // Missing Kitty image
+    s.nextSlice("\x1B_25a1;r;cp=41;%%%invalid%%%\x1B\\"); // Rejected glyph
+
+    // Query, malformed input, protocol failure responses, and external-effect
+    // failures do not imply that terminal-owned semantic state diverged.
+    try testing.expect(!s.handler.semantic_failure);
 
     // Terminal should still be functional
     s.nextSlice("Test");
@@ -1484,20 +1760,32 @@ test "ignores query actions" {
 }
 
 test "OSC 52 clipboard write effect forwards SET, ignores read" {
-    // ROOTSHELL-TMUX (id=streamterm-clipboard)
+    // ROOTSHELL-TMUX (id=streamterm-clipboard): tmux relays the app's raw OSC 52
+    // bytes in %output, so the pane stream sees them here. A control client
+    // (-CC) has no tty, so tmux never forwards the clipboard itself (its
+    // `tty_set_selection` path is gated off for control clients); the write is
+    // routed to the app through upstream's `clipboard_write` effect, which the
+    // viewer installs in `initLayout`. The clipboard READ (`data == "?"`) is a
+    // deliberate gap — it needs an async app round-trip and a reply routed back
+    // into the pane — so it must never reach the effect.
     var t: Terminal = try .init(testing.allocator, .{ .cols = 10, .rows = 10 });
     defer t.deinit(testing.allocator);
 
     const S = struct {
-        var kind: u8 = 0;
+        var location: clipboard.Location = .standard;
         var buf: [256]u8 = undefined;
         var len: usize = 0;
         var calls: usize = 0;
-        fn cb(_: *Handler, k: u8, d: []const u8) void {
-            kind = k;
-            @memcpy(buf[0..d.len], d);
-            len = d.len;
+        fn cb(_: *Handler, write: clipboard.Write) clipboard.WriteResult {
             calls += 1;
+            location = write.location;
+            len = 0;
+            if (write.contents.len > 0) {
+                const data = write.contents[0].data;
+                @memcpy(buf[0..data.len], data);
+                len = data.len;
+            }
+            return .success;
         }
     };
     S.calls = 0;
@@ -1506,17 +1794,21 @@ test "OSC 52 clipboard write effect forwards SET, ignores read" {
     defer s.deinit();
     s.handler.effects.clipboard_write = &S.cb;
 
-    // SET: data stays base64-encoded (the app side decodes). "aGVsbG8=" = "hello".
+    // SET: upstream decodes the base64 payload. "aGVsbG8=" = "hello".
     s.nextSlice("\x1b]52;c;aGVsbG8=\x07");
     try testing.expectEqual(@as(usize, 1), S.calls);
-    try testing.expectEqual(@as(u8, 'c'), S.kind);
-    try testing.expectEqualStrings("aGVsbG8=", S.buf[0..S.len]);
+    try testing.expectEqual(clipboard.Location.standard, S.location);
+    try testing.expectEqualStrings("hello", S.buf[0..S.len]);
+
+    // The selection kind still round-trips to the right destination.
+    s.nextSlice("\x1b]52;p;aGVsbG8=\x07");
+    try testing.expectEqual(@as(usize, 2), S.calls);
+    try testing.expectEqual(clipboard.Location.primary, S.location);
 
     // READ ("?") is a deliberate no-op: the callback must not fire.
     s.nextSlice("\x1b]52;c;?\x07");
-    try testing.expectEqual(@as(usize, 1), S.calls);
+    try testing.expectEqual(@as(usize, 2), S.calls);
 }
-
 test "OSC 52 clipboard write is a no-op with readonly effects" {
     // ROOTSHELL-TMUX (id=streamterm-clipboard): the default (readonly) effects
     // leave clipboard_write null; OSC 52 must be silently dropped, not crash.
@@ -2070,6 +2362,156 @@ test "bell effect callback" {
         s.nextSlice("\x07\x07");
         try testing.expectEqual(@as(usize, 3), S.bell_count);
     }
+}
+
+test "clipboard_write effect callback" {
+    var t: Terminal = try .init(testing.allocator, .{ .cols = 80, .rows = 24 });
+    defer t.deinit(testing.allocator);
+
+    // A null callback (the default readonly effects) silently ignores writes.
+    {
+        var s: Stream = .initAlloc(testing.allocator, .init(&t));
+        defer s.deinit();
+
+        s.nextSlice("\x1B]52;c;aGVsbG8=\x1B\\");
+
+        // Terminal should still be functional after the ignored sequence
+        s.nextSlice("AfterClipboard");
+        const str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("AfterClipboard", str);
+    }
+
+    t.fullReset();
+
+    const S = struct {
+        var count: usize = 0;
+        var result: clipboard.WriteResult = .success;
+        var last_location: clipboard.Location = .standard;
+        var last_contents_len: usize = 0;
+        var last_mime: ?[]u8 = null;
+        var last_data: ?[]u8 = null;
+
+        fn clearCapture() void {
+            if (last_mime) |value| testing.allocator.free(value);
+            if (last_data) |value| testing.allocator.free(value);
+            last_mime = null;
+            last_data = null;
+            last_contents_len = 0;
+        }
+
+        fn clipboardWrite(_: *Handler, write: clipboard.Write) clipboard.WriteResult {
+            clearCapture();
+            count += 1;
+            last_location = write.location;
+            last_contents_len = write.contents.len;
+            if (write.contents.len > 0) {
+                last_mime = testing.allocator.dupe(u8, write.contents[0].mime) catch
+                    @panic("failed to capture clipboard MIME type");
+                last_data = testing.allocator.dupe(u8, write.contents[0].data) catch
+                    @panic("failed to capture clipboard data");
+            }
+            return result;
+        }
+    };
+    S.count = 0;
+    S.result = .denied;
+    S.clearCapture();
+    defer S.clearCapture();
+
+    var handler: Handler = .init(&t);
+    handler.effects.clipboard_write = &S.clipboardWrite;
+
+    var s: Stream = .initAlloc(testing.allocator, handler);
+    defer s.deinit();
+
+    // Selectors are normalized and payloads are decoded before the callback.
+    const cases = [_]struct {
+        sequence: []const u8,
+        location: clipboard.Location,
+        data: []const u8,
+    }{
+        .{ .sequence = "\x1B]52;c;aGVsbG8=\x1B\\", .location = .standard, .data = "hello" },
+        .{ .sequence = "\x1B]52;s;d29ybGQ=\x07", .location = .selection, .data = "world" },
+        .{ .sequence = "\x1B]52;p;cHJpbWFyeQ==\x1B\\", .location = .primary, .data = "primary" },
+        .{ .sequence = "\x1B]52;0;Y3V0\x1B\\", .location = .standard, .data = "cut" },
+        .{ .sequence = "\x1B]52;x;ZmFsbGJhY2s=\x1B\\", .location = .standard, .data = "fallback" },
+        .{ .sequence = "\x1B]52;c;YQBi\x1B\\", .location = .standard, .data = "a\x00b" },
+    };
+
+    for (cases, 1..) |case, expected_count| {
+        s.nextSlice(case.sequence);
+        try testing.expectEqual(expected_count, S.count);
+        try testing.expectEqual(case.location, S.last_location);
+        try testing.expectEqual(@as(usize, 1), S.last_contents_len);
+        try testing.expectEqualStrings("text/plain", S.last_mime.?);
+        try testing.expectEqualSlices(u8, case.data, S.last_data.?);
+    }
+
+    // Empty data is a clear, represented by an empty contents slice.
+    s.nextSlice("\x1B]52;s;\x1B\\");
+    try testing.expectEqual(@as(usize, cases.len + 1), S.count);
+    try testing.expectEqual(clipboard.Location.selection, S.last_location);
+    try testing.expectEqual(@as(usize, 0), S.last_contents_len);
+    try testing.expect(S.last_mime == null);
+    try testing.expect(S.last_data == null);
+
+    // Reads and malformed base64 are ignored.
+    s.nextSlice("\x1B]52;c;?\x1B\\");
+    s.nextSlice("\x1B]52;c;***\x1B\\");
+    try testing.expectEqual(@as(usize, cases.len + 1), S.count);
+
+    // OSC 1337 Copy shares the normalized clipboard write path.
+    s.nextSlice("\x1B]1337;Copy=:aVRlcm0y\x1B\\");
+    try testing.expectEqual(@as(usize, cases.len + 2), S.count);
+    try testing.expectEqual(clipboard.Location.standard, S.last_location);
+    try testing.expectEqualStrings("text/plain", S.last_mime.?);
+    try testing.expectEqualStrings("iTerm2", S.last_data.?);
+
+    // Parsing across write boundaries still invokes exactly one atomic write.
+    s.nextSlice("\x1B]52;p;ZnJh");
+    s.nextSlice("Z21lbnRlZA==\x1B");
+    s.nextSlice("\\");
+    try testing.expectEqual(@as(usize, cases.len + 3), S.count);
+    try testing.expectEqual(clipboard.Location.primary, S.last_location);
+    try testing.expectEqualStrings("text/plain", S.last_mime.?);
+    try testing.expectEqualStrings("fragmented", S.last_data.?);
+
+    // Callback results are intentionally ignored for protocols without a
+    // write acknowledgement. The denied result above did not stop later writes.
+    try testing.expectEqual(clipboard.WriteResult.denied, S.result);
+}
+
+test "clipboard_write allocation failure is ignored" {
+    var t: Terminal = try .init(testing.allocator, .{ .cols = 80, .rows = 24 });
+    defer t.deinit(testing.allocator);
+
+    const S = struct {
+        var count: usize = 0;
+
+        fn clipboardWrite(_: *Handler, _: clipboard.Write) clipboard.WriteResult {
+            count += 1;
+            return .success;
+        }
+    };
+    S.count = 0;
+
+    var handler: Handler = .init(&t);
+    handler.effects.clipboard_write = &S.clipboardWrite;
+
+    var s: Stream = .initAlloc(testing.allocator, handler);
+    defer s.deinit();
+
+    // Only the decoded scratch data uses the terminal allocator here. Swap in
+    // an allocator that always fails, then restore it before terminal teardown.
+    {
+        const alloc = t.screens.active.alloc;
+        t.screens.active.alloc = testing.failing_allocator;
+        defer t.screens.active.alloc = alloc;
+        s.nextSlice("\x1B]52;c;aGVsbG8=\x1B\\");
+    }
+    try testing.expectEqual(@as(usize, 0), S.count);
+    try testing.expect(!s.handler.semantic_failure);
 }
 
 test "request mode DECRQM with write_pty callback" {

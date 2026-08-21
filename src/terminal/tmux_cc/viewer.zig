@@ -15,6 +15,7 @@ const Screen = @import("../Screen.zig");
 const ScreenSet = @import("../ScreenSet.zig");
 const Terminal = @import("../Terminal.zig");
 const color = @import("../color.zig");
+const clipboard = @import("../clipboard.zig"); // ROOTSHELL-TMUX (id=viewer-clipboard): protocol-neutral clipboard write effect
 const mouse = @import("../mouse.zig");
 const osc = @import("../osc.zig"); // ROOTSHELL-TMUX (id=viewer-pane-osc): OSC 9;4 progress report type
 const device_attributes = @import("../device_attributes.zig"); // ROOTSHELL-TMUX (id=streamterm-tmux-passthrough): DA reply for wrapped queries
@@ -1126,6 +1127,16 @@ pub const Viewer = struct {
             self.terminal.height_px = @as(u32, @intCast(self.terminal.rows)) * self.cell_height;
         }
 
+        /// The pane's cell size for `Terminal.Resize.cell_size_px`, or null
+        /// when we don't know it yet (the gateway sizes panes in cells only,
+        /// so the app may not have pushed a cell size yet). Null leaves the
+        /// terminal's pixel geometry untouched, matching `recomputePixelSize`.
+        /// ROOTSHELL-TMUX (id=tmux-pane-pixel-geometry)
+        pub fn cellSizePx(self: *const Pane) @FieldType(Terminal.Resize, "cell_size_px") {
+            if (self.cell_width == 0 or self.cell_height == 0) return null;
+            return .{ .width = self.cell_width, .height = self.cell_height };
+        }
+
         /// Result of a bounded renderer-lock attempt. `.acquired` (with the
         /// possibly-null mutex) must be paired with `unlockRenderer`;
         /// `.timeout` has already dropped the `renderer_users` registration
@@ -1529,10 +1540,10 @@ pub const Viewer = struct {
                 PANE_LOCK_QUICK_BUDGET_NS,
             ) orelse continue;
             defer pane.unlockRenderer(m);
-            pane.stream.handler.default_cursor_style = style;
+            pane.terminal.cursor.default_style = style;
             // `orelse true` mirrors how a normal surface resolves DECSCUSR 0.
-            pane.stream.handler.default_cursor_blink = blink orelse true;
-            if (pane.stream.handler.default_cursor) {
+            pane.terminal.cursor.default_blink = blink orelse true;
+            if (pane.terminal.cursor.is_default) {
                 pane.terminal.screens.active.cursor.cursor_style = style;
                 // Only force blink when explicitly configured; an unset blink
                 // leaves the pane's current value (don't flip steady->blinking).
@@ -3802,7 +3813,7 @@ pub const Viewer = struct {
                 std.mem.eql(u8, data.cursor_shape, "underline") or
                 std.mem.eql(u8, data.cursor_shape, "bar");
             if (shape_is_default or shape_is_explicit) {
-                pane.stream.handler.default_cursor = shape_is_default;
+                pane.terminal.cursor.is_default = shape_is_default;
             }
 
             // Set cursor position on the appropriate screen (tmux uses 0-based)
@@ -4227,13 +4238,17 @@ pub const Viewer = struct {
     fn flushPaneDeferred(self: *Viewer, pane: *Pane, pane_id: usize) void {
         if (pane.pending_resize) |pr| {
             pane.pending_resize = null;
-            pane.terminal.resize(self.alloc, pr.cols, pr.rows) catch |err| {
+            // cell_size_px keeps pixel geometry consistent with the new cell
+            // grid so auto-sized images don't collapse, and upstream rolls it
+            // back with the rest of the resize on failure. ROOTSHELL-TMUX
+            // (id=tmux-pane-pixel-geometry)
+            pane.terminal.resize(self.alloc, .{
+                .cols = pr.cols,
+                .rows = pr.rows,
+                .cell_size_px = pane.cellSizePx(),
+            }) catch |err| {
                 log.warn("deferred pane {} resize failed err={}", .{ pane_id, err });
             };
-            // Keep pixel geometry consistent with the new cell grid so
-            // auto-sized images don't collapse. ROOTSHELL-TMUX
-            // (id=tmux-pane-pixel-geometry)
-            pane.recomputePixelSize();
         }
 
         if (pane.pending_dropped) {
@@ -4500,13 +4515,52 @@ pub const Viewer = struct {
     /// OSC 52 SET per call for emission as a `pane_clipboard_write` action after
     /// the `%output` feed (see `flushPaneClipboard`). Recovers the owning `Pane`
     /// from the handler's terminal pointer (always `pane.terminal`, set by
-    /// `vtStream`). The base64 stays encoded; the app side decodes it.
-    /// ROOTSHELL-TMUX (id=viewer-clipboard)
-    fn paneClipboardWrite(handler: *TerminalStreamHandler, kind: u8, data: []const u8) void {
+    /// `vtStream`).
+    ///
+    /// Upstream's protocol-neutral effect hands us DECODED contents, but the
+    /// rest of this path feeds `apprt.surface.Message.clipboard_write`, whose
+    /// payload `Surface.clipboardWrite` base64-decodes — the same contract the
+    /// non-tmux OSC 52 path uses. So re-encode here and keep the pane action
+    /// byte-identical to the normal path. ROOTSHELL-TMUX (id=viewer-clipboard)
+    fn paneClipboardWrite(
+        handler: *TerminalStreamHandler,
+        write: clipboard.Write,
+    ) clipboard.WriteResult {
         const pane: *Pane = @fieldParentPtr("terminal", handler.terminal);
         const alloc = handler.terminal.gpa();
-        const copy = alloc.dupe(u8, data) catch return;
-        pane.clipboard_writes.append(alloc, .{ .kind = kind, .data = copy }) catch alloc.free(copy);
+
+        const kind: u8 = switch (write.location) {
+            .selection => 's',
+            .primary => 'p',
+            else => 'c',
+        };
+
+        // An empty contents slice clears the destination; OSC 52 spells that
+        // as an empty payload, which needs no encoding.
+        if (write.contents.len == 0) {
+            const empty = alloc.alloc(u8, 0) catch return .io_error;
+            pane.clipboard_writes.append(alloc, .{
+                .kind = kind,
+                .data = empty,
+            }) catch {
+                alloc.free(empty);
+                return .io_error;
+            };
+            return .success;
+        }
+
+        const enc = std.base64.standard.Encoder;
+        const data = write.contents[0].data;
+        const copy = alloc.alloc(u8, enc.calcSize(data.len)) catch return .io_error;
+        _ = enc.encode(copy, data);
+        pane.clipboard_writes.append(alloc, .{
+            .kind = kind,
+            .data = copy,
+        }) catch {
+            alloc.free(copy);
+            return .io_error;
+        };
+        return .success;
     }
 
     /// `dcs_passthrough` effect installed on each pane's live stream: buffer the
@@ -4825,15 +4879,13 @@ pub const Viewer = struct {
                     };
                     defer pane.unlockRenderer(render_mutex);
                     pane.pending_resize = null;
-                    try pane.terminal.resize(
-                        gpa_alloc,
-                        cols,
-                        rows,
-                    );
-                    // Keep pixel geometry consistent with the new cell grid so
-                    // auto-sized images don't collapse. ROOTSHELL-TMUX
-                    // (id=tmux-pane-pixel-geometry)
-                    pane.recomputePixelSize();
+                    // See id=tmux-pane-pixel-geometry above: cell_size_px keeps
+                    // the pane's pixel geometry in step with the cell grid.
+                    try pane.terminal.resize(gpa_alloc, .{
+                        .cols = cols,
+                        .rows = rows,
+                        .cell_size_px = pane.cellSizePx(),
+                    });
                     // Wake the child surface's renderer so it repaints at the new
                     // size. Resizing the pane terminal reflows its content, but
                     // unlike the `%output` write paths this is NOT a write, so
@@ -4902,9 +4954,9 @@ pub const Viewer = struct {
         default_cursor_style: Screen.CursorStyle,
         default_cursor_blink: ?bool,
     ) void {
-        pane.stream.handler.default_cursor_style = default_cursor_style;
+        pane.terminal.cursor.default_style = default_cursor_style;
         // `orelse true` mirrors how a normal surface resolves DECSCUSR 0.
-        pane.stream.handler.default_cursor_blink = default_cursor_blink orelse true;
+        pane.terminal.cursor.default_blink = default_cursor_blink orelse true;
         // Query-reply router: this pane answers the terminal queries tmux does NOT
         // handle for a control client (kitty-keyboard, DECRQM of unknown modes,
         // OSC 4/12, etc.). Replies are buffered on the pane and routed back to the
