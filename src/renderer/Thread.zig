@@ -4,7 +4,8 @@ pub const Thread = @This();
 
 const std = @import("std");
 const builtin = @import("builtin");
-const xev = @import("../global.zig").xev;
+const global = @import("../global.zig");
+const xev = global.xev;
 const crash = @import("../crash/main.zig");
 const internal_os = @import("../os/main.zig");
 const rendererpkg = @import("../renderer.zig");
@@ -371,7 +372,7 @@ fn drainMailbox(self: *Thread) !void {
         void;
     defer if (builtin.os.tag.isDarwin()) pool.deinit();
 
-    while (self.mailbox.pop()) |message| {
+    while (self.mailbox.pop(global.io())) |message| {
         log.debug("mailbox message={}", .{message});
         switch (message) {
             .crash => @panic("crash request, crashing intentionally"),
@@ -383,7 +384,7 @@ fn drainMailbox(self: *Thread) !void {
             // handle, even if signaling somehow becomes a no-op, so the
             // apprt-side timeout path can't leak the handle.
             .drain_to_idle => |handle| {
-                handle.event.set();
+                handle.event.set(global.io());
                 handle.release(self.alloc);
             },
 
@@ -572,8 +573,8 @@ fn drainMailbox(self: *Thread) !void {
                 if (self.renderer.redact) |*old| old.deinit();
                 self.renderer.redact = v;
                 {
-                    self.state.mutex.lock();
-                    defer self.state.mutex.unlock();
+                    self.state.mutex.lockUncancelable(global.io());
+                    defer self.state.mutex.unlock(global.io());
                     self.state.terminal.flags.dirty.clear = true;
                 }
             },
@@ -857,7 +858,7 @@ fn cursorBlinkInterval() u64 {
 /// Compute the cursor blink alpha for animated blink modes.
 /// Uses monotonic time to produce smooth, drift-free animation.
 fn computeBlinkAlpha(mode: configpkg.CursorBlinkMode) f64 {
-    const now_ns = std.time.nanoTimestamp();
+    const now_ns = std.Io.Timestamp.now(global.io(), .awake).toNanoseconds();
     const elapsed_s: f64 = @as(f64, @floatFromInt(now_ns)) / @as(f64, std.time.ns_per_s);
 
     return switch (mode) {
@@ -954,7 +955,7 @@ const Compression = struct {
         // frame without changing terminal contents and must not starve this
         // timer indefinitely.
         if (thread.state.mutex.tryLock()) {
-            defer thread.state.mutex.unlock();
+            defer thread.state.mutex.unlock(global.io());
             const activity = thread.state.terminal.compressionActivity();
             if (self.activity == activity) return;
             self.activity = activity;
@@ -1013,7 +1014,7 @@ const Compression = struct {
 
         const state = thread.state;
         if (!state.mutex.tryLock()) return idle_interval;
-        defer state.mutex.unlock();
+        defer state.mutex.unlock(global.io());
 
         const activity = state.terminal.compressionActivity();
         if (self.activity != activity) {

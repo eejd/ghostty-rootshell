@@ -27,6 +27,8 @@ const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 const Terminal = terminal.Terminal;
 const Health = renderer.Health;
+const compat_file = @import("../lib/compat/file.zig");
+const global = @import("../global.zig");
 
 const getConstraint = @import("../font/nerd_font_attributes.zig").getConstraint;
 
@@ -41,7 +43,7 @@ const IOSDisplayLink = @import("metal/IOSDisplayLink.zig").IOSDisplayLink;
 
 const DisplayLink = switch (builtin.os.tag) {
     .macos => *macos.video.DisplayLink,
-    .ios, .visionos => *IOSDisplayLink,
+    .ios, .maccatalyst, .visionos => *IOSDisplayLink,
     else => void,
 };
 
@@ -102,7 +104,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
         /// This mutex must be held whenever any state used in `drawFrame` is
         /// being modified, and also when it's being accessed in `drawFrame`.
-        draw_mutex: std.Thread.Mutex = .{},
+        draw_mutex: std.Io.Mutex = .init,
 
         /// The configuration we need derived from the main config.
         config: DerivedConfig,
@@ -175,12 +177,12 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         /// Timestamp we rendered out first frame.
         ///
         /// This is used when updating custom shader uniforms.
-        first_frame_time: ?std.time.Instant = null,
+        first_frame_time: ?std.Io.Timestamp = null,
 
         /// Timestamp when we rendered out more recent frame.
         ///
         /// This is used when updating custom shader uniforms.
-        last_frame_time: ?std.time.Instant = null,
+        last_frame_time: ?std.Io.Timestamp = null,
 
         /// The font structures.
         font_grid: *font.SharedGrid,
@@ -217,7 +219,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         /// iOS/visionOS display-link idle-pause bookkeeping (see
         /// reconcileLinkIdleLocked); unused elsewhere. Protected by
         /// draw_mutex. null until the first damage frame.
-        last_damage: ?std.time.Instant = null,
+        last_damage: ?std.Io.Timestamp = null,
 
         /// Health of the most recently completed frame.
         health: std.atomic.Value(Health) = .{ .raw = .healthy },
@@ -282,7 +284,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             frame_index: std.math.IntFittingRange(0, buf_count) = 0,
             /// Semaphore that we wait on to make sure we have an available
             /// frame state struct so we can start working on a new frame.
-            frame_sema: std.Thread.Semaphore = .{ .permits = buf_count },
+            frame_sema: std.Io.Semaphore = .{ .permits = buf_count },
 
             /// Set to true when deinited, if you try to deinit a defunct
             /// swap chain it will just be ignored, to prevent double-free.
@@ -309,7 +311,9 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
                 // Wait for all of our inflight draws to complete
                 // so that we can cleanly deinit our GPU state.
-                for (0..buf_count) |_| self.frame_sema.wait();
+                for (0..buf_count) |_| self.frame_sema.waitUncancelable(
+                    global.io(),
+                );
                 for (&self.frames) |*frame| frame.deinit();
             }
 
@@ -319,7 +323,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             pub fn nextFrame(self: *SwapChain) error{Defunct}!*FrameState {
                 if (self.defunct) return error.Defunct;
 
-                self.frame_sema.wait();
+                self.frame_sema.waitUncancelable(global.io());
                 errdefer self.frame_sema.post();
                 self.frame_index = (self.frame_index + 1) % buf_count;
                 return &self.frames[self.frame_index];
@@ -327,7 +331,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
             /// This should be called when the frame has completed drawing.
             pub fn releaseFrame(self: *SwapChain) void {
-                self.frame_sema.post();
+                self.frame_sema.post(global.io());
             }
         };
 
@@ -716,8 +720,8 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 metrics: font.Metrics,
             } = font_critical: {
                 const grid: *font.SharedGrid = options.font_grid;
-                grid.lock.lockShared();
-                defer grid.lock.unlockShared();
+                grid.lock.lockSharedUncancelable(global.io());
+                defer grid.lock.unlockShared(global.io());
                 break :font_critical .{
                     .metrics = grid.metrics,
                 };
@@ -1038,8 +1042,8 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
             // Lock the draw mutex so that we can
             // safely reinitialize our GPU resources.
-            self.draw_mutex.lock();
-            defer self.draw_mutex.unlock();
+            self.draw_mutex.lockUncancelable(global.io());
+            defer self.draw_mutex.unlock(global.io());
 
             // We assume that the swap chain was deinited in
             // `displayUnrealized`, in which case it should be
@@ -1067,8 +1071,8 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
             // Lock the draw mutex so that we can
             // safely deinitialize our GPU resources.
-            self.draw_mutex.lock();
-            defer self.draw_mutex.unlock();
+            self.draw_mutex.lockUncancelable(global.io());
+            defer self.draw_mutex.unlock(global.io());
 
             // We deinit our swap chain and shaders.
             //
@@ -1215,13 +1219,13 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         /// which also resets any idle pause.
         fn reconcileLinkIdleLocked(self: *Self, damaged: bool) void {
             const display_link = self.display_link orelse return;
-            const now = std.time.Instant.now() catch return;
+            const now: std.Io.Timestamp = .now(global.io(), .awake);
 
             if (damaged) {
                 defer self.last_damage = now;
                 if (display_link.desiredRunning()) return;
                 const last = self.last_damage orelse return;
-                if (now.since(last) / std.time.ns_per_ms <= link_restart_burst_ms)
+                if (@divFloor(last.durationTo(now).nanoseconds, std.time.ns_per_ms) <= link_restart_burst_ms)
                     display_link.start() catch {};
                 return;
             }
@@ -1233,7 +1237,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 self.last_damage = now;
                 return;
             };
-            if (now.since(last) / std.time.ns_per_ms > link_idle_pause_ms)
+            if (@divFloor(last.durationTo(now).nanoseconds, std.time.ns_per_ms) > link_idle_pause_ms)
                 display_link.stop() catch {};
         }
 
@@ -1315,8 +1319,8 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         ///
         /// Must be called on the render thread.
         pub fn setFontGrid(self: *Self, grid: *font.SharedGrid) void {
-            self.draw_mutex.lock();
-            defer self.draw_mutex.unlock();
+            self.draw_mutex.lockUncancelable(global.io());
+            defer self.draw_mutex.unlock(global.io());
 
             // Update our grid
             self.font_grid = grid;
@@ -1373,16 +1377,6 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             cursor_blink_visible: bool,
             cursor_blink_alpha: f64,
         ) Allocator.Error!void {
-            // const start = std.time.Instant.now() catch unreachable;
-            // const start_micro = std.time.microTimestamp();
-            // defer {
-            //     const end = std.time.Instant.now() catch unreachable;
-            //     log.warn(
-            //         "[updateFrame time] start_micro={} duration={}ns",
-            //         .{ start_micro, end.since(start) / std.time.ns_per_us },
-            //     );
-            // }
-
             // We fully deinit and reset the terminal state every so often
             // so that a particularly large terminal state doesn't cause
             // the renderer to hold on to retained memory.
@@ -1413,6 +1407,9 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
             // Update all our data as tightly as possible within the mutex.
             var critical: Critical = critical: {
+                // NOTE: This code needs be updated to 0.16.0 before you
+                // un-comment it ;)
+                //
                 // const start = try std.time.Instant.now();
                 // const start_micro = std.time.microTimestamp();
                 // defer {
@@ -1420,10 +1417,8 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 //     std.log.err("[updateFrame critical time] start={}\tduration={} us", .{ start_micro, end.since(start) / std.time.ns_per_us });
                 // }
 
-                // Lock while signaling demand so the IO parse thread
-                // can't starve us. See renderer.State.lockDemand.
-                state.lockDemand();
-                defer state.unlockDemand();
+                state.lockDemand(global.io());
+                defer state.unlockDemand(global.io());
 
                 // If we're in a synchronized output state, we pause all rendering.
                 if (state.terminal.modes.get(.synchronized_output)) {
@@ -1543,8 +1538,8 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 if (self.images.kittyRequiresUpdate(state.terminal)) {
                     // We need to grab the draw mutex since this updates
                     // our image state that drawFrame uses.
-                    self.draw_mutex.lock();
-                    defer self.draw_mutex.unlock();
+                    self.draw_mutex.lockUncancelable(global.io());
+                    defer self.draw_mutex.unlock(global.io());
                     self.images.kittyUpdate(
                         self.alloc,
                         state.terminal,
@@ -1693,8 +1688,8 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
             // Acquire the draw mutex for all remaining state updates.
             {
-                self.draw_mutex.lock();
-                defer self.draw_mutex.unlock();
+                self.draw_mutex.lockUncancelable(global.io());
+                defer self.draw_mutex.unlock(global.io());
 
                 // Store blink alpha for use in addCursor
                 self.cursor_blink_alpha = cursor_blink_alpha;
@@ -1777,20 +1772,10 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             self: *Self,
             sync: bool,
         ) !void {
-            // const start = std.time.Instant.now() catch unreachable;
-            // const start_micro = std.time.microTimestamp();
-            // defer {
-            //     const end = std.time.Instant.now() catch unreachable;
-            //     log.warn(
-            //         "[drawFrame time] start_micro={} duration={}ns",
-            //         .{ start_micro, end.since(start) / std.time.ns_per_us },
-            //     );
-            // }
-
             // We hold a the draw mutex to prevent changes to any
             // data we access while we're in the middle of drawing.
-            self.draw_mutex.lock();
-            defer self.draw_mutex.unlock();
+            self.draw_mutex.lockUncancelable(global.io());
+            defer self.draw_mutex.unlock(global.io());
 
             // After the graphics API is complete (so we defer) we want to
             // update our scrollbar state.
@@ -1926,16 +1911,16 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             texture: {
                 const modified = self.font_grid.atlas_grayscale.modified.load(.monotonic);
                 if (modified <= frame.grayscale_modified) break :texture;
-                self.font_grid.lock.lockShared();
-                defer self.font_grid.lock.unlockShared();
+                self.font_grid.lock.lockSharedUncancelable(global.io());
+                defer self.font_grid.lock.unlockShared(global.io());
                 frame.grayscale_modified = self.font_grid.atlas_grayscale.modified.load(.monotonic);
                 try self.syncAtlasTexture(&self.font_grid.atlas_grayscale, &frame.grayscale);
             }
             texture: {
                 const modified = self.font_grid.atlas_color.modified.load(.monotonic);
                 if (modified <= frame.color_modified) break :texture;
-                self.font_grid.lock.lockShared();
-                defer self.font_grid.lock.unlockShared();
+                self.font_grid.lock.lockSharedUncancelable(global.io());
+                defer self.font_grid.lock.unlockShared(global.io());
                 frame.color_modified = self.font_grid.atlas_color.modified.load(.monotonic);
                 try self.syncAtlasTexture(&self.font_grid.atlas_color, &frame.color);
             }
@@ -2109,17 +2094,22 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 };
 
                 // Open the file
-                var file = std.fs.openFileAbsolute(path, .{}) catch |err| {
+                var file = std.Io.Dir.openFileAbsolute(
+                    global.io(),
+                    path,
+                    .{},
+                ) catch |err| {
                     log.warn(
                         "error opening background image file \"{s}\": {}",
                         .{ path, err },
                     );
                     break :load_background;
                 };
-                defer file.close();
+                defer file.close(global.io());
 
                 // Read it
-                const contents = file.readToEndAlloc(
+                const contents = compat_file.readToEndAlloc(
+                    file,
                     self.alloc,
                     std.math.maxInt(u32), // Max size of 4 GiB, for now.
                 ) catch |err| {
@@ -2196,8 +2186,8 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
         /// Update the configuration.
         pub fn changeConfig(self: *Self, config: *DerivedConfig) !void {
-            self.draw_mutex.lock();
-            defer self.draw_mutex.unlock();
+            self.draw_mutex.lockUncancelable(global.io());
+            defer self.draw_mutex.unlock(global.io());
 
             // We always redo the font shaper in case font features changed. We
             // could check to see if there was an actual config change but this is
@@ -2306,8 +2296,8 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         /// EDR-only; guarded so non-Metal backends still compile (and no-op).
         pub fn setBrightness(self: *Self, gain: f32, visible: bool) void {
             if (comptime @hasDecl(GraphicsAPI, "setHDRBoost")) {
-                self.draw_mutex.lock();
-                defer self.draw_mutex.unlock();
+                self.draw_mutex.lockUncancelable(global.io());
+                defer self.draw_mutex.unlock(global.io());
 
                 self.uniforms.brightness_gain = std.math.clamp(gain, 1.0, 16.0);
                 if (visible) self.reconcileHDRBoostLocked();
@@ -2320,8 +2310,8 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         /// thread's visibility handler on visibility regain.
         pub fn reconcileBrightness(self: *Self) void {
             if (comptime @hasDecl(GraphicsAPI, "setHDRBoost")) {
-                self.draw_mutex.lock();
-                defer self.draw_mutex.unlock();
+                self.draw_mutex.lockUncancelable(global.io());
+                defer self.draw_mutex.unlock(global.io());
                 self.reconcileHDRBoostLocked();
             }
         }
@@ -2363,8 +2353,8 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             self: *Self,
             size: renderer.Size,
         ) void {
-            self.draw_mutex.lock();
-            defer self.draw_mutex.unlock();
+            self.draw_mutex.lockUncancelable(global.io());
+            defer self.draw_mutex.unlock(global.io());
 
             // We only actually need the padding from this,
             // everything else is derived elsewhere.
@@ -2548,7 +2538,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
             const uniforms: *shadertoy.Uniforms = &self.custom_shader_uniforms;
 
-            const now = try std.time.Instant.now();
+            const now: std.Io.Timestamp = .now(global.io(), .awake);
             defer self.last_frame_time = now;
             const first_frame_time = self.first_frame_time orelse t: {
                 self.first_frame_time = now;
@@ -2556,10 +2546,10 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             };
             const last_frame_time = self.last_frame_time orelse now;
 
-            const since_ns: f32 = @floatFromInt(now.since(first_frame_time));
+            const since_ns: f32 = @floatFromInt(first_frame_time.durationTo(now).nanoseconds);
             uniforms.time = since_ns / std.time.ns_per_s;
 
-            const delta_ns: f32 = @floatFromInt(now.since(last_frame_time));
+            const delta_ns: f32 = @floatFromInt(last_frame_time.durationTo(now).nanoseconds);
             uniforms.time_delta = delta_ns / std.time.ns_per_s;
 
             uniforms.frame += 1;
@@ -2687,16 +2677,6 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             self: *Self,
             features: []const Overlay.Feature,
         ) Overlay.InitError!void {
-            // const start = std.time.Instant.now() catch unreachable;
-            // const start_micro = std.time.microTimestamp();
-            // defer {
-            //     const end = std.time.Instant.now() catch unreachable;
-            //     log.warn(
-            //         "[rebuildOverlay time] start_micro={} duration={}ns",
-            //         .{ start_micro, end.since(start) / std.time.ns_per_us },
-            //     );
-            // }
-
             const alloc = self.alloc;
 
             // If we have no features enabled, don't build an overlay.
@@ -2771,14 +2751,6 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             links: *const terminal.RenderState.CellSet,
         ) Allocator.Error!void {
             const state: *terminal.RenderState = &self.terminal_state;
-
-            // const start = try std.time.Instant.now();
-            // const start_micro = std.time.microTimestamp();
-            // defer {
-            //     const end = std.time.Instant.now() catch unreachable;
-            //     // "[rebuildCells time] <START us>\t<TIME_TAKEN us>"
-            //     std.log.warn("[rebuildCells time] {}\t{}", .{start_micro, end.since(start) / std.time.ns_per_us});
-            // }
 
             const grid_size_diff =
                 self.cells.size.rows != state.rows or

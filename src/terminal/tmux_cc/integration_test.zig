@@ -17,6 +17,13 @@ const Screen = @import("../Screen.zig");
 
 const log = std.log.scoped(.terminal_tmux_integration);
 
+/// Milliseconds on the monotonic clock (`std.time.milliTimestamp` is gone in
+/// Zig 0.16). Only used for test deadlines.
+fn nowMs() i64 {
+    const ts: std.Io.Timestamp = .now(testing.io, .awake);
+    return ts.toMilliseconds();
+}
+
 /// Helper that drives a tmux control-mode subprocess. Owns the child
 /// process, pipes, and the control parser that consumes raw bytes.
 const TmuxHarness = struct {
@@ -27,13 +34,13 @@ const TmuxHarness = struct {
 
     const InitError = error{
         TmuxNotAvailable,
-    } || std.process.Child.SpawnError || std.mem.Allocator.Error;
+    } || std.process.SpawnError || std.mem.Allocator.Error;
 
     fn init(alloc: std.mem.Allocator, session_name: []const u8) InitError!TmuxHarness {
         // Start tmux in control mode with a new detached session, then
         // attach to it. We use -x/-y to set a known terminal size.
-        var child: std.process.Child = .init(
-            &.{
+        const child = std.process.spawn(testing.io, .{
+            .argv = &.{
                 "tmux",
                 "-C",
                 "new-session",
@@ -49,20 +56,17 @@ const TmuxHarness = struct {
                 "-t",
                 session_name,
             },
-            alloc,
-        );
-        child.stdin_behavior = .Pipe;
-        child.stdout_behavior = .Pipe;
-        child.stderr_behavior = .Pipe;
-
-        child.spawn() catch |err| {
+            .stdin = .pipe,
+            .stdout = .pipe,
+            .stderr = .pipe,
+        }) catch |err| {
             return switch (err) {
                 error.FileNotFound => error.TmuxNotAvailable,
                 else => err,
             };
         };
 
-        const viewer = try Viewer.init(alloc, 80, 24);
+        const viewer = try Viewer.init(testing.io, alloc, 80, 24);
 
         return .{
             .child = child,
@@ -83,21 +87,21 @@ const TmuxHarness = struct {
                 .{self.session_name},
             ) catch null;
             if (cmd) |c| {
-                stdin.writeAll(c) catch {};
+                stdin.writeStreamingAll(testing.io, c) catch {};
                 testing.allocator.free(c);
             }
         }
 
         // Close stdin to signal EOF
         if (self.child.stdin) |stdin| {
-            stdin.close();
+            stdin.close(testing.io);
             self.child.stdin = null;
         }
 
         self.viewer.deinit();
         self.parser.deinit();
 
-        _ = self.child.wait() catch {};
+        _ = self.child.wait(testing.io) catch {};
     }
 
     fn consumeActions(self: *TmuxHarness, actions: []const Viewer.Action) !void {
@@ -134,7 +138,7 @@ const TmuxHarness = struct {
 
         if (fds[0].revents & posix.POLL.HUP != 0) return 0; // EOF
 
-        return self.child.stdout.?.read(buf) catch |err| {
+        return self.child.stdout.?.readStreaming(testing.io, &.{buf}) catch |err| {
             log.warn("read error: {}", .{err});
             return 0;
         };
@@ -145,12 +149,21 @@ const TmuxHarness = struct {
     /// the command_queue state (i.e., windows are discovered and pane
     /// captures are complete).
     fn driveStartup(self: *TmuxHarness, timeout_ms: u32) !bool {
-        const deadline = std.time.milliTimestamp() + timeout_ms;
+        const started: std.Io.Timestamp = .now(testing.io, .awake);
+        const timeout_ns: u64 = @as(u64, timeout_ms) * std.time.ns_per_ms;
         var buf: [4096]u8 = undefined;
         var saw_windows = false;
 
-        while (std.time.milliTimestamp() < deadline) {
-            const remaining_ms: u32 = @intCast(@max(1, deadline - std.time.milliTimestamp()));
+        while (true) {
+            const elapsed_ns: u64 = @intCast(@max(
+                0,
+                started.durationTo(.now(testing.io, .awake)).nanoseconds,
+            ));
+            if (elapsed_ns >= timeout_ns) break;
+            const remaining_ms: u32 = @intCast(@max(
+                1,
+                (timeout_ns - elapsed_ns) / std.time.ns_per_ms,
+            ));
             const n = try self.readWithTimeout(&buf, remaining_ms);
             if (n == 0) continue;
 
@@ -182,7 +195,7 @@ const TmuxHarness = struct {
     /// Send a raw command string to tmux's stdin.
     fn sendCommand(self: *TmuxHarness, cmd: []const u8) !void {
         if (self.child.stdin) |stdin| {
-            try stdin.writeAll(cmd);
+            try stdin.writeStreamingAll(testing.io, cmd);
         }
     }
 };
@@ -234,12 +247,12 @@ test "integration: output routing" {
     try harness.sendCommand("send-keys 'echo GHOSTTY_TEST_MARKER' Enter\n");
 
     // Drive until we see the marker in a pane terminal
-    const deadline = std.time.milliTimestamp() + 5_000;
+    const deadline = nowMs() + 5_000;
     var buf: [4096]u8 = undefined;
     var found_marker = false;
 
-    while (std.time.milliTimestamp() < deadline) {
-        const remaining_ms: u32 = @intCast(@max(1, deadline - std.time.milliTimestamp()));
+    while (nowMs() < deadline) {
+        const remaining_ms: u32 = @intCast(@max(1, deadline - nowMs()));
         const n = try harness.readWithTimeout(&buf, remaining_ms);
         if (n == 0) continue;
 
@@ -295,12 +308,12 @@ test "integration: topology change on split" {
 
     // Drive until we see a windows action (layout change triggers
     // a windows update with the new topology)
-    const deadline = std.time.milliTimestamp() + 5_000;
+    const deadline = nowMs() + 5_000;
     var buf: [4096]u8 = undefined;
     var saw_topology_change = false;
 
-    while (std.time.milliTimestamp() < deadline) {
-        const remaining_ms: u32 = @intCast(@max(1, deadline - std.time.milliTimestamp()));
+    while (nowMs() < deadline) {
+        const remaining_ms: u32 = @intCast(@max(1, deadline - nowMs()));
         const n = try harness.readWithTimeout(&buf, remaining_ms);
         if (n == 0) continue;
 
@@ -351,13 +364,13 @@ test "integration: session disconnect produces exit" {
 
     // Drive and see what happens — we should either get an exit
     // action or the pipe should close cleanly.
-    const deadline = std.time.milliTimestamp() + 5_000;
+    const deadline = nowMs() + 5_000;
     var buf: [4096]u8 = undefined;
     var saw_exit = false;
     var pipe_closed = false;
 
-    while (std.time.milliTimestamp() < deadline) {
-        const remaining_ms: u32 = @intCast(@max(1, deadline - std.time.milliTimestamp()));
+    while (nowMs() < deadline) {
+        const remaining_ms: u32 = @intCast(@max(1, deadline - nowMs()));
         const n = try harness.readWithTimeout(&buf, remaining_ms);
         if (n == 0) {
             pipe_closed = true;
@@ -406,12 +419,12 @@ test "integration: focus change on pane switch" {
     try harness.sendCommand("split-window -h\n");
 
     // Drive until split is complete
-    var deadline = std.time.milliTimestamp() + 5_000;
+    var deadline = nowMs() + 5_000;
     var buf: [4096]u8 = undefined;
     var split_done = false;
 
-    while (std.time.milliTimestamp() < deadline) {
-        const remaining_ms: u32 = @intCast(@max(1, deadline - std.time.milliTimestamp()));
+    while (nowMs() < deadline) {
+        const remaining_ms: u32 = @intCast(@max(1, deadline - nowMs()));
         const n = try harness.readWithTimeout(&buf, remaining_ms);
         if (n == 0) continue;
 
@@ -436,12 +449,12 @@ test "integration: focus change on pane switch" {
     try harness.sendCommand("select-pane -t :.+\n");
 
     // Drive until we see a focus action
-    deadline = std.time.milliTimestamp() + 5_000;
+    deadline = nowMs() + 5_000;
     var saw_focus = false;
     var focus_pane_id: ?usize = null;
 
-    while (std.time.milliTimestamp() < deadline) {
-        const remaining_ms: u32 = @intCast(@max(1, deadline - std.time.milliTimestamp()));
+    while (nowMs() < deadline) {
+        const remaining_ms: u32 = @intCast(@max(1, deadline - nowMs()));
         const n = try harness.readWithTimeout(&buf, remaining_ms);
         if (n == 0) continue;
 

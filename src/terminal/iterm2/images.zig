@@ -126,7 +126,7 @@ pub const Loading = struct {
     meta: Meta,
     /// Accumulated base64-encoded bytes. We keep them encoded until FileEnd
     /// arrives, then decode all at once.
-    data: std.ArrayListUnmanaged(u8) = .{},
+    data: std.ArrayListUnmanaged(u8) = .empty,
 
     pub fn create(alloc: Allocator, meta: Meta) !*Loading {
         const self = try alloc.create(Loading);
@@ -276,7 +276,7 @@ fn dispatchPng(
     };
     defer cmd.deinit(alloc);
 
-    _ = kitty_exec.execute(alloc, terminal, &cmd);
+    _ = kitty_exec.execute(terminal.io(), alloc, terminal, &cmd);
 }
 
 /// Read PNG image dimensions from the IHDR chunk. PNG layout:
@@ -342,7 +342,7 @@ fn dispatchJpeg(
     };
     defer cmd.deinit(alloc);
 
-    _ = kitty_exec.execute(alloc, terminal, &cmd);
+    _ = kitty_exec.execute(terminal.io(), alloc, terminal, &cmd);
 }
 
 /// Build a Kitty Display struct from iTerm2 meta. We translate:
@@ -524,7 +524,7 @@ test "pngDims: rejects non-PNG" {
 
 test "displayFromMeta: preserveAspectRatio with wide image keeps columns" {
     // 40x40 terminal grid, 10x20 px cells (realistic-ish aspect).
-    var t: Terminal = try .init(std.testing.allocator, .{ .cols = 40, .rows = 40 });
+    var t: Terminal = try .init(std.testing.io, std.testing.allocator, .{ .cols = 40, .rows = 40 });
     defer t.deinit(std.testing.allocator);
     t.width_px = 400;
     t.height_px = 800;
@@ -542,7 +542,7 @@ test "displayFromMeta: preserveAspectRatio with wide image keeps columns" {
 }
 
 test "displayFromMeta: preserveAspectRatio with tall image keeps rows" {
-    var t: Terminal = try .init(std.testing.allocator, .{ .cols = 40, .rows = 40 });
+    var t: Terminal = try .init(std.testing.io, std.testing.allocator, .{ .cols = 40, .rows = 40 });
     defer t.deinit(std.testing.allocator);
     t.width_px = 400;
     t.height_px = 800;
@@ -560,7 +560,7 @@ test "displayFromMeta: preserveAspectRatio with tall image keeps rows" {
 }
 
 test "displayFromMeta: preserveAspectRatio=0 uses both dims (stretch)" {
-    var t: Terminal = try .init(std.testing.allocator, .{ .cols = 40, .rows = 40 });
+    var t: Terminal = try .init(std.testing.io, std.testing.allocator, .{ .cols = 40, .rows = 40 });
     defer t.deinit(std.testing.allocator);
     t.width_px = 400;
     t.height_px = 800;
@@ -576,7 +576,7 @@ test "displayFromMeta: preserveAspectRatio=0 uses both dims (stretch)" {
 }
 
 test "displayFromMeta: single dim passthrough" {
-    var t: Terminal = try .init(std.testing.allocator, .{ .cols = 40, .rows = 40 });
+    var t: Terminal = try .init(std.testing.io, std.testing.allocator, .{ .cols = 40, .rows = 40 });
     defer t.deinit(std.testing.allocator);
     t.width_px = 400;
     t.height_px = 800;

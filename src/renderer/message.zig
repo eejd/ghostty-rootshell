@@ -17,7 +17,7 @@ const terminal = @import("../terminal/main.zig");
 /// for the renderer thread (released after it signals the event). Whichever
 /// side decrements last frees the handle.
 pub const DrainHandle = struct {
-    event: std.Thread.ResetEvent = .{},
+    event: std.Io.Event = .unset,
     refcount: std.atomic.Value(u32) = std.atomic.Value(u32).init(2),
 
     pub fn create(alloc: std.mem.Allocator) !*DrainHandle {

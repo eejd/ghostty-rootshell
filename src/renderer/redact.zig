@@ -311,7 +311,7 @@ pub const Set = struct {
                 const tail = &cell_raws[x + 1];
                 assert(tail.wide == .spacer_tail);
                 tail.content_tag = .codepoint;
-                tail.content = .{ .codepoint = self.mask };
+                tail.content = .{ .codepoint = .{ .data = self.mask } };
                 tail.wide = .narrow;
             },
             // Never in the haystack.
@@ -321,7 +321,7 @@ pub const Set = struct {
         // Setting the tag to .codepoint also neutralizes any grapheme
         // slice (only read when the tag is .codepoint_grapheme).
         cell.content_tag = .codepoint;
-        cell.content = .{ .codepoint = self.mask };
+        cell.content = .{ .codepoint = .{ .data = self.mask } };
         cell.wide = .narrow;
     }
 };
@@ -441,7 +441,7 @@ test "redact simple match masks exact cells" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var t: terminal.Terminal = try .init(alloc, .{ .cols = 10, .rows = 3 });
+    var t: terminal.Terminal = try .init(std.testing.io, alloc, .{ .cols = 10, .rows = 3 });
     defer t.deinit(alloc);
     var s = t.vtStream();
     defer s.deinit();
@@ -467,7 +467,7 @@ test "redact case-insensitive fold" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var t: terminal.Terminal = try .init(alloc, .{ .cols = 10, .rows = 3 });
+    var t: terminal.Terminal = try .init(std.testing.io, alloc, .{ .cols = 10, .rows = 3 });
     defer t.deinit(alloc);
     var s = t.vtStream();
     defer s.deinit();
@@ -502,7 +502,7 @@ test "redact wide chars fill both columns" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var t: terminal.Terminal = try .init(alloc, .{ .cols = 10, .rows = 3 });
+    var t: terminal.Terminal = try .init(std.testing.io, alloc, .{ .cols = 10, .rows = 3 });
     defer t.deinit(alloc);
     var s = t.vtStream();
     defer s.deinit();
@@ -529,7 +529,7 @@ test "redact grapheme cluster collapses to mask" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var t: terminal.Terminal = try .init(alloc, .{ .cols = 10, .rows = 3 });
+    var t: terminal.Terminal = try .init(std.testing.io, alloc, .{ .cols = 10, .rows = 3 });
     defer t.deinit(alloc);
     var s = t.vtStream();
     defer s.deinit();
@@ -554,7 +554,7 @@ test "redact needle across soft-wrap boundary" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var t: terminal.Terminal = try .init(alloc, .{ .cols = 5, .rows = 3 });
+    var t: terminal.Terminal = try .init(std.testing.io, alloc, .{ .cols = 5, .rows = 3 });
     defer t.deinit(alloc);
     var s = t.vtStream();
     defer s.deinit();
@@ -582,7 +582,7 @@ test "redact wrap chain partial dirty rescans whole line" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var t: terminal.Terminal = try .init(alloc, .{ .cols = 5, .rows = 3 });
+    var t: terminal.Terminal = try .init(std.testing.io, alloc, .{ .cols = 5, .rows = 3 });
     defer t.deinit(alloc);
     var s = t.vtStream();
     defer s.deinit();
@@ -633,7 +633,7 @@ test "redact is idempotent and rejects mask-containing needles" {
     try testing.expectEqual(@as(?Set, null), try Set.init(alloc, &.{}, 0, 0));
     try testing.expectEqual(@as(?Set, null), try Set.init(alloc, &.{""}, 0, 0));
 
-    var t: terminal.Terminal = try .init(alloc, .{ .cols = 10, .rows = 3 });
+    var t: terminal.Terminal = try .init(std.testing.io, alloc, .{ .cols = 10, .rows = 3 });
     defer t.deinit(alloc);
     var s = t.vtStream();
     defer s.deinit();
@@ -660,7 +660,7 @@ test "redact disable restores original text via full re-copy" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var t: terminal.Terminal = try .init(alloc, .{ .cols = 10, .rows = 3 });
+    var t: terminal.Terminal = try .init(std.testing.io, alloc, .{ .cols = 10, .rows = 3 });
     defer t.deinit(alloc);
     var s = t.vtStream();
     defer s.deinit();
@@ -691,7 +691,7 @@ test "redact multiple needles with overlap" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var t: terminal.Terminal = try .init(alloc, .{ .cols = 10, .rows = 3 });
+    var t: terminal.Terminal = try .init(std.testing.io, alloc, .{ .cols = 10, .rows = 3 });
     defer t.deinit(alloc);
     var s = t.vtStream();
     defer s.deinit();
@@ -715,7 +715,7 @@ test "redact fails closed when scan allocation fails" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var t: terminal.Terminal = try .init(alloc, .{ .cols = 10, .rows = 3 });
+    var t: terminal.Terminal = try .init(std.testing.io, alloc, .{ .cols = 10, .rows = 3 });
     defer t.deinit(alloc);
     var s = t.vtStream();
     defer s.deinit();
@@ -743,7 +743,7 @@ test "redact mask-all fallback masks every text cell" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var t: terminal.Terminal = try .init(alloc, .{ .cols = 10, .rows = 3 });
+    var t: terminal.Terminal = try .init(std.testing.io, alloc, .{ .cols = 10, .rows = 3 });
     defer t.deinit(alloc);
     var s = t.vtStream();
     defer s.deinit();
@@ -766,7 +766,7 @@ test "redact preserves styles on masked cells" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var t: terminal.Terminal = try .init(alloc, .{ .cols = 10, .rows = 3 });
+    var t: terminal.Terminal = try .init(std.testing.io, alloc, .{ .cols = 10, .rows = 3 });
     defer t.deinit(alloc);
     var s = t.vtStream();
     defer s.deinit();

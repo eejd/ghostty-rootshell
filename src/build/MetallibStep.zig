@@ -24,7 +24,9 @@ output: LazyPath,
 pub fn create(b: *std.Build, opts: Options) ?*MetallibStep {
     const sdk = switch (opts.target.result.os.tag) {
         .macos => "macosx",
-        .ios => switch (opts.target.result.abi) {
+        // Mac Catalyst was iOS + the .macabi ABI before Zig 0.16 gave it its
+        // own OS tag, so it keeps using the iOS SDK and version-min flag.
+        .ios, .maccatalyst => switch (opts.target.result.abi) {
             // The iOS simulator uses the same SDK for Metal as the device,
             // but the minimum version tag causes different behaviors.
             .simulator => "iphoneos",
@@ -38,7 +40,7 @@ pub fn create(b: *std.Build, opts: Options) ?*MetallibStep {
     };
     const platform_version_arg = switch (opts.target.result.os.tag) {
         .macos => "-mmacos-version-min",
-        .ios => switch (opts.target.result.abi) {
+        .ios, .maccatalyst => switch (opts.target.result.abi) {
             .simulator => "-mios-simulator-version-min",
             else => "-mios-version-min",
         },
@@ -53,7 +55,7 @@ pub fn create(b: *std.Build, opts: Options) ?*MetallibStep {
         b.fmt("{f}", .{v.semver})
     else switch (opts.target.result.os.tag) {
         .macos => "10.14",
-        .ios => "11.0",
+        .ios, .maccatalyst => "11.0",
         .visionos => "2.0",
         else => unreachable,
     };

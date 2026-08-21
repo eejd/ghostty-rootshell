@@ -83,9 +83,8 @@ pub fn init(
             b,
             b.resolveTargetQuery(.{
                 .cpu_arch = .aarch64,
-                .os_tag = .ios,
-                .os_version_min = Config.osVersionMin(.ios),
-                .abi = .macabi,
+                .os_tag = .maccatalyst,
+                .os_version_min = Config.osVersionMin(.maccatalyst),
 
                 // We force the Apple CPU model to avoid compilation issues
                 // with NEON intrinsics in dependencies like simdutf
@@ -97,9 +96,8 @@ pub fn init(
             b,
             b.resolveTargetQuery(.{
                 .cpu_arch = .x86_64,
-                .os_tag = .ios,
-                .os_version_min = Config.osVersionMin(.ios),
-                .abi = .macabi,
+                .os_tag = .maccatalyst,
+                .os_version_min = Config.osVersionMin(.maccatalyst),
             }),
         ));
 

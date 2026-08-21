@@ -387,7 +387,7 @@ pub const Parser = struct {
                         self.block_begin = null;
                         self.mismatched_terminators = 0;
 
-                        const output = std.mem.trimRight(
+                        const output = std.mem.trimEnd(
                             u8,
                             written[0..idx],
                             "\r\n",

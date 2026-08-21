@@ -1,6 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const xev = @import("../global.zig").xev;
+const global = @import("../global.zig");
+const xev = global.xev;
 const renderer = @import("../renderer.zig");
 const termio = @import("../termio.zig");
 const BlockingQueue = @import("../datastruct/main.zig").BlockingQueue;
@@ -67,13 +68,13 @@ pub const Mailbox = union(enum) {
     pub fn send(
         self: *Mailbox,
         msg: termio.Message,
-        mutex: ?*std.Thread.Mutex,
+        mutex: ?*std.Io.Mutex,
     ) void {
         switch (self.*) {
             .spsc => |*mb| send: {
                 // Try to write to the queue with an instant timeout. This is the
                 // fast path because we can queue without a lock.
-                if (mb.queue.push(msg, .{ .instant = {} }) > 0) break :send;
+                if (mb.queue.push(global.io(), msg, .{ .instant = {} }) > 0) break :send;
 
                 // If we enter this conditional, the queue is full. We wake up
                 // the writer thread so that it can process messages to clear up
@@ -93,12 +94,12 @@ pub const Mailbox = union(enum) {
                 // are other messages in the writer queue (resize, focus) that
                 // could acquire the lock. This is why we have to release our lock
                 // here.
-                if (mutex) |m| m.unlock();
-                defer if (mutex) |m| m.lock();
+                if (mutex) |m| m.unlock(global.io());
+                defer if (mutex) |m| m.lockUncancelable(global.io());
 
                 var attempts: usize = 0;
                 while (attempts < send_retry_attempts) : (attempts += 1) {
-                    if (mb.queue.push(msg, .{ .ns = send_retry_ns }) > 0) break :send;
+                    if (mb.queue.push(global.io(), msg, .{ .ns = send_retry_ns }) > 0) break :send;
 
                     mb.wakeup.notify() catch |err| {
                         log.warn(
@@ -128,7 +129,7 @@ pub const Mailbox = union(enum) {
     pub fn sendBounded(self: *Mailbox, msg: termio.Message) bool {
         switch (self.*) {
             .spsc => |*mb| {
-                if (mb.queue.push(msg, .{ .instant = {} }) > 0) return true;
+                if (mb.queue.push(global.io(), msg, .{ .instant = {} }) > 0) return true;
 
                 mb.wakeup.notify() catch |err| {
                     log.warn("failed to wake up writer, data will be dropped err={}", .{err});
@@ -138,7 +139,7 @@ pub const Mailbox = union(enum) {
 
                 var attempts: usize = 0;
                 while (attempts < send_retry_attempts) : (attempts += 1) {
-                    if (mb.queue.push(msg, .{ .ns = send_retry_ns }) > 0) return true;
+                    if (mb.queue.push(global.io(), msg, .{ .ns = send_retry_ns }) > 0) return true;
                     mb.wakeup.notify() catch break;
                 }
 

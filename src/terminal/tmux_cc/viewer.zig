@@ -263,15 +263,15 @@ const PANE_HISTORY_MAX_LINES = 10_000;
 // `orphan_mutex` so the "still in the list?" check + unlink + free is atomic and
 // exactly one releaser frees. The membership check compares pointer VALUES, so a
 // stale pointer (already-reaped pane) is simply not found — never dereferenced.
-var orphan_mutex: std.Thread.Mutex = .{};
+var orphan_mutex: std.Io.Mutex = .init;
 var orphan_head: ?*Viewer.Pane = null;
 
 /// Transfer a still-retained pane to the graveyard at viewer teardown (IO
 /// thread). It will be freed by `reapOrphan` once its last child / snapshot hold
 /// is released. ROOTSHELL-TMUX (id=viewer-orphan-graveyard)
 fn orphanPane(pane: *Viewer.Pane, alloc: Allocator) void {
-    orphan_mutex.lock();
-    defer orphan_mutex.unlock();
+    orphan_mutex.lockUncancelable(pane.io);
+    defer orphan_mutex.unlock(pane.io);
     // Re-check retention UNDER the lock. A hold may have been released between
     // the caller's `isRetained()` check and here (e.g. the child detached on its
     // own thread, whose `reapOrphan` found the pane not-yet-listed and no-op'd).
@@ -292,8 +292,8 @@ fn orphanPane(pane: *Viewer.Pane, alloc: Allocator) void {
 /// (cheap list-empty check) while the owning viewer is alive. ROOTSHELL-TMUX
 /// (id=viewer-orphan-graveyard)
 fn reapOrphan(pane: *Viewer.Pane) void {
-    orphan_mutex.lock();
-    defer orphan_mutex.unlock();
+    orphan_mutex.lockUncancelable(pane.io);
+    defer orphan_mutex.unlock(pane.io);
 
     // Locate `pane` in the list, comparing addresses only (never dereferences a
     // possibly-freed pointer). If it isn't present it was never orphaned, or
@@ -321,6 +321,10 @@ fn reapOrphan(pane: *Viewer.Pane) void {
 }
 
 pub const Viewer = struct {
+    /// I/O implementation used for the pane renderer mutexes and for any
+    /// terminal we create. ROOTSHELL-TMUX (id=viewer-io)
+    io: std.Io,
+
     /// Allocator used for all internal state.
     alloc: Allocator,
 
@@ -749,6 +753,10 @@ pub const Viewer = struct {
     };
 
     pub const Pane = struct {
+        /// I/O implementation used for this pane's renderer mutex.
+        /// ROOTSHELL-TMUX (id=viewer-io)
+        io: std.Io,
+
         terminal: Terminal,
         stream: TerminalStream,
 
@@ -772,7 +780,7 @@ pub const Viewer = struct {
         /// (`receivedOutput`, `receivedPaneHistory`, `receivedPaneVisible`,
         /// `receivedPaneState`) to coordinate with the child surface's
         /// renderer thread.
-        renderer_mutex: ?*std.Thread.Mutex = null,
+        renderer_mutex: ?*std.Io.Mutex = null,
 
         /// Opaque wake callback registered by the child surface's tmux
         /// backend in `Tmux.threadEnter` (cleared in `threadExit`). The viewer
@@ -1018,7 +1026,7 @@ pub const Viewer = struct {
         /// ROOTSHELL-TMUX (id=viewer-pane-atomics)
         pub fn attachRenderer(
             self: *Pane,
-            mutex: *std.Thread.Mutex,
+            mutex: *std.Io.Mutex,
             wake_ctx: *anyopaque,
             wake_fn: *const fn (?*anyopaque) void,
             osc_post_ctx: *anyopaque,
@@ -1031,7 +1039,7 @@ pub const Viewer = struct {
             // ROOTSHELL-TMUX (id=viewer-pane-osc)
             @atomicStore(?*anyopaque, &self.osc_post_ctx, osc_post_ctx, .release);
             @atomicStore(?*const fn (?*anyopaque, PaneOscEvent) void, &self.osc_post_fn, osc_post_fn, .release);
-            @atomicStore(?*std.Thread.Mutex, &self.renderer_mutex, mutex, .release);
+            @atomicStore(?*std.Io.Mutex, &self.renderer_mutex, mutex, .release);
             @atomicStore(bool, &self.pending_attach, false, .release);
         }
 
@@ -1068,10 +1076,10 @@ pub const Viewer = struct {
             // here (this child is attached), so the pane is retained right now.
             self.acquireSnapshotRef();
 
-            const mutex = @atomicLoad(?*std.Thread.Mutex, &self.renderer_mutex, .seq_cst);
+            const mutex = @atomicLoad(?*std.Io.Mutex, &self.renderer_mutex, .seq_cst);
             if (mutex) |m| {
-                m.lock();
-                m.unlock();
+                m.lockUncancelable(self.io);
+                m.unlock(self.io);
             }
             @atomicStore(?*const fn (?*anyopaque) void, &self.wake_fn, null, .release);
             @atomicStore(?*anyopaque, &self.wake_ctx, null, .release);
@@ -1079,7 +1087,7 @@ pub const Viewer = struct {
             // concurrent gateway post skips. ROOTSHELL-TMUX (id=viewer-pane-osc)
             @atomicStore(?*const fn (?*anyopaque, PaneOscEvent) void, &self.osc_post_fn, null, .release);
             @atomicStore(?*anyopaque, &self.osc_post_ctx, null, .release);
-            @atomicStore(?*std.Thread.Mutex, &self.renderer_mutex, null, .seq_cst);
+            @atomicStore(?*std.Io.Mutex, &self.renderer_mutex, null, .seq_cst);
             while (@atomicLoad(usize, &self.renderer_users, .seq_cst) > 0) {
                 std.atomic.spinLoopHint();
             }
@@ -1096,10 +1104,10 @@ pub const Viewer = struct {
         /// observes it), load `renderer_mutex`, and lock it if a child is attached.
         /// Returns the locked mutex (or null). MUST be paired with
         /// `unlockRenderer`. ROOTSHELL-TMUX (id=viewer-renderer-users-drain)
-        pub fn lockRenderer(self: *Pane) ?*std.Thread.Mutex {
+        pub fn lockRenderer(self: *Pane) ?*std.Io.Mutex {
             _ = @atomicRmw(usize, &self.renderer_users, .Add, 1, .seq_cst);
-            const m = @atomicLoad(?*std.Thread.Mutex, &self.renderer_mutex, .seq_cst);
-            if (m) |mu| mu.lock();
+            const m = @atomicLoad(?*std.Io.Mutex, &self.renderer_mutex, .seq_cst);
+            if (m) |mu| mu.lockUncancelable(self.io);
             return m;
         }
 
@@ -1107,8 +1115,8 @@ pub const Viewer = struct {
         /// `lockRenderer` — unlock the mutex (if any) then drop the
         /// `renderer_users` registration. ROOTSHELL-TMUX
         /// (id=viewer-renderer-users-drain)
-        pub fn unlockRenderer(self: *Pane, m: ?*std.Thread.Mutex) void {
-            if (m) |mu| mu.unlock();
+        pub fn unlockRenderer(self: *Pane, m: ?*std.Io.Mutex) void {
+            if (m) |mu| mu.unlock(self.io);
             _ = @atomicRmw(usize, &self.renderer_users, .Sub, 1, .seq_cst);
         }
 
@@ -1142,7 +1150,7 @@ pub const Viewer = struct {
         /// `.timeout` has already dropped the `renderer_users` registration
         /// and must NOT be unlocked. ROOTSHELL-TMUX (id=viewer-pane-bounded-lock)
         pub const BoundedLock = union(enum) {
-            acquired: ?*std.Thread.Mutex,
+            acquired: ?*std.Io.Mutex,
             timeout,
         };
 
@@ -1157,17 +1165,12 @@ pub const Viewer = struct {
         /// (id=viewer-pane-bounded-lock)
         pub fn lockRendererBounded(self: *Pane, budget_ns: u64) BoundedLock {
             _ = @atomicRmw(usize, &self.renderer_users, .Add, 1, .seq_cst);
-            const m = @atomicLoad(?*std.Thread.Mutex, &self.renderer_mutex, .seq_cst);
+            const m = @atomicLoad(?*std.Io.Mutex, &self.renderer_mutex, .seq_cst);
             const mu = m orelse return .{ .acquired = null };
             if (mu.tryLock()) return .{ .acquired = m };
-            var timer = std.time.Timer.start() catch {
-                // No monotonic clock (cannot happen on shipping targets):
-                // fall back to the blocking lock rather than spinning blind.
-                mu.lock();
-                return .{ .acquired = m };
-            };
-            while (timer.read() < budget_ns) {
-                std.Thread.sleep(1 * std.time.ns_per_ms);
+            const started: std.Io.Timestamp = .now(self.io, .awake);
+            while (started.durationTo(.now(self.io, .awake)).nanoseconds < budget_ns) {
+                std.Io.sleep(self.io, .fromNanoseconds(std.time.ns_per_ms), .awake) catch {};
                 if (mu.tryLock()) return .{ .acquired = m };
             }
             _ = @atomicRmw(usize, &self.renderer_users, .Sub, 1, .seq_cst);
@@ -1182,7 +1185,7 @@ pub const Viewer = struct {
         /// observe a stale null and free a pane the child is mid-bind on.
         pub fn isHeldByChild(self: *const Pane) bool {
             if (@atomicLoad(bool, &self.pending_attach, .acquire)) return true;
-            return @atomicLoad(?*std.Thread.Mutex, &self.renderer_mutex, .acquire) != null;
+            return @atomicLoad(?*std.Io.Mutex, &self.renderer_mutex, .acquire) != null;
         }
 
         /// Gateway IO thread: invoke the child's wake callback if one is
@@ -1280,7 +1283,12 @@ pub const Viewer = struct {
     ///
     /// The given allocator is used for all internal state. You must
     /// call deinit when you're done with the viewer to free it.
-    pub fn init(alloc: Allocator, client_cols: size.CellCountInt, client_rows: size.CellCountInt) Allocator.Error!Viewer {
+    pub fn init(
+        io: std.Io,
+        alloc: Allocator,
+        client_cols: size.CellCountInt,
+        client_rows: size.CellCountInt,
+    ) Allocator.Error!Viewer {
         // Create our initial command queue
         var command_queue: CommandQueue = try .init(alloc, COMMAND_QUEUE_INITIAL);
         errdefer command_queue.deinit(alloc);
@@ -1291,6 +1299,7 @@ pub const Viewer = struct {
         errdefer sent_fifo.deinit(alloc);
 
         return .{
+            .io = io,
             .alloc = alloc,
             .state = .startup,
             .startup_got_block = false,
@@ -2298,7 +2307,7 @@ pub const Viewer = struct {
             },
 
             // A window was added to this session.
-            .window_add => |_| self.refreshWindowList() catch {
+            .window_add => self.refreshWindowList() catch {
                 log.warn("failed to handle window add, becoming defunct", .{});
                 return self.defunct();
             },
@@ -2317,7 +2326,7 @@ pub const Viewer = struct {
             },
 
             // A window was closed in this session.
-            .window_close => |_| self.refreshWindowList() catch {
+            .window_close => self.refreshWindowList() catch {
                 log.warn("failed to handle window close, becoming defunct", .{});
                 return self.defunct();
             },
@@ -2947,6 +2956,7 @@ pub const Viewer = struct {
             panes.deinit(self.alloc);
         }
         for (windows) |window| try initLayout(
+            self.io,
             self.alloc,
             self.colors,
             self.default_cursor_style,
@@ -3134,7 +3144,7 @@ pub const Viewer = struct {
     ) (Allocator.Error || std.Io.Writer.Error)!void {
         // Build up a new viewer. Its the easiest way to reset ourselves.
         // Carry forward the current client size.
-        var replacement: Viewer = try .init(self.alloc, self.client_cols, self.client_rows);
+        var replacement: Viewer = try .init(self.io, self.alloc, self.client_cols, self.client_rows);
         errdefer replacement.deinit();
         // Carry the themed pane colors forward across the session reset.
         replacement.colors = self.colors;
@@ -4203,7 +4213,7 @@ pub const Viewer = struct {
         pane: *Pane,
         pane_id: usize,
         budget_ns: u64,
-    ) ??*std.Thread.Mutex {
+    ) ??*std.Io.Mutex {
         if (self.debug_progress) |dp| {
             dp.site.store(DebugProgress.site_pane_lock, .monotonic);
             dp.pane.store(
@@ -4788,6 +4798,7 @@ pub const Viewer = struct {
     };
 
     fn initLayout(
+        io: std.Io,
         gpa_alloc: Allocator,
         colors: Terminal.Colors,
         default_cursor_style: Screen.CursorStyle,
@@ -4802,6 +4813,7 @@ pub const Viewer = struct {
             .horizontal, .vertical => |layouts| {
                 for (layouts) |l| {
                     try initLayout(
+                        io,
                         gpa_alloc,
                         colors,
                         default_cursor_style,
@@ -4898,7 +4910,7 @@ pub const Viewer = struct {
                     break :pane;
                 }
 
-                var t: Terminal = try .init(gpa_alloc, .{
+                var t: Terminal = try .init(io, gpa_alloc, .{
                     .cols = cols,
                     .rows = rows,
                     // tmux replays each pane's recent history via `capture-pane
@@ -4929,6 +4941,7 @@ pub const Viewer = struct {
                 const pane = try gpa_alloc.create(Pane);
                 errdefer gpa_alloc.destroy(pane);
                 pane.* = .{
+                    .io = io,
                     .terminal = t,
                     .stream = undefined,
                     // A child surface will be created for this new pane (the
@@ -6026,7 +6039,7 @@ test "pane DCS terminates and doesn't swallow the rest of the stream" {
         "\x1bPt\x9c", // 8-bit C1 ST
     };
     for (dcs_prefixes) |prefix| {
-        var t: Terminal = try .init(testing.allocator, .{ .cols = 100, .rows = 30 });
+        var t: Terminal = try .init(testing.io, testing.allocator, .{ .cols = 100, .rows = 30 });
         defer t.deinit(testing.allocator);
         var stream = t.vtStream();
         defer stream.deinit();
@@ -6067,7 +6080,7 @@ test "pane_color_report is gated to tmux versions with refresh-client -r" {
 }
 
 test "setClientSize queues command in command_queue state" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
     try testViewer(&viewer, &.{
@@ -6131,7 +6144,7 @@ test "setClientSize queues command in command_queue state" {
 }
 
 test "takePendingCommand flushes an idle-queued resize and keeps FIFO order" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
     try testViewer(&viewer, &.{
@@ -6246,7 +6259,7 @@ fn firstCommandAction(actions: []const Viewer.Action) ?[]const u8 {
 }
 
 test "pane_state leaves focus_event unchanged when tmux omits focus_flag" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
     try driveStartupOneWindow(&viewer);
 
@@ -6271,7 +6284,7 @@ test "pane history retry cap survives capture-pending pane_state acquires" {
     // and reset capture_retries without applying capture content. With the
     // counter reset defeated, repeated history lock timeouts reach the cap,
     // drop the stale capture, and the trailing pane_state initializes the pane.
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
     _ = viewer.next(.{ .tmux = blockEnd("") });
@@ -6287,7 +6300,7 @@ test "pane history retry cap survives capture-pending pane_state acquires" {
     const pane = viewer.panes.get(0).?;
     try testing.expect(!pane.initialized);
 
-    var render_mutex: std.Thread.Mutex = .{};
+    var render_mutex: std.Io.Mutex = .init;
     var dummy_ctx: u8 = 0;
     const wake_fn = struct {
         fn wake(_: ?*anyopaque) void {}
@@ -6308,7 +6321,7 @@ test "pane history retry cap survives capture-pending pane_state acquires" {
         const is_state = std.mem.startsWith(u8, current_command, "list-panes -s");
 
         if (is_history) {
-            render_mutex.lock();
+            render_mutex.lockUncancelable(testing.io);
             history_timeouts += 1;
         }
         actions = viewer.next(.{ .tmux = blockEnd(if (is_state)
@@ -6317,7 +6330,7 @@ test "pane history retry cap survives capture-pending pane_state acquires" {
             "HISTORY"
         else
             "VISIBLE") });
-        if (is_history) render_mutex.unlock();
+        if (is_history) render_mutex.unlock(testing.io);
 
         current_command = firstCommandAction(actions) orelse "";
         if (current_command.len == 0 and viewer.command_in_flight) {
@@ -6335,7 +6348,7 @@ test "pane history retry cap survives capture-pending pane_state acquires" {
 }
 
 test "untracked send-keys ack is swallowed, not matched to a tracked command" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
     try driveStartupOneWindow(&viewer);
 
@@ -6373,7 +6386,7 @@ test "untracked send-keys ack is swallowed, not matched to a tracked command" {
 }
 
 test "server-originated block does not consume command in flight" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
     try driveStartupOneWindow(&viewer);
 
@@ -6392,7 +6405,7 @@ test "server-originated block does not consume command in flight" {
 }
 
 test "unexpected client-originated block requests recovery" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
     try driveStartupOneWindow(&viewer);
     try testing.expect(!viewer.command_in_flight);
@@ -6404,7 +6417,7 @@ test "unexpected client-originated block requests recovery" {
 }
 
 test "window list survives a send-keys block landing before list-windows" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
     try driveStartupOneWindow(&viewer);
 
@@ -6437,7 +6450,7 @@ test "window list survives a send-keys block landing before list-windows" {
 test "topology cap drops excess windows from list-windows" {
     // A hostile server listing thousands of windows must not materialize a
     // Terminal per pane past the caps. ROOTSHELL-TMUX (id=viewer-topology-caps)
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
     try driveStartupOneWindow(&viewer);
 
@@ -6475,7 +6488,7 @@ test "topology cap drops excess windows from list-windows" {
 }
 
 test "paste produces multiple untracked markers, all swallowed" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
     try driveStartupOneWindow(&viewer);
 
@@ -6492,7 +6505,7 @@ test "paste produces multiple untracked markers, all swallowed" {
 }
 
 test "bulk untracked markers interleave correctly with a tracked command" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
     try driveStartupOneWindow(&viewer);
 
@@ -6514,7 +6527,7 @@ test "bulk untracked markers interleave correctly with a tracked command" {
 }
 
 test "recordUntrackedSends zero is a no-op" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
     try driveStartupOneWindow(&viewer);
 
@@ -6523,7 +6536,7 @@ test "recordUntrackedSends zero is a no-op" {
 }
 
 test "classifyBlock on empty FIFO returns empty and startup still completes" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
     // Empty FIFO (the startup attach block we never wrote) classifies as empty,
     // so the caller falls through to the normal handling.
@@ -6534,7 +6547,7 @@ test "classifyBlock on empty FIFO returns empty and startup still completes" {
 }
 
 test "resync drops stale stream then rebuilds on probe marker" {
-    var viewer = try Viewer.init(testing.allocator, 100, 40);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 100, 40);
     defer viewer.deinit();
 
     // tmuxResume creates a fresh viewer in .startup then flips it to .resync.
@@ -6590,7 +6603,7 @@ test "parseResyncSessionId parses $<id>, rejects malformed" {
 }
 
 test "session change resets the sent-FIFO" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
     try driveStartupOneWindow(&viewer);
 
@@ -6621,7 +6634,7 @@ test "parseResizePane parses target/cols/rows, rejects others" {
 }
 
 test "queueRelayedPaneCommand rewrites a single-pane resize to client_size" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
     // Standard startup leaving a single-pane window @0 with pane %0.
@@ -6658,7 +6671,7 @@ test "queueRelayedPaneCommand rewrites a single-pane resize to client_size" {
 }
 
 test "takePendingCommand returns null during startup" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
     // In startup state setClientSize only stores dims; nothing is queued, so
@@ -6672,7 +6685,7 @@ test "takePendingCommand returns null during startup" {
 }
 
 test "setClientSize stores dimensions but does not queue during startup" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
     // Viewer is in startup state
@@ -6691,7 +6704,7 @@ test "setClientSize ignores below-floor dimensions" {
     // must neither be stored (a resync would re-send it) nor queued — the
     // control client size clamps the server window DOWN for every attached
     // client and a 1x1 sticks until explicitly corrected.
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
     viewer.setClientSize(100, 50);
@@ -6714,7 +6727,7 @@ test "setClientSize coalesces a queued-but-unsent client_size" {
     // ROOTSHELL-TMUX (id=viewer-coalesce-client-size): rapid resizes must
     // not pile up one stale size per step — the pending command is updated
     // in place and the pump sends only the newest size.
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
     try driveStartupOneWindow(&viewer);
 
@@ -6737,7 +6750,7 @@ test "setClientSize does not mutate the in-flight client_size head" {
     // ROOTSHELL-TMUX (id=viewer-coalesce-client-size): once a command's bytes
     // are written, the response FIFO depends on it staying put; later resizes
     // queue behind it (and coalesce with each other).
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
     try driveStartupOneWindow(&viewer);
 
@@ -6771,7 +6784,7 @@ test "setClientSize coalescing preserves enable_pause" {
     // ROOTSHELL-TMUX (id=viewer-coalesce-client-size): the resync rebuild
     // queues its client_size with the pause-after re-enable; coalescing a
     // later resize into it must update dims only, never strip the flag.
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
     try driveStartupOneWindow(&viewer);
 
@@ -6793,7 +6806,7 @@ test "queueUserCommand coalesces a per-window size refresh" {
     // ROOTSHELL-TMUX (id=viewer-coalesce-window-refresh): per-window
     // `refresh-client -C @id:WxH` pushes coalesce per window; everything
     // else still appends.
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
     try driveStartupOneWindow(&viewer);
 
@@ -6817,7 +6830,7 @@ test "queueUserCommand coalesces a per-window size refresh" {
 
 test "queueUserCommand does not coalesce into the in-flight head" {
     // ROOTSHELL-TMUX (id=viewer-coalesce-window-refresh)
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
     try driveStartupOneWindow(&viewer);
 
@@ -6853,7 +6866,7 @@ test "startup enables pause-after but sends NO client size" {
     // must enable pause-after WITHOUT a `-C` size, so tmux keeps each window at
     // the size it was left at on detach instead of reflowing every app to our
     // grid on attach. The init dims (132x43) must NOT leak into a startup size.
-    var viewer = try Viewer.init(testing.allocator, 132, 43);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 132, 43);
     defer viewer.deinit();
 
     try testViewer(&viewer, &.{
@@ -6891,7 +6904,7 @@ test "post-startup app resize sends a sized refresh-client -C" {
     // viewport; that MUST go out as a sized `refresh-client -C`, which is what
     // actually drives tmux to (re)size the windows. ROOTSHELL-TMUX
     // (id=viewer-startup-pause-only)
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
     try driveStartupOneWindow(&viewer);
 
@@ -6906,7 +6919,7 @@ test "post-startup app resize sends a sized refresh-client -C" {
 }
 
 test "message notification produces message action" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
     try testViewer(&viewer, &.{
@@ -6986,7 +6999,7 @@ fn testViewer(viewer: *Viewer, steps: []const TestStep) !void {
 }
 
 test "immediate exit" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
     try testViewer(&viewer, &.{
@@ -7006,7 +7019,7 @@ test "immediate exit" {
 }
 
 test "session changed resets state" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
     try testViewer(&viewer, &.{
@@ -7098,7 +7111,7 @@ test "session changed resets state" {
 }
 
 test "initial flow" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
     try testViewer(&viewer, &.{
@@ -7318,7 +7331,7 @@ test "initial flow" {
 test "startup session before block" {
     // Verify that %session-changed arriving before %begin/%end
     // still completes startup correctly.
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
     try testViewer(&viewer, &.{
@@ -7369,7 +7382,7 @@ test "startup session before block" {
 }
 
 test "layout change" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
     try testViewer(&viewer, &.{
@@ -7458,7 +7471,7 @@ test "updateColors refreshes existing pane terminal colors live" {
     // `self.colors` (consumed at pane creation), so live panes stayed stale
     // until a detach/reattach rebuilt them. ROOTSHELL-TMUX
     // (id=viewer-update-existing-pane-colors)
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
     try testViewer(&viewer, &.{
@@ -7513,7 +7526,7 @@ test "layout change resizes existing pane without structural change" {
     // resized), tmux sends a %layout-change with the same pane
     // structure but different dimensions. The viewer must resize the
     // pane's shadow terminal to match.
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
     try testViewer(&viewer, &.{
@@ -7586,7 +7599,7 @@ test "layout change resizes existing pane without structural change" {
 }
 
 test "layout_change does not return command when queue not empty" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
     try testViewer(&viewer, &.{
@@ -7650,7 +7663,7 @@ test "layout_change does not return command when queue not empty" {
 }
 
 test "layout_change returns command when queue was empty" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
     try testViewer(&viewer, &.{
@@ -7722,7 +7735,7 @@ test "layout_change returns command when queue was empty" {
 }
 
 test "window_add queues list_windows when queue empty" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
     try testViewer(&viewer, &.{
@@ -7788,7 +7801,7 @@ test "window_add queues list_windows when queue empty" {
 }
 
 test "window_add queues list_windows when queue not empty" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
     try testViewer(&viewer, &.{
@@ -7847,7 +7860,7 @@ test "window_add queues list_windows when queue not empty" {
 }
 
 test "session_window_changed queues list_windows when queue empty" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
     try testViewer(&viewer, &.{
@@ -7912,7 +7925,7 @@ test "session_window_changed queues list_windows when queue empty" {
 }
 
 test "session_window_changed queues list_windows when queue not empty" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
     try testViewer(&viewer, &.{
@@ -7968,7 +7981,7 @@ test "session_window_changed queues list_windows when queue not empty" {
 }
 
 test "window_close queues list_windows when queue empty" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
     try testViewer(&viewer, &.{
@@ -8034,7 +8047,7 @@ test "window_close queues list_windows when queue empty" {
 }
 
 test "window_close queues list_windows when queue not empty" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
     try testViewer(&viewer, &.{
@@ -8093,7 +8106,7 @@ test "window_close queues list_windows when queue not empty" {
 }
 
 test "refreshWindowList coalesces duplicate list_windows" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
     try testViewer(&viewer, &.{
@@ -8178,7 +8191,7 @@ test "refreshWindowList coalesces duplicate list_windows" {
 }
 
 test "two pane flow with pane state" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
     try testViewer(&viewer, &.{
@@ -8392,7 +8405,7 @@ test "layout change preserves other windows on shared arena" {
     // rebuilds. Names live on the same arena as layouts, so the reset in
     // layoutChanged invalidates them too unless they're carried across.
     // ROOTSHELL-TMUX (id=layout-change-preserve-window-name)
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
     // Static storage for the pre-reset name pointers. Comparing CONTENTS alone
@@ -8536,7 +8549,7 @@ test "Action.format handles exit action" {
 }
 
 test "window_pane_changed produces focus action" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
     try testViewer(&viewer, &.{
@@ -8616,7 +8629,7 @@ test "window_pane_changed for untracked pane refreshes window list" {
     // %window-pane-changed naming a pane we don't track yet (it raced ahead
     // of the layout refresh) must NOT record the id or emit focus for the
     // ghost pane; it re-queries list-windows instead.
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
     try testViewer(&viewer, &.{
@@ -8684,7 +8697,7 @@ test "forceResync drops buffered pane responses" {
     // ROOTSHELL-TMUX (id=viewer-force-resync-drop-responses): panes survive a
     // live resync, so query replies buffered before the desync must be dropped
     // or they'd flush as stale bytes into the pane app after recovery.
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
     try testViewer(&viewer, &.{
@@ -8743,7 +8756,7 @@ test "forceReset recaptures every pane on the resync rebuild" {
     // panes by id (no flicker). syncLayouts honors the per-pane reset_recapture
     // flag and queues capture-pane for the reused pane; the flag is consumed. The
     // reset also re-arms the title subscription so tmux re-pushes current titles.
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
     try driveStartupOneWindow(&viewer);
@@ -8790,7 +8803,7 @@ test "forceResync does NOT recapture a reused pane (wedge regression guard)" {
     // ROOTSHELL-TMUX (id=viewer-force-resync): the wedge recovery PRESERVES and
     // reuses panes with NO recapture (their grids are intact). This guards that
     // the forceReset recapture path does not leak into the wedge path.
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
     try driveStartupOneWindow(&viewer);
@@ -8826,7 +8839,7 @@ test "forceReset resets each pane's live VT parser to ground" {
     // ROOTSHELL-TMUX (id=viewer-force-reset): a discard can truncate %output
     // mid-sequence, stranding the pane's LONG-LIVED parser; forceReset must reset
     // it (and the utf8 decoder) so the first post-recovery %output parses cleanly.
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
     try driveStartupOneWindow(&viewer);
 
@@ -8846,7 +8859,7 @@ test "reset requested during an in-flight resync upgrades the rebuild to recaptu
     // wedge forceResync is already in flight must NOT be lost. forceReset can't
     // run (needs .command_queue), so requestReset records it; the resync's marker
     // handler honors it and upgrades the rebuild into a full recapture.
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
     try driveStartupOneWindow(&viewer);
     try testing.expect(viewer.panes.contains(0));
@@ -8896,7 +8909,7 @@ test "forceResync interrupting a reset's captures re-flags stranded panes" {
     // queued them, so without the re-flag the follow-up rebuild would reuse the
     // pane WITHOUT recapture, stranding it uninitialized forever (live %output
     // suppressed) — the frozen/blank background-tab bug.
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
     try driveStartupOneWindow(&viewer);
 
@@ -8978,7 +8991,7 @@ test "forceResync interrupting a new pane's initial captures re-flags only that 
     // wedge resync drops a NEW pane's initial captures. The new pane must be
     // re-flagged (else stranded uninitialized); the already-initialized pane
     // keeps the wedge path's reuse-without-recapture (no flicker).
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
     try driveStartupOneWindow(&viewer);
 
@@ -9043,7 +9056,7 @@ test "pane OSC 52 emits a pane_clipboard_write action" {
     // ROOTSHELL-TMUX (id=viewer-clipboard): a -CC pane app that emits OSC 52
     // (relayed raw by tmux in %output — tmux never sets the clipboard itself for
     // a control client) must surface a clipboard write action to the app.
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
     try testViewer(&viewer, &.{
@@ -9106,7 +9119,7 @@ test "Action.format handles focus action" {
 }
 
 test "output suppressed for uninitialized panes" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
     try testViewer(&viewer, &.{
@@ -9200,7 +9213,7 @@ test "output suppressed for uninitialized panes" {
 }
 
 test "output OSC title from active pane produces title action" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
     defer {
         var it = viewer.panes.iterator();
@@ -9277,7 +9290,7 @@ test "output decode drops raw CR and skips CR injected mid-escape" {
     // path: `\033]0;<title>\007`. A raw CR mid-title must be dropped (title intact,
     // cursor not snapped to col 0); a CR splitting the leading `\033` escape must
     // be skipped so the ESC still decodes and the OSC is recognized.
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
     defer {
         var it = viewer.panes.iterator();
@@ -9348,7 +9361,7 @@ test "output decode drops raw CR and skips CR injected mid-escape" {
 }
 
 test "window_renamed produces title action" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
     try testViewer(&viewer, &.{
@@ -9419,7 +9432,7 @@ test "window_renamed produces title action" {
 }
 
 test "session_renamed produces session_title action" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
     try testViewer(&viewer, &.{
@@ -9489,7 +9502,7 @@ test "session_renamed produces session_title action" {
 }
 
 test "list_windows stores window name" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
     try testViewer(&viewer, &.{
@@ -9529,7 +9542,7 @@ test "list_windows stores window name" {
 test "list_windows emits focus action for active window" {
     // Verifies that receivedListWindows emits a .focus action targeting
     // the active window and its current pane from the list-windows output.
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
     try testViewer(&viewer, &.{
@@ -9575,7 +9588,7 @@ test "list_windows emits focus action for active window" {
 test "list_windows emits focus for active window in multi-window session" {
     // With two windows, only @0 is active. The focus action should
     // target @0 and its current pane %0, not the inactive @1.
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
     try testViewer(&viewer, &.{
@@ -9621,7 +9634,7 @@ test "list_windows emits focus for active window in multi-window session" {
 }
 
 test "pause notification triggers auto-continue and full pause cycle" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
     try testViewer(&viewer, &.{
@@ -9727,7 +9740,7 @@ test "pause notification triggers auto-continue and full pause cycle" {
 }
 
 test "pause for unknown pane is ignored" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
     try testViewer(&viewer, &.{
@@ -9786,7 +9799,7 @@ test "two paused panes: one pane's pane_state does not re-initialize the other" 
     // %output interleave before the second pane's history replay and corrupt
     // its screen. The `capture_pending` flag set at pause entry is the guard.
     // ROOTSHELL-TMUX (id=pause-after-recover)
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
     const pane_state_content =
@@ -9900,7 +9913,7 @@ test "two paused panes: one pane's pane_state does not re-initialize the other" 
 }
 
 test "pane_mode_changed queues query and updates state on response" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
     try testViewer(&viewer, &.{
@@ -9967,7 +9980,7 @@ test "pane_mode_changed queues query and updates state on response" {
 }
 
 test "pane_mode_changed for unknown pane is ignored" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
     try testViewer(&viewer, &.{
@@ -10019,7 +10032,7 @@ test "pane_mode_changed for unknown pane is ignored" {
 }
 
 test "pane_mode_changed empty response means normal mode" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
     try testViewer(&viewer, &.{
@@ -10099,7 +10112,7 @@ test "pane_mode_changed empty response means normal mode" {
 }
 
 test "layout_change mid-capture suppresses output for uninitialized pane" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
     try testViewer(&viewer, &.{
@@ -10242,7 +10255,7 @@ test "pane state alternate_saved cursor applies to primary screen" {
     // cursor position saved from the primary screen on entry to alternate
     // mode. They must be applied to the primary screen, not the alternate
     // screen (which would overwrite the active cursor).
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
     try testViewer(&viewer, &.{
@@ -10330,7 +10343,7 @@ test "pane state alternate_on keeps the normal-screen scrollback on the primary"
     // The old code pointer-swapped the two Screen objects, which stranded the
     // scrollback on the 0-budget alternate screen AND made that 0-budget object
     // the live primary — both symptoms this test guards against.
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
     try testViewer(&viewer, &.{
@@ -10461,7 +10474,7 @@ fn testPaneStateMouseModes(
     expected_button: bool,
     expected_any: bool,
 ) !void {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
     defer {
         var it = viewer.panes.iterator();
@@ -10554,7 +10567,7 @@ test "pane state restores tmux mouse flags" {
 // ROOTSHELL-TMUX (id=viewer-user-query): app-issued query command tests.
 
 test "user_query appends missing trailing newline and formats verbatim" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
     try driveStartupOneWindow(&viewer);
 
@@ -10570,7 +10583,7 @@ test "user_query appends missing trailing newline and formats verbatim" {
 }
 
 test "user_query success delivers command_response with tag and body" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
     try driveStartupOneWindow(&viewer);
 
@@ -10609,7 +10622,7 @@ test "user_query success delivers command_response with tag and body" {
 }
 
 test "user_query %error delivers is_err response and the pump continues" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
     try driveStartupOneWindow(&viewer);
 
@@ -10671,7 +10684,7 @@ test "user_query %error delivers is_err response and the pump continues" {
 }
 
 test "pending user queries error back across %session-changed" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
     try driveStartupOneWindow(&viewer);
 
@@ -10721,7 +10734,7 @@ test "pending user queries error back across %session-changed" {
 }
 
 test "switch-client normal ordering: %end then %session-changed" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
     try driveStartupOneWindow(&viewer);
 
@@ -10775,7 +10788,7 @@ test "switch-client normal ordering: %end then %session-changed" {
 }
 
 test "post-switch straggler block self-heals via recover" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
     try driveStartupOneWindow(&viewer);
 
@@ -10818,7 +10831,7 @@ test "post-switch straggler block self-heals via recover" {
 // ROOTSHELL-TMUX (id=viewer-sessions-changed): dashboard refresh nudges.
 
 test "sessions_changed and other-client churn emit sessions_changed action" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
     try driveStartupOneWindow(&viewer);
 
@@ -10845,7 +10858,7 @@ test "sessions_changed and other-client churn emit sessions_changed action" {
 // ROOTSHELL-TMUX (id=viewer-session-info): attached-session identity.
 
 test "startup emits session_info with id and name" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
     try testViewer(&viewer, &.{
@@ -10871,7 +10884,7 @@ test "startup emits session_info with id and name" {
 }
 
 test "session rename emits session_title and session_info" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
     try driveStartupOneWindow(&viewer);
 
@@ -10898,7 +10911,7 @@ test "session rename emits session_title and session_info" {
 // to, which renamed the wrong session from a second gateway's tab menu).
 // ROOTSHELL-TMUX (id=viewer-session-renamed-scope)
 test "session rename of another session leaves our identity alone" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
     try driveStartupOneWindow(&viewer);
     try testing.expectEqual(@as(usize, 1), viewer.session_id);
@@ -10924,7 +10937,7 @@ test "session rename of another session leaves our identity alone" {
 }
 
 test "forceResync yields pending user_query tags" {
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
     try driveStartupOneWindow(&viewer);
 
@@ -10952,12 +10965,12 @@ test "bounded pane lock: contended renderer spills output, flushes on next event
     // never block indefinitely on a pane renderer mutex. With the mutex held
     // (as a stuck pane renderer would), live %output spills to pending_vt
     // within the bounded budget; the next viewer event flushes it.
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
     try driveStartupOneWindow(&viewer);
 
     const pane = viewer.panes.get(0).?;
-    var render_mutex: std.Thread.Mutex = .{};
+    var render_mutex: std.Io.Mutex = .init;
     var dummy_ctx: u8 = 0;
     const wake_fn = struct {
         fn wake(_: ?*anyopaque) void {}
@@ -10969,12 +10982,12 @@ test "bounded pane lock: contended renderer spills output, flushes on next event
     defer pane.detachRenderer();
 
     // Hold the renderer mutex like a wedged pane renderer.
-    render_mutex.lock();
+    render_mutex.lockUncancelable(testing.io);
     _ = viewer.next(.{ .tmux = .{ .output = .{ .pane_id = 0, .data = "hello" } } });
     // The write spilled instead of deadlocking.
     try testing.expectEqualStrings("hello", pane.pending_vt.items);
     try testing.expect(!pane.pending_dropped);
-    render_mutex.unlock();
+    render_mutex.unlock(testing.io);
 
     // Any subsequent viewer event retries deferred work first, so the spill
     // lands before the new data.
@@ -10987,12 +11000,12 @@ test "bounded pane lock: spill overflow drops and queues a visible re-fetch" {
     // ROOTSHELL-TMUX (id=viewer-pane-bounded-lock): when the spill exceeds its
     // cap, the content is dropped and the next lock window re-fetches the
     // pane's visible content from tmux instead of replaying a hole.
-    var viewer = try Viewer.init(testing.allocator, 80, 24);
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
     try driveStartupOneWindow(&viewer);
 
     const pane = viewer.panes.get(0).?;
-    var render_mutex: std.Thread.Mutex = .{};
+    var render_mutex: std.Io.Mutex = .init;
     var dummy_ctx: u8 = 0;
     const wake_fn = struct {
         fn wake(_: ?*anyopaque) void {}
@@ -11007,14 +11020,14 @@ test "bounded pane lock: spill overflow drops and queues a visible re-fetch" {
     defer testing.allocator.free(big);
     @memset(big, 'x');
 
-    render_mutex.lock();
+    render_mutex.lockUncancelable(testing.io);
     _ = viewer.next(.{ .tmux = .{ .output = .{ .pane_id = 0, .data = big } } });
     try testing.expect(!pane.pending_dropped);
     _ = viewer.next(.{ .tmux = .{ .output = .{ .pane_id = 0, .data = big } } });
     // Second spill exceeded PANE_PENDING_VT_MAX: dropped, buffer cleared.
     try testing.expect(pane.pending_dropped);
     try testing.expectEqual(@as(usize, 0), pane.pending_vt.items.len);
-    render_mutex.unlock();
+    render_mutex.unlock(testing.io);
 
     // The next event's deferred flush queues the visible re-fetch.
     _ = viewer.next(.{ .tmux = .{ .output = .{ .pane_id = 0, .data = "y" } } });

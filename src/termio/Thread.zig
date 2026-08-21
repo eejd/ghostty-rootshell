@@ -14,7 +14,8 @@ pub const Thread = @This();
 const std = @import("std");
 const ArenaAllocator = std.heap.ArenaAllocator;
 const builtin = @import("builtin");
-const xev = @import("../global.zig").xev;
+const global = @import("../global.zig");
+const xev = global.xev;
 const crash = @import("../crash/main.zig");
 const internal_os = @import("../os/main.zig");
 const termio = @import("../termio.zig");
@@ -147,8 +148,8 @@ pub fn threadMain(self: *Thread, io: *termio.Termio) void {
         // the error to the surface thread and let the apprt deal with it
         // in some way but this works for now. Without this, the user would
         // just see a blank terminal window.
-        io.renderer_state.mutex.lock();
-        defer io.renderer_state.mutex.unlock();
+        io.renderer_state.mutex.lockUncancelable(global.io());
+        defer io.renderer_state.mutex.unlock(global.io());
         const t = io.renderer_state.terminal;
 
         // Hide the cursor
@@ -297,7 +298,7 @@ fn drainMailbox(
 
     // If we're draining, we just drain the mailbox and return.
     if (self.flags.drain) {
-        while (mailbox.pop()) |_| {}
+        while (mailbox.pop(global.io())) |_| {}
         return;
     }
 
@@ -305,7 +306,7 @@ fn drainMailbox(
     // expectation is that all our message handlers will be non-blocking
     // ENOUGH to not mess up throughput on producers.
     var redraw: bool = false;
-    while (mailbox.pop()) |message| {
+    while (mailbox.pop(global.io())) |message| {
         // If we have a message we always redraw
         redraw = true;
 
@@ -336,16 +337,16 @@ fn drainMailbox(
                 // independent of the renderer (id=termio-tmux-mutex). The
                 // unlocked-io flag makes messageWriter use bounded no-mutex
                 // sends instead of the renderer unlock/relock slow path.
-                io.tmux_mutex.lock();
-                defer io.tmux_mutex.unlock();
+                io.tmux_mutex.lockUncancelable(global.io());
+                defer io.tmux_mutex.unlock(global.io());
                 io.terminal_stream.handler.tmux_unlocked_io = true;
                 defer io.terminal_stream.handler.tmux_unlocked_io = false;
                 io.terminal_stream.handler.tmuxSetClientSize(v.cols, v.rows);
             },
             .tmux_pane_command => |v| { // ROOTSHELL-TMUX (id=thread-pane-command)
                 // Same locking rationale as .tmux_set_client_size.
-                io.tmux_mutex.lock();
-                defer io.tmux_mutex.unlock();
+                io.tmux_mutex.lockUncancelable(global.io());
+                defer io.tmux_mutex.unlock(global.io());
                 io.terminal_stream.handler.tmux_unlocked_io = true;
                 defer io.terminal_stream.handler.tmux_unlocked_io = false;
                 defer v.alloc.free(v.data);
@@ -353,8 +354,8 @@ fn drainMailbox(
             },
             .tmux_query_command => |v| { // ROOTSHELL-TMUX (id=thread-query-command)
                 // Same locking rationale as .tmux_set_client_size.
-                io.tmux_mutex.lock();
-                defer io.tmux_mutex.unlock();
+                io.tmux_mutex.lockUncancelable(global.io());
+                defer io.tmux_mutex.unlock(global.io());
                 io.terminal_stream.handler.tmux_unlocked_io = true;
                 defer io.terminal_stream.handler.tmux_unlocked_io = false;
                 defer {
@@ -394,8 +395,8 @@ fn drainMailbox(
                 // is exactly the line count.
                 const line_count = std.mem.count(u8, v.data, "\n");
                 {
-                    io.tmux_mutex.lock();
-                    defer io.tmux_mutex.unlock();
+                    io.tmux_mutex.lockUncancelable(global.io());
+                    defer io.tmux_mutex.unlock(global.io());
                     io.terminal_stream.handler.recordTmuxUntrackedSend(@max(1, line_count));
                 }
                 io.queueWrite(data, v.data, self.flags.linefeed_mode) catch |err| {
@@ -405,8 +406,8 @@ fn drainMailbox(
                     // against it. A live resync resets the sent-FIFO and the
                     // command pipeline cleanly.
                     log.warn("tmux send-keys write failed err={}; forcing resync", .{err});
-                    io.tmux_mutex.lock();
-                    defer io.tmux_mutex.unlock();
+                    io.tmux_mutex.lockUncancelable(global.io());
+                    defer io.tmux_mutex.unlock(global.io());
                     io.terminal_stream.handler.tmux_unlocked_io = true;
                     defer io.terminal_stream.handler.tmux_unlocked_io = false;
                     io.terminal_stream.handler.tmuxForceResync();
@@ -417,15 +418,15 @@ fn drainMailbox(
                 // rationale as send-keys; id=thread-tmux-write-record-atomic).
                 defer v.alloc.free(v.data);
                 {
-                    io.tmux_mutex.lock();
-                    defer io.tmux_mutex.unlock();
+                    io.tmux_mutex.lockUncancelable(global.io());
+                    defer io.tmux_mutex.unlock(global.io());
                     io.terminal_stream.handler.recordTmuxTrackedSend();
                 }
                 io.queueWrite(data, v.data, self.flags.linefeed_mode) catch |err| {
                     // Same stale-marker rationale as send-keys above.
                     log.warn("tmux tracked-command write failed err={}; forcing resync", .{err});
-                    io.tmux_mutex.lock();
-                    defer io.tmux_mutex.unlock();
+                    io.tmux_mutex.lockUncancelable(global.io());
+                    defer io.tmux_mutex.unlock(global.io());
                     io.terminal_stream.handler.tmux_unlocked_io = true;
                     defer io.terminal_stream.handler.tmux_unlocked_io = false;
                     io.terminal_stream.handler.tmuxForceResync();
@@ -433,8 +434,8 @@ fn drainMailbox(
             },
             .tmux_detach => { // ROOTSHELL-TMUX (id=thread-detach)
                 // Same locking rationale as .tmux_set_client_size.
-                io.tmux_mutex.lock();
-                defer io.tmux_mutex.unlock();
+                io.tmux_mutex.lockUncancelable(global.io());
+                defer io.tmux_mutex.unlock(global.io());
                 io.terminal_stream.handler.tmux_unlocked_io = true;
                 defer io.terminal_stream.handler.tmux_unlocked_io = false;
                 io.terminal_stream.handler.tmuxDetach();
@@ -447,10 +448,10 @@ fn drainMailbox(
                 // NOT hold it (each Termio handler locks it itself), so we must.
                 // tmux_mutex nests inside (renderer -> tmux order) because the
                 // arm mutates viewer/dcs state (id=termio-tmux-mutex).
-                io.renderer_state.mutex.lock();
-                defer io.renderer_state.mutex.unlock();
-                io.tmux_mutex.lock();
-                defer io.tmux_mutex.unlock();
+                io.renderer_state.mutex.lockUncancelable(global.io());
+                defer io.renderer_state.mutex.unlock(global.io());
+                io.tmux_mutex.lockUncancelable(global.io());
+                defer io.tmux_mutex.unlock(global.io());
                 // Bounded sends while tmux_mutex is held (lock-order rule;
                 // id=streamhandler-unlocked-io).
                 io.terminal_stream.handler.tmux_unlocked_io = true;
@@ -472,10 +473,10 @@ fn drainMailbox(
                 // viewer / resetting the parser touches state the renderer reads,
                 // and the viewer/dcs/parser pokes need tmux_mutex (renderer ->
                 // tmux order).
-                io.renderer_state.mutex.lock();
-                defer io.renderer_state.mutex.unlock();
-                io.tmux_mutex.lock();
-                defer io.tmux_mutex.unlock();
+                io.renderer_state.mutex.lockUncancelable(global.io());
+                defer io.renderer_state.mutex.unlock(global.io());
+                io.tmux_mutex.lockUncancelable(global.io());
+                defer io.tmux_mutex.unlock(global.io());
                 // Bounded sends while tmux_mutex is held (lock-order rule;
                 // id=streamhandler-unlocked-io).
                 io.terminal_stream.handler.tmux_unlocked_io = true;
@@ -490,8 +491,8 @@ fn drainMailbox(
                 // Heartbeat nudge: retry deferred pane writes / re-send a
                 // dropped topology snapshot. Viewer state only — tmux_mutex
                 // with the unlocked-io flag, same as .tmux_set_client_size.
-                io.tmux_mutex.lock();
-                defer io.tmux_mutex.unlock();
+                io.tmux_mutex.lockUncancelable(global.io());
+                defer io.tmux_mutex.unlock(global.io());
                 io.terminal_stream.handler.tmux_unlocked_io = true;
                 defer io.terminal_stream.handler.tmux_unlocked_io = false;
                 io.terminal_stream.handler.tmuxFlushDeferred();
@@ -502,8 +503,8 @@ fn drainMailbox(
                 // tmux_mutex (id=termio-tmux-mutex); the unlocked-io flag makes
                 // its messageWriter sends use the bounded no-mutex path. Stay
                 // in DCS passthrough — unlike abort, the channel keeps running.
-                io.tmux_mutex.lock();
-                defer io.tmux_mutex.unlock();
+                io.tmux_mutex.lockUncancelable(global.io());
+                defer io.tmux_mutex.unlock(global.io());
                 io.terminal_stream.handler.tmux_unlocked_io = true;
                 defer io.terminal_stream.handler.tmux_unlocked_io = false;
                 io.terminal_stream.handler.tmuxForceResync();
@@ -516,8 +517,8 @@ fn drainMailbox(
                 // `.resync`, so a message draining after the gateway is gone is a
                 // plain no-op — unlike `.tmux_resume`, whose no-viewer branch would
                 // re-enter control mode. Stay in DCS passthrough.
-                io.tmux_mutex.lock();
-                defer io.tmux_mutex.unlock();
+                io.tmux_mutex.lockUncancelable(global.io());
+                defer io.tmux_mutex.unlock(global.io());
                 io.terminal_stream.handler.tmux_unlocked_io = true;
                 defer io.terminal_stream.handler.tmux_unlocked_io = false;
                 io.terminal_stream.handler.tmuxResumeResendProbe();
@@ -530,8 +531,8 @@ fn drainMailbox(
                 // `.tmux_recover` this needs only tmux_mutex (id=termio-tmux-mutex)
                 // + the unlocked-io flag for its bounded messageWriter sends. Stay
                 // in DCS passthrough — the channel keeps running.
-                io.tmux_mutex.lock();
-                defer io.tmux_mutex.unlock();
+                io.tmux_mutex.lockUncancelable(global.io());
+                defer io.tmux_mutex.unlock(global.io());
                 // Fallback executor for the reset barrier: the read thread may
                 // have already consumed the flag (reset-before-parse ordering);
                 // in that case this message is a no-op instead of a double
@@ -552,10 +553,10 @@ fn drainMailbox(
                 // viewer + emitting the empty-topology snapshot touches state the
                 // renderer reads, uses messageWriter, and pokes the VT parser
                 // (renderer -> tmux order).
-                io.renderer_state.mutex.lock();
-                defer io.renderer_state.mutex.unlock();
-                io.tmux_mutex.lock();
-                defer io.tmux_mutex.unlock();
+                io.renderer_state.mutex.lockUncancelable(global.io());
+                defer io.renderer_state.mutex.unlock(global.io());
+                io.tmux_mutex.lockUncancelable(global.io());
+                defer io.tmux_mutex.unlock(global.io());
                 // Bounded sends while tmux_mutex is held (lock-order rule;
                 // id=streamhandler-unlocked-io).
                 io.terminal_stream.handler.tmux_unlocked_io = true;

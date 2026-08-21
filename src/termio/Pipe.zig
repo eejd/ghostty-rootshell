@@ -1,5 +1,7 @@
 const std = @import("std");
 const posix = std.posix;
+const compat_fd = @import("../lib/compat/fd.zig");
+const global = @import("../global.zig");
 const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
 const termio = @import("../termio.zig");
@@ -52,33 +54,30 @@ pub fn init(alloc: Allocator, opts: Options) !Pipe {
     _ = opts;
 
     // Create input pipe (Swift → Ghostty)
-    const input_fds = try posix.pipe();
-    errdefer posix.close(input_fds[0]);
-    errdefer posix.close(input_fds[1]);
+    const input_fds = try compat_fd.pipe();
+    errdefer compat_fd.close(input_fds[0]);
+    errdefer compat_fd.close(input_fds[1]);
 
     const master_fd = input_fds[0]; // Read end
     const slave_fd = input_fds[1]; // Write end
 
     // Create response pipe (Ghostty → Swift)
-    const response_fds = try posix.pipe();
-    errdefer posix.close(response_fds[0]);
-    errdefer posix.close(response_fds[1]);
+    const response_fds = try compat_fd.pipe();
+    errdefer compat_fd.close(response_fds[0]);
+    errdefer compat_fd.close(response_fds[1]);
 
     const response_read_fd = response_fds[0]; // Read end (for Swift)
     const response_write_fd = response_fds[1]; // Write end (for Ghostty)
 
-    // Set all pipe ends to non-blocking mode
-    const master_flags = try posix.fcntl(master_fd, posix.F.GETFL, 0);
-    _ = try posix.fcntl(master_fd, posix.F.SETFL, master_flags | @as(u32, @bitCast(posix.O{ .NONBLOCK = true })));
-
-    const slave_flags = try posix.fcntl(slave_fd, posix.F.GETFL, 0);
-    _ = try posix.fcntl(slave_fd, posix.F.SETFL, slave_flags | @as(u32, @bitCast(posix.O{ .NONBLOCK = true })));
-
-    const resp_read_flags = try posix.fcntl(response_read_fd, posix.F.GETFL, 0);
-    _ = try posix.fcntl(response_read_fd, posix.F.SETFL, resp_read_flags | @as(u32, @bitCast(posix.O{ .NONBLOCK = true })));
-
-    const resp_write_flags = try posix.fcntl(response_write_fd, posix.F.GETFL, 0);
-    _ = try posix.fcntl(response_write_fd, posix.F.SETFL, resp_write_flags | @as(u32, @bitCast(posix.O{ .NONBLOCK = true })));
+    // Set all pipe ends to non-blocking mode. Zig 0.16 dropped the
+    // `posix.fcntl` wrapper, so go through `posix.system` directly and check
+    // errno ourselves, the same way `pty.zig` now does.
+    for ([_]posix.fd_t{
+        master_fd,
+        slave_fd,
+        response_read_fd,
+        response_write_fd,
+    }) |fd| try setNonblocking(fd);
 
     log.info("Pipe: created input pipe (master_fd={}, slave_fd={})", .{ master_fd, slave_fd });
     log.info("Pipe: created response pipe (response_read_fd={}, response_write_fd={})", .{ response_read_fd, response_write_fd });
@@ -97,12 +96,27 @@ pub fn init(alloc: Allocator, opts: Options) !Pipe {
     };
 }
 
+/// Set O_NONBLOCK on `fd`. Zig 0.16 removed `std.posix.fcntl`.
+fn setNonblocking(fd: posix.fd_t) !void {
+    const flags = posix.system.fcntl(fd, posix.F.GETFL, @as(usize, 0));
+    if (flags == -1) return error.FcntlFailed;
+    const nonblock: u32 = @bitCast(posix.O{ .NONBLOCK = true });
+    return switch (posix.errno(posix.system.fcntl(
+        fd,
+        posix.F.SETFL,
+        @as(usize, @intCast(flags)) | nonblock,
+    ))) {
+        .SUCCESS => {},
+        else => error.FcntlFailed,
+    };
+}
+
 pub fn deinit(self: *Pipe) void {
     // Close all pipe FDs
-    if (self.master_fd >= 0) posix.close(self.master_fd);
-    if (self.slave_fd >= 0) posix.close(self.slave_fd);
-    if (self.response_read_fd >= 0) posix.close(self.response_read_fd);
-    if (self.response_write_fd >= 0) posix.close(self.response_write_fd);
+    if (self.master_fd >= 0) compat_fd.close(self.master_fd);
+    if (self.slave_fd >= 0) compat_fd.close(self.slave_fd);
+    if (self.response_read_fd >= 0) compat_fd.close(self.response_read_fd);
+    if (self.response_write_fd >= 0) compat_fd.close(self.response_write_fd);
     log.info("Pipe cleaned up", .{});
 }
 
@@ -126,7 +140,7 @@ pub const ThreadData = struct {
 
     pub fn deinit(self: *ThreadData, alloc: Allocator) void {
         _ = alloc;
-        posix.close(self.read_thread_pipe);
+        compat_fd.close(self.read_thread_pipe);
     }
 
     pub fn changeConfig(self: *ThreadData, config: *termio.DerivedConfig) void {
@@ -147,8 +161,8 @@ pub fn threadEnter(
     // Create a pipe for signaling the read thread to exit.
     // pipe[0] is the read end (for the thread), pipe[1] is the write end (for us).
     const quit_pipe = try internal_os.pipe();
-    errdefer posix.close(quit_pipe[0]);
-    errdefer posix.close(quit_pipe[1]);
+    errdefer compat_fd.close(quit_pipe[0]);
+    errdefer compat_fd.close(quit_pipe[1]);
 
     // Reset quit flag (in case of reuse after a previous session).
     self.quit.store(false, .release);
@@ -160,7 +174,7 @@ pub fn threadEnter(
         ReadThread.threadMainPosix,
         .{ self.master_fd, io, quit_pipe[0], &self.quit },
     );
-    read_thread.setName("io-reader") catch {};
+    read_thread.setName(global.io(), "io-reader") catch {};
 
     // Store thread handle and quit pipe write end in ThreadData
     td.backend = .{ .pipe = .{
@@ -181,11 +195,16 @@ pub fn threadExit(self: *Pipe, td: *termio.Termio.ThreadData) void {
     self.quit.store(true, .release);
 
     // Also signal via quit pipe to wake the thread if it's blocked in poll().
-    _ = posix.write(pipe_data.read_thread_pipe, "x") catch |err| switch (err) {
-        // BrokenPipe means the read thread already exited, which is fine.
-        error.BrokenPipe => {},
-        else => log.warn("error writing to read thread quit pipe err={}", .{err}),
-    };
+    // Zig 0.16 dropped the `posix.write` wrapper; go through `posix.system`
+    // and check errno directly, the same way `Exec.zig` now does. EPIPE means
+    // the read thread already exited, which is fine.
+    switch (posix.errno(posix.system.write(pipe_data.read_thread_pipe, "x", 1))) {
+        .SUCCESS, .PIPE => {},
+        else => |err| log.warn(
+            "error writing to read thread quit pipe err=E{s}",
+            .{@tagName(err)},
+        ),
+    }
 
     // Wait for the read thread to finish
     pipe_data.read_thread.join();
@@ -261,8 +280,17 @@ fn writeAllToResponsePipe(self: *Pipe, data: []const u8) !void {
 
     while (total_written < data.len) {
         const remaining = data[total_written..];
-        const written = posix.write(self.response_write_fd, remaining) catch |err| switch (err) {
-            error.WouldBlock => {
+        // `posix.write` is gone in Zig 0.16; use the raw syscall and map errno
+        // back onto the two cases this loop cares about.
+        const rc = posix.system.write(
+            self.response_write_fd,
+            remaining.ptr,
+            remaining.len,
+        );
+        const written: usize = switch (posix.errno(rc)) {
+            .SUCCESS => @intCast(rc),
+            .INTR => continue,
+            .AGAIN => {
                 _ = posix.poll(&pollfds, -1) catch |poll_err| {
                     log.warn("response pipe poll failed: {}", .{poll_err});
                     return poll_err;
@@ -275,9 +303,13 @@ fn writeAllToResponsePipe(self: *Pipe, data: []const u8) !void {
 
                 continue;
             },
-            else => {
-                log.warn("failed to write to response pipe: {}", .{err});
-                return err;
+            .PIPE => {
+                log.warn("response pipe closed while writing", .{});
+                return error.BrokenPipe;
+            },
+            else => |err| {
+                log.warn("failed to write to response pipe: E{s}", .{@tagName(err)});
+                return error.WriteFailed;
             },
         };
 
@@ -319,7 +351,7 @@ pub fn childExitedAbnormally(
 pub const ReadThread = struct {
     fn threadMainPosix(fd: posix.fd_t, io: *termio.Termio, quit: posix.fd_t, quit_flag: *std.atomic.Value(bool)) void {
         // Always close our end of the quit pipe when we exit.
-        defer posix.close(quit);
+        defer compat_fd.close(quit);
 
         // Set thread name on Darwin (std.Thread.setName can only name the
         // current thread on Darwin, and we have no way to get it from within).
@@ -329,19 +361,10 @@ pub const ReadThread = struct {
 
         // Set the fd to non-blocking so we can do a tight read loop and
         // only fall back to poll when data runs out.
-        if (posix.fcntl(fd, posix.F.GETFL, 0)) |flags| {
-            _ = posix.fcntl(
-                fd,
-                posix.F.SETFL,
-                flags | @as(u32, @bitCast(posix.O{ .NONBLOCK = true })),
-            ) catch |err| {
-                log.warn("read thread failed to set flags err={}", .{err});
-                log.warn("this isn't a fatal error, but may cause performance issues", .{});
-            };
-        } else |err| {
-            log.warn("read thread failed to get flags err={}", .{err});
+        setNonblocking(fd) catch |err| {
+            log.warn("read thread failed to set non-blocking err={}", .{err});
             log.warn("this isn't a fatal error, but may cause performance issues", .{});
-        }
+        };
 
         // Poll both the data fd and the quit pipe.
         var pollfds: [2]posix.pollfd = .{

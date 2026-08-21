@@ -80,7 +80,7 @@ autorelease_pool: ?*objc.AutoreleasePool = null,
 
 pub fn init(alloc: Allocator, opts: rendererpkg.Options) !Metal {
     comptime switch (builtin.os.tag) {
-        .macos, .ios, .visionos => {},
+        .macos, .ios, .maccatalyst, .visionos => {},
         else => @compileError("unsupported platform for Metal"),
     };
 
@@ -96,7 +96,7 @@ pub fn init(alloc: Allocator, opts: rendererpkg.Options) !Metal {
     // .managed is not available on iOS/visionOS. Since we're doing dynamic allocations,
     // we use .shared on iOS/visionOS and check unified memory on macOS.
     const default_storage_mode: mtl.MTLResourceOptions.StorageMode = switch (comptime builtin.os.tag) {
-        .ios, .visionos => .shared,
+        .ios, .maccatalyst, .visionos => .shared,
         .macos => if (device.getProperty(bool, "hasUnifiedMemory")) .shared else .managed,
         else => .shared,
     };
@@ -144,7 +144,7 @@ pub fn init(alloc: Allocator, opts: rendererpkg.Options) !Metal {
             info.view.setProperty("wantsLayer", true);
         },
 
-        .ios, .visionos => {
+        .ios, .maccatalyst, .visionos => {
             const view_layer = objc.Object.fromId(info.view.getProperty(?*anyopaque, "layer"));
             // Retain view_layer to prevent cf_release_thread from cleaning it up prematurely
             // getProperty may return an autoreleased object on iOS/visionOS
@@ -251,7 +251,7 @@ fn displayCallback(renderer: *Renderer) align(8) void {
     //
     // Pure iOS/visionOS still skip this path: window-style resize is rare
     // there, and IOSDisplayLink-driven rendering is sufficient.
-    if (comptime builtin.os.tag != .macos and builtin.abi != .macabi) {
+    if (comptime builtin.os.tag != .macos and builtin.os.tag != .maccatalyst) {
         return;
     }
 
@@ -533,7 +533,7 @@ fn chooseDevice() error{NoMetalDevice}!objc.Object {
                     device.getProperty(bool, "isLowPower")) break;
             }
         },
-        .ios, .visionos => {
+        .ios, .maccatalyst, .visionos => {
             chosen_device = objc.Object.fromId(mtl.MTLCreateSystemDefaultDevice());
         },
         else => @compileError("unsupported target for Metal"),

@@ -12,6 +12,7 @@
 //! which then invokes a C function callback.
 
 const std = @import("std");
+const global = @import("../../global.zig");
 const builtin = @import("builtin");
 const objc = @import("objc");
 const macos = @import("macos");
@@ -77,7 +78,7 @@ pub const IOSDisplayLink = struct {
 
     /// Monotonic epoch captured at init; all tick/kick timestamps are ms
     /// relative to it (see nowMs). Immutable after init, so reads are race-free.
-    epoch: std.time.Instant,
+    epoch: std.Io.Timestamp,
 
     /// Monotonic ms (since `epoch`) of the most recent CADisplayLink tick (and
     /// of the last start(), as a grace period). Written on the main run loop
@@ -139,7 +140,7 @@ pub const IOSDisplayLink = struct {
             .target = target,
             // running / desired_running / last_tick_ms / last_kick_ms use their
             // atomic defaults.
-            .epoch = std.time.Instant.now() catch return error.ObjCFailed,
+            .epoch = .now(global.io(), .awake),
         };
 
         return self;
@@ -151,9 +152,11 @@ pub const IOSDisplayLink = struct {
     /// the last tick stamp, so age computes to ~0 and we don't self-heal a
     /// healthy link.
     fn nowMs(self: *const IOSDisplayLink) i64 {
-        const now = std.time.Instant.now() catch
-            return self.last_tick_ms.load(.monotonic);
-        return @intCast(now.since(self.epoch) / std.time.ns_per_ms);
+        const now: std.Io.Timestamp = .now(global.io(), .awake);
+        return @intCast(@divFloor(
+            self.epoch.durationTo(now).nanoseconds,
+            std.time.ns_per_ms,
+        ));
     }
 
     pub fn release(self: *IOSDisplayLink) void {

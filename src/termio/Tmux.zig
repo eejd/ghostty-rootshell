@@ -28,7 +28,8 @@
 const Tmux = @This();
 
 const std = @import("std");
-const xev = @import("../global.zig").xev;
+const global = @import("../global.zig");
+const xev = global.xev;
 const Allocator = std.mem.Allocator;
 const assert = @import("../quirks.zig").inlineAssert;
 const renderer = @import("../renderer.zig");
@@ -254,8 +255,8 @@ pub fn threadEnter(
     // child's own (empty) terminal to the shared viewer pane terminal with no
     // unlocked-write window.
     if (self.viewer_terminal) |vt| {
-        io.renderer_state.mutex.lock();
-        defer io.renderer_state.mutex.unlock();
+        io.renderer_state.mutex.lockUncancelable(global.io());
+        defer io.renderer_state.mutex.unlock(global.io());
         io.renderer_state.terminal = vt;
     }
 
@@ -1156,7 +1157,7 @@ test "queueWrite batch hex round-trips to input" {
     try testing.expectEqual(@as(usize, 3), std.mem.count(u8, batch, "\n"));
 
     // Decode every hex pair back and compare against the input.
-    var decoded: std.ArrayListUnmanaged(u8) = .{};
+    var decoded: std.ArrayListUnmanaged(u8) = .empty;
     defer decoded.deinit(alloc);
     var lines = std.mem.splitScalar(u8, batch, '\n');
     while (lines.next()) |line| {
@@ -1240,7 +1241,7 @@ test "ParentWriter routes commands through mailbox" {
     try writer.write("list-windows\n");
 
     // Verify the command was queued in the mailbox
-    const msg = mailbox.spsc.queue.pop() orelse {
+    const msg = mailbox.spsc.queue.pop(std.testing.io) orelse {
         return error.TestUnexpectedResult;
     };
 
@@ -1276,7 +1277,7 @@ test "ParentWriter handles large commands" {
     const large_cmd = "send-keys -H -t %12345 41 42 43 44 45 46 47 48\n";
     try writer.write(large_cmd);
 
-    const msg = mailbox.spsc.queue.pop() orelse {
+    const msg = mailbox.spsc.queue.pop(std.testing.io) orelse {
         return error.TestUnexpectedResult;
     };
 
@@ -1319,7 +1320,7 @@ test "ParentWriter used as backend ControlWriter" {
         .{ .width = 1000, .height = 600 },
     );
 
-    const msg = mailbox.spsc.queue.pop() orelse {
+    const msg = mailbox.spsc.queue.pop(std.testing.io) orelse {
         return error.TestUnexpectedResult;
     };
 
