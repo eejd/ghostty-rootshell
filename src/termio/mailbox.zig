@@ -53,6 +53,7 @@ pub const Mailbox = union(enum) {
     pub fn deinit(self: *Mailbox, alloc: Allocator) void {
         switch (self.*) {
             .spsc => |*v| {
+                while (v.queue.pop(global.io())) |msg| msg.deinit();
                 v.queue.destroy(alloc);
                 v.wakeup.deinit();
             },
@@ -82,6 +83,7 @@ pub const Mailbox = union(enum) {
                 // lock so we need to unlock.
                 mb.wakeup.notify() catch |err| {
                     log.warn("failed to wake up writer, data will be dropped err={}", .{err});
+                    msg.deinit();
                     return;
                 };
 
@@ -106,7 +108,7 @@ pub const Mailbox = union(enum) {
                             "failed to wake up writer while queue full, dropping message tag={s} err={}",
                             .{ @tagName(msg), err },
                         );
-                        msg.deinitDropped();
+                        msg.deinit();
                         return;
                     };
                 }
@@ -115,7 +117,7 @@ pub const Mailbox = union(enum) {
                     "dropping termio mailbox message after sustained backpressure tag={s} attempts={}",
                     .{ @tagName(msg), attempts },
                 );
-                msg.deinitDropped();
+                msg.deinit();
             },
         }
     }
@@ -133,7 +135,7 @@ pub const Mailbox = union(enum) {
 
                 mb.wakeup.notify() catch |err| {
                     log.warn("failed to wake up writer, data will be dropped err={}", .{err});
-                    msg.deinitDropped();
+                    msg.deinit();
                     return false;
                 };
 
@@ -147,7 +149,7 @@ pub const Mailbox = union(enum) {
                     "dropping termio mailbox message after sustained backpressure tag={s} attempts={}",
                     .{ @tagName(msg), attempts },
                 );
-                msg.deinitDropped();
+                msg.deinit();
                 return false;
             },
         }

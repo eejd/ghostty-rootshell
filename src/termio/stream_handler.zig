@@ -2496,83 +2496,24 @@ pub const StreamHandler = struct {
             .decrqss => |decrqss| {
                 // ROOTSHELL-TMUX (id=streamhandler-suppress-gateway-reports): drop report-generating replies on the tmux gateway.
                 if (self.suppressPtyReportForTmuxGateway("DECRQSS")) return;
-                var response: [128]u8 = undefined;
-                var writer: std.Io.Writer = .fixed(&response);
-
-                // Offset the stream position to just past the response prefix.
-                // We will write the "payload" (if any) below. If no payload is
-                // written then we send an invalid DECRPSS response.
-                const prefix_fmt = "\x1bP{d}$r";
-                const prefix_len = std.fmt.comptimePrint(prefix_fmt, .{0}).len;
-                writer.end = prefix_len;
-
-                switch (decrqss) {
-                    // Invalid or unhandled request
-                    .none => {},
-
-                    .sgr => {
-                        const buf = try self.terminal.printAttributes(writer.buffer[writer.end..]);
-
-                        // printAttributes wrote into our buffer, so adjust the stream
-                        // position
-                        writer.end += buf.len;
-
-                        try writer.writeByte('m');
-                    },
-
-                    .decscusr => {
-                        const blink = self.terminal.modes.get(.cursor_blinking);
-                        const style: u8 = switch (self.terminal.screens.active.cursor.cursor_style) {
-                            .block => if (blink) 1 else 2,
-                            .underline => if (blink) 3 else 4,
-                            .bar => if (blink) 5 else 6,
-
-                            // Below here, the cursor styles aren't represented by
-                            // DECSCUSR so we map it to some other style.
-                            .block_hollow => if (blink) 1 else 2,
-                        };
-                        try writer.print("{d} q", .{style});
-                    },
-
-                    .decstbm => {
-                        try writer.print("{d};{d}r", .{
-                            self.terminal.scrolling_region.top + 1,
-                            self.terminal.scrolling_region.bottom + 1,
-                        });
-                    },
-
-                    .decslrm => {
-                        // We only send a valid response when left and right
-                        // margin mode (DECLRMM) is enabled.
-                        if (self.terminal.modes.get(.enable_left_and_right_margin)) {
-                            try writer.print("{d};{d}s", .{
-                                self.terminal.scrolling_region.left + 1,
-                                self.terminal.scrolling_region.right + 1,
-                            });
-                        }
-                    },
-                }
-
-                // Our response is valid if we have a response payload
-                const valid = writer.end > prefix_len;
-
-                // Write the terminator
-                try writer.writeAll("\x1b\\");
-
-                // Write the response prefix into the buffer
-                _ = try std.fmt.bufPrint(response[0..prefix_len], prefix_fmt, .{@intFromBool(valid)});
-                const msg = try termio.Message.writeReq(self.alloc, response[0..writer.end]);
+                var response: [terminal.dcs.Command.DECRQSS.max_response_bytes]u8 = undefined;
+                const encoded = try decrqss.encode(self.terminal, &response);
+                const msg = try termio.Message.writeReq(
+                    self.alloc,
+                    encoded,
+                );
                 self.messageWriter(msg);
             },
         }
     }
 
     pub fn apcEnd(self: *StreamHandler) !void {
-        var cmd = self.apc.end() orelse return;
-        defer cmd.deinit(self.alloc);
+        var result = self.apc.end() orelse return;
+        defer result.deinit(self.alloc);
 
-        // log.warn("APC command: {}", .{cmd});
-        switch (cmd) {
+        // log.warn("APC command: {}", .{result});
+        switch (result) {
+            .unknown => return,
             .kitty => |*kitty_cmd| {
                 // ROOTSHELL-TMUX (id=streamhandler-suppress-gateway-reports): drop report-generating replies on the tmux gateway.
                 if (self.suppressPtyReportForTmuxGateway("kitty graphics")) return;
@@ -2817,6 +2758,17 @@ pub const StreamHandler = struct {
             },
 
             // ROOTSHELL-TMUX (id=streamhandler-suppress-gateway-reports): drop report-generating replies on the tmux gateway.
+            .report_visibility => if (enabled and
+                !self.suppressPtyReportForTmuxGateway("visibility"))
+            {
+                self.messageWriter(.{
+                    .visibility_report = .{
+                        .visible = self.terminal.flags.visible,
+                        .force = true,
+                    },
+                });
+            },
+
             .focus_event => if (enabled and
                 !self.suppressPtyReportForTmuxGateway("focus"))
             {
@@ -2938,7 +2890,17 @@ pub const StreamHandler = struct {
                 self.messageWriter(msg);
             },
 
+            // (suppress-gateway + mode check live inside sendColorSchemeReport)
             .color_scheme => self.sendColorSchemeReport(true),
+
+            // ROOTSHELL-TMUX (id=streamhandler-suppress-gateway-reports): the
+            // gateway must not answer queries tmux answers for the client.
+            .visibility => if (!self.suppressPtyReportForTmuxGateway("visibility")) {
+                self.messageWriter(.{ .visibility_report = .{
+                    .visible = self.terminal.flags.visible,
+                    .force = true,
+                } });
+            },
         }
     }
 
@@ -3461,17 +3423,9 @@ pub const StreamHandler = struct {
         title: []const u8,
         body: []const u8,
     ) !void {
-        var message = apprt.surface.Message{ .desktop_notification = undefined };
-
-        const title_len = @min(title.len, message.desktop_notification.title.len);
-        @memcpy(message.desktop_notification.title[0..title_len], title[0..title_len]);
-        message.desktop_notification.title[title_len] = 0;
-
-        const body_len = @min(body.len, message.desktop_notification.body.len);
-        @memcpy(message.desktop_notification.body[0..body_len], body[0..body_len]);
-        message.desktop_notification.body[body_len] = 0;
-
-        self.surfaceMessageWriter(message);
+        self.surfaceMessageWriter(.{
+            .desktop_notification = .init(title, body),
+        });
     }
 
     /// Answer the CSI ?996n / mode-2031 color-scheme query INLINE on the read

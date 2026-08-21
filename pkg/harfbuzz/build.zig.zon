@@ -5,8 +5,8 @@
     .paths = .{""},
     .dependencies = .{
         .translate_c = .{
-            .url = "https://github.com/kitknox/translate-c-rootshell/archive/cb0e8f8068ae1927c781707c7f5f52310f0972e5.tar.gz",
-            .hash = "translate_c-0.0.0-Q_BUWuA_BwB_CVrwdE9W26b9-Km_dvLKuNXnZv7ps0CY",
+            .url = "https://github.com/kitknox/translate-c-rootshell/archive/e3191f810deeb9bbf2d4d57356ed399967f1572c.tar.gz",
+            .hash = "translate_c-0.0.0-Q_BUWgY7BwDz2Lr7aRh6umNFBwMBS5vwe7zAKYyI8vwg",
             .lazy = true,
         },
 

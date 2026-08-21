@@ -169,6 +169,10 @@ child_exited: bool = false,
 /// to let us know.
 focused: bool = true,
 
+/// Whether this surface may be visible. Unknown visibility is considered
+/// visible so reporting remains conservative.
+visible: bool = true,
+
 /// Used to determine whether to continuously scroll.
 selection_scroll_active: bool = false,
 
@@ -346,6 +350,7 @@ const DerivedConfig = struct {
     title: ?[:0]const u8,
     title_report: bool,
     links: []DerivedConfig.Link,
+    link_osc8: bool,
     link_previews: configpkg.LinkPreviews,
     scroll_to_bottom: configpkg.Config.ScrollToBottom,
     notify_on_command_finish: configpkg.Config.NotifyOnCommandFinish,
@@ -426,6 +431,7 @@ const DerivedConfig = struct {
             .title = config.title,
             .title_report = config.@"title-report",
             .links = links,
+            .link_osc8 = config.@"link-osc8",
             .link_previews = config.@"link-previews",
             .scroll_to_bottom = config.@"scroll-to-bottom",
             .notify_on_command_finish = config.@"notify-on-command-finish",
@@ -939,7 +945,7 @@ pub fn deinit(self: *Surface) void {
     self.alloc.destroy(self.renderer_state.mutex);
     self.config.deinit();
 
-    log.info("surface closed addr={x}", .{@intFromPtr(self)});
+    log.info("surface closed id={x}", .{self.id});
 }
 
 /// Close this surface. This will trigger the runtime to start the
@@ -956,7 +962,7 @@ inline fn surfaceMailbox(self: *Surface) Mailbox {
     };
 }
 
-/// Queue a message for the IO thread.
+/// Queue a message for the IO thread, taking ownership of `msg`.
 ///
 /// We centralize all our logic into this spot so we can intercept
 /// messages for example in readonly mode.
@@ -971,7 +977,10 @@ fn queueIo(
             .write_small,
             .write_stable,
             .write_alloc,
-            => return,
+            => {
+                msg.deinit();
+                return;
+            },
 
             else => {},
         }
@@ -1203,9 +1212,10 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
         .pwd_change => |w| {
             defer w.deinit();
 
-            // We always allocate for this because we need to null-terminate.
-            const str = try self.alloc.dupeZ(u8, w.slice());
-            defer self.alloc.free(str);
+            var stack = std.heap.stackFallback(256, self.alloc);
+            const alloc = stack.get();
+            const str = try alloc.dupeZ(u8, w.slice());
+            defer alloc.free(str);
 
             _ = try self.rt_app.performAction(
                 .{ .surface = self },
@@ -2624,13 +2634,14 @@ fn copySelectionToClipboards(
 
     const ScreenFormatter = terminal.formatter.ScreenFormatter;
     var aw: std.Io.Writer.Allocating = .init(alloc);
-    var contents: std.ArrayList(apprt.ClipboardContent) = .empty;
+    var contents_buf: [2]apprt.ClipboardContent = undefined;
+    var contents: std.ArrayList(apprt.ClipboardContent) = .initBuffer(&contents_buf);
     switch (format) {
         .plain => {
             var formatter: ScreenFormatter = .init(screen, opts);
             formatter.content = .{ .selection = sel };
             try formatter.format(&aw.writer);
-            try contents.append(alloc, .{
+            contents.appendAssumeCapacity(.{
                 .mime = "text/plain",
                 .data = try aw.toOwnedSliceSentinel(0),
             });
@@ -2647,7 +2658,7 @@ fn copySelectionToClipboards(
 
             // Note: We don't apply codepoint mappings to VT format since it contains
             // escape sequences that should be preserved as-is
-            try contents.append(alloc, .{
+            contents.appendAssumeCapacity(.{
                 .mime = "text/plain",
                 .data = try aw.toOwnedSliceSentinel(0),
             });
@@ -2664,7 +2675,7 @@ fn copySelectionToClipboards(
 
             // Note: We don't apply codepoint mappings to HTML format since HTML
             // has its own character encoding and entity system
-            try contents.append(alloc, .{
+            contents.appendAssumeCapacity(.{
                 .mime = "text/html",
                 .data = try aw.toOwnedSliceSentinel(0),
             });
@@ -2675,7 +2686,7 @@ fn copySelectionToClipboards(
             var formatter: ScreenFormatter = .init(screen, opts);
             formatter.content = .{ .selection = sel };
             try formatter.format(&aw.writer);
-            try contents.append(alloc, .{
+            contents.appendAssumeCapacity(.{
                 .mime = "text/plain",
                 .data = try aw.toOwnedSliceSentinel(0),
             });
@@ -2698,7 +2709,7 @@ fn copySelectionToClipboards(
             try formatter.format(&aw.writer);
 
             // Note: We don't apply codepoint mappings to HTML format
-            try contents.append(alloc, .{
+            contents.appendAssumeCapacity(.{
                 .mime = "text/html",
                 .data = try aw.toOwnedSliceSentinel(0),
             });
@@ -3363,11 +3374,11 @@ pub fn keyCallback(
         // an encoded value, we close the surface. We want to eventually
         // move this behavior to the apprt probably.
         if (self.child_exited) {
+            write_req.deinit();
             self.close();
             return .closed;
         }
 
-        errdefer write_req.deinit();
         self.queueIo(switch (write_req) {
             .small => |v| .{ .write_small = v },
             .stable => |v| .{ .write_stable = v },
@@ -3489,15 +3500,18 @@ fn maybeHandleBinding(
     // Determine if this entry has an action or if its a leader key.
     const leaf: input.Binding.Set.GenericLeaf = switch (entry.value_ptr.*) {
         .leader => |set| {
-            // Setup the next set we'll look at.
-            self.keyboard.sequence_set = set;
-
             // Store this event so that we can drain and encode on invalid.
             // We don't need to cap this because it is naturally capped by
             // the config validation.
             if (try self.encodeKey(event, insp_ev)) |req| {
-                try self.keyboard.sequence_queued.append(self.alloc, req);
+                self.keyboard.sequence_queued.append(self.alloc, req) catch |err| {
+                    req.deinit();
+                    return err;
+                };
             }
+
+            // Setup the next set we'll look at only after all fallible work.
+            self.keyboard.sequence_set = set;
 
             // Start or continue our key sequence
             _ = self.rt_app.performAction(
@@ -3787,17 +3801,15 @@ fn encodeKey(
         );
         defer alloc_writer.deinit();
 
-        // This results in a double allocation but this is such an unlikely
-        // path the performance impact is unimportant.
         try input.key_encode.encode(
             &alloc_writer.writer,
             event,
             encoding_opts,
         );
-        break :req try termio.Message.WriteReq.init(
-            self.alloc,
-            alloc_writer.writer.buffered(),
-        );
+        break :req .{ .alloc = .{
+            .alloc = self.alloc,
+            .data = try alloc_writer.toOwnedSlice(),
+        } };
     };
 
     // Copy the encoded data into the inspector event if we have one.
@@ -3874,9 +3886,34 @@ pub fn occlusionCallback(self: *Surface, visible: bool) !void {
     crash.sentry.thread_state = self.crashThreadState();
     defer crash.sentry.thread_state = null;
 
+    // Avoid duplicate renderer and visibility reports.
+    if (self.visible == visible) return;
+    self.visible = visible;
+
+    // Update the terminal state for synchronous queries, then notify the IO
+    // thread so it can emit a mode 2033 report when enabled.
+    //
+    // ROOTSHELL-TMUX (id=tmux-pane-visibility): this is VT state a program
+    // reads back via DSR, so it belongs to the terminal the program is
+    // actually attached to. For a tmux -CC pane that is the viewer-owned pane
+    // terminal, NOT `io.terminal`, which is an empty relay placeholder — the
+    // same reason paste options are read from it (id=tmux-pane-paste-terminal).
+    self.renderer_state.mutex.lockUncancelable(global.io());
+    const vis_term = self.uiTerminalLocked();
+    vis_term.flags.visible = visible;
+    const report_visibility = vis_term.modes.get(.report_visibility);
+    self.renderer_state.mutex.unlock(global.io());
+    if (report_visibility) {
+        self.queueIo(.{ .visibility_report = .{
+            .visible = visible,
+            .force = false,
+        } }, .unlocked);
+    }
+
     _ = self.renderer_thread.mailbox.push(global.io(), .{
         .visible = visible,
     }, .{ .forever = {} });
+
     try self.queueRender();
 }
 
@@ -4293,6 +4330,12 @@ pub fn contentScaleCallback(self: *Surface, content_scale: apprt.ContentScale) !
 fn isMouseReporting(self: *const Surface) bool {
     return self.config.mouse_reporting and
         self.uiTerminalLockedConst().flags.mouse_event != .none;
+}
+
+pub fn mouseReportingActive(self: *Surface) bool {
+    self.renderer_state.mutex.lockUncancelable(global.io());
+    defer self.renderer_state.mutex.unlock(global.io());
+    return self.isMouseReporting();
 }
 
 fn mouseReport(
@@ -4951,7 +4994,9 @@ fn linkAtPos(
     const mouse_mods = self.mouseModsWithCapture(self.mouse.mods);
 
     // If we have the proper modifiers set then we can check for OSC8 links.
-    if (mouse_mods.equal(input.ctrlOrSuper(.{}))) hyperlink: {
+    if (self.config.link_osc8 and
+        mouse_mods.equal(input.ctrlOrSuper(.{})))
+    hyperlink: {
         const rac = mouse_pin.rowAndCell();
         const cell = rac.cell;
         if (!cell.hyperlink) break :hyperlink;
@@ -4986,12 +5031,10 @@ fn linkAtPin(
         .semantic_prompt_boundary = true,
     }) orelse return null;
 
-    var strmap: terminal.StringMap = undefined;
-    self.alloc.free(try screen.selectionString(self.alloc, .{
+    const strmap = try screen.selectionStringMap(self.alloc, .{
         .sel = line,
         .trim = false,
-        .map = &strmap,
-    }));
+    });
     defer strmap.deinit(self.alloc);
 
     for (self.config.links) |link| {
@@ -5375,7 +5418,7 @@ fn processLinks(self: *Surface, pos: apprt.CursorPos) !bool {
                 log.warn("failed to get URI for OSC8 hyperlink", .{});
                 return false;
             };
-            try self.openUrl(.{ .kind = .unknown, .url = uri });
+            try self.openUrl(.{ .kind = .osc8, .url = uri });
         },
     }
 
@@ -5958,10 +6001,10 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
         },
 
         .text => |data| {
-            // For text we always allocate just because its easier to
-            // handle all cases that way.
-            const buf = try self.alloc.alloc(u8, data.len);
-            defer self.alloc.free(buf);
+            var stack = std.heap.stackFallback(256, self.alloc);
+            const alloc = stack.get();
+            const buf = try alloc.alloc(u8, data.len);
+            defer alloc.free(buf);
             const text = configpkg.string.parse(buf, data) catch |err| {
                 log.warn(
                     "error parsing text binding text={s} err={}",
@@ -6276,6 +6319,12 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             .tab,
         ),
 
+        .prompt_window_title => return try self.rt_app.performAction(
+            .{ .surface = self },
+            .prompt_title,
+            .window,
+        ),
+
         .set_surface_title => |v| {
             const title = try self.alloc.dupeZ(u8, v);
             defer self.alloc.free(title);
@@ -6292,6 +6341,16 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             return try self.rt_app.performAction(
                 .{ .surface = self },
                 .set_tab_title,
+                .{ .title = title },
+            );
+        },
+
+        .set_window_title => |v| {
+            const title = try self.alloc.dupeZ(u8, v);
+            defer self.alloc.free(title);
+            return try self.rt_app.performAction(
+                .{ .surface = self },
+                .set_window_title,
                 .{ .title = title },
             );
         },
@@ -6438,6 +6497,12 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             .{ .surface = self },
             .move_tab,
             .{ .amount = position },
+        ),
+
+        .move_tab_to_new_window => return try self.rt_app.performAction(
+            .{ .surface = self },
+            .move_tab_to_new_window,
+            {},
         ),
 
         .new_split => |direction| return try self.rt_app.performAction(
@@ -6795,7 +6860,8 @@ fn writeScreenFile(
 ) !void {
     // Create a temporary directory to store our scrollback.
     var tmp_dir = try internal_os.TempDir.init();
-    errdefer tmp_dir.deinit();
+    var retain_tmp_dir = false;
+    defer if (retain_tmp_dir) tmp_dir.close(.retain) else tmp_dir.deinit();
 
     var filename_buf: [std.fs.max_path_bytes]u8 = undefined;
     const filename = try std.fmt.bufPrint(
@@ -6868,7 +6934,6 @@ fn writeScreenFile(
 
         const sel = sel_ orelse {
             // If we have no selection we have no data so we do nothing.
-            tmp_dir.deinit();
             return;
         };
 
@@ -6922,6 +6987,9 @@ fn writeScreenFile(
             path,
         ), .unlocked),
     }
+
+    // The action accepted the path, so retain the file for its consumer.
+    retain_tmp_dir = true;
 }
 
 /// Call this to complete a clipboard request sent to apprt. This should
@@ -7122,8 +7190,8 @@ fn completeClipboardReadOSC52(
     // This must hold the base64 encoded data PLUS the OSC code surrounding it.
     const enc = std.base64.standard.Encoder;
     const size = enc.calcSize(data.len);
-    var buf = try self.alloc.alloc(u8, size + 9); // const for OSC
-    defer self.alloc.free(buf);
+    const buf = try self.alloc.alloc(u8, size + 9); // const for OSC
+    errdefer self.alloc.free(buf);
 
     const kind: u8 = switch (clipboard_type) {
         .standard => 'c',
@@ -7141,10 +7209,10 @@ fn completeClipboardReadOSC52(
     const encoded = enc.encode(buf[prefix.len..], data);
     assert(encoded.len == size);
 
-    self.queueIo(try termio.Message.writeReq(
-        self.alloc,
-        buf,
-    ), .unlocked);
+    self.queueIo(.{ .write_alloc = .{
+        .alloc = self.alloc,
+        .data = buf,
+    } }, .unlocked);
 }
 
 fn showDesktopNotification(self: *Surface, title: [:0]const u8, body: [:0]const u8) !void {
@@ -7215,4 +7283,19 @@ fn presentSurface(self: *Surface) !void {
 /// not available on a particular platform.
 pub fn getProcessInfo(self: *Surface, comptime info: ProcessInfo) ?ProcessInfo.Type(info) {
     return self.io.getProcessInfo(info);
+}
+
+test "queueIo frees allocated writes in readonly mode" {
+    const testing = std.testing;
+
+    const surface = try testing.allocator.create(Surface);
+    defer testing.allocator.destroy(surface);
+    surface.readonly = true;
+
+    // queueIo must free allocated writes in read-only mode.
+    const data = try testing.allocator.dupe(u8, "\x1b]lGhostty\x1b\\");
+    surface.queueIo(.{ .write_alloc = .{
+        .alloc = testing.allocator,
+        .data = data,
+    } }, .unlocked);
 }

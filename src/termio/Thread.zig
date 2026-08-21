@@ -298,7 +298,7 @@ fn drainMailbox(
 
     // If we're draining, we just drain the mailbox and return.
     if (self.flags.drain) {
-        while (mailbox.pop(global.io())) |_| {}
+        while (mailbox.pop(global.io())) |msg| msg.deinit();
         return;
     }
 
@@ -313,6 +313,11 @@ fn drainMailbox(
         log.debug("mailbox message={s}", .{@tagName(message)});
         switch (message) {
             .color_scheme_report => |v| try io.colorSchemeReport(data, v.force),
+            .visibility_report => |v| try io.visibilityReport(
+                data,
+                v.visible,
+                v.force,
+            ),
             .crash => @panic("crash request, crashing intentionally"),
             .change_config => |config| {
                 defer config.alloc.destroy(config.ptr);

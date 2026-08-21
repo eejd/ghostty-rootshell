@@ -4631,9 +4631,15 @@ pub const Viewer = struct {
         pane.postOscEvent(.{ .pwd = pwd });
     }
 
-    fn paneDesktopNotification(handler: *TerminalStreamHandler, title: []const u8, body: []const u8) void {
+    fn paneDesktopNotification(
+        handler: *TerminalStreamHandler,
+        notification: TerminalStream.Action.ShowDesktopNotification,
+    ) void {
         const pane: *Pane = @fieldParentPtr("terminal", handler.terminal);
-        pane.postOscEvent(.{ .notification = .{ .title = title, .body = body } });
+        pane.postOscEvent(.{ .notification = .{
+            .title = notification.title,
+            .body = notification.body,
+        } });
     }
 
     /// Drain the pane's buffered OSC 52 clipboard SETs into
@@ -4921,7 +4927,7 @@ pub const Viewer = struct {
                     // budget matching ghostty's default scrollback-limit (10 MiB).
                     // Actual memory tracks content and is bounded by tmux's own
                     // history-limit, so this is a ceiling, not a reservation.
-                    .max_scrollback = 10 * 1024 * 1024,
+                    .max_scrollback_bytes = 10 * 1024 * 1024,
                     // Use the gateway terminal's themed colors so default-background
                     // cells match the app theme rather than the built-in dark default
                     // (`.default` colors leave background `.unset`).
@@ -10422,10 +10428,10 @@ test "pane state alternate_on keeps the normal-screen scrollback on the primary"
                     // scrollback-bearing screen (non-zero budget) and the alternate
                     // stays the 0-budget ephemeral screen. The old swap inverted
                     // these, so the primary could never accumulate scrollback.
-                    try testing.expect(pri.pages.explicit_max_size > 0);
+                    try testing.expect(pri.pages.limits.bytes.explicit > 0);
                     try testing.expectEqual(
                         @as(usize, 0),
-                        t.screens.get(.alternate).?.pages.explicit_max_size,
+                        t.screens.get(.alternate).?.pages.limits.bytes.explicit,
                     );
                 }
             }).check,
