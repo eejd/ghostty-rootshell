@@ -163,6 +163,9 @@ pub const Command = union(Key) {
     /// https://uapi-group.org/specifications/specs/osc_context/
     context_signal: parsers.context_signal.Command,
 
+    /// Kitty desktop notifications (OSC 99)
+    kitty_desktop_notification: KittyDesktopNotification,
+
     /// OSC 1337 iTerm2 inline image protocol.
     /// https://iterm2.com/documentation-images.html
     ///
@@ -203,6 +206,8 @@ pub const Command = union(Key) {
 
     pub const KittyDndProtocol = parsers.kitty_dnd_protocol.OSC;
 
+    pub const KittyDesktopNotification = parsers.kitty_desktop_notification.OSC;
+
     pub const Key = LibEnum(
         lib.target,
         // NOTE: Order matters, see LibEnum documentation.
@@ -233,6 +238,7 @@ pub const Command = union(Key) {
             "kitty_clipboard_protocol",
             "kitty_dnd_protocol",
             "context_signal",
+            "kitty_desktop_notification",
             "iterm2_image",
         },
     );
@@ -414,6 +420,7 @@ pub const Parser = struct {
         @"66",
         @"72",
         @"77",
+        @"99",
         @"104",
         @"110",
         @"111",
@@ -496,6 +503,7 @@ pub const Parser = struct {
             .kitty_text_sizing,
             .kitty_clipboard_protocol,
             .kitty_dnd_protocol,
+            .kitty_desktop_notification,
             .context_signal,
             => {},
         }
@@ -906,11 +914,24 @@ pub const Parser = struct {
                 else => self.state = .invalid,
             },
 
+            .@"9",
+            => switch (c) {
+                ';' => self.captureTrailing(.fixed),
+                '9' => self.state = .@"99",
+                else => self.state = .invalid,
+            },
+
+            .@"99",
+            => switch (c) {
+                // OSC 99 encoded payloads can exceed the fixed buffer.
+                ';' => self.captureTrailing(.allocating),
+                else => self.state = .invalid,
+            },
+
             .@"0",
             .@"22",
             .@"777",
             .@"8",
-            .@"9",
             => switch (c) {
                 ';' => self.captureTrailing(.fixed),
                 else => self.state = .invalid,
@@ -991,6 +1012,8 @@ pub const Parser = struct {
 
             .@"77" => null,
 
+            .@"99" => parsers.kitty_desktop_notification.parse(self, terminator_ch),
+
             .@"133" => parsers.semantic_prompt.parse(self, terminator_ch),
 
             .@"552" => null,
@@ -1011,7 +1034,7 @@ test {
 
 test "Parser allocating captures have a hard limit" {
     const testing = std.testing;
-    const prefixes = [_][]const u8{ "52;", "66;", "72;", "5522;" };
+    const prefixes = [_][]const u8{ "52;", "66;", "72;", "99;", "5522;" };
     const limit = Parser.MAX_BUF + 1;
 
     for (prefixes) |prefix| {
