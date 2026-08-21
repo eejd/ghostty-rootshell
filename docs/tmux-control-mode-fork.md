@@ -13,9 +13,10 @@ tree is to make rebasing onto `ghostty-org/ghostty` (`upstream/main`) mechanical
 > part of the **frozen C ABI** the iOS Swift app consumes are additionally tagged
 > `FROZEN-ABI` and must never be renamed or reordered.
 
-The iOS Swift consumer lives in the separate `ghostty-ios` repo
-(`Core/Tmux/TmuxController.swift`, the `ghostty_tmux_*` call sites, and
-`ghostty-ios-Bridging-Header.h`). Any change to a `FROZEN-ABI` hook must be mirrored there.
+The Swift consumer lives in the separate `rootshell` repo
+(`rootshell/Features/Tmux/TmuxController.swift`, the `ghostty_tmux_*` call
+sites, and `rootshell/rootshell-Bridging-Header.h`). Any change to a
+`FROZEN-ABI` hook must be mirrored there.
 
 ---
 
@@ -72,7 +73,7 @@ only the aggregator `src/terminal/tmux.zig` points at `tmux_cc/` instead of `tmu
 
 ## Frozen C ABI contract (what the iOS Swift app depends on)
 
-These must remain byte-stable. Mirror any change in `ghostty-ios`.
+These must remain byte-stable. Mirror any change in `rootshell`.
 
 - **Action:** `GHOSTTY_ACTION_TMUX_RECONCILE` and the `action.zig` union member
   `tmux_reconcile` + `pub const Key` enum entry `tmux_reconcile` (tag value — do not
@@ -289,19 +290,19 @@ grep -rn 'ROOTSHELL-TMUX' src/ include/ | grep -oE 'id=[a-z0-9-]+' | sort -u
 3. **Tier C/D hooked upstream files:** for each conflicted file, run
    `grep -n ROOTSHELL-TMUX <file>` and re-apply each marked hook using its `reapply:` note
    and the registry above. Check off every `id` for that file.
-4. Rebuild (fast iteration build, from `ghostty-dec20`):
+4. Rebuild. Requires Zig 0.16 (`brew install zig`); the old visionOS stdlib
+   patching is gone, 0.16 has those fixes.
    ```bash
-   /opt/homebrew/opt/zig@0.15/bin/zig build -Doptimize=ReleaseFast -Demit-xcframework \
-     -Dxcframework-target=universal -Dsentry=false -Dappstore=false
+   zig build test            # fast iteration; compiles everything for the host
    ```
-5. **ABI verify** (see "Frozen C ABI contract"): `nm` the static archive for the 7 tmux
+5. **ABI verify** (see "Frozen C ABI contract"): `nm` the static archive for the tmux
    symbols; `git diff include/ghostty.h` should be comment-only.
 6. Run tests: `zig build test` (covers `src/terminal/tmux_cc/integration_test.zig` and the
    `dcs.zig` tmux tests).
-7. Rebuild the shippable framework and the iOS app:
-   `./scripts/build-framework.sh appstore`, then build `rootshell-AppStore` in `ghostty-ios`
-   and smoke-test `tmux -CC` on device (native tab/split mapping, pane input, scrollback,
-   resize).
+7. Rebuild the shippable framework and the app, from `rootshell/scripts`:
+   `./build-framework.sh appstore --ghostty-source /path/to/ghostty-dec20`, then build
+   `rootshell-AppStore` and smoke-test `tmux -CC` on device (native tab/split mapping,
+   pane input, scrollback, resize).
 
 ### Drift checks (run any time)
 ```bash
@@ -313,4 +314,41 @@ nm macos/GhosttyKit.xcframework/ios-arm64/libghostty-internal-fat.a \
   | grep -cE '_ghostty_(tmux|surface_new_tmux|surface_tmux_(set_client|detach|command|active))'   # expect 10
 # No stale upstream tmux/ path references crept back in:
 grep -rn 'terminal/tmux/' src/ --include='*.zig' | grep -v 'tmux_cc/'      # expect empty
+# Hook ids present (compare against the previous sync, currently 241):
+grep -rn 'ROOTSHELL' src/ include/ | grep -oE 'id=[a-z0-9-]+' | sort -u | wc -l
 ```
+
+---
+
+## Fork features with NO marker
+
+`ROOTSHELL-TMUX` only covers tmux control mode. These other fork features have
+no marker safety net, so a merge can drop them silently. After every sync, check
+each symbol still exists — an auto-merged upstream rewrite is the usual way one
+disappears.
+
+| Feature | Check for |
+|---|---|
+| iOS/visionOS/Catalyst port | `src/termio/Pipe.zig`, `backend.Kind.{pipe,tmux}`, `Command.startPosixSpawnPty`, `pty.zig` `.ios => PosixPty`, the `.maccatalyst` arms |
+| Smooth scroll / rubber band / bottom inset | `setSmoothScrollOffset`, `setRubberBandOffset`, `scrollToRowSmooth`, `setBottomInset`, `posToViewportLocked`, `render.zig` `beginUpdateExtraRows` |
+| HDR / EDR boost | `Metal.zig` `hdr_boost` / `setHDRBoost`, `brightness_gain`, `apply_brightness` in shaders.metal |
+| Display link | `IOSDisplayLink`, `vsyncTicking`, `reconcileLinkIdleLocked`, `setFrameRateRange`; `drawFrame` must keep excluding `sync` from `needs_redraw` |
+| iTerm2 inline images | `Terminal.iterm2Image`, `terminal/iterm2/images.zig`, `graphics_storage.iterm2_loading` |
+| IPv6 word selection | `Screen.selectWordOrIPv6`, and that `selectWordBetween` calls it |
+| Multi-row link extension | `terminal/link_extend.zig`, `renderer/link.zig` `extendMatchAcrossRows` |
+| Cursor blink modes | `config.CursorBlinkMode`, `.rootshell` arm in `renderer/cell.zig`, `computeBlinkAlpha` |
+| Display-only redaction | `renderer/redact.zig`, `render.zig` `rebuildViewportRow` |
+| Screen dump / external IO C API | the `ghostty_surface_dump_*`, `_pty_master_fd`, `_response_read_fd`, `_get_slave_fd` exports |
+| Content-change events | `Surface.queueContentChanged`, `action.surface_content_changed` |
+
+Two more invariants worth re-checking by hand, because nothing catches them:
+
+- **`uiTerminalLocked` discipline.** `grep -n 'io\.terminal' src/Surface.zig
+  src/apprt/embedded.zig` and classify every hit. UI / mouse / selection / link /
+  paste / dump / VT-state-a-program-queries paths must use `uiTerminalLocked()`,
+  `uiTerminalLockedConst()` or `renderer_state.terminal`; only real IO keeps
+  `io.terminal`. A regression here shows up only as "broken inside tmux panes".
+- **Dependency pins.** `build.zig.zon` plus the four `pkg/*/build.zig.zon` point
+  at forks carrying fixes upstream lacks (libxev `.maccatalyst`, translate-c/aro
+  visionOS). Upstream bumping those deps will conflict; rebase the fork rather
+  than taking upstream's pin, or visionOS/Catalyst stops building.
