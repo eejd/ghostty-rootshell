@@ -182,7 +182,7 @@ These must remain byte-stable. Mirror any change in `rootshell`.
 
 **Verify the ABI** (from the `ghostty-dec20` repo, after a build):
 ```bash
-nm macos/GhosttyKit.xcframework/ios-arm64/libghostty-internal-fat.a \
+nm macos/GhosttyKitAppStore.xcframework/ios-arm64/libghostty-internal.a \
   | grep -E '_ghostty_(tmux|surface_new_tmux|surface_tmux_(set_client|detach|command|active|resume|recover|reset|reprobe|force_exit))' | sort -u
 ```
 Expect 17 `T` (defined text) symbols:
@@ -250,7 +250,7 @@ REORDER` note; behavioral hooks in `dcs.zig` / `stream_handler.zig` / `parse_tab
 
 ### `id` registry
 
-231 hook ids across 30 files (the table below enumerates the Tier C/D upstream-hooked
+242 hook ids across 31 files (the table below enumerates the Tier C/D upstream-hooked
 files; the fork-owned sidecars `src/Surface_tmux.zig`, `src/apprt/surface_tmux.zig`,
 `src/termio/Tmux.zig`, and the `src/terminal/tmux_cc/*` parser also carry `id=`-tagged hooks
 but are carried forward verbatim, so they are not re-listed here). Regenerate the full list
@@ -310,11 +310,11 @@ grep -rn 'ROOTSHELL-TMUX' src/ include/ | grep -oE 'id=[a-z0-9-]+' | sort -u
 echo "$(grep -rc 'ROOTSHELL-TMUX BEGIN' src/ include/ | awk -F: '{s+=$2} END{print s}') begin / \
       $(grep -rc 'ROOTSHELL-TMUX END'   src/ include/ | awk -F: '{s+=$2} END{print s}') end"
 # Every FROZEN-ABI symbol still present:
-nm macos/GhosttyKit.xcframework/ios-arm64/libghostty-internal-fat.a \
-  | grep -cE '_ghostty_(tmux|surface_new_tmux|surface_tmux_(set_client|detach|command|active))'   # expect 10
+nm macos/GhosttyKitAppStore.xcframework/ios-arm64/libghostty-internal.a \
+  | grep -cE '_ghostty_(tmux|surface_new_tmux|surface_tmux_(set_client|detach|command|active))'   # expect 11 (command_with_reply matches too)
 # No stale upstream tmux/ path references crept back in:
 grep -rn 'terminal/tmux/' src/ --include='*.zig' | grep -v 'tmux_cc/'      # expect empty
-# Hook ids present (compare against the previous sync, currently 241):
+# Hook ids present (compare against the previous sync, currently 244):
 grep -rn 'ROOTSHELL' src/ include/ | grep -oE 'id=[a-z0-9-]+' | sort -u | wc -l
 ```
 
@@ -329,7 +329,8 @@ disappears.
 
 | Feature | Check for |
 |---|---|
-| iOS/visionOS/Catalyst port | `src/termio/Pipe.zig`, `backend.Kind.{pipe,tmux}`, `Command.startPosixSpawnPty`, `pty.zig` `.ios => PosixPty`, the `.maccatalyst` arms |
+| iOS/visionOS/Catalyst port | `src/termio/Pipe.zig`, `backend.Kind.{pipe,tmux}`, `Command.startPosixSpawnPty`, `pty.zig` `.ios => PosixPty`, the `.maccatalyst` arms (incl. `renderer/generic.zig` display-link arms, `preThreadDeinit`) |
+| Live environ (`id=global-live-environ`, `id=surface-exec-env-scope`) | `global.zig` `liveEnviron()`: `environ()`/`environMap()` must re-read `std.c.environ`, never return the `ghostty_init` snapshot; `os/file.zig` `allocTmpDir` dupes on POSIX; `Surface.zig` builds the env map only in the exec branch. The host app calls `setenv` all process long; a cached slice crashes in `Environ.createMap` |
 | Smooth scroll / rubber band / bottom inset | `setSmoothScrollOffset`, `setRubberBandOffset`, `scrollToRowSmooth`, `setBottomInset`, `posToViewportLocked`, `render.zig` `beginUpdateExtraRows` |
 | HDR / EDR boost | `Metal.zig` `hdr_boost` / `setHDRBoost`, `brightness_gain`, `apply_brightness` in shaders.metal |
 | Display link | `IOSDisplayLink`, `vsyncTicking`, `reconcileLinkIdleLocked`, `setFrameRateRange`; `drawFrame` must keep excluding `sync` from `needs_redraw` |

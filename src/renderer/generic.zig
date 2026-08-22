@@ -871,8 +871,10 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         /// where a queued main-thread tick would call `notify()` on a port
         /// the renderer thread has already destroyed (recycled by libdispatch
         /// → `EXC_GUARD INVALID_OPTIONS`). On other platforms it's a no-op.
+        /// Catalyst uses the same CADisplayLink (Zig 0.16 split `.maccatalyst`
+        /// out of `.ios`), so it needs the same guard.
         pub fn preThreadDeinit(self: *Self) void {
-            if (comptime !(builtin.os.tag == .ios or builtin.os.tag == .visionos)) return;
+            if (comptime !(builtin.os.tag == .ios or builtin.os.tag == .maccatalyst or builtin.os.tag == .visionos)) return;
             if (comptime DisplayLink == void) return;
             const display_link = self.display_link orelse return;
             display_link.invalidateSync();
@@ -1217,7 +1219,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             if (comptime DisplayLink == void) return false;
             const display_link = self.display_link orelse return false;
             return switch (builtin.os.tag) {
-                .ios, .visionos => display_link.isTicking(vsync_stale_ms),
+                .ios, .maccatalyst, .visionos => display_link.isTicking(vsync_stale_ms),
                 else => display_link.isRunning(),
             };
         }
@@ -1227,7 +1229,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         /// rate-limits the actual re-kick internally.
         pub fn requestVsyncKick(self: *Self) void {
             if (comptime DisplayLink == void) return;
-            if (comptime builtin.os.tag != .ios and builtin.os.tag != .visionos) return;
+            if (comptime builtin.os.tag != .ios and builtin.os.tag != .maccatalyst and builtin.os.tag != .visionos) return;
             const display_link = self.display_link orelse return;
             display_link.requestKick();
         }
@@ -1238,7 +1240,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         /// pre-normalized from the apprt.
         pub fn setFrameRateRange(self: *Self, range: renderer.Message.FrameRateRange) void {
             if (comptime DisplayLink == void) return;
-            if (comptime builtin.os.tag != .ios and builtin.os.tag != .visionos) return;
+            if (comptime builtin.os.tag != .ios and builtin.os.tag != .maccatalyst and builtin.os.tag != .visionos) return;
             const display_link = self.display_link orelse return;
             display_link.setFrameRateRange(range.min, range.max, range.preferred);
         }
@@ -1307,7 +1309,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             if (comptime DisplayLink == void) return -1;
             const display_link = self.display_link orelse return -1;
             return switch (builtin.os.tag) {
-                .ios, .visionos => display_link.lastTickAgeMs(),
+                .ios, .maccatalyst, .visionos => display_link.lastTickAgeMs(),
                 else => -1,
             };
         }

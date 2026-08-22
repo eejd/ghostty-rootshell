@@ -146,11 +146,11 @@ pub const IOSDisplayLink = struct {
         return self;
     }
 
-    /// Monotonic milliseconds since `epoch`. A monotonic source (not wall clock)
-    /// keeps a clock adjustment from making a healthy link look stale or a
-    /// wedged one look healthy. On the (effectively never) error path we return
-    /// the last tick stamp, so age computes to ~0 and we don't self-heal a
-    /// healthy link.
+    /// Monotonic milliseconds since `epoch` (`.awake` = CLOCK_UPTIME_RAW on
+    /// Darwin, pauses during device sleep). A monotonic source (not wall
+    /// clock) keeps a clock adjustment from making a healthy link look stale
+    /// or a wedged one look healthy. `Io.Timestamp.now` cannot fail in 0.16;
+    /// the old fallback to the last tick stamp is gone.
     fn nowMs(self: *const IOSDisplayLink) i64 {
         const now: std.Io.Timestamp = .now(global.io(), .awake);
         return @intCast(@divFloor(

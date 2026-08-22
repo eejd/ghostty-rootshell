@@ -679,22 +679,6 @@ pub fn initWithOptions(
     // This separate block ({}) is important because our errdefers must
     // be scoped here to be valid.
     {
-        var env = rt_surface.defaultTermioEnv() catch |err| env: {
-            // If an error occurs, we don't want to block surface startup.
-            log.warn("error getting env map for surface err={}", .{err});
-            break :env global.environMap() catch std.process.Environ.Map.init(alloc);
-        };
-        errdefer env.deinit();
-
-        // don't leak GHOSTTY_LOG to any subprocesses
-        _ = env.orderedRemove("GHOSTTY_LOG");
-
-        var buf: [18]u8 = undefined;
-        try env.put(
-            "GHOSTTY_SURFACE_ID",
-            std.fmt.bufPrint(&buf, "0x{x:0>16}", .{self.id}) catch unreachable,
-        );
-
         // Initialize our IO mailbox
         var io_mailbox = try termio.Mailbox.initSPSC(alloc);
         errdefer io_mailbox.deinit(alloc);
@@ -731,7 +715,26 @@ pub fn initWithOptions(
             errdefer io_pipe.deinit();
             break :blk .{ .pipe = io_pipe };
         } else blk: {
-            // PTY-capable platforms: macOS, Linux, Catalyst
+            // PTY-capable platforms: macOS, Linux, Catalyst.
+            // Only the exec backend spawns a child, so only it builds the
+            // process environment; the pipe/tmux backends above never touch
+            // environ and have nothing to free. ROOTSHELL (id=surface-exec-env-scope)
+            var env = rt_surface.defaultTermioEnv() catch |err| env: {
+                // If an error occurs, we don't want to block surface startup.
+                log.warn("error getting env map for surface err={}", .{err});
+                break :env global.environMap() catch std.process.Environ.Map.init(alloc);
+            };
+            errdefer env.deinit();
+
+            // don't leak GHOSTTY_LOG to any subprocesses
+            _ = env.orderedRemove("GHOSTTY_LOG");
+
+            var buf: [18]u8 = undefined;
+            try env.put(
+                "GHOSTTY_SURFACE_ID",
+                std.fmt.bufPrint(&buf, "0x{x:0>16}", .{self.id}) catch unreachable,
+            );
+
             var io_exec = try termio.Exec.init(alloc, .{
                 .command = command,
                 .env = env,

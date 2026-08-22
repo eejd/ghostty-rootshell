@@ -61,9 +61,12 @@ pub fn restoreMaxFiles(lim: rlimit) void {
 ///
 /// On Windows this calls `GetTempPathW` and allocates a UTF-8 copy
 /// (or duplicates a hard-fallback string if the syscall fails). On
-/// POSIX this returns `$TMPDIR`/`$TMP` (or `"/tmp"` as a fallback)
-/// without allocating. Always pair with `freeTmpDir` to release any
-/// allocation.
+/// POSIX this returns a copy of `$TMPDIR`/`$TMP` (or `"/tmp"` as a
+/// fallback). Always pair with `freeTmpDir`.
+///
+/// The POSIX value is duplicated rather than sliced out of libc's
+/// environ: the embedding app may setenv("TMPDIR") later, freeing the
+/// string an unowned slice would point at. ROOTSHELL (id=global-live-environ)
 pub fn allocTmpDir(allocator: std.mem.Allocator, environ: std.process.Environ) std.mem.Allocator.Error![]const u8 {
     if (builtin.os.tag == .windows) {
         // GetTempPathW guarantees the result fits in MAX_PATH+1.
@@ -82,14 +85,12 @@ pub fn allocTmpDir(allocator: std.mem.Allocator, environ: std.process.Environ) s
         }
         return allocator.dupe(u8, "C:\\Windows\\Temp");
     }
-    const tmpdir = environ.getPosix("TMPDIR") orelse environ.getPosix("TMP") orelse return "/tmp";
-    return std.mem.trimEnd(u8, tmpdir, &.{std.fs.path.sep});
+    const tmpdir = environ.getPosix("TMPDIR") orelse environ.getPosix("TMP") orelse "/tmp";
+    return allocator.dupe(u8, std.mem.trimEnd(u8, tmpdir, &.{std.fs.path.sep}));
 }
 
-/// Free a path returned by `allocTmpDir` if it allocated memory.
-/// This is a no-op on POSIX.
+/// Free a path returned by `allocTmpDir`.
 pub fn freeTmpDir(allocator: std.mem.Allocator, dir: []const u8) void {
-    if (builtin.os.tag != .windows) return;
     allocator.free(dir);
 }
 

@@ -274,7 +274,7 @@ pub fn alloc() std.mem.Allocator {
 pub fn environ() std.process.Environ {
     if (builtin.is_test) return std.testing.environ;
 
-    return state.?.environ;
+    return liveEnviron() orelse state.?.environ;
 }
 
 /// Helper to create an environment map off of the state's environment, or one
@@ -284,8 +284,27 @@ pub fn environ() std.process.Environ {
 pub fn environMap() !std.process.Environ.Map {
     if (builtin.is_test) return std.testing.environ.createMap(std.testing.allocator);
 
-    return state.?.environ.createMap(state.?.alloc);
+    return (liveEnviron() orelse state.?.environ).createMap(state.?.alloc);
 }
+
+// ROOTSHELL BEGIN (id=global-live-environ)
+// what:    environ()/environMap() read libc `environ` live instead of the
+//          snapshot taken at ghostty_init. The embedding app (rootshell via
+//          ios_system) calls setenv/unsetenv for the whole process lifetime,
+//          which reallocs libc's array and leaves the init-time slice dangling
+//          (Environ.createMap walks it length-bounded -> NULL deref).
+// reapply: keep this helper and route environ()/environMap()/syncEnviron()
+//          through it. Never cache a getPosix() result (see os/file.zig).
+/// Live view of the libc environ block, or null where there is no such
+/// block (Windows / no libc) and the init snapshot is authoritative.
+fn liveEnviron() ?std.process.Environ {
+    if (comptime builtin.os.tag == .windows or !builtin.link_libc) return null;
+    if (comptime std.process.Environ.Block != std.process.Environ.PosixBlock) return null;
+    var len: usize = 0;
+    while (std.c.environ[len]) |_| : (len += 1) {}
+    return .{ .block = .{ .slice = std.c.environ[0..len :null] } };
+}
+// ROOTSHELL END (id=global-live-environ)
 
 /// Re-synchronizes the global Environ (both the higher-level and I/O versions)
 /// from the process. No-op on Windows, asserts libc and an initialized global
@@ -310,11 +329,7 @@ pub fn syncEnviron() void {
         else => {
             assert(builtin.link_libc);
             assert(!builtin.is_test);
-            const new_environ: std.process.Environ = .{ .block = .{ .slice = std.c.environ[0..env_len: {
-                var len: usize = 0;
-                while (std.c.environ[len]) |_| : (len += 1) {}
-                break :env_len len;
-            } :null] } };
+            const new_environ = liveEnviron() orelse return; // ROOTSHELL (id=global-live-environ)
             state.?.environ = new_environ;
             state.?.io_impl.environ = .{ .process_environ = new_environ };
         },

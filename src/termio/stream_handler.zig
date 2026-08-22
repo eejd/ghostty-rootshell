@@ -25,7 +25,9 @@ const log = std.log.scoped(.io_handler);
 /// post-exit drain and the read-progress gauges. `std.time.milliTimestamp`
 /// was removed in Zig 0.16; these values are only ever consumed as deltas,
 /// so a monotonic clock is strictly more correct than the old wall clock.
-/// ROOTSHELL-TMUX (id=tmux-debug-mirror)
+/// `.awake` is CLOCK_UPTIME_RAW on Darwin: it pauses while the device sleeps,
+/// so ages under-report across a sleep (the app's watchdogs see a shorter gap
+/// right after wake, never a spurious timeout). ROOTSHELL-TMUX (id=tmux-debug-mirror)
 fn nowMs() i64 {
     const ts: std.Io.Timestamp = .now(global.io(), .awake);
     return ts.toMilliseconds();
@@ -61,7 +63,8 @@ pub const TmuxDebugSnapshot = extern struct {
     /// Command union tag of the in-flight command (0 none). See commandKindCode:
     /// 1 list_windows, 2 pane_history, 3 pane_visible, 4 pane_state,
     /// 5 tmux_version, 6 subscribe_titles, 7 pane_mode_query, 8 client_size,
-    /// 9 continue_pane, 10 pane_color_report, 11 user.
+    /// 9 continue_pane, 10 pane_color_report, 11 user, 12 enable_pause,
+    /// 13 user_query.
     in_flight_cmd_kind: u8,
     /// control.ErrorCode of the parser / viewer respectively.
     parser_last_error: u8,
@@ -132,8 +135,8 @@ pub const TmuxDebugSnapshot = extern struct {
 /// Per-field relaxed atomics (not a seqlock): fields may be from instants a few
 /// microseconds apart, which is irrelevant for a 1–2 Hz diagnostic dump and
 /// keeps the read free of any dependency on the (possibly wedged) IO thread.
-/// Timestamps are wall-clock ms (`std.time.milliTimestamp`), 0 = never; the app
-/// reader converts them to ages. ROOTSHELL-TMUX (id=tmux-debug-mirror)
+/// Timestamps are monotonic ms (`nowMs`), 0 = never; the app reader converts
+/// them to ages. ROOTSHELL-TMUX (id=tmux-debug-mirror)
 const TmuxDebugMirror = struct {
     enabled: std.atomic.Value(bool) = .init(false),
 
@@ -1493,8 +1496,8 @@ pub const StreamHandler = struct {
         return true;
     }
 
-    /// Milliseconds between a stored wall-clock ms timestamp and `now`; 0 when
-    /// the timestamp is unset (0) or the clock moved backwards. ROOTSHELL-TMUX
+    /// Milliseconds between a stored `nowMs` timestamp and `now`; 0 when the
+    /// timestamp is unset (0) or `now` is older. ROOTSHELL-TMUX
     /// (id=tmux-debug-mirror)
     fn msSince(now: i64, then: i64) u64 {
         if (then == 0) return 0;

@@ -197,13 +197,20 @@ pub fn threadExit(self: *Pipe, td: *termio.Termio.ThreadData) void {
     // Also signal via quit pipe to wake the thread if it's blocked in poll().
     // Zig 0.16 dropped the `posix.write` wrapper; go through `posix.system`
     // and check errno directly, the same way `Exec.zig` now does. EPIPE means
-    // the read thread already exited, which is fine.
-    switch (posix.errno(posix.system.write(pipe_data.read_thread_pipe, "x", 1))) {
-        .SUCCESS, .PIPE => {},
-        else => |err| log.warn(
-            "error writing to read thread quit pipe err=E{s}",
-            .{@tagName(err)},
-        ),
+    // the read thread already exited, which is fine. Retry EINTR: without the
+    // byte the read thread can sit in poll(-1) forever and join() below hangs.
+    while (true) {
+        switch (posix.errno(posix.system.write(pipe_data.read_thread_pipe, "x", 1))) {
+            .SUCCESS, .PIPE => break,
+            .INTR => continue,
+            else => |err| {
+                log.warn(
+                    "error writing to read thread quit pipe err=E{s}",
+                    .{@tagName(err)},
+                );
+                break;
+            },
+        }
     }
 
     // Wait for the read thread to finish
