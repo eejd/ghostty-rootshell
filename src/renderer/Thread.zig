@@ -622,6 +622,11 @@ fn drawNowCallback(
     const t = self_.?;
     t.drawFrame(true);
 
+    // A display-link draw can discover a cursor position change while it is
+    // rendering shader uniforms. Re-evaluate afterward so a link that parked
+    // on this same tick still gets the short timer bridge needed to restart.
+    t.armAnimationTimerAfterDisplayTick();
+
     return .rearm;
 }
 
@@ -676,6 +681,29 @@ fn renderCallback(
 /// actual next wake.
 fn armAnimationTimer(self: *Thread) void {
     const wake = self.renderer.animationWake() orelse return;
+    self.scheduleAnimationWake(wake);
+}
+
+/// Reconcile the shared animation timer after a display-link frame. A healthy
+/// link calls this at frame cadence, so preserve an already-armed watchdog
+/// instead of canceling and recreating it 60–120 times per second. Any earlier
+/// draw or Kitty update wake still replaces it normally.
+fn armAnimationTimerAfterDisplayTick(self: *Thread) void {
+    const wake = self.renderer.animationWake() orelse return;
+    if (wake.kind == .watchdog and
+        self.animation_wake == .watchdog and
+        self.render_c.state() == .active)
+    {
+        return;
+    }
+
+    self.scheduleAnimationWake(wake);
+}
+
+fn scheduleAnimationWake(
+    self: *Thread,
+    wake: rendererpkg.Renderer.AnimationWake,
+) void {
     self.animation_wake = wake.kind;
     self.render_h.reset(
         &self.loop,
@@ -721,10 +749,10 @@ fn animationTimerCallback(
             {},
         ),
 
-        // A redraw alone suffices (custom shader time uniform).
-        // Draw calls don't update from the terminal state so they
-        // are much cheaper than a frame update.
-        .draw => {
+        // A redraw alone suffices for a shader frame. A watchdog takes the
+        // same path, but drawFrame returns without rendering while vsync is
+        // healthy and falls through to wedge recovery only when it is stale.
+        .draw, .watchdog => {
             t.drawFrame(false);
             t.armAnimationTimer();
             return .disarm;

@@ -49,6 +49,39 @@ const DisplayLink = switch (builtin.os.tag) {
 
 const log = std.log.scoped(.generic_renderer);
 
+fn customShaderAnimationActive(
+    has_custom_shaders: bool,
+    has_continuous_shader: bool,
+    cursor_animation_active: bool,
+    animation_mode: configpkg.CustomShaderAnimation,
+    focused: bool,
+) bool {
+    if (!has_custom_shaders) return false;
+    if (!has_continuous_shader and !cursor_animation_active) return false;
+
+    return switch (animation_mode) {
+        .false => false,
+        .always => true,
+        .true => focused,
+    };
+}
+
+const CustomShaderWakeMode = enum {
+    none,
+    draw,
+    watchdog,
+};
+
+fn customShaderWakeMode(
+    animation_active: bool,
+    vsync_ticking: bool,
+    needs_vsync_watchdog: bool,
+) CustomShaderWakeMode {
+    if (!animation_active) return .none;
+    if (!vsync_ticking) return .draw;
+    return if (needs_vsync_watchdog) .watchdog else .none;
+}
+
 /// Create a renderer type with the provided graphics API wrapper.
 ///
 /// The graphics API wrapper must provide the interface outlined below.
@@ -257,6 +290,12 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
         /// True when cursor animation is currently active (within duration of last cursor change).
         cursor_animation_active: bool = false,
+
+        /// True while the iOS-family display link is being kept alive by a
+        /// custom shader animation. This lets the final animation frame park
+        /// the link immediately without weakening the ordinary terminal
+        /// damage burst/idle heuristics.
+        link_shader_animation_active: bool = false,
 
         /// Our shader pipelines.
         shaders: Shaders,
@@ -1131,34 +1170,57 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 /// than `update`.
                 draw,
 
+                /// Check display-link liveness without driving an extra frame
+                /// while vsync is healthy.
+                watchdog,
+
                 /// Frame data must be updated first: updateFrame, then draw.
                 update,
             };
         };
 
-        /// The soonest animation wake this renderer needs, if any:
-        /// custom shader animation wants continuous draw-only wakes
-        /// at draw_interval_ms while active, and a running Kitty
-        /// graphics animation wants an update wake when its next
-        /// frame is due. The renderer thread drives its animation
-        /// timer off this, re-querying after every wake.
+        /// Whether custom shaders need a freshly rendered frame right now.
+        /// This is intentionally independent of animationWake: on Apple a
+        /// healthy display link supplies the cadence, while drawFrame still
+        /// needs to know that each display-link tick must run the shaders.
+        fn shaderAnimationActive(self: *const Self) bool {
+            return customShaderAnimationActive(
+                self.has_custom_shaders,
+                self.has_continuous_shader,
+                self.cursor_animation_active,
+                self.config.custom_shader_animation,
+                self.focused,
+            );
+        }
+
+        /// The soonest animation wake this renderer needs, if any. Custom
+        /// shaders use the 8ms draw-only timer only when a healthy display
+        /// link is unavailable. A low-frequency watchdog remains armed for
+        /// iOS-family display links so a later wedge can be detected without
+        /// unrelated terminal activity. Kitty graphics keeps its independent
+        /// update wake.
         ///
         /// Must be called on the render thread.
         pub fn animationWake(self: *const Self) ?AnimationWake {
-            // Custom shaders animate by redrawing on a fixed cadence,
-            // gated by configuration and focus.
-            const shader_delay: ?u64 = shader: {
-                if (!self.has_custom_shaders) break :shader null;
-                // ROOTSHELL: a cursor-only shader animates just while the
-                // cursor animation is running; continuous shaders (CRT and
-                // friends) always do. Without this a static cursor shader
-                // pins the renderer at draw_interval_ms forever.
-                if (!self.has_continuous_shader and
-                    !self.cursor_animation_active) break :shader null;
-                break :shader switch (self.config.custom_shader_animation) {
-                    .false => null,
-                    .always => draw_interval_ms,
-                    .true => if (self.focused) draw_interval_ms else null,
+            // A display link already supplies shader cadence. Avoid a second
+            // frame-driving wake stream while it is healthy, but retain a
+            // cheap liveness watchdog on CADisplayLink platforms. The
+            // watchdog callback performs no draw unless the link is stale.
+            const shader_wake: ?AnimationWake = shader: {
+                const needs_vsync_watchdog = comptime builtin.os.tag == .ios or
+                    builtin.os.tag == .maccatalyst or
+                    builtin.os.tag == .visionos;
+                break :shader switch (customShaderWakeMode(
+                    self.shaderAnimationActive(),
+                    self.vsyncTicking(),
+                    needs_vsync_watchdog,
+                )) {
+                    .none => null,
+                    .draw => .{ .delay_ms = draw_interval_ms, .kind = .draw },
+                    .watchdog => .{
+                        .delay_ms = shader_watchdog_interval_ms,
+                        .kind = .watchdog,
+                    },
                 };
             };
 
@@ -1181,12 +1243,12 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
             // An update wake includes a draw, so it wins ties.
             if (kitty_delay) |k| {
-                if (shader_delay == null or k <= shader_delay.?) {
+                if (shader_wake == null or k <= shader_wake.?.delay_ms) {
                     return .{ .delay_ms = k, .kind = .update };
                 }
             }
 
-            if (shader_delay) |s| return .{ .delay_ms = s, .kind = .draw };
+            if (shader_wake) |wake| return wake;
 
             return null;
         }
@@ -1205,6 +1267,12 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         /// dead. Generous vs the 8–16ms healthy cadence so brief hitches (or a
         /// busy main thread mid tab-switch) don't trip it.
         const vsync_stale_ms: i64 = 100;
+
+        /// A healthy CADisplayLink owns frame cadence, but the render thread
+        /// must still wake occasionally to notice if it stops ticking. This is
+        /// deliberately much slower than frame cadence; finite cursor effects
+        /// usually incur only one or two watchdog checks.
+        pub const shader_watchdog_interval_ms: u64 = 250;
 
         /// True if vsync is not just "running" but actually delivering ticks.
         /// On macOS (CVDisplayLink) there is no CADisplayLink wedge, so this is
@@ -1267,9 +1335,33 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         /// is true, and requestKick itself refuses while desired_running is
         /// false. setVisible(true) still starts the link unconditionally,
         /// which also resets any idle pause.
-        fn reconcileLinkIdleLocked(self: *Self, damaged: bool) void {
+        fn reconcileLinkIdleLocked(
+            self: *Self,
+            damaged: bool,
+            shader_animation_active: bool,
+        ) void {
             const display_link = self.display_link orelse return;
             const now: std.Io.Timestamp = .now(global.io(), .awake);
+
+            // Cursor effects are short, high-fidelity bursts. Start the link
+            // immediately for them (rather than waiting for a second damage
+            // frame), and park it on the first tick after the final frame.
+            // Continuous shaders also use this path but remain active until
+            // their focus/configuration policy changes.
+            if (shader_animation_active) {
+                self.link_shader_animation_active = true;
+                self.last_damage = now;
+                if (!display_link.desiredRunning())
+                    display_link.start() catch {};
+                return;
+            }
+
+            if (self.link_shader_animation_active) {
+                self.link_shader_animation_active = false;
+                if (display_link.desiredRunning())
+                    display_link.stop() catch {};
+                return;
+            }
 
             if (damaged) {
                 defer self.last_damage = now;
@@ -2013,20 +2105,25 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             // affects presentation timing, not whether content changed, and on
             // Mac Catalyst Core Animation calls display() often enough that
             // including it means constant redundant redraws.
+            const shader_animation_active = self.shaderAnimationActive();
             const needs_redraw =
                 size_changed or
                 swap_chain_rebuilt or
                 self.cells_rebuilt or
-                self.animationWake() != null;
+                shader_animation_active or
+                self.kitty_animation_next_ms != null;
 
             // Display-link idle-pause. Only render-thread draws participate:
-            // sync == true means an app-thread caller (resize, the app-side
-            // shader tick) drove this draw, and those must not toggle the link.
+            // sync == true means an app-thread caller (resize or explicit draw)
+            // drove this draw, and those must not toggle the link.
             if (comptime builtin.os.tag == .ios or
                 builtin.os.tag == .maccatalyst or
                 builtin.os.tag == .visionos)
             {
-                if (!sync) self.reconcileLinkIdleLocked(needs_redraw);
+                if (!sync) self.reconcileLinkIdleLocked(
+                    needs_redraw,
+                    shader_animation_active,
+                );
             }
 
             if (!needs_redraw) {
@@ -2860,13 +2957,14 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 const time_since_cursor_change = self.custom_shader_uniforms.time -
                     self.custom_shader_uniforms.cursor_change_time;
 
-                // Add small buffer (0.1s) to ensure animation completes smoothly
-                const active_threshold = duration + 0.1;
-                self.cursor_animation_active = time_since_cursor_change < active_threshold;
+                // drawFrame decides to render using the previous active value,
+                // so the first frame at/after DURATION is still rendered. We
+                // can then sleep immediately without an arbitrary 100ms tail.
+                self.cursor_animation_active = time_since_cursor_change < duration;
             } else if (!self.has_continuous_shader) {
-                // No duration and not continuous - keep animation active indefinitely
-                // This handles shaders that use cursor uniforms but don't declare duration
-                self.cursor_animation_active = true;
+                // No time-based animation was detected. Static shaders should
+                // redraw only with terminal damage, never pin an animation loop.
+                self.cursor_animation_active = false;
             }
 
             // Update focus uniforms
@@ -4033,4 +4131,32 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             try texture.replaceRegion(0, 0, atlas.size, atlas.size, atlas.data);
         }
     };
+}
+
+test "custom shader animation activity policy" {
+    const expect = std.testing.expect;
+
+    try expect(!customShaderAnimationActive(false, true, true, .always, true));
+    try expect(!customShaderAnimationActive(true, false, false, .always, true));
+    try expect(!customShaderAnimationActive(true, true, true, .false, true));
+    try expect(!customShaderAnimationActive(true, true, true, .true, false));
+    try expect(customShaderAnimationActive(true, true, false, .true, true));
+    try expect(customShaderAnimationActive(true, false, true, .always, false));
+
+    try std.testing.expectEqual(
+        CustomShaderWakeMode.none,
+        customShaderWakeMode(false, false, true),
+    );
+    try std.testing.expectEqual(
+        CustomShaderWakeMode.draw,
+        customShaderWakeMode(true, false, true),
+    );
+    try std.testing.expectEqual(
+        CustomShaderWakeMode.watchdog,
+        customShaderWakeMode(true, true, true),
+    );
+    try std.testing.expectEqual(
+        CustomShaderWakeMode.none,
+        customShaderWakeMode(true, true, false),
+    );
 }
