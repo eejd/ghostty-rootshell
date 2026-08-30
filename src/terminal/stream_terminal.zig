@@ -136,8 +136,15 @@ pub const Handler = struct {
     /// Without this the DCS swallows the rest of the stream — e.g. opencode's
     /// `ESC P tmux; ...` makes the pane eat its own `1049h` + entire UI, so the
     /// pane renders blank. `dcs_pending_esc` tracks a seen ESC awaiting `\`.
+    /// `0x9C` is only an ST outside a UTF-8 multi-byte sequence: it is a
+    /// common continuation byte (`Ü` = C3 9C), so `dcs_utf8_pending` counts
+    /// the continuation bytes still owed by the current lead byte.
     dcs_pending_esc: bool = false,
     dcs_ground_request: bool = false,
+    dcs_utf8_pending: u2 = 0,
+    /// Lead byte while its FIRST continuation byte is still owed (0 after),
+    /// so that byte can be range-checked per Unicode Table 3-7.
+    dcs_utf8_lead: u8 = 0,
 
     /// ROOTSHELL-TMUX (id=streamterm-tmux-passthrough): unwrap state for an
     /// `ESC P tmux; ...` passthrough DCS. `void` (and unused) in a non-tmux
@@ -500,6 +507,8 @@ pub const Handler = struct {
             // dropped (see `dcsPutTmux` / `TmuxPassthrough`).
             .dcs_hook => {
                 self.dcs_pending_esc = false;
+                self.dcs_utf8_pending = 0;
+                self.dcs_utf8_lead = 0;
                 if (comptime build_options.tmux_control_mode) {
                     self.tmux_passthrough.reset();
                     // `ESC P tmux; ...` arrives as DCS final 't' with no params
@@ -514,6 +523,8 @@ pub const Handler = struct {
             .dcs_put => if (!self.dcsPutTmux(value)) try self.dcsPut(value),
             .dcs_unhook => {
                 self.dcs_pending_esc = false;
+                self.dcs_utf8_pending = 0;
+                self.dcs_utf8_lead = 0;
                 if (comptime build_options.tmux_control_mode) self.tmux_passthrough.reset();
                 try self.dcsUnhook();
             },
@@ -537,8 +548,10 @@ pub const Handler = struct {
     /// DCS isn't cut short by raw bytes in its payload), the parser will not
     /// leave `dcs_passthrough` on its own. We detect 7-bit `ESC \` and 8-bit
     /// `0x9C` here and set `dcs_ground_request`; the stream consumes it after
-    /// dispatch and returns the parser to ground.
-    fn dcsDetectSt(self: *Handler, byte: u8) void {
+    /// dispatch and returns the parser to ground. `in_utf8` is true when the
+    /// byte is a continuation byte of a multi-byte sequence (see `dcsPutTmux`),
+    /// where `0x9C` is payload, not ST.
+    fn dcsDetectSt(self: *Handler, byte: u8, in_utf8: bool) void {
         // ROOTSHELL-TMUX (id=streamterm-dcs-can-sub): CAN (0x18) / SUB (0x1A) is
         // an ECMA-48 abort of the control string. The fork's parse table forwards
         // them as `.put` (so a raw payload byte can't cut the gateway's
@@ -564,9 +577,44 @@ pub const Handler = struct {
         }
         switch (byte) {
             0x1B => self.dcs_pending_esc = true, // possible start of 7-bit ST
-            0x9C => self.dcs_ground_request = true, // 8-bit C1 ST
+            0x9C => if (!in_utf8) {
+                self.dcs_ground_request = true; // 8-bit C1 ST
+            },
             else => {},
         }
+    }
+
+    /// Track UTF-8 multi-byte state across DCS put bytes so `0x9C` inside a
+    /// well-formed sequence is not mistaken for an 8-bit ST. Returns whether
+    /// `byte` is a valid continuation byte owed by an earlier lead byte; a
+    /// byte outside the lead-dependent range (e.g. `E0 9C`, `F4 9C`) breaks
+    /// the sequence and is classified on its own. Known limit: a range-valid
+    /// 0x9C is payload immediately; if the sequence is then left incomplete,
+    /// that 0x9C is not retroactively an ST (the DCS ends at the next ST).
+    fn dcsTrackUtf8(self: *Handler, byte: u8) bool {
+        if (self.dcs_utf8_pending > 0) {
+            const lo: u8, const hi: u8 = switch (self.dcs_utf8_lead) {
+                0xE0 => .{ 0xA0, 0xBF },
+                0xED => .{ 0x80, 0x9F },
+                0xF0 => .{ 0x90, 0xBF },
+                0xF4 => .{ 0x80, 0x8F },
+                else => .{ 0x80, 0xBF },
+            };
+            self.dcs_utf8_lead = 0;
+            if (byte >= lo and byte <= hi) {
+                self.dcs_utf8_pending -= 1;
+                return true;
+            }
+            self.dcs_utf8_pending = 0;
+        }
+        self.dcs_utf8_pending = switch (byte) {
+            0xC2...0xDF => 1,
+            0xE0...0xEF => 2,
+            0xF0...0xF4 => 3,
+            else => 0,
+        };
+        self.dcs_utf8_lead = if (self.dcs_utf8_pending > 0) byte else 0;
+        return false;
     }
 
     /// Returns (and clears) whether the last DCS put completed a string
@@ -591,21 +639,22 @@ pub const Handler = struct {
     /// handler must not see them. Every other byte is only *watched* (string
     /// terminator detection, envelope prefix matching) and still forwarded.
     fn dcsPutTmux(self: *Handler, byte: u8) bool {
+        const in_utf8 = self.dcsTrackUtf8(byte);
         if (comptime build_options.tmux_control_mode) {
             switch (self.tmux_passthrough.phase) {
                 .inactive => {},
                 .maybe, .confirming => {
                     // Confirm also runs dcsDetectSt as its fallback.
-                    self.tmuxPassthroughConfirm(byte);
+                    self.tmuxPassthroughConfirm(byte, in_utf8);
                     return false;
                 },
                 .active => {
-                    self.tmuxPassthroughPut(byte);
+                    self.tmuxPassthroughPut(byte, in_utf8);
                     return true;
                 },
             }
         }
-        self.dcsDetectSt(byte);
+        self.dcsDetectSt(byte, in_utf8);
         return false;
     }
 
@@ -613,9 +662,9 @@ pub const Handler = struct {
     /// keep `dcsDetectSt` live as a fallback because `mux;` carries no string
     /// terminator, so a non-tmux DCS whose final is also 't' (or a bare
     /// `ESC Pt`) still terminates correctly the instant the prefix mismatches.
-    fn tmuxPassthroughConfirm(self: *Handler, byte: u8) void {
+    fn tmuxPassthroughConfirm(self: *Handler, byte: u8, in_utf8: bool) void {
         const pt = &self.tmux_passthrough;
-        self.dcsDetectSt(byte);
+        self.dcsDetectSt(byte, in_utf8);
         if (byte == TmuxPassthrough.confirm[pt.match]) {
             pt.match += 1;
             if (pt.match == TmuxPassthrough.confirm.len) {
@@ -638,7 +687,7 @@ pub const Handler = struct {
     /// Un-double one inner byte of a confirmed tmux passthrough payload. tmux
     /// doubles every inner ESC, so `ESC ESC` -> one literal ESC and a lone
     /// `ESC \` is the real string terminator (NOT a doubled `ESC ESC \`).
-    fn tmuxPassthroughPut(self: *Handler, byte: u8) void {
+    fn tmuxPassthroughPut(self: *Handler, byte: u8, in_utf8: bool) void {
         const pt = &self.tmux_passthrough;
         if (pt.overflowed) return; // bailed; swallow until the next reset
         // ECMA-48 control-string controls, mirrored from `dcsDetectSt` so a
@@ -646,17 +695,18 @@ pub const Handler = struct {
         // the usual 7-bit `ESC \`) recovers instead of wedging the parser in
         // dcs_passthrough — swallowing later pane output up to the byte cap. CAN
         // (0x18) / SUB (0x1A) abort the string (discard the partial payload); the
-        // 8-bit ST (0x9C) terminates it like `ESC \`. These bytes can't be part
-        // of a doubled escape (only ESC is doubled) and never occur in a Kitty
-        // base64 payload, so honoring them here is safe. ROOTSHELL-TMUX
-        // (id=streamterm-tmux-passthrough)
+        // 8-bit ST (0x9C) terminates it like `ESC \`. None of these can be part
+        // of a doubled escape (only ESC is doubled). The payload may be any
+        // UTF-8 (a wrapped OSC 9 body, an OSC 0 title), where 0x9C is a
+        // continuation byte, so it is only an ST outside a multi-byte sequence.
+        // ROOTSHELL-TMUX (id=streamterm-tmux-passthrough)
         switch (byte) {
             0x18, 0x1A => {
                 self.dcs_ground_request = true;
                 pt.reset();
                 return;
             },
-            0x9C => return self.tmuxPassthroughFinish(),
+            0x9C => if (!in_utf8) return self.tmuxPassthroughFinish(),
             else => {},
         }
         if (pt.pending_esc) {
@@ -4337,6 +4387,64 @@ test "tmux passthrough: 8-bit ST terminates, CAN/SUB aborts (no wedge)" {
         try testing.expect(std.mem.indexOf(u8, str, "XYZ") != null);
     }
 
+    // 0x9C as a UTF-8 continuation byte (`Ü` = C3 9C, `远` = E8 BF 9C) is
+    // payload, not ST: the envelope must run to its real `ESC \`.
+    {
+        var t: Terminal = try .init(testing.io, testing.allocator, .{ .cols = 10, .rows = 10 });
+        defer t.deinit(testing.allocator);
+        const S = struct {
+            var recovered: std.ArrayList(u8) = .empty;
+            var calls: usize = 0;
+            fn cb(_: *Handler, data: []const u8) void {
+                calls += 1;
+                recovered.appendSlice(testing.allocator, data) catch @panic("OOM");
+            }
+        };
+        S.recovered = .empty;
+        S.calls = 0;
+        defer S.recovered.deinit(testing.allocator);
+        var handler: Handler = .init(&t);
+        handler.effects.dcs_passthrough = &S.cb;
+        var s: Stream = .init(.{ .allocator = testing.allocator, .handler = handler });
+        defer s.deinit();
+
+        s.nextSlice("\x1bPtmux;Ü远B\x1b\\");
+        try testing.expectEqual(@as(usize, 1), S.calls);
+        try testing.expectEqualStrings("Ü远B", S.recovered.items);
+        try testing.expectEqual(.ground, s.parser.state);
+        s.nextSlice("XYZ");
+        const str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("XYZ", str);
+    }
+
+    // A 0x9C after a lead byte whose first continuation range excludes it
+    // (E0 needs A0-BF, F4 needs 80-8F) is malformed UTF-8, so it is a raw ST:
+    // the envelope must terminate rather than swallow the following output.
+    for ([_][]const u8{ "\x1bPtmux;A\xe0\x9c", "\x1bPtmux;A\xf4\x9c" }) |input| {
+        var t: Terminal = try .init(testing.io, testing.allocator, .{ .cols = 10, .rows = 10 });
+        defer t.deinit(testing.allocator);
+        const S = struct {
+            var calls: usize = 0;
+            fn cb(_: *Handler, _: []const u8) void {
+                calls += 1;
+            }
+        };
+        S.calls = 0;
+        var handler: Handler = .init(&t);
+        handler.effects.dcs_passthrough = &S.cb;
+        var s: Stream = .init(.{ .allocator = testing.allocator, .handler = handler });
+        defer s.deinit();
+
+        s.nextSlice(input);
+        try testing.expectEqual(@as(usize, 1), S.calls);
+        try testing.expectEqual(.ground, s.parser.state);
+        s.nextSlice("XYZ");
+        const str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("XYZ", str);
+    }
+
     // CAN (0x18) aborts: the partial payload is discarded (no replay) and the
     // parser returns to ground so following input still works (no wedge).
     {
@@ -4362,6 +4470,90 @@ test "tmux passthrough: 8-bit ST terminates, CAN/SUB aborts (no wedge)" {
         const str = try t.plainString(testing.allocator);
         defer testing.allocator.free(str);
         try testing.expect(std.mem.indexOf(u8, str, "ABC") != null);
+    }
+}
+
+// Regression: a wrapped OSC 9 whose UTF-8 body contains 0x9C continuation
+// bytes used to be cut at the first one (treated as 8-bit ST): a truncated
+// notification fired and the rest of the body printed into the grid.
+test "tmux passthrough: wrapped OSC 9 with UTF-8 body containing 0x9C" {
+    if (comptime !build_options.tmux_control_mode) return error.SkipZigTest;
+
+    var t: Terminal = try .init(testing.io, testing.allocator, .{ .cols = 40, .rows = 10 });
+    defer t.deinit(testing.allocator);
+
+    const body = "构建完成，共有 3 个远程分支已更新 Ü";
+    const S = struct {
+        var stream: ?*Stream = null;
+        var replayed: std.ArrayList(u8) = .empty;
+        var count: usize = 0;
+        var last_body: []const u8 = "";
+        fn passthrough(_: *Handler, data: []const u8) void {
+            // Buffer like the viewer: replay happens after nextSlice returns.
+            replayed.appendSlice(testing.allocator, data) catch @panic("OOM");
+        }
+        fn notify(_: *Handler, n: Action.ShowDesktopNotification) void {
+            count += 1;
+            last_body = testing.allocator.dupe(u8, n.body) catch @panic("OOM");
+        }
+    };
+    S.replayed = .empty;
+    S.count = 0;
+    S.last_body = "";
+    defer S.replayed.deinit(testing.allocator);
+    defer if (S.last_body.len > 0) testing.allocator.free(S.last_body);
+
+    var handler: Handler = .init(&t);
+    handler.effects.dcs_passthrough = &S.passthrough;
+    handler.effects.desktop_notification = &S.notify;
+    var s: Stream = .init(.{ .allocator = testing.allocator, .handler = handler });
+    defer s.deinit();
+
+    s.nextSlice("\x1bPtmux;\x1b\x1b]9;" ++ body ++ "\x07\x1b\\");
+    try testing.expectEqual(.ground, s.parser.state);
+    try testing.expectEqual(@as(usize, 0), S.count);
+    try testing.expectEqualStrings("\x1b]9;" ++ body ++ "\x07", S.replayed.items);
+
+    // Replay at the clean boundary, as `replayPanePassthrough` does.
+    s.nextSlice(S.replayed.items);
+    try testing.expectEqual(@as(usize, 1), S.count);
+    try testing.expectEqualStrings(body, S.last_body);
+    try testing.expectEqual(.ground, s.parser.state);
+    try testing.expectEqual(@as(u32, 0), s.utf8decoder.state);
+
+    s.nextSlice("OK");
+    const str = try t.plainString(testing.allocator);
+    defer testing.allocator.free(str);
+    try testing.expectEqualStrings("OK", str);
+}
+
+// Same for an ordinary (non-tmux) pane DCS: `dcsDetectSt` must not ground the
+// parser on a 0x9C continuation byte, or the tail of the DCS prints as text.
+test "pane DCS: 0x9C inside UTF-8 payload does not terminate" {
+    if (comptime !build_options.tmux_control_mode) return error.SkipZigTest;
+
+    var t: Terminal = try .init(testing.io, testing.allocator, .{ .cols = 20, .rows = 5 });
+    defer t.deinit(testing.allocator);
+    var s: Stream = .init(.{ .allocator = testing.allocator, .handler = .init(&t) });
+    defer s.deinit();
+
+    s.nextSlice("\x1bPqÜ远AB\x1b\\XYZ");
+    try testing.expectEqual(.ground, s.parser.state);
+    {
+        const str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("XYZ", str);
+    }
+
+    // Malformed UTF-8 (E0 9C is out of range) followed by raw output: the
+    // 0x9C is a real ST and the DCS must not swallow what follows.
+    t.fullReset();
+    s.nextSlice("\x1bPqA\xe0\x9cXYZ");
+    try testing.expectEqual(.ground, s.parser.state);
+    {
+        const str = try t.plainString(testing.allocator);
+        defer testing.allocator.free(str);
+        try testing.expectEqualStrings("XYZ", str);
     }
 }
 

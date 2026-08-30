@@ -6043,6 +6043,10 @@ test "pane DCS terminates and doesn't swallow the rest of the stream" {
         "\x1bPq\x1b\\", // sixel-style
         "\x1bP+q544E\x1b\\", // XTGETTCAP
         "\x1bPt\x9c", // 8-bit C1 ST
+        "\x1bPqÜ远\x1b\\", // 0x9C as a UTF-8 continuation byte is not ST
+        "\x1bPtmux;\x1b\x1b]0;Ü远\x07\x1b\\", // same inside a tmux envelope
+        "\x1bPq\xe0\x9c", // malformed UTF-8: 0x9C is a real 8-bit ST
+        "\x1bPtmux;\xf4\x9c", // same inside a tmux envelope
     };
     for (dcs_prefixes) |prefix| {
         var t: Terminal = try .init(testing.io, testing.allocator, .{ .cols = 100, .rows = 30 });
@@ -9108,6 +9112,75 @@ test "pane OSC 52 emits a pane_clipboard_write action" {
         }
     }
     try testing.expect(found);
+}
+
+test "pane wrapped OSC 9 with 0x9C in body notifies once and prints nothing" {
+    // ROOTSHELL-TMUX (id=streamterm-tmux-passthrough): a `tmux;` passthrough
+    // whose UTF-8 payload contains 0x9C continuation bytes must reach its real
+    // `ESC \`; cutting it early leaked the body tail into the pane grid.
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
+    defer viewer.deinit();
+
+    try testViewer(&viewer, &.{
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{
+            .input = .{ .tmux = .{ .session_changed = .{ .id = 1, .name = "test" } } },
+            .contains_command = "refresh-client",
+        },
+        .{ .input = .{ .tmux = blockEnd("") }, .contains_command = "display-message" },
+        .{ .input = .{ .tmux = blockEnd("3.5a") }, .contains_command = "list-windows" },
+        .{
+            .input = .{ .tmux = blockEnd(
+                \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
+            ) },
+            .contains_tags = &.{ .windows, .command },
+        },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+    });
+
+    const pane = viewer.panes.get(0).?;
+    pane.initialized = true;
+
+    const S = struct {
+        var count: usize = 0;
+        var last_body: []const u8 = "";
+        fn post(_: ?*anyopaque, event: Viewer.PaneOscEvent) void {
+            switch (event) {
+                .notification => |n| {
+                    count += 1;
+                    last_body = testing.allocator.dupe(u8, n.body) catch @panic("OOM");
+                },
+                else => {},
+            }
+        }
+        fn wake(_: ?*anyopaque) void {}
+    };
+    S.count = 0;
+    S.last_body = "";
+    defer if (S.last_body.len > 0) testing.allocator.free(S.last_body);
+
+    var render_mutex: std.Io.Mutex = .init;
+    var dummy_ctx: u8 = 0;
+    pane.attachRenderer(&render_mutex, &dummy_ctx, S.wake, &dummy_ctx, S.post);
+    defer pane.detachRenderer();
+
+    const body = "构建完成，共有 3 个远程分支已更新 Ü";
+    _ = viewer.next(.{ .tmux = .{ .output = .{
+        .pane_id = 0,
+        .data = "\\033Ptmux;\\033\\033]9;" ++ body ++ "\\007\\033\\134",
+    } } });
+    _ = viewer.next(.{ .tmux = .{ .output = .{ .pane_id = 0, .data = "OK" } } });
+
+    try testing.expectEqual(@as(usize, 1), S.count);
+    try testing.expectEqualStrings(body, S.last_body);
+    const str = try pane.terminal.plainString(testing.allocator);
+    defer testing.allocator.free(str);
+    try testing.expectEqualStrings("OK", str);
 }
 
 test "Action.format handles focus action" {
