@@ -16,9 +16,10 @@
 //! This is a pure rolling matcher over the discarded stream: it consumes
 //! (discards) bytes until a line that BEGINS with `%exit` has been consumed
 //! AND the following ST (7-bit `ESC \` or 8-bit 0x9C) has been consumed, or
-//! until a byte budget / wall-clock deadline expires (the `%exit` may never
-//! come if the remote client outlives us). Bytes after the boundary are the
-//! shell's legitimate output and must be processed normally.
+//! until a fresh ESC begins a replacement control-mode DCS, or until a byte
+//! budget / wall-clock deadline expires. Bytes after the boundary are returned
+//! to normal processing; notably the fresh ESC is not consumed, so the VT
+//! parser receives the replacement `ESC P 1000 p` preamble intact.
 //!
 //! Pure state machine — no allocation, no clock access (the caller passes
 //! `now_ms`) — so chunk-boundary behavior is unit-testable byte by byte.
@@ -90,6 +91,19 @@ pub const ExitDrain = struct {
                 return i;
             }
             const c = chunk[i];
+
+            // A replacement `tmux -CC` starts a fresh DCS with ESC P 1000 p.
+            // Stop BEFORE consuming ESC so the normal VT path sees the entire
+            // preamble and hooks the new control viewer. Control-mode payload
+            // escapes terminal ESC bytes, so before the old `%exit` boundary a
+            // raw ESC is either this fresh handoff or a closing ST whose `%exit`
+            // was lost; returning either to the ground parser is safe. Do not
+            // take this branch while awaiting the known old ST: that boundary
+            // must still be consumed by the drain below.
+            if (c == 0x1B and self.state != .await_st) {
+                self.state = .done;
+                return i;
+            }
             self.budget -= 1;
 
             switch (self.state) {
@@ -225,4 +239,24 @@ test "exit drain: ESC ESC \\ still terminates" {
     const consumed = d.feed(input, 1);
     try t.expect(d.isDone());
     try t.expectEqualStrings("tail", input[consumed..]);
+}
+
+test "exit drain: fresh tmux DCS is handed to normal parser intact" {
+    const t = std.testing;
+    var d = ExitDrain.init(0);
+    const input = "%output %1 stale\n\x1bP1000p%begin 1 2 0\n";
+    const consumed = d.feed(input, 1);
+    try t.expect(d.isDone());
+    try t.expectEqualStrings("\x1bP1000p%begin 1 2 0\n", input[consumed..]);
+}
+
+test "exit drain: fresh tmux DCS split before ESC is handed off" {
+    const t = std.testing;
+    var d = ExitDrain.init(0);
+    try t.expectEqual(@as(usize, 6), d.feed("stale\n", 1));
+    const input = "\x1bP1000p%begin 1 2 0\n";
+    const consumed = d.feed(input, 1);
+    try t.expectEqual(@as(usize, 0), consumed);
+    try t.expect(d.isDone());
+    try t.expectEqualStrings(input, input[consumed..]);
 }
