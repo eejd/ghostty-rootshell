@@ -558,6 +558,13 @@ pub const StreamHandler = struct {
                 if (comptime tmux_enabled) self.tmux_topology_retry = true;
             },
             .tmux_command_response => |resp| resp.deinit(),
+            // The viewer dedupes repeat titles; a dropped one must be
+            // re-sendable on the next event. (id=viewer-title-dedupe)
+            .tmux_title_changed => |tc| if (comptime tmux_enabled) {
+                if (tc.tmux_window_id) |window_id| {
+                    if (self.tmux_viewer) |viewer| viewer.forgetEmittedTitle(window_id);
+                }
+            },
             // Ordinary messages reach the bounded drop path too (the
             // unhooked parse also runs with the flag set): WriteReq payloads
             // may be `.alloc` and own heap memory (OSC 52 clipboard writes,

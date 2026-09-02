@@ -441,6 +441,14 @@ pub const Viewer = struct {
     /// Freed on replace and on deinit.
     pane_titles: PaneTitlesMap = .empty,
 
+    /// Last title emitted as a `.title` action per window id, owned on
+    /// `self.alloc`. One OSC title frame reaches us twice (the pane-output
+    /// fingerprint and the `#T` subscription), so `emitWindowTitle` drops a
+    /// repeat before it becomes a mailbox message and an app-thread reconcile.
+    /// Cleared whenever the app side may need a re-send (full list-windows
+    /// rebuild, forced title re-push). ROOTSHELL-TMUX (id=viewer-title-dedupe)
+    last_emitted_titles: PaneTitlesMap = .empty,
+
     /// Whether the pane-title subscription command has been queued yet. We
     /// queue it once, after the first list-windows' capture sequence, so it
     /// trails (rather than interrupts) the startup command flow. The tmux
@@ -1392,6 +1400,8 @@ pub const Viewer = struct {
             while (it.next()) |kv| self.alloc.free(kv.value_ptr.*);
             self.pane_titles.deinit(self.alloc);
         }
+        self.clearEmittedTitles();
+        self.last_emitted_titles.deinit(self.alloc);
         self.action_arena.promote(self.alloc).deinit();
     }
 
@@ -1997,6 +2007,8 @@ pub const Viewer = struct {
         // making tmux re-push every current title. The cache is KEPT so unchanged
         // tabs render immediately (no blank flash) until the re-push lands.
         self.title_subscription_queued = false;
+        // The re-push must reach the app even when the value is unchanged.
+        self.clearEmittedTitles();
     }
 
     /// Whether the viewer is still awaiting its resync probe marker. The app
@@ -2871,6 +2883,11 @@ pub const Viewer = struct {
         const title: []const u8 = self.resolveWindowTitle(window_id, window_name);
         if (title.len == 0) return;
 
+        // Same value the app already has: skip the message and the reconcile.
+        if (self.last_emitted_titles.get(window_id)) |last| {
+            if (std.mem.eql(u8, last, title)) return;
+        }
+
         var act_arena = self.action_arena.promote(self.alloc);
         defer self.action_arena = act_arena.state;
         actions.append(act_arena.allocator(), .{ .title = .{
@@ -2878,7 +2895,35 @@ pub const Viewer = struct {
             .name = title,
         } }) catch {
             log.warn("failed to queue title action for window={}", .{window_id});
+            return;
         };
+        // Recorded only once queued; a later mailbox drop calls
+        // forgetEmittedTitle so the next event re-sends.
+        self.rememberEmittedTitle(window_id, title) catch {
+            log.warn("failed to record emitted title for window={}", .{window_id});
+        };
+    }
+
+    /// The app never received the last emitted title for this window (the
+    /// surface mailbox dropped it); let the next resolve send it again.
+    pub fn forgetEmittedTitle(self: *Viewer, window_id: usize) void {
+        if (self.last_emitted_titles.fetchRemove(window_id)) |kv| self.alloc.free(kv.value);
+    }
+
+    fn rememberEmittedTitle(self: *Viewer, window_id: usize, title: []const u8) Allocator.Error!void {
+        const dup = try self.alloc.dupe(u8, title);
+        errdefer self.alloc.free(dup);
+        const gop = try self.last_emitted_titles.getOrPut(self.alloc, window_id);
+        if (gop.found_existing) self.alloc.free(gop.value_ptr.*);
+        gop.value_ptr.* = dup;
+    }
+
+    /// Forget every emitted title so the next resolve for each window is sent
+    /// again. Keeps the map's capacity.
+    fn clearEmittedTitles(self: *Viewer) void {
+        var it = self.last_emitted_titles.iterator();
+        while (it.next()) |kv| self.alloc.free(kv.value_ptr.*);
+        self.last_emitted_titles.clearRetainingCapacity();
     }
 
     fn windowForActivePane(self: *const Viewer, pane_id: usize) ?usize {
@@ -3566,6 +3611,10 @@ pub const Viewer = struct {
         errdefer self.windows_arena = win_arena.state;
         _ = win_arena.reset(.free_all);
         const win_alloc = win_arena.allocator();
+
+        // A rebuild re-projects every window on the app side; let the live
+        // title route re-send once per window afterwards.
+        self.clearEmittedTitles();
 
         // Re-dupe session_name from the stack copy onto the fresh arena.
         self.session_name = win_alloc.dupe(u8, saved_name_buf[0..saved_name_len]) catch "";
@@ -9504,6 +9553,104 @@ test "window_renamed produces title action" {
                     try testing.expect(found);
                     // Window name in viewer state should also be updated
                     try testing.expectEqualStrings("vim", v.windows.items[0].name);
+                }
+            }).check,
+        },
+    });
+}
+
+test "title dedupe: pane output and subscription emit one title per value" {
+    // ROOTSHELL-TMUX (id=viewer-title-dedupe): one OSC title frame arrives via
+    // the pane-output fingerprint AND the #T subscription. The second route
+    // carries the same value and must not produce a second .title action.
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
+    defer viewer.deinit();
+    defer {
+        var it = viewer.panes.iterator();
+        while (it.next()) |kv| kv.value_ptr.*.clearPendingAttach();
+    }
+
+    const countTitles = struct {
+        fn count(actions: []const Viewer.Action) usize {
+            var n: usize = 0;
+            for (actions) |action| {
+                if (action == .title) n += 1;
+            }
+            return n;
+        }
+    }.count;
+
+    try testViewer(&viewer, &.{
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{
+            .input = .{ .tmux = .{ .session_changed = .{ .id = 1, .name = "test" } } },
+            .contains_command = "refresh-client",
+        },
+        .{ .input = .{ .tmux = blockEnd("") }, .contains_command = "display-message" },
+        .{ .input = .{ .tmux = blockEnd("3.5a") }, .contains_command = "list-windows" },
+        .{
+            .input = .{ .tmux = blockEnd("$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash") },
+            .contains_tags = &.{ .windows, .command },
+        },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        // Pane output sets the title: one .title action.
+        .{
+            .input = .{ .tmux = .{ .output = .{
+                .pane_id = 0,
+                .data = "\\033]0;spin 1\\007",
+            } } },
+            .contains_tags = &.{.title},
+            .check = (struct {
+                fn check(_: *Viewer, actions: []const Viewer.Action) anyerror!void {
+                    try testing.expectEqual(@as(usize, 1), countTitles(actions));
+                }
+            }).check,
+        },
+        // The subscription reports the same value: no second action.
+        .{
+            .input = .{ .tmux = .{ .subscription_changed = .{
+                .name = control.title_subscription_name,
+                .window_id = 0,
+                .value = "spin 1",
+            } } },
+            .check = (struct {
+                fn check(_: *Viewer, actions: []const Viewer.Action) anyerror!void {
+                    try testing.expectEqual(@as(usize, 0), countTitles(actions));
+                }
+            }).check,
+        },
+        // A new value emits again.
+        .{
+            .input = .{ .tmux = .{ .subscription_changed = .{
+                .name = control.title_subscription_name,
+                .window_id = 0,
+                .value = "spin 2",
+            } } },
+            .contains_tags = &.{.title},
+            .check = (struct {
+                fn check(v: *Viewer, actions: []const Viewer.Action) anyerror!void {
+                    try testing.expectEqual(@as(usize, 1), countTitles(actions));
+                    try testing.expectEqualStrings("spin 2", actions[actions.len - 1].title.name);
+                    // A forced re-push must reach the app even when unchanged.
+                    v.flagAllPanesForReset();
+                }
+            }).check,
+        },
+        .{
+            .input = .{ .tmux = .{ .subscription_changed = .{
+                .name = control.title_subscription_name,
+                .window_id = 0,
+                .value = "spin 2",
+            } } },
+            .contains_tags = &.{.title},
+            .check = (struct {
+                fn check(_: *Viewer, actions: []const Viewer.Action) anyerror!void {
+                    try testing.expectEqual(@as(usize, 1), countTitles(actions));
                 }
             }).check,
         },
