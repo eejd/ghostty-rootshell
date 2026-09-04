@@ -5753,6 +5753,22 @@ pub fn cursorPosCallback(
 /// Call to notify Ghostty that the color scheme for the terminal has
 /// changed.
 pub fn colorSchemeCallback(self: *Surface, scheme: apprt.ColorScheme) !void {
+    return self.colorSchemeCallbackWithReport(scheme, false);
+}
+
+/// Embedded clients use this when applying a complete config/scheme delivery.
+/// The explicit delivery is itself an appearance event, even when the semantic
+/// light/dark value is unchanged (for example, editing the active dark theme).
+/// The termio layer still suppresses the actual 997 unless mode 2031 is active.
+pub fn colorSchemeCallbackForced(self: *Surface, scheme: apprt.ColorScheme) !void {
+    return self.colorSchemeCallbackWithReport(scheme, true);
+}
+
+fn colorSchemeCallbackWithReport(
+    self: *Surface,
+    scheme: apprt.ColorScheme,
+    force_report: bool,
+) !void {
     // Crash metadata in case we crash in here
     crash.sentry.thread_state = self.crashThreadState();
     defer crash.sentry.thread_state = null;
@@ -5762,6 +5778,7 @@ pub fn colorSchemeCallback(self: *Surface, scheme: apprt.ColorScheme) !void {
         &self.system_color_scheme,
         &self.config_conditional_state.theme,
         scheme,
+        force_report,
     )) return;
 
     // The appearance transition also changed conditional configuration state.
@@ -5773,12 +5790,13 @@ fn applyColorSchemeTransition(
     system_scheme: *std.atomic.Value(apprt.ColorScheme),
     conditional_theme: *configpkg.ConditionalState.Theme,
     scheme: apprt.ColorScheme,
+    force_report: bool,
 ) bool {
     // Reporting follows the surface's effective appearance, which may differ
     // from the app default when an embedder supports per-window/tab themes.
     // It is independent of conditional configuration reloads: a normal
     // light/dark transition changes both and still needs a live mode-2031 DSR.
-    if (system_scheme.swap(scheme, .monotonic) != scheme) {
+    if (system_scheme.swap(scheme, .monotonic) != scheme or force_report) {
         reporter.reportColorSchemeChanged();
     }
 
@@ -7390,6 +7408,7 @@ test "color scheme transition reports independently of config reload" {
         &system_scheme,
         &conditional_theme,
         .dark,
+        false,
     ));
     try std.testing.expectEqual(@as(usize, 1), reporter.reports);
     try std.testing.expectEqual(apprt.ColorScheme.dark, system_scheme.load(.monotonic));
@@ -7401,8 +7420,21 @@ test "color scheme transition reports independently of config reload" {
         &system_scheme,
         &conditional_theme,
         .dark,
+        false,
     ));
     try std.testing.expectEqual(@as(usize, 1), reporter.reports);
+
+    // An embedded config/scheme delivery is an explicit appearance event.
+    // Same-scheme theme edits report exactly once without reloading conditional
+    // configuration.
+    try std.testing.expect(!applyColorSchemeTransition(
+        &reporter,
+        &system_scheme,
+        &conditional_theme,
+        .dark,
+        true,
+    ));
+    try std.testing.expectEqual(@as(usize, 2), reporter.reports);
 }
 
 test "initial surface scheme overrides app conditional theme" {

@@ -995,7 +995,7 @@ pub const Surface = struct {
     }
 
     pub fn colorSchemeCallback(self: *Surface, scheme: apprt.ColorScheme) void {
-        self.core_surface.colorSchemeCallback(scheme) catch |err| {
+        self.core_surface.colorSchemeCallbackForced(scheme) catch |err| {
             log.err("error setting color scheme err={}", .{err});
             return;
         };
@@ -2269,7 +2269,9 @@ pub const CAPI = struct {
         return .fromSlice(copy);
     }
 
-    /// Update the color scheme of the surface.
+    /// Update the color scheme of the surface. An explicit embedded delivery
+    /// publishes one mode-2031 appearance event even when the semantic value is
+    /// unchanged, allowing same-scheme theme edits to reach subscribed TUIs.
     export fn ghostty_surface_set_color_scheme(surface: *Surface, scheme_raw: c_int) void {
         const scheme = std.enums.fromInt(apprt.ColorScheme, scheme_raw) orelse return;
         surface.colorSchemeCallback(scheme);

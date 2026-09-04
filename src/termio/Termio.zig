@@ -526,7 +526,6 @@ pub fn changeConfig(self: *Termio, td: *ThreadData, config: *DerivedConfig) !voi
     // gateway-owned viewer_terminal (threadEnter swaps renderer_state.terminal
     // to it), not self.terminal, so mirror the theme colors there too. Safe
     // under renderer_state.mutex (held above) = this pane's renderer_mutex.
-    var tmux_theme_subscribed = false;
     if (self.backend == .tmux) {
         if (self.backend.tmux.viewer_terminal) |vt| {
             vt.colors.palette.changeDefault(config.palette);
@@ -537,11 +536,6 @@ pub fn changeConfig(self: *Termio, td: *ThreadData, config: *DerivedConfig) !voi
                 const color = config.cursor_color orelse break :cursor null;
                 break :cursor color.toTerminalRGB() orelse break :cursor null;
             };
-            // StreamHandler owns self.terminal, which stays unused for a
-            // native tmux child. Capture the subscription from the shared
-            // viewer terminal while its renderer mutex is held so same-scheme
-            // palette/theme edits can still emit the required notification.
-            tmux_theme_subscribed = vt.modes.get(.report_color_scheme);
         }
     }
 
@@ -565,12 +559,6 @@ pub fn changeConfig(self: *Termio, td: *ThreadData, config: *DerivedConfig) !voi
             config.foreground.toTerminalRGB(),
             config.background.toTerminalRGB(),
         );
-        if (tmux_theme_subscribed) {
-            self.backend.tmux.reportColorScheme(switch (self.system_color_scheme.load(.monotonic)) {
-                .dark => .dark,
-                .light => .light,
-            });
-        }
     }
 }
 

@@ -769,6 +769,13 @@ pub const Viewer = struct {
         terminal: Terminal,
         stream: TerminalStream,
 
+        /// Last semantic scheme received from this pane's child surface. tmux
+        /// 3.8+ natively notifies mode-2031 subscribers only when the derived
+        /// dark/light class changes; repeated explicit same-scheme deliveries
+        /// (for example an edited dark theme) therefore still need one
+        /// synthesized notification. Viewer owns this on its IO thread.
+        last_relayed_color_scheme: ?device_status.ColorScheme = null,
+
         /// Cell pixel size reported by the child surface's renderer (its font
         /// cell metrics), forwarded through `Tmux.updateViewerPaneCell` on every
         /// child resize. Zero until a child has attached and reported. Used to
@@ -5251,14 +5258,24 @@ pub const Viewer = struct {
     /// Multi-pane `resize-pane` (a split-divider drag) is forwarded unchanged.
     pub fn queueRelayedPaneCommand(self: *Viewer, cmd: []const u8) Allocator.Error!void {
         if (parsePaneColorSchemeReport(cmd)) |report| {
+            const previous_scheme = if (self.panes.get(report.pane_id)) |pane| previous: {
+                const previous = pane.last_relayed_color_scheme;
+                pane.last_relayed_color_scheme = report.scheme;
+                break :previous previous;
+            } else null;
+
             // tmux 3.6 and 3.7 answer one-shot 996 queries natively but do not
             // notify mode-2031 subscribers when refresh-client -r changes the
-            // pane background. Queue one ordered send-keys after the preceding
-            // color reports. Newer/unknown behavior is deliberately left to
-            // tmux to avoid duplicate 997 notifications.
-            if (tmuxVersionAtLeast(self.tmux_version, 3, 6) and
-                !tmuxVersionAtLeast(self.tmux_version, 3, 8))
-            {
+            // pane background, so always synthesize there. tmux 3.8+ notifies
+            // when its derived semantic class changes; synthesize only a
+            // repeated explicit same-scheme delivery (such as an edited dark
+            // theme), which native tmux suppresses. The first report is left to
+            // native tmux because its own last-theme state is authoritative.
+            const tmux_36_or_37 = tmuxVersionAtLeast(self.tmux_version, 3, 6) and
+                !tmuxVersionAtLeast(self.tmux_version, 3, 8);
+            const tmux_38_same_scheme = tmuxVersionAtLeast(self.tmux_version, 3, 8) and
+                previous_scheme == report.scheme;
+            if (tmux_36_or_37 or tmux_38_same_scheme) {
                 const bytes = switch (report.scheme) {
                     .dark => "\x1b[?997;1n",
                     .light => "\x1b[?997;2n",
@@ -6782,17 +6799,32 @@ test "queueRelayedPaneCommand synthesizes subscribed theme updates only for tmux
         cmd,
     );
 
-    // The sentinel is only produced after a one-shot query or a known mode-
-    // 2031 subscription. On newer tmux, refresh-client -r is expected to emit
-    // the native notification, so the sentinel itself must never be forwarded.
+    // On newer tmux, a semantic change is natively reported, while an explicit
+    // same-scheme theme edit still needs one synthesized notification.
     var newer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer newer.deinit();
-    newer.state = .command_queue;
+    try driveStartupOneWindow(&newer);
+    newer.alloc.free(newer.tmux_version);
     newer.tmux_version = try newer.alloc.dupe(u8, "3.8");
     try newer.queueRelayedPaneCommand(
-        "rootshell-report-color-scheme -t %7 dark\n",
+        "rootshell-report-color-scheme -t %0 dark\n",
     );
     try testing.expect(newer.command_queue.empty());
+    try newer.queueRelayedPaneCommand(
+        "rootshell-report-color-scheme -t %0 dark\n",
+    );
+    try testing.expectEqual(@as(usize, 1), newer.command_queue.len());
+    var newer_arena: ArenaAllocator = .init(testing.allocator);
+    defer newer_arena.deinit();
+    const same_scheme = (try newer.takePendingCommand(newer_arena.allocator())).?;
+    try testing.expectEqualStrings(
+        "send-keys -H -t %0 1B 5B 3F 39 39 37 3B 31 6E\n",
+        same_scheme,
+    );
+    try newer.queueRelayedPaneCommand(
+        "rootshell-report-color-scheme -t %0 light\n",
+    );
+    try testing.expectEqual(@as(usize, 1), newer.command_queue.len());
 }
 
 test "queueRelayedPaneCommand rewrites a single-pane resize to client_size" {
