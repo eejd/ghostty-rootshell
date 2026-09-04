@@ -1024,3 +1024,49 @@ pub const ThreadData = struct {
 pub fn getProcessInfo(self: *Termio, comptime info: ProcessInfo) ?ProcessInfo.Type(info) {
     return self.backend.getProcessInfo(info);
 }
+
+test "color scheme report reaches native tmux backend" {
+    const CaptureWriter = struct {
+        buffer: [128]u8 = undefined,
+        len: usize = 0,
+
+        fn controlWriter(self: *@This()) termio.Tmux.ControlWriter {
+            return .{
+                .context = @ptrCast(self),
+                .writeFn = &writeFn,
+            };
+        }
+
+        fn writeFn(
+            context: *anyopaque,
+            data: []const u8,
+        ) termio.Tmux.ControlWriter.WriteError!void {
+            const self: *@This() = @ptrCast(@alignCast(context));
+            if (data.len > self.buffer.len) return error.WriteFailed;
+            @memcpy(self.buffer[0..data.len], data);
+            self.len = data.len;
+        }
+    };
+
+    var capture: CaptureWriter = .{};
+    var scheme: std.atomic.Value(apprt.ColorScheme) = .init(.dark);
+    var io: Termio = undefined;
+    io.alloc = std.testing.allocator;
+    io.backend = .{ .tmux = termio.Tmux.init(.{
+        .pane_id = 7,
+        .window_id = 0,
+        .control_writer = capture.controlWriter(),
+    }) };
+    io.system_color_scheme = &scheme;
+
+    var td: ThreadData = undefined;
+    td.backend = .{ .tmux = .{} };
+
+    // Force avoids needing renderer state; the message handler passes the same
+    // flag through when mode 2031 is already known to be enabled.
+    try io.colorSchemeReportLocked(&td, true);
+    try std.testing.expectEqualStrings(
+        "send-keys -H -t %7 1B 5B 3F 39 39 37 3B 31 6E\n",
+        capture.buffer[0..capture.len],
+    );
+}

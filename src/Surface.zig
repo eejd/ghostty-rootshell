@@ -5732,31 +5732,45 @@ pub fn colorSchemeCallback(self: *Surface, scheme: apprt.ColorScheme) !void {
     crash.sentry.thread_state = self.crashThreadState();
     defer crash.sentry.thread_state = null;
 
-    const new_scheme: configpkg.ConditionalState.Theme = switch (scheme) {
+    if (!applyColorSchemeTransition(
+        self,
+        &self.system_color_scheme,
+        &self.config_conditional_state.theme,
+        scheme,
+    )) return;
+
+    // The appearance transition also changed conditional configuration state.
+    self.notifyConfigConditionalState();
+}
+
+fn applyColorSchemeTransition(
+    reporter: anytype,
+    system_scheme: *std.atomic.Value(apprt.ColorScheme),
+    conditional_theme: *configpkg.ConditionalState.Theme,
+    scheme: apprt.ColorScheme,
+) bool {
+    // Reporting follows the surface's effective appearance, which may differ
+    // from the app default when an embedder supports per-window/tab themes.
+    // It is independent of conditional configuration reloads: a normal
+    // light/dark transition changes both and still needs a live mode-2031 DSR.
+    if (system_scheme.swap(scheme, .monotonic) != scheme) {
+        reporter.reportColorSchemeChanged();
+    }
+
+    const new_theme: configpkg.ConditionalState.Theme = switch (scheme) {
         .light => .light,
         .dark => .dark,
     };
+    if (conditional_theme.* == new_theme) return false;
+    conditional_theme.* = new_theme;
+    return true;
+}
 
-    // Reporting follows the surface's effective appearance, which may differ
-    // from the app default when an embedder supports per-window/tab themes.
-    const system_scheme_changed =
-        self.system_color_scheme.swap(scheme, .monotonic) != scheme;
-
-    // A non-conditional theme can leave the config state unchanged even when
-    // the effective appearance changed. Report that transition directly.
-    if (self.config_conditional_state.theme == new_scheme) {
-        if (system_scheme_changed) {
-            self.queueIo(
-                .{ .color_scheme_report = .{ .force = false } },
-                .unlocked,
-            );
-        }
-        return;
-    }
-
-    // Setup our conditional state which has the current color theme.
-    self.config_conditional_state.theme = new_scheme;
-    self.notifyConfigConditionalState();
+fn reportColorSchemeChanged(self: *Surface) void {
+    self.queueIo(
+        .{ .color_scheme_report = .{ .force = false } },
+        .unlocked,
+    );
 }
 
 fn posToViewportWithSmoothOffset(
@@ -7331,4 +7345,37 @@ test "queueIo frees allocated writes in readonly mode" {
         .alloc = testing.allocator,
         .data = data,
     } }, .unlocked);
+}
+
+test "color scheme transition reports independently of config reload" {
+    const Reporter = struct {
+        reports: usize = 0,
+
+        fn reportColorSchemeChanged(self: *@This()) void {
+            self.reports += 1;
+        }
+    };
+
+    var reporter: Reporter = .{};
+    var system_scheme: std.atomic.Value(apprt.ColorScheme) = .init(.light);
+    var conditional_theme: configpkg.ConditionalState.Theme = .light;
+
+    try std.testing.expect(applyColorSchemeTransition(
+        &reporter,
+        &system_scheme,
+        &conditional_theme,
+        .dark,
+    ));
+    try std.testing.expectEqual(@as(usize, 1), reporter.reports);
+    try std.testing.expectEqual(apprt.ColorScheme.dark, system_scheme.load(.monotonic));
+    try std.testing.expectEqual(configpkg.ConditionalState.Theme.dark, conditional_theme);
+
+    // Repeating the same appearance is a no-op for both paths.
+    try std.testing.expect(!applyColorSchemeTransition(
+        &reporter,
+        &system_scheme,
+        &conditional_theme,
+        .dark,
+    ));
+    try std.testing.expectEqual(@as(usize, 1), reporter.reports);
 }
