@@ -72,6 +72,10 @@ alloc: Allocator,
 /// The app that this surface is attached to.
 app: *App,
 
+/// The effective color scheme reported by this surface. This starts with the
+/// app default but can be overridden through ghostty_surface_set_color_scheme.
+system_color_scheme: std.atomic.Value(apprt.ColorScheme),
+
 /// The windowing system surface and app.
 rt_app: *apprt.runtime.App,
 rt_surface: *apprt.runtime.Surface,
@@ -639,6 +643,7 @@ pub fn initWithOptions(
         },
         .alloc = alloc,
         .app = app,
+        .system_color_scheme = .init(app.system_color_scheme.load(.monotonic)),
         .rt_app = rt_app,
         .rt_surface = rt_surface,
         .font_grid_key = font_grid_key,
@@ -756,7 +761,7 @@ pub fn initWithOptions(
             .size = size,
             .full_config = config,
             .config = try termio.Termio.DerivedConfig.init(alloc, config),
-            .system_color_scheme = &app.system_color_scheme,
+            .system_color_scheme = &self.system_color_scheme,
             .backend = backend,
             .mailbox = io_mailbox,
             .renderer_state = &self.renderer_state,
@@ -5732,8 +5737,22 @@ pub fn colorSchemeCallback(self: *Surface, scheme: apprt.ColorScheme) !void {
         .dark => .dark,
     };
 
-    // If our scheme didn't change, then we don't do anything.
-    if (self.config_conditional_state.theme == new_scheme) return;
+    // Reporting follows the surface's effective appearance, which may differ
+    // from the app default when an embedder supports per-window/tab themes.
+    const system_scheme_changed =
+        self.system_color_scheme.swap(scheme, .monotonic) != scheme;
+
+    // A non-conditional theme can leave the config state unchanged even when
+    // the effective appearance changed. Report that transition directly.
+    if (self.config_conditional_state.theme == new_scheme) {
+        if (system_scheme_changed) {
+            self.queueIo(
+                .{ .color_scheme_report = .{ .force = false } },
+                .unlocked,
+            );
+        }
+        return;
+    }
 
     // Setup our conditional state which has the current color theme.
     self.config_conditional_state.theme = new_scheme;
@@ -5977,6 +5996,11 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
 
     switch (action.scoped(.surface).?) {
         .system_color_scheme_changed => {
+            const scheme = self.app.system_color_scheme.load(.monotonic);
+            if (self.system_color_scheme.swap(scheme, .monotonic) == scheme) {
+                return true;
+            }
+
             // Termio suppresses this report unless mode 2031 is enabled.
             self.queueIo(
                 .{ .color_scheme_report = .{ .force = false } },

@@ -331,9 +331,7 @@ pub fn init(self: *Termio, alloc: Allocator, opts: termio.Options) !void {
         .clipboard_write = opts.config.clipboard_write,
         .tmux_control_mode = opts.config.tmux_control_mode, // ROOTSHELL-TMUX (id=termio-stream-config)
         .enquiry_response = opts.config.enquiry_response,
-        // Seed from config so the CSI ?996n reply is correct before the first
-        // changeConfig (id=streamhandler-inline-reports).
-        .color_scheme_is_dark = opts.config.conditional_state.theme == .dark,
+        .system_color_scheme = opts.system_color_scheme,
     };
 
     const thread_enter_state = try ThreadEnterState.create(

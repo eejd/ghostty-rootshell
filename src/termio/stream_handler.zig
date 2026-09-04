@@ -251,15 +251,14 @@ pub const StreamHandler = struct {
     /// Whether tmux control mode is enabled at runtime.
     tmux_control_mode: bool = true,
 
-    /// Cached OS color scheme (true = dark), refreshed in changeConfig from
-    /// config.conditional_state.theme. Lets `sendColorSchemeReport` answer the
+    /// Effective surface color scheme. Lets `sendColorSchemeReport` answer the
     /// CSI ?996n / mode-2031 theme query INLINE on the read thread — under the
     /// renderer lock we already hold while parsing — instead of deferring a
     /// `color_scheme_report` message that the IO thread's drainMailbox must
     /// re-acquire renderer_state.mutex to handle. That cross-thread re-lock
     /// gets starved under a heavy-output flood (zellij), stalling the drain for
     /// seconds and dropping write_small. (id=streamhandler-inline-reports)
-    color_scheme_is_dark: bool = true,
+    system_color_scheme: *const std.atomic.Value(apprt.ColorScheme),
 
     //---------------------------------------------------------------
     // Internal state
@@ -404,10 +403,6 @@ pub const StreamHandler = struct {
         self.osc_color_report_format = config.osc_color_report_format;
         self.clipboard_write = config.clipboard_write;
         self.enquiry_response = config.enquiry_response;
-        // Cache the resolved theme so we can answer the color-scheme query
-        // inline (id=streamhandler-inline-reports). Must run before the
-        // color-scheme report emitted at the end of this function.
-        self.color_scheme_is_dark = config.conditional_state.theme == .dark;
         // If tmux control mode was just disabled and a viewer is active,
         // proactively tear down the viewer and close child surfaces so
         // they don't leak until the tmux server sends an exit.
@@ -3451,11 +3446,17 @@ pub const StreamHandler = struct {
         // ROOTSHELL-TMUX (id=streamhandler-suppress-gateway-reports): drop report-generating replies on the tmux gateway.
         if (self.suppressPtyReportForTmuxGateway("color scheme")) return;
         if (!force and !self.terminal.modes.get(.report_color_scheme)) return;
-        const output: []const u8 = if (self.color_scheme_is_dark)
-            "\x1B[?997;1n"
-        else
-            "\x1B[?997;2n";
+        const output = colorSchemeReportBytes(
+            self.system_color_scheme.load(.monotonic),
+        );
         self.messageWriter(.{ .write_stable = output });
+    }
+
+    fn colorSchemeReportBytes(scheme: apprt.ColorScheme) []const u8 {
+        return switch (scheme) {
+            .dark => "\x1B[?997;1n",
+            .light => "\x1B[?997;2n",
+        };
     }
 
     /// Encode a size report INLINE (self.size is consistent under the renderer
@@ -3698,5 +3699,19 @@ pub const StreamHandler = struct {
             .content = .{ .horizontal = &children },
         };
         logPaneIds(layout);
+    }
+
+    test "color scheme report follows runtime surface state" {
+        var scheme: std.atomic.Value(apprt.ColorScheme) = .init(.light);
+        try std.testing.expectEqualStrings(
+            "\x1B[?997;2n",
+            colorSchemeReportBytes(scheme.load(.monotonic)),
+        );
+
+        scheme.store(.dark, .monotonic);
+        try std.testing.expectEqualStrings(
+            "\x1B[?997;1n",
+            colorSchemeReportBytes(scheme.load(.monotonic)),
+        );
     }
 };
