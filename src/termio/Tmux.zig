@@ -212,6 +212,16 @@ pub fn threadEnter(
 
     log.info("tmux backend thread enter pane_id={}", .{self.pane_id});
 
+    // Prime tmux's pane-local control colors from the effective config that
+    // constructed this child. RootShell can supply a tab/window override to the
+    // constructor, so this is intentionally earlier than any later config
+    // callback. The tracked relay is asynchronous, but once tmux consumes it,
+    // native CSI ?996n responses use this pane's effective background.
+    self.reportColors(
+        io.config.foreground.toTerminalRGB(),
+        io.config.background.toTerminalRGB(),
+    );
+
     // Register this child surface's renderer mutex and wake callback on the
     // viewer pane FIRST — before publishing the pane terminal to the renderer.
     // ROOTSHELL-TMUX (id=tmux-attach-order): attachRenderer installs
@@ -443,6 +453,40 @@ pub fn updateViewerPaneCell(self: *Tmux, cell_width: u32, cell_height: u32) void
     pane.cell_width = cell_width;
     pane.cell_height = cell_height;
     pane.recomputePixelSize();
+}
+
+/// Report this child surface's effective foreground/background to tmux's
+/// per-pane control-client state. tmux 3.6+ uses control_bg to answer CSI
+/// ?996n, so it remains the single query responder and cannot conflict with a
+/// second viewer-generated 997 response.
+pub fn reportColors(
+    self: *Tmux,
+    foreground: ?terminal.color.RGB,
+    background: ?terminal.color.RGB,
+) void {
+    if (foreground) |fg| self.reportColor(10, fg);
+    if (background) |bg| self.reportColor(11, bg);
+}
+
+fn reportColor(self: *Tmux, code: u8, value: terminal.color.RGB) void {
+    var buf: [160]u8 = undefined;
+    const cmd = std.fmt.bufPrint(
+        &buf,
+        "refresh-client -r \"%{d}:\\033]{d};rgb:{x:0>2}{x:0>2}/{x:0>2}{x:0>2}/{x:0>2}{x:0>2}\\033\\\\\"\n",
+        .{
+            self.pane_id,
+            code,
+            value.r,
+            value.r,
+            value.g,
+            value.g,
+            value.b,
+            value.b,
+        },
+    ) catch return;
+    self.control_writer.write(cmd) catch |err| {
+        log.warn("failed to report pane theme color code={} err={}", .{ code, err });
+    };
 }
 
 /// Forward a raw command to the tmux control mode connection.
@@ -969,6 +1013,32 @@ test "queueWrite relays color scheme report" {
     try testing.expectEqualStrings(
         "send-keys -H -t %7 1B 5B 3F 39 39 37 3B 31 6E\n",
         writer.lastCommand().?,
+    );
+}
+
+test "reportColors relays per-pane control colors" {
+    const alloc = testing.allocator;
+    var writer = TestControlWriter.init(alloc);
+    defer writer.deinit();
+
+    var tmux = Tmux.init(.{
+        .pane_id = 7,
+        .window_id = 0,
+        .control_writer = writer.controlWriter(),
+    });
+    tmux.reportColors(
+        .{ .r = 0xaa, .g = 0xbb, .b = 0xcc },
+        .{ .r = 0x01, .g = 0x02, .b = 0x03 },
+    );
+
+    try testing.expectEqual(@as(usize, 2), writer.commands.items.len);
+    try testing.expectEqualStrings(
+        "refresh-client -r \"%7:\\033]10;rgb:aaaa/bbbb/cccc\\033\\\\\"\n",
+        writer.commands.items[0],
+    );
+    try testing.expectEqualStrings(
+        "refresh-client -r \"%7:\\033]11;rgb:0101/0202/0303\\033\\\\\"\n",
+        writer.commands.items[1],
     );
 }
 

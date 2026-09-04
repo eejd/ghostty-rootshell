@@ -1149,6 +1149,18 @@ GHOSTTY_API ghostty_surface_t ghostty_surface_new_tmux_pane(
     void* viewer_terminal,
     void* viewer_pane,
     const ghostty_surface_config_s*);
+// RootShell extension: seed the effective config and semantic appearance
+// before the tmux child surface starts its renderer and IO threads.
+GHOSTTY_API ghostty_surface_t ghostty_surface_new_tmux_pane_with_theme(
+    ghostty_app_t,
+    ghostty_surface_t,
+    uintptr_t window_id,
+    uintptr_t pane_id,
+    void* viewer_terminal,
+    void* viewer_pane,
+    const ghostty_surface_config_s*,
+    ghostty_config_t,
+    ghostty_color_scheme_e);
 // ROOTSHELL-TMUX END FROZEN-ABI (id=ghostty-h-reconcile)
 
 typedef void (*ghostty_runtime_wakeup_cb)(void*);

@@ -489,6 +489,11 @@ const DerivedConfig = struct {
 /// pane terminal (single-terminal model).
 pub const InitOptions = struct {
     tmux_backend: ?termio.Tmux.Config = null, // ROOTSHELL-TMUX (id=surface-initoptions-backend)
+    /// Effective appearance supplied by an embedder before the surface IO
+    /// thread starts. This closes the tmux-pane construction window where the
+    /// surface otherwise inherits the app-global scheme before RootShell can
+    /// apply its tab/window override.
+    initial_color_scheme: ?apprt.ColorScheme = null, // ROOTSHELL-TMUX (id=surface-initial-color-scheme)
 };
 
 /// Create a new surface. This must be called from the main thread. The
@@ -643,7 +648,9 @@ pub fn initWithOptions(
         },
         .alloc = alloc,
         .app = app,
-        .system_color_scheme = .init(app.system_color_scheme.load(.monotonic)),
+        .system_color_scheme = .init(
+            opts.initial_color_scheme orelse app.system_color_scheme.load(.monotonic),
+        ),
         .rt_app = rt_app,
         .rt_surface = rt_surface,
         .font_grid_key = font_grid_key,

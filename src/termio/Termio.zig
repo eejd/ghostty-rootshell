@@ -536,6 +536,15 @@ pub fn changeConfig(self: *Termio, td: *ThreadData, config: *DerivedConfig) !voi
                 break :cursor color.toTerminalRGB() orelse break :cursor null;
             };
         }
+        // tmux 3.6+ is the sole responder to a pane application's CSI ?996n.
+        // Keep its per-pane control colors aligned with this child surface's
+        // effective config; the tmux backend relays these reports through the
+        // tracked control channel. The explicit mode-2031 report below remains
+        // necessary on tmux 3.7c, which does not notify on control_bg changes.
+        self.backend.tmux.reportColors(
+            config.foreground.toTerminalRGB(),
+            config.background.toTerminalRGB(),
+        );
     }
 
     // Set the image limits
