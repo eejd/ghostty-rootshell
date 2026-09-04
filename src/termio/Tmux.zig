@@ -235,11 +235,6 @@ pub fn threadEnter(
     // wake the pane would not repaint until some unrelated event (the source of
     // the "super slow" pane behavior).
     if (self.viewer_pane) |pane| {
-        // The gateway owns the stream parser for this pane. Give it a provider
-        // for this child surface's per-surface atomic so CSI ?996n observes the
-        // RootShell tab/window appearance rather than the gateway default.
-        // ROOTSHELL-TMUX (id=viewer-pane-color-scheme)
-        pane.attachColorScheme(io.system_color_scheme, &currentColorScheme);
         pane.attachRenderer(
             io.renderer_state.mutex,
             @ptrCast(io),
@@ -267,15 +262,6 @@ pub fn threadEnter(
 
     // Populate the thread data with our (empty) thread state.
     td.backend = .{ .tmux = .{} };
-}
-
-fn currentColorScheme(ctx: ?*const anyopaque) terminal.device_status.ColorScheme {
-    const scheme: *const std.atomic.Value(apprt.ColorScheme) =
-        @ptrCast(@alignCast(ctx orelse unreachable));
-    return switch (scheme.load(.monotonic)) {
-        .dark => .dark,
-        .light => .light,
-    };
 }
 
 pub fn threadExit(self: *Tmux, td: *termio.Termio.ThreadData) void {
@@ -983,20 +969,6 @@ test "queueWrite relays color scheme report" {
     try testing.expectEqualStrings(
         "send-keys -H -t %7 1B 5B 3F 39 39 37 3B 31 6E\n",
         writer.lastCommand().?,
-    );
-}
-
-test "currentColorScheme reads the child surface atomic" {
-    var scheme: std.atomic.Value(apprt.ColorScheme) = .init(.dark);
-    try testing.expectEqual(
-        terminal.device_status.ColorScheme.dark,
-        currentColorScheme(&scheme),
-    );
-
-    scheme.store(.light, .monotonic);
-    try testing.expectEqual(
-        terminal.device_status.ColorScheme.light,
-        currentColorScheme(&scheme),
     );
 }
 
