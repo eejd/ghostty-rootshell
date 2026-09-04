@@ -18,6 +18,7 @@ const color = @import("../color.zig");
 const clipboard = @import("../clipboard.zig"); // ROOTSHELL-TMUX (id=viewer-clipboard): protocol-neutral clipboard write effect
 const mouse = @import("../mouse.zig");
 const osc = @import("../osc.zig"); // ROOTSHELL-TMUX (id=viewer-pane-osc): OSC 9;4 progress report type
+const device_status = @import("../device_status.zig"); // ROOTSHELL-TMUX (id=viewer-pane-color-scheme): CSI ?996n response
 const device_attributes = @import("../device_attributes.zig"); // ROOTSHELL-TMUX (id=streamterm-tmux-passthrough): DA reply for wrapped queries
 const size_report = @import("../size_report.zig"); // ROOTSHELL-TMUX (id=streamterm-tmux-passthrough): pixel-size reply for wrapped queries
 const TerminalStream = @import("../stream_terminal.zig").Stream;
@@ -810,6 +811,14 @@ pub const Viewer = struct {
         osc_post_ctx: ?*anyopaque = null,
         osc_post_fn: ?*const fn (?*anyopaque, PaneOscEvent) void = null,
 
+        /// ROOTSHELL-TMUX (id=viewer-pane-color-scheme): provider for the
+        /// attached child surface's effective appearance. The gateway owns the
+        /// live pane stream, so CSI ?996n queries in `%output` are parsed here,
+        /// not by the child IO thread. Published and cleared with the renderer
+        /// handshake so the provider context cannot outlive the child Termio.
+        color_scheme_ctx: ?*const anyopaque = null,
+        color_scheme_fn: ?*const fn (?*const anyopaque) device_status.ColorScheme = null,
+
         /// True from the moment this pane's terminal is created (io thread,
         /// `initLayout`) until a child surface attaches its renderer
         /// (`Tmux.threadEnter` clears it). While true, a child surface for this
@@ -1026,6 +1035,23 @@ pub const Viewer = struct {
         captured_visible_primary: ?[]const u8 = null,
         captured_visible_alternate: ?[]const u8 = null,
 
+        /// Publish the color-scheme provider before `attachRenderer` clears
+        /// `pending_attach`. Its final release-store makes these earlier stores
+        /// visible to the gateway thread alongside the rest of the handshake.
+        pub fn attachColorScheme(
+            self: *Pane,
+            ctx: *const anyopaque,
+            provider: *const fn (?*const anyopaque) device_status.ColorScheme,
+        ) void {
+            @atomicStore(?*const anyopaque, &self.color_scheme_ctx, ctx, .release);
+            @atomicStore(
+                ?*const fn (?*const anyopaque) device_status.ColorScheme,
+                &self.color_scheme_fn,
+                provider,
+                .release,
+            );
+        }
+
         /// Child IO thread (`Tmux.threadEnter`): publish the attach handshake.
         /// Stores the wake context/fn and renderer mutex with release ordering,
         /// then clears `pending_attach` LAST, so a gateway acquire-load that sees
@@ -1095,6 +1121,16 @@ pub const Viewer = struct {
             // concurrent gateway post skips. ROOTSHELL-TMUX (id=viewer-pane-osc)
             @atomicStore(?*const fn (?*anyopaque, PaneOscEvent) void, &self.osc_post_fn, null, .release);
             @atomicStore(?*anyopaque, &self.osc_post_ctx, null, .release);
+            // Clear the appearance callback before its Termio-owned context.
+            // A gateway already inside lockRenderer is covered by the users
+            // drain below. ROOTSHELL-TMUX (id=viewer-pane-color-scheme)
+            @atomicStore(
+                ?*const fn (?*const anyopaque) device_status.ColorScheme,
+                &self.color_scheme_fn,
+                null,
+                .release,
+            );
+            @atomicStore(?*const anyopaque, &self.color_scheme_ctx, null, .release);
             @atomicStore(?*std.Io.Mutex, &self.renderer_mutex, null, .seq_cst);
             while (@atomicLoad(usize, &self.renderer_users, .seq_cst) > 0) {
                 std.atomic.spinLoopHint();
@@ -4570,6 +4606,25 @@ pub const Viewer = struct {
         pane.responses.append(alloc, copy) catch alloc.free(copy);
     }
 
+    /// Resolve CSI ?996n from the child surface that renders this pane. The
+    /// viewer parses pane output on the gateway thread; the child tmux backend
+    /// intentionally has no output parser of its own. ROOTSHELL-TMUX
+    /// (id=viewer-pane-color-scheme)
+    fn paneColorScheme(handler: *TerminalStreamHandler) ?device_status.ColorScheme {
+        const pane: *Pane = @fieldParentPtr("terminal", handler.terminal);
+        const provider = @atomicLoad(
+            ?*const fn (?*const anyopaque) device_status.ColorScheme,
+            &pane.color_scheme_fn,
+            .acquire,
+        ) orelse return null;
+        const ctx = @atomicLoad(
+            ?*const anyopaque,
+            &pane.color_scheme_ctx,
+            .acquire,
+        ) orelse return null;
+        return provider(ctx);
+    }
+
     /// `clipboard_write` effect installed on each pane's live stream: buffer one
     /// OSC 52 SET per call for emission as a `pane_clipboard_write` action after
     /// the `%output` feed (see `flushPaneClipboard`). Recovers the owning `Pane`
@@ -5033,6 +5088,11 @@ pub const Viewer = struct {
         // defaults to readonly, so capture replays and other vtStream users are
         // unaffected.)
         pane.stream.handler.effects.write_pty = &paneWritePty;
+        // The gateway, not the child tmux backend, parses this pane's output.
+        // Read the attached child surface's live atomic scheme so harnesses in
+        // different RootShell tabs/windows receive their own effective value.
+        // ROOTSHELL-TMUX (id=viewer-pane-color-scheme)
+        pane.stream.handler.effects.color_scheme = &paneColorScheme;
         // Forward OSC 52 clipboard SETs from this pane to the app's system
         // clipboard — tmux never sets the clipboard for a -CC client (no tty).
         // ROOTSHELL-TMUX (id=viewer-clipboard)
@@ -9161,6 +9221,51 @@ test "pane OSC 52 emits a pane_clipboard_write action" {
         }
     }
     try testing.expect(found);
+}
+
+test "pane color scheme query follows attached child surface" {
+    // ROOTSHELL-TMUX (id=viewer-pane-color-scheme): `%output` is parsed by
+    // the gateway viewer, while the effective appearance belongs to the child
+    // surface rendering this pane. Verify both live values reach the pane app
+    // through the normal send-keys response route.
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
+    defer viewer.deinit();
+    try driveStartupOneWindow(&viewer);
+
+    const pane = viewer.panes.get(0).?;
+    pane.initialized = true;
+    var scheme: device_status.ColorScheme = .dark;
+    pane.attachColorScheme(&scheme, (struct {
+        fn current(ctx: ?*const anyopaque) device_status.ColorScheme {
+            const value: *const device_status.ColorScheme =
+                @ptrCast(@alignCast(ctx orelse unreachable));
+            return value.*;
+        }
+    }).current);
+
+    const dark_actions = viewer.next(.{ .tmux = .{ .output = .{
+        .pane_id = 0,
+        .data = "\\033[?996n",
+    } } });
+    const dark = firstCommandAction(dark_actions) orelse
+        return error.MissingColorSchemeReply;
+    try testing.expectEqualStrings(
+        "send-keys -H -t %0 1B 5B 3F 39 39 37 3B 31 6E\n",
+        dark,
+    );
+
+    _ = viewer.next(.{ .tmux = blockEnd("") });
+    scheme = .light;
+    const light_actions = viewer.next(.{ .tmux = .{ .output = .{
+        .pane_id = 0,
+        .data = "\\033[?996n",
+    } } });
+    const light = firstCommandAction(light_actions) orelse
+        return error.MissingColorSchemeReply;
+    try testing.expectEqualStrings(
+        "send-keys -H -t %0 1B 5B 3F 39 39 37 3B 32 6E\n",
+        light,
+    );
 }
 
 test "pane wrapped OSC 9 with 0x9C in body notifies once and prints nothing" {
