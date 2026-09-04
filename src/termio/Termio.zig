@@ -37,6 +37,9 @@ backend: termio.Backend,
 /// The derived configuration for this termio implementation.
 config: DerivedConfig,
 
+/// The system color scheme used for mode 2031 reports.
+system_color_scheme: *const std.atomic.Value(apprt.ColorScheme),
+
 /// The terminal emulator internal state. This is the abstract "terminal"
 /// that manages input, grid updating, etc. and is renderer-agnostic. It
 /// just stores internal state about a grid.
@@ -328,9 +331,7 @@ pub fn init(self: *Termio, alloc: Allocator, opts: termio.Options) !void {
         .clipboard_write = opts.config.clipboard_write,
         .tmux_control_mode = opts.config.tmux_control_mode, // ROOTSHELL-TMUX (id=termio-stream-config)
         .enquiry_response = opts.config.enquiry_response,
-        // Seed from config so the CSI ?996n reply is correct before the first
-        // changeConfig (id=streamhandler-inline-reports).
-        .color_scheme_is_dark = opts.config.conditional_state.theme == .dark,
+        .system_color_scheme = opts.system_color_scheme,
     };
 
     const thread_enter_state = try ThreadEnterState.create(
@@ -342,6 +343,7 @@ pub fn init(self: *Termio, alloc: Allocator, opts: termio.Options) !void {
         .alloc = alloc,
         .terminal = term,
         .config = opts.config,
+        .system_color_scheme = opts.system_color_scheme,
         .renderer_state = opts.renderer_state,
         .renderer_wakeup = opts.renderer_wakeup,
         .renderer_mailbox = opts.renderer_mailbox,
@@ -950,10 +952,11 @@ pub fn colorSchemeReportLocked(self: *Termio, td: *ThreadData, force: bool) !voi
     if (!force and !self.renderer_state.terminal.modes.get(.report_color_scheme)) {
         return;
     }
-    const scheme: terminalpkg.device_status.ColorScheme = switch (self.config.conditional_state.theme) {
-        .light => .light,
-        .dark => .dark,
-    };
+    const scheme: terminalpkg.device_status.ColorScheme =
+        switch (self.system_color_scheme.load(.monotonic)) {
+            .light => .light,
+            .dark => .dark,
+        };
 
     var buf: [terminalpkg.device_status.max_color_scheme_report_encode_size]u8 = undefined;
     var writer: std.Io.Writer = .fixed(&buf);
@@ -1020,4 +1023,50 @@ pub const ThreadData = struct {
 /// not available on a particular platform.
 pub fn getProcessInfo(self: *Termio, comptime info: ProcessInfo) ?ProcessInfo.Type(info) {
     return self.backend.getProcessInfo(info);
+}
+
+test "color scheme report reaches native tmux backend" {
+    const CaptureWriter = struct {
+        buffer: [128]u8 = undefined,
+        len: usize = 0,
+
+        fn controlWriter(self: *@This()) termio.Tmux.ControlWriter {
+            return .{
+                .context = @ptrCast(self),
+                .writeFn = &writeFn,
+            };
+        }
+
+        fn writeFn(
+            context: *anyopaque,
+            data: []const u8,
+        ) termio.Tmux.ControlWriter.WriteError!void {
+            const self: *@This() = @ptrCast(@alignCast(context));
+            if (data.len > self.buffer.len) return error.WriteFailed;
+            @memcpy(self.buffer[0..data.len], data);
+            self.len = data.len;
+        }
+    };
+
+    var capture: CaptureWriter = .{};
+    var scheme: std.atomic.Value(apprt.ColorScheme) = .init(.dark);
+    var io: Termio = undefined;
+    io.alloc = std.testing.allocator;
+    io.backend = .{ .tmux = termio.Tmux.init(.{
+        .pane_id = 7,
+        .window_id = 0,
+        .control_writer = capture.controlWriter(),
+    }) };
+    io.system_color_scheme = &scheme;
+
+    var td: ThreadData = undefined;
+    td.backend = .{ .tmux = .{} };
+
+    // Force avoids needing renderer state; the message handler passes the same
+    // flag through when mode 2031 is already known to be enabled.
+    try io.colorSchemeReportLocked(&td, true);
+    try std.testing.expectEqualStrings(
+        "send-keys -H -t %7 1B 5B 3F 39 39 37 3B 31 6E\n",
+        capture.buffer[0..capture.len],
+    );
 }

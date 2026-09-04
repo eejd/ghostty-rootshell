@@ -952,6 +952,26 @@ test "queueWrite escape sequence" {
     try testing.expectEqualStrings("send-keys -H -t %10 1B 5B 41\n", writer.lastCommand().?);
 }
 
+test "queueWrite relays color scheme report" {
+    const alloc = testing.allocator;
+    var writer = TestControlWriter.init(alloc);
+    defer writer.deinit();
+
+    var tmux = Tmux.init(.{
+        .pane_id = 7,
+        .window_id = 0,
+        .control_writer = writer.controlWriter(),
+    });
+
+    var td = testThreadData();
+    try tmux.queueWrite(alloc, &td, "\x1B[?997;1n", false);
+
+    try testing.expectEqualStrings(
+        "send-keys -H -t %7 1B 5B 3F 39 39 37 3B 31 6E\n",
+        writer.lastCommand().?,
+    );
+}
+
 test "queueWrite with linefeed mode" {
     const alloc = testing.allocator;
     var writer = TestControlWriter.init(alloc);
