@@ -960,7 +960,12 @@ fn processOutputLocked(self: *Termio, buf: []const u8) void {
 }
 
 /// Sends a DSR response for the current color scheme to the pty.
-pub fn colorSchemeReport(self: *Termio, td: *ThreadData, force: bool) !void {
+pub fn colorSchemeReport(
+    self: *Termio,
+    td: *ThreadData,
+    force: bool,
+    explicit_same_scheme: bool,
+) !void {
     const scheme: terminalpkg.device_status.ColorScheme =
         switch (self.system_color_scheme.load(.monotonic)) {
             .light => .light,
@@ -981,7 +986,7 @@ pub fn colorSchemeReport(self: *Termio, td: *ThreadData, force: bool) !void {
             self.renderer_state.mutex.unlock(global.io());
             if (!subscribed) return;
         }
-        self.backend.tmux.reportColorScheme(scheme);
+        self.backend.tmux.reportColorScheme(scheme, explicit_same_scheme);
         return;
     }
 
@@ -1102,9 +1107,9 @@ test "color scheme report reaches native tmux backend" {
     var td: ThreadData = undefined;
     td.backend = .{ .tmux = .{} };
 
-    try io.colorSchemeReport(&td, true);
+    try io.colorSchemeReport(&td, true, false);
     try std.testing.expectEqualStrings(
-        "rootshell-report-color-scheme -t %7 dark\n",
+        "rootshell-report-color-scheme -t %7 dark transition\n",
         capture.buffer[0..capture.len],
     );
 }

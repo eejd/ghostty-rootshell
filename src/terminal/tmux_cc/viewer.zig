@@ -769,13 +769,6 @@ pub const Viewer = struct {
         terminal: Terminal,
         stream: TerminalStream,
 
-        /// Last semantic scheme received from this pane's child surface. tmux
-        /// 3.8+ natively notifies mode-2031 subscribers only when the derived
-        /// dark/light class changes; repeated explicit same-scheme deliveries
-        /// (for example an edited dark theme) therefore still need one
-        /// synthesized notification. Viewer owns this on its IO thread.
-        last_relayed_color_scheme: ?device_status.ColorScheme = null,
-
         /// Cell pixel size reported by the child surface's renderer (its font
         /// cell metrics), forwarded through `Tmux.updateViewerPaneCell` on every
         /// child resize. Zero until a child has attached and reported. Used to
@@ -5258,23 +5251,17 @@ pub const Viewer = struct {
     /// Multi-pane `resize-pane` (a split-divider drag) is forwarded unchanged.
     pub fn queueRelayedPaneCommand(self: *Viewer, cmd: []const u8) Allocator.Error!void {
         if (parsePaneColorSchemeReport(cmd)) |report| {
-            const previous_scheme = if (self.panes.get(report.pane_id)) |pane| previous: {
-                const previous = pane.last_relayed_color_scheme;
-                pane.last_relayed_color_scheme = report.scheme;
-                break :previous previous;
-            } else null;
-
             // tmux 3.6 and 3.7 answer one-shot 996 queries natively but do not
             // notify mode-2031 subscribers when refresh-client -r changes the
             // pane background, so always synthesize there. tmux 3.8+ notifies
-            // when its derived semantic class changes; synthesize only a
-            // repeated explicit same-scheme delivery (such as an edited dark
-            // theme), which native tmux suppresses. The first report is left to
-            // native tmux because its own last-theme state is authoritative.
+            // when its derived semantic class changes; synthesize only an
+            // explicitly tagged same-scheme delivery (such as an edited dark
+            // theme), which native tmux suppresses. Intent is carried from the
+            // Surface rather than inferred from lossy per-viewer history.
             const tmux_36_or_37 = tmuxVersionAtLeast(self.tmux_version, 3, 6) and
                 !tmuxVersionAtLeast(self.tmux_version, 3, 8);
             const tmux_38_same_scheme = tmuxVersionAtLeast(self.tmux_version, 3, 8) and
-                previous_scheme == report.scheme;
+                report.explicit_same_scheme;
             if (tmux_36_or_37 or tmux_38_same_scheme) {
                 const bytes = switch (report.scheme) {
                     .dark => "\x1b[?997;1n",
@@ -5316,6 +5303,7 @@ pub const Viewer = struct {
     const PaneColorSchemeReport = struct {
         pane_id: usize,
         scheme: device_status.ColorScheme,
+        explicit_same_scheme: bool,
     };
 
     fn parsePaneColorSchemeReport(cmd: []const u8) ?PaneColorSchemeReport {
@@ -5326,14 +5314,25 @@ pub const Viewer = struct {
         if (target.len < 2 or target[0] != '%') return null;
         const pane_id = std.fmt.parseInt(usize, target[1..], 10) catch return null;
         const scheme_raw = tokens.next() orelse return null;
-        if (tokens.next() != null) return null;
         const scheme: device_status.ColorScheme = if (std.mem.eql(u8, scheme_raw, "dark"))
             .dark
         else if (std.mem.eql(u8, scheme_raw, "light"))
             .light
         else
             return null;
-        return .{ .pane_id = pane_id, .scheme = scheme };
+        const intent_raw = tokens.next() orelse return null;
+        const explicit_same_scheme = if (std.mem.eql(u8, intent_raw, "explicit"))
+            true
+        else if (std.mem.eql(u8, intent_raw, "transition"))
+            false
+        else
+            return null;
+        if (tokens.next() != null) return null;
+        return .{
+            .pane_id = pane_id,
+            .scheme = scheme,
+            .explicit_same_scheme = explicit_same_scheme,
+        };
     }
 
     const ResizePane = struct {
@@ -6760,36 +6759,41 @@ test "parseResizePane parses target/cols/rows, rejects others" {
 
 test "parsePaneColorSchemeReport validates the internal relay command" {
     const dark = Viewer.parsePaneColorSchemeReport(
-        "rootshell-report-color-scheme -t %7 dark\n",
+        "rootshell-report-color-scheme -t %7 dark transition\n",
     ).?;
     try testing.expectEqual(@as(usize, 7), dark.pane_id);
     try testing.expectEqual(device_status.ColorScheme.dark, dark.scheme);
+    try testing.expect(!dark.explicit_same_scheme);
 
     const light = Viewer.parsePaneColorSchemeReport(
-        "rootshell-report-color-scheme -t %42 light",
+        "rootshell-report-color-scheme -t %42 light explicit",
     ).?;
     try testing.expectEqual(@as(usize, 42), light.pane_id);
     try testing.expectEqual(device_status.ColorScheme.light, light.scheme);
+    try testing.expect(light.explicit_same_scheme);
 
     try testing.expect(Viewer.parsePaneColorSchemeReport(
-        "rootshell-report-color-scheme -t 7 dark",
+        "rootshell-report-color-scheme -t 7 dark transition",
     ) == null);
     try testing.expect(Viewer.parsePaneColorSchemeReport(
-        "rootshell-report-color-scheme -t %7 unknown",
+        "rootshell-report-color-scheme -t %7 unknown transition",
     ) == null);
     try testing.expect(Viewer.parsePaneColorSchemeReport(
-        "rootshell-report-color-scheme -t %7 dark extra",
+        "rootshell-report-color-scheme -t %7 dark unknown",
+    ) == null);
+    try testing.expect(Viewer.parsePaneColorSchemeReport(
+        "rootshell-report-color-scheme -t %7 dark explicit extra",
     ) == null);
 }
 
-test "queueRelayedPaneCommand synthesizes subscribed theme updates only for tmux 3.6 and 3.7" {
+test "queueRelayedPaneCommand uses explicit scheme intent across tmux versions" {
     var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
     viewer.state = .command_queue;
     viewer.tmux_version = try viewer.alloc.dupe(u8, "3.7c");
 
     try viewer.queueRelayedPaneCommand(
-        "rootshell-report-color-scheme -t %7 light\n",
+        "rootshell-report-color-scheme -t %7 light transition\n",
     );
     var arena: ArenaAllocator = .init(testing.allocator);
     defer arena.deinit();
@@ -6803,28 +6807,26 @@ test "queueRelayedPaneCommand synthesizes subscribed theme updates only for tmux
     // same-scheme theme edit still needs one synthesized notification.
     var newer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer newer.deinit();
-    try driveStartupOneWindow(&newer);
-    newer.alloc.free(newer.tmux_version);
+    newer.state = .command_queue;
     newer.tmux_version = try newer.alloc.dupe(u8, "3.8");
     try newer.queueRelayedPaneCommand(
-        "rootshell-report-color-scheme -t %0 dark\n",
+        "rootshell-report-color-scheme -t %7 dark transition\n",
     );
     try testing.expect(newer.command_queue.empty());
+    // This is deliberately the fresh viewer's first explicit relay: intent is
+    // sufficient even when transitions occurred while mode 2031 was disabled
+    // and no historical relay exists.
     try newer.queueRelayedPaneCommand(
-        "rootshell-report-color-scheme -t %0 dark\n",
+        "rootshell-report-color-scheme -t %7 dark explicit\n",
     );
     try testing.expectEqual(@as(usize, 1), newer.command_queue.len());
     var newer_arena: ArenaAllocator = .init(testing.allocator);
     defer newer_arena.deinit();
     const same_scheme = (try newer.takePendingCommand(newer_arena.allocator())).?;
     try testing.expectEqualStrings(
-        "send-keys -H -t %0 1B 5B 3F 39 39 37 3B 31 6E\n",
+        "send-keys -H -t %7 1B 5B 3F 39 39 37 3B 31 6E\n",
         same_scheme,
     );
-    try newer.queueRelayedPaneCommand(
-        "rootshell-report-color-scheme -t %0 light\n",
-    );
-    try testing.expectEqual(@as(usize, 1), newer.command_queue.len());
 }
 
 test "queueRelayedPaneCommand rewrites a single-pane resize to client_size" {

@@ -279,10 +279,13 @@ pub fn threadEnter(
     }
 
     if (report_existing_subscription) {
-        self.reportColorScheme(switch (io.system_color_scheme.load(.monotonic)) {
-            .dark => .dark,
-            .light => .light,
-        });
+        self.reportColorScheme(
+            switch (io.system_color_scheme.load(.monotonic)) {
+                .dark => .dark,
+                .light => .light,
+            },
+            false,
+        );
     }
 
     // Populate the thread data with our (empty) thread state.
@@ -490,12 +493,17 @@ pub fn reportColors(
 pub fn reportColorScheme(
     self: *Tmux,
     scheme: terminal.device_status.ColorScheme,
+    explicit_same_scheme: bool,
 ) void {
     var buf: [96]u8 = undefined;
     const cmd = std.fmt.bufPrint(
         &buf,
-        "rootshell-report-color-scheme -t %{d} {s}\n",
-        .{ self.pane_id, @tagName(scheme) },
+        "rootshell-report-color-scheme -t %{d} {s} {s}\n",
+        .{
+            self.pane_id,
+            @tagName(scheme),
+            if (explicit_same_scheme) "explicit" else "transition",
+        },
     ) catch return;
     self.control_writer.write(cmd) catch |err| {
         log.warn("failed to relay pane color scheme err={}", .{err});
@@ -1086,9 +1094,9 @@ test "reportColorScheme uses tracked gateway sentinel" {
         .control_writer = writer.controlWriter(),
     });
 
-    tmux.reportColorScheme(.light);
+    tmux.reportColorScheme(.light, true);
     try testing.expectEqualStrings(
-        "rootshell-report-color-scheme -t %7 light\n",
+        "rootshell-report-color-scheme -t %7 light explicit\n",
         writer.lastCommand().?,
     );
 }

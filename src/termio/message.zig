@@ -24,6 +24,12 @@ pub const Message = union(enum) {
     color_scheme_report: struct {
         /// Force write the current color scheme
         force: bool,
+
+        /// The embedder explicitly delivered the same semantic light/dark
+        /// value with a changed appearance configuration. tmux 3.8+ suppresses
+        /// its native report for this case, so the pane relay must synthesize
+        /// one notification without relying on historical inference.
+        explicit_same_scheme: bool = false,
     },
 
     /// Request a visibility report is sent to the PTY.
