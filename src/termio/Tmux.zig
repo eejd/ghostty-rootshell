@@ -264,10 +264,25 @@ pub fn threadEnter(
     // to attachRenderer above — so the renderer transitions atomically from the
     // child's own (empty) terminal to the shared viewer pane terminal with no
     // unlocked-write window.
+    var report_existing_subscription = false;
     if (self.viewer_terminal) |vt| {
         io.renderer_state.mutex.lockUncancelable(global.io());
         defer io.renderer_state.mutex.unlock(global.io());
         io.renderer_state.terminal = vt;
+        // The viewer terminal has parsed this pane's output, so its mode bit is
+        // the only subscription evidence available to the embedded client. Do
+        // not inject an unsolicited 997 merely because a child surface starts:
+        // applications that never enabled mode 2031 may treat it as input.
+        // A subscription established before the control client began observing
+        // the pane cannot be reconstructed safely on tmux 3.6/3.7.
+        report_existing_subscription = vt.modes.get(.report_color_scheme);
+    }
+
+    if (report_existing_subscription) {
+        self.reportColorScheme(switch (io.system_color_scheme.load(.monotonic)) {
+            .dark => .dark,
+            .light => .light,
+        });
     }
 
     // Populate the thread data with our (empty) thread state.
@@ -466,6 +481,25 @@ pub fn reportColors(
 ) void {
     if (foreground) |fg| self.reportColor(10, fg);
     if (background) |bg| self.reportColor(11, bg);
+}
+
+/// Relay a semantic appearance notification through the gateway's tracked
+/// command queue. The gateway decides from the negotiated tmux version whether
+/// it must synthesize the mode-2031 notification (3.6/3.7) or let newer tmux
+/// provide it when the background report changes.
+pub fn reportColorScheme(
+    self: *Tmux,
+    scheme: terminal.device_status.ColorScheme,
+) void {
+    var buf: [96]u8 = undefined;
+    const cmd = std.fmt.bufPrint(
+        &buf,
+        "rootshell-report-color-scheme -t %{d} {s}\n",
+        .{ self.pane_id, @tagName(scheme) },
+    ) catch return;
+    self.control_writer.write(cmd) catch |err| {
+        log.warn("failed to relay pane color scheme err={}", .{err});
+    };
 }
 
 fn reportColor(self: *Tmux, code: u8, value: terminal.color.RGB) void {
@@ -1039,6 +1073,23 @@ test "reportColors relays per-pane control colors" {
     try testing.expectEqualStrings(
         "refresh-client -r \"%7:\\033]11;rgb:0101/0202/0303\\033\\\\\"\n",
         writer.commands.items[1],
+    );
+}
+
+test "reportColorScheme uses tracked gateway sentinel" {
+    const alloc = testing.allocator;
+    var writer = TestControlWriter.init(alloc);
+    defer writer.deinit();
+    var tmux = Tmux.init(.{
+        .pane_id = 7,
+        .window_id = 0,
+        .control_writer = writer.controlWriter(),
+    });
+
+    tmux.reportColorScheme(.light);
+    try testing.expectEqualStrings(
+        "rootshell-report-color-scheme -t %7 light\n",
+        writer.lastCommand().?,
     );
 }
 

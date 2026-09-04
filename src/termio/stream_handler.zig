@@ -1525,9 +1525,11 @@ pub const StreamHandler = struct {
     /// Per-probe nonce for the dead-shell echo matcher. ROOTSHELL-TMUX
     /// (id=streamhandler-detach-echo)
     const ProbeNonce = [terminal.tmux.ProbeEchoMatcher.nonce_len]u8;
-    const ResyncProbeBuf = [terminal.tmux.Viewer.resync_probe_prefix.len +
-        terminal.tmux.ProbeEchoMatcher.nonce_len +
-        terminal.tmux.Viewer.resync_probe_suffix.len]u8;
+    const ResyncProbeBuf = [
+        terminal.tmux.Viewer.resync_probe_prefix.len +
+            terminal.tmux.ProbeEchoMatcher.nonce_len +
+            terminal.tmux.Viewer.resync_probe_suffix.len
+    ]u8;
 
     /// Build a resync probe command carrying a fresh random nonce into `buf`,
     /// returning the full command slice (writeReq copies it, so the stack
@@ -1892,6 +1894,11 @@ pub const StreamHandler = struct {
     pub fn tmuxQueuePaneCommand(self: *StreamHandler, cmd: []const u8) void { // ROOTSHELL-TMUX (id=streamhandler-pane-command)
         if (comptime !tmux_enabled) return;
         const viewer = self.tmux_viewer orelse {
+            // The appearance relay is an internal message for Viewer, not tmux
+            // syntax. A child update may race viewer teardown; drop it here
+            // rather than writing an invalid command whose untracked %error
+            // would corrupt control-response accounting.
+            if (isPaneColorSchemeRelay(cmd)) return;
             // No viewer (should not happen for a pane relay): write directly so
             // the command still reaches tmux rather than being silently lost.
             self.messageWriter(termio.Message.writeReq(self.alloc, cmd) catch return);
@@ -1910,6 +1917,14 @@ pub const StreamHandler = struct {
         // Flush now in case the queue was idle, so a pane resize/select takes
         // effect without waiting for the next inbound notification.
         self.pumpTmuxCommandQueue(viewer);
+    }
+
+    fn isPaneColorSchemeRelay(cmd: []const u8) bool {
+        return std.mem.startsWith(
+            u8,
+            std.mem.trimStart(u8, cmd, " \t\r\n"),
+            "rootshell-report-color-scheme ",
+        );
     }
 
     /// Route an app-issued query command (session dashboard: list-sessions,
@@ -3712,6 +3727,22 @@ pub const StreamHandler = struct {
         try std.testing.expectEqualStrings(
             "\x1B[?997;1n",
             colorSchemeReportBytes(scheme.load(.monotonic)),
+        );
+    }
+
+    test "pane color scheme relay is dropped after viewer teardown" {
+        if (comptime !tmux_enabled) return;
+        try std.testing.expect(isPaneColorSchemeRelay(
+            "rootshell-report-color-scheme -t %7 dark\n",
+        ));
+
+        // Only tmux_viewer is initialized deliberately. The teardown branch
+        // must return before touching a mailbox or allocator; attempting the
+        // old direct-write fallback would trip on the undefined fields.
+        var handler: StreamHandler = undefined;
+        handler.tmux_viewer = null;
+        handler.tmuxQueuePaneCommand(
+            "rootshell-report-color-scheme -t %7 dark\n",
         );
     }
 };

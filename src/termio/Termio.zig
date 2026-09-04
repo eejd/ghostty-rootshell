@@ -476,7 +476,8 @@ pub fn changeConfig(self: *Termio, td: *ThreadData, config: *DerivedConfig) !voi
     // the read thread data, all of which requires holding the renderer
     // state lock.
     self.renderer_state.mutex.lockUncancelable(global.io());
-    defer self.renderer_state.mutex.unlock(global.io());
+    var renderer_locked = true;
+    defer if (renderer_locked) self.renderer_state.mutex.unlock(global.io());
 
     // Deinit our old config. We do this in the lock because the
     // stream handler may be referencing the old config (i.e. enquiry resp)
@@ -525,6 +526,7 @@ pub fn changeConfig(self: *Termio, td: *ThreadData, config: *DerivedConfig) !voi
     // gateway-owned viewer_terminal (threadEnter swaps renderer_state.terminal
     // to it), not self.terminal, so mirror the theme colors there too. Safe
     // under renderer_state.mutex (held above) = this pane's renderer_mutex.
+    var tmux_theme_subscribed = false;
     if (self.backend == .tmux) {
         if (self.backend.tmux.viewer_terminal) |vt| {
             vt.colors.palette.changeDefault(config.palette);
@@ -535,21 +537,41 @@ pub fn changeConfig(self: *Termio, td: *ThreadData, config: *DerivedConfig) !voi
                 const color = config.cursor_color orelse break :cursor null;
                 break :cursor color.toTerminalRGB() orelse break :cursor null;
             };
+            // StreamHandler owns self.terminal, which stays unused for a
+            // native tmux child. Capture the subscription from the shared
+            // viewer terminal while its renderer mutex is held so same-scheme
+            // palette/theme edits can still emit the required notification.
+            tmux_theme_subscribed = vt.modes.get(.report_color_scheme);
         }
-        // tmux 3.6+ is the sole responder to a pane application's CSI ?996n.
-        // Keep its per-pane control colors aligned with this child surface's
-        // effective config; the tmux backend relays these reports through the
-        // tracked control channel. The explicit mode-2031 report below remains
-        // necessary on tmux 3.7c, which does not notify on control_bg changes.
-        self.backend.tmux.reportColors(
-            config.foreground.toTerminalRGB(),
-            config.background.toTerminalRGB(),
-        );
     }
 
     // Set the image limits
     self.terminal.setKittyGraphicsSizeLimit(self.alloc, config.image_storage_limit);
     self.terminal.setKittyGraphicsLoadingLimits(.allWithTempDir(global.tmpDirPath()));
+
+    // SurfaceRelayWriter uses a blocking app-mailbox push. Release the renderer
+    // mutex before reporting colors so a full queue cannot deadlock against the
+    // app thread while it waits for this same renderer. ROOTSHELL-TMUX
+    // (id=tmux-theme-report-lock-order)
+    self.renderer_state.mutex.unlock(global.io());
+    renderer_locked = false;
+    if (self.backend == .tmux) {
+        // tmux 3.6+ is the sole responder to a pane application's CSI ?996n.
+        // Keep its per-pane control colors aligned with this child surface's
+        // effective config; the tmux backend relays these reports through the
+        // tracked control channel. The explicit mode-2031 report remains
+        // necessary on tmux 3.7c, which does not notify on control_bg changes.
+        self.backend.tmux.reportColors(
+            config.foreground.toTerminalRGB(),
+            config.background.toTerminalRGB(),
+        );
+        if (tmux_theme_subscribed) {
+            self.backend.tmux.reportColorScheme(switch (self.system_color_scheme.load(.monotonic)) {
+                .dark => .dark,
+                .light => .light,
+            });
+        }
+    }
 }
 
 /// Resize the terminal.
@@ -951,22 +973,43 @@ fn processOutputLocked(self: *Termio, buf: []const u8) void {
 
 /// Sends a DSR response for the current color scheme to the pty.
 pub fn colorSchemeReport(self: *Termio, td: *ThreadData, force: bool) !void {
-    self.renderer_state.mutex.lockUncancelable(global.io());
-    defer self.renderer_state.mutex.unlock(global.io());
-
-    try self.colorSchemeReportLocked(td, force);
-}
-
-pub fn colorSchemeReportLocked(self: *Termio, td: *ThreadData, force: bool) !void {
-    if (!force and !self.renderer_state.terminal.modes.get(.report_color_scheme)) {
-        return;
-    }
     const scheme: terminalpkg.device_status.ColorScheme =
         switch (self.system_color_scheme.load(.monotonic)) {
             .light => .light,
             .dark => .dark,
         };
 
+    // A tmux child queueWrite crosses SurfaceRelayWriter's blocking app
+    // mailbox. Never make that hop while holding the renderer mutex: the app
+    // thread can be waiting for this mutex while it is the only consumer able
+    // to drain a full relay queue. Take the mutex only long enough to read the
+    // subscription bit for unforced updates. A forced report answers an
+    // explicit one-shot query, so no mode read is needed. Normal PTY writes
+    // retain the established under-lock behavior.
+    if (self.backend == .tmux) {
+        if (!force) {
+            self.renderer_state.mutex.lockUncancelable(global.io());
+            const subscribed = self.renderer_state.terminal.modes.get(.report_color_scheme);
+            self.renderer_state.mutex.unlock(global.io());
+            if (!subscribed) return;
+        }
+        self.backend.tmux.reportColorScheme(scheme);
+        return;
+    }
+
+    self.renderer_state.mutex.lockUncancelable(global.io());
+    defer self.renderer_state.mutex.unlock(global.io());
+    if (!force and !self.renderer_state.terminal.modes.get(.report_color_scheme)) {
+        return;
+    }
+    try self.queueColorSchemeReport(td, scheme);
+}
+
+fn queueColorSchemeReport(
+    self: *Termio,
+    td: *ThreadData,
+    scheme: terminalpkg.device_status.ColorScheme,
+) !void {
     var buf: [terminalpkg.device_status.max_color_scheme_report_encode_size]u8 = undefined;
     var writer: std.Io.Writer = .fixed(&buf);
     try terminalpkg.device_status.encodeColorSchemeReport(&writer, scheme);
@@ -1071,11 +1114,9 @@ test "color scheme report reaches native tmux backend" {
     var td: ThreadData = undefined;
     td.backend = .{ .tmux = .{} };
 
-    // Force avoids needing renderer state; the message handler passes the same
-    // flag through when mode 2031 is already known to be enabled.
-    try io.colorSchemeReportLocked(&td, true);
+    try io.colorSchemeReport(&td, true);
     try std.testing.expectEqualStrings(
-        "send-keys -H -t %7 1B 5B 3F 39 39 37 3B 31 6E\n",
+        "rootshell-report-color-scheme -t %7 dark\n",
         capture.buffer[0..capture.len],
     );
 }

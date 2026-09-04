@@ -1822,12 +1822,16 @@ pub const CAPI = struct {
         config: *const configpkg.Config,
         scheme_raw: c_int,
     ) ?*Surface {
-        const scheme = std.enums.fromInt(apprt.ColorScheme, scheme_raw) orelse return null;
-        const vt: ?*terminal.Terminal = if (viewer_terminal) |p|
+        const vp: ?*terminal.tmux.Viewer.Pane = if (viewer_pane) |p|
             @ptrCast(@alignCast(p))
         else
             null;
-        const vp: ?*terminal.tmux.Viewer.Pane = if (viewer_pane) |p|
+        const scheme = std.enums.fromInt(apprt.ColorScheme, scheme_raw) orelse {
+            log.warn("invalid initial tmux pane color scheme={}", .{scheme_raw});
+            if (vp) |pane| pane.clearPendingAttach();
+            return null;
+        };
+        const vt: ?*terminal.Terminal = if (viewer_terminal) |p|
             @ptrCast(@alignCast(p))
         else
             null;
@@ -3604,3 +3608,21 @@ pub const CAPI = struct {
         }
     };
 };
+
+test "themed tmux pane rejects invalid initial color scheme" {
+    // The invalid enum returns before any of these non-null opaque inputs are
+    // dereferenced. A real viewer pane additionally clears pending_attach on
+    // this path so construction failure cannot retain it forever.
+    const result = CAPI.ghostty_surface_new_tmux_pane_with_theme(
+        undefined,
+        undefined,
+        0,
+        0,
+        null,
+        null,
+        undefined,
+        undefined,
+        -1,
+    );
+    try std.testing.expect(result == null);
+}
