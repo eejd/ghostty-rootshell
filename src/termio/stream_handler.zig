@@ -3815,7 +3815,7 @@ pub const StreamHandler = struct {
     test "pane color scheme relay is dropped after viewer teardown" {
         if (comptime !tmux_enabled) return;
         try std.testing.expect(isPaneColorSchemeRelay(
-            "rootshell-report-color-scheme -t %7 dark\n",
+            "rootshell-report-color-scheme -t %7 dark transition\n",
         ));
 
         // Only tmux_viewer is initialized deliberately. The teardown branch
@@ -3824,7 +3824,7 @@ pub const StreamHandler = struct {
         var handler: StreamHandler = undefined;
         handler.tmux_viewer = null;
         handler.tmuxQueuePaneCommand(
-            "rootshell-report-color-scheme -t %7 dark\n",
+            "rootshell-report-color-scheme -t %7 dark transition\n",
         );
     }
 };

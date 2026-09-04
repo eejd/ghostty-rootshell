@@ -5805,8 +5805,9 @@ fn applyColorSchemeTransition(
     // from the app default when an embedder supports per-window/tab themes.
     // It is independent of conditional configuration reloads: a normal
     // light/dark transition changes both and still needs a live mode-2031 DSR.
-    if (system_scheme.swap(scheme, .monotonic) != scheme or force_report) {
-        reporter.reportColorSchemeChanged();
+    const changed = system_scheme.swap(scheme, .monotonic) != scheme;
+    if (changed or force_report) {
+        reporter.reportColorSchemeChanged(!changed);
     }
 
     const new_theme: configpkg.ConditionalState.Theme = switch (scheme) {
@@ -5818,9 +5819,12 @@ fn applyColorSchemeTransition(
     return true;
 }
 
-fn reportColorSchemeChanged(self: *Surface) void {
+fn reportColorSchemeChanged(self: *Surface, explicit_same_scheme: bool) void {
     self.queueIo(
-        .{ .color_scheme_report = .{ .force = false } },
+        .{ .color_scheme_report = .{
+            .force = false,
+            .explicit_same_scheme = explicit_same_scheme,
+        } },
         .unlocked,
     );
 }
@@ -7402,9 +7406,11 @@ test "queueIo frees allocated writes in readonly mode" {
 test "color scheme transition reports independently of config reload" {
     const Reporter = struct {
         reports: usize = 0,
+        explicit_reports: usize = 0,
 
-        fn reportColorSchemeChanged(self: *@This()) void {
+        fn reportColorSchemeChanged(self: *@This(), explicit_same_scheme: bool) void {
             self.reports += 1;
+            if (explicit_same_scheme) self.explicit_reports += 1;
         }
     };
 
@@ -7420,6 +7426,7 @@ test "color scheme transition reports independently of config reload" {
         false,
     ));
     try std.testing.expectEqual(@as(usize, 1), reporter.reports);
+    try std.testing.expectEqual(@as(usize, 0), reporter.explicit_reports);
     try std.testing.expectEqual(apprt.ColorScheme.dark, system_scheme.load(.monotonic));
     try std.testing.expectEqual(configpkg.ConditionalState.Theme.dark, conditional_theme);
 
@@ -7444,6 +7451,7 @@ test "color scheme transition reports independently of config reload" {
         true,
     ));
     try std.testing.expectEqual(@as(usize, 2), reporter.reports);
+    try std.testing.expectEqual(@as(usize, 1), reporter.explicit_reports);
 }
 
 test "initial surface scheme overrides app conditional theme" {
