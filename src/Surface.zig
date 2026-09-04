@@ -497,6 +497,20 @@ pub const InitOptions = struct {
     initial_color_scheme: ?apprt.ColorScheme = null, // ROOTSHELL-TMUX (id=surface-initial-color-scheme)
 };
 
+fn initialConditionalState(
+    app_state: configpkg.ConditionalState,
+    scheme: ?apprt.ColorScheme,
+) configpkg.ConditionalState {
+    var state = app_state;
+    if (scheme) |value| {
+        state.theme = switch (value) {
+            .light => .light,
+            .dark => .dark,
+        };
+    }
+    return state;
+}
+
 /// Create a new surface. This must be called from the main thread. The
 /// pointer to the memory for the surface must be provided and must be
 /// stable due to interfacing with various callbacks.
@@ -522,10 +536,14 @@ pub fn initWithOptions(
     rt_surface: *apprt.runtime.Surface,
     opts: InitOptions,
 ) !void {
+    const initial_conditional_state = initialConditionalState(
+        app.config_conditional_state,
+        opts.initial_color_scheme,
+    );
     // Apply our conditional state. If we fail to apply the conditional state
     // then we log and attempt to move forward with the old config.
     var config_: ?configpkg.Config = config_original.changeConditionalState(
-        app.config_conditional_state,
+        initial_conditional_state,
     ) catch |err| err: {
         log.warn("failed to apply conditional state to config err={}", .{err});
         break :err null;
@@ -678,7 +696,7 @@ pub fn initWithOptions(
 
         // Our conditional state is initialized to the app state. This
         // lets us get the most likely correct color theme and so on.
-        .config_conditional_state = app.config_conditional_state,
+        .config_conditional_state = initial_conditional_state,
     };
 
     // The command we're going to execute
@@ -7394,4 +7412,16 @@ test "color scheme transition reports independently of config reload" {
         .dark,
     ));
     try std.testing.expectEqual(@as(usize, 1), reporter.reports);
+}
+
+test "initial surface scheme overrides app conditional theme" {
+    const app_state: configpkg.ConditionalState = .{ .theme = .light };
+    try std.testing.expectEqual(
+        configpkg.ConditionalState.Theme.dark,
+        initialConditionalState(app_state, .dark).theme,
+    );
+    try std.testing.expectEqual(
+        configpkg.ConditionalState.Theme.light,
+        initialConditionalState(app_state, null).theme,
+    );
 }
