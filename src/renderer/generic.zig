@@ -62,7 +62,7 @@ fn customShaderAnimationActive(
     return switch (animation_mode) {
         .false => false,
         .always => true,
-        .true => focused,
+        .true => focused or cursor_animation_active,
     };
 }
 
@@ -71,6 +71,19 @@ const CustomShaderWakeMode = enum {
     draw,
     watchdog,
 };
+
+fn cursorAnimationMayStart(mode: configpkg.CustomShaderAnimation, focused: bool) bool {
+    return switch (mode) {
+        .false => false,
+        .true => focused,
+        .always => true,
+    };
+}
+
+fn cursorAnimationPendingAfterFrame(pending: bool, duration: ?f32, elapsed: f32, submitted: bool) bool {
+    if (!submitted) return pending;
+    return pending and if (duration) |limit| elapsed < limit else false;
+}
 
 fn customShaderWakeMode(
     animation_active: bool,
@@ -288,7 +301,8 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         /// True if any shader requires continuous animation (uses iTime for effects).
         has_continuous_shader: bool = false,
 
-        /// True when cursor animation is currently active (within duration of last cursor change).
+        /// A finite cursor effect still needs frames, including its final frame.
+        /// Cleared only after that frame has been submitted, not during preparation.
         cursor_animation_active: bool = false,
 
         /// True while the iOS-family display link is being kept alive by a
@@ -1004,6 +1018,12 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             self.has_custom_shaders = has_custom_shaders;
             self.cursor_animation_duration = max_duration;
             self.has_continuous_shader = has_continuous;
+            self.cursor_animation_active = false;
+            self.custom_shader_uniforms.previous_cursor = self.custom_shader_uniforms.current_cursor;
+            self.custom_shader_uniforms.previous_cursor_color = self.custom_shader_uniforms.current_cursor_color;
+            if (max_duration) |duration| {
+                self.custom_shader_uniforms.cursor_change_time = self.custom_shader_uniforms.time - duration - 0.001;
+            }
 
             // Log animation configuration
             if (has_custom_shaders) {
@@ -2258,7 +2278,18 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
             // Get a frame context from the graphics API.
             var frame_ctx = try self.api.beginFrame(self, &frame.target);
-            defer frame_ctx.complete(sync);
+            // Keep pending cursor work on any preparation/encoding failure.
+            // Retire it only after complete has submitted the successful frame.
+            var frame_encoded = false;
+            defer {
+                frame_ctx.complete(sync);
+                self.cursor_animation_active = cursorAnimationPendingAfterFrame(
+                    self.cursor_animation_active,
+                    self.cursor_animation_duration,
+                    self.custom_shader_uniforms.time - self.custom_shader_uniforms.cursor_change_time,
+                    frame_encoded,
+                );
+            }
 
             {
                 var pass = frame_ctx.renderPass(&.{.{
@@ -2391,6 +2422,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     });
                 }
             }
+            frame_encoded = true;
         }
 
         // Callback from the graphics API when a frame is completed.
@@ -2970,27 +3002,23 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     uniforms.previous_cursor_color = uniforms.current_cursor_color;
                     uniforms.current_cursor = new_cursor;
                     uniforms.current_cursor_color = cursor_color;
-                    uniforms.cursor_change_time = uniforms.time;
-
-                    // Cursor changed - animation is now active
-                    self.cursor_animation_active = true;
+                    if (cursorAnimationMayStart(self.config.custom_shader_animation, self.focused)) {
+                        uniforms.cursor_change_time = uniforms.time;
+                        self.cursor_animation_active = self.cursor_animation_duration != null;
+                    } else {
+                        // Damage in an unfocused preview must not create a
+                        // partial trail or extend a tail already finishing.
+                        uniforms.previous_cursor = new_cursor;
+                        uniforms.previous_cursor_color = cursor_color;
+                        if (self.cursor_animation_duration) |duration| {
+                            uniforms.cursor_change_time = uniforms.time - duration - 0.001;
+                        }
+                    }
                 }
             }
 
-            // Update cursor animation active state based on time since cursor change
-            if (self.cursor_animation_duration) |duration| {
-                const time_since_cursor_change = self.custom_shader_uniforms.time -
-                    self.custom_shader_uniforms.cursor_change_time;
-
-                // drawFrame decides to render using the previous active value,
-                // so the first frame at/after DURATION is still rendered. We
-                // can then sleep immediately without an arbitrary 100ms tail.
-                self.cursor_animation_active = time_since_cursor_change < duration;
-            } else if (!self.has_continuous_shader) {
-                // No time-based animation was detected. Static shaders should
-                // redraw only with terminal damage, never pin an animation loop.
-                self.cursor_animation_active = false;
-            }
+            // Completion of a finite effect is recorded after frame submission.
+            // Updating uniforms alone must never consume its final redraw.
 
             // Update focus uniforms
             uniforms.focus = @intFromBool(self.focused);
@@ -4164,7 +4192,8 @@ test "custom shader animation activity policy" {
     try expect(!customShaderAnimationActive(false, true, true, .always, true));
     try expect(!customShaderAnimationActive(true, false, false, .always, true));
     try expect(!customShaderAnimationActive(true, true, true, .false, true));
-    try expect(!customShaderAnimationActive(true, true, true, .true, false));
+    try expect(customShaderAnimationActive(true, true, true, .true, false));
+    try expect(!customShaderAnimationActive(true, true, false, .true, false));
     try expect(customShaderAnimationActive(true, true, false, .true, true));
     try expect(customShaderAnimationActive(true, false, true, .always, false));
 
@@ -4184,4 +4213,32 @@ test "custom shader animation activity policy" {
         CustomShaderWakeMode.none,
         customShaderWakeMode(true, true, false),
     );
+}
+
+test "cursor shader tail survives focus loss until final submission" {
+    const expect = std.testing.expect;
+    try expect(cursorAnimationMayStart(.true, true));
+    try expect(!cursorAnimationMayStart(.true, false));
+    try expect(cursorAnimationMayStart(.always, false));
+    try expect(!cursorAnimationMayStart(.false, true));
+
+    var pending = true;
+    // A still-visible, unfocused preview must keep the existing tail awake.
+    pending = cursorAnimationPendingAfterFrame(pending, 0.2, 0.19, true);
+    try expect(customShaderAnimationActive(true, false, pending, .true, false));
+    // A dropped/failed final frame (also a hidden surface) consumes no work.
+    pending = cursorAnimationPendingAfterFrame(pending, 0.2, 0.3, false);
+    try expect(pending);
+    try expect(customShaderWakeMode(pending, false, true) == .draw);
+    try expect(customShaderWakeMode(pending, true, true) == .watchdog);
+    // The first successful frame after expiry settles and parks the renderer.
+    pending = cursorAnimationPendingAfterFrame(pending, 0.2, 0.3, true);
+    try expect(!pending);
+    try expect(customShaderWakeMode(pending, true, true) == .none);
+    try expect(!customShaderAnimationActive(true, false, pending, .true, false));
+    try expect(!cursorAnimationPendingAfterFrame(true, 0.2, 0.2, true));
+    // Focus changes and elapsed time alone cannot resurrect retired work.
+    try expect(!cursorAnimationPendingAfterFrame(false, 0.2, 0, true));
+    try expect(!customShaderAnimationActive(true, false, false, .true, true));
+    try expect(!cursorAnimationPendingAfterFrame(true, null, 0, true));
 }

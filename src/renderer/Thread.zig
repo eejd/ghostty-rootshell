@@ -390,8 +390,8 @@ fn drainMailbox(self: *Thread) !void {
                 // Set it on the renderer
                 try self.renderer.setFocus(v);
 
-                // Focus gates custom shader animation, so re-arm
-                // the animation timer for the new state.
+                // Focus gates new shader animation; a finite cursor tail
+                // may still need its final frames after losing focus.
                 self.armAnimationTimer();
 
                 if (!v) {
