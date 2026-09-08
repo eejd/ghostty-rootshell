@@ -387,6 +387,10 @@ pub const Viewer = struct {
     /// would be mistaken for an already-sent in-flight command.
     command_in_flight: bool,
 
+    // ROOTSHELL-TMUX (id=attach-output-snapshot): one synchronous command group,
+    // five replies. Staged until the matching terminal state arrives.
+    capture_transaction: ?CaptureTransaction = null,
+
     /// The list of commands we've sent that we want to send and wait
     /// for a response for. We only send one command at a time just
     /// to avoid any possible confusion around ordering.
@@ -602,7 +606,7 @@ pub const Viewer = struct {
     /// Whether a written-but-unacked command was tracked (issued by the viewer
     /// through the command_queue) or untracked (a `send-keys` written directly).
     /// ROOTSHELL-TMUX (id=viewer-sent-fifo)
-    pub const SentKind = enum { tracked, untracked };
+    pub const SentKind = union(enum) { tracked, untracked, snapshot: u3 };
     pub const SentFifo = CircBuf(SentKind, undefined);
 
     /// Result of classifying an incoming `%begin/%end` block against the
@@ -957,6 +961,13 @@ pub const Viewer = struct {
         /// are suppressed until this is true to avoid displaying
         /// partial/stale data before the capture-pane sequence completes.
         initialized: bool = false,
+
+        // Output suppressed during the legacy incremental capture means its
+        // history/visible/state can describe different instants. Repair that
+        // pane with one atomic server-side snapshot before releasing live output.
+        capture_dirty: bool = false,
+        snapshot_requested: bool = false,
+        pending_snapshot: ?CaptureTransaction = null,
 
         // ROOTSHELL-TMUX (id=viewer-pane-bounded-lock): deferred work for a
         // pane whose renderer mutex was contended past its budget. The
@@ -1333,6 +1344,7 @@ pub const Viewer = struct {
         }
 
         pub fn deinit(self: *Pane, alloc: Allocator) void {
+            if (self.pending_snapshot) |*snapshot| snapshot.deinit(alloc);
             for (self.responses.items) |chunk| alloc.free(chunk);
             self.responses.deinit(alloc);
             for (self.clipboard_writes.items) |cw| alloc.free(cw.data);
@@ -1416,6 +1428,7 @@ pub const Viewer = struct {
     }
 
     pub fn deinit(self: *Viewer) void {
+        self.clearCaptureTransaction();
         {
             self.windows.deinit(self.alloc);
             self.windows_arena.promote(self.alloc).deinit();
@@ -1707,8 +1720,13 @@ pub const Viewer = struct {
     /// Record that a tracked command was written to the tmux pty (called at the
     /// drain/write point after the bytes are written). ROOTSHELL-TMUX
     /// (id=viewer-sent-fifo)
+    pub fn trackedReplyCount(self: *const Viewer) u3 {
+        return if (self.command_queue.first()) |cmd| (if (cmd.* == .pane_snapshot) 5 else 1) else 1;
+    }
+
     pub fn recordTrackedSend(self: *Viewer) void {
-        self.recordSent(.tracked, 1);
+        const count = self.trackedReplyCount();
+        self.recordSent(if (count > 1) .{ .snapshot = count } else .tracked, 1);
     }
 
     /// Record that untracked `send-keys` command lines were written to the tmux
@@ -1753,11 +1771,20 @@ pub const Viewer = struct {
     /// / post-reset straggler — caller falls through to existing handling).
     /// ROOTSHELL-TMUX (id=viewer-sent-fifo)
     pub fn classifyBlock(self: *Viewer) BlockClass {
+        return self.classifyBlockResult(false);
+    }
+
+    pub fn classifyBlockResult(self: *Viewer, is_err: bool) BlockClass {
         const first = self.sent_fifo.first() orelse return .empty;
         const kind = first.*;
-        self.sent_fifo.deleteOldest(1);
+        if (kind == .snapshot and !is_err and kind.snapshot > 1) {
+            first.snapshot -= 1;
+        } else {
+            // tmux aborts the remaining commands in a semicolon group on error.
+            self.sent_fifo.deleteOldest(1);
+        }
         return switch (kind) {
-            .tracked => .tracked,
+            .tracked, .snapshot => .tracked,
             .untracked => .untracked,
         };
     }
@@ -1843,7 +1870,7 @@ pub const Viewer = struct {
             const has_deferred = pane.pending_vt.items.len > 0 or
                 pane.pending_dropped or pane.pending_resize != null or
                 pane.clipboard_writes.items.len > 0 or
-                pane.replay.items.len > 0;
+                pane.replay.items.len > 0 or pane.pending_snapshot != null;
             if (!has_deferred) continue;
             const m = self.lockPaneBounded(
                 pane,
@@ -1948,6 +1975,7 @@ pub const Viewer = struct {
     /// `.state` — the callers own those (so the two recovery modes can't diverge
     /// on the pipeline-reset half). ROOTSHELL-TMUX (id=viewer-reset-command-pipeline)
     fn resetCommandPipeline(self: *Viewer) void {
+        self.clearCaptureTransaction();
         // Drop the stranded in-flight command and every queued command: the
         // rebuild re-establishes topology + focus, and keeping them would just
         // desync against the post-resync block stream.
@@ -1986,6 +2014,7 @@ pub const Viewer = struct {
                 // desync would otherwise survive and be replayed by a later
                 // unrelated session-wide pane_state. ROOTSHELL-TMUX (id=alt-screen-fix)
                 self.freeStashedVisibles(pane);
+                self.clearPaneSnapshot(pane);
             }
         }
 
@@ -2068,6 +2097,7 @@ pub const Viewer = struct {
     /// parser + UTF-8 decoder to ground and drop any spilled pre-discard bytes.
     /// ROOTSHELL-TMUX (id=viewer-force-reset)
     fn flagPaneForReset(self: *Viewer, pane: *Pane) void {
+        self.clearPaneSnapshot(pane);
         pane.initialized = false;
         pane.reset_recapture = true;
         pane.capture_pending = false;
@@ -2410,6 +2440,13 @@ pub const Viewer = struct {
                 }
 
                 if (self.command_in_flight) {
+                    if (self.command_queue.first()) |cmd| {
+                        if (cmd.* == .pane_snapshot and tag != .block_err) {
+                            const complete = self.receiveSnapshotBlock(cmd.pane_snapshot, block.content) catch
+                                return self.defunct();
+                            if (!complete) return actions.items;
+                        }
+                    }
                     self.receivedCommandOutput(
                         &actions,
                         block.content,
@@ -2730,7 +2767,10 @@ pub const Viewer = struct {
                             pane.pause_recapture = false;
                             log.warn("failed to queue pause recapture for pane={}", .{info.pane_id});
                         };
-                    } else if (pane.pause_recapture) {
+                    } else if (pane.pause_recapture or pane.snapshot_requested) {
+                        // A queued/in-flight/deferred atomic snapshot is also a
+                        // recapture: %pause invalidates it even if it did not start
+                        // as pause recovery. The replacement must follow continue.
                         // Already mid pause-recapture and tmux discarded ANOTHER
                         // gap (the link is still congested). The in-flight batch
                         // may have captured BEFORE this newest gap, so schedule a
@@ -3108,6 +3148,98 @@ pub const Viewer = struct {
         self.emitWindowTitle(actions, window_id);
     }
 
+    const CaptureTransaction = struct {
+        id: usize,
+        count: u3 = 0,
+        replies: [5]?[]u8 = .{null} ** 5,
+
+        fn deinit(self: *CaptureTransaction, alloc: Allocator) void {
+            for (self.replies) |reply| if (reply) |bytes| alloc.free(bytes);
+            self.* = .{ .id = self.id };
+        }
+    };
+
+    fn clearCaptureTransaction(self: *Viewer) void {
+        if (self.capture_transaction) |*snapshot| snapshot.deinit(self.alloc);
+        self.capture_transaction = null;
+    }
+
+    fn clearPaneSnapshot(self: *Viewer, pane: *Pane) void {
+        if (pane.pending_snapshot) |*snapshot| snapshot.deinit(self.alloc);
+        pane.pending_snapshot = null;
+        pane.snapshot_requested = false;
+        pane.capture_dirty = false;
+    }
+
+    fn queuePaneSnapshot(self: *Viewer, id: usize) !void {
+        const pane = self.panes.get(id) orelse return;
+        if (pane.snapshot_requested) return;
+        const owner: CommandOwner = if (pane.recovery_pending) .recovery else .ordinary;
+        try self.queueCommandsWithOwner(&.{.{ .pane_snapshot = id }}, owner);
+        pane.initialized = false;
+        pane.snapshot_requested = true;
+    }
+
+    fn receiveSnapshotBlock(self: *Viewer, id: usize, content: []const u8) !bool {
+        if (self.capture_transaction == null) self.capture_transaction = .{ .id = id };
+        const snapshot = &self.capture_transaction.?;
+        assert(snapshot.id == id and snapshot.count < 5);
+        snapshot.replies[snapshot.count] = try self.alloc.dupe(u8, content);
+        snapshot.count += 1;
+        return snapshot.count == 5;
+    }
+
+    // Caller holds the renderer lock. A completed snapshot may wait here for a
+    // bounded lock; output AFTER its state block spills until it can be applied.
+    fn applyPendingSnapshot(self: *Viewer, pane: *Pane, id: usize) !void {
+        var snapshot = pane.pending_snapshot.?;
+        pane.pending_snapshot = null;
+        defer snapshot.deinit(self.alloc);
+        if (pane.pending_dropped or pane.recapture_again) {
+            pane.pending_vt.clearRetainingCapacity();
+            pane.pending_dropped = false;
+            pane.recapture_again = false;
+            pane.snapshot_requested = false;
+            try self.queuePaneSnapshot(id);
+            return;
+        }
+        var state = std.mem.splitScalar(u8, std.mem.trim(u8, snapshot.replies[4].?, " \t\r\n"), ' ');
+        const cols = try std.fmt.parseInt(size.CellCountInt, state.next() orelse return error.InvalidSnapshotSize, 10);
+        const rows = try std.fmt.parseInt(size.CellCountInt, state.next() orelse return error.InvalidSnapshotSize, 10);
+        if (cols == 0 or rows == 0) return error.InvalidSnapshotSize;
+        const line = state.rest();
+        const data = try output.parseFormatStruct(Format.list_panes.Struct(), line, Format.list_panes.delim);
+        if (data.pane_id != id) return error.InvalidSnapshotPane;
+        const private_modes_present = delimitedFieldNonEmpty(line, Format.list_panes.delim, comptime formatFieldIndex(Format.list_panes, .pane_private_modes));
+        // Old partial escape sequences and query effects belong to the replaced
+        // stream, not the post-snapshot bytes waiting in pending_vt.
+        pane.stream.deinit();
+        pane.stream = pane.terminal.vtStream();
+        installPaneStreamEffects(pane, self.default_cursor_style, self.default_cursor_blink);
+        pane.capture_pending = false;
+        pane.state_pending = false;
+        // Restore at the captured dimensions, then reflow to the current layout.
+        // A resize notification can arrive while renderer-lock contention keeps
+        // the snapshot staged; its cursor coordinates refer to the old grid.
+        const current_cols = pane.terminal.cols;
+        const current_rows = pane.terminal.rows;
+        try pane.terminal.resize(self.alloc, .{ .cols = cols, .rows = rows, .cell_size_px = pane.cellSizePx() });
+        try self.applyPaneHistory(pane, .primary, snapshot.replies[0].?);
+        try self.applyPaneHistory(pane, .alternate, snapshot.replies[2].?);
+        try self.receivedPaneVisible(.primary, id, snapshot.replies[1].?);
+        try self.receivedPaneVisible(.alternate, id, snapshot.replies[3].?);
+        try self.applyPaneState(pane, data, private_modes_present);
+        try pane.terminal.resize(self.alloc, .{ .cols = current_cols, .rows = current_rows, .cell_size_px = pane.cellSizePx() });
+        pane.initialized = true;
+        pane.snapshot_requested = false;
+        pane.capture_dirty = false;
+        pane.pause_recapture = false;
+        pane.capture_retries = 0;
+        pane.recovery_pending = false;
+        if (recoveryWindowForPane(self.windows.items, id)) |window_id|
+            self.completeRecoveryWindow(window_id);
+    }
+
     /// Handle output (or extended output) for a pane. Suppresses data for
     /// panes that haven't completed their capture-pane initialization
     /// sequence — processing output before capture completes would corrupt
@@ -3117,7 +3249,8 @@ pub const Viewer = struct {
             entry.value_ptr.*
         else
             null;
-        if (pane != null and !pane.?.initialized) {
+        if (pane != null and !pane.?.initialized and pane.?.pending_snapshot == null) {
+            pane.?.capture_dirty = true;
             log.debug("suppressing output for uninitialized pane id={}", .{pane_id});
         } else {
             self.receivedOutput(actions, pane_id, data) catch |err| {
@@ -3838,6 +3971,16 @@ pub const Viewer = struct {
         // tmux's serial command queue means the NEXT command's response is
         // unaffected. (Don't log the body: it can carry sensitive context.)
         if (is_err) {
+            if (command == .pane_snapshot) {
+                self.clearCaptureTransaction();
+                if (self.panes.get(command.pane_snapshot)) |pane| {
+                    self.clearPaneSnapshot(pane);
+                    pane.initialized = true;
+                    pane.capture_pending = false;
+                    pane.recovery_pending = false;
+                }
+                try self.queueCommands(&.{.list_windows});
+            }
             self.last_error = .control_error; // ROOTSHELL-TMUX (id=control-error-code)
             log.info("tmux command {s} returned %error", .{@tagName(command)});
             // pane_state is the LAST command of the capture sequence and is what
@@ -3879,6 +4022,10 @@ pub const Viewer = struct {
                         recovery_window,
                     )) continue;
                     if (pane.capture_pending or pane.state_pending) continue;
+                    if (pane.capture_dirty) {
+                        try self.queuePaneSnapshot(kv.key_ptr.*);
+                        continue;
+                    }
                     if (pane.recapture_again) {
                         try self.queueCommandsWithOwner(&.{
                             .{ .pane_history = .{ .id = kv.key_ptr.*, .screen_key = .primary } },
@@ -3921,6 +4068,10 @@ pub const Viewer = struct {
                         // Mirrors the success path's wakePane. ROOTSHELL-TMUX
                         // (id=alt-screen-fix)
                         if (applied) wakePane(pane);
+                    }
+                    if (pane.capture_dirty) {
+                        try self.queuePaneSnapshot(kv.key_ptr.*);
+                        continue;
                     }
                     pane.initialized = true;
                     pane.pause_recapture = false;
@@ -3971,6 +4122,22 @@ pub const Viewer = struct {
 
         // Process our command
         switch (command) {
+            .pane_snapshot => |id| {
+                if (self.panes.get(id)) |pane| {
+                    if (pane.pending_snapshot) |*old| old.deinit(self.alloc);
+                    pane.pending_snapshot = self.capture_transaction;
+                    self.capture_transaction = null;
+                    // This snapshot includes all output preceding its replies.
+                    pane.capture_dirty = false;
+                    pane.pending_vt.clearRetainingCapacity();
+                    pane.pending_dropped = false;
+                    if (self.lockPaneBounded(pane, id, PANE_LOCK_CAPTURE_BUDGET_NS)) |m| {
+                        defer pane.unlockRenderer(m);
+                        self.flushPaneDeferred(pane, id);
+                        wakePane(pane);
+                    }
+                } else self.clearCaptureTransaction();
+            },
             .client_size => |cs| self.last_applied_client_size = .{
                 .cols = cs.cols,
                 .rows = cs.rows,
@@ -4053,6 +4220,10 @@ pub const Viewer = struct {
                         pane.recapture_again = false;
                         pane.capture_pending = true;
                         requeue_state = true;
+                        continue;
+                    }
+                    if (pane.capture_dirty) {
+                        try self.queuePaneSnapshot(kv.key_ptr.*);
                         continue;
                     }
                     pane.initialized = true;
@@ -4416,6 +4587,11 @@ pub const Viewer = struct {
                 continue;
             }
 
+            if (pane.capture_dirty and !pane.capture_pending) {
+                try self.queuePaneSnapshot(data.pane_id);
+                continue;
+            }
+
             // Bounded lock: on timeout, flag the pane so the completion arm
             // skips marking it initialized and re-queues a pane_state (the
             // alt-screen swap is gated on !initialized and must not be
@@ -4452,273 +4628,277 @@ pub const Viewer = struct {
             pane.state_pending = false;
             self.flushPaneDeferred(pane, data.pane_id);
 
-            const t: *Terminal = &pane.terminal;
-
-            // ROOTSHELL-TMUX (id=alt-screen-fix): apply the deferred VISIBLE
-            // captures (stashed by `receivedPaneVisible`) to their FINAL screens
-            // now that `alternate_on` is known. tmux's `capture-pane` (no `-a`)
-            // returns the ACTIVE grid and `-a` the SAVED grid; when a pane is in
-            // its alternate screen the alt-screen app is the no-`-a` visible and
-            // the normal screen's last visible row(s) are the `-a` visible — they
-            // belong to OPPOSITE terminal screens. The normal-screen SCROLLBACK is
-            // the no-`-a` `pane_history`, already replayed into `.primary` (which
-            // keeps the real scrollback budget). We DO NOT swap the `Screen`
-            // objects (the old approach): that moved the scrollback onto the
-            // 0-scrollback alternate screen (history lost when the app exits) AND
-            // made that 0-scrollback object the live primary ("rubber band": no
-            // new scrollback could ever accumulate). Routing the visibles here
-            // instead keeps `.primary` as the real scrollback-bearing screen.
-            //
-            // This applies to BOTH a fresh capture/recapture (uninitialized pane)
-            // AND a live `pending_dropped` visible re-fetch of an already-initialized
-            // pane (`flushPaneDeferred` re-fetches visible+state) — in both cases the
-            // freshly stashed buffers must reach the screen, so the gate is "captures
-            // done", NOT "!initialized". Gate on `!capture_pending` so a pane whose
-            // capture suffix is still being retried waits for its FINAL trailing
-            // pane_state (when both screens' visibles are stashed together); else a
-            // partial re-stash could drop one screen. `applyCapturedVisible` no-ops on
-            // a null buffer, so a session-wide pane_state revisiting a pane with
-            // nothing freshly stashed does nothing. Free the buffers once applied; a
-            // pause/force-reset recapture re-stashes fresh before re-applying.
-            if (!pane.capture_pending) {
-                if (data.alternate_on) {
-                    // normal-screen visible = the `-a` capture -> .primary;
-                    // alt-screen app = the no-`-a` capture -> .alternate.
-                    try applyCapturedVisible(t, .primary, pane.captured_visible_alternate);
-                    try applyCapturedVisible(t, .alternate, pane.captured_visible_primary);
-                } else {
-                    // No alternate screen: the no-`-a` capture is the normal
-                    // screen's visible -> .primary.
-                    try applyCapturedVisible(t, .primary, pane.captured_visible_primary);
-                }
-                self.freeStashedVisibles(pane);
-            }
-
-            // Determine which screen to use based on alternate_on
-            const screen_key: ScreenSet.Key = if (data.alternate_on) .alternate else .primary;
-
-            // Switch the terminal to the correct active screen. The visible
-            // application above and the capture sequence may leave the terminal
-            // on either screen, so pin it here.
-            _ = try t.switchScreen(screen_key);
-
-            // Classify the cursor shape tmux reports for this pane. tmux encodes
-            // a default cursor (app set no DECSCUSR) as empty OR literal
-            // "default"; an explicit block/underline/bar means the app chose it.
-            // A default follows the configured `cursor-style`/`cursor-style-blink`.
-            // Recording this on the handler's `default_cursor` flag keeps a later
-            // config reload (`updateCursorDefaults`) from clobbering an app-set
-            // cursor — the capture replay never re-emits DECSCUSR, so the flag
-            // must be reconstructed here. ROOTSHELL-TMUX (id=viewer-cursor-style-default)
-            const shape_is_default = data.cursor_shape.len == 0 or
-                std.mem.eql(u8, data.cursor_shape, "default");
-            const shape_is_explicit =
-                std.mem.eql(u8, data.cursor_shape, "block") or
-                std.mem.eql(u8, data.cursor_shape, "underline") or
-                std.mem.eql(u8, data.cursor_shape, "bar");
-            if (shape_is_default or shape_is_explicit) {
-                pane.terminal.cursor.is_default = shape_is_default;
-            }
-
-            // Set cursor position on the appropriate screen (tmux uses 0-based)
-            if (t.screens.get(screen_key)) |screen| {
-                cursor: {
-                    const cursor_x = std.math.cast(
-                        size.CellCountInt,
-                        data.cursor_x,
-                    ) orelse break :cursor;
-                    const cursor_y = std.math.cast(
-                        size.CellCountInt,
-                        data.cursor_y,
-                    ) orelse break :cursor;
-                    if (cursor_x >= screen.pages.cols or
-                        cursor_y >= screen.pages.rows) break :cursor;
-                    screen.cursorAbsolute(cursor_x, cursor_y);
-                }
-
-                // Set cursor shape on this screen; "default" follows the config.
-                // ROOTSHELL-TMUX (id=viewer-cursor-style-default)
-                if (std.mem.eql(u8, data.cursor_shape, "block")) {
-                    screen.cursor.cursor_style = .block;
-                } else if (std.mem.eql(u8, data.cursor_shape, "underline")) {
-                    screen.cursor.cursor_style = .underline;
-                } else if (std.mem.eql(u8, data.cursor_shape, "bar")) {
-                    screen.cursor.cursor_style = .bar;
-                } else if (shape_is_default) {
-                    screen.cursor.cursor_style = self.default_cursor_style;
-                }
-                // unrecognized non-empty shape: leave the live cursor as-is
-            }
-
-            // Restore the saved cursor for the INACTIVE screen.
-            //
-            // tmux's alternate_saved_x/y is the cursor that was saved when the
-            // pane entered the alternate screen via mode 1049 — i.e. the primary
-            // screen's cursor to restore when the alt-screen app exits. When
-            // alternate_on we must seed the primary screen's DECSC saved-cursor
-            // SLOT (not just its live cursor): the live `ESC[?1049l` the app emits
-            // on exit calls `restoreCursor()`, which reads `saved_cursor` and
-            // DEFAULTS TO (0,0) when it is null — so without this the cursor snaps
-            // to the top-left after the app quits (the wrong-location report on
-            // detach/reattach). ROOTSHELL-TMUX (id=alt-screen-cursor-restore). We
-            // also set the live cursor so the position is right if the screen is
-            // shown by a non-1049 path. When alternate_on is false this targets the
-            // alternate screen (tmux usually sends MAX_INT — no saved position).
-            {
-                const saved_screen_key: ScreenSet.Key = if (data.alternate_on) .primary else .alternate;
-                if (t.screens.get(saved_screen_key)) |saved_screen| cursor: {
-                    const alt_x = std.math.cast(
-                        size.CellCountInt,
-                        data.alternate_saved_x,
-                    ) orelse break :cursor;
-                    const alt_y = std.math.cast(
-                        size.CellCountInt,
-                        data.alternate_saved_y,
-                    ) orelse break :cursor;
-
-                    // If our coordinates are outside our screen we ignore it.
-                    // tmux actually sends MAX_INT for when there isn't a set
-                    // cursor position, so this isn't theoretical.
-                    if (alt_x >= saved_screen.pages.cols or
-                        alt_y >= saved_screen.pages.rows) break :cursor;
-
-                    saved_screen.cursorAbsolute(alt_x, alt_y);
-                    // Seed the DECSC saved-cursor slot the app's exit `1049l`
-                    // restoreCursor() reads (mirrors Terminal.saveCursor; pen/
-                    // charset from the just-replayed screen, pending_wrap cleared
-                    // since we positioned absolutely).
-                    saved_screen.saved_cursor = .{
-                        .x = alt_x,
-                        .y = alt_y,
-                        .style = saved_screen.cursor.style,
-                        .protected = saved_screen.cursor.protected,
-                        .pending_wrap = false,
-                        .origin = t.modes.get(.origin),
-                        .charset = saved_screen.charset,
-                    };
-                }
-            }
-
-            // Set cursor visibility
-            t.modes.set(.cursor_visible, data.cursor_flag);
-
-            // Set cursor blinking. A default-shape cursor uses the configured
-            // blink only when explicitly set; otherwise (and for an explicit
-            // shape) it honors tmux's reported blink — so an unconfigured default
-            // doesn't force a steady cursor to blink on attach/recapture.
-            // ROOTSHELL-TMUX (id=viewer-cursor-style-default)
-            t.modes.set(
-                .cursor_blinking,
-                if (shape_is_default)
-                    (self.default_cursor_blink orelse data.cursor_blinking)
-                else
-                    data.cursor_blinking,
-            );
-
-            // Terminal modes
-            t.modes.set(.insert, data.insert_flag);
-            t.modes.set(.wraparound, data.wrap_flag);
-            t.modes.set(.keypad_keys, data.keypad_flag);
-            t.modes.set(.cursor_keys, data.keypad_cursor_flag);
-            t.modes.set(.origin, data.origin_flag);
-
-            // Mouse modes. tmux's mouse_any_flag is an aggregate
-            // ALL_MOUSE_MODES indicator; the concrete mutually exclusive
-            // modes are standard/button/all.
-            t.modes.set(.mouse_event_x10, false);
-            t.modes.set(.mouse_event_normal, data.mouse_standard_flag);
-            t.modes.set(.mouse_event_button, data.mouse_button_flag);
-            t.modes.set(.mouse_event_any, data.mouse_all_flag);
-            t.modes.set(.mouse_format_utf8, data.mouse_utf8_flag);
-            t.modes.set(.mouse_format_sgr, data.mouse_sgr_flag);
-            t.flags.mouse_event = if (data.mouse_all_flag)
-                .any
-            else if (data.mouse_button_flag)
-                .button
-            else if (data.mouse_standard_flag)
-                .normal
-            else
-                .none;
-            t.flags.mouse_format = if (data.mouse_sgr_flag)
-                .sgr
-            else if (data.mouse_utf8_flag)
-                .utf8
-            else
-                .x10;
-
-            // Focus reporting. `pane_private_modes` expands empty both on tmux
-            // without the variable (< 3.8) and when no modes are set. Only a
-            // server known to have it may treat empty as "no modes"; otherwise
-            // an empty field fails closed and leaves the live mode untouched.
-            const private_modes_authoritative = private_modes_present or
-                tmuxVersionAtLeast(self.tmux_version, 3, 8);
-            if (private_modes_authoritative) {
-                t.modes.set(
-                    .focus_event,
-                    output.privateModesContain(data.pane_private_modes, 1004),
-                );
-            }
-
-            // Force synchronized output (DECSET 2026) off. A completed
-            // capture-pane snapshot is a settled, non-synchronized frame —
-            // tmux has no persistent sync flag, it's transient. During attach
-            // the balancing `2026l` can be dropped (uninitialized-pane output
-            // suppression / spill overflow), latching the bit ON with no live
-            // stream to clear it; the renderer then skips every frame and the
-            // pane stays blank. Mirrors the resize-path clear in c/terminal.zig.
-            // ROOTSHELL-TMUX (id=viewer-sync-output-attach-clear)
-            t.modes.set(.synchronized_output, false);
-
-            // Bracketed paste is intentionally NOT synced from tmux. tmux
-            // exposes no `bracketed_paste` format variable — `#{bracketed_paste}`
-            // returns empty on every tmux through 3.6 — so syncing it would
-            // clobber the value the pane's own `%output` stream already tracks
-            // (from the app's `\033[?2004h`/`l`) down to a constant `false`,
-            // leaving every paste into the pane un-bracketed. The live stream is
-            // authoritative; mirror iTerm2, whose `pasteHelperShouldBracket`
-            // reads its own per-pane screen mode and never asks tmux.
-            // ROOTSHELL-TMUX (id=tmux-pane-bracketed-paste)
-
-            // Scroll region (tmux uses 0-based, inclusive). Clamp to the pane's
-            // current rows and require a valid (top < bottom) region, mirroring
-            // `Terminal.setTopAndBottomMargin`'s bounds but WITHOUT its
-            // cursor-home side effect (the cursor was already restored above). A
-            // tmux-reported region taller than the pane terminal's current rows
-            // (a real transient during resize/relayout) would otherwise feed OOB
-            // row math, and top >= bottom would underflow the region height. On a
-            // degenerate report we leave the default full-screen region.
-            // ROOTSHELL-TMUX (id=viewer-pane-state-scroll-clamp)
-            scroll: {
-                if (t.rows == 0) break :scroll;
-                const upper = std.math.cast(
-                    size.CellCountInt,
-                    data.scroll_region_upper,
-                ) orelse break :scroll;
-                const lower = std.math.cast(
-                    size.CellCountInt,
-                    data.scroll_region_lower,
-                ) orelse break :scroll;
-                const max_row: size.CellCountInt = @intCast(t.rows - 1);
-                const scroll_top = @min(upper, max_row);
-                const scroll_bottom = @min(lower, max_row);
-                if (scroll_top >= scroll_bottom) break :scroll;
-                t.scrolling_region.top = scroll_top;
-                t.scrolling_region.bottom = scroll_bottom;
-            }
-
-            // Tab stops - parse comma-separated list and set
-            t.tabstops.reset(0); // Clear all tabstops first
-            if (data.pane_tabs.len > 0) {
-                var tabs_it = std.mem.splitScalar(u8, data.pane_tabs, ',');
-                while (tabs_it.next()) |tab_str| {
-                    const col = std.fmt.parseInt(usize, tab_str, 10) catch continue;
-                    const col_cell = std.math.cast(size.CellCountInt, col) orelse continue;
-                    if (col_cell >= t.cols) continue;
-                    t.tabstops.set(col_cell);
-                }
-            }
-
+            try self.applyPaneState(pane, data, private_modes_present);
             wakePane(pane);
+        }
+    }
+
+    // Caller holds the pane renderer lock.
+    fn applyPaneState(self: *Viewer, pane: *Pane, data: Format.list_panes.Struct(), private_modes_present: bool) !void {
+        const t: *Terminal = &pane.terminal;
+
+        // ROOTSHELL-TMUX (id=alt-screen-fix): apply the deferred VISIBLE
+        // captures (stashed by `receivedPaneVisible`) to their FINAL screens
+        // now that `alternate_on` is known. tmux's `capture-pane` (no `-a`)
+        // returns the ACTIVE grid and `-a` the SAVED grid; when a pane is in
+        // its alternate screen the alt-screen app is the no-`-a` visible and
+        // the normal screen's last visible row(s) are the `-a` visible — they
+        // belong to OPPOSITE terminal screens. The normal-screen SCROLLBACK is
+        // the no-`-a` `pane_history`, already replayed into `.primary` (which
+        // keeps the real scrollback budget). We DO NOT swap the `Screen`
+        // objects (the old approach): that moved the scrollback onto the
+        // 0-scrollback alternate screen (history lost when the app exits) AND
+        // made that 0-scrollback object the live primary ("rubber band": no
+        // new scrollback could ever accumulate). Routing the visibles here
+        // instead keeps `.primary` as the real scrollback-bearing screen.
+        //
+        // This applies to BOTH a fresh capture/recapture (uninitialized pane)
+        // AND a live `pending_dropped` visible re-fetch of an already-initialized
+        // pane (`flushPaneDeferred` re-fetches visible+state) — in both cases the
+        // freshly stashed buffers must reach the screen, so the gate is "captures
+        // done", NOT "!initialized". Gate on `!capture_pending` so a pane whose
+        // capture suffix is still being retried waits for its FINAL trailing
+        // pane_state (when both screens' visibles are stashed together); else a
+        // partial re-stash could drop one screen. `applyCapturedVisible` no-ops on
+        // a null buffer, so a session-wide pane_state revisiting a pane with
+        // nothing freshly stashed does nothing. Free the buffers once applied; a
+        // pause/force-reset recapture re-stashes fresh before re-applying.
+        if (!pane.capture_pending) {
+            if (data.alternate_on) {
+                // normal-screen visible = the `-a` capture -> .primary;
+                // alt-screen app = the no-`-a` capture -> .alternate.
+                try applyCapturedVisible(t, .primary, pane.captured_visible_alternate);
+                try applyCapturedVisible(t, .alternate, pane.captured_visible_primary);
+            } else {
+                // No alternate screen: the no-`-a` capture is the normal
+                // screen's visible -> .primary.
+                try applyCapturedVisible(t, .primary, pane.captured_visible_primary);
+            }
+            self.freeStashedVisibles(pane);
+        }
+
+        // Determine which screen to use based on alternate_on
+        const screen_key: ScreenSet.Key = if (data.alternate_on) .alternate else .primary;
+
+        // Switch the terminal to the correct active screen. The visible
+        // application above and the capture sequence may leave the terminal
+        // on either screen, so pin it here.
+        _ = try t.switchScreen(screen_key);
+
+        // Classify the cursor shape tmux reports for this pane. tmux encodes
+        // a default cursor (app set no DECSCUSR) as empty OR literal
+        // "default"; an explicit block/underline/bar means the app chose it.
+        // A default follows the configured `cursor-style`/`cursor-style-blink`.
+        // Recording this on the handler's `default_cursor` flag keeps a later
+        // config reload (`updateCursorDefaults`) from clobbering an app-set
+        // cursor — the capture replay never re-emits DECSCUSR, so the flag
+        // must be reconstructed here. ROOTSHELL-TMUX (id=viewer-cursor-style-default)
+        const shape_is_default = data.cursor_shape.len == 0 or
+            std.mem.eql(u8, data.cursor_shape, "default");
+        const shape_is_explicit =
+            std.mem.eql(u8, data.cursor_shape, "block") or
+            std.mem.eql(u8, data.cursor_shape, "underline") or
+            std.mem.eql(u8, data.cursor_shape, "bar");
+        if (shape_is_default or shape_is_explicit) {
+            pane.terminal.cursor.is_default = shape_is_default;
+        }
+
+        // Set cursor position on the appropriate screen (tmux uses 0-based)
+        if (t.screens.get(screen_key)) |screen| {
+            cursor: {
+                const cursor_x = std.math.cast(
+                    size.CellCountInt,
+                    data.cursor_x,
+                ) orelse break :cursor;
+                const cursor_y = std.math.cast(
+                    size.CellCountInt,
+                    data.cursor_y,
+                ) orelse break :cursor;
+                if (cursor_x >= screen.pages.cols or
+                    cursor_y >= screen.pages.rows) break :cursor;
+                screen.cursorAbsolute(cursor_x, cursor_y);
+            }
+
+            // Set cursor shape on this screen; "default" follows the config.
+            // ROOTSHELL-TMUX (id=viewer-cursor-style-default)
+            if (std.mem.eql(u8, data.cursor_shape, "block")) {
+                screen.cursor.cursor_style = .block;
+            } else if (std.mem.eql(u8, data.cursor_shape, "underline")) {
+                screen.cursor.cursor_style = .underline;
+            } else if (std.mem.eql(u8, data.cursor_shape, "bar")) {
+                screen.cursor.cursor_style = .bar;
+            } else if (shape_is_default) {
+                screen.cursor.cursor_style = self.default_cursor_style;
+            }
+            // unrecognized non-empty shape: leave the live cursor as-is
+        }
+
+        // Restore the saved cursor for the INACTIVE screen.
+        //
+        // tmux's alternate_saved_x/y is the cursor that was saved when the
+        // pane entered the alternate screen via mode 1049 — i.e. the primary
+        // screen's cursor to restore when the alt-screen app exits. When
+        // alternate_on we must seed the primary screen's DECSC saved-cursor
+        // SLOT (not just its live cursor): the live `ESC[?1049l` the app emits
+        // on exit calls `restoreCursor()`, which reads `saved_cursor` and
+        // DEFAULTS TO (0,0) when it is null — so without this the cursor snaps
+        // to the top-left after the app quits (the wrong-location report on
+        // detach/reattach). ROOTSHELL-TMUX (id=alt-screen-cursor-restore). We
+        // also set the live cursor so the position is right if the screen is
+        // shown by a non-1049 path. When alternate_on is false this targets the
+        // alternate screen (tmux usually sends MAX_INT — no saved position).
+        {
+            const saved_screen_key: ScreenSet.Key = if (data.alternate_on) .primary else .alternate;
+            if (t.screens.get(saved_screen_key)) |saved_screen| cursor: {
+                const alt_x = std.math.cast(
+                    size.CellCountInt,
+                    data.alternate_saved_x,
+                ) orelse break :cursor;
+                const alt_y = std.math.cast(
+                    size.CellCountInt,
+                    data.alternate_saved_y,
+                ) orelse break :cursor;
+
+                // If our coordinates are outside our screen we ignore it.
+                // tmux actually sends MAX_INT for when there isn't a set
+                // cursor position, so this isn't theoretical.
+                if (alt_x >= saved_screen.pages.cols or
+                    alt_y >= saved_screen.pages.rows) break :cursor;
+
+                saved_screen.cursorAbsolute(alt_x, alt_y);
+                // Seed the DECSC saved-cursor slot the app's exit `1049l`
+                // restoreCursor() reads (mirrors Terminal.saveCursor; pen/
+                // charset from the just-replayed screen, pending_wrap cleared
+                // since we positioned absolutely).
+                saved_screen.saved_cursor = .{
+                    .x = alt_x,
+                    .y = alt_y,
+                    .style = saved_screen.cursor.style,
+                    .protected = saved_screen.cursor.protected,
+                    .pending_wrap = false,
+                    .origin = t.modes.get(.origin),
+                    .charset = saved_screen.charset,
+                };
+            }
+        }
+
+        // Set cursor visibility
+        t.modes.set(.cursor_visible, data.cursor_flag);
+
+        // Set cursor blinking. A default-shape cursor uses the configured
+        // blink only when explicitly set; otherwise (and for an explicit
+        // shape) it honors tmux's reported blink — so an unconfigured default
+        // doesn't force a steady cursor to blink on attach/recapture.
+        // ROOTSHELL-TMUX (id=viewer-cursor-style-default)
+        t.modes.set(
+            .cursor_blinking,
+            if (shape_is_default)
+                (self.default_cursor_blink orelse data.cursor_blinking)
+            else
+                data.cursor_blinking,
+        );
+
+        // Terminal modes
+        t.modes.set(.insert, data.insert_flag);
+        t.modes.set(.wraparound, data.wrap_flag);
+        t.modes.set(.keypad_keys, data.keypad_flag);
+        t.modes.set(.cursor_keys, data.keypad_cursor_flag);
+        t.modes.set(.origin, data.origin_flag);
+
+        // Mouse modes. tmux's mouse_any_flag is an aggregate
+        // ALL_MOUSE_MODES indicator; the concrete mutually exclusive
+        // modes are standard/button/all.
+        t.modes.set(.mouse_event_x10, false);
+        t.modes.set(.mouse_event_normal, data.mouse_standard_flag);
+        t.modes.set(.mouse_event_button, data.mouse_button_flag);
+        t.modes.set(.mouse_event_any, data.mouse_all_flag);
+        t.modes.set(.mouse_format_utf8, data.mouse_utf8_flag);
+        t.modes.set(.mouse_format_sgr, data.mouse_sgr_flag);
+        t.flags.mouse_event = if (data.mouse_all_flag)
+            .any
+        else if (data.mouse_button_flag)
+            .button
+        else if (data.mouse_standard_flag)
+            .normal
+        else
+            .none;
+        t.flags.mouse_format = if (data.mouse_sgr_flag)
+            .sgr
+        else if (data.mouse_utf8_flag)
+            .utf8
+        else
+            .x10;
+
+        // Focus reporting. `pane_private_modes` expands empty both on tmux
+        // without the variable (< 3.8) and when no modes are set. Only a
+        // server known to have it may treat empty as "no modes"; otherwise
+        // an empty field fails closed and leaves the live mode untouched.
+        const private_modes_authoritative = private_modes_present or
+            tmuxVersionAtLeast(self.tmux_version, 3, 8);
+        if (private_modes_authoritative) {
+            t.modes.set(
+                .focus_event,
+                output.privateModesContain(data.pane_private_modes, 1004),
+            );
+        }
+
+        // Force synchronized output (DECSET 2026) off. A completed
+        // capture-pane snapshot is a settled, non-synchronized frame —
+        // tmux has no persistent sync flag, it's transient. During attach
+        // the balancing `2026l` can be dropped (uninitialized-pane output
+        // suppression / spill overflow), latching the bit ON with no live
+        // stream to clear it; the renderer then skips every frame and the
+        // pane stays blank. Mirrors the resize-path clear in c/terminal.zig.
+        // ROOTSHELL-TMUX (id=viewer-sync-output-attach-clear)
+        t.modes.set(.synchronized_output, false);
+
+        // Bracketed paste is intentionally NOT synced from tmux. tmux
+        // exposes no `bracketed_paste` format variable — `#{bracketed_paste}`
+        // returns empty on every tmux through 3.6 — so syncing it would
+        // clobber the value the pane's own `%output` stream already tracks
+        // (from the app's `\033[?2004h`/`l`) down to a constant `false`,
+        // leaving every paste into the pane un-bracketed. The live stream is
+        // authoritative; mirror iTerm2, whose `pasteHelperShouldBracket`
+        // reads its own per-pane screen mode and never asks tmux.
+        // ROOTSHELL-TMUX (id=tmux-pane-bracketed-paste)
+
+        // Scroll region (tmux uses 0-based, inclusive). Clamp to the pane's
+        // current rows and require a valid (top < bottom) region, mirroring
+        // `Terminal.setTopAndBottomMargin`'s bounds but WITHOUT its
+        // cursor-home side effect (the cursor was already restored above). A
+        // tmux-reported region taller than the pane terminal's current rows
+        // (a real transient during resize/relayout) would otherwise feed OOB
+        // row math, and top >= bottom would underflow the region height. On a
+        // degenerate report we leave the default full-screen region.
+        // ROOTSHELL-TMUX (id=viewer-pane-state-scroll-clamp)
+        scroll: {
+            if (t.rows == 0) break :scroll;
+            const upper = std.math.cast(
+                size.CellCountInt,
+                data.scroll_region_upper,
+            ) orelse break :scroll;
+            const lower = std.math.cast(
+                size.CellCountInt,
+                data.scroll_region_lower,
+            ) orelse break :scroll;
+            const max_row: size.CellCountInt = @intCast(t.rows - 1);
+            const scroll_top = @min(upper, max_row);
+            const scroll_bottom = @min(lower, max_row);
+            if (scroll_top >= scroll_bottom) break :scroll;
+            t.scrolling_region.top = scroll_top;
+            t.scrolling_region.bottom = scroll_bottom;
+        }
+
+        // Tab stops - parse comma-separated list and set
+        t.tabstops.reset(0); // Clear all tabstops first
+        if (data.pane_tabs.len > 0) {
+            var tabs_it = std.mem.splitScalar(u8, data.pane_tabs, ',');
+            while (tabs_it.next()) |tab_str| {
+                const col = std.fmt.parseInt(usize, tab_str, 10) catch continue;
+                const col_cell = std.math.cast(size.CellCountInt, col) orelse continue;
+                if (col_cell >= t.cols) continue;
+                t.tabstops.set(col_cell);
+            }
         }
     }
 
@@ -4728,6 +4908,7 @@ pub const Viewer = struct {
         pane: *const Pane,
         recovery_window: ?usize,
     ) bool {
+        if (pane.snapshot_requested) return false;
         if (recovery_window) |window_id| {
             // A topology change can add a new pane while this window-scoped
             // state command is already in flight. Layout membership alone is
@@ -4813,8 +4994,14 @@ pub const Viewer = struct {
         pane.capture_pending = false;
         self.flushPaneDeferred(pane, id);
 
+        try self.applyPaneHistory(pane, screen_key, content);
+    }
+
+    // Caller holds the pane renderer lock.
+    fn applyPaneHistory(_: *Viewer, pane: *Pane, screen_key: ScreenSet.Key, content: []const u8) !void {
         const t: *Terminal = &pane.terminal;
         _ = try t.switchScreen(screen_key);
+        prepareCaptureReplay(t);
 
         // Make the history apply idempotent: a RETRIED history (after a lock
         // timeout) lands on a screen that may already hold visible content,
@@ -4832,7 +5019,7 @@ pub const Viewer = struct {
         // correct but we'll get the active contents soon.
         var stream = t.vtStream();
         defer stream.deinit();
-        stream.nextSlice(content);
+        replayCapture(&stream, content);
         stream.nextSlice("\x1b[0m");
 
         // Populate the active area to be empty since this is only history.
@@ -4911,13 +5098,43 @@ pub const Viewer = struct {
     ) !void {
         const bytes = content orelse return;
         _ = try t.switchScreen(key);
+        prepareCaptureReplay(t);
         t.eraseDisplay(.complete, false);
         t.setCursorPos(1, 1);
         var stream = t.vtStream();
         defer stream.deinit();
         stream.nextSlice("\x1b[0m");
-        stream.nextSlice(bytes);
+        replayCapture(&stream, bytes);
         stream.nextSlice("\x1b[0m");
+    }
+
+    // Captures describe full grids, not writes through the live application's
+    // margins/modes. A same-size resize does not reset these. Restore the
+    // captured modes and scroll region only AFTER all capture replay finishes.
+    fn prepareCaptureReplay(t: *Terminal) void {
+        t.modes.set(.origin, false);
+        t.modes.set(.insert, false);
+        t.modes.set(.wraparound, true);
+        t.scrolling_region = .{
+            .top = 0,
+            .bottom = t.rows - 1,
+            .left = 0,
+            .right = t.cols - 1,
+        };
+    }
+
+    // capture-pane serializes hard row boundaries as LF. A PTY may add CR,
+    // but a pipe need not; replay each hard row from column zero in both cases.
+    // Soft wraps joined by -J contain no LF and still reflow naturally.
+    fn replayCapture(stream: anytype, content: []const u8) void {
+        var start: usize = 0;
+        for (content, 0..) |byte, i| {
+            if (byte != '\n') continue;
+            stream.nextSlice(content[start..i]);
+            stream.nextSlice("\r\n");
+            start = i + 1;
+        }
+        stream.nextSlice(content[start..]);
     }
 
     /// ROOTSHELL-TMUX (id=alt-screen-fix): free + null a pane's stashed VISIBLE
@@ -4989,6 +5206,16 @@ pub const Viewer = struct {
     /// spill or the spilled bytes themselves. ROOTSHELL-TMUX
     /// (id=viewer-pane-bounded-lock)
     fn flushPaneDeferred(self: *Viewer, pane: *Pane, pane_id: usize) void {
+        if (pane.pending_snapshot != null) {
+            self.applyPendingSnapshot(pane, pane_id) catch |err| {
+                log.warn("pane {} snapshot application failed: {}", .{ pane_id, err });
+                self.clearPaneSnapshot(pane);
+                pane.pending_vt.clearRetainingCapacity();
+                pane.pending_dropped = false;
+                self.queuePaneSnapshot(pane_id) catch {};
+                return;
+            };
+        }
         if (pane.pending_resize) |pr| {
             pane.pending_resize = null;
             // cell_size_px keeps pixel geometry consistent with the new cell
@@ -5007,18 +5234,8 @@ pub const Viewer = struct {
         if (pane.pending_dropped) {
             pane.pending_dropped = false;
             pane.pending_vt.clearRetainingCapacity();
-            // Content was lost; tmux is the source of truth — re-fetch the
-            // visible area for both screens rather than replaying a hole,
-            // then pane_state to restore the active screen/cursor/modes
-            // (receivedPaneVisible leaves the terminal on the last refreshed
-            // screen with the cursor at the content end). Pane titles
-            // self-heal via the title subscription.
-            self.queueCommands(&.{
-                .{ .pane_visible = .{ .id = pane_id, .screen_key = .primary } },
-                .{ .pane_visible = .{ .id = pane_id, .screen_key = .alternate } },
-                .{ .pane_state = self.session_id },
-            }) catch |err| {
-                log.warn("failed to queue dropped-spill refresh for pane {} err={}", .{ pane_id, err });
+            self.queuePaneSnapshot(pane_id) catch |err| {
+                log.warn("failed to queue dropped-spill snapshot for pane {} err={}", .{ pane_id, err });
             };
             return;
         }
@@ -5197,6 +5414,7 @@ pub const Viewer = struct {
 
         // Apply work deferred by earlier lock timeouts BEFORE the new data.
         self.flushPaneDeferred(pane, id);
+        if (!pane.initialized) return;
 
         const title_before = titleFingerprint(pane.terminal.getTitle());
         pane.stream.nextSlice(buf[0..n]);
@@ -6124,6 +6342,10 @@ const Command = union(enum) {
     /// List all windows so we can sync our window state.
     list_windows,
 
+    /// Repair an interrupted capture with four captures + matching state in one
+    /// synchronous tmux command group. Each command has its own guard block.
+    pane_snapshot: usize,
+
     /// Capture history for the given pane ID.
     pane_history: CapturePane,
 
@@ -6232,6 +6454,7 @@ const Command = union(enum) {
     pub fn deinit(self: Command, alloc: Allocator) void {
         return switch (self) {
             .list_windows,
+            .pane_snapshot,
             .pane_history,
             .pane_visible,
             .pane_state,
@@ -6257,6 +6480,24 @@ const Command = union(enum) {
         writer: *std.Io.Writer,
     ) std.Io.Writer.Error!void {
         switch (self) {
+            .pane_snapshot => |id| {
+                // One complete line prevents network fragmentation from letting
+                // tmux service pane output between the synchronous captures.
+                for ([_]Command{
+                    .{ .pane_history = .{ .id = id, .screen_key = .primary } },
+                    .{ .pane_visible = .{ .id = id, .screen_key = .primary } },
+                    .{ .pane_history = .{ .id = id, .screen_key = .alternate } },
+                    .{ .pane_visible = .{ .id = id, .screen_key = .alternate } },
+                }) |cmd| {
+                    var buf: [256]u8 = undefined;
+                    var part: std.Io.Writer = .fixed(&buf);
+                    try cmd.formatCommand(&part);
+                    const bytes = part.buffered();
+                    try writer.writeAll(bytes[0 .. bytes.len - 1]);
+                    try writer.writeAll(" ; ");
+                }
+                try writer.print("display-message -p -t %{d} '#{{pane_width}} #{{pane_height}} {s}'\n", .{ id, comptime Format.list_panes.comptimeFormat() });
+            },
             .list_windows => try writer.writeAll(std.fmt.comptimePrint(
                 "list-windows -F '{s}'\n",
                 .{comptime Format.list_windows.comptimeFormat()},
@@ -10717,98 +10958,303 @@ test "Action.format handles focus action" {
     try testing.expect(std.mem.indexOf(u8, result, "focus") != null);
 }
 
-test "output suppressed for uninitialized panes" {
+test "attach snapshot recovers banner and first prompt lost during capture" {
+    for ([_][]const u8{ "Disk Usage :", "" }) |partial| {
+        var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
+        defer viewer.deinit();
+        try driveStartupOneWindow(&viewer);
+        const pane = viewer.panes.get(0).?;
+        pane.initialized = false;
+        try viewer.queueCommands(&.{
+            .{ .pane_history = .{ .id = 0, .screen_key = .primary } },
+            .{ .pane_visible = .{ .id = 0, .screen_key = .primary } },
+            .{ .pane_history = .{ .id = 0, .screen_key = .alternate } },
+            .{ .pane_visible = .{ .id = 0, .screen_key = .alternate } },
+            .{ .pane_state = 1 },
+        });
+        var arena = ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        _ = (try viewer.takePendingCommand(arena.allocator())).?;
+        _ = viewer.next(.{ .tmux = blockEnd("") });
+        _ = viewer.next(.{ .tmux = blockEnd(partial) });
+        // The old implementation drops these bytes, then applies the later
+        // cursor position to an earlier (possibly empty) visible capture.
+        _ = viewer.next(.{ .tmux = .{ .output = .{ .pane_id = 0, .data = "MOTD tail\\015\\012starship> " } } });
+        _ = viewer.next(.{ .tmux = blockEnd("") });
+        _ = viewer.next(.{ .tmux = blockEnd("") });
+        const actions = viewer.next(.{ .tmux = blockEnd(snapshotTestState[6..]) });
+        try testing.expect(!pane.initialized);
+        const cmd = firstCommandAction(actions).?;
+        try testing.expectEqual(@as(usize, 4), std.mem.count(u8, cmd, "capture-pane"));
+        try testing.expectEqual(@as(usize, 1), std.mem.count(u8, cmd, "\n"));
+        try testing.expect(std.mem.indexOf(u8, cmd, "display-message -p -t %0") != null);
+        viewer.recordTrackedSend();
+        // A later send-keys ack must remain behind ALL five snapshot replies.
+        viewer.recordUntrackedSends(1);
+        const full = "Disk Usage :\r\nMOTD tail\r\nstarship> ";
+        try feedSnapshotTest(&viewer, full, snapshotTestState);
+        try testing.expect(pane.initialized);
+        try testing.expectEqual(Viewer.BlockClass.untracked, viewer.classifyBlock());
+        const str = try pane.terminal.screens.active.dumpStringAlloc(testing.allocator, .{ .active = .{} });
+        defer testing.allocator.free(str);
+        try testing.expectEqual(@as(usize, 1), std.mem.count(u8, str, "MOTD tail"));
+        try testing.expectEqual(@as(usize, 1), std.mem.count(u8, str, "starship>"));
+        try testing.expectEqual(@as(usize, 9), pane.terminal.screens.active.cursor.x);
+        try testing.expectEqual(@as(usize, 2), pane.terminal.screens.active.cursor.y);
+        _ = viewer.next(.{ .tmux = .{ .output = .{ .pane_id = 0, .data = "echo ok" } } });
+        const after = try pane.terminal.screens.active.dumpStringAlloc(testing.allocator, .{ .active = .{} });
+        defer testing.allocator.free(after);
+        try testing.expect(std.mem.indexOf(u8, after, "starship>echo ok") != null);
+    }
+}
+
+const snapshotTestState = "83 44 %0;9;2;1;;1;0;4294967295;4294967295;0;1;0;0;0;0;0;0;0;0;0;;0;0;43;8,16";
+
+fn feedSnapshotTest(viewer: *Viewer, visible: []const u8, state: []const u8) !void {
+    for ([_][]const u8{ "", visible, "", "", state }, 0..) |reply, i| {
+        try testing.expectEqual(Viewer.BlockClass.tracked, viewer.classifyBlock());
+        const actions = viewer.next(.{ .tmux = blockEnd(reply) });
+        if (i < 4) {
+            try testing.expect(viewer.command_in_flight);
+            try testing.expect(firstCommandAction(actions) == null);
+        }
+    }
+}
+
+test "attach snapshot error cancels only its remaining replies" {
+    for (0..5) |failed_at| {
+        var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
+        defer viewer.deinit();
+        try driveStartupOneWindow(&viewer);
+        try viewer.queuePaneSnapshot(0);
+        var arena = ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        _ = (try viewer.takePendingCommand(arena.allocator())).?;
+        viewer.recordTrackedSend();
+        viewer.recordUntrackedSends(1);
+        for (0..failed_at) |_| {
+            try testing.expectEqual(Viewer.BlockClass.tracked, viewer.classifyBlock());
+            _ = viewer.next(.{ .tmux = blockEnd("unused") });
+        }
+        try testing.expectEqual(Viewer.BlockClass.tracked, viewer.classifyBlockResult(true));
+        const failed = blockEnd("pane no longer exists");
+        _ = viewer.next(.{ .tmux = .{ .block_err = failed.block_end } });
+        try testing.expect(viewer.capture_transaction == null);
+        try testing.expectEqual(Viewer.BlockClass.untracked, viewer.classifyBlock());
+        try testing.expectEqual(Viewer.BlockClass.empty, viewer.classifyBlock());
+        try testing.expect(!viewer.panes.get(0).?.snapshot_requested);
+    }
+}
+
+test "attach snapshot defers under renderer lock and preserves following output" {
     var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
+    try driveStartupOneWindow(&viewer);
+    const pane = viewer.panes.get(0).?;
+    try viewer.queuePaneSnapshot(0);
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    _ = (try viewer.takePendingCommand(arena.allocator())).?;
+    viewer.recordTrackedSend();
+    var mutex: std.Io.Mutex = .init;
+    var ctx: u8 = 0;
+    const callbacks = struct {
+        fn wake(_: ?*anyopaque) void {}
+        fn post(_: ?*anyopaque, _: Viewer.PaneOscEvent) void {}
+    };
+    pane.attachRenderer(&mutex, &ctx, callbacks.wake, &ctx, callbacks.post);
+    defer pane.detachRenderer();
+    mutex.lockUncancelable(testing.io);
+    var locked = true;
+    defer if (locked) mutex.unlock(testing.io);
+    try feedSnapshotTest(&viewer, "Disk Usage :\r\nMOTD tail\r\nstarship> ", snapshotTestState);
+    try testing.expect(pane.pending_snapshot != null);
+    _ = viewer.next(.{ .tmux = .{ .output = .{ .pane_id = 0, .data = "echo ok" } } });
+    try testing.expectEqualStrings("echo ok", pane.pending_vt.items);
+    pane.pending_resize = .{ .cols = 100, .rows = 50 };
+    mutex.unlock(testing.io);
+    locked = false;
+    viewer.flushAllDeferredPanes(null, PANE_LOCK_OUTPUT_BUDGET_NS);
+    try testing.expect(pane.initialized);
+    try testing.expectEqual(@as(usize, 100), pane.terminal.cols);
+    try testing.expectEqual(@as(usize, 50), pane.terminal.rows);
+    try testing.expect(pane.pending_snapshot == null);
+    const str = try pane.terminal.screens.active.dumpStringAlloc(testing.allocator, .{ .active = .{} });
+    defer testing.allocator.free(str);
+    try testing.expect(std.mem.indexOf(u8, str, "starship>echo ok") != null);
+}
 
-    try testViewer(&viewer, &.{
-        // Startup
-        .{ .input = .{ .tmux = blockEnd("") } },
-        .{
-            .input = .{ .tmux = .{ .session_changed = .{
-                .id = 1,
-                .name = "test",
-            } } },
-            .contains_command = "refresh-client",
-        },
-        // Receive client_size response, which triggers version query
-        .{
-            .input = .{ .tmux = blockEnd("") },
-            .contains_command = "display-message",
-        },
-        .{
-            .input = .{ .tmux = blockEnd("3.5a") },
-            .contains_command = "list-windows",
-        },
-        // Receive window with single pane
-        .{
-            .input = .{ .tmux = blockEnd(
-                \\$0 @0 1 0 0 %0 83 44 b7dd,83x44,0,0,0 bash
-            ) },
-            .contains_tags = &.{ .windows, .command },
-            .check = (struct {
-                fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
-                    // Pane should exist but not be initialized
-                    const pane = v.panes.getEntry(0).?.value_ptr.*;
-                    try testing.expect(!pane.initialized);
-                }
-            }).check,
-        },
-        // Output arrives during capture-pane sequence — should be suppressed
-        .{
-            .input = .{ .tmux = .{ .output = .{ .pane_id = 0, .data = "premature output" } } },
-            .check = (struct {
-                fn check(v: *Viewer, actions: []const Viewer.Action) anyerror!void {
-                    // No actions should be emitted — output is suppressed
-                    try testing.expectEqual(0, actions.len);
-                    // Viewer's terminal should NOT have the premature output
-                    const pane = v.panes.getEntry(0).?.value_ptr;
-                    const screen: *Screen = pane.*.terminal.screens.active;
-                    const str = try screen.dumpStringAlloc(
-                        testing.allocator,
-                        .{ .active = .{} },
-                    );
-                    defer testing.allocator.free(str);
-                    try testing.expectEqualStrings("", str);
-                }
-            }).check,
-        },
-        // Complete capture-pane sequence: 4 captures + pane_state
-        .{ .input = .{ .tmux = blockEnd("") } },
-        .{ .input = .{ .tmux = blockEnd("") } },
-        .{ .input = .{ .tmux = blockEnd("") } },
-        .{ .input = .{ .tmux = blockEnd("") } },
-        .{
-            .input = .{ .tmux = blockEnd("") },
-            // pane_state completes — pane should now be initialized
-            .check = (struct {
-                fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
-                    const pane = v.panes.getEntry(0).?.value_ptr.*;
-                    try testing.expect(pane.initialized);
-                }
-            }).check,
-        },
-        // Output after initialization — should be processed by viewer
-        .{
-            .input = .{ .tmux = .{ .output = .{ .pane_id = 0, .data = "real output" } } },
-            .check = (struct {
-                fn check(v: *Viewer, actions: []const Viewer.Action) anyerror!void {
-                    // No actions emitted — viewer processes output
-                    // internally into the pane terminal.
-                    try testing.expectEqual(0, actions.len);
-                    // Viewer's terminal should have the output
-                    const pane = v.panes.getEntry(0).?.value_ptr;
-                    const screen: *Screen = pane.*.terminal.screens.active;
-                    const str = try screen.dumpStringAlloc(
-                        testing.allocator,
-                        .{ .active = .{} },
-                    );
-                    defer testing.allocator.free(str);
-                    try testing.expect(std.mem.containsAtLeast(u8, str, 1, "real output"));
-                }
-            }).check,
-        },
-    });
+test "attach snapshot restores alternate screen without losing primary history" {
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
+    defer viewer.deinit();
+    try driveStartupOneWindow(&viewer);
+    try viewer.queuePaneSnapshot(0);
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    _ = (try viewer.takePendingCommand(arena.allocator())).?;
+    for ([_][]const u8{
+        "history one\nhistory two",
+        "VIM",
+        "",
+        "SHELL",
+        "83 44 %0;1;0;1;;1;1;5;0;0;1;0;0;0;0;0;0;0;0;0;;0;0;43;8,16",
+    }) |reply| _ = viewer.next(.{ .tmux = blockEnd(reply) });
+    const pane = viewer.panes.get(0).?;
+    try testing.expectEqual(ScreenSet.Key.alternate, pane.terminal.screens.active_key);
+    const primary = pane.terminal.screens.get(.primary).?;
+    const history = try primary.dumpStringAlloc(testing.allocator, .{ .history = .{} });
+    defer testing.allocator.free(history);
+    try testing.expectEqualStrings("history one\nhistory two", history);
+    const active = try pane.terminal.screens.active.dumpStringAlloc(testing.allocator, .{ .active = .{} });
+    defer testing.allocator.free(active);
+    try testing.expectEqualStrings("VIM", active);
+    const saved = try primary.dumpStringAlloc(testing.allocator, .{ .active = .{} });
+    defer testing.allocator.free(saved);
+    try testing.expectEqualStrings("SHELL", saved);
+}
+
+test "attach snapshot resync discards partial replies and rearms pane recovery" {
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
+    defer viewer.deinit();
+    try driveStartupOneWindow(&viewer);
+    try viewer.queuePaneSnapshot(0);
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    _ = (try viewer.takePendingCommand(arena.allocator())).?;
+    _ = viewer.next(.{ .tmux = blockEnd("old history") });
+    _ = viewer.next(.{ .tmux = blockEnd("old prompt") });
+    try testing.expect(viewer.capture_transaction != null);
+    viewer.forceResync();
+    try testing.expect(viewer.capture_transaction == null);
+    const pane = viewer.panes.get(0).?;
+    try testing.expect(!pane.snapshot_requested);
+    try testing.expect(pane.reset_recapture);
+    try testing.expect(viewer.isResyncing());
+}
+
+test "attach snapshot spill overflow requests a fresh snapshot before going live" {
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
+    defer viewer.deinit();
+    try driveStartupOneWindow(&viewer);
+    try viewer.queuePaneSnapshot(0);
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    _ = (try viewer.takePendingCommand(arena.allocator())).?;
+    const pane = viewer.panes.get(0).?;
+    // Stage the final response behind a contended renderer.
+    var mutex: std.Io.Mutex = .init;
+    var ctx: u8 = 0;
+    const callbacks = struct {
+        fn wake(_: ?*anyopaque) void {}
+        fn post(_: ?*anyopaque, _: Viewer.PaneOscEvent) void {}
+    };
+    pane.attachRenderer(&mutex, &ctx, callbacks.wake, &ctx, callbacks.post);
+    defer pane.detachRenderer();
+    mutex.lockUncancelable(testing.io);
+    var locked = true;
+    defer if (locked) mutex.unlock(testing.io);
+    for ([_][]const u8{ "", "stale", "", "", snapshotTestState }) |reply|
+        _ = viewer.next(.{ .tmux = blockEnd(reply) });
+    const big = try testing.allocator.alloc(u8, PANE_PENDING_VT_MAX + 1);
+    defer testing.allocator.free(big);
+    @memset(big, 'x');
+    _ = viewer.next(.{ .tmux = .{ .output = .{ .pane_id = 0, .data = big } } });
+    try testing.expect(pane.pending_dropped);
+    mutex.unlock(testing.io);
+    locked = false;
+    viewer.flushAllDeferredPanes(null, 0);
+    try testing.expect(!pane.initialized);
+    try testing.expect(pane.pending_snapshot == null);
+    try testing.expect(pane.snapshot_requested);
+    try testing.expectEqual(@as(usize, 0), pane.pending_vt.items.len);
+    _ = (try viewer.takePendingCommand(arena.allocator())).?;
+    viewer.recordTrackedSend();
+    try feedSnapshotTest(&viewer, "fresh snapshot", snapshotTestState);
+    try testing.expect(pane.initialized);
+    const visible = try pane.terminal.screens.active.dumpStringAlloc(testing.allocator, .{ .active = .{} });
+    defer testing.allocator.free(visible);
+    try testing.expectEqualStrings("fresh snapshot", visible);
+}
+
+test "attach snapshot normalizes restricted replay modes then restores captured state" {
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
+    defer viewer.deinit();
+    try driveStartupOneWindow(&viewer);
+    const pane = viewer.panes.get(0).?;
+    pane.terminal.modes.set(.origin, true);
+    pane.terminal.modes.set(.insert, true);
+    pane.terminal.modes.set(.wraparound, false);
+    pane.terminal.scrolling_region = .{ .top = 5, .bottom = 10, .left = 4, .right = 40 };
+    // Exercise the real spill-overflow entrypoint, at the SAME dimensions.
+    pane.pending_dropped = true;
+    viewer.flushAllDeferredPanes(null, 0);
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    _ = (try viewer.takePendingCommand(arena.allocator())).?;
+    for ([_][]const u8{
+        "history one\nhistory two",
+        "first line\nsecond line",
+        "",
+        "",
+        "83 44 %0;9;2;1;;1;0;4294967295;4294967295;1;0;0;0;1;0;0;0;0;0;0;;0;5;10;8,16",
+    }) |reply| _ = viewer.next(.{ .tmux = blockEnd(reply) });
+    try testing.expect(pane.initialized);
+    const history = try pane.terminal.screens.active.dumpStringAlloc(testing.allocator, .{ .history = .{} });
+    defer testing.allocator.free(history);
+    try testing.expectEqualStrings("history one\nhistory two", history);
+    const visible = try pane.terminal.screens.active.dumpStringAlloc(testing.allocator, .{ .active = .{} });
+    defer testing.allocator.free(visible);
+    try testing.expectEqualStrings("first line\nsecond line", visible);
+    try testing.expect(pane.terminal.modes.get(.origin));
+    try testing.expect(pane.terminal.modes.get(.insert));
+    try testing.expect(!pane.terminal.modes.get(.wraparound));
+    try testing.expectEqual(@as(usize, 5), pane.terminal.scrolling_region.top);
+    try testing.expectEqual(@as(usize, 10), pane.terminal.scrolling_region.bottom);
+}
+
+test "attach snapshot pause invalidates deferred content and recaptures after continue" {
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
+    defer viewer.deinit();
+    try driveStartupOneWindow(&viewer);
+    const pane = viewer.panes.get(0).?;
+    try viewer.queuePaneSnapshot(0);
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    _ = (try viewer.takePendingCommand(arena.allocator())).?;
+    var mutex: std.Io.Mutex = .init;
+    var ctx: u8 = 0;
+    const callbacks = struct {
+        fn wake(_: ?*anyopaque) void {}
+        fn post(_: ?*anyopaque, _: Viewer.PaneOscEvent) void {}
+    };
+    pane.attachRenderer(&mutex, &ctx, callbacks.wake, &ctx, callbacks.post);
+    defer pane.detachRenderer();
+    mutex.lockUncancelable(testing.io);
+    var locked = true;
+    defer if (locked) mutex.unlock(testing.io);
+    for ([_][]const u8{ "", "old prompt", "", "", snapshotTestState }) |reply|
+        _ = viewer.next(.{ .tmux = blockEnd(reply) });
+    try testing.expect(pane.pending_snapshot != null);
+    try testing.expect(!pane.pause_recapture);
+    const actions = viewer.next(.{ .tmux = .{ .pause = .{ .pane_id = 0 } } });
+    try testing.expect(std.mem.indexOf(u8, firstCommandAction(actions).?, ":continue") != null);
+    try testing.expect(pane.recapture_again);
+    mutex.unlock(testing.io);
+    locked = false;
+    viewer.flushAllDeferredPanes(null, 0);
+    try testing.expect(!pane.initialized);
+    try testing.expect(pane.pending_snapshot == null);
+    // The stale snapshot cannot be installed, and the replacement waits for
+    // continue's acknowledgement (which skips tmux's discarded output).
+    try testing.expect(viewer.command_queue.first().?.* == .continue_pane);
+    const after_continue = viewer.next(.{ .tmux = blockEnd("") });
+    try testing.expect(std.mem.indexOf(u8, firstCommandAction(after_continue).?, "capture-pane") != null);
+    viewer.recordTrackedSend();
+    try feedSnapshotTest(&viewer, "recovered discarded output", snapshotTestState);
+    try testing.expect(pane.initialized);
+    const visible = try pane.terminal.screens.active.dumpStringAlloc(testing.allocator, .{ .active = .{} });
+    defer testing.allocator.free(visible);
+    try testing.expectEqualStrings("recovered discarded output", visible);
 }
 
 test "output OSC title from active pane produces title action" {
@@ -11912,9 +12358,14 @@ test "layout_change mid-capture suppresses output for uninitialized pane" {
         .{ .input = .{ .tmux = blockEnd("") } },
         .{ .input = .{ .tmux = blockEnd("") } },
         .{ .input = .{ .tmux = blockEnd("") } },
-        // pane_state response — this marks all panes as initialized
+        // The discarded output requires an atomic repair for pane %2 only.
+        .{ .input = .{ .tmux = blockEnd("") }, .contains_command = "capture-pane" },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("premature output") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
+        .{ .input = .{ .tmux = blockEnd("") } },
         .{
-            .input = .{ .tmux = blockEnd("") },
+            .input = .{ .tmux = blockEnd("83 21 %2;0;1;1;;1;0;4294967295;4294967295;0;1;0;0;0;0;0;0;0;0;0;;0;0;20;8,16") },
             .check = (struct {
                 fn check(v: *Viewer, _: []const Viewer.Action) anyerror!void {
                     // Pane %2 should now be initialized
@@ -12732,7 +13183,7 @@ test "bounded pane lock: spill overflow drops and queues a visible re-fetch" {
     var found_visible = false;
     var it = viewer.command_queue.iterator(.forward);
     while (it.next()) |cmd| {
-        if (cmd.* == .pane_visible) found_visible = true;
+        if (cmd.* == .pane_snapshot) found_visible = true;
     }
     try testing.expect(found_visible);
 }

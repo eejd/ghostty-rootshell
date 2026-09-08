@@ -31,6 +31,9 @@ const TmuxHarness = struct {
     parser: control.Parser,
     viewer: Viewer,
     session_name: []const u8,
+    release_banner: bool = false,
+    released_banner: bool = false,
+    snapshots_sent: usize = 0,
 
     const InitError = error{
         TmuxNotAvailable,
@@ -115,8 +118,46 @@ const TmuxHarness = struct {
         }
 
         for (actions) |action| {
-            if (action == .command) try self.sendCommand(action.command);
+            if (action == .command) {
+                const cmd = action.command;
+                const snapshot = std.mem.count(u8, cmd, "capture-pane") == 4;
+                if (snapshot) self.snapshots_sent += 1;
+                if (self.release_banner and !snapshot and
+                    std.mem.indexOf(u8, cmd, "-a -q -S") != null)
+                {
+                    // Let the process finish its MOTD AFTER the first visible
+                    // capture and BEFORE the remaining captures/state. This is
+                    // the precise race from rootshell #428, without timing the
+                    // shell's startup or relying on a particular prompt theme.
+                    self.release_banner = false;
+                    self.released_banner = true;
+                    const target = std.mem.lastIndexOf(u8, cmd, " -t %").?;
+                    const pane = std.mem.trim(u8, cmd[target + 4 ..], "\n");
+                    const release = try std.fmt.allocPrint(testing.allocator, "send-keys -t {s} Enter\n", .{pane});
+                    defer testing.allocator.free(release);
+                    try self.sendCommand(release);
+                    try std.Io.sleep(testing.io, .fromMilliseconds(150), .awake);
+                }
+                if (self.child.stdin) |stdin| {
+                    self.viewer.recordTrackedSend();
+                    try stdin.writeStreamingAll(testing.io, cmd);
+                }
+            }
         }
+    }
+
+    // Exercise the same sent-FIFO classification as the production stream
+    // handler, including command groups and untracked send-keys acknowledgements.
+    fn receiveNotification(self: *TmuxHarness, notification: control.Notification) []const Viewer.Action {
+        switch (notification) {
+            .block_end, .block_err => |block| {
+                if (block.info.flags & 1 != 0 and
+                    self.viewer.classifyBlockResult(notification == .block_err) == .untracked)
+                    return &.{};
+            },
+            else => {},
+        }
+        return self.viewer.next(.{ .tmux = notification });
     }
 
     /// Read available bytes from tmux stdout with a timeout.
@@ -174,7 +215,7 @@ const TmuxHarness = struct {
             // grow) bytes. ROOTSHELL-TMUX (id=integration-harness-inline)
             for (buf[0..n]) |byte| {
                 const notification = (try self.parser.put(byte)) orelse continue;
-                const actions = self.viewer.next(.{ .tmux = notification });
+                const actions = self.receiveNotification(notification);
                 for (actions) |action| {
                     if (action == .windows) saw_windows = true;
                 }
@@ -195,6 +236,7 @@ const TmuxHarness = struct {
     /// Send a raw command string to tmux's stdin.
     fn sendCommand(self: *TmuxHarness, cmd: []const u8) !void {
         if (self.child.stdin) |stdin| {
+            self.viewer.recordUntrackedSends(std.mem.count(u8, cmd, "\n"));
             try stdin.writeStreamingAll(testing.io, cmd);
         }
     }
@@ -261,7 +303,7 @@ test "integration: output routing" {
         // (id=integration-harness-inline)
         for (buf[0..n]) |byte| {
             const notification = (try harness.parser.put(byte)) orelse continue;
-            const actions = harness.viewer.next(.{ .tmux = notification });
+            const actions = harness.receiveNotification(notification);
             try harness.consumeActions(actions);
         }
 
@@ -322,7 +364,7 @@ test "integration: topology change on split" {
         // (id=integration-harness-inline)
         for (buf[0..n]) |byte| {
             const notification = (try harness.parser.put(byte)) orelse continue;
-            const actions = harness.viewer.next(.{ .tmux = notification });
+            const actions = harness.receiveNotification(notification);
             for (actions) |action| {
                 if (action == .windows) saw_topology_change = true;
             }
@@ -384,12 +426,12 @@ test "integration: session disconnect produces exit" {
             const notification = (try harness.parser.put(byte)) orelse continue;
             if (notification == .exit) {
                 saw_exit = true;
-                const actions = harness.viewer.next(.{ .tmux = notification });
+                const actions = harness.receiveNotification(notification);
                 try harness.consumeActions(actions);
                 break;
             }
 
-            const actions = harness.viewer.next(.{ .tmux = notification });
+            const actions = harness.receiveNotification(notification);
             for (actions) |action| {
                 if (action == .exit) saw_exit = true;
             }
@@ -433,7 +475,7 @@ test "integration: focus change on pane switch" {
         // (id=integration-harness-inline)
         for (buf[0..n]) |byte| {
             const notification = (try harness.parser.put(byte)) orelse continue;
-            const actions = harness.viewer.next(.{ .tmux = notification });
+            const actions = harness.receiveNotification(notification);
             for (actions) |action| {
                 if (action == .windows) split_done = true;
             }
@@ -463,7 +505,7 @@ test "integration: focus change on pane switch" {
         // (id=integration-harness-inline)
         for (buf[0..n]) |byte| {
             const notification = (try harness.parser.put(byte)) orelse continue;
-            const actions = harness.viewer.next(.{ .tmux = notification });
+            const actions = harness.receiveNotification(notification);
             for (actions) |action| {
                 switch (action) {
                     .focus => |f| {
@@ -483,4 +525,47 @@ test "integration: focus change on pane switch" {
     try testing.expect(focus_pane_id != null);
     // The focused pane should be a known pane
     try testing.expect(harness.viewer.panes.contains(focus_pane_id.?));
+}
+
+test "integration: attach snapshot preserves a banner and first prompt printed during new window capture" {
+    var harness = TmuxHarness.init(testing.allocator, "ghostty_test_attach_snapshot") catch |err| {
+        if (err == error.TmuxNotAvailable) return error.SkipZigTest;
+        return err;
+    };
+    defer harness.deinit();
+    try testing.expect(try harness.driveStartup(10_000));
+    harness.release_banner = true;
+    // This shell pauses after the first banner section. consumeActions releases
+    // it at the capture boundary; 60 numbered lines exercise the history gap as
+    // well as the missing initial prompt. cat keeps the pane alive and idle.
+    try harness.sendCommand(
+        \\new-window -d 'stty -echo; printf "Disk Usage :\n"; read ignored; i=0; while [ $i -lt 60 ]; do printf "MOTD-428-%02d\n" $i; i=$((i+1)); done; printf "STARSHIP-428> "; exec cat'
+        ++ "\n",
+    );
+    try testing.expect(try harness.driveStartup(10_000));
+    try testing.expect(harness.released_banner);
+    var found = false;
+    var panes = harness.viewer.panes.iterator();
+    while (panes.next()) |entry| {
+        const pane = entry.value_ptr.*;
+        const screen = pane.terminal.screens.active;
+        const active = try screen.dumpStringAlloc(testing.allocator, .{ .active = .{} });
+        defer testing.allocator.free(active);
+        if (std.mem.indexOf(u8, active, "STARSHIP-428>") == null) continue;
+        const history = try screen.dumpStringAlloc(testing.allocator, .{ .history = .{} });
+        defer testing.allocator.free(history);
+        const all = try std.mem.concat(testing.allocator, u8, &.{ history, "\n", active });
+        defer testing.allocator.free(all);
+        for (0..60) |i| {
+            var buf: [32]u8 = undefined;
+            const marker = try std.fmt.bufPrint(&buf, "MOTD-428-{d:0>2}", .{i});
+            if (std.mem.count(u8, all, marker) != 1) std.debug.print("missing/duplicate {s} in test pane:\n{s}\n", .{ marker, all });
+            try testing.expectEqual(@as(usize, 1), std.mem.count(u8, all, marker));
+        }
+        try testing.expect(pane.initialized);
+        try testing.expectEqual(@as(usize, 1), std.mem.count(u8, all, "STARSHIP-428>"));
+        found = true;
+    }
+    try testing.expect(found);
+    try testing.expect(harness.snapshots_sent > 0);
 }

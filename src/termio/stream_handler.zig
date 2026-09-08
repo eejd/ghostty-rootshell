@@ -1197,7 +1197,7 @@ pub const StreamHandler = struct {
         if (comptime !tmux_enabled) return;
         const viewer = self.tmux_viewer orelse return;
         viewer.recordTrackedSend();
-        self.tmuxDebugNoteCommandsSent(1); // ROOTSHELL-TMUX (id=tmux-debug-mirror)
+        self.tmuxDebugNoteCommandsSent(viewer.trackedReplyCount()); // ROOTSHELL-TMUX (id=tmux-debug-mirror)
     }
 
     /// Record (on the IO thread, at the drain/write point) that `n` untracked
@@ -1389,6 +1389,7 @@ pub const StreamHandler = struct {
                     .user => 11,
                     .enable_pause => 12,
                     .user_query => 13,
+                    .pane_snapshot => 14,
                 } else 0
             else
                 0;
@@ -2258,7 +2259,7 @@ pub const StreamHandler = struct {
                                 }
                                 viewer.clearOutstandingResyncProbes();
                             }
-                            switch (viewer.classifyBlock()) {
+                            switch (viewer.classifyBlockResult(tmux == .block_err)) {
                                 .untracked => break :tmux,
                                 .tracked, .empty => {},
                             }

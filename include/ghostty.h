@@ -1329,7 +1329,7 @@ GHOSTTY_API void ghostty_surface_send_input(ghostty_surface_t, const char*, uint
 // in_flight_cmd_kind: 0 none, 1 list_windows, 2 pane_history, 3 pane_visible,
 //   4 pane_state, 5 tmux_version, 6 subscribe_titles, 7 pane_mode_query,
 //   8 client_size, 9 continue_pane, 10 pane_color_report, 11 user,
-//   12 enable_pause, 13 user_query
+//   12 enable_pause, 13 user_query, 14 pane_snapshot
 // parser_last_error/viewer_last_error: 0 none, 1 stray_byte_broken,
 //   2 buffer_overflow, 3 block_mismatch, 4 control_error, 5 unexpected_block,
 //   6 defunct, 7 sent_fifo_oom, 8 resync_rebuild_failed
