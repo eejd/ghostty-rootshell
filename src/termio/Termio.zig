@@ -28,6 +28,11 @@ const log = std.log.scoped(.io_exec);
 /// Mutex state argument for queueMessage.
 pub const MutexState = enum { locked, unlocked };
 
+/// Total deadline for the end-of-chunk tmux pane flush. Short on purpose: a
+/// timeout just leaves the bytes staged, while waiting here stops this thread
+/// draining the control pty. ROOTSHELL-TMUX (id=viewer-output-batch)
+const tmux_batch_flush_budget_ns: u64 = 4 * std.time.ns_per_ms;
+
 /// Allocator
 alloc: Allocator,
 
@@ -866,11 +871,42 @@ fn processOutputTmuxPrefix(self: *Termio, buf: []const u8) ?[]const u8 {
         // Hooked: parse byte-at-a-time under tmux_mutex only. The flag makes
         // messageWriter/surfaceMessageWriter use bounded no-mutex sends (the
         // renderer-mutex unlock/relock slow path would be UB here).
+        //
+        // Bracketed as ONE batch: `%output` stages per pane and the flush below
+        // applies the chunk with one lock + wake per pane, matching what the
+        // non-tmux path does per read. ROOTSHELL-TMUX (id=viewer-output-batch)
+        //
+        // `dcsPutSlice` bulk-forwards runs while the parser sits in
+        // `dcs_passthrough` (the fork's table has no exit transition there);
+        // it returns 0 for anything it won't take verbatim, so the scalar path
+        // below stays authoritative. ROOTSHELL-TMUX (id=control-bulk-put)
+        //
+        // Bulk bypasses `Stream.next`, whose only extra work is continuation
+        // tracking — never enabled here.
+        assert(self.terminal_stream.continuation == null);
         h.tmux_unlocked_io = true;
+        h.tmuxBeginBatch();
         var i: usize = 0;
-        while (i < rem.len and h.tmuxControlHooked()) : (i += 1) {
+        while (i < rem.len and h.tmuxControlHooked()) {
+            if (self.terminal_stream.parser.state == .dcs_passthrough) {
+                const consumed = h.dcsPutSlice(rem[i..]);
+                if (consumed > 0) {
+                    i += consumed;
+                    // Same check `Stream.next` makes after a dcs_put: the
+                    // channel can unhook mid-chunk.
+                    if (h.dcsConsumeGroundRequest()) {
+                        self.terminal_stream.parser.state = .ground;
+                    }
+                    continue;
+                }
+            }
             self.terminal_stream.next(rem[i]);
+            i += 1;
         }
+        h.tmuxEndBatch();
+        // Still under tmux_mutex with unlocked-io set, so the flush's surface
+        // messages take the same bounded no-unlock path the parse does.
+        h.tmuxFlushPanes(tmux_batch_flush_budget_ns);
         h.tmux_unlocked_io = false;
         const messaged = if (comptime StreamHandler.tmux_enabled)
             h.tmux_termio_messaged.swap(false, .monotonic)

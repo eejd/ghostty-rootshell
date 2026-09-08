@@ -21,6 +21,11 @@ const posix = std.posix;
 
 const log = std.log.scoped(.io_handler);
 
+/// Deadline for `tmuxTeardownViewer`'s final pane flush; short because the
+/// panes are being destroyed either way.
+/// ROOTSHELL-TMUX (id=viewer-output-batch)
+const tmux_teardown_flush_budget_ns: u64 = 2 * std.time.ns_per_ms;
+
 /// Milliseconds on the monotonic clock, for the tmux debug mirror, the
 /// post-exit drain and the read-progress gauges. `std.time.milliTimestamp`
 /// was removed in Zig 0.16; these values are only ever consumed as deltas,
@@ -610,24 +615,57 @@ pub const StreamHandler = struct {
             }
         }
 
-        if (self.tmux_viewer) |viewer| {
-            // Collect deferred OSC 52 clipboard writes so we deliver them NOW: on
-            // an idle session this nudge is the only path that flushes deferred
-            // pane work, and without delivery a pane's clipboard SET buffered in
-            // deferred output would strand (or land late on a later unrelated
-            // %output). The action payloads live on the viewer's action arena
-            // (valid until the next `next()`); we forward them to the surface
-            // mailbox immediately below, which copies the bytes into a WriteReq.
-            // The list backing is arena-allocated by flushPaneClipboard, so it
-            // needs no separate deinit. ROOTSHELL-TMUX
-            // (id=streamhandler-flush-deferred-clipboard)
-            var clip_actions: std.ArrayList(terminal.tmux.Viewer.Action) = .empty;
-            viewer.flushAllDeferredPanes(&clip_actions, 2 * std.time.ns_per_ms);
-            for (clip_actions.items) |action| {
-                const cw = switch (action) {
-                    .pane_clipboard_write => |w| w,
-                    else => continue,
-                };
+        self.tmuxFlushPanes(2 * std.time.ns_per_ms);
+    }
+
+    /// Bracket one gateway read chunk: inside it the viewer stages `%output`
+    /// per pane and the paired `tmuxFlushPanes` applies the whole chunk.
+    /// ROOTSHELL-TMUX (id=viewer-output-batch)
+    pub fn tmuxBeginBatch(self: *StreamHandler) void {
+        if (comptime !tmux_enabled) return;
+        if (self.tmux_viewer) |viewer| viewer.beginBatch();
+    }
+
+    pub fn tmuxEndBatch(self: *StreamHandler) void {
+        if (comptime !tmux_enabled) return;
+        if (self.tmux_viewer) |viewer| viewer.endBatch();
+    }
+
+    /// Apply pane work staged since the last flush and deliver its actions,
+    /// then pump the command queue. Called at the end of every gateway read
+    /// chunk and by the app's heartbeat for idle sessions. IO thread, under
+    /// `tmux_mutex`. ROOTSHELL-TMUX (id=viewer-output-batch,
+    /// id=termio-msg-flush-deferred)
+    pub fn tmuxFlushPanes(self: *StreamHandler, budget_ns: u64) void {
+        if (comptime !tmux_enabled) return;
+        const viewer = self.tmux_viewer orelse return;
+        self.tmuxDeliverPaneWork(viewer, budget_ns);
+
+        // The flush may have queued commands (re-fetches, buffered replies);
+        // the queue is pull-based, so nothing else would send them on an idle
+        // session. ROOTSHELL-TMUX (id=termio-msg-flush-deferred)
+        self.pumpTmuxCommandQueue(viewer);
+    }
+
+    /// `tmuxFlushPanes` without the command pump, for `tmuxTeardownViewer`:
+    /// still deliver a pane's side effects, but write nothing more to a pty
+    /// about to be handed back to the shell.
+    /// ROOTSHELL-TMUX (id=viewer-output-batch)
+    fn tmuxDeliverPaneWork(
+        self: *StreamHandler,
+        viewer: *terminal.tmux.Viewer,
+        budget_ns: u64,
+    ) void {
+        if (comptime !tmux_enabled) return;
+
+        // Payloads live on the viewer's action arena (valid until the next
+        // `next()`); every branch copies what it forwards. The list backing is
+        // arena-allocated, so it needs no deinit. ROOTSHELL-TMUX
+        // (id=streamhandler-flush-deferred-clipboard)
+        var actions: std.ArrayList(terminal.tmux.Viewer.Action) = .empty;
+        viewer.flushAllDeferredPanes(&actions, budget_ns);
+        for (actions.items) |action| switch (action) {
+            .pane_clipboard_write => |cw| {
                 const clipboard_type: apprt.Clipboard = switch (cw.kind) {
                     'c' => .standard,
                     's' => .selection,
@@ -642,15 +680,22 @@ pub const StreamHandler = struct {
                     .req = req,
                     .clipboard_type = clipboard_type,
                 } });
-            }
-            // The flush (and the topology retry above) may have QUEUED
-            // commands (pane_visible re-fetches, buffered pane responses,
-            // list-windows); the queue is pull-based, so on an idle session
-            // nothing else would ever send them. Pump exactly once at the
-            // end so everything queued here goes out now.
-            // ROOTSHELL-TMUX (id=termio-msg-flush-deferred)
-            self.pumpTmuxCommandQueue(viewer);
-        }
+            },
+
+            // A window title the pane's own OSC changed. Same message the
+            // notification-path `.title` arm sends; a drop is undone by
+            // `dropSurfaceMessage`'s forgetEmittedTitle. (id=viewer-title-dedupe)
+            .title => |t| self.surfaceMessageWriter(.{
+                .tmux_title_changed = apprt.surface.Message.TmuxTitleChanged.init(
+                    t.window_id,
+                    t.name,
+                ),
+            }),
+
+            // No other action reaches this path: flushAllDeferredPanes only
+            // emits clipboard writes and titles.
+            else => {},
+        };
     }
 
     /// Send an empty topology snapshot so the reconciler prunes all tmux
@@ -685,6 +730,11 @@ pub const StreamHandler = struct {
         self.tmux_resume_pending = false;
         self.tmux_resume_preferred_window = null;
         const viewer = self.tmux_viewer orelse return;
+        // Deliver pane work staged earlier in this chunk before the panes go
+        // away: a chunk shaped `%output` (an OSC 52 yank) + `%exit` would
+        // otherwise leave the chunk-end flush with no viewer and lose it.
+        // ROOTSHELL-TMUX (id=viewer-output-batch)
+        self.tmuxDeliverPaneWork(viewer, tmux_teardown_flush_budget_ns);
         // Error pending app queries back before the queue dies with the
         // viewer. ROOTSHELL-TMUX (id=streamhandler-query-command)
         self.failPendingTmuxQueries(viewer);
@@ -2017,6 +2067,25 @@ pub const StreamHandler = struct {
         defer cmd.deinit();
         try self.dcsCommand(&cmd);
         if (comptime tmux_enabled) self.refreshTmuxDebugAfter(&cmd); // ROOTSHELL-TMUX (id=tmux-debug-mirror)
+    }
+
+    /// Bulk sibling of `dcsPut`: hand a run straight to the DCS handler,
+    /// skipping the parse table and the per-byte chain. Returns bytes consumed;
+    /// 0 means the caller feeds one byte the scalar way. No command to dispatch
+    /// here — `putSlice` never completes a notification, since the terminating
+    /// `\n` always goes back through `dcsPut`.
+    /// ROOTSHELL-TMUX (id=control-bulk-put)
+    pub inline fn dcsPutSlice(self: *StreamHandler, bytes: []const u8) usize {
+        if (comptime !tmux_enabled) return 0;
+        const consumed = self.dcs.putSlice(bytes);
+        if (consumed == 0) return 0;
+        if (self.tmux_debug.enabled.load(.monotonic)) {
+            _ = self.tmux_debug.tmux_put_bytes.fetchAdd(consumed, .monotonic);
+        }
+        // The edge check `dcsPut` runs per byte. A bulk run cannot raise either
+        // edge, but both are take-and-clear so this stays interchangeable.
+        self.tmuxMaybeRecover(); // ROOTSHELL-TMUX (id=streamhandler-force-resync)
+        return consumed;
     }
 
     pub inline fn dcsUnhook(self: *StreamHandler) !void {

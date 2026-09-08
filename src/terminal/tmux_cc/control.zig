@@ -461,6 +461,51 @@ pub const Parser = struct {
         return null;
     }
 
+    /// Whether `putSlice` can take anything right now. Lets the caller skip a
+    /// scan it would only throw away. ROOTSHELL-TMUX (id=control-bulk-put)
+    pub fn bulkEligible(self: *const Parser) bool {
+        return switch (self.state) {
+            .notification, .block => true,
+            // `.idle` owns the probe-echo scan and the stray-byte self-heal,
+            // both genuinely per byte.
+            .idle, .broken => false,
+        };
+    }
+
+    /// Bulk-append a run while accumulating a notification or block body,
+    /// returning how many bytes were consumed; 0 means the caller must fall
+    /// back to the scalar `put`. Everything interesting happens on `\n`, so the
+    /// run is cut there and at every byte limit `put` enforces, leaving the
+    /// boundary byte to trip them identically.
+    /// ROOTSHELL-TMUX (id=control-bulk-put)
+    pub fn putSlice(self: *Parser, bytes: []const u8) usize {
+        if (bytes.len == 0 or !self.bulkEligible()) return 0;
+
+        // `put` checks each limit BEFORE appending, so the buffer may reach the
+        // limit exactly and the NEXT byte trips it. Cap the run there.
+        const written = self.buffer.written().len;
+        if (written >= self.max_bytes) return 0;
+        var limit = @min(bytes.len, self.max_bytes - written);
+        if (self.state == .block) {
+            if (written >= block_recover_bytes) return 0;
+            limit = @min(limit, block_recover_bytes - written);
+        }
+
+        const run_len = std.mem.indexOfScalar(u8, bytes[0..limit], '\n') orelse limit;
+        if (run_len == 0) return 0; // the newline itself: scalar path
+        const run = bytes[0..run_len];
+
+        // Reserve first so the write cannot fail part-way; on OOM the scalar
+        // path raises it the way callers expect.
+        self.buffer.ensureUnusedCapacity(run_len) catch return 0;
+        self.buffer.writer.writeAll(run) catch return 0;
+
+        // No `\n` in the run, so the next byte does not begin a line.
+        // ROOTSHELL-TMUX (id=control-resync-line-start)
+        self.resync_at_line_start = false;
+        return run_len;
+    }
+
     /// Whether an ST (7-bit `ESC \` or 8-bit 0x9C) seen by the DCS handler
     /// right now should be honored as the tmux control-mode terminator. Only
     /// true once a `%exit` notification has been parsed (tmux's real closing
@@ -2198,4 +2243,143 @@ test "tmux probe echo: line-start %-prompt swallows echo, NO edge (documented mi
     const echo = "\n% display-message -p '__ROOTSHELL_TMUX_RESYNC__ #{session_id} ab12cd34'";
     for (echo) |byte| _ = try c.put(byte);
     try testing.expect(!c.takeDetachRequest());
+}
+
+// ROOTSHELL-TMUX (id=control-bulk-put)
+
+/// Render one notification to a comparable string.
+fn recordNotification(
+    alloc: std.mem.Allocator,
+    n: Notification,
+    out: *std.ArrayList([]u8),
+) !void {
+    const text = switch (n) {
+        .output => |o| try std.fmt.allocPrint(
+            alloc,
+            "output %{d} {s}",
+            .{ o.pane_id, o.data },
+        ),
+        .block_end => |b| try std.fmt.allocPrint(
+            alloc,
+            "block_end {s}",
+            .{b.content},
+        ),
+        else => try alloc.dupe(u8, @tagName(n)),
+    };
+    try out.append(alloc, text);
+}
+
+/// Drive a whole control-mode stream, preferring `putSlice` and falling back to
+/// `put` for any byte it declines. This is the exact discipline
+/// `Termio.processOutputTmuxPrefix` uses.
+fn drainBulk(
+    c: *Parser,
+    alloc: std.mem.Allocator,
+    bytes: []const u8,
+    out: *std.ArrayList([]u8),
+) !void {
+    var i: usize = 0;
+    while (i < bytes.len) {
+        const consumed = c.putSlice(bytes[i..]);
+        if (consumed > 0) {
+            i += consumed;
+            continue;
+        }
+        if (try c.put(bytes[i])) |n| try recordNotification(alloc, n, out);
+        i += 1;
+    }
+}
+
+/// Same, one byte at a time.
+fn drainScalar(
+    c: *Parser,
+    alloc: std.mem.Allocator,
+    bytes: []const u8,
+    out: *std.ArrayList([]u8),
+) !void {
+    for (bytes) |byte| {
+        if (try c.put(byte)) |n| try recordNotification(alloc, n, out);
+    }
+}
+
+fn freeAll(alloc: std.mem.Allocator, list: *std.ArrayList([]u8)) void {
+    for (list.items) |item| alloc.free(item);
+    list.deinit(alloc);
+}
+
+test "putSlice produces the same notifications as byte-at-a-time" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    // A realistic mix: a block, several %output records (one carrying tmux's
+    // `\ooo` escapes and raw high UTF-8 bytes), and a notification with no
+    // trailing newline left dangling at the end.
+    const stream =
+        "%begin 1 5 1\nline one\nline two\n%end 1 5 1\n" ++
+        "%output %0 hello\\033[0m world\n" ++
+        "%output %0 \xE2\x94\x80\xC3\x9C tail\n" ++
+        "%window-add @3\n" ++
+        "%output %1 dangling";
+
+    var bulk_out: std.ArrayList([]u8) = .empty;
+    defer freeAll(alloc, &bulk_out);
+    var scalar_out: std.ArrayList([]u8) = .empty;
+    defer freeAll(alloc, &scalar_out);
+
+    var a: Parser = .{ .buffer = .init(alloc) };
+    defer a.deinit();
+    try drainBulk(&a, alloc, stream, &bulk_out);
+
+    var b: Parser = .{ .buffer = .init(alloc) };
+    defer b.deinit();
+    try drainScalar(&b, alloc, stream, &scalar_out);
+
+    try testing.expectEqual(scalar_out.items.len, bulk_out.items.len);
+    for (scalar_out.items, bulk_out.items) |want, got| {
+        try testing.expectEqualStrings(want, got);
+    }
+    // The dangling notification is still buffered in both, identically.
+    try testing.expectEqualStrings(a.buffer.written(), b.buffer.written());
+    try testing.expectEqual(b.state, a.state);
+}
+
+test "putSlice declines idle, newlines and a broken parser" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var c: Parser = .{ .buffer = .init(alloc) };
+    defer c.deinit();
+
+    // .idle owns the probe-echo scan and the stray-byte self-heal, so it is
+    // never bulk-eligible.
+    try testing.expectEqual(@as(usize, 0), c.putSlice("%output %0 hi\n"));
+
+    // Inside a notification it takes everything up to (not including) the \n.
+    try testing.expect(try c.put('%') == null);
+    try testing.expectEqual(@as(usize, 11), c.putSlice("output %0 x\ntail"));
+    // Now positioned ON the newline: declined, so `put` parses the line.
+    try testing.expectEqual(@as(usize, 0), c.putSlice("\ntail"));
+    const n = (try c.put('\n')).?;
+    try testing.expect(n == .output);
+    try testing.expectEqualStrings("x", n.output.data);
+
+    try testing.expectEqual(@as(usize, 0), c.putSlice(""));
+}
+
+test "putSlice stops at the buffer cap so the next byte breaks the channel" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var c: Parser = .{ .buffer = .init(alloc), .max_bytes = 16 };
+    defer c.deinit();
+
+    try testing.expect(try c.put('%') == null);
+    // 1 byte buffered, cap 16: the run may fill exactly to the cap.
+    try testing.expectEqual(@as(usize, 15), c.putSlice("aaaaaaaaaaaaaaaaaaaa"));
+    try testing.expectEqual(@as(usize, 16), c.buffer.written().len);
+    // At the cap it declines, and the scalar path breaks the channel the same
+    // way it would have without any bulk path.
+    try testing.expectEqual(@as(usize, 0), c.putSlice("a"));
+    try testing.expectError(error.OutOfMemory, c.put('a'));
+    try testing.expectEqual(@as(usize, 0), c.putSlice("a"));
 }

@@ -102,6 +102,12 @@ const PANE_LOCK_QUICK_BUDGET_NS: u64 = 10 * std.time.ns_per_ms;
 /// Cap on per-pane spilled live output. On overflow the spill is discarded
 /// and the pane's visible content is re-fetched from tmux instead.
 const PANE_PENDING_VT_MAX: usize = 1024 * 1024;
+/// Action-arena capacity kept across notifications; anything larger is
+/// released. ROOTSHELL-TMUX (id=viewer-output-batch)
+const action_arena_retain_bytes: usize = 4096;
+/// tryLock spins before `lockRendererBounded` falls back to 1ms sleeps.
+/// ROOTSHELL-TMUX (id=viewer-pane-bounded-lock)
+const lock_spin_attempts: usize = 128;
 /// Max capture-reply re-queues after lock timeouts per pane (resets on a
 /// successful application) so a permanently-stuck renderer can't loop.
 const PANE_CAPTURE_RETRY_MAX: u8 = 3;
@@ -548,6 +554,12 @@ pub const Viewer = struct {
     /// creation; null in tests / when the mirror is absent.
     debug_progress: ?DebugProgress = null,
 
+    /// True while the gateway is feeding one pty read chunk, so `next()` leaves
+    /// staged `%output` for the chunk-end flush instead of applying it per
+    /// notification. False in tests, which drive `next()` directly.
+    /// ROOTSHELL-TMUX (id=viewer-output-batch)
+    batching: bool = false,
+
     pub const DebugProgress = struct {
         site: *std.atomic.Value(u8),
         pane: *std.atomic.Value(u32),
@@ -978,21 +990,37 @@ pub const Viewer = struct {
         // (`flushPaneDeferred`). All fields are touched only by the thread
         // holding `Termio.tmux_mutex`, so they stay plain (non-atomic).
 
-        /// Live `%output` bytes (already unescaped) that couldn't be written
-        /// under the renderer mutex in time. Flushed before any newer data.
+        /// Unescaped `%output` bytes, contiguous in arrival order. `staged`
+        /// says which step owns which run. ROOTSHELL-TMUX
+        /// (id=viewer-output-batch)
         pending_vt: std.ArrayList(u8) = .empty,
 
-        /// The spill overflowed its cap and content was discarded; the next
+        /// Pane work awaiting a renderer-lock window, in ARRIVAL ORDER. Output
+        /// and resizes interleave, so a resize must not be collapsed to "the
+        /// latest size": bytes written before it were produced for the old
+        /// grid and reinterpret wrongly at the new width.
+        /// ROOTSHELL-TMUX (id=viewer-output-batch)
+        staged: std.ArrayList(StagedOp) = .empty,
+
+        /// Staged work overflowed its cap or could not be recorded; the next
         /// successful lock window re-fetches the pane's visible content from
         /// tmux (the source of truth) instead of replaying a hole.
         pending_dropped: bool = false,
 
-        /// A terminal resize that timed out on the renderer mutex; applied
-        /// at the next successful lock window.
-        pending_resize: ?struct {
-            cols: size.CellCountInt,
-            rows: size.CellCountInt,
-        } = null,
+        /// The grid size tmux last reported for this pane, independent of what
+        /// the terminal is currently at. Every path that discards `staged`
+        /// (an overflow, a snapshot recovery) would otherwise lose an unapplied
+        /// resize and strand the pane at its old width; recovery reconciles
+        /// against this instead. ROOTSHELL-TMUX (id=viewer-output-batch)
+        grid_size: PaneSize,
+
+        /// The size in effect when `staged` became non-empty, i.e. the grid the
+        /// journal's first bytes were produced for. A capture snapshot that
+        /// lands in front of the journal must reflow to THIS, not to the final
+        /// size, or the journal's early output replays at a width it never saw.
+        /// Meaningless while `staged` is empty.
+        /// ROOTSHELL-TMUX (id=viewer-output-batch)
+        staged_base_size: PaneSize,
 
         /// Capture-reply retries consumed after renderer-lock timeouts
         /// (capture replies are re-queued rather than copied; bounded so a
@@ -1267,6 +1295,19 @@ pub const Viewer = struct {
             const m = @atomicLoad(?*std.Io.Mutex, &self.renderer_mutex, .seq_cst);
             const mu = m orelse return .{ .acquired = null };
             if (mu.tryLock()) return .{ .acquired = m };
+
+            // Spin first: contention is usually a renderer microseconds from
+            // releasing, which a 1ms sleep vastly overshoots. Budget 0 means
+            // "pure tryLock", so it skips even this.
+            if (budget_ns == 0) {
+                _ = @atomicRmw(usize, &self.renderer_users, .Sub, 1, .seq_cst);
+                return .timeout;
+            }
+            for (0..lock_spin_attempts) |_| {
+                std.atomic.spinLoopHint();
+                if (mu.tryLock()) return .{ .acquired = m };
+            }
+
             const started: std.Io.Timestamp = .now(self.io, .awake);
             while (started.durationTo(.now(self.io, .awake)).nanoseconds < budget_ns) {
                 std.Io.sleep(self.io, .fromNanoseconds(std.time.ns_per_ms), .awake) catch {};
@@ -1354,9 +1395,34 @@ pub const Viewer = struct {
             if (self.captured_visible_primary) |b| alloc.free(b);
             if (self.captured_visible_alternate) |b| alloc.free(b);
             self.pending_vt.deinit(alloc); // ROOTSHELL-TMUX (id=viewer-pane-bounded-lock)
+            self.staged.deinit(alloc); // ROOTSHELL-TMUX (id=viewer-output-batch)
             self.stream.deinit();
             self.terminal.deinit(alloc);
         }
+    };
+
+    pub const PaneSize = struct {
+        cols: size.CellCountInt,
+        rows: size.CellCountInt,
+    };
+
+    /// One staged pane operation. `.output` names a run of `pending_vt` rather
+    /// than owning bytes.
+    ///
+    /// There is exactly one entry per `%output` notification: boundaries are
+    /// NEVER merged. A record can leave an `ESC Ptmux;` envelope open whose
+    /// inner sequences the pane handler recovers and replays only once the
+    /// envelope closes, so merging a later record in front of that replay
+    /// reorders it. Whether a record opens or closes an envelope is a property
+    /// of the pane stream's parser state at apply time, not of the record's
+    /// bytes — tmux splits `%output` at arbitrary offsets, so even the two-byte
+    /// terminator can straddle records. Keeping every boundary is the only rule
+    /// that holds, and it costs nothing that matters: the batch still takes one
+    /// renderer lock and issues one wake per pane per chunk.
+    /// ROOTSHELL-TMUX (id=viewer-output-batch, id=streamterm-tmux-passthrough)
+    pub const StagedOp = union(enum) {
+        output: usize,
+        resize: PaneSize,
     };
 
     pub const PaneMode = enum {
@@ -1826,20 +1892,35 @@ pub const Viewer = struct {
         // an error occurs we must go into a defunct state or some other
         // state to gracefully handle it.
 
-        // Retry pane work deferred by bounded-lock timeouts on every inbound
-        // event (a cheap field sweep when nothing is deferred). Budget 0 =
-        // pure tryLock: a still-stuck pane must not tax every event with a
-        // sleep-retry loop. The idle-session case (no further events) is
-        // covered by the app's heartbeat nudge via
-        // ghostty_surface_tmux_flush_deferred, which uses a real budget.
-        // Null action sink: clipboard from any pane flushed here is delivered by
-        // the subsequent receivedOutput drain (or the idle ABI flush below).
-        // ROOTSHELL-TMUX (id=viewer-pane-bounded-lock)
-        self.flushAllDeferredPanes(null, 0);
+        // Retry pane work deferred by lock timeouts on every inbound event
+        // (cheap when nothing is deferred; budget 0 = pure tryLock). Skipped
+        // while batching — sweeping here would apply once per notification,
+        // which is exactly what the batch removes.
+        // ROOTSHELL-TMUX (id=viewer-pane-bounded-lock, id=viewer-output-batch)
+        if (!self.batching) self.flushAllDeferredPanes(null, 0);
 
         return switch (input) {
             .tmux => self.nextTmux(input.tmux),
         };
+    }
+
+    /// Apply staged `%output` when nobody is batching for us, so a caller that
+    /// drives `next()` one notification at a time (the tests) still sees the
+    /// effect in that call. The gateway always batches.
+    /// ROOTSHELL-TMUX (id=viewer-output-batch)
+    fn applyStagedIfUnbatched(self: *Viewer, actions: *std.ArrayList(Action)) void {
+        if (self.batching) return;
+        self.flushAllDeferredPanes(actions, 0);
+    }
+
+    /// Enter/leave the gateway's per-read-chunk batch window. See `batching`.
+    /// ROOTSHELL-TMUX (id=viewer-output-batch)
+    pub fn beginBatch(self: *Viewer) void {
+        self.batching = true;
+    }
+
+    pub fn endBatch(self: *Viewer) void {
+        self.batching = false;
     }
 
     /// Queue a list-windows so tmux re-derives (and the viewer re-emits) the
@@ -1858,41 +1939,41 @@ pub const Viewer = struct {
     /// heartbeat nudge. O(1) when nothing is deferred. ROOTSHELL-TMUX
     /// (id=viewer-pane-bounded-lock)
     pub fn flushAllDeferredPanes(self: *Viewer, actions: ?*std.ArrayList(Action), budget_ns: u64) void {
+        // `budget_ns` is the deadline for the WHOLE sweep: per pane, N contended
+        // panes would stall the channel N times as long.
+        // ROOTSHELL-TMUX (id=viewer-output-batch)
+        const started: ?std.Io.Timestamp = if (budget_ns > 0)
+            .now(self.io, .awake)
+        else
+            null;
+
         var it = self.panes.iterator();
         while (it.next()) |kv| {
             const pane = kv.value_ptr.*;
-            // clipboard_writes / replay are included so a pane whose pending_vt
-            // was already drained by the null-sink live pre-pass (`next`, which
-            // buffers OSC 52 / wrapped-passthrough bytes but cannot emit/replay
-            // them) stays eligible for the sink-bearing idle flush. Otherwise
-            // those side effects strand whenever the NEXT inbound event is not a
-            // %output drain for this pane. ROOTSHELL-TMUX (id=viewer-clipboard)
-            const has_deferred = pane.pending_vt.items.len > 0 or
-                pane.pending_dropped or pane.pending_resize != null or
+            // Side-effect buffers count too: a pane whose pending_vt was drained
+            // by a null-sink flush still owes its replies/clipboard/replay, and
+            // would otherwise strand until its next %output.
+            // ROOTSHELL-TMUX (id=viewer-clipboard)
+            const has_deferred = pane.staged.items.len > 0 or
+                pane.pending_dropped or
                 pane.clipboard_writes.items.len > 0 or
+                pane.responses.items.len > 0 or
                 pane.replay.items.len > 0 or pane.pending_snapshot != null;
             if (!has_deferred) continue;
+            const remaining: u64 = if (started) |t| rem: {
+                const spent = t.durationTo(.now(self.io, .awake)).nanoseconds;
+                if (spent < 0) break :rem budget_ns;
+                const used: u64 = @intCast(spent);
+                break :rem if (used >= budget_ns) 0 else budget_ns - used;
+            } else 0;
             const m = self.lockPaneBounded(
                 pane,
                 kv.key_ptr.*,
-                budget_ns,
+                remaining,
             ) orelse continue;
             defer pane.unlockRenderer(m);
-            self.flushPaneDeferred(pane, kv.key_ptr.*);
-            // Replay any passthrough (wrapped Kitty graphics) the just-flushed
-            // deferred bytes buffered, so deferred image data is not stranded on
-            // an idle session until the next %output. Shares the live path's
-            // clean-boundary replay. ROOTSHELL-TMUX (id=streamterm-tmux-passthrough)
-            self.replayPanePassthrough(pane, kv.key_ptr.*);
-            // Deliver any deferred OSC 52 clipboard writes when the caller gave an
-            // action sink (the idle-flush ABI path) — otherwise a clipboard SET in
-            // deferred output would strand on an idle pane or be delivered late on
-            // a later unrelated %output. The live `next()` path passes null: it
-            // drains clipboard via the subsequent receivedOutput. Title still
-            // self-heals via the #{pane_title} subscription. ROOTSHELL-TMUX
-            // (id=viewer-clipboard)
-            if (actions) |a| self.flushPaneClipboard(a, pane);
-            wakePane(pane);
+            self.flushPaneDeferred(actions, pane, kv.key_ptr.*);
+            self.panePostApply(actions, pane, kv.key_ptr.*);
         }
     }
 
@@ -2136,6 +2217,7 @@ pub const Viewer = struct {
         // screen + state, so leaving it set would make the first recapture
         // handler queue ANOTHER visible/state refresh behind ours (stale work
         // that can race with live output after the pane re-initializes).
+        pane.staged.clearRetainingCapacity();
         pane.pending_vt.clearRetainingCapacity();
         pane.pending_dropped = false;
         // Drop any stashed VISIBLE captures: the recapture re-stashes fresh
@@ -2401,11 +2483,13 @@ pub const Viewer = struct {
         // handle it by ignoring any command output. That's okay!
         assert(self.state == .command_queue);
 
-        // Clear our prior arena so it is ready to be used for any
-        // actions immediately.
+        // Clear our prior arena so it is ready to be used for any actions
+        // immediately. Retained (not freed) since this runs per notification;
+        // the limit keeps a one-off topology snapshot from staying resident.
+        // ROOTSHELL-TMUX (id=viewer-output-batch)
         {
             var arena = self.action_arena.promote(self.alloc);
-            _ = arena.reset(.free_all);
+            _ = arena.reset(.{ .retain_with_limit = action_arena_retain_bytes });
             self.action_arena = arena.state;
         }
 
@@ -2471,12 +2555,18 @@ pub const Viewer = struct {
                 command_consumed = true;
             },
 
-            .output => |out| self.handlePaneOutput(&actions, out.pane_id, out.data),
+            .output => |out| {
+                self.handlePaneOutput(out.pane_id, out.data);
+                self.applyStagedIfUnbatched(&actions);
+            },
 
             // Extended output: sent instead of %output when pause-after
             // flow control is enabled. Treated identically to %output;
             // the age_ms field is informational for flow control timing.
-            .extended_output => |out| self.handlePaneOutput(&actions, out.pane_id, out.data),
+            .extended_output => |out| {
+                self.handlePaneOutput(out.pane_id, out.data);
+                self.applyStagedIfUnbatched(&actions);
+            },
 
             // Session changed means we switched to a different tmux session.
             // We need to reset our state and start fresh with list-windows.
@@ -3196,6 +3286,7 @@ pub const Viewer = struct {
         pane.pending_snapshot = null;
         defer snapshot.deinit(self.alloc);
         if (pane.pending_dropped or pane.recapture_again) {
+            pane.staged.clearRetainingCapacity();
             pane.pending_vt.clearRetainingCapacity();
             pane.pending_dropped = false;
             pane.recapture_again = false;
@@ -3218,18 +3309,24 @@ pub const Viewer = struct {
         installPaneStreamEffects(pane, self.default_cursor_style, self.default_cursor_blink);
         pane.capture_pending = false;
         pane.state_pending = false;
-        // Restore at the captured dimensions, then reflow to the current layout.
-        // A resize notification can arrive while renderer-lock contention keeps
-        // the snapshot staged; its cursor coordinates refer to the old grid.
-        const current_cols = pane.terminal.cols;
-        const current_rows = pane.terminal.rows;
+        // Restore at the captured dimensions, then reflow to the grid the
+        // SURVIVING journal starts from — its own resizes carry the pane the
+        // rest of the way. Jumping straight to `grid_size` would replay the
+        // journal's early output at a width it was never produced for. With no
+        // journal that base IS the authoritative size, which is what keeps a
+        // recovery that discarded an unapplied resize from stranding the pane
+        // at its old width. ROOTSHELL-TMUX (id=viewer-output-batch)
+        const target = if (pane.staged.items.len > 0)
+            pane.staged_base_size
+        else
+            pane.grid_size;
         try pane.terminal.resize(self.alloc, .{ .cols = cols, .rows = rows, .cell_size_px = pane.cellSizePx() });
         try self.applyPaneHistory(pane, .primary, snapshot.replies[0].?);
         try self.applyPaneHistory(pane, .alternate, snapshot.replies[2].?);
         try self.receivedPaneVisible(.primary, id, snapshot.replies[1].?);
         try self.receivedPaneVisible(.alternate, id, snapshot.replies[3].?);
         try self.applyPaneState(pane, data, private_modes_present);
-        try pane.terminal.resize(self.alloc, .{ .cols = current_cols, .rows = current_rows, .cell_size_px = pane.cellSizePx() });
+        try pane.terminal.resize(self.alloc, .{ .cols = target.cols, .rows = target.rows, .cell_size_px = pane.cellSizePx() });
         pane.initialized = true;
         pane.snapshot_requested = false;
         pane.capture_dirty = false;
@@ -3244,7 +3341,7 @@ pub const Viewer = struct {
     /// panes that haven't completed their capture-pane initialization
     /// sequence — processing output before capture completes would corrupt
     /// the terminal state being built up by receivedPaneHistory/Visible.
-    fn handlePaneOutput(self: *Viewer, actions: *std.ArrayList(Action), pane_id: usize, data: []const u8) void {
+    fn handlePaneOutput(self: *Viewer, pane_id: usize, data: []const u8) void {
         const pane = if (self.panes.getEntry(pane_id)) |entry|
             entry.value_ptr.*
         else
@@ -3253,9 +3350,7 @@ pub const Viewer = struct {
             pane.?.capture_dirty = true;
             log.debug("suppressing output for uninitialized pane id={}", .{pane_id});
         } else {
-            self.receivedOutput(actions, pane_id, data) catch |err| {
-                log.warn("failed to process output for pane id={}: {}", .{ pane_id, err });
-            };
+            self.receivedOutput(pane_id, data);
         }
     }
 
@@ -3541,6 +3636,11 @@ pub const Viewer = struct {
         // Reap any panes pruned earlier whose child surfaces have since
         // detached, before we churn the pane map again.
         self.reapRetiredPanes();
+
+        // Apply staged output (with side effects) before `initLayout` reflows
+        // any pane; it falls back to the in-lock apply there on a miss.
+        // ROOTSHELL-TMUX (id=viewer-output-batch)
+        self.flushAllDeferredPanes(null, 0);
 
         // Go through the window layout and setup all our panes. We move
         // this into a new panes map so that we can easily prune our old
@@ -3851,10 +3951,41 @@ pub const Viewer = struct {
         session_id: usize,
         session_name: []const u8,
     ) (Allocator.Error || std.Io.Writer.Error)!void {
+        // Deliver pane side effects staged earlier in this chunk before the old
+        // panes die with the viewer below: `%output` carrying an OSC 52 yank
+        // followed by `%session-changed` would otherwise lose the write. The
+        // actions land on the DYING arena, so copy the payloads out and re-emit
+        // them on the replacement's arena after the swap. Titles are dropped —
+        // the windows they name are being pruned.
+        // ROOTSHELL-TMUX (id=viewer-output-batch)
+        var rescued: std.ArrayList(struct { kind: u8, data: []u8 }) = .empty;
+        defer {
+            for (rescued.items) |cw| self.alloc.free(cw.data);
+            rescued.deinit(self.alloc);
+        }
+        {
+            var staged_actions: std.ArrayList(Action) = .empty;
+            self.flushAllDeferredPanes(&staged_actions, PANE_LOCK_QUICK_BUDGET_NS);
+            for (staged_actions.items) |a| switch (a) {
+                .pane_clipboard_write => |cw| {
+                    const copy = self.alloc.dupe(u8, cw.data) catch continue;
+                    rescued.append(self.alloc, .{
+                        .kind = cw.kind,
+                        .data = copy,
+                    }) catch self.alloc.free(copy);
+                },
+                else => {},
+            };
+        }
+
         // Build up a new viewer. Its the easiest way to reset ourselves.
         // Carry forward the current client size.
         var replacement: Viewer = try .init(self.io, self.alloc, self.client_cols, self.client_rows);
         errdefer replacement.deinit();
+        // The gateway is mid-read-chunk; the replacement must keep staging so
+        // the rest of the chunk stays batched.
+        // ROOTSHELL-TMUX (id=viewer-output-batch)
+        replacement.batching = self.batching;
         // Carry the themed pane colors forward across the session reset.
         replacement.colors = self.colors;
         // This is the same tmux control client, so its acknowledged size remains
@@ -3924,6 +4055,16 @@ pub const Viewer = struct {
                 .id = self.session_id,
                 .name = self.session_name,
             } }) catch log.warn("failed to queue session_info action", .{});
+
+            // Re-emit the clipboard writes rescued from the old panes.
+            // ROOTSHELL-TMUX (id=viewer-output-batch)
+            for (rescued.items) |cw| {
+                const data = act_arena.allocator().dupe(u8, cw.data) catch continue;
+                actions.append(act_arena.allocator(), .{ .pane_clipboard_write = .{
+                    .kind = cw.kind,
+                    .data = data,
+                } }) catch log.warn("failed to queue rescued clipboard write", .{});
+            }
         }
 
         assert(self.state == .command_queue);
@@ -4129,11 +4270,12 @@ pub const Viewer = struct {
                     self.capture_transaction = null;
                     // This snapshot includes all output preceding its replies.
                     pane.capture_dirty = false;
+                    pane.staged.clearRetainingCapacity();
                     pane.pending_vt.clearRetainingCapacity();
                     pane.pending_dropped = false;
                     if (self.lockPaneBounded(pane, id, PANE_LOCK_CAPTURE_BUDGET_NS)) |m| {
                         defer pane.unlockRenderer(m);
-                        self.flushPaneDeferred(pane, id);
+                        self.flushPaneDeferred(actions, pane, id);
                         wakePane(pane);
                     }
                 } else self.clearCaptureTransaction();
@@ -4626,7 +4768,10 @@ pub const Viewer = struct {
             defer pane.unlockRenderer(render_mutex);
             if (!pane.capture_pending) pane.capture_retries = 0;
             pane.state_pending = false;
-            self.flushPaneDeferred(pane, data.pane_id);
+            // Null sink: this reply path has no action list, and a title
+            // carried in staged output still self-heals via the
+            // #{pane_title} subscription.
+            self.flushPaneDeferred(null, pane, data.pane_id);
 
             try self.applyPaneState(pane, data, private_modes_present);
             wakePane(pane);
@@ -4992,7 +5137,8 @@ pub const Viewer = struct {
         defer pane.unlockRenderer(render_mutex);
         pane.capture_retries = 0;
         pane.capture_pending = false;
-        self.flushPaneDeferred(pane, id);
+        // Null sink: see receivedPaneState.
+        self.flushPaneDeferred(null, pane, id);
 
         try self.applyPaneHistory(pane, screen_key, content);
     }
@@ -5199,66 +5345,61 @@ pub const Viewer = struct {
         }
     }
 
-    /// Apply work deferred by earlier renderer-lock timeouts. Called at the
-    /// START of every successful pane lock window so deferred state lands
-    /// before any newer data: pending resize first (the spilled bytes were
-    /// produced for the new grid), then either the re-fetch for a dropped
-    /// spill or the spilled bytes themselves. ROOTSHELL-TMUX
-    /// (id=viewer-pane-bounded-lock)
-    fn flushPaneDeferred(self: *Viewer, pane: *Pane, pane_id: usize) void {
+    /// Apply staged pane state at the START of every successful pane lock
+    /// window: a capture snapshot first, then either the re-fetch for a dropped
+    /// journal or the journal itself via `applyStaged`. Delivers no side
+    /// effects; see `panePostApply`.
+    /// ROOTSHELL-TMUX (id=viewer-pane-bounded-lock, id=viewer-output-batch)
+    fn flushPaneDeferred(
+        self: *Viewer,
+        actions: ?*std.ArrayList(Action),
+        pane: *Pane,
+        pane_id: usize,
+    ) void {
         if (pane.pending_snapshot != null) {
             self.applyPendingSnapshot(pane, pane_id) catch |err| {
                 log.warn("pane {} snapshot application failed: {}", .{ pane_id, err });
                 self.clearPaneSnapshot(pane);
+                pane.staged.clearRetainingCapacity();
                 pane.pending_vt.clearRetainingCapacity();
                 pane.pending_dropped = false;
                 self.queuePaneSnapshot(pane_id) catch {};
                 return;
             };
         }
-        if (pane.pending_resize) |pr| {
-            pane.pending_resize = null;
-            // cell_size_px keeps pixel geometry consistent with the new cell
-            // grid so auto-sized images don't collapse, and upstream rolls it
-            // back with the rest of the resize on failure. ROOTSHELL-TMUX
-            // (id=tmux-pane-pixel-geometry)
-            pane.terminal.resize(self.alloc, .{
-                .cols = pr.cols,
-                .rows = pr.rows,
-                .cell_size_px = pane.cellSizePx(),
-            }) catch |err| {
-                log.warn("deferred pane {} resize failed err={}", .{ pane_id, err });
-            };
-        }
 
         if (pane.pending_dropped) {
             pane.pending_dropped = false;
+            pane.staged.clearRetainingCapacity();
             pane.pending_vt.clearRetainingCapacity();
             self.queuePaneSnapshot(pane_id) catch |err| {
-                log.warn("failed to queue dropped-spill snapshot for pane {} err={}", .{ pane_id, err });
+                log.warn("failed to queue dropped-work snapshot for pane {} err={}", .{ pane_id, err });
             };
             return;
         }
 
-        if (pane.pending_vt.items.len > 0) {
-            pane.stream.nextSlice(pane.pending_vt.items);
-            pane.pending_vt.clearRetainingCapacity();
-            // Mirror the live-output path's side effect: the replayed bytes
-            // can contain terminal queries whose replies the pane terminal
-            // buffered via write_pty — route them back now, not at some
-            // unrelated future output. (Queued as a send-keys command; the
-            // pull-based queue sends it on the next block reply, or the
-            // heartbeat's pump on an idle session.) Title changes are NOT
-            // re-detected here: the #{pane_title} subscription is the
-            // authoritative title source and self-heals on its own cadence.
-            // ROOTSHELL-TMUX (id=viewer-pane-bounded-lock)
-            self.flushPaneResponses(pane_id, pane) catch |err| {
-                log.warn(
-                    "failed to flush pane {} deferred query replies err={}",
-                    .{ pane_id, err },
-                );
+        self.applyStaged(actions, pane, pane_id);
+
+        // Backstop: land on the size tmux reported even if a resize op was lost
+        // (a failed reflow, a discarded journal).
+        // ROOTSHELL-TMUX (id=viewer-output-batch)
+        if (pane.terminal.cols != pane.grid_size.cols or
+            pane.terminal.rows != pane.grid_size.rows)
+        {
+            pane.terminal.resize(self.alloc, .{
+                .cols = pane.grid_size.cols,
+                .rows = pane.grid_size.rows,
+                .cell_size_px = pane.cellSizePx(),
+            }) catch |err| {
+                log.warn("pane {} size reconcile failed err={}", .{ pane_id, err });
             };
         }
+
+        // Side effects the applied bytes buffered (replies, clipboard,
+        // passthrough) are delivered ONLY by `panePostApply`, so that ordering
+        // lives in one place. Capture-reply callers leave them buffered; every
+        // buffer is in `flushAllDeferredPanes`'s `has_deferred`, so the
+        // chunk-end sweep picks them up.
     }
 
     /// Replay inner sequences recovered from `ESC P tmux; ...` passthrough
@@ -5309,17 +5450,122 @@ pub const Viewer = struct {
         return hasher.final();
     }
 
+    /// Discard a pane's staged work and re-fetch its visible content from tmux
+    /// rather than replaying around a hole. Frees the byte buffer: the capacity
+    /// that got us here is by definition oversized. A dropped RESIZE recovers
+    /// too — the snapshot carries the pane's size.
+    /// ROOTSHELL-TMUX (id=viewer-output-batch)
+    fn dropStaged(alloc: Allocator, pane: *Pane, id: usize) void {
+        pane.pending_dropped = true;
+        pane.staged.clearRetainingCapacity();
+        pane.pending_vt.clearAndFree(alloc);
+        log.warn("pane {} staged work dropped; will re-fetch visible content", .{id});
+    }
+
+    /// Record a resize behind everything already staged for this pane. Adjacent
+    /// resizes coalesce (nothing observed the intermediate size); a resize after
+    /// output does not, or those bytes would replay at the wrong width.
+    /// ROOTSHELL-TMUX (id=viewer-output-batch)
+    fn stageResize(
+        alloc: Allocator,
+        pane: *Pane,
+        id: usize,
+        cols: size.CellCountInt,
+        rows: size.CellCountInt,
+    ) void {
+        // Recorded even when the journal entry cannot be, so a recovery path
+        // that discards `staged` still knows the pane's real size.
+        if (pane.staged.items.len == 0) pane.staged_base_size = pane.grid_size;
+        pane.grid_size = .{ .cols = cols, .rows = rows };
+        if (pane.pending_dropped) return;
+        if (pane.staged.items.len > 0) {
+            const last = &pane.staged.items[pane.staged.items.len - 1];
+            if (last.* == .resize) {
+                last.* = .{ .resize = .{ .cols = cols, .rows = rows } };
+                return;
+            }
+        }
+        pane.staged.append(alloc, .{
+            .resize = .{ .cols = cols, .rows = rows },
+        }) catch dropStaged(alloc, pane, id);
+    }
+
+    /// Apply everything staged for this pane, in arrival order, under a held
+    /// renderer lock. The ONLY place staged work reaches the pane terminal, so
+    /// output/resize ordering and title detection live in one spot.
+    /// ROOTSHELL-TMUX (id=viewer-output-batch)
+    fn applyStaged(
+        self: *Viewer,
+        actions: ?*std.ArrayList(Action),
+        pane: *Pane,
+        pane_id: usize,
+    ) void {
+        if (pane.staged.items.len == 0) return;
+
+        const title_before = titleFingerprint(pane.terminal.getTitle());
+        var off: usize = 0;
+        for (pane.staged.items) |op| switch (op) {
+            .output => |len| {
+                pane.stream.nextSlice(pane.pending_vt.items[off..][0..len]);
+                off += len;
+                // Drain recovered `ESC Ptmux;` passthrough HERE, not after the
+                // whole journal: a wrapped cursor move or image placement that
+                // preceded a resize must execute on the grid it was written
+                // for. Replays only at a clean stream boundary, so bytes that
+                // straddle this step stay buffered for the next one (or the
+                // final drain in `panePostApply`).
+                // ROOTSHELL-TMUX (id=streamterm-tmux-passthrough,
+                // id=viewer-output-batch)
+                self.replayPanePassthrough(pane, pane_id);
+            },
+            .resize => |r| pane.terminal.resize(self.alloc, .{
+                .cols = r.cols,
+                .rows = r.rows,
+                // cell_size_px keeps pixel geometry in step with the cell grid
+                // so auto-sized images don't collapse.
+                // ROOTSHELL-TMUX (id=tmux-pane-pixel-geometry)
+                .cell_size_px = pane.cellSizePx(),
+            }) catch |err| {
+                log.warn("staged pane {} resize failed err={}", .{ pane_id, err });
+            },
+        };
+        pane.staged.clearRetainingCapacity();
+        pane.pending_vt.clearRetainingCapacity();
+
+        if (titleFingerprint(pane.terminal.getTitle()) != title_before) {
+            if (actions) |a| {
+                const title: []const u8 = pane.terminal.getTitle() orelse "";
+                self.emitPaneTitle(a, pane_id, title);
+            }
+        }
+    }
+
+    /// Stage one `%output` payload: unescape into the pane's buffer, take no
+    /// renderer lock and issue no wake. The chunk-end flush applies the whole
+    /// journal under ONE lock and ONE wake per pane, instead of one of each per
+    /// notification. ROOTSHELL-TMUX (id=viewer-output-batch)
     fn receivedOutput(
         self: *Viewer,
-        actions: *std.ArrayList(Action),
         id: usize,
         data: []const u8,
-    ) !void {
+    ) void {
         const entry = self.panes.getEntry(id) orelse {
             log.info("received output for untracked pane id={}", .{id});
             return;
         };
         const pane: *Pane = entry.value_ptr.*;
+
+        // A prior overflow already discarded the staged bytes and queued a
+        // re-fetch from tmux; staging more would replay around a hole.
+        if (pane.pending_dropped) return;
+
+        // Cap BEFORE reserving, else an oversized notification allocates past
+        // the cap and leaves that capacity resident. Decoding never grows the
+        // input, so `data.len` bounds it. ROOTSHELL-TMUX (id=viewer-output-batch)
+        if (pane.pending_vt.items.len + data.len > PANE_PENDING_VT_MAX) {
+            dropStaged(self.alloc, pane, id);
+            return;
+        }
 
         // tmux escapes control bytes (< 0x20) and the backslash itself as
         // `\ooo` (a backslash followed by exactly three octal digits) in
@@ -5342,8 +5588,14 @@ pub const Viewer = struct {
         // NOTE: the upstream octal-decode PRs (#11217, #12076) were not merged
         // (code-quality review), so this is a fork-local fix on the one path
         // that actually writes pane output to a terminal.
-        const buf = try self.alloc.alloc(u8, data.len);
-        defer self.alloc.free(buf);
+        //
+        // Decoded straight into the staging buffer (reserve `data.len`, shrink
+        // to the decoded count), which replaces a malloc/free per notification.
+        // ROOTSHELL-TMUX (id=viewer-output-batch)
+        const buf = pane.pending_vt.addManyAsSlice(self.alloc, data.len) catch {
+            dropStaged(self.alloc, pane, id);
+            return;
+        };
         var n: usize = 0;
         var i: usize = 0;
         while (i < data.len) {
@@ -5383,46 +5635,29 @@ pub const Viewer = struct {
             }
         }
 
-        // Bounded renderer lock: the control channel must never block
-        // indefinitely on a pane renderer. On timeout, spill the unescaped
-        // bytes to the pane's pending buffer (flushed in order at the next
-        // successful lock window); on overflow, drop the spill and re-fetch
-        // from tmux. ROOTSHELL-TMUX (id=viewer-pane-bounded-lock)
-        const render_mutex = self.lockPaneBounded(
-            pane,
-            id,
-            PANE_LOCK_OUTPUT_BUDGET_NS,
-        ) orelse {
-            if (!pane.pending_dropped) {
-                if (pane.pending_vt.items.len + n > PANE_PENDING_VT_MAX) {
-                    pane.pending_dropped = true;
-                    pane.pending_vt.clearRetainingCapacity();
-                    log.warn(
-                        "pane {} spill overflowed; will re-fetch visible content",
-                        .{id},
-                    );
-                } else {
-                    pane.pending_vt.appendSlice(self.alloc, buf[0..n]) catch {
-                        pane.pending_dropped = true;
-                        pane.pending_vt.clearRetainingCapacity();
-                    };
-                }
-            }
-            return;
+        // Shrink to the decoded length.
+        assert(n <= data.len);
+        pane.pending_vt.items.len -= data.len - n;
+        if (n == 0) return;
+
+        if (pane.staged.items.len == 0) pane.staged_base_size = pane.grid_size;
+
+        // One entry per notification, never merged — see `StagedOp`.
+        pane.staged.append(self.alloc, .{ .output = n }) catch {
+            pane.pending_vt.items.len -= n;
+            dropStaged(self.alloc, pane, id);
         };
-        defer pane.unlockRenderer(render_mutex);
+    }
 
-        // Apply work deferred by earlier lock timeouts BEFORE the new data.
-        self.flushPaneDeferred(pane, id);
-        if (!pane.initialized) return;
-
-        const title_before = titleFingerprint(pane.terminal.getTitle());
-        pane.stream.nextSlice(buf[0..n]);
-        if (titleFingerprint(pane.terminal.getTitle()) != title_before) {
-            const title: []const u8 = pane.terminal.getTitle() orelse "";
-            self.emitPaneTitle(actions, id, title);
-        }
-
+    /// The single side-effect sequence that follows a pane apply: passthrough
+    /// replay, query replies, clipboard, wake. ROOTSHELL-TMUX
+    /// (id=viewer-output-batch)
+    fn panePostApply(
+        self: *Viewer,
+        actions: ?*std.ArrayList(Action),
+        pane: *Pane,
+        id: usize,
+    ) void {
         // ROOTSHELL-TMUX (id=streamterm-tmux-passthrough): replay inner sequences
         // recovered from `ESC P tmux; ...` passthrough envelopes (e.g. yazi's
         // wrapped Kitty graphics). The pane handler can only buffer (no Stream
@@ -5463,10 +5698,10 @@ pub const Viewer = struct {
             log.warn("failed to flush pane {} query replies err={}", .{ id, err });
         };
 
-        // Route any OSC 52 clipboard SETs the pane app emitted to the system
-        // clipboard via a `pane_clipboard_write` action (tmux never sets the
-        // clipboard for a -CC client). ROOTSHELL-TMUX (id=viewer-clipboard)
-        self.flushPaneClipboard(actions, pane);
+        // Route OSC 52 SETs to the system clipboard (tmux never does it for a
+        // -CC client). With no sink they stay buffered for the next flush that
+        // has one, never dropped. ROOTSHELL-TMUX (id=viewer-clipboard)
+        if (actions) |a| self.flushPaneClipboard(a, pane);
 
         wakePane(pane);
     }
@@ -5826,54 +6061,22 @@ pub const Viewer = struct {
                     gop.value_ptr.* = entry.value_ptr.*;
                     const pane = gop.value_ptr.*;
 
-                    // Resize the terminal if the pane's grid dimensions
-                    // changed (e.g. after a split or window resize). This
-                    // keeps the viewer's terminal in sync with tmux's
-                    // actual pane size. Terminal.resize no-ops when the
-                    // dimensions already match.
-                    //
-                    // Hold the child surface's renderer mutex (if a child is
-                    // attached) across the resize: it mutates the terminal's
-                    // PageList while the child's renderer thread reads the same
-                    // terminal under that mutex. Without this lock a relayout
-                    // during heavy output (e.g. running btop in a pane) races
-                    // the renderer and crashes in updateFrame/updateExtraRows.
-                    // Bounded: on timeout, stash the target size so the next
-                    // successful lock window applies it (flushPaneDeferred) —
-                    // never block the control channel on a pane renderer.
-                    // ROOTSHELL-TMUX (id=viewer-pane-bounded-lock)
-                    const render_mutex = switch (pane.lockRendererBounded(
-                        PANE_LOCK_QUICK_BUDGET_NS,
-                    )) {
-                        .acquired => |m| m,
-                        .timeout => {
-                            log.warn(
-                                "pane {} renderer lock contended; deferring resize to {}x{}",
-                                .{ id, cols, rows },
-                            );
-                            pane.pending_resize = .{ .cols = cols, .rows = rows };
-                            wakePane(pane);
-                            break :pane;
-                        },
-                    };
-                    defer pane.unlockRenderer(render_mutex);
-                    pane.pending_resize = null;
-                    // See id=tmux-pane-pixel-geometry above: cell_size_px keeps
-                    // the pane's pixel geometry in step with the cell grid.
-                    try pane.terminal.resize(gpa_alloc, .{
-                        .cols = cols,
-                        .rows = rows,
-                        .cell_size_px = pane.cellSizePx(),
-                    });
-                    // Wake the child surface's renderer so it repaints at the new
-                    // size. Resizing the pane terminal reflows its content, but
-                    // unlike the `%output` write paths this is NOT a write, so
-                    // nothing else wakes the renderer. Without this, a pane whose
-                    // program emits no output after a resize (e.g. an idle shell
-                    // prompt) keeps drawing its old-size frame — the terminal
-                    // "doesn't react" to window/divider resizes. wakePane no-ops
-                    // when no child is attached. ROOTSHELL-TMUX (id=viewer-wake-on-resize)
-                    wakePane(pane);
+                    // Stage the resize BEHIND anything already staged rather
+                    // than resizing here: output that arrived first was
+                    // produced for the old grid and must replay on it. The
+                    // flush applies the journal in order under the pane's
+                    // renderer mutex, which is also what keeps the reflow from
+                    // racing the child's renderer thread (a relayout during
+                    // heavy output used to crash in updateFrame).
+                    // ROOTSHELL-TMUX (id=viewer-output-batch,
+                    // id=viewer-pane-bounded-lock)
+                    if (pane.grid_size.cols != cols or pane.grid_size.rows != rows) {
+                        stageResize(gpa_alloc, pane, id, cols, rows);
+                        // Nothing else wakes the renderer for a pure resize, so
+                        // an idle pane would keep drawing its old-size frame.
+                        // ROOTSHELL-TMUX (id=viewer-wake-on-resize)
+                        wakePane(pane);
+                    }
                     break :pane;
                 }
 
@@ -5911,6 +6114,8 @@ pub const Viewer = struct {
                     .io = io,
                     .terminal = t,
                     .stream = undefined,
+                    .grid_size = .{ .cols = cols, .rows = rows },
+                    .staged_base_size = .{ .cols = cols, .rows = rows },
                     // A child surface will be created for this new pane (the
                     // reconcile emits an ensure_pane op). Mark it en route so no
                     // free path reclaims it before that child attaches.
@@ -8686,8 +8891,10 @@ test "layout change" {
                     try testing.expect(v.panes.contains(2));
                     // Commands should be queued for the new pane (4 capture-pane + 1 pane_state)
                     try testing.expectEqual(5, v.command_queue.len());
-                    // Pane 0 was 83x44 before the split. After the
-                    // layout change it should be resized to 83x22.
+                    // Pane 0 was 83x44 before the split. After the layout
+                    // change it should be resized to 83x22. The resize is
+                    // staged behind any pending output, so flush to apply it.
+                    v.flushAllDeferredPanes(null, 0);
                     const pane0 = v.panes.get(0).?;
                     try testing.expectEqual(83, pane0.terminal.cols);
                     try testing.expectEqual(22, pane0.terminal.rows);
@@ -8824,7 +9031,9 @@ test "layout change resizes existing pane without structural change" {
                     // Still one pane, no new captures queued
                     try testing.expectEqual(1, v.panes.count());
                     try testing.expect(v.command_queue.empty());
-                    // Terminal dimensions must match the new layout
+                    // Terminal dimensions must match the new layout once the
+                    // staged resize is flushed.
+                    v.flushAllDeferredPanes(null, 0);
                     const pane0 = v.panes.get(0).?;
                     try testing.expectEqual(120, pane0.terminal.cols);
                     try testing.expectEqual(50, pane0.terminal.rows);
@@ -11071,7 +11280,7 @@ test "attach snapshot defers under renderer lock and preserves following output"
     try testing.expect(pane.pending_snapshot != null);
     _ = viewer.next(.{ .tmux = .{ .output = .{ .pane_id = 0, .data = "echo ok" } } });
     try testing.expectEqualStrings("echo ok", pane.pending_vt.items);
-    pane.pending_resize = .{ .cols = 100, .rows = 50 };
+    Viewer.stageResize(testing.allocator, pane, 0, 100, 50);
     mutex.unlock(testing.io);
     locked = false;
     viewer.flushAllDeferredPanes(null, PANE_LOCK_OUTPUT_BUDGET_NS);
@@ -13186,4 +13395,505 @@ test "bounded pane lock: spill overflow drops and queues a visible re-fetch" {
         if (cmd.* == .pane_snapshot) found_visible = true;
     }
     try testing.expect(found_visible);
+}
+
+// Inside a batch every %output only STAGES, so the pane renderer is locked and
+// woken once for the chunk. ROOTSHELL-TMUX (id=viewer-output-batch)
+test "output batch: staged across a chunk, applied once at the flush" {
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
+    defer viewer.deinit();
+    try driveStartupOneWindow(&viewer);
+
+    const pane = viewer.panes.get(0).?;
+    var render_mutex: std.Io.Mutex = .init;
+    var wakes: usize = 0;
+    var dummy_ctx: u8 = 0;
+    const wake_fn = struct {
+        fn wake(ctx: ?*anyopaque) void {
+            const p: *usize = @ptrCast(@alignCast(ctx.?));
+            p.* += 1;
+        }
+    }.wake;
+    const osc_post_fn = struct {
+        fn post(_: ?*anyopaque, _: Viewer.PaneOscEvent) void {}
+    }.post;
+    pane.attachRenderer(&render_mutex, &wakes, wake_fn, &dummy_ctx, osc_post_fn);
+    defer pane.detachRenderer();
+
+    viewer.beginBatch();
+    _ = viewer.next(.{ .tmux = .{ .output = .{ .pane_id = 0, .data = "one " } } });
+    _ = viewer.next(.{ .tmux = .{ .output = .{ .pane_id = 0, .data = "two " } } });
+    _ = viewer.next(.{ .tmux = .{ .output = .{ .pane_id = 0, .data = "three" } } });
+
+    // Nothing reached the terminal yet, and the renderer was never woken. Each
+    // notification keeps its own journal entry; the batching win is the single
+    // lock/wake, not fewer entries.
+    try testing.expectEqualStrings("one two three", pane.pending_vt.items);
+    try testing.expectEqual(@as(usize, 3), pane.staged.items.len);
+    try testing.expectEqual(@as(usize, 4), pane.staged.items[0].output);
+    try testing.expectEqual(@as(usize, 0), wakes);
+
+    viewer.endBatch();
+    var actions: std.ArrayList(Viewer.Action) = .empty;
+    viewer.flushAllDeferredPanes(&actions, 0);
+
+    // One apply, in order, and exactly one wake for the whole chunk.
+    try testing.expectEqual(@as(usize, 0), pane.pending_vt.items.len);
+    try testing.expectEqual(@as(usize, 0), pane.staged.items.len);
+    try testing.expectEqual(@as(usize, 1), wakes);
+    var buf: [16]u8 = undefined;
+    const row = try pane.terminal.screens.active.selectionString(testing.allocator, .{
+        .sel = pane.terminal.screens.active.selectAll().?,
+        .trim = true,
+    });
+    defer testing.allocator.free(row);
+    _ = &buf;
+    try testing.expectEqualStrings("one two three", row);
+}
+
+// The title fingerprint moves from per-notification to per-flush, not away.
+// ROOTSHELL-TMUX (id=viewer-output-batch)
+test "output batch: title set mid-chunk emits one title action at the flush" {
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
+    defer viewer.deinit();
+    try driveStartupOneWindow(&viewer);
+
+    viewer.beginBatch();
+    // OSC 2 split across two %output records, exactly as tmux fragments them.
+    _ = viewer.next(.{ .tmux = .{ .output = .{
+        .pane_id = 0,
+        .data = "\\033]2;batch",
+    } } });
+    _ = viewer.next(.{ .tmux = .{ .output = .{
+        .pane_id = 0,
+        .data = "-title\\007",
+    } } });
+    viewer.endBatch();
+
+    var actions: std.ArrayList(Viewer.Action) = .empty;
+    viewer.flushAllDeferredPanes(&actions, 0);
+
+    var titles: usize = 0;
+    for (actions.items) |a| {
+        if (a != .title) continue;
+        titles += 1;
+        try testing.expectEqualStrings("batch-title", a.title.name);
+    }
+    try testing.expectEqual(@as(usize, 1), titles);
+}
+
+// ROOTSHELL-TMUX (id=viewer-output-batch)
+test "output batch: staged output survives an uninitialized pane's snapshot" {
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
+    defer viewer.deinit();
+    try driveStartupOneWindow(&viewer);
+
+    const pane = viewer.panes.get(0).?;
+    pane.initialized = false;
+
+    viewer.beginBatch();
+    // No snapshot in flight: output is suppressed and the pane is flagged for
+    // an atomic recapture instead of replaying a partial screen.
+    _ = viewer.next(.{ .tmux = .{ .output = .{ .pane_id = 0, .data = "dropped" } } });
+    try testing.expect(pane.capture_dirty);
+    try testing.expectEqual(@as(usize, 0), pane.pending_vt.items.len);
+    viewer.endBatch();
+}
+
+// Output and resizes interleave, so the journal must keep BOTH boundaries:
+// collapsing to "the latest size" replays A and B on the same grid when B was
+// produced at an intermediate width. ROOTSHELL-TMUX (id=viewer-output-batch)
+test "output batch: interleaved resizes keep their output boundaries" {
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
+    defer viewer.deinit();
+    try driveStartupOneWindow(&viewer);
+
+    const pane = viewer.panes.get(0).?;
+    const alloc = testing.allocator;
+
+    // A, resize 100, B, resize 120 — all while the flush cannot run.
+    viewer.beginBatch();
+    _ = viewer.next(.{ .tmux = .{ .output = .{ .pane_id = 0, .data = "A" } } });
+    Viewer.stageResize(alloc, pane, 0, 100, 30);
+    _ = viewer.next(.{ .tmux = .{ .output = .{ .pane_id = 0, .data = "B" } } });
+    Viewer.stageResize(alloc, pane, 0, 120, 40);
+    viewer.endBatch();
+
+    try testing.expectEqualStrings("AB", pane.pending_vt.items);
+    try testing.expectEqual(@as(usize, 4), pane.staged.items.len);
+    try testing.expectEqual(@as(usize, 1), pane.staged.items[0].output);
+    try testing.expectEqual(@as(size.CellCountInt, 100), pane.staged.items[1].resize.cols);
+    try testing.expectEqual(@as(usize, 1), pane.staged.items[2].output);
+    try testing.expectEqual(@as(size.CellCountInt, 120), pane.staged.items[3].resize.cols);
+
+    var actions: std.ArrayList(Viewer.Action) = .empty;
+    viewer.flushAllDeferredPanes(&actions, 0);
+
+    try testing.expectEqual(@as(usize, 0), pane.staged.items.len);
+    try testing.expectEqual(@as(usize, 0), pane.pending_vt.items.len);
+    try testing.expectEqual(@as(size.CellCountInt, 120), pane.terminal.cols);
+    try testing.expectEqual(@as(size.CellCountInt, 40), pane.terminal.rows);
+}
+
+/// One step of a pane-op sequence for the batched-vs-sequential comparisons.
+const BatchStep = union(enum) {
+    out: []const u8,
+    resize: struct { cols: size.CellCountInt, rows: size.CellCountInt },
+};
+
+/// Run `steps` against a fresh viewer's pane 0 and return its screen dump.
+/// `batched` stages everything and flushes once; otherwise each step is applied
+/// on its own, which is what the pre-batch code did.
+fn runBatchSteps(steps: []const BatchStep, batched: bool) ![]const u8 {
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
+    defer viewer.deinit();
+    try driveStartupOneWindow(&viewer);
+    const pane = viewer.panes.get(0).?;
+    pane.initialized = true;
+
+    if (batched) viewer.beginBatch();
+    for (steps) |step| {
+        switch (step) {
+            .out => |d| _ = viewer.next(.{ .tmux = .{ .output = .{
+                .pane_id = 0,
+                .data = d,
+            } } }),
+            .resize => |r| Viewer.stageResize(testing.allocator, pane, 0, r.cols, r.rows),
+        }
+        if (!batched) viewer.flushAllDeferredPanes(null, 0);
+    }
+    if (batched) {
+        viewer.endBatch();
+        viewer.flushAllDeferredPanes(null, 0);
+    }
+
+    return pane.terminal.screens.active.dumpStringAlloc(
+        testing.allocator,
+        .{ .active = .{} },
+    );
+}
+
+fn expectBatchMatchesSequential(steps: []const BatchStep) !void {
+    const got = try runBatchSteps(steps, true);
+    defer testing.allocator.free(got);
+    const want = try runBatchSteps(steps, false);
+    defer testing.allocator.free(want);
+    try testing.expectEqualStrings(want, got);
+}
+
+// Batching must be invisible: output written before a resize has to land on the
+// grid it was written for, wrapping and all. Checking only the final dimensions
+// would miss that. ROOTSHELL-TMUX (id=viewer-output-batch)
+test "output batch: interleaved resizes match immediate sequential application" {
+    try expectBatchMatchesSequential(&.{
+        .{ .resize = .{ .cols = 20, .rows = 10 } },
+        // 30 columns of text: wraps at 20, would not at 40.
+        .{ .out = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+        .{ .resize = .{ .cols = 40, .rows = 10 } },
+        .{ .out = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+        .{ .resize = .{ .cols = 15, .rows = 10 } },
+        .{ .out = "cccccccccccccccccccc" },
+    });
+}
+
+// Same, with absolute cursor positioning: a CUP addressed to the old grid must
+// not be re-interpreted at the new width.
+// ROOTSHELL-TMUX (id=viewer-output-batch)
+test "output batch: cursor addressing respects the grid it was written for" {
+    try expectBatchMatchesSequential(&.{
+        .{ .resize = .{ .cols = 30, .rows = 8 } },
+        .{ .out = "\\033[4;25Hedge" },
+        .{ .resize = .{ .cols = 60, .rows = 8 } },
+        .{ .out = "\\033[4;25Hwide" },
+        .{ .resize = .{ .cols = 30, .rows = 8 } },
+    });
+}
+
+// A wrapped `ESC Ptmux;` sequence is recovered by the pane handler and replayed
+// separately, so it must drain before a later resize rather than after the whole
+// journal. ROOTSHELL-TMUX (id=streamterm-tmux-passthrough, id=viewer-output-batch)
+test "output batch: wrapped passthrough replays before a following resize" {
+    try expectBatchMatchesSequential(&.{
+        .{ .resize = .{ .cols = 30, .rows = 8 } },
+        // ESC P tmux; ESC ESC [ 4 ; 25 H (doubled ESC per the tmux envelope),
+        // then ESC \ to close, then text at that position.
+        .{ .out = "\\033Ptmux;\\033\\033[4;25H\\033\\\\here" },
+        .{ .resize = .{ .cols = 60, .rows = 8 } },
+        .{ .out = "after" },
+    });
+}
+
+// Adjacent `%output` records coalesce into one journal entry, which must not put
+// a later record's text in front of the replay owed by an earlier one — no
+// resize needed to expose it.
+// ROOTSHELL-TMUX (id=streamterm-tmux-passthrough, id=viewer-output-batch)
+test "output batch: passthrough in one record replays before the next record" {
+    try expectBatchMatchesSequential(&.{
+        .{ .resize = .{ .cols = 30, .rows = 8 } },
+        .{ .out = "\\033Ptmux;\\033\\033[4;10H\\033\\134" },
+        .{ .out = "text" },
+    });
+}
+
+// tmux splits `%output` at arbitrary offsets, so the record that CLOSES an
+// envelope (and thus produces the replay) can hold only the terminator. Sealing
+// has to cover that record too, not just the one carrying the opener.
+// ROOTSHELL-TMUX (id=streamterm-tmux-passthrough, id=viewer-output-batch)
+test "output batch: a fragmented envelope still replays before later text" {
+    try expectBatchMatchesSequential(&.{
+        .{ .resize = .{ .cols = 30, .rows = 8 } },
+        // Opener + body, envelope left OPEN.
+        .{ .out = "\\033Ptmux;\\033\\033[4;10H" },
+        // Terminator only: no `ESC P` anywhere in this record.
+        .{ .out = "\\033\\134" },
+        // Must not merge ahead of the replay the record above produced.
+        .{ .out = "text" },
+    });
+}
+
+// The opener itself can straddle two records, which no fixed two-byte match
+// would see. ROOTSHELL-TMUX (id=streamterm-tmux-passthrough)
+test "output batch: an envelope opener split across records still seals" {
+    try expectBatchMatchesSequential(&.{
+        .{ .resize = .{ .cols = 30, .rows = 8 } },
+        .{ .out = "\\033" },
+        .{ .out = "Ptmux;\\033\\033[4;10H\\033\\134" },
+        .{ .out = "text" },
+    });
+}
+
+// The TERMINATOR can straddle records too: the record completing it carries
+// only a backslash, so no byte in it hints at an envelope boundary. This is why
+// the journal keeps every notification boundary rather than sniffing bytes.
+// ROOTSHELL-TMUX (id=streamterm-tmux-passthrough, id=viewer-output-batch)
+test "output batch: an envelope terminator split across records still replays first" {
+    try expectBatchMatchesSequential(&.{
+        .{ .resize = .{ .cols = 30, .rows = 8 } },
+        // Opener, body, and the ESC half of the terminator.
+        .{ .out = "\\033Ptmux;\\033\\033[4;10H\\033" },
+        // Just the '\' that completes it — no ESC, no 0x9C.
+        .{ .out = "\\134" },
+        .{ .out = "text" },
+    });
+}
+
+// A snapshot that waits on the renderer sits in front of the journal, so it must
+// restore the grid the journal STARTS from, not the size its later resizes end
+// at. ROOTSHELL-TMUX (id=viewer-output-batch)
+test "output batch: a deferred snapshot replays the journal from its base grid" {
+    // The journal must START with output so the base grid actually matters: an
+    // opening resize would carry both variants to the same width regardless.
+    const steps = [_]BatchStep{
+        // 30 columns: wraps at the pre-snapshot width of 20, not at 50.
+        .{ .out = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+        .{ .resize = .{ .cols = 50, .rows = 10 } },
+        .{ .out = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+    };
+
+    const got = try runSnapshotThenSteps(&steps, true);
+    defer testing.allocator.free(got);
+    const want = try runSnapshotThenSteps(&steps, false);
+    defer testing.allocator.free(want);
+    try testing.expectEqualStrings(want, got);
+}
+
+/// Land a capture snapshot while the renderer is held, then run `steps`.
+/// `deferred` keeps the lock so the snapshot and the journal apply together in
+/// one window; otherwise each lands on its own.
+fn runSnapshotThenSteps(steps: []const BatchStep, deferred: bool) ![]const u8 {
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
+    defer viewer.deinit();
+    try driveStartupOneWindow(&viewer);
+
+    const pane = viewer.panes.get(0).?;
+    var mutex: std.Io.Mutex = .init;
+    var ctx: u8 = 0;
+    const callbacks = struct {
+        fn wake(_: ?*anyopaque) void {}
+        fn post(_: ?*anyopaque, _: Viewer.PaneOscEvent) void {}
+    };
+    pane.attachRenderer(&mutex, &ctx, callbacks.wake, &ctx, callbacks.post);
+    defer pane.detachRenderer();
+
+    // Settle the pane at a narrow grid first: this is the width the journal's
+    // opening output is produced for, and what the snapshot must restore to.
+    Viewer.stageResize(testing.allocator, pane, 0, 20, 10);
+    viewer.flushAllDeferredPanes(null, 0);
+
+    try viewer.queuePaneSnapshot(0);
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    _ = (try viewer.takePendingCommand(arena.allocator())).?;
+    viewer.recordTrackedSend();
+
+    if (deferred) mutex.lockUncancelable(testing.io);
+    try feedSnapshotTest(&viewer, "snap\r\n", snapshotTestState);
+    if (!deferred) viewer.flushAllDeferredPanes(null, 0);
+
+    if (deferred) viewer.beginBatch();
+    for (steps) |step| {
+        switch (step) {
+            .out => |d| _ = viewer.next(.{ .tmux = .{ .output = .{
+                .pane_id = 0,
+                .data = d,
+            } } }),
+            .resize => |r| Viewer.stageResize(testing.allocator, pane, 0, r.cols, r.rows),
+        }
+        if (!deferred) viewer.flushAllDeferredPanes(null, 0);
+    }
+    if (deferred) {
+        viewer.endBatch();
+        mutex.unlock(testing.io);
+        viewer.flushAllDeferredPanes(null, 0);
+    }
+
+    return pane.terminal.screens.active.dumpStringAlloc(
+        testing.allocator,
+        .{ .active = .{} },
+    );
+}
+
+// A capture snapshot discards the staged journal, so the pane's authoritative
+// size has to survive separately or it stays at the old width forever.
+// ROOTSHELL-TMUX (id=viewer-output-batch)
+test "output batch: a snapshot recovery still reaches the staged size" {
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
+    defer viewer.deinit();
+    try driveStartupOneWindow(&viewer);
+
+    const pane = viewer.panes.get(0).?;
+    var mutex: std.Io.Mutex = .init;
+    var ctx: u8 = 0;
+    const callbacks = struct {
+        fn wake(_: ?*anyopaque) void {}
+        fn post(_: ?*anyopaque, _: Viewer.PaneOscEvent) void {}
+    };
+    pane.attachRenderer(&mutex, &ctx, callbacks.wake, &ctx, callbacks.post);
+    defer pane.detachRenderer();
+
+    // A resize tmux told us about, still unapplied.
+    Viewer.stageResize(testing.allocator, pane, 0, 100, 50);
+    try testing.expectEqual(@as(size.CellCountInt, 100), pane.grid_size.cols);
+
+    // A snapshot lands and wipes the journal on its way in. Hold the renderer
+    // so it stays staged until the explicit flush below.
+    try viewer.queuePaneSnapshot(0);
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    _ = (try viewer.takePendingCommand(arena.allocator())).?;
+    viewer.recordTrackedSend();
+    mutex.lockUncancelable(testing.io);
+    try feedSnapshotTest(&viewer, "hello\r\n", snapshotTestState);
+    try testing.expect(pane.pending_snapshot != null);
+    mutex.unlock(testing.io);
+    viewer.flushAllDeferredPanes(null, 0);
+
+    // The pane still reaches the size tmux reported, not the pre-resize one.
+    try testing.expect(pane.initialized);
+    try testing.expectEqual(@as(size.CellCountInt, 100), pane.terminal.cols);
+    try testing.expectEqual(@as(size.CellCountInt, 50), pane.terminal.rows);
+}
+
+// A session switch destroys every pane, so effects staged earlier in the same
+// chunk have to be delivered first. ROOTSHELL-TMUX (id=viewer-output-batch)
+test "output batch: %session-changed rescues a staged clipboard write" {
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
+    defer viewer.deinit();
+    try driveStartupOneWindow(&viewer);
+    viewer.panes.get(0).?.initialized = true;
+
+    // OSC 52 stages behind the batch, then the session switches in the same
+    // chunk before any flush could run.
+    viewer.beginBatch();
+    _ = viewer.next(.{ .tmux = .{ .output = .{
+        .pane_id = 0,
+        .data = "\\033]52;c;aGVsbG8=\\007",
+    } } });
+    try testing.expect(viewer.panes.get(0).?.staged.items.len > 0);
+
+    const actions = viewer.next(.{ .tmux = .{ .session_changed = .{
+        .id = 2,
+        .name = "other",
+    } } });
+
+    var found = false;
+    for (actions) |a| {
+        if (a != .pane_clipboard_write) continue;
+        found = true;
+        try testing.expectEqual(@as(u8, 'c'), a.pane_clipboard_write.kind);
+        try testing.expectEqualStrings("aGVsbG8=", a.pane_clipboard_write.data);
+    }
+    try testing.expect(found);
+
+    // The replacement keeps staging so the rest of the chunk stays batched.
+    try testing.expect(viewer.batching);
+    viewer.endBatch();
+}
+
+// Back-to-back resizes with no output between them observe no intermediate
+// grid, so they collapse. ROOTSHELL-TMUX (id=viewer-output-batch)
+test "output batch: adjacent resizes coalesce" {
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
+    defer viewer.deinit();
+    try driveStartupOneWindow(&viewer);
+
+    const pane = viewer.panes.get(0).?;
+    const alloc = testing.allocator;
+
+    Viewer.stageResize(alloc, pane, 0, 100, 30);
+    Viewer.stageResize(alloc, pane, 0, 110, 32);
+    Viewer.stageResize(alloc, pane, 0, 120, 40);
+    try testing.expectEqual(@as(usize, 1), pane.staged.items.len);
+    try testing.expectEqual(@as(size.CellCountInt, 120), pane.staged.items[0].resize.cols);
+
+    viewer.flushAllDeferredPanes(null, 0);
+    try testing.expectEqual(@as(size.CellCountInt, 120), pane.terminal.cols);
+}
+
+// One deadline for the whole sweep, not one per pane: N contended panes must
+// not stall the control channel N times as long.
+// ROOTSHELL-TMUX (id=viewer-output-batch)
+test "output batch: the flush budget is a total, not per pane" {
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
+    defer viewer.deinit();
+    try driveStartupTwoWindows(&viewer);
+
+    var mutexes: [2]std.Io.Mutex = .{ .init, .init };
+    var dummy_ctx: u8 = 0;
+    const wake_fn = struct {
+        fn wake(_: ?*anyopaque) void {}
+    }.wake;
+    const osc_post_fn = struct {
+        fn post(_: ?*anyopaque, _: Viewer.PaneOscEvent) void {}
+    }.post;
+
+    var staged: usize = 0;
+    var it = viewer.panes.iterator();
+    while (it.next()) |kv| : (staged += 1) {
+        if (staged >= mutexes.len) break;
+        const pane = kv.value_ptr.*;
+        pane.attachRenderer(&mutexes[staged], &dummy_ctx, wake_fn, &dummy_ctx, osc_post_fn);
+        mutexes[staged].lockUncancelable(testing.io);
+        try pane.pending_vt.appendSlice(testing.allocator, "x");
+        try pane.staged.append(testing.allocator, .{ .output = 1 });
+    }
+    defer {
+        var dit = viewer.panes.iterator();
+        var i: usize = 0;
+        while (dit.next()) |kv| : (i += 1) {
+            if (i >= mutexes.len) break;
+            mutexes[i].unlock(testing.io);
+            kv.value_ptr.*.detachRenderer();
+        }
+    }
+    try testing.expectEqual(@as(usize, 2), staged);
+
+    const budget = 20 * std.time.ns_per_ms;
+    const started: std.Io.Timestamp = .now(testing.io, .awake);
+    viewer.flushAllDeferredPanes(null, budget);
+    const spent = started.durationTo(.now(testing.io, .awake)).nanoseconds;
+
+    // Both panes are wedged, so the sweep spends the budget once, not twice.
+    // Generous slack for scheduling; the bug this pins is a 2x overrun.
+    try testing.expect(spent < 2 * @as(i128, budget));
 }

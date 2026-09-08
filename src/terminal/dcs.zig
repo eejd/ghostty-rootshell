@@ -244,6 +244,55 @@ pub const Handler = struct {
         return self.forwardPut(byte);
     }
 
+    /// Bulk-forward a run to the live tmux control parser, returning how many
+    /// bytes were consumed; 0 means the caller must fall back to scalar `put`.
+    /// Eligible only where `put` does nothing but forward: tmux state, no ESC
+    /// held, and before `%exit` (so no ST is live yet). The run stops at every
+    /// byte `put` treats specially, each of which then takes the scalar path:
+    ///
+    ///   0x1B ESC             arms `pending_esc` for the ESC `\` ST handshake
+    ///   0x18 CAN / 0x1A SUB  the ECMA-48 abort the fork forwards as content
+    ///   0x9C                 8-bit ST: content here, terminator after `%exit`
+    ///   0x7F DEL             dropped by the parse table (`.ignore`), never put
+    ///   '\n'                 not special to `put`, but the parser never
+    ///                        consumes past it, so scanning further is work the
+    ///                        caller redoes — quadratic over many short lines
+    ///
+    /// ROOTSHELL-TMUX (id=control-bulk-put)
+    pub fn putSlice(self: *Handler, bytes: []const u8) usize {
+        if (comptime !build_options.tmux_control_mode) return 0;
+        if (bytes.len == 0 or self.pending_esc) return 0;
+        switch (self.state) {
+            // Eligibility BEFORE scanning, else an idle byte costs a scan for a
+            // guaranteed 0.
+            .tmux => |*tmux| if (tmux.canTerminate() or !tmux.bulkEligible()) return 0,
+            else => return 0,
+        }
+
+        const run_len = bulkRunLen(bytes);
+        if (run_len == 0) return 0;
+
+        return switch (self.state) {
+            .tmux => |*tmux| tmux.putSlice(bytes[0..run_len]),
+            else => unreachable,
+        };
+    }
+
+    /// Length of the leading run `putSlice` may forward verbatim, i.e. the
+    /// index of the first byte the scalar `put` must see. Bounded by the
+    /// current line so repeated calls over a chunk stay linear.
+    /// ROOTSHELL-TMUX (id=control-bulk-put)
+    fn bulkRunLen(bytes: []const u8) usize {
+        var i: usize = 0;
+        while (i < bytes.len) : (i += 1) {
+            switch (bytes[i]) {
+                0x1B, 0x18, 0x1A, 0x9C, 0x7F, '\n' => break,
+                else => {},
+            }
+        }
+        return i;
+    }
+
     /// Forward a byte to the appropriate sub-handler.
     fn forwardPut(self: *Handler, byte: u8) ?Command {
         return self.tryPut(byte) catch |err| {
@@ -1135,4 +1184,178 @@ test "tmux: a control-parser put failure surfaces as .broken, not silent .ignore
     try testing.expect(got_broken);
     // Handler is inactive so the stream grounds on the next byte.
     try testing.expect(h.isInactive());
+}
+
+// ROOTSHELL-TMUX (id=control-bulk-put)
+
+/// Hook a fresh handler into tmux control mode for the bulk-path tests.
+fn testHookTmux(h: *Handler, alloc: std.mem.Allocator) !void {
+    var cmd = h.hook(alloc, .{ .params = &.{1000}, .final = 'p' }).?;
+    defer cmd.deinit();
+    try std.testing.expect(cmd.tmux == .enter);
+}
+
+test "putSlice: stops at every byte put treats specially" {
+    if (comptime !build_options.tmux_control_mode) return error.SkipZigTest;
+
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    for ([_]u8{ 0x1B, 0x18, 0x1A, 0x9C, 0x7F, '\n' }) |stop| {
+        var h: Handler = .{};
+        defer h.deinit();
+        try testHookTmux(&h, alloc);
+
+        // Open a notification so the control parser is in an accumulating state.
+        try testing.expect(h.put('%') == null);
+
+        const run = [_]u8{ 'a', 'b', 'c', stop, 'd', 'e' };
+        try testing.expectEqual(@as(usize, 3), h.putSlice(&run));
+    }
+}
+
+test "bulkRunLen stops at the first byte the scalar path must see" {
+    if (comptime !build_options.tmux_control_mode) return error.SkipZigTest;
+
+    // This is what keeps repeated putSlice calls linear over a chunk: the scan
+    // itself must stop at the current line, not just the run it hands back.
+    // Asserting on bytes CONSUMED cannot see the difference — an unbounded scan
+    // consumes the same amount, it just examines far more.
+    const testing = std.testing;
+
+    for ([_]u8{ 0x1B, 0x18, 0x1A, 0x9C, 0x7F, '\n' }) |stop| {
+        const run = [_]u8{ 'a', 'b', 'c', stop, 'd', 'e' };
+        try testing.expectEqual(@as(usize, 3), Handler.bulkRunLen(&run));
+    }
+
+    // Newline first: nothing to take, so the caller feeds one scalar byte.
+    try testing.expectEqual(@as(usize, 0), Handler.bulkRunLen("\nabc"));
+    // No stop byte at all: the whole slice.
+    try testing.expectEqual(@as(usize, 3), Handler.bulkRunLen("abc"));
+    try testing.expectEqual(@as(usize, 0), Handler.bulkRunLen(""));
+
+    // Over a many-line chunk the scan never reaches beyond the current line,
+    // so total work is the input length rather than its square.
+    const line = "%output %0 hello\n";
+    var buf: [16 * line.len]u8 = undefined;
+    var i: usize = 0;
+    while (i < buf.len) : (i += line.len) @memcpy(buf[i..][0..line.len], line);
+    try testing.expectEqual(line.len - 1, Handler.bulkRunLen(&buf));
+}
+
+test "putSlice: declines while an ESC is pending and once %exit was seen" {
+    if (comptime !build_options.tmux_control_mode) return error.SkipZigTest;
+
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var h: Handler = .{};
+    defer h.deinit();
+    try testHookTmux(&h, alloc);
+    try testing.expect(h.put('%') == null);
+
+    // A held ESC must be resolved by the scalar path (it may form ESC \).
+    try testing.expect(h.put(0x1B) == null);
+    try testing.expect(h.pending_esc);
+    try testing.expectEqual(@as(usize, 0), h.putSlice("abc"));
+
+    // Resolve it as content and the bulk path opens back up.
+    try testing.expect(h.put('a') == null);
+    try testing.expect(!h.pending_esc);
+    try testing.expectEqual(@as(usize, 3), h.putSlice("bcd"));
+
+    // After %exit an ST is live, so every byte must be inspected again.
+    try testing.expect(h.put('\n') == null);
+    for ("%exit") |byte| try testing.expect(h.put(byte) == null);
+    {
+        var cmd = h.put('\n').?;
+        defer cmd.deinit();
+        try testing.expect(cmd.tmux == .exit);
+    }
+    try testing.expectEqual(@as(usize, 0), h.putSlice("abc"));
+}
+
+test "putSlice: declines outside tmux control mode" {
+    if (comptime !build_options.tmux_control_mode) return error.SkipZigTest;
+
+    const testing = std.testing;
+
+    // Never hooked.
+    var h: Handler = .{};
+    defer h.deinit();
+    try testing.expectEqual(@as(usize, 0), h.putSlice("abc"));
+
+    // An ordinary DCS on the same surface parks the VT parser in
+    // dcs_passthrough too, but must not take the tmux bulk path.
+    var g: Handler = .{};
+    defer g.deinit();
+    try testing.expect(g.hook(std.testing.allocator, .{
+        .intermediates = "+",
+        .final = 'q',
+    }) == null);
+    try testing.expect(g.state == .xtgettcap);
+    try testing.expectEqual(@as(usize, 0), g.putSlice("abc"));
+}
+
+test "putSlice: a full stream matches byte-at-a-time through the handler" {
+    if (comptime !build_options.tmux_control_mode) return error.SkipZigTest;
+
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    // Raw ESC, CAN, SUB, 0x9C and DEL embedded in payloads, plus tmux's own
+    // `\ooo` escapes and multi-byte UTF-8 — every byte the bulk path has to
+    // hand back to the scalar path.
+    const stream = "%begin 1 5 1\nbody \x1b[0m more\n%end 1 5 1\n" ++
+        "%output %0 a\x18b\x1ac\x9cd\x7fe\n" ++
+        "%output %0 \\033[1m\xE2\x94\x80\n" ++
+        "%exit\n";
+
+    var bulk: std.ArrayList([]u8) = .empty;
+    defer {
+        for (bulk.items) |item| alloc.free(item);
+        bulk.deinit(alloc);
+    }
+    var scalar: std.ArrayList([]u8) = .empty;
+    defer {
+        for (scalar.items) |item| alloc.free(item);
+        scalar.deinit(alloc);
+    }
+
+    {
+        var h: Handler = .{};
+        defer h.deinit();
+        try testHookTmux(&h, alloc);
+        var i: usize = 0;
+        while (i < stream.len) {
+            const consumed = h.putSlice(stream[i..]);
+            if (consumed > 0) {
+                i += consumed;
+                continue;
+            }
+            if (h.put(stream[i])) |cmd_| {
+                var cmd = cmd_;
+                defer cmd.deinit();
+                try bulk.append(alloc, try alloc.dupe(u8, @tagName(cmd.tmux)));
+            }
+            i += 1;
+        }
+    }
+    {
+        var h: Handler = .{};
+        defer h.deinit();
+        try testHookTmux(&h, alloc);
+        for (stream) |byte| {
+            if (h.put(byte)) |cmd_| {
+                var cmd = cmd_;
+                defer cmd.deinit();
+                try scalar.append(alloc, try alloc.dupe(u8, @tagName(cmd.tmux)));
+            }
+        }
+    }
+
+    try testing.expectEqual(scalar.items.len, bulk.items.len);
+    for (scalar.items, bulk.items) |want, got| {
+        try testing.expectEqualStrings(want, got);
+    }
 }
