@@ -16,6 +16,18 @@ pub const Options = struct {
 
     /// The Metal source files.
     sources: []const LazyPath,
+
+    /// MacPorts enablement: absolute paths to the `metal`/`metallib` tools
+    /// to invoke directly instead of `/usr/bin/xcrun -sdk <sdk> metal`. A
+    /// MacPorts build runs as an unprivileged, non-interactive build user
+    /// whose per-user `xcrun` toolchain selection cache does not necessarily
+    /// see the same Metal Toolchain as an interactive user, and the tools
+    /// under a mounted Metal Toolchain cryptex are not SDK-multiplexed the
+    /// way `xcrun -sdk <sdk>` is -- one `metal`/`metallib` binary handles
+    /// every target. Null (the default) keeps upstream's `xcrun` behavior
+    /// unchanged for every other caller.
+    metal_bin: ?[]const u8 = null,
+    metallib_bin: ?[]const u8 = null,
 };
 
 step: *Step,
@@ -64,7 +76,11 @@ pub fn create(b: *std.Build, opts: Options) ?*MetallibStep {
         b,
         b.fmt("metal {s}", .{opts.name}),
     );
-    run_ir.addArgs(&.{ "/usr/bin/xcrun", "-sdk", sdk, "metal", "-o" });
+    if (opts.metal_bin) |metal_bin| {
+        run_ir.addArgs(&.{ metal_bin, "-o" });
+    } else {
+        run_ir.addArgs(&.{ "/usr/bin/xcrun", "-sdk", sdk, "metal", "-o" });
+    }
     const output_ir = run_ir.addOutputFileArg(b.fmt("{s}.ir", .{opts.name}));
     run_ir.addArgs(&.{"-c"});
     for (opts.sources) |source| run_ir.addFileArg(source);
@@ -79,7 +95,11 @@ pub fn create(b: *std.Build, opts: Options) ?*MetallibStep {
         b,
         b.fmt("metallib {s}", .{opts.name}),
     );
-    run_lib.addArgs(&.{ "/usr/bin/xcrun", "-sdk", sdk, "metallib", "-o" });
+    if (opts.metallib_bin) |metallib_bin| {
+        run_lib.addArgs(&.{ metallib_bin, "-o" });
+    } else {
+        run_lib.addArgs(&.{ "/usr/bin/xcrun", "-sdk", sdk, "metallib", "-o" });
+    }
     const output_lib = run_lib.addOutputFileArg(b.fmt("{s}.metallib", .{opts.name}));
     run_lib.addFileArg(output_ir);
     run_lib.step.dependOn(&run_ir.step);

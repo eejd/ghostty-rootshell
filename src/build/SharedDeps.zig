@@ -20,6 +20,15 @@ unicode_tables: UnicodeTables,
 framedata: GhosttyFrameData,
 uucode_tables: std.Build.LazyPath,
 
+/// MacPorts enablement: `-Dmetal-bin=`/`-Dmetallib-bin=` overrides for the
+/// `metal`/`metallib` tools invoked by `initTarget`'s `MetallibStep.create`.
+/// Read once in `init` via `b.option` and cached here -- `initTarget` runs
+/// once per retarget (e.g. macOS universal builds retarget to aarch64 *and*
+/// x86_64), and `b.option` panics ("Option '...' declared twice") if called
+/// more than once with the same name.
+metal_bin: ?[]const u8,
+metallib_bin: ?[]const u8,
+
 /// Singleton uucode module, instantiated once in `init` and reused
 /// everywhere so that ghostty and vaxis share the same compiled tables in
 /// each final binary instead of each linking its own copy.
@@ -84,6 +93,11 @@ pub fn init(b: *std.Build, cfg: *const Config) !SharedDeps {
         .uucode_tables = uucode_tables,
         .uucode_mod = uucode_mod,
 
+        // MacPorts enablement: read once here, not in initTarget. See the
+        // field doc comments above.
+        .metal_bin = b.option([]const u8, "metal-bin", "Absolute path to the metal compiler to use instead of 'xcrun -sdk <sdk> metal'"),
+        .metallib_bin = b.option([]const u8, "metallib-bin", "Absolute path to the metallib tool to use instead of 'xcrun -sdk <sdk> metallib'"),
+
         // Setup by retarget
         .options = undefined,
         .metallib = undefined,
@@ -133,6 +147,8 @@ fn initTarget(
         .name = "Ghostty",
         .target = target,
         .sources = &.{b.path("src/renderer/shaders/shaders.metal")},
+        .metal_bin = self.metal_bin,
+        .metallib_bin = self.metallib_bin,
     });
 
     // Change our config
