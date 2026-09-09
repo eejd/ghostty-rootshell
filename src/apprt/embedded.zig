@@ -292,6 +292,8 @@ pub const App = struct {
         pane_id: usize,
         viewer_terminal: ?*terminal.Terminal,
         viewer_pane: ?*terminal.tmux.Viewer.Pane,
+        config_override: ?*const configpkg.Config,
+        initial_color_scheme: ?apprt.ColorScheme,
     ) !*Surface {
         var surface = try self.core_app.alloc.create(Surface);
         errdefer self.core_app.alloc.destroy(surface);
@@ -304,6 +306,8 @@ pub const App = struct {
             pane_id,
             viewer_terminal,
             viewer_pane,
+            config_override,
+            initial_color_scheme,
         );
         errdefer surface.deinit();
 
@@ -695,6 +699,8 @@ pub const Surface = struct {
         pane_id: usize,
         viewer_terminal: ?*terminal.Terminal,
         viewer_pane: ?*terminal.tmux.Viewer.Pane,
+        config_override: ?*const configpkg.Config,
+        initial_color_scheme: ?apprt.ColorScheme,
     ) !void {
         self.* = .{
             .app = app,
@@ -719,7 +725,11 @@ pub const Surface = struct {
 
         // Shallow copy the config. tmux panes use the default config; there
         // is no command/working-directory since the tmux backend owns no pty.
-        var config = try apprt.surface.newConfig(app.core_app, &app.config, opts.context);
+        var config = try apprt.surface.newConfig(
+            app.core_app,
+            config_override orelse &app.config,
+            opts.context,
+        );
         defer config.deinit();
 
         // Allocate a relay writer bound to the parent (viewer-owner)
@@ -746,6 +756,7 @@ pub const Surface = struct {
             self,
             .{
                 .initially_visible = opts.initially_visible,
+                .initial_color_scheme = initial_color_scheme,
                 .tmux_backend = .{
                     .pane_id = pane_id,
                     .window_id = window_id,
@@ -994,7 +1005,7 @@ pub const Surface = struct {
     }
 
     pub fn colorSchemeCallback(self: *Surface, scheme: apprt.ColorScheme) void {
-        self.core_surface.colorSchemeCallback(scheme) catch |err| {
+        self.core_surface.colorSchemeCallbackForced(scheme) catch |err| {
             log.err("error setting color scheme err={}", .{err});
             return;
         };
@@ -1788,6 +1799,8 @@ pub const CAPI = struct {
             pane_id,
             vt,
             vp,
+            null,
+            null,
         ) catch |err| {
             log.err("error initializing tmux pane surface err={}", .{err});
             // The child surface failed to create, so its IO thread will never run
@@ -1800,6 +1813,49 @@ pub const CAPI = struct {
             // the in-flight reconcile payload's snapshot-ref still protects the pane
             // pointer until Swift frees the payload. ROOTSHELL-TMUX
             // (id=pending-attach-failure-clear)
+            if (vp) |pane| pane.clearPendingAttach();
+            return null;
+        };
+    }
+
+    /// RootShell extension that installs the effective config and appearance
+    /// before the child renderer/IO threads start. The original entry point
+    /// remains ABI-compatible for other embedders.
+    export fn ghostty_surface_new_tmux_pane_with_theme(
+        app: *App,
+        parent: *Surface,
+        window_id: usize,
+        pane_id: usize,
+        viewer_terminal: ?*anyopaque,
+        viewer_pane: ?*anyopaque,
+        opts: *const apprt.Surface.Options,
+        config: *const configpkg.Config,
+        scheme_raw: c_int,
+    ) ?*Surface {
+        const vp: ?*terminal.tmux.Viewer.Pane = if (viewer_pane) |p|
+            @ptrCast(@alignCast(p))
+        else
+            null;
+        const scheme = std.enums.fromInt(apprt.ColorScheme, scheme_raw) orelse {
+            log.warn("invalid initial tmux pane color scheme={}", .{scheme_raw});
+            if (vp) |pane| pane.clearPendingAttach();
+            return null;
+        };
+        const vt: ?*terminal.Terminal = if (viewer_terminal) |p|
+            @ptrCast(@alignCast(p))
+        else
+            null;
+        return app.newTmuxPaneSurface(
+            opts.*,
+            parent,
+            window_id,
+            pane_id,
+            vt,
+            vp,
+            config,
+            scheme,
+        ) catch |err| {
+            log.err("error initializing themed tmux pane surface err={}", .{err});
             if (vp) |pane| pane.clearPendingAttach();
             return null;
         };
@@ -2223,7 +2279,9 @@ pub const CAPI = struct {
         return .fromSlice(copy);
     }
 
-    /// Update the color scheme of the surface.
+    /// Update the color scheme of the surface. An explicit embedded delivery
+    /// publishes one mode-2031 appearance event even when the semantic value is
+    /// unchanged, allowing same-scheme theme edits to reach subscribed TUIs.
     export fn ghostty_surface_set_color_scheme(surface: *Surface, scheme_raw: c_int) void {
         const scheme = std.enums.fromInt(apprt.ColorScheme, scheme_raw) orelse return;
         surface.colorSchemeCallback(scheme);
@@ -3590,3 +3648,21 @@ pub const CAPI = struct {
         }
     };
 };
+
+test "themed tmux pane rejects invalid initial color scheme" {
+    // The invalid enum returns before any of these non-null opaque inputs are
+    // dereferenced. A real viewer pane additionally clears pending_attach on
+    // this path so construction failure cannot retain it forever.
+    const result = CAPI.ghostty_surface_new_tmux_pane_with_theme(
+        undefined,
+        undefined,
+        0,
+        0,
+        null,
+        null,
+        undefined,
+        undefined,
+        -1,
+    );
+    try std.testing.expect(result == null);
+}

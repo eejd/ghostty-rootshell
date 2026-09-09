@@ -18,6 +18,7 @@ const color = @import("../color.zig");
 const clipboard = @import("../clipboard.zig"); // ROOTSHELL-TMUX (id=viewer-clipboard): protocol-neutral clipboard write effect
 const mouse = @import("../mouse.zig");
 const osc = @import("../osc.zig"); // ROOTSHELL-TMUX (id=viewer-pane-osc): OSC 9;4 progress report type
+const device_status = @import("../device_status.zig"); // ROOTSHELL-TMUX (id=viewer-pane-theme-report): mode-2031 notification
 const device_attributes = @import("../device_attributes.zig"); // ROOTSHELL-TMUX (id=streamterm-tmux-passthrough): DA reply for wrapped queries
 const size_report = @import("../size_report.zig"); // ROOTSHELL-TMUX (id=streamterm-tmux-passthrough): pixel-size reply for wrapped queries
 const TerminalStream = @import("../stream_terminal.zig").Stream;
@@ -1619,11 +1620,10 @@ pub const Viewer = struct {
         }
     }
 
-    /// Update the themed colors after a config reload, applying them to BOTH
-    /// future pane terminals (via `self.colors`, consumed by `initLayout`) and
-    /// every EXISTING pane terminal so the live render reflects the new theme
-    /// immediately, and re-report fg/bg to tmux so OSC 10/11 queries answer
-    /// with the current theme. Covers the full `Terminal.Colors` set the theme
+    /// Update the gateway theme after a config reload. It applies to future and
+    /// unattached pane terminals, but never overwrites panes owned by child
+    /// surfaces: those children carry their own tab/window effective configs
+    /// and report their own fg/bg to tmux. Covers the full `Terminal.Colors` set the theme
     /// can change: background, foreground, cursor, and the 256-color palette —
     /// mirroring how `Termio.changeConfig` applies config colors. Only the
     /// `default` slot (and the palette `original`/default entries) is changed,
@@ -1659,6 +1659,12 @@ pub const Viewer = struct {
             var pit = self.panes.iterator();
             while (pit.next()) |kv| {
                 const pane = kv.value_ptr.*;
+                // A pending or attached child owns this pane's effective
+                // colors. The gateway and child IO threads update separately;
+                // skipping here eliminates a last-writer-wins race that could
+                // replace a tab/window override with the gateway theme.
+                // ROOTSHELL-TMUX (id=viewer-child-theme-owner)
+                if (pane.isHeldByChild()) continue;
                 // Hold the child's renderer mutex (if a child is attached)
                 // while mutating the terminal the child's renderer thread
                 // reads, the same discipline as the `initLayout` resize path.
@@ -1691,6 +1697,7 @@ pub const Viewer = struct {
         const rbg = self.colors.background.get() orelse return;
         var it = self.panes.iterator();
         while (it.next()) |kv| {
+            if (kv.value_ptr.*.isHeldByChild()) continue;
             // Two separate reports per pane: tmux parses one OSC per report.
             self.queueCommands(&.{
                 .{ .pane_color_report = .{ .pane_id = kv.key_ptr.*, .code = 10, .color = rfg } },
@@ -6387,6 +6394,29 @@ pub const Viewer = struct {
         if (parseSelectWindow(cmd)) |window_id| {
             self.prioritizeRecoveryWindow(window_id);
         }
+        if (parsePaneColorSchemeReport(cmd)) |report| {
+            // tmux 3.6 and 3.7 answer one-shot 996 queries natively but do not
+            // notify mode-2031 subscribers when refresh-client -r changes the
+            // pane background, so always synthesize there. tmux 3.8+ notifies
+            // when its derived semantic class changes; synthesize only an
+            // explicitly tagged same-scheme delivery (such as an edited dark
+            // theme), which native tmux suppresses. Intent is carried from the
+            // Surface rather than inferred from lossy per-viewer history.
+            const tmux_36_or_37 = tmuxVersionAtLeast(self.tmux_version, 3, 6) and
+                !tmuxVersionAtLeast(self.tmux_version, 3, 8);
+            const tmux_38_same_scheme = tmuxVersionAtLeast(self.tmux_version, 3, 8) and
+                report.explicit_same_scheme;
+            if (tmux_36_or_37 or tmux_38_same_scheme) {
+                const bytes = switch (report.scheme) {
+                    .dark => "\x1b[?997;1n",
+                    .light => "\x1b[?997;2n",
+                };
+                const send_keys = try formatSendKeys(self.alloc, report.pane_id, bytes);
+                defer self.alloc.free(send_keys);
+                try self.queueUserCommand(send_keys);
+            }
+            return;
+        }
         if (parseResizePane(cmd)) |rp| {
             if (self.windowIsSinglePane(rp.pane_id)) {
                 // Single-pane window: the pane fills the window, so its grid IS
@@ -6426,6 +6456,41 @@ pub const Viewer = struct {
         const target = it.next() orelse return null;
         if (it.next() != null or target.len < 2 or target[0] != '@') return null;
         return std.fmt.parseInt(usize, target[1..], 10) catch null;
+    }
+
+    const PaneColorSchemeReport = struct {
+        pane_id: usize,
+        scheme: device_status.ColorScheme,
+        explicit_same_scheme: bool,
+    };
+
+    fn parsePaneColorSchemeReport(cmd: []const u8) ?PaneColorSchemeReport {
+        var tokens = std.mem.tokenizeAny(u8, cmd, " \r\n");
+        if (!std.mem.eql(u8, tokens.next() orelse return null, "rootshell-report-color-scheme")) return null;
+        if (!std.mem.eql(u8, tokens.next() orelse return null, "-t")) return null;
+        const target = tokens.next() orelse return null;
+        if (target.len < 2 or target[0] != '%') return null;
+        const pane_id = std.fmt.parseInt(usize, target[1..], 10) catch return null;
+        const scheme_raw = tokens.next() orelse return null;
+        const scheme: device_status.ColorScheme = if (std.mem.eql(u8, scheme_raw, "dark"))
+            .dark
+        else if (std.mem.eql(u8, scheme_raw, "light"))
+            .light
+        else
+            return null;
+        const intent_raw = tokens.next() orelse return null;
+        const explicit_same_scheme = if (std.mem.eql(u8, intent_raw, "explicit"))
+            true
+        else if (std.mem.eql(u8, intent_raw, "transition"))
+            false
+        else
+            return null;
+        if (tokens.next() != null) return null;
+        return .{
+            .pane_id = pane_id,
+            .scheme = scheme,
+            .explicit_same_scheme = explicit_same_scheme,
+        };
     }
 
     const ResizePane = struct {
@@ -8078,6 +8143,78 @@ test "parseResizePane parses target/cols/rows, rejects others" {
     try testing.expect(Viewer.parseResizePane("resize-pane -t 7 -x 1 -y 1\n") == null);
 }
 
+test "parsePaneColorSchemeReport validates the internal relay command" {
+    const dark = Viewer.parsePaneColorSchemeReport(
+        "rootshell-report-color-scheme -t %7 dark transition\n",
+    ).?;
+    try testing.expectEqual(@as(usize, 7), dark.pane_id);
+    try testing.expectEqual(device_status.ColorScheme.dark, dark.scheme);
+    try testing.expect(!dark.explicit_same_scheme);
+
+    const light = Viewer.parsePaneColorSchemeReport(
+        "rootshell-report-color-scheme -t %42 light explicit",
+    ).?;
+    try testing.expectEqual(@as(usize, 42), light.pane_id);
+    try testing.expectEqual(device_status.ColorScheme.light, light.scheme);
+    try testing.expect(light.explicit_same_scheme);
+
+    try testing.expect(Viewer.parsePaneColorSchemeReport(
+        "rootshell-report-color-scheme -t 7 dark transition",
+    ) == null);
+    try testing.expect(Viewer.parsePaneColorSchemeReport(
+        "rootshell-report-color-scheme -t %7 unknown transition",
+    ) == null);
+    try testing.expect(Viewer.parsePaneColorSchemeReport(
+        "rootshell-report-color-scheme -t %7 dark unknown",
+    ) == null);
+    try testing.expect(Viewer.parsePaneColorSchemeReport(
+        "rootshell-report-color-scheme -t %7 dark explicit extra",
+    ) == null);
+}
+
+test "queueRelayedPaneCommand uses explicit scheme intent across tmux versions" {
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
+    defer viewer.deinit();
+    viewer.state = .command_queue;
+    viewer.tmux_version = try viewer.alloc.dupe(u8, "3.7c");
+
+    try viewer.queueRelayedPaneCommand(
+        "rootshell-report-color-scheme -t %7 light transition\n",
+    );
+    var arena: ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const cmd = (try viewer.takePendingCommand(arena.allocator())).?;
+    try testing.expectEqualStrings(
+        "send-keys -H -t %7 1B 5B 3F 39 39 37 3B 32 6E\n",
+        cmd,
+    );
+
+    // On newer tmux, a semantic change is natively reported, while an explicit
+    // same-scheme theme edit still needs one synthesized notification.
+    var newer = try Viewer.init(testing.io, testing.allocator, 80, 24);
+    defer newer.deinit();
+    newer.state = .command_queue;
+    newer.tmux_version = try newer.alloc.dupe(u8, "3.8");
+    try newer.queueRelayedPaneCommand(
+        "rootshell-report-color-scheme -t %7 dark transition\n",
+    );
+    try testing.expect(newer.command_queue.empty());
+    // This is deliberately the fresh viewer's first explicit relay: intent is
+    // sufficient even when transitions occurred while mode 2031 was disabled
+    // and no historical relay exists.
+    try newer.queueRelayedPaneCommand(
+        "rootshell-report-color-scheme -t %7 dark explicit\n",
+    );
+    try testing.expectEqual(@as(usize, 1), newer.command_queue.len());
+    var newer_arena: ArenaAllocator = .init(testing.allocator);
+    defer newer_arena.deinit();
+    const same_scheme = (try newer.takePendingCommand(newer_arena.allocator())).?;
+    try testing.expectEqualStrings(
+        "send-keys -H -t %7 1B 5B 3F 39 39 37 3B 31 6E\n",
+        same_scheme,
+    );
+}
+
 test "queueRelayedPaneCommand rewrites a single-pane resize to client_size" {
     var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
@@ -8912,12 +9049,11 @@ test "layout change" {
     });
 }
 
-test "updateColors refreshes existing pane terminal colors live" {
-    // A theme change (config reload) must update the colors of panes that
-    // ALREADY exist, not just future panes. Before the fix this only updated
-    // `self.colors` (consumed at pane creation), so live panes stayed stale
-    // until a detach/reattach rebuilt them. ROOTSHELL-TMUX
-    // (id=viewer-update-existing-pane-colors)
+test "updateColors preserves child theme and refreshes unattached pane" {
+    // Child-owned panes carry tab/window effective themes. A gateway config
+    // reload must not overwrite them; once an en-route child is cancelled, the
+    // unattached pane follows the gateway again. ROOTSHELL-TMUX
+    // (id=viewer-child-theme-owner)
     var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
     defer viewer.deinit();
 
@@ -8947,9 +9083,25 @@ test "updateColors refreshes existing pane terminal colors live" {
                     // can prove the palette propagates through changeDefault.
                     var new_palette = pane0.terminal.colors.palette.original;
                     new_palette[5] = accent;
+                    const child_fg: color.RGB = .{ .r = 0xde, .g = 0xad, .b = 0x01 };
+                    const child_bg: color.RGB = .{ .r = 0x02, .g = 0xbe, .b = 0xef };
+                    pane0.terminal.colors.foreground.default = child_fg;
+                    pane0.terminal.colors.background.default = child_bg;
+                    const held_queue_len = v.command_queue.len();
                     v.updateColors(new_fg, new_bg, new_cursor, new_palette);
-                    // The existing pane terminal (what the child renderer reads)
-                    // picked up the full new theme live (bg/fg/cursor/palette).
+                    // pending_attach means a child is en route and owns this
+                    // pane; the gateway must preserve its distinct colors and
+                    // must not queue OSC 10/11 reports that would overwrite
+                    // tmux's per-pane control colors.
+                    try testing.expectEqual(child_fg, pane0.terminal.colors.foreground.default.?);
+                    try testing.expectEqual(child_bg, pane0.terminal.colors.background.default.?);
+                    try testing.expectEqual(held_queue_len, v.command_queue.len());
+
+                    // If child creation fails, the app clears pending_attach;
+                    // the otherwise-unowned pane resumes following the gateway.
+                    pane0.clearPendingAttach();
+                    v.updateColors(new_fg, new_bg, new_cursor, new_palette);
+                    try testing.expectEqual(held_queue_len + 2, v.command_queue.len());
                     try testing.expectEqual(new_fg, pane0.terminal.colors.foreground.default.?);
                     try testing.expectEqual(new_bg, pane0.terminal.colors.background.default.?);
                     try testing.expectEqual(new_cursor, pane0.terminal.colors.cursor.default.?);

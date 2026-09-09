@@ -490,7 +490,26 @@ const DerivedConfig = struct {
 pub const InitOptions = struct {
     initially_visible: bool = true,
     tmux_backend: ?termio.Tmux.Config = null, // ROOTSHELL-TMUX (id=surface-initoptions-backend)
+    /// Effective appearance supplied by an embedder before the surface IO
+    /// thread starts. This closes the tmux-pane construction window where the
+    /// surface otherwise inherits the app-global scheme before RootShell can
+    /// apply its tab/window override.
+    initial_color_scheme: ?apprt.ColorScheme = null, // ROOTSHELL-TMUX (id=surface-initial-color-scheme)
 };
+
+fn initialConditionalState(
+    app_state: configpkg.ConditionalState,
+    scheme: ?apprt.ColorScheme,
+) configpkg.ConditionalState {
+    var state = app_state;
+    if (scheme) |value| {
+        state.theme = switch (value) {
+            .light => .light,
+            .dark => .dark,
+        };
+    }
+    return state;
+}
 
 /// Create a new surface. This must be called from the main thread. The
 /// pointer to the memory for the surface must be provided and must be
@@ -517,10 +536,14 @@ pub fn initWithOptions(
     rt_surface: *apprt.runtime.Surface,
     opts: InitOptions,
 ) !void {
+    const initial_conditional_state = initialConditionalState(
+        app.config_conditional_state,
+        opts.initial_color_scheme,
+    );
     // Apply our conditional state. If we fail to apply the conditional state
     // then we log and attempt to move forward with the old config.
     var config_: ?configpkg.Config = config_original.changeConditionalState(
-        app.config_conditional_state,
+        initial_conditional_state,
     ) catch |err| err: {
         log.warn("failed to apply conditional state to config err={}", .{err});
         break :err null;
@@ -646,7 +669,9 @@ pub fn initWithOptions(
         },
         .alloc = alloc,
         .app = app,
-        .system_color_scheme = .init(app.system_color_scheme.load(.monotonic)),
+        .system_color_scheme = .init(
+            opts.initial_color_scheme orelse app.system_color_scheme.load(.monotonic),
+        ),
         .rt_app = rt_app,
         .rt_surface = rt_surface,
         .font_grid_key = font_grid_key,
@@ -671,7 +696,7 @@ pub fn initWithOptions(
 
         // Our conditional state is initialized to the app state. This
         // lets us get the most likely correct color theme and so on.
-        .config_conditional_state = app.config_conditional_state,
+        .config_conditional_state = initial_conditional_state,
     };
 
     // The command we're going to execute
@@ -5737,6 +5762,22 @@ pub fn cursorPosCallback(
 /// Call to notify Ghostty that the color scheme for the terminal has
 /// changed.
 pub fn colorSchemeCallback(self: *Surface, scheme: apprt.ColorScheme) !void {
+    return self.colorSchemeCallbackWithReport(scheme, false);
+}
+
+/// Embedded clients use this when applying a complete config/scheme delivery.
+/// The explicit delivery is itself an appearance event, even when the semantic
+/// light/dark value is unchanged (for example, editing the active dark theme).
+/// The termio layer still suppresses the actual 997 unless mode 2031 is active.
+pub fn colorSchemeCallbackForced(self: *Surface, scheme: apprt.ColorScheme) !void {
+    return self.colorSchemeCallbackWithReport(scheme, true);
+}
+
+fn colorSchemeCallbackWithReport(
+    self: *Surface,
+    scheme: apprt.ColorScheme,
+    force_report: bool,
+) !void {
     // Crash metadata in case we crash in here
     crash.sentry.thread_state = self.crashThreadState();
     defer crash.sentry.thread_state = null;
@@ -5746,6 +5787,7 @@ pub fn colorSchemeCallback(self: *Surface, scheme: apprt.ColorScheme) !void {
         &self.system_color_scheme,
         &self.config_conditional_state.theme,
         scheme,
+        force_report,
     )) return;
 
     // The appearance transition also changed conditional configuration state.
@@ -5757,13 +5799,15 @@ fn applyColorSchemeTransition(
     system_scheme: *std.atomic.Value(apprt.ColorScheme),
     conditional_theme: *configpkg.ConditionalState.Theme,
     scheme: apprt.ColorScheme,
+    force_report: bool,
 ) bool {
     // Reporting follows the surface's effective appearance, which may differ
     // from the app default when an embedder supports per-window/tab themes.
     // It is independent of conditional configuration reloads: a normal
     // light/dark transition changes both and still needs a live mode-2031 DSR.
-    if (system_scheme.swap(scheme, .monotonic) != scheme) {
-        reporter.reportColorSchemeChanged();
+    const changed = system_scheme.swap(scheme, .monotonic) != scheme;
+    if (changed or force_report) {
+        reporter.reportColorSchemeChanged(!changed);
     }
 
     const new_theme: configpkg.ConditionalState.Theme = switch (scheme) {
@@ -5775,9 +5819,12 @@ fn applyColorSchemeTransition(
     return true;
 }
 
-fn reportColorSchemeChanged(self: *Surface) void {
+fn reportColorSchemeChanged(self: *Surface, explicit_same_scheme: bool) void {
     self.queueIo(
-        .{ .color_scheme_report = .{ .force = false } },
+        .{ .color_scheme_report = .{
+            .force = false,
+            .explicit_same_scheme = explicit_same_scheme,
+        } },
         .unlocked,
     );
 }
@@ -7359,9 +7406,11 @@ test "queueIo frees allocated writes in readonly mode" {
 test "color scheme transition reports independently of config reload" {
     const Reporter = struct {
         reports: usize = 0,
+        explicit_reports: usize = 0,
 
-        fn reportColorSchemeChanged(self: *@This()) void {
+        fn reportColorSchemeChanged(self: *@This(), explicit_same_scheme: bool) void {
             self.reports += 1;
+            if (explicit_same_scheme) self.explicit_reports += 1;
         }
     };
 
@@ -7374,8 +7423,10 @@ test "color scheme transition reports independently of config reload" {
         &system_scheme,
         &conditional_theme,
         .dark,
+        false,
     ));
     try std.testing.expectEqual(@as(usize, 1), reporter.reports);
+    try std.testing.expectEqual(@as(usize, 0), reporter.explicit_reports);
     try std.testing.expectEqual(apprt.ColorScheme.dark, system_scheme.load(.monotonic));
     try std.testing.expectEqual(configpkg.ConditionalState.Theme.dark, conditional_theme);
 
@@ -7385,6 +7436,32 @@ test "color scheme transition reports independently of config reload" {
         &system_scheme,
         &conditional_theme,
         .dark,
+        false,
     ));
     try std.testing.expectEqual(@as(usize, 1), reporter.reports);
+
+    // An embedded config/scheme delivery is an explicit appearance event.
+    // Same-scheme theme edits report exactly once without reloading conditional
+    // configuration.
+    try std.testing.expect(!applyColorSchemeTransition(
+        &reporter,
+        &system_scheme,
+        &conditional_theme,
+        .dark,
+        true,
+    ));
+    try std.testing.expectEqual(@as(usize, 2), reporter.reports);
+    try std.testing.expectEqual(@as(usize, 1), reporter.explicit_reports);
+}
+
+test "initial surface scheme overrides app conditional theme" {
+    const app_state: configpkg.ConditionalState = .{ .theme = .light };
+    try std.testing.expectEqual(
+        configpkg.ConditionalState.Theme.dark,
+        initialConditionalState(app_state, .dark).theme,
+    );
+    try std.testing.expectEqual(
+        configpkg.ConditionalState.Theme.light,
+        initialConditionalState(app_state, null).theme,
+    );
 }

@@ -212,6 +212,16 @@ pub fn threadEnter(
 
     log.info("tmux backend thread enter pane_id={}", .{self.pane_id});
 
+    // Prime tmux's pane-local control colors from the effective config that
+    // constructed this child. RootShell can supply a tab/window override to the
+    // constructor, so this is intentionally earlier than any later config
+    // callback. The tracked relay is asynchronous, but once tmux consumes it,
+    // native CSI ?996n responses use this pane's effective background.
+    self.reportColors(
+        io.config.foreground.toTerminalRGB(),
+        io.config.background.toTerminalRGB(),
+    );
+
     // Register this child surface's renderer mutex and wake callback on the
     // viewer pane FIRST — before publishing the pane terminal to the renderer.
     // ROOTSHELL-TMUX (id=tmux-attach-order): attachRenderer installs
@@ -254,6 +264,7 @@ pub fn threadEnter(
     // to attachRenderer above — so the renderer transitions atomically from the
     // child's own (empty) terminal to the shared viewer pane terminal with no
     // unlocked-write window.
+    var report_existing_subscription = false;
     if (self.viewer_terminal) |vt| {
         io.renderer_state.mutex.lockUncancelable(global.io());
         defer io.renderer_state.mutex.unlock(global.io());
@@ -262,6 +273,23 @@ pub fn threadEnter(
         // it so a tab switch racing this handoff wins in either ordering.
         vt.flags.visible = io.renderer_state.terminal.flags.visible;
         io.renderer_state.terminal = vt;
+        // The viewer terminal has parsed this pane's output, so its mode bit is
+        // the only subscription evidence available to the embedded client. Do
+        // not inject an unsolicited 997 merely because a child surface starts:
+        // applications that never enabled mode 2031 may treat it as input.
+        // A subscription established before the control client began observing
+        // the pane cannot be reconstructed safely on tmux 3.6/3.7.
+        report_existing_subscription = vt.modes.get(.report_color_scheme);
+    }
+
+    if (report_existing_subscription) {
+        self.reportColorScheme(
+            switch (io.system_color_scheme.load(.monotonic)) {
+                .dark => .dark,
+                .light => .light,
+            },
+            false,
+        );
     }
 
     // Populate the thread data with our (empty) thread state.
@@ -447,6 +475,64 @@ pub fn updateViewerPaneCell(self: *Tmux, cell_width: u32, cell_height: u32) void
     pane.cell_width = cell_width;
     pane.cell_height = cell_height;
     pane.recomputePixelSize();
+}
+
+/// Report this child surface's effective foreground/background to tmux's
+/// per-pane control-client state. tmux 3.6+ uses control_bg to answer CSI
+/// ?996n, so it remains the single query responder and cannot conflict with a
+/// second viewer-generated 997 response.
+pub fn reportColors(
+    self: *Tmux,
+    foreground: ?terminal.color.RGB,
+    background: ?terminal.color.RGB,
+) void {
+    if (foreground) |fg| self.reportColor(10, fg);
+    if (background) |bg| self.reportColor(11, bg);
+}
+
+/// Relay a semantic appearance notification through the gateway's tracked
+/// command queue. The gateway decides from the negotiated tmux version whether
+/// it must synthesize the mode-2031 notification (3.6/3.7) or let newer tmux
+/// provide it when the background report changes.
+pub fn reportColorScheme(
+    self: *Tmux,
+    scheme: terminal.device_status.ColorScheme,
+    explicit_same_scheme: bool,
+) void {
+    var buf: [96]u8 = undefined;
+    const cmd = std.fmt.bufPrint(
+        &buf,
+        "rootshell-report-color-scheme -t %{d} {s} {s}\n",
+        .{
+            self.pane_id,
+            @tagName(scheme),
+            if (explicit_same_scheme) "explicit" else "transition",
+        },
+    ) catch return;
+    self.control_writer.write(cmd) catch |err| {
+        log.warn("failed to relay pane color scheme err={}", .{err});
+    };
+}
+
+fn reportColor(self: *Tmux, code: u8, value: terminal.color.RGB) void {
+    var buf: [160]u8 = undefined;
+    const cmd = std.fmt.bufPrint(
+        &buf,
+        "refresh-client -r \"%{d}:\\033]{d};rgb:{x:0>2}{x:0>2}/{x:0>2}{x:0>2}/{x:0>2}{x:0>2}\\033\\\\\"\n",
+        .{
+            self.pane_id,
+            code,
+            value.r,
+            value.r,
+            value.g,
+            value.g,
+            value.b,
+            value.b,
+        },
+    ) catch return;
+    self.control_writer.write(cmd) catch |err| {
+        log.warn("failed to report pane theme color code={} err={}", .{ code, err });
+    };
 }
 
 /// Forward a raw command to the tmux control mode connection.
@@ -972,6 +1058,49 @@ test "queueWrite relays color scheme report" {
 
     try testing.expectEqualStrings(
         "send-keys -H -t %7 1B 5B 3F 39 39 37 3B 31 6E\n",
+        writer.lastCommand().?,
+    );
+}
+
+test "reportColors relays per-pane control colors" {
+    const alloc = testing.allocator;
+    var writer = TestControlWriter.init(alloc);
+    defer writer.deinit();
+
+    var tmux = Tmux.init(.{
+        .pane_id = 7,
+        .window_id = 0,
+        .control_writer = writer.controlWriter(),
+    });
+    tmux.reportColors(
+        .{ .r = 0xaa, .g = 0xbb, .b = 0xcc },
+        .{ .r = 0x01, .g = 0x02, .b = 0x03 },
+    );
+
+    try testing.expectEqual(@as(usize, 2), writer.commands.items.len);
+    try testing.expectEqualStrings(
+        "refresh-client -r \"%7:\\033]10;rgb:aaaa/bbbb/cccc\\033\\\\\"\n",
+        writer.commands.items[0],
+    );
+    try testing.expectEqualStrings(
+        "refresh-client -r \"%7:\\033]11;rgb:0101/0202/0303\\033\\\\\"\n",
+        writer.commands.items[1],
+    );
+}
+
+test "reportColorScheme uses tracked gateway sentinel" {
+    const alloc = testing.allocator;
+    var writer = TestControlWriter.init(alloc);
+    defer writer.deinit();
+    var tmux = Tmux.init(.{
+        .pane_id = 7,
+        .window_id = 0,
+        .control_writer = writer.controlWriter(),
+    });
+
+    tmux.reportColorScheme(.light, true);
+    try testing.expectEqualStrings(
+        "rootshell-report-color-scheme -t %7 light explicit\n",
         writer.lastCommand().?,
     );
 }
