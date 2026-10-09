@@ -848,6 +848,9 @@ pub const Viewer = struct {
         progress: osc.Command.ProgressReport,
         pwd: []const u8,
         notification: struct { title: []const u8, body: []const u8 },
+        /// OSC 7501; borrows the pane parser buffer. ROOTSHELL-TMUX
+        /// (id=viewer-pane-program-status)
+        program_status: osc.Command.ProgramStatus.Report,
     };
 
     pub const Pane = struct {
@@ -5856,6 +5859,14 @@ pub const Viewer = struct {
         pane.postOscEvent(.{ .progress = report });
     }
 
+    fn paneProgramStatus(
+        handler: *TerminalStreamHandler,
+        report: osc.Command.ProgramStatus.Report,
+    ) void {
+        const pane: *Pane = @fieldParentPtr("terminal", handler.terminal);
+        pane.postOscEvent(.{ .program_status = report });
+    }
+
     fn panePwdReport(handler: *TerminalStreamHandler, pwd: []const u8) void {
         const pane: *Pane = @fieldParentPtr("terminal", handler.terminal);
         pane.postOscEvent(.{ .pwd = pwd });
@@ -6214,6 +6225,7 @@ pub const Viewer = struct {
         // own child surface (the normal terminal-surface path handles them
         // downstream). ROOTSHELL-TMUX (id=viewer-pane-osc)
         pane.stream.handler.effects.progress_report = &paneProgressReport;
+        pane.stream.handler.effects.program_status = &paneProgramStatus; // ROOTSHELL-TMUX (id=viewer-pane-program-status)
         pane.stream.handler.effects.pwd_report = &panePwdReport;
         pane.stream.handler.effects.desktop_notification = &paneDesktopNotification;
     }

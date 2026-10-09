@@ -811,6 +811,39 @@ typedef struct {
   uint32_t height;
 } ghostty_action_resize_window_s;
 
+// apprt.action.ProgramStatus.State
+typedef enum {
+  GHOSTTY_PROGRAM_STATUS_IDLE,
+  GHOSTTY_PROGRAM_STATUS_WORKING,
+  GHOSTTY_PROGRAM_STATUS_DONE,
+  GHOSTTY_PROGRAM_STATUS_BLOCKED,
+  GHOSTTY_PROGRAM_STATUS_ERROR,
+  GHOSTTY_PROGRAM_STATUS_CLEAR,
+} ghostty_action_program_status_state_e;
+
+// apprt.action.ProgramStatus.Kind
+typedef enum {
+  GHOSTTY_PROGRAM_STATUS_KIND_NONE,
+  GHOSTTY_PROGRAM_STATUS_KIND_PERMISSION,
+  GHOSTTY_PROGRAM_STATUS_KIND_QUESTION,
+  GHOSTTY_PROGRAM_STATUS_KIND_AUTH,
+} ghostty_action_program_status_kind_e;
+
+// apprt.action.ProgramStatus.Value. An OSC 7501 program status report,
+// valid only during the action callback. Strings are NUL-terminated and
+// empty when the report didn't send them. A `clear` with an empty id
+// removes every record (sent on a full reset).
+typedef struct {
+  ghostty_action_program_status_state_e state;
+  ghostty_action_program_status_kind_e kind;
+  // -1 if no progress was reported, otherwise 0-100
+  int8_t progress;
+  const char* id;
+  const char* app;
+  const char* title;
+  const char* msg;
+} ghostty_action_program_status_s;
+
 // apprt.action.CellSize
 typedef struct {
   uint32_t width;
@@ -1041,6 +1074,7 @@ typedef enum {
   // work such as cursor blinking does not emit this action.
   GHOSTTY_ACTION_SURFACE_CONTENT_CHANGED,
   GHOSTTY_ACTION_PTY_RESIZE,
+  GHOSTTY_ACTION_PROGRAM_STATUS,
 } ghostty_action_tag_e;
 
 // ROOTSHELL-TMUX FROZEN-ABI (id=ghostty-h-session-actions): tmux session
@@ -1120,6 +1154,7 @@ typedef union {
   // ROOTSHELL-TMUX FROZEN-ABI (id=ghostty-h-session-actions)
   ghostty_action_tmux_session_changed_s tmux_session_changed;
   ghostty_action_tmux_command_response_s tmux_command_response;
+  const ghostty_action_program_status_s* program_status;
 } ghostty_action_u;
 
 typedef struct {

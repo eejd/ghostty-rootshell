@@ -152,6 +152,11 @@ pub const Message = union(enum) {
     /// Report the progress of an action using a GUI element
     progress_report: terminal.osc.Command.ProgressReport,
 
+    /// An OSC 7501 program status report, copied out of the parser buffer.
+    /// Heap-allocated because `msg` alone can be 2 KB; the receiver calls
+    /// `destroy`.
+    program_status: *ProgramStatus,
+
     /// A command has started in the shell, start a timer.
     start_command,
 
@@ -258,6 +263,127 @@ pub const Message = union(enum) {
     pub const TmuxCommandResponse = @import("surface_tmux.zig").TmuxCommandResponse;
     pub const TmuxSessionInfo = @import("surface_tmux.zig").TmuxSessionInfo;
     // ROOTSHELL-TMUX END (id=apprt-surface-tmux-types-extracted)
+
+    /// An owned copy of an OSC 7501 report for the `program_status` message.
+    pub const ProgramStatus = struct {
+        alloc: Allocator,
+        value: apprt.action.ProgramStatus.Value,
+
+        /// "id\x00app\x00title\x00msg\x00"; `value`'s strings point here.
+        strings: []u8,
+
+        const Report = terminal.osc.Command.ProgramStatus.Report;
+        // The specification's longest decoded `msg` (`title` is shorter).
+        const max_text = 2048;
+
+        pub fn create(alloc: Allocator, report: Report) Allocator.Error!*ProgramStatus {
+            var title_buf: [max_text]u8 = undefined;
+            var title: std.Io.Writer = .fixed(&title_buf);
+            report.writeText(.title, &title) catch {};
+            var msg_buf: [max_text]u8 = undefined;
+            var msg: std.Io.Writer = .fixed(&msg_buf);
+            report.writeText(.msg, &msg) catch {};
+
+            const State = apprt.action.ProgramStatus.State;
+            const Kind = apprt.action.ProgramStatus.Kind;
+            return try init(alloc, .{
+                .state = switch (report.state) {
+                    inline else => |s| @field(State, @tagName(s)),
+                },
+                .kind = if (report.readOption(.kind)) |k| switch (k) {
+                    inline else => |v| @field(Kind, @tagName(v)),
+                } else .none,
+                .progress = if (report.readOption(.progress)) |p| @intCast(p) else -1,
+            }, .{
+                report.readOption(.id) orelse "",
+                report.readOption(.app) orelse "",
+                title.buffered(),
+                msg.buffered(),
+            });
+        }
+
+        /// A `clear` with no id, which removes every record (full reset).
+        pub fn createClear(alloc: Allocator) Allocator.Error!*ProgramStatus {
+            return try init(alloc, .{ .state = .clear }, .{ "", "", "", "" });
+        }
+
+        fn init(
+            alloc: Allocator,
+            fields: struct {
+                state: apprt.action.ProgramStatus.State,
+                kind: apprt.action.ProgramStatus.Kind = .none,
+                progress: i8 = -1,
+            },
+            texts: [4][]const u8,
+        ) Allocator.Error!*ProgramStatus {
+            var len: usize = 0;
+            for (texts) |t| len += t.len + 1;
+            const strings = try alloc.alloc(u8, len);
+            errdefer alloc.free(strings);
+
+            var ptrs: [4][*:0]const u8 = undefined;
+            var i: usize = 0;
+            for (texts, &ptrs) |t, *p| {
+                @memcpy(strings[i..][0..t.len], t);
+                strings[i + t.len] = 0;
+                p.* = strings[i .. i + t.len :0].ptr;
+                i += t.len + 1;
+            }
+
+            const self = try alloc.create(ProgramStatus);
+            self.* = .{
+                .alloc = alloc,
+                .strings = strings,
+                .value = .{
+                    .state = fields.state,
+                    .kind = fields.kind,
+                    .progress = fields.progress,
+                    .id = ptrs[0],
+                    .app = ptrs[1],
+                    .title = ptrs[2],
+                    .msg = ptrs[3],
+                },
+            };
+            return self;
+        }
+
+        pub fn destroy(self: *ProgramStatus) void {
+            const alloc = self.alloc;
+            alloc.free(self.strings);
+            alloc.destroy(self);
+        }
+
+        pub fn action(self: *const ProgramStatus) apprt.action.ProgramStatus {
+            return .{ .value = &self.value };
+        }
+
+        test "program status report copy" {
+            const testing = std.testing;
+            var p: terminal.osc.Parser = .init(testing.allocator);
+            defer p.deinit();
+            // title "Build" and msg "Needs approval" in base64.
+            p.nextSlice("7501;state=blocked:kind=permission:id=deploy/us:app=cargo:" ++
+                "progress=40:title=QnVpbGQ=:msg=TmVlZHMgYXBwcm92YWw=");
+            const report = p.end('\x1b').?.program_status.report;
+
+            const status = try create(testing.allocator, report);
+            defer status.destroy();
+            const v = status.action().value;
+            try testing.expectEqual(apprt.action.ProgramStatus.State.blocked, v.state);
+            try testing.expectEqual(apprt.action.ProgramStatus.Kind.permission, v.kind);
+            try testing.expectEqual(@as(i8, 40), v.progress);
+            try testing.expectEqualStrings("deploy/us", std.mem.span(v.id));
+            try testing.expectEqualStrings("cargo", std.mem.span(v.app));
+            try testing.expectEqualStrings("Build", std.mem.span(v.title));
+            try testing.expectEqualStrings("Needs approval", std.mem.span(v.msg));
+
+            const cleared = try createClear(testing.allocator);
+            defer cleared.destroy();
+            try testing.expectEqual(apprt.action.ProgramStatus.State.clear, cleared.value.state);
+            try testing.expectEqualStrings("", std.mem.span(cleared.value.id));
+            try testing.expectEqual(@as(i8, -1), cleared.value.progress);
+        }
+    };
 };
 
 /// A ControlWriter implementation that routes tmux commands through

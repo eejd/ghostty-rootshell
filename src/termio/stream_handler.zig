@@ -603,6 +603,7 @@ pub const StreamHandler = struct {
             // OSC 7 pwd changes, tmux write relays).
             .clipboard_write => |v| v.req.deinit(),
             .pwd_change => |req| req.deinit(),
+            .program_status => |status| status.destroy(),
             .tmux_write_command => |req| req.deinit(),
             else => {},
         }
@@ -1191,8 +1192,9 @@ pub const StreamHandler = struct {
             .title_pop,
             .kitty_dnd,
             .osc_unknown,
-            .program_status,
             => {},
+
+            .program_status => self.programStatus(value),
         }
     }
 
@@ -3091,6 +3093,11 @@ pub const StreamHandler = struct {
 
         // Clear the progress bar
         self.progressReport(.{ .state = .remove });
+
+        // A full reset clears every OSC 7501 program status record.
+        if (apprt.surface.Message.ProgramStatus.createClear(self.alloc)) |status| {
+            self.surfaceMessageWriter(.{ .program_status = status });
+        } else |err| log.warn("error clearing program status err={}", .{err});
     }
 
     /// Record a Kitty clipboard protocol session grant so future
@@ -4140,6 +4147,28 @@ pub const StreamHandler = struct {
     /// Display a GUI progress report.
     fn progressReport(self: *StreamHandler, report: terminal.osc.Command.ProgressReport) void {
         self.surfaceMessageWriter(.{ .progress_report = report });
+    }
+
+    /// OSC 7501: reports go to the app, which keeps the records. The app
+    /// reads them, so the support query is always answered.
+    fn programStatus(self: *StreamHandler, cmd: terminal.osc.Command.ProgramStatus) void {
+        switch (cmd) {
+            .query => |terminator| switch (terminator) {
+                inline else => |t| self.messageWriter(.{
+                    .write_stable = "\x1b]7501;?" ++ comptime t.string(),
+                }),
+            },
+            .report => |report| {
+                const status = apprt.surface.Message.ProgramStatus.create(
+                    self.alloc,
+                    report,
+                ) catch |err| {
+                    log.warn("error copying program status err={}", .{err});
+                    return;
+                };
+                self.surfaceMessageWriter(.{ .program_status = status });
+            },
+        }
     }
 
     /// Log pane IDs from a tmux layout tree. Walks the tree recursively

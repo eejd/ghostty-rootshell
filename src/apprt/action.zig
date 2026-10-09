@@ -407,6 +407,12 @@ pub const Action = union(Key) {
     /// application's redraw is parsed into the old grid.
     pty_resize: PtyResize,
 
+
+    /// A program reported its status with OSC 7501 (program status
+    /// protocol). The apprt keeps one record per id; the terminal keeps none.
+    /// The payload is valid only during the action callback.
+    program_status: ProgramStatus,
+
     /// Sync with: ghostty_action_tag_e
     pub const Key = enum(c_int) {
         quit,
@@ -490,6 +496,7 @@ pub const Action = union(Key) {
         tmux_command_response,
         surface_content_changed,
         pty_resize,
+        program_status,
 
         test "ghostty.h Action.Key" {
             try lib.checkGhosttyHEnum(Key, "GHOSTTY_ACTION_");
@@ -799,6 +806,57 @@ pub const InitialSize = extern struct {
 pub const ResizeWindow = extern struct {
     width: u32,
     height: u32,
+};
+
+/// OSC 7501 program status report. The C payload is a pointer so the action
+/// union keeps its size; it and its strings live only for the callback.
+pub const ProgramStatus = struct {
+    value: *const Value,
+
+    // Sync with: ghostty_action_program_status_s
+    pub const Value = extern struct {
+        state: State,
+        kind: Kind,
+        /// 0-100, or -1 if the report carried no progress.
+        progress: i8,
+        /// NUL-terminated and empty when the report didn't send one.
+        id: [*:0]const u8,
+        app: [*:0]const u8,
+        title: [*:0]const u8,
+        msg: [*:0]const u8,
+    };
+
+    // Sync with: ghostty_action_program_status_state_e
+    pub const State = enum(c_int) {
+        idle,
+        working,
+        done,
+        blocked,
+        @"error",
+        clear,
+
+        test "ghostty.h ProgramStatus.State" {
+            try lib.checkGhosttyHEnum(State, "GHOSTTY_PROGRAM_STATUS_");
+        }
+    };
+
+    // Sync with: ghostty_action_program_status_kind_e
+    pub const Kind = enum(c_int) {
+        none,
+        permission,
+        question,
+        auth,
+
+        test "ghostty.h ProgramStatus.Kind" {
+            try lib.checkGhosttyHEnum(Kind, "GHOSTTY_PROGRAM_STATUS_KIND_");
+        }
+    };
+
+    pub const C = *const Value;
+
+    pub fn cval(self: ProgramStatus) C {
+        return self.value;
+    }
 };
 
 pub const CellSize = extern struct {
