@@ -1567,6 +1567,7 @@ pub const Viewer = struct {
         }
         self.clearEmittedTitles();
         self.last_emitted_titles.deinit(self.alloc);
+        self.colors.palette.deinit(self.alloc); // ROOTSHELL-TMUX (id=viewer-pane-palette-owner)
         self.action_arena.promote(self.alloc).deinit();
     }
 
@@ -1619,6 +1620,26 @@ pub const Viewer = struct {
         }
     }
 
+    /// Replace the themed pane colors with a copy of `colors`. The viewer owns
+    /// its palette, so a caller's palette is cloned rather than shared.
+    /// ROOTSHELL-TMUX (id=viewer-pane-palette-owner)
+    pub fn setColors(self: *Viewer, colors: Terminal.Colors) Allocator.Error!void {
+        const palette = try clonePalette(self.alloc, &colors.palette);
+        self.colors.palette.deinit(self.alloc);
+        self.colors = colors;
+        self.colors.palette = palette;
+    }
+
+    fn clonePalette(
+        alloc: Allocator,
+        src: *const color.DynamicPalette,
+    ) Allocator.Error!color.DynamicPalette {
+        var result: color.DynamicPalette = try .init(alloc, src.original.*);
+        result.current = src.current;
+        result.mask = src.mask;
+        return result;
+    }
+
     /// Update the themed colors after a config reload, applying them to BOTH
     /// future pane terminals (via `self.colors`, consumed by `initLayout`) and
     /// every EXISTING pane terminal so the live render reflects the new theme
@@ -1645,7 +1666,9 @@ pub const Viewer = struct {
         if (fg) |c| self.colors.foreground.default = c;
         if (bg) |c| self.colors.background.default = c;
         self.colors.cursor.default = cursor;
-        if (palette) |p| self.colors.palette.changeDefault(p);
+        if (palette) |p| self.colors.palette.changeDefault(self.alloc, p) catch |err| {
+            log.warn("tmux viewer palette update failed err={}", .{err});
+        };
 
         // Refresh the colors of panes that already exist so the live render
         // picks up the new theme immediately. New panes already inherit
@@ -1674,7 +1697,12 @@ pub const Viewer = struct {
                 if (fg) |c| pane.terminal.colors.foreground.default = c;
                 if (bg) |c| pane.terminal.colors.background.default = c;
                 pane.terminal.colors.cursor.default = cursor;
-                if (palette) |p| pane.terminal.colors.palette.changeDefault(p);
+                if (palette) |p| pane.terminal.colors.palette.changeDefault(
+                    pane.terminal.gpa(),
+                    p,
+                ) catch |err| {
+                    log.warn("tmux pane palette update failed err={}", .{err});
+                };
                 // Mark colors dirty so the next frame does a full rebuild and
                 // default/palette cells re-resolve, matching the `dirty.palette`
                 // set in `Termio.changeConfig`.
@@ -3987,7 +4015,7 @@ pub const Viewer = struct {
         // ROOTSHELL-TMUX (id=viewer-output-batch)
         replacement.batching = self.batching;
         // Carry the themed pane colors forward across the session reset.
-        replacement.colors = self.colors;
+        try replacement.setColors(self.colors);
         // This is the same tmux control client, so its acknowledged size remains
         // valid across a session switch just like its stored current dimensions.
         replacement.last_applied_client_size = self.last_applied_client_size;
@@ -5710,7 +5738,7 @@ pub const Viewer = struct {
     /// query reply per call for later routing (see `flushPaneResponses`).
     /// Recovers the owning `Pane` from the handler's terminal pointer, which
     /// always points at `pane.terminal` (set by `vtStream`).
-    fn paneWritePty(handler: *TerminalStreamHandler, data: [:0]const u8) void {
+    fn paneWritePty(handler: *TerminalStreamHandler, data: []const u8) void {
         const pane: *Pane = @fieldParentPtr("terminal", handler.terminal);
         const alloc = handler.terminal.gpa();
         const copy = alloc.dupe(u8, data) catch return;
@@ -5731,7 +5759,7 @@ pub const Viewer = struct {
     fn paneClipboardWrite(
         handler: *TerminalStreamHandler,
         write: clipboard.Write,
-    ) clipboard.WriteResult {
+    ) void {
         const pane: *Pane = @fieldParentPtr("terminal", handler.terminal);
         const alloc = handler.terminal.gpa();
 
@@ -5744,29 +5772,35 @@ pub const Viewer = struct {
         // An empty contents slice clears the destination; OSC 52 spells that
         // as an empty payload, which needs no encoding.
         if (write.contents.len == 0) {
-            const empty = alloc.alloc(u8, 0) catch return .io_error;
+            const empty = alloc.alloc(u8, 0) catch return write.reply(.io_error);
             pane.clipboard_writes.append(alloc, .{
                 .kind = kind,
                 .data = empty,
             }) catch {
                 alloc.free(empty);
-                return .io_error;
+                return write.reply(.io_error);
             };
-            return .success;
+            return write.reply(.{ .success = .{} });
         }
 
+        // The pane action carries text only; prefer a text representation
+        // when the program offered several (Kitty clipboard protocol).
+        const content = for (write.contents) |c| {
+            if (clipboard.isTextMime(c.mime)) break c;
+        } else return write.reply(.unsupported);
+
         const enc = std.base64.standard.Encoder;
-        const data = write.contents[0].data;
-        const copy = alloc.alloc(u8, enc.calcSize(data.len)) catch return .io_error;
+        const data = content.data;
+        const copy = alloc.alloc(u8, enc.calcSize(data.len)) catch return write.reply(.io_error);
         _ = enc.encode(copy, data);
         pane.clipboard_writes.append(alloc, .{
             .kind = kind,
             .data = copy,
         }) catch {
             alloc.free(copy);
-            return .io_error;
+            return write.reply(.io_error);
         };
-        return .success;
+        write.reply(.{ .success = .{} });
     }
 
     /// `dcs_passthrough` effect installed on each pane's live stream: buffer the
@@ -6080,7 +6114,11 @@ pub const Viewer = struct {
                     break :pane;
                 }
 
-                var t: Terminal = try .init(io, gpa_alloc, .{
+                // Each pane terminal owns (and frees) its own palette copy.
+                // ROOTSHELL-TMUX (id=viewer-pane-palette-owner)
+                var pane_colors = colors;
+                pane_colors.palette = try clonePalette(gpa_alloc, &colors.palette);
+                var t: Terminal = Terminal.init(io, gpa_alloc, .{
                     .cols = cols,
                     .rows = rows,
                     // tmux replays each pane's recent history via `capture-pane
@@ -6095,8 +6133,11 @@ pub const Viewer = struct {
                     // Use the gateway terminal's themed colors so default-background
                     // cells match the app theme rather than the built-in dark default
                     // (`.default` colors leave background `.unset`).
-                    .colors = colors,
-                });
+                    .colors = pane_colors,
+                }) catch |err| {
+                    pane_colors.palette.deinit(gpa_alloc);
+                    return err;
+                };
                 errdefer t.deinit(gpa_alloc);
 
                 // Seed the configured cursor style/blink so a fresh pane honors
@@ -8945,7 +8986,7 @@ test "updateColors refreshes existing pane terminal colors live" {
                     const pane0 = v.panes.get(0).?;
                     // Build a themed palette by tweaking one default entry so we
                     // can prove the palette propagates through changeDefault.
-                    var new_palette = pane0.terminal.colors.palette.original;
+                    var new_palette = pane0.terminal.colors.palette.original.*;
                     new_palette[5] = accent;
                     v.updateColors(new_fg, new_bg, new_cursor, new_palette);
                     // The existing pane terminal (what the child renderer reads)
@@ -13896,4 +13937,31 @@ test "output batch: the flush budget is a total, not per pane" {
     // Both panes are wedged, so the sweep spends the budget once, not twice.
     // Generous slack for scheduling; the bug this pins is a 2x overrun.
     try testing.expect(spent < 2 * @as(i128, budget));
+}
+
+test "setColors owns a copy of the palette" {
+    // ROOTSHELL-TMUX (id=viewer-pane-palette-owner): Terminal.deinit frees an
+    // owned palette, so the viewer must never share one with the gateway
+    // terminal or across setColors calls. The testing allocator catches a
+    // double free or leak.
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
+    defer viewer.deinit();
+
+    var themed = color.default;
+    themed[1] = .{ .r = 0x12, .g = 0x34, .b = 0x56 };
+
+    var gateway: Terminal.Colors = .default;
+    gateway.palette = try .init(testing.allocator, themed);
+    defer gateway.palette.deinit(testing.allocator);
+    gateway.palette.set(2, .{ .r = 1, .g = 2, .b = 3 });
+
+    try viewer.setColors(gateway);
+    try testing.expect(viewer.colors.palette.original != gateway.palette.original);
+    try testing.expectEqual(themed[1], viewer.colors.palette.original[1]);
+    try testing.expectEqual(gateway.palette.current[2], viewer.colors.palette.current[2]);
+
+    // Replacing the colors frees the previous copy exactly once.
+    try viewer.setColors(gateway);
+    viewer.updateColors(null, null, null, color.default);
+    try testing.expectEqual(color.default[1], viewer.colors.palette.original[1]);
 }

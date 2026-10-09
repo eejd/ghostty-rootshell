@@ -124,6 +124,12 @@ pub const Message = union(enum) {
     /// prior masking is discarded or new needles apply everywhere.
     set_redact: ?renderer.redact.Set,
 
+    /// Updates the health of the current presentation state.
+    ///
+    /// If unhealthy, then somehow the apprt failed to present frames from
+    /// the renderer. On GTK, this can be caused by failing to import a DMABUF.
+    presentation_health: renderer.Health,
+
     pub const FrameRateRange = struct {
         min: u16,
         max: u16,

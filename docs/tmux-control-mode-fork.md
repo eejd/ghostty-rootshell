@@ -353,7 +353,7 @@ nm macos/GhosttyKitAppStore.xcframework/ios-arm64/libghostty-internal.a \
   | grep -cE '_ghostty_(tmux|surface_new_tmux|surface_tmux_(set_client|detach|command|active))'   # expect 11 (command_with_reply matches too)
 # No stale upstream tmux/ path references crept back in:
 grep -rn 'terminal/tmux/' src/ --include='*.zig' | grep -v 'tmux_cc/'      # expect empty
-# Hook ids present (compare against the previous sync, currently 244):
+# Hook ids present (compare against the previous sync, currently 260):
 grep -rn 'ROOTSHELL' src/ include/ | grep -oE 'id=[a-z0-9-]+' | sort -u | wc -l
 ```
 
@@ -370,10 +370,12 @@ disappears.
 |---|---|
 | iOS/visionOS/Catalyst port | `src/termio/Pipe.zig`, `backend.Kind.{pipe,tmux}`, `Command.startPosixSpawnPty`, `pty.zig` `.ios => PosixPty`, the `.maccatalyst` arms (incl. `renderer/generic.zig` display-link arms, `preThreadDeinit`) |
 | Live environ (`id=global-live-environ`, `id=surface-exec-env-scope`) | `global.zig` `liveEnviron()`: `environ()`/`environMap()` must re-read `std.c.environ`, never return the `ghostty_init` snapshot; `os/file.zig` `allocTmpDir` dupes on POSIX; `Surface.zig` builds the env map only in the exec branch. The host app calls `setenv` all process long; a cached slice crashes in `Environ.createMap` |
-| Smooth scroll / rubber band / bottom inset | `setSmoothScrollOffset`, `setRubberBandOffset`, `scrollToRowSmooth`, `setBottomInset`, `posToViewportLocked`, `render.zig` `beginUpdateExtraRows` |
+| Smooth scroll / rubber band / bottom inset | `setSmoothScrollOffset`, `setRubberBandOffset`, `scrollToRowSmooth`, `setBottomInset`, `posToViewportLocked`; `render.zig` `beginUpdateExtraRows` (a shim over upstream `overscan_request.below` that also places a cursor in the overscan), `renderRows`, and `linkRows` in `string`/`linkCells`; `rebuildCells` sizes the grid from `renderRows()`, and `link.zig`, `redact.zig`, `Overlay.zig` read only `rowDataRange()` |
 | HDR / EDR boost | `Metal.zig` `hdr_boost` / `setHDRBoost`, `brightness_gain`, `apply_brightness` in shaders.metal |
-| Display link | `IOSDisplayLink`, `vsyncTicking`, `reconcileLinkIdleLocked`, `setFrameRateRange`; `drawFrame` must keep excluding `sync` from `needs_redraw` |
-| iTerm2 inline images | `Terminal.iterm2Image`, `terminal/iterm2/images.zig`, `graphics_storage.iterm2_loading` |
+| Shared Metal device | `metal/Device.zig` `.maccatalyst`/`.visionos` arms in `chooseDevice` and the `.shared` storage mode |
+| Display link | `IOSDisplayLink`, `vsyncTicking`, `reconcileLinkIdleLocked`, `setFrameRateRange`; `drawFrameLocked` must keep excluding `sync` from `needs_redraw`, and `syncDisplayLink` returns before upstream's per-frame parking on iOS-family targets |
+| Hidden-surface gate | `drawFrameLocked` `if (!self.visible) return false` and the `ROOTSHELL-PRESENT` lease right after it, both before the swap chain rebuild |
+| iTerm2 inline images | `Terminal.iterm2Image`, `terminal/iterm2/images.zig`, `graphics_storage.iterm2_loading`; `osc.Parser.nextSlice` must classify the 1337 key (`osc_1337_classify_pending`) before its bulk copy, or image payloads drop at 2 KB; `iterm2_image` stays last in the `osc.zig` and `stream.zig` key lists |
 | IPv6 word selection | `Screen.selectWordOrIPv6`, and that `selectWordBetween` calls it |
 | Multi-row link extension | `terminal/link_extend.zig`, `renderer/link.zig` `extendMatchAcrossRows` |
 | Cursor blink modes | `config.CursorBlinkMode`, `.rootshell` arm in `renderer/cell.zig`, `computeBlinkAlpha` |
@@ -389,6 +391,10 @@ Two more invariants worth re-checking by hand, because nothing catches them:
   `uiTerminalLockedConst()` or `renderer_state.terminal`; only real IO keeps
   `io.terminal`. A regression here shows up only as "broken inside tmux panes".
 - **Dependency pins.** `build.zig.zon` plus the four `pkg/*/build.zig.zon` point
-  at forks carrying fixes upstream lacks (libxev `.maccatalyst`, translate-c/aro
-  visionOS). Upstream bumping those deps will conflict; rebase the fork rather
-  than taking upstream's pin, or visionOS/Catalyst stops building.
+  at forks carrying fixes upstream lacks (libxev `.maccatalyst`). Upstream
+  bumping libxev will conflict; rebase the fork rather than taking upstream's
+  pin, or Catalyst stops building. translate-c is upstream's `pkg/translate-c`
+  again since its aro pin handles visionOS, but `appleExtraArgs` in
+  `pkg/translate-c/build.zig` must survive: it adds `-fblocks` on every Darwin
+  target and corrects Aro's predefined `TARGET_OS_IPHONE`/`TARGET_OS_IOS` for
+  Catalyst and visionOS, or the iOS-family framework headers fail to translate.

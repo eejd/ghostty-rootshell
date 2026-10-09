@@ -203,6 +203,20 @@ const ThreadEnterState = struct {
 /// The configuration for this IO that is derived from the main
 /// configuration. This must be exported so that we don't need to
 /// pass around Config pointers which makes memory management a pain.
+/// Convert the vt-xt-checksum-extension config, whose values are named for
+/// what they turn on, to the XTCHECKSUM bits, which turn things off.
+fn xtChecksumFlags(
+    ext: configpkg.Config.XtChecksumExtension,
+) terminalpkg.xt_checksum.Flags {
+    return .{
+        .positive = !ext.negate,
+        .no_attributes = !ext.attributes,
+        .no_trim = !ext.trim,
+        .undrawn = ext.undrawn,
+        .full = ext.full,
+    };
+}
+
 pub const DerivedConfig = struct {
     arena: ArenaAllocator,
 
@@ -215,8 +229,11 @@ pub const DerivedConfig = struct {
     background: configpkg.Config.Color,
     osc_color_report_format: configpkg.Config.OSCColorReportFormat,
     clipboard_write: configpkg.ClipboardAccess,
+    clipboard_write_limit: usize,
     enquiry_response: []const u8,
     tmux_control_mode: bool, // ROOTSHELL-TMUX (id=termio-derived-config): plumbs tmux-control-mode into DerivedConfig
+    xt_checksum_report: bool,
+    xt_checksum_extension: terminalpkg.xt_checksum.Flags,
     conditional_state: configpkg.ConditionalState,
 
     pub fn init(
@@ -252,8 +269,11 @@ pub const DerivedConfig = struct {
             .background = config.background,
             .osc_color_report_format = config.@"osc-color-report-format",
             .clipboard_write = config.@"clipboard-write",
+            .clipboard_write_limit = config.@"clipboard-write-limit-bytes".value,
             .enquiry_response = try alloc.dupe(u8, config.@"enquiry-response"),
             .tmux_control_mode = config.@"tmux-control-mode", // ROOTSHELL-TMUX (id=termio-derived-init)
+            .xt_checksum_report = config.@"vt-xt-checksum-report",
+            .xt_checksum_extension = xtChecksumFlags(config.@"vt-xt-checksum-extension"),
             .conditional_state = config._conditional_state,
 
             // This has to be last so that we copy AFTER the arena allocations
@@ -300,6 +320,7 @@ pub fn init(self: *Termio, alloc: Allocator, opts: termio.Options) !void {
             .default_modes = default_modes,
             .default_cursor_style = opts.config.cursor_style,
             .default_cursor_blink = opts.config.cursor_blink,
+            .default_xt_checksum = opts.config.xt_checksum_extension,
             .colors = .{
                 .background = .init(opts.config.background.toTerminalRGB()),
                 .foreground = .init(opts.config.foreground.toTerminalRGB()),
@@ -308,13 +329,17 @@ pub fn init(self: *Termio, alloc: Allocator, opts: termio.Options) !void {
                     const rgb = color.toTerminalRGB() orelse break :cursor .unset;
                     break :cursor .init(rgb);
                 },
-                .palette = .init(opts.config.palette),
+                .palette = .default,
             },
             .kitty_image_storage_limit = opts.config.image_storage_limit,
             .kitty_image_loading_limits = .allWithTempDir(global.tmpDirPath()),
         };
     });
     errdefer term.deinit(alloc);
+
+    // The default palette may be an allocator-owned copy, so it is set
+    // once the terminal owns its memory and can release it on deinit.
+    try term.colors.palette.changeDefault(alloc, opts.config.palette);
 
     // Setup our terminal size in pixels for certain requests.
     term.width_px = term.cols * opts.size.cell.width;
@@ -342,6 +367,8 @@ pub fn init(self: *Termio, alloc: Allocator, opts: termio.Options) !void {
         // Seed from config so the CSI ?996n reply is correct before the first
         // changeConfig (id=streamhandler-inline-reports).
         .color_scheme_is_dark = opts.config.conditional_state.theme == .dark,
+        .clipboard_write_limit = opts.config.clipboard_write_limit,
+        .xt_checksum_report = opts.config.xt_checksum_report,
     };
 
     const thread_enter_state = try ThreadEnterState.create(
@@ -518,8 +545,16 @@ pub fn changeConfig(self: *Termio, td: *ThreadData, config: *DerivedConfig) !voi
     //   - command, working-directory: we never restart the underlying
     //   process so we don't care or need to know about these.
 
-    // Update the default palette.
-    self.terminal.colors.palette.changeDefault(config.palette);
+    // Update the default palette. A config change must not fail here, so
+    // if we can't allocate the copy of the configured palette we fall back
+    // to the built-in default, which never allocates.
+    self.terminal.colors.palette.changeDefault(
+        self.alloc,
+        config.palette,
+    ) catch |err| {
+        log.warn("error changing default palette, using built-in default err={}", .{err});
+        self.terminal.colors.palette.resetDefault(self.alloc);
+    };
     self.terminal.flags.dirty.palette = true;
 
     // Update all our other colors
@@ -536,7 +571,11 @@ pub fn changeConfig(self: *Termio, td: *ThreadData, config: *DerivedConfig) !voi
     // under renderer_state.mutex (held above) = this pane's renderer_mutex.
     if (self.backend == .tmux) {
         if (self.backend.tmux.viewer_terminal) |vt| {
-            vt.colors.palette.changeDefault(config.palette);
+            // The pane terminal is viewer-owned, so use its allocator.
+            vt.colors.palette.changeDefault(vt.gpa(), config.palette) catch |err| {
+                log.warn("error changing tmux pane palette err={}", .{err});
+                vt.colors.palette.resetDefault(vt.gpa());
+            };
             vt.flags.dirty.palette = true;
             vt.colors.background.default = config.background.toTerminalRGB();
             vt.colors.foreground.default = config.foreground.toTerminalRGB();
@@ -995,6 +1034,19 @@ fn processOutputLocked(self: *Termio, buf: []const u8) void {
 }
 
 /// Sends a DSR response for the current color scheme to the pty.
+/// Record a Kitty clipboard protocol session grant so future requests
+/// carrying the password skip the permission prompt.
+pub fn kittyClipboardGrant(
+    self: *Termio,
+    pw: []const u8,
+    dir: terminalpkg.kitty.clipboard.Grants.Direction,
+) error{OutOfMemory}!void {
+    self.renderer_state.mutex.lockUncancelable(global.io());
+    defer self.renderer_state.mutex.unlock(global.io());
+
+    try self.terminal_stream.handler.kittyClipboardGrant(pw, dir);
+}
+
 pub fn colorSchemeReport(self: *Termio, td: *ThreadData, force: bool) !void {
     self.renderer_state.mutex.lockUncancelable(global.io());
     defer self.renderer_state.mutex.unlock(global.io());

@@ -5,10 +5,6 @@
     .paths = .{""},
     .dependencies = .{
         .apple_sdk = .{ .path = "../apple-sdk" },
-        .translate_c = .{
-            .url = "https://github.com/kitknox/translate-c-rootshell/archive/e3191f810deeb9bbf2d4d57356ed399967f1572c.tar.gz",
-            .hash = "translate_c-0.0.0-Q_BUWgY7BwDz2Lr7aRh6umNFBwMBS5vwe7zAKYyI8vwg",
-            .lazy = true,
-        },
+        .translate_c = .{ .path = "../translate-c" },
     },
 }

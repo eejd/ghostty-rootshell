@@ -5,21 +5,9 @@
     .fingerprint = 0x64407a2a0b4147e5,
     .minimum_zig_version = "0.16.0",
     .dependencies = .{
-        // External translate-c
-        // NOTE: We might not need to keep this around forever, but we need it
-        // for at least the 0.16.0 release cycle since we need fixes in
-        // Aro/translate-c itself.
-        // kitknox/translate-c-rootshell is upstream's pinned translate_c with
-        // its aro dependency repointed at kitknox/arocc-rootshell, which adds
-        // the missing visionOS case to Aro's Darwin system defines. Without it
-        // translate-c aborts on `else => unreachable` for any xrOS target, so
-        // the visionOS xcframework slices can't build. Drop both pins once the
-        // fix lands upstream.
-        .translate_c = .{
-            .lazy = true,
-            .url = "https://github.com/kitknox/translate-c-rootshell/archive/e3191f810deeb9bbf2d4d57356ed399967f1572c.tar.gz",
-            .hash = "translate_c-0.0.0-Q_BUWgY7BwDz2Lr7aRh6umNFBwMBS5vwe7zAKYyI8vwg",
-        },
+        // Our higher-level C translation helper (this also helps ensure we
+        // only need to maintain one external dependency point)
+        .translate_c = .{ .path = "./pkg/translate-c" },
 
         // Zig libs
         .libxev = .{
@@ -59,8 +47,8 @@
         },
         .uucode = .{
             // jacobsandlund/uucode
-            .url = "https://deps.files.ghostty.org/uucode-2826a37a4562284fdacd8fa029d49509cc9bffcd.tar.gz",
-            .hash = "uucode-0.2.0-ZZjBPlK5VADj7fdoq7G8LIHzD5o6FSkcBXXrRWr4jnrA",
+            .url = "https://github.com/jacobsandlund/uucode/archive/9d55524551411b493cca41ca06363625d90aff1e.tar.gz",
+            .hash = "uucode-0.2.0-ZZjBPuuFVgC8YZ8eld4fOKsZANLIhTFMzULQxhkLi1C7",
         },
         .zig_wayland = .{
             // codeberg ifreund/zig-wayland
@@ -136,8 +124,8 @@
         .apple_sdk = .{ .path = "./pkg/apple-sdk" },
         .android_ndk = .{ .path = "./pkg/android-ndk" },
         .iterm2_themes = .{
-            .url = "https://deps.files.ghostty.org/ghostty-themes-release-20260810-152212-0173c3c.tgz",
-            .hash = "N-V-__8AAPpcBAD4_75xLBbLiYqdojOwQP74eoWmpL3jPrBl",
+            .url = "https://deps.files.ghostty.org/ghostty-themes-release-20260928-151043-99d9701.tgz",
+            .hash = "N-V-__8AAAfDBACe1jGqjr9jIG3UAK8KbzJKQ7xrzYoau-_a",
             .lazy = true,
         },
     },

@@ -489,3 +489,40 @@ test "OSC: 1337: test CurrentDir with non-empty value" {
     try testing.expect(cmd == .report_pwd);
     try testing.expectEqualStrings("abc123", cmd.report_pwd.value);
 }
+
+test "OSC: 1337: File payload larger than the fixed buffer via nextSlice" {
+    const testing = std.testing;
+
+    var p: Parser = .init(testing.allocator);
+    defer p.deinit();
+
+    const payload_len = 8 * 1024;
+    const input = try std.mem.concat(testing.allocator, u8, &.{
+        "1337;File=inline=1:",
+        "A" ** payload_len,
+    });
+    defer testing.allocator.free(input);
+
+    // Split mid-key and mid-payload to cover resumption across calls.
+    p.nextSlice(input[0..7]);
+    p.nextSlice(input[7..100]);
+    p.nextSlice(input[100..]);
+
+    const cmd = p.end('\x1b').?.*;
+    try testing.expect(cmd == .iterm2_image);
+    try testing.expect(cmd.iterm2_image == .oneshot);
+    try testing.expectEqualStrings("inline=1", cmd.iterm2_image.oneshot.meta_args);
+    try testing.expectEqual(payload_len, cmd.iterm2_image.oneshot.data.len);
+}
+
+test "OSC: 1337: non-image key stays capped at the fixed buffer via nextSlice" {
+    const testing = std.testing;
+
+    var p: Parser = .init(testing.allocator);
+    defer p.deinit();
+
+    const input = "1337;SetBadgeFormat=" ++ "A" ** (8 * 1024);
+    p.nextSlice(input);
+
+    try testing.expect(p.end('\x1b') == null);
+}
