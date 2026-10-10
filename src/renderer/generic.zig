@@ -929,6 +929,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             result.updateScreenSizeUniforms();
             result.updateBgImageBuffer();
             try result.prepBackgroundImage();
+            result.syncOutputSpaceUniforms();
 
             return result;
         }
@@ -2789,6 +2790,15 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 self.target_config_modified +%= 1;
             }
 
+            // ROOTSHELL: the target's colorspace tag follows the config too.
+            if (comptime @hasDecl(GraphicsAPI, "outputsSRGB")) {
+                if (self.api.colorspace != config.colorspace) {
+                    self.api.colorspace = config.colorspace;
+                    self.target_config_modified +%= 1;
+                }
+            }
+            self.syncOutputSpaceUniforms();
+
             if (custom_shaders_changed) {
                 self.reinitialize_shaders = true;
             }
@@ -2833,6 +2843,17 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             }
         }
 
+        /// ROOTSHELL: uniforms that depend on the applied target, not just the
+        /// config. Colors skip the sRGB to P3 conversion on an sRGB target.
+        fn syncOutputSpaceUniforms(self: *Self) void {
+            if (comptime @hasDecl(GraphicsAPI, "outputsSRGB")) {
+                self.uniforms.bools.use_display_p3 =
+                    self.config.colorspace == .@"display-p3" or self.api.outputsSRGB();
+                self.uniforms.bools.use_gamma_alpha =
+                    self.api.blending.isLinear() and !self.api.hdr_boost;
+            }
+        }
+
         /// Engage/disengage the half-float EDR target to match the current gain
         /// (>1.0 = boosted). No-op when already in the right state. Caller must
         /// hold `draw_mutex` and must only call this for a VISIBLE surface,
@@ -2857,6 +2878,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     self.uniforms.bools.use_linear_blending = self.config.blending.isLinear();
                     self.uniforms.bools.use_linear_correction = self.config.blending == .@"linear-corrected";
                 }
+                self.syncOutputSpaceUniforms();
 
                 // Crossing 1.0 changes pixel format + colorspace: rebuild the
                 // shaders and recreate each swap-chain frame's target.

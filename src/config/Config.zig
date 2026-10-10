@@ -386,13 +386,14 @@ language: ?[:0]const u8 = null,
 /// This affects the appearance of text and of any images with transparency.
 /// Additionally, custom shaders will receive colors in the configured space.
 ///
-/// On macOS the default is `native`, on all other platforms the default is
-/// `linear-corrected`.
+/// On Apple platforms the default is `native`, on all other platforms the
+/// default is `linear-corrected`.
 ///
 /// Valid values:
 ///
 /// * `native` - Perform alpha blending in the native color space for the OS.
-///   On macOS this corresponds to Display P3, and on Linux it's sRGB.
+///   On macOS this corresponds to Display P3, and on Linux it's sRGB. On iOS
+///   and Mac Catalyst it's sRGB when `window-colorspace` is `srgb`.
 ///
 /// * `linear` - Perform alpha blending in linear space. This will eliminate
 ///   the darkening artifacts around the edges of text that are very visible
@@ -406,10 +407,11 @@ language: ?[:0]const u8 = null,
 ///
 /// Available since: 1.1.0
 @"alpha-blending": AlphaBlending =
-    if (builtin.os.tag == .macos)
-        .native
-    else
-        .@"linear-corrected",
+    // ROOTSHELL: native on iOS-family targets too, matching UIKit text.
+    switch (builtin.os.tag) {
+        .macos, .ios, .maccatalyst, .visionos => .native,
+        else => .@"linear-corrected",
+    },
 
 /// All of the configurations behavior adjust various metrics determined by the
 /// font. The values can be integers (1, -1, etc.) or a percentage (20%, -15%,

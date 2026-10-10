@@ -26,6 +26,8 @@ pub const Options = struct {
 
     /// Pixel format for the MTLTexture
     pixel_format: mtl.MTLPixelFormat,
+    /// Tag the SDR surface sRGB instead of Display P3.
+    srgb: bool = false,
     /// Storage mode for the MTLTexture
     storage_mode: mtl.MTLResourceOptions.StorageMode,
 };
@@ -51,7 +53,7 @@ pub fn init(opts: Options) !Self {
     // blending artifacts.
     const edr = opts.pixel_format == .rgba16float;
     const colorspace = try graphics.ColorSpace.createNamed(
-        if (edr) .extendedLinearDisplayP3 else .displayP3,
+        if (edr) .extendedLinearDisplayP3 else if (opts.srgb) .sRGB else .displayP3,
     );
     defer colorspace.release();
 

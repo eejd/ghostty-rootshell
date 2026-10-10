@@ -26,6 +26,7 @@ struct Uniforms {
   bool use_display_p3;
   bool use_linear_blending;
   bool use_linear_correction;
+  bool use_gamma_alpha;
 };
 
 //-------------------------------------------------------------------
@@ -269,6 +270,12 @@ fragment float4 bg_color_fragment(
     uniforms.use_display_p3,
     uniforms.use_linear_blending
   );
+  // ROOTSHELL: the srgb target then stores encode(c) * a, matching how
+  // Core Animation (and UIKit's own fills) premultiply translucent layers.
+  if (uniforms.use_gamma_alpha && color.a > 0.0 && color.a < 1.0) {
+    float4 encoded = unlinearize(float4(color.rgb / color.a, 1.0));
+    color.rgb = linearize(float4(encoded.rgb * color.a, 1.0)).rgb;
+  }
   // HDR brightness boost: tone-curve rgb only (alpha is premultiplied). A no-op
   // at the default gain of 1.0.
   color.rgb = apply_brightness(color.rgb, color.a, uniforms.brightness_gain);

@@ -50,6 +50,9 @@ queue: objc.Object,
 /// Alpha blending mode
 blending: configpkg.Config.AlphaBlending,
 
+/// Color space terminal colors are given in. See `outputsSRGB`.
+colorspace: configpkg.Config.WindowColorspace,
+
 /// When true, the render target is a half-float, extended-linear EDR surface
 /// (rgba16float + extendedLinearDisplayP3) and the layer can present values
 /// above 1.0.
@@ -175,6 +178,7 @@ pub fn init(
         .device = device,
         .queue = queue,
         .blending = opts.config.blending,
+        .colorspace = opts.config.colorspace,
         .rt_surface = opts.rt_surface,
     };
 }
@@ -204,6 +208,13 @@ pub fn deinit(self: *Metal) void {
 /// `target_config_modified`).
 pub fn setHDRBoost(self: *Metal, enabled: bool) void {
     self.hdr_boost = enabled;
+}
+
+/// ROOTSHELL: on iOS-family targets sRGB colors go to an sRGB-tagged target
+/// unconverted, byte-identical to UIKit chrome instead of relying on the
+/// compositor to undo a P3 conversion. macOS keeps upstream's P3 output.
+pub fn outputsSRGB(self: *const Metal) bool {
+    return builtin.os.tag != .macos and !self.hdr_boost and self.colorspace == .srgb;
 }
 
 pub fn loopEnter(self: *Metal) void {
@@ -322,6 +333,7 @@ pub fn initTarget(self: *const Metal, width: usize, height: usize) !Target {
             .bgra8unorm_srgb
         else
             .bgra8unorm,
+        .srgb = self.outputsSRGB(),
         .storage_mode = self.device.default_storage_mode,
         .width = width,
         .height = height,

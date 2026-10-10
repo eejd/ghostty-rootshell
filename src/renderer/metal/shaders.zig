@@ -260,6 +260,10 @@ pub const Uniforms = extern struct {
         /// with linear alpha blending have a similar apparent weight
         /// (thickness) to gamma-incorrect blending.
         use_linear_correction: bool align(1) = false,
+
+        /// ROOTSHELL: premultiply the background's alpha in gamma space,
+        /// as Core Animation composites it, while still blending linearly.
+        use_gamma_alpha: bool align(1) = false,
     },
 
     const PaddingExtend = packed struct(u8) {
