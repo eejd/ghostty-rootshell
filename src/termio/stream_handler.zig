@@ -250,6 +250,10 @@ pub const StreamHandler = struct {
     /// The color reporting format for OSC requests.
     osc_color_report_format: configpkg.Config.OSCColorReportFormat,
 
+    /// Background reported to OSC 11 queries in place of the default.
+    /// ROOTSHELL (id=config-osc-color-report-background)
+    osc_color_report_background: ?terminal.color.RGB,
+
     /// The clipboard write access configuration.
     clipboard_write: configpkg.ClipboardAccess,
 
@@ -427,9 +431,18 @@ pub const StreamHandler = struct {
         try self.renderer_wakeup.notify();
     }
 
+    /// Background for OSC 11 replies: a program's OSC 11 override, then
+    /// `osc-color-report-background`, then the configured default.
+    /// ROOTSHELL (id=config-osc-color-report-background)
+    fn reportedBackground(self: *const StreamHandler) ?terminal.color.RGB {
+        const bg = &self.terminal.colors.background;
+        return bg.override orelse self.osc_color_report_background orelse bg.default;
+    }
+
     /// Change the configuration for this handler.
     pub fn changeConfig(self: *StreamHandler, config: *termio.DerivedConfig) void {
         self.osc_color_report_format = config.osc_color_report_format;
+        self.osc_color_report_background = if (config.osc_color_report_background) |c| c.toTerminalRGB() else null;
         self.clipboard_write = config.clipboard_write;
         self.clipboard_write_limit = config.clipboard_write_limit;
         self.enquiry_response = config.enquiry_response;
@@ -469,6 +482,7 @@ pub const StreamHandler = struct {
                     const cc = config.cursor_color orelse break :cursor null;
                     break :cursor cc.toTerminalRGB() orelse break :cursor null;
                 };
+                viewer.report_background = self.osc_color_report_background; // ROOTSHELL (id=config-osc-color-report-background)
                 viewer.updateColors(
                     config.foreground.toTerminalRGB(),
                     config.background.toTerminalRGB(),
@@ -2191,6 +2205,7 @@ pub const StreamHandler = struct {
                         // terminal's colors so default-background cells match the
                         // app theme instead of the built-in dark default.
                         try viewer.setColors(self.terminal.colors);
+                        viewer.report_background = self.osc_color_report_background; // ROOTSHELL (id=config-osc-color-report-background)
                         // Configured cursor style/blink, so panes honor
                         // `cursor-style`/`cursor-style-blink` like a normal
                         // surface. Blink stays nullable: null = honor tmux's
@@ -3902,7 +3917,7 @@ pub const StreamHandler = struct {
                         .palette => |i| self.terminal.colors.palette.current[i],
                         .dynamic => |dynamic| switch (dynamic) {
                             .foreground => self.terminal.colors.foreground.get().?,
-                            .background => self.terminal.colors.background.get().?,
+                            .background => self.reportedBackground().?,
                             .cursor => self.terminal.colors.cursor.get() orelse
                                 self.terminal.colors.foreground.get().?,
                             .pointer_foreground,
@@ -4070,7 +4085,7 @@ pub const StreamHandler = struct {
                         .palette => |palette| self.terminal.colors.palette.current[palette],
                         .special => |special| switch (special) {
                             .foreground => self.terminal.colors.foreground.get(),
-                            .background => self.terminal.colors.background.get(),
+                            .background => self.reportedBackground(),
                             .cursor => self.terminal.colors.cursor.get(),
                             else => {
                                 log.warn("ignoring unsupported kitty color protocol key: {f}", .{key});

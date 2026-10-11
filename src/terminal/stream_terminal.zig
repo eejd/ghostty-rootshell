@@ -119,6 +119,11 @@ pub const Handler = struct {
     /// effects.
     effects: Effects = .readonly,
 
+    /// Background reported to color queries in place of the default.
+    /// Rendering still uses the terminal's colors.
+    /// ROOTSHELL (id=config-osc-color-report-background)
+    report_background: ?color.RGB = null,
+
     /// Whether CSI 21 t may report the terminal title. This is disabled by
     /// default because reporting an attacker-controlled title to the pty can
     /// inject text into the input stream of the foreground process.
@@ -2448,7 +2453,13 @@ pub const Handler = struct {
                 .query => |target| {
                     if (self.effects.write_pty == null) continue;
                     if (self.suppressTmuxDuplicateXtermColorReport(target)) continue;
-                    const c = self.terminal.colorForXterm(target) orelse continue;
+                    const c = switch (target) {
+                        .dynamic => |dynamic| if (dynamic == .background)
+                            self.reportedBackground()
+                        else
+                            self.terminal.colorForXterm(target),
+                        else => self.terminal.colorForXterm(target),
+                    } orelse continue;
                     try writeXtermColorReport(writer, target, c, terminator);
                 },
 
@@ -2523,6 +2534,13 @@ pub const Handler = struct {
         };
     }
 
+    /// A program's OSC 11 override, then `report_background`, then the default.
+    /// ROOTSHELL (id=config-osc-color-report-background)
+    fn reportedBackground(self: *const Handler) ?color.RGB {
+        const bg = &self.terminal.colors.background;
+        return bg.override orelse self.report_background orelse bg.default;
+    }
+
     fn kittyColorOperation(
         self: *Handler,
         request: kitty_color.OSC,
@@ -2561,7 +2579,13 @@ pub const Handler = struct {
                 },
                 .query => |key| {
                     if (self.effects.write_pty == null) continue;
-                    const c = self.terminal.colorForKitty(key) orelse {
+                    const c = switch (key) {
+                        .special => |special| if (special == .background)
+                            self.reportedBackground()
+                        else
+                            self.terminal.colorForKitty(key),
+                        else => self.terminal.colorForKitty(key),
+                    } orelse {
                         if (!key.hasTerminalQueryColor()) continue;
                         if (response.written().len == 0) try writer.writeAll("\x1b]21");
                         try writer.print(";{f}=", .{key});
@@ -4082,6 +4106,47 @@ test "kitty color protocol query responses" {
         "\x1b]21;foreground=rgb:12/34/56;background=;2=rgb:aa/bb/cc\x1b\\",
         S.last_response.?,
     );
+}
+
+// ROOTSHELL (id=config-osc-color-report-background)
+test "kitty color query reports the report background, not the default" {
+    var t: Terminal = try .init(testing.io, testing.allocator, .{ .cols = 10, .rows = 10 });
+    defer t.deinit(testing.allocator);
+    const default: color.RGB = .{ .r = 0x10, .g = 0x20, .b = 0x30 };
+    t.colors.background = .init(default);
+
+    const S = struct {
+        var last_response: ?[:0]const u8 = null;
+
+        fn reset() void {
+            if (last_response) |old| testing.allocator.free(old);
+            last_response = null;
+        }
+
+        fn writePty(_: *Handler, data: []const u8) void {
+            reset();
+            last_response = testing.allocator.dupeZ(u8, data) catch @panic("OOM");
+        }
+    };
+    S.last_response = null;
+    defer S.reset();
+
+    var handler: Handler = .init(&t);
+    handler.effects.write_pty = &S.writePty;
+    handler.report_background = .{ .r = 0x40, .g = 0x50, .b = 0x60 };
+
+    var s: Stream = .init(.{ .allocator = testing.allocator, .handler = handler });
+    defer s.deinit();
+
+    s.nextSlice("\x1b]21;background=?\x1b\\");
+    try testing.expectEqualStrings("\x1b]21;background=rgb:40/50/60\x1b\\", S.last_response.?);
+    // Rendering keeps the configured default.
+    try testing.expectEqual(default, t.colors.background.get().?);
+
+    // A program's own background still wins.
+    s.nextSlice("\x1b]21;background=rgb:aa/bb/cc\x1b\\");
+    s.nextSlice("\x1b]21;background=?\x1b\\");
+    try testing.expectEqualStrings("\x1b]21;background=rgb:aa/bb/cc\x1b\\", S.last_response.?);
 }
 
 test "palette dirty flag set on color change" {

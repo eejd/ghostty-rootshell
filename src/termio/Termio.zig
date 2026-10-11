@@ -228,6 +228,7 @@ pub const DerivedConfig = struct {
     foreground: configpkg.Config.Color,
     background: configpkg.Config.Color,
     osc_color_report_format: configpkg.Config.OSCColorReportFormat,
+    osc_color_report_background: ?configpkg.Config.Color, // ROOTSHELL (id=config-osc-color-report-background)
     clipboard_write: configpkg.ClipboardAccess,
     clipboard_write_limit: usize,
     enquiry_response: []const u8,
@@ -268,6 +269,7 @@ pub const DerivedConfig = struct {
             .foreground = config.foreground,
             .background = config.background,
             .osc_color_report_format = config.@"osc-color-report-format",
+            .osc_color_report_background = config.@"osc-color-report-background",
             .clipboard_write = config.@"clipboard-write",
             .clipboard_write_limit = config.@"clipboard-write-limit-bytes".value,
             .enquiry_response = try alloc.dupe(u8, config.@"enquiry-response"),
@@ -361,6 +363,7 @@ pub fn init(self: *Termio, alloc: Allocator, opts: termio.Options) !void {
         .size = &self.size,
         .terminal = &self.terminal,
         .osc_color_report_format = opts.config.osc_color_report_format,
+        .osc_color_report_background = if (opts.config.osc_color_report_background) |c| c.toTerminalRGB() else null,
         .clipboard_write = opts.config.clipboard_write,
         .tmux_control_mode = opts.config.tmux_control_mode, // ROOTSHELL-TMUX (id=termio-stream-config)
         .enquiry_response = opts.config.enquiry_response,

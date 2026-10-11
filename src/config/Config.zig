@@ -3077,6 +3077,14 @@ keybind: Keybinds = .{},
 /// The default value is `16-bit`.
 @"osc-color-report-format": OSCColorReportFormat = .@"16-bit",
 
+/// The background color reported to OSC 11 (and kitty OSC 21) queries in
+/// place of `background`. Rendering is unaffected, and a background set by
+/// the running program with OSC 11 still takes precedence. Useful when the
+/// visible background differs from `background`, such as a translucent
+/// terminal composited over a colored backdrop.
+// ROOTSHELL (id=config-osc-color-report-background): fork-owned config option.
+@"osc-color-report-background": ?Color = null,
+
 /// If true, allows the "KAM" mode (ANSI mode 2) to be used within
 /// the terminal. KAM disables keyboard input at the request of the
 /// application. This is not a common feature and is not recommended

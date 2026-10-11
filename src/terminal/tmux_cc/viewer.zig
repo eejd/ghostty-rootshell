@@ -375,6 +375,10 @@ pub const Viewer = struct {
     /// `sessionChanged` carries it forward to the replacement viewer.
     colors: Terminal.Colors = .default,
 
+    /// Background reported to tmux in place of `colors.background`'s default.
+    /// ROOTSHELL (id=config-osc-color-report-background)
+    report_background: ?color.RGB = null,
+
     /// Configured cursor style/blink, set by the stream handler from the
     /// gateway's config (mirrors `colors` above) so tmux -CC panes honor
     /// `cursor-style`/`cursor-style-blink`. Blink is `?bool`: null means the
@@ -1633,6 +1637,13 @@ pub const Viewer = struct {
         self.colors.palette = palette;
     }
 
+    /// Matches the gateway's OSC 11 reply: override, report color, default.
+    /// ROOTSHELL (id=config-osc-color-report-background)
+    fn reportedBackground(self: *const Viewer) ?color.RGB {
+        const bg = &self.colors.background;
+        return bg.override orelse self.report_background orelse bg.default;
+    }
+
     fn clonePalette(
         alloc: Allocator,
         src: *const color.DynamicPalette,
@@ -1685,6 +1696,9 @@ pub const Viewer = struct {
             var pit = self.panes.iterator();
             while (pit.next()) |kv| {
                 const pane = kv.value_ptr.*;
+                // Only this thread parses pane streams, so no renderer lock.
+                // ROOTSHELL (id=config-osc-color-report-background)
+                pane.stream.handler.report_background = self.report_background;
                 // Hold the child's renderer mutex (if a child is attached)
                 // while mutating the terminal the child's renderer thread
                 // reads, the same discipline as the `initLayout` resize path.
@@ -1719,7 +1733,7 @@ pub const Viewer = struct {
         if (self.state != .command_queue) return;
         if (!self.supportsPaneColorReport()) return;
         const rfg = self.colors.foreground.get() orelse return;
-        const rbg = self.colors.background.get() orelse return;
+        const rbg = self.reportedBackground() orelse return;
         var it = self.panes.iterator();
         while (it.next()) |kv| {
             // Two separate reports per pane: tmux parses one OSC per report.
@@ -2236,7 +2250,7 @@ pub const Viewer = struct {
         // until the recapture completes, so nothing feeds this stream meanwhile.
         pane.stream.deinit();
         pane.stream = pane.terminal.vtStream();
-        installPaneStreamEffects(pane, self.default_cursor_style, self.default_cursor_blink);
+        installPaneStreamEffects(pane, self.default_cursor_style, self.default_cursor_blink, self.report_background);
         // A stranded synchronized-output (DECSET 2026) bit is NOT cleared here:
         // this bookkeeping path holds no pane renderer lock and issues no wake,
         // so a `terminal.modes` write would race the child renderer and repaint
@@ -3337,7 +3351,7 @@ pub const Viewer = struct {
         // stream, not the post-snapshot bytes waiting in pending_vt.
         pane.stream.deinit();
         pane.stream = pane.terminal.vtStream();
-        installPaneStreamEffects(pane, self.default_cursor_style, self.default_cursor_blink);
+        installPaneStreamEffects(pane, self.default_cursor_style, self.default_cursor_blink, self.report_background);
         pane.capture_pending = false;
         pane.state_pending = false;
         // Restore at the captured dimensions, then reflow to the grid the
@@ -3694,6 +3708,7 @@ pub const Viewer = struct {
             self.colors,
             self.default_cursor_style,
             self.default_cursor_blink,
+            self.report_background,
             &self.panes,
             &panes,
             window.layout,
@@ -4019,6 +4034,7 @@ pub const Viewer = struct {
         replacement.batching = self.batching;
         // Carry the themed pane colors forward across the session reset.
         try replacement.setColors(self.colors);
+        replacement.report_background = self.report_background; // ROOTSHELL (id=config-osc-color-report-background)
         // This is the same tmux control client, so its acknowledged size remains
         // valid across a session switch just like its stored current dimensions.
         replacement.last_applied_client_size = self.last_applied_client_size;
@@ -4489,7 +4505,7 @@ pub const Viewer = struct {
                 .color = fg,
             } }}, owner);
         }
-        if (self.colors.background.get()) |bg| {
+        if (self.reportedBackground()) |bg| {
             try self.queueCommandsWithOwner(&.{.{ .pane_color_report = .{
                 .pane_id = pane_id,
                 .code = 11,
@@ -6050,6 +6066,7 @@ pub const Viewer = struct {
         colors: Terminal.Colors,
         default_cursor_style: Screen.CursorStyle,
         default_cursor_blink: ?bool,
+        report_background: ?color.RGB, // ROOTSHELL (id=config-osc-color-report-background)
         panes_old: *const PanesMap,
         panes_new: *PanesMap,
         layout: Layout,
@@ -6065,6 +6082,7 @@ pub const Viewer = struct {
                         colors,
                         default_cursor_style,
                         default_cursor_blink,
+                        report_background,
                         panes_old,
                         panes_new,
                         l,
@@ -6174,7 +6192,7 @@ pub const Viewer = struct {
                     .pending_attach = true,
                 };
                 pane.stream = pane.terminal.vtStream();
-                installPaneStreamEffects(pane, default_cursor_style, default_cursor_blink);
+                installPaneStreamEffects(pane, default_cursor_style, default_cursor_blink, report_background);
                 gop.value_ptr.* = pane;
             },
         }
@@ -6190,7 +6208,11 @@ pub const Viewer = struct {
         pane: *Pane,
         default_cursor_style: Screen.CursorStyle,
         default_cursor_blink: ?bool,
+        report_background: ?color.RGB,
     ) void {
+        // Kitty OSC 21 is answered here, not by tmux; match its OSC 11 reply.
+        // ROOTSHELL (id=config-osc-color-report-background)
+        pane.stream.handler.report_background = report_background;
         pane.terminal.cursor.default_style = default_cursor_style;
         // `orelse true` mirrors how a normal surface resolves DECSCUSR 0.
         pane.terminal.cursor.default_blink = default_cursor_blink orelse true;
@@ -8114,6 +8136,19 @@ test "session change resets the sent-FIFO" {
     // in-flight command). The fresh FIFO is empty.
     _ = viewer.next(.{ .tmux = .{ .session_changed = .{ .id = 2, .name = "two" } } });
     try testing.expectEqual(Viewer.BlockClass.empty, viewer.classifyBlock());
+}
+
+// ROOTSHELL (id=config-osc-color-report-background)
+test "session change keeps the reported background" {
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
+    defer viewer.deinit();
+    try driveStartupOneWindow(&viewer);
+
+    const report: color.RGB = .{ .r = 0x40, .g = 0x50, .b = 0x60 };
+    viewer.colors.background.default = .{ .r = 0x10, .g = 0x20, .b = 0x30 };
+    viewer.report_background = report;
+    _ = viewer.next(.{ .tmux = .{ .session_changed = .{ .id = 2, .name = "two" } } });
+    try testing.expectEqual(report, viewer.reportedBackground().?);
 }
 
 test "parseResizePane parses target/cols/rows, rejects others" {
@@ -13976,4 +14011,20 @@ test "setColors owns a copy of the palette" {
     try viewer.setColors(gateway);
     viewer.updateColors(null, null, null, color.default);
     try testing.expectEqual(color.default[1], viewer.colors.palette.original[1]);
+}
+
+// ROOTSHELL (id=config-osc-color-report-background)
+test "reported background prefers override, then report color, then default" {
+    var viewer = try Viewer.init(testing.io, testing.allocator, 80, 24);
+    defer viewer.deinit();
+
+    const default: color.RGB = .{ .r = 0x10, .g = 0x20, .b = 0x30 };
+    const report: color.RGB = .{ .r = 0x40, .g = 0x50, .b = 0x60 };
+    const override: color.RGB = .{ .r = 0x70, .g = 0x80, .b = 0x90 };
+    viewer.colors.background.default = default;
+    try testing.expectEqual(default, viewer.reportedBackground().?);
+    viewer.report_background = report;
+    try testing.expectEqual(report, viewer.reportedBackground().?);
+    viewer.colors.background.set(override);
+    try testing.expectEqual(override, viewer.reportedBackground().?);
 }
