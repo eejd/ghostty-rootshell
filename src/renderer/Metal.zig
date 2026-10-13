@@ -34,8 +34,13 @@ pub const custom_shader_target: shadertoy.Target = .msl;
 // The fragCoord for Metal shaders is +Y = down.
 pub const custom_shader_y_is_down = true;
 
-/// Triple buffering.
-pub const swap_chain_count = 3;
+/// Triple buffering. ROOTSHELL: five on the iOS family, where scroll updates
+/// draw directly at the display rate and a blended (translucent) layer keeps
+/// each frame in the compositor longer; three left draws waiting on a surface.
+pub const swap_chain_count = switch (builtin.os.tag) {
+    .ios, .maccatalyst, .visionos => 5,
+    else => 3,
+};
 
 const log = std.log.scoped(.metal);
 
