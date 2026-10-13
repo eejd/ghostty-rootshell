@@ -2996,6 +2996,7 @@ pub fn setSmoothScrollOffset(self: *Surface, y_px: f64) !void {
         self.renderer_state.smooth_scroll_active = active;
     }
 
+    self.renderer.noteScrollInput();
     try self.queueRender();
 }
 
@@ -3014,6 +3015,7 @@ pub fn setRubberBandOffset(self: *Surface, y_px: f64) !void {
         self.renderer_state.rubber_band_y_px = offset;
     }
 
+    self.renderer.noteScrollInput();
     try self.queueRender();
 }
 
@@ -3063,6 +3065,7 @@ pub fn scrollToRowSmooth(self: *Surface, row: usize, y_px: f64) !void {
         }
     }
 
+    self.renderer.noteScrollInput();
     try self.queueRender();
 }
 

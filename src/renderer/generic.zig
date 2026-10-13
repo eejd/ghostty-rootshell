@@ -289,6 +289,10 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         /// draw_mutex. null until the first damage frame.
         last_damage: ?std.Io.Timestamp = null,
 
+        /// ROOTSHELL: awake-clock nanoseconds of the latest app scroll input
+        /// (0 = none). Written on the app thread, read on the render thread.
+        scroll_input_ns: std.atomic.Value(i64) = .init(0),
+
         /// Health of the most recently completed frame.
         health: std.atomic.Value(Health) = .{ .raw = .healthy },
 
@@ -1403,6 +1407,28 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             display_link.setFrameRateRange(range.min, range.max, range.preferred);
         }
 
+        /// ROOTSHELL: scroll mode lasts this long after the latest scroll input.
+        const scroll_mode_ms: i64 = 150;
+
+        /// ROOTSHELL: the app moved the viewport (smooth scroll, rubber band).
+        pub fn noteScrollInput(self: *Self) void {
+            const now: std.Io.Timestamp = .now(global.io(), .awake);
+            self.scroll_input_ns.store(@intCast(now.nanoseconds), .monotonic);
+        }
+
+        /// ROOTSHELL: true while the app's scroll view drives the viewport.
+        /// Each scroll update then draws directly and the iOS-family link stays
+        /// parked: a running link drops UIKit's deceleration to 60 Hz and below,
+        /// which reads as a stuttering coast.
+        pub fn scrollActive(self: *const Self) bool {
+            if (comptime builtin.os.tag != .ios and builtin.os.tag != .maccatalyst and builtin.os.tag != .visionos) return false;
+            const last = self.scroll_input_ns.load(.monotonic);
+            if (last == 0) return false;
+            const now: std.Io.Timestamp = .now(global.io(), .awake);
+            const elapsed: i64 = @as(i64, @intCast(now.nanoseconds)) - last;
+            return elapsed < scroll_mode_ms * std.time.ns_per_ms;
+        }
+
         /// No render-thread damage for this long pauses the display link.
         /// Kept below the 600ms cursor-blink interval so an idle prompt with
         /// a blinking cursor fully parks the link — each blink toggle becomes
@@ -1452,6 +1478,14 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
             if (self.link_shader_animation_active) {
                 self.link_shader_animation_active = false;
+                if (display_link.desiredRunning())
+                    display_link.stop() catch {};
+                return;
+            }
+
+            // Scroll mode keeps the link parked; idle rules resume after it.
+            if (self.scrollActive()) {
+                if (damaged) self.last_damage = now;
                 if (display_link.desiredRunning())
                     display_link.stop() catch {};
                 return;
@@ -2320,6 +2354,16 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             const frame = swap_chain.nextFrame();
             errdefer swap_chain.releaseFrame();
             // log.debug("drawing frame index={}", .{swap_chain.frame_index});
+
+            // ROOTSHELL: frame_sema only tracks the GPU; Core Animation can
+            // still be showing this surface when draws outpace the display.
+            // Drawing into it then tears. Bounded so a held surface can't wedge.
+            if (comptime @hasField(Target, "surface")) {
+                var waited_us: u32 = 0;
+                while (frame.target.surface.isInUse() and waited_us < 50_000) : (waited_us += 500) {
+                    std.Io.sleep(global.io(), .fromMicroseconds(500), .awake) catch break;
+                }
+            }
 
             // If we need to reinitialize our shaders, do so.
             if (self.reinitialize_shaders) {

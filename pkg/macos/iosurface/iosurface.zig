@@ -70,6 +70,11 @@ pub const IOSurface = opaque {
         foundation.CFRelease(self);
     }
 
+    /// True while the window server (or anything else) still uses the surface.
+    pub fn isInUse(self: *IOSurface) bool {
+        return c.IOSurfaceIsInUse(@ptrCast(self)) != 0;
+    }
+
     pub fn setColorSpace(self: *IOSurface, colorspace: *graphics.ColorSpace) void {
         // Preferred path: serialize the colorspace to a property list and
         // attach that to the surface.
