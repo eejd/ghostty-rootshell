@@ -200,7 +200,9 @@ fn extendMatchAcrossRows(
     ext_coords: *terminal.RenderState.StringMap,
 ) !bool {
     // Must have rows below the current match end.
-    if (end_coord.y + 1 >= render_state.rows) return false;
+    // Rows include the captured overscan below (smooth scrolling).
+    const rows = render_state.rowDataRange().end;
+    if (end_coord.y + 1 >= rows) return false;
 
     const row_slice = render_state.row_data.slice();
     const row_raws = row_slice.items(.raw);
@@ -246,7 +248,7 @@ fn extendMatchAcrossRows(
     // Extend across subsequent rows within the same column window.
     const max_y: usize = @min(
         @as(usize, end_coord.y) + link_extend.max_extend_rows + 1,
-        render_state.rows,
+        rows,
     );
 
     var next_y: usize = @as(usize, end_coord.y) + 1;

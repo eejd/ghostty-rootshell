@@ -79,18 +79,55 @@ typedef enum {
 typedef enum {
   GHOSTTY_CLIPBOARD_STANDARD,
   GHOSTTY_CLIPBOARD_SELECTION,
+  GHOSTTY_CLIPBOARD_PRIMARY,
 } ghostty_clipboard_e;
 
+// One representation of clipboard contents. The data is binary-safe with
+// an explicit length; it is not necessarily null-terminated.
 typedef struct {
   const char *mime;
   const char *data;
+  size_t len;
 } ghostty_clipboard_content_s;
+
+// The payload for completing a clipboard read request. See
+// ghostty_surface_complete_clipboard_request.
+typedef struct {
+  const ghostty_clipboard_content_s *contents;
+  size_t contents_len;
+  const char *const *available;
+  size_t available_len;
+  bool confirmed;
+  bool remember;
+} ghostty_clipboard_complete_s;
+
+// The payload of a clipboard read confirmation request: the would-be
+// completion contents plus the information shown in the permission
+// prompt. See ghostty_runtime_confirm_read_clipboard_cb.
+typedef struct {
+  const ghostty_clipboard_content_s *contents;
+  size_t contents_len;
+  const char *const *available;
+  size_t available_len;
+  const char *name;
+  bool can_remember;
+} ghostty_clipboard_confirm_s;
 
 typedef enum {
   GHOSTTY_CLIPBOARD_REQUEST_PASTE,
   GHOSTTY_CLIPBOARD_REQUEST_OSC_52_READ,
   GHOSTTY_CLIPBOARD_REQUEST_OSC_52_WRITE,
+  GHOSTTY_CLIPBOARD_REQUEST_KITTY_READ,
+  GHOSTTY_CLIPBOARD_REQUEST_KITTY_WRITE,
+  GHOSTTY_CLIPBOARD_REQUEST_LIST,
 } ghostty_clipboard_request_e;
+
+// apprt.ClipboardReadResult
+typedef enum {
+  GHOSTTY_CLIPBOARD_READ_STARTED,
+  GHOSTTY_CLIPBOARD_READ_UNAVAILABLE,
+  GHOSTTY_CLIPBOARD_READ_UNSUPPORTED,
+} ghostty_clipboard_read_result_e;
 
 typedef enum {
   GHOSTTY_MOUSE_RELEASE,
@@ -768,11 +805,58 @@ typedef struct {
   uint32_t height;
 } ghostty_action_initial_size_s;
 
+// apprt.action.ResizeWindow
+typedef struct {
+  uint32_t width;
+  uint32_t height;
+} ghostty_action_resize_window_s;
+
+// apprt.action.ProgramStatus.State
+typedef enum {
+  GHOSTTY_PROGRAM_STATUS_IDLE,
+  GHOSTTY_PROGRAM_STATUS_WORKING,
+  GHOSTTY_PROGRAM_STATUS_DONE,
+  GHOSTTY_PROGRAM_STATUS_BLOCKED,
+  GHOSTTY_PROGRAM_STATUS_ERROR,
+  GHOSTTY_PROGRAM_STATUS_CLEAR,
+} ghostty_action_program_status_state_e;
+
+// apprt.action.ProgramStatus.Kind
+typedef enum {
+  GHOSTTY_PROGRAM_STATUS_KIND_NONE,
+  GHOSTTY_PROGRAM_STATUS_KIND_PERMISSION,
+  GHOSTTY_PROGRAM_STATUS_KIND_QUESTION,
+  GHOSTTY_PROGRAM_STATUS_KIND_AUTH,
+} ghostty_action_program_status_kind_e;
+
+// apprt.action.ProgramStatus.Value. An OSC 7501 program status report,
+// valid only during the action callback. Strings are NUL-terminated and
+// empty when the report didn't send them. A `clear` with an empty id
+// removes every record (sent on a full reset).
+typedef struct {
+  ghostty_action_program_status_state_e state;
+  ghostty_action_program_status_kind_e kind;
+  // -1 if no progress was reported, otherwise 0-100
+  int8_t progress;
+  const char* id;
+  const char* app;
+  const char* title;
+  const char* msg;
+} ghostty_action_program_status_s;
+
 // apprt.action.CellSize
 typedef struct {
   uint32_t width;
   uint32_t height;
 } ghostty_action_cell_size_s;
+
+// apprt.action.PtyResize
+typedef struct {
+  uint32_t rows;
+  uint32_t cols;
+  uint32_t width_px;
+  uint32_t height_px;
+} ghostty_action_pty_resize_s;
 
 // renderer.Health
 typedef enum {
@@ -978,6 +1062,7 @@ typedef enum {
   GHOSTTY_ACTION_READONLY,
   GHOSTTY_ACTION_COPY_TITLE_TO_CLIPBOARD,
   GHOSTTY_ACTION_MOVE_TAB_TO_NEW_WINDOW,
+  GHOSTTY_ACTION_RESIZE_WINDOW,
   // ROOTSHELL-TMUX FROZEN-ABI (id=ghostty-h-action-enum): DO NOT REORDER (tag value).
   GHOSTTY_ACTION_TMUX_RECONCILE,
   // ROOTSHELL-TMUX FROZEN-ABI (id=ghostty-h-session-actions): append-only; order
@@ -988,6 +1073,8 @@ typedef enum {
   // Emitted after terminal content changes for one exact surface. Render-only
   // work such as cursor blinking does not emit this action.
   GHOSTTY_ACTION_SURFACE_CONTENT_CHANGED,
+  GHOSTTY_ACTION_PTY_RESIZE,
+  GHOSTTY_ACTION_PROGRAM_STATUS,
 } ghostty_action_tag_e;
 
 // ROOTSHELL-TMUX FROZEN-ABI (id=ghostty-h-session-actions): tmux session
@@ -1025,7 +1112,9 @@ typedef union {
   ghostty_action_resize_split_s resize_split;
   ghostty_action_size_limit_s size_limit;
   ghostty_action_initial_size_s initial_size;
+  ghostty_action_resize_window_s resize_window;
   ghostty_action_cell_size_s cell_size;
+  ghostty_action_pty_resize_s pty_resize;
   ghostty_action_scrollbar_s scrollbar;
   ghostty_action_inspector_e inspector;
   ghostty_action_export_terminal_io_s export_terminal_io;
@@ -1065,6 +1154,7 @@ typedef union {
   // ROOTSHELL-TMUX FROZEN-ABI (id=ghostty-h-session-actions)
   ghostty_action_tmux_session_changed_s tmux_session_changed;
   ghostty_action_tmux_command_response_s tmux_command_response;
+  const ghostty_action_program_status_s* program_status;
 } ghostty_action_u;
 
 typedef struct {
@@ -1165,12 +1255,16 @@ GHOSTTY_API ghostty_surface_t ghostty_surface_new_tmux_pane_with_theme(
 // ROOTSHELL-TMUX END FROZEN-ABI (id=ghostty-h-reconcile)
 
 typedef void (*ghostty_runtime_wakeup_cb)(void*);
-typedef bool (*ghostty_runtime_read_clipboard_cb)(void*,
-                                                  ghostty_clipboard_e,
-                                                  void*);
+typedef ghostty_clipboard_read_result_e (*ghostty_runtime_read_clipboard_cb)(
+    void*,
+    ghostty_clipboard_e,
+    void*,
+    const char* const*,
+    size_t,
+    bool);
 typedef void (*ghostty_runtime_confirm_read_clipboard_cb)(
     void*,
-    const char*,
+    const ghostty_clipboard_confirm_s*,
     void*,
     ghostty_clipboard_request_e);
 typedef void (*ghostty_runtime_write_clipboard_cb)(void*,
@@ -1268,6 +1362,10 @@ GHOSTTY_API void ghostty_app_set_color_scheme(ghostty_app_t, ghostty_color_schem
 
 // Enable coalesced per-surface terminal-content actions. Disabled by default.
 GHOSTTY_API void ghostty_app_set_surface_content_events_enabled(ghostty_app_t, bool);
+
+// Allow or forbid GPU presentation for every surface, from any thread.
+// Allowed by default.
+GHOSTTY_API void ghostty_presentation_set_allowed(bool);
 
 GHOSTTY_API ghostty_surface_config_s ghostty_surface_config_new();
 
@@ -1476,10 +1574,12 @@ GHOSTTY_API void ghostty_surface_split_resize(ghostty_surface_t,
                                                  uint16_t);
 GHOSTTY_API void ghostty_surface_split_equalize(ghostty_surface_t);
 GHOSTTY_API bool ghostty_surface_binding_action(ghostty_surface_t, const char*, uintptr_t);
-GHOSTTY_API void ghostty_surface_complete_clipboard_request(ghostty_surface_t,
-                                                               const char*,
-                                                               void*,
-                                                               bool);
+GHOSTTY_API void ghostty_surface_complete_clipboard_request(
+    ghostty_surface_t,
+    const ghostty_clipboard_complete_s*,
+    void*);
+GHOSTTY_API void ghostty_surface_deny_clipboard_request(ghostty_surface_t,
+                                                           void*);
 GHOSTTY_API bool ghostty_surface_has_selection(ghostty_surface_t);
 GHOSTTY_API bool ghostty_surface_read_selection(ghostty_surface_t, ghostty_text_s*);
 GHOSTTY_API bool ghostty_surface_read_text(ghostty_surface_t,

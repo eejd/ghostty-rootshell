@@ -579,6 +579,14 @@ fn drainMailbox(
                 // there may be no further bytes to trigger dcsConsumeGroundRequest.
                 io.terminal_stream.parser.state = .ground;
             },
+            .kitty_clipboard_grant_read => |v| {
+                defer v.alloc.free(v.pw);
+                try io.kittyClipboardGrant(v.pw, .read);
+            },
+            .kitty_clipboard_grant_write => |v| {
+                defer v.alloc.free(v.pw);
+                try io.kittyClipboardGrant(v.pw, .write);
+            },
             .start_synchronized_output => self.startSynchronizedOutput(cb),
             .linefeed_mode => |v| self.flags.linefeed_mode = v,
             .focused => |v| try io.focusGained(data, v),

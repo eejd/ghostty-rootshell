@@ -365,6 +365,9 @@ fn postOscEvent(ctx: ?*anyopaque, event: terminal.tmux.Viewer.PaneOscEvent) void
     const io: *termio.Termio = @ptrCast(@alignCast(ctx orelse return));
     const msg: apprt.surface.Message = switch (event) {
         .progress => |report| .{ .progress_report = report },
+        .program_status => |report| .{
+            .program_status = apprt.surface.Message.ProgramStatus.create(io.alloc, report) catch return,
+        },
         .pwd => |raw| .{ .pwd_change = apprt.surface.Message.WriteReq.init(io.alloc, pwdPath(raw)) catch return },
         .notification => |n| msg: {
             var m = apprt.surface.Message{ .desktop_notification = undefined };
@@ -386,7 +389,12 @@ fn postOscEvent(ctx: ?*anyopaque, event: terminal.tmux.Viewer.PaneOscEvent) void
     // once the 64-slot queue fills under back-pressure. Drop on full instead: these
     // OSC side-effects (progress / pwd / notification) are non-critical and
     // coalesceable — a dropped progress report is harmless, a deadlock is not.
-    _ = io.surface_mailbox.push(msg, .{ .instant = {} });
+    if (io.surface_mailbox.push(msg, .{ .instant = {} }) > 0) return;
+    switch (msg) {
+        .program_status => |status| status.destroy(),
+        .pwd_change => |req| req.deinit(),
+        else => {},
+    }
 }
 
 /// Focus gained/lost notification. The tmux backend deliberately sends

@@ -232,6 +232,12 @@ pub const Message = union(enum) {
     /// The surface gained or lost focus.
     focused: bool,
 
+    /// Record a Kitty clipboard protocol session grant for a password
+    /// so future requests carrying it skip the permission prompt, for
+    /// reads and writes respectively.
+    kitty_clipboard_grant_read: KittyClipboardGrant,
+    kitty_clipboard_grant_write: KittyClipboardGrant,
+
     /// Write where the data fits in the union.
     write_small: WriteReq.Small,
 
@@ -240,6 +246,13 @@ pub const Message = union(enum) {
 
     /// Write where the data is allocated and must be freed.
     write_alloc: WriteReq.Alloc,
+
+    /// The payload of the kitty_clipboard_grant_* messages. The
+    /// password is allocated and must be freed.
+    pub const KittyClipboardGrant = struct {
+        alloc: Allocator,
+        pw: []const u8,
+    };
 
     /// Return a write request for the given data. This will use
     /// write_small if it fits or write_alloc otherwise. This should NOT
@@ -269,6 +282,9 @@ pub const Message = union(enum) {
             },
             .tmux_send_keys => |v| v.alloc.free(v.data), // ROOTSHELL-TMUX (id=termio-msg-send-keys)
             .tmux_track_command => |v| v.alloc.free(v.data), // ROOTSHELL-TMUX (id=termio-msg-track-command)
+            .kitty_clipboard_grant_read,
+            .kitty_clipboard_grant_write,
+            => |v| v.alloc.free(v.pw),
             else => {},
         }
     }

@@ -161,8 +161,10 @@ fn highlightHyperlinks(
     const fill_color = Color.hyperlink.rectFill();
 
     const row_slice = state.row_data.slice();
-    const row_raw = row_slice.items(.raw);
-    const row_cells = row_slice.items(.cells);
+    // Only captured rows hold data (smooth scrolling overscans below).
+    const range = state.rowDataRange();
+    const row_raw = row_slice.items(.raw)[range.start..range.end];
+    const row_cells = row_slice.items(.cells)[range.start..range.end];
     for (row_raw, row_cells, 0..) |row, cells, y| {
         if (!row.hyperlink) continue;
 
@@ -205,8 +207,10 @@ fn highlightSemanticPrompts(
     state: *const terminal.RenderState,
 ) void {
     const row_slice = state.row_data.slice();
-    const row_raw = row_slice.items(.raw);
-    const row_cells = row_slice.items(.cells);
+    // Only captured rows hold data (smooth scrolling overscans below).
+    const range = state.rowDataRange();
+    const row_raw = row_slice.items(.raw)[range.start..range.end];
+    const row_cells = row_slice.items(.cells)[range.start..range.end];
 
     // Highlight the row-level semantic prompt bars. The prompts are easy
     // because they're part of the row metadata.

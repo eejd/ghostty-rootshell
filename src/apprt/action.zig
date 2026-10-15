@@ -362,6 +362,13 @@ pub const Action = union(Key) {
     /// Move a tab to a new window.
     move_tab_to_new_window,
 
+    /// Resize the window containing the target surface so that the
+    /// surface is the given size in points. A zero dimension should be
+    /// kept as is. This is requested by the running program (CSI 8 t)
+    /// and apprts may ignore it, for example if the surface is in a
+    /// split or the window is fullscreen.
+    resize_window: ResizeWindow,
+
     // ROOTSHELL-TMUX FROZEN-ABI (id=action-reconcile-variant): the iOS Swift app
     // consumes GHOSTTY_ACTION_TMUX_RECONCILE via this union member `tmux_reconcile`.
     // DO NOT rename/reorder. reapply: re-add this variant, its Key enum entry, and
@@ -394,6 +401,17 @@ pub const Action = union(Key) {
     /// The active terminal content for one exact surface changed. The target
     /// is always a surface; render-only animation does not emit this.
     surface_content_changed,
+
+    /// The IO thread applied a resize to the terminal (pipe backend only).
+    /// The external pty must be resized after this, never before, or the
+    /// application's redraw is parsed into the old grid.
+    pty_resize: PtyResize,
+
+
+    /// A program reported its status with OSC 7501 (program status
+    /// protocol). The apprt keeps one record per id; the terminal keeps none.
+    /// The payload is valid only during the action callback.
+    program_status: ProgramStatus,
 
     /// Sync with: ghostty_action_tag_e
     pub const Key = enum(c_int) {
@@ -466,6 +484,7 @@ pub const Action = union(Key) {
         readonly,
         copy_title_to_clipboard,
         move_tab_to_new_window,
+        resize_window,
 
         // ROOTSHELL-TMUX FROZEN-ABI (id=action-key-variant): ghostty_action_tag_e
         // tag value — DO NOT REORDER (the iOS Swift app switches on it).
@@ -476,6 +495,8 @@ pub const Action = union(Key) {
         tmux_session_changed,
         tmux_command_response,
         surface_content_changed,
+        pty_resize,
+        program_status,
 
         test "ghostty.h Action.Key" {
             try lib.checkGhosttyHEnum(Key, "GHOSTTY_ACTION_");
@@ -525,6 +546,8 @@ pub const Action = union(Key) {
 
     /// Returns the value type for the given key.
     pub fn Value(comptime key: Key) type {
+        // The rootshell variants push this scan past the default quota.
+        @setEvalBranchQuota(4000);
         inline for (@typeInfo(Action).@"union".fields) |field| {
             const field_key = @field(Key, field.name);
             if (field_key == key) return field.type;
@@ -780,9 +803,73 @@ pub const InitialSize = extern struct {
     };
 };
 
+pub const ResizeWindow = extern struct {
+    width: u32,
+    height: u32,
+};
+
+/// OSC 7501 program status report. The C payload is a pointer so the action
+/// union keeps its size; it and its strings live only for the callback.
+pub const ProgramStatus = struct {
+    value: *const Value,
+
+    // Sync with: ghostty_action_program_status_s
+    pub const Value = extern struct {
+        state: State,
+        kind: Kind,
+        /// 0-100, or -1 if the report carried no progress.
+        progress: i8,
+        /// NUL-terminated and empty when the report didn't send one.
+        id: [*:0]const u8,
+        app: [*:0]const u8,
+        title: [*:0]const u8,
+        msg: [*:0]const u8,
+    };
+
+    // Sync with: ghostty_action_program_status_state_e
+    pub const State = enum(c_int) {
+        idle,
+        working,
+        done,
+        blocked,
+        @"error",
+        clear,
+
+        test "ghostty.h ProgramStatus.State" {
+            try lib.checkGhosttyHEnum(State, "GHOSTTY_PROGRAM_STATUS_");
+        }
+    };
+
+    // Sync with: ghostty_action_program_status_kind_e
+    pub const Kind = enum(c_int) {
+        none,
+        permission,
+        question,
+        auth,
+
+        test "ghostty.h ProgramStatus.Kind" {
+            try lib.checkGhosttyHEnum(Kind, "GHOSTTY_PROGRAM_STATUS_KIND_");
+        }
+    };
+
+    pub const C = *const Value;
+
+    pub fn cval(self: ProgramStatus) C {
+        return self.value;
+    }
+};
+
 pub const CellSize = extern struct {
     width: u32,
     height: u32,
+};
+
+// Sync with: ghostty_action_pty_resize_s
+pub const PtyResize = extern struct {
+    rows: u32,
+    cols: u32,
+    width_px: u32,
+    height_px: u32,
 };
 
 pub const SetTitle = struct {

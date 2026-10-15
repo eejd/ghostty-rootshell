@@ -5,6 +5,7 @@
 const std = @import("std");
 const assert = @import("../../quirks.zig").inlineAssert;
 const Allocator = std.mem.Allocator;
+const simd = @import("../../simd/main.zig");
 const clipboard = @import("../clipboard.zig");
 const clipboard_command = @import("clipboard_command.zig");
 
@@ -14,10 +15,11 @@ const max_mime_len = clipboard_command.max_mime_len;
 
 const log = std.log.scoped(.kitty_clipboard);
 
-/// Maximum total decoded bytes accumulated by one write transaction.
-/// We hardcode this for now but probably will make this configurable
-/// later.
-pub const max_write_size = 32 * 1024 * 1024;
+/// Default maximum total decoded bytes accumulated by one write
+/// transaction. Embedders can override this per-transaction via
+/// WriteState.Options (Ghostty exposes it as the
+/// `clipboard-write-limit-bytes` configuration).
+pub const max_write_size = 64 * 1024 * 1024;
 
 /// Maximum MIME types and aliases per write transaction.
 pub const max_write_mimes = 64;
@@ -36,17 +38,30 @@ pub const WriteState = struct {
     loc: clipboard.Location,
     id: []const u8,
     pw: []const u8,
-    has_name: bool,
+    name: []const u8,
     spool: std.ArrayListUnmanaged(u8) = .empty,
     entries: std.ArrayListUnmanaged(Entry) = .empty,
     aliases: std.ArrayListUnmanaged(Alias) = .empty,
 
+    /// Maximum total decoded bytes this transaction will accumulate.
+    /// Captured at init so a change to the configured limit doesn't
+    /// apply to a transaction already in flight.
+    max_size: usize,
+
     /// Index into entries currently receiving data.
     current: ?usize = null,
 
-    /// Set when max_write_size was exceeded; excess data is dropped
-    /// but the write still completes.
-    truncated: bool = false,
+    /// Decodes the concatenated payload stream of the entry currently
+    /// receiving data. Per the spec's "Encoding of payloads" section,
+    /// individual wdata packet payloads split one base64 stream at
+    /// arbitrary boundaries; only the concatenation per MIME type must
+    /// be valid, correctly padded base64.
+    decoder: simd.base64.Streaming = .{},
+
+    pub const Options = struct {
+        /// Maximum total decoded bytes accumulated by the transaction.
+        max_size: usize = max_write_size,
+    };
 
     const Entry = struct {
         /// Owned by the transaction arena.
@@ -62,18 +77,24 @@ pub const WriteState = struct {
     };
 
     /// Begin a transaction from a type=write packet.
-    pub fn init(alloc: Allocator, meta: *const Metadata) Allocator.Error!WriteState {
+    pub fn init(
+        alloc: Allocator,
+        meta: *const Metadata,
+        opts: Options,
+    ) Allocator.Error!WriteState {
         assert(meta.op == .write);
         var arena: std.heap.ArenaAllocator = .init(alloc);
         errdefer arena.deinit();
         const id = try arena.allocator().dupe(u8, meta.id);
         const pw = try arena.allocator().dupe(u8, meta.pw);
+        const name = try arena.allocator().dupe(u8, meta.name);
         return .{
             .arena = arena,
             .loc = meta.loc,
             .id = id,
             .pw = pw,
-            .has_name = meta.has_name,
+            .name = name,
+            .max_size = opts.max_size,
         };
     }
 
@@ -86,12 +107,17 @@ pub const WriteState = struct {
 
     /// Accumulate one wdata chunk carrying data for meta.mime (which
     /// must be non-empty; an empty mime is a commit, not data).
+    ///
+    /// Returns error.TooLarge when the transaction exceeds max_size
+    /// and error.Invalid when the payload stream is not valid base64.
+    /// The caller must fail the whole transaction with EFBIG or EINVAL
+    /// respectively and abort it, as required by the protocol.
     pub fn data(
         self: *WriteState,
         alloc: Allocator,
         meta: *const Metadata,
         payload: []const u8,
-    ) error{OutOfMemory}!void {
+    ) error{ OutOfMemory, TooLarge, Invalid }!void {
         assert(meta.op == .wdata);
         assert(meta.mime.len > 0);
         // Switch the receiving entry if this chunk is for a different
@@ -103,7 +129,10 @@ pub const WriteState = struct {
                     break :entry;
                 }
 
-                // Finalize the previous region.
+                // Finalize the previous region. Its concatenated
+                // stream must have ended on a complete base64 group,
+                // otherwise the data was not correctly padded.
+                try self.finishCurrent();
                 entry.len = self.spool.items.len - entry.start;
             }
 
@@ -134,29 +163,30 @@ pub const WriteState = struct {
             self.current = self.entries.items.len - 1;
         }
 
-        // Each packet's payload is independently base64-encoded: per
-        // the spec, "payload is base64 encoded data" and clients chunk
-        // the data before encoding. An invalid chunk is dropped and
-        // the transaction continues.
-        const decoded = Payload.init(
-            alloc,
+        // The payloads for one MIME region concatenate into a single
+        // strict base64 stream, decoded directly into the spool's
+        // unused capacity. Invalid data aborts the transaction; per
+        // the spec it must not be silently discarded "since that
+        // turns corrupted data into apparently valid data".
+        try self.spool.ensureUnusedCapacity(alloc, self.decoder.maxLen(payload));
+        const decoded = self.decoder.feed(
             payload,
-        ) catch |err| switch (err) {
-            error.OutOfMemory => return error.OutOfMemory,
-            error.Invalid => {
-                log.warn("clipboard write chunk has invalid base64, ignoring chunk", .{});
-                return;
-            },
-        };
-        defer decoded.deinit(alloc);
+            self.spool.unusedCapacitySlice(),
+        ) catch return error.Invalid;
 
-        const remaining = max_write_size -| self.spool.items.len;
-        const n = @min(decoded.data.len, remaining);
-        try self.spool.appendSlice(alloc, decoded.data[0..n]);
-        if (n < decoded.data.len) {
-            self.truncated = true;
-            logTruncatedOnce();
-        }
+        // The limit covers all decoded data in the transaction. Going
+        // over it aborts the entire write; partial clipboard contents
+        // must never reach the embedder.
+        const remaining = self.max_size -| self.spool.items.len;
+        if (decoded.len > remaining) return error.TooLarge;
+        self.spool.items.len += decoded.len;
+    }
+
+    /// Finish the decode stream of the entry currently receiving
+    /// data. Returns error.Invalid when the stream ends mid-group,
+    /// i.e. the concatenated payload was not correctly padded.
+    fn finishCurrent(self: *WriteState) error{Invalid}!void {
+        self.decoder.finish() catch return error.Invalid;
     }
 
     /// Register aliases from a walias packet: meta.mime is the target
@@ -173,6 +203,7 @@ pub const WriteState = struct {
         assert(meta.mime.len > 0);
         const decoded = try Payload.init(alloc, payload);
         defer decoded.deinit(alloc);
+        if (!decoded.isValidUtf8()) return error.Invalid;
         var it = decoded.mimeIterator();
 
         // Copy the target only if at least one valid alias exists.
@@ -220,8 +251,7 @@ pub const WriteState = struct {
         loc: clipboard.Location,
         id: []const u8,
         pw: []const u8,
-        has_name: bool,
-        truncated: bool,
+        name: []const u8,
         contents: []const Content,
 
         pub fn deinit(self: *const Committed, alloc: Allocator) void {
@@ -231,13 +261,16 @@ pub const WriteState = struct {
 
     /// Commit the transaction (a wdata packet without a MIME type).
     /// The caller must use the result, call Committed.deinit, and then
-    /// deinit this state.
+    /// deinit this state. Returns error.Invalid when the last region's
+    /// concatenated payload was not correctly padded; the caller must
+    /// fail the transaction with EINVAL and abort it.
     pub fn commit(
         self: *WriteState,
         alloc: Allocator,
-    ) error{OutOfMemory}!Committed {
+    ) error{ OutOfMemory, Invalid }!Committed {
         // Finalize the region receiving data.
         if (self.current) |idx| {
+            try self.finishCurrent();
             const entry = &self.entries.items[idx];
             entry.len = self.spool.items.len - entry.start;
             self.current = null;
@@ -289,25 +322,9 @@ pub const WriteState = struct {
             .loc = self.loc,
             .id = self.id,
             .pw = self.pw,
-            .has_name = self.has_name,
-            .truncated = self.truncated,
+            .name = self.name,
             .contents = try contents.toOwnedSlice(alloc),
         };
-    }
-
-    fn logTruncatedOnce() void {
-        // Log spam protection: this can be hit for every chunk of an
-        // oversized write.
-        const S = struct {
-            var logged: bool = false;
-        };
-        if (!S.logged) {
-            S.logged = true;
-            log.warn(
-                "clipboard write exceeds {} bytes, truncating",
-                .{max_write_size},
-            );
-        }
     }
 };
 
@@ -316,7 +333,7 @@ test "write: basic transaction" {
     const alloc = testing.allocator;
 
     const begin_meta: Metadata = .{ .op = .write, .id = "42" };
-    var state: WriteState = try .init(alloc, &begin_meta);
+    var state: WriteState = try .init(alloc, &begin_meta, .{});
     defer state.deinit(alloc);
 
     try state.data(alloc, &.{ .op = .wdata, .mime = "text/plain" }, "R2hvc3R0eQ=="); // "Ghostty"
@@ -335,7 +352,7 @@ test "write: chunked data accumulates" {
     const alloc = testing.allocator;
 
     const begin_meta: Metadata = .{ .op = .write };
-    var state: WriteState = try .init(alloc, &begin_meta);
+    var state: WriteState = try .init(alloc, &begin_meta, .{});
     defer state.deinit(alloc);
 
     try state.data(alloc, &.{ .op = .wdata, .mime = "text/plain" }, "SGVsbG8="); // "Hello"
@@ -351,7 +368,7 @@ test "write: multiple mimes in order" {
     const alloc = testing.allocator;
 
     const begin_meta: Metadata = .{ .op = .write };
-    var state: WriteState = try .init(alloc, &begin_meta);
+    var state: WriteState = try .init(alloc, &begin_meta, .{});
     defer state.deinit(alloc);
 
     try state.data(alloc, &.{ .op = .wdata, .mime = "text/plain" }, "YQ=="); // "a"
@@ -371,7 +388,7 @@ test "write: reused mime overwrites" {
     const alloc = testing.allocator;
 
     const begin_meta: Metadata = .{ .op = .write };
-    var state: WriteState = try .init(alloc, &begin_meta);
+    var state: WriteState = try .init(alloc, &begin_meta, .{});
     defer state.deinit(alloc);
 
     try state.data(alloc, &.{ .op = .wdata, .mime = "text/plain" }, "YQ=="); // "a"
@@ -386,21 +403,140 @@ test "write: reused mime overwrites" {
     try testing.expectEqualStrings("c", committed.contents[0].data);
 }
 
-test "write: invalid base64 chunk is dropped, transaction continues" {
+test "write: invalid base64 chunk aborts the transaction" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    // Invalid characters anywhere in the stream are error.Invalid,
+    // which the handlers turn into an EINVAL abort. These mirror
+    // kitty's own tests for the spec change.
+    const invalid_payloads = [_][]const u8{
+        "!!!",
+        "SGVs!!!bG8=",
+        "\nZGF0YSB3aXRoIGEgbmV3bGluZQ==",
+    };
+    for (invalid_payloads) |payload| {
+        const begin_meta: Metadata = .{ .op = .write };
+        var state: WriteState = try .init(alloc, &begin_meta, .{});
+        defer state.deinit(alloc);
+        try testing.expectError(error.Invalid, state.data(
+            alloc,
+            &.{ .op = .wdata, .mime = "text/plain" },
+            payload,
+        ));
+    }
+
+    // Also after an earlier valid chunk for the same MIME type.
+    {
+        const begin_meta: Metadata = .{ .op = .write };
+        var state: WriteState = try .init(alloc, &begin_meta, .{});
+        defer state.deinit(alloc);
+        try state.data(alloc, &.{ .op = .wdata, .mime = "text/plain" }, "Z29vZA=="); // "good"
+        try testing.expectError(error.Invalid, state.data(
+            alloc,
+            &.{ .op = .wdata, .mime = "text/plain" },
+            "SGVs!!!bG8=",
+        ));
+    }
+}
+
+test "write: chunks split one base64 stream at arbitrary boundaries" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    // The concatenation of all payloads per MIME type is the base64
+    // stream; individual packets need not be a multiple of four bytes.
+    const encoded = "c29tZSBkYXRh"; // "some data"
+    const splits = [_][]const usize{
+        &.{ 3, 7 },
+        &.{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 },
+    };
+    for (splits) |split| {
+        const begin_meta: Metadata = .{ .op = .write };
+        var state: WriteState = try .init(alloc, &begin_meta, .{});
+        defer state.deinit(alloc);
+
+        var prev: usize = 0;
+        for (split) |end| {
+            try state.data(
+                alloc,
+                &.{ .op = .wdata, .mime = "text/plain" },
+                encoded[prev..end],
+            );
+            prev = end;
+        }
+        try state.data(alloc, &.{ .op = .wdata, .mime = "text/plain" }, encoded[prev..]);
+
+        const committed = try state.commit(alloc);
+        defer committed.deinit(alloc);
+        try testing.expectEqualStrings("some data", committed.contents[0].data);
+    }
+}
+
+test "write: incorrectly padded stream aborts at commit" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
     const begin_meta: Metadata = .{ .op = .write };
-    var state: WriteState = try .init(alloc, &begin_meta);
+    var state: WriteState = try .init(alloc, &begin_meta, .{});
     defer state.deinit(alloc);
 
-    try state.data(alloc, &.{ .op = .wdata, .mime = "text/plain" }, "SGVsbG8="); // "Hello"
-    try state.data(alloc, &.{ .op = .wdata, .mime = "text/plain" }, "!!!bad!!!");
-    try state.data(alloc, &.{ .op = .wdata, .mime = "text/plain" }, "V29ybGQ="); // "World"
+    // "Hello" without its final padding byte: every chunk decodes,
+    // but the stream ends mid-group so the commit reports it.
+    try state.data(alloc, &.{ .op = .wdata, .mime = "text/plain" }, "SGVsbG8");
+    try testing.expectError(error.Invalid, state.commit(alloc));
+}
+
+test "write: incorrectly padded stream aborts at MIME switch" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    const begin_meta: Metadata = .{ .op = .write };
+    var state: WriteState = try .init(alloc, &begin_meta, .{});
+    defer state.deinit(alloc);
+
+    try state.data(alloc, &.{ .op = .wdata, .mime = "text/plain" }, "SGVsbG8");
+    try testing.expectError(error.Invalid, state.data(
+        alloc,
+        &.{ .op = .wdata, .mime = "text/html" },
+        "PGI+aGk8L2I+",
+    ));
+}
+
+test "write: independently padded chunks accumulate" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    // A packet payload ending exactly at terminal padding resets the
+    // stream, so clients that base64-encode every chunk independently
+    // keep working (matching kitty, which resets its streaming
+    // decoder on EOF). Padding followed by more data within a single
+    // packet stays invalid.
+    const begin_meta: Metadata = .{ .op = .write };
+    var state: WriteState = try .init(alloc, &begin_meta, .{});
+    defer state.deinit(alloc);
+
+    try state.data(alloc, &.{ .op = .wdata, .mime = "text/plain" }, "Z29vZA=="); // "good"
+    try state.data(alloc, &.{ .op = .wdata, .mime = "text/plain" }, "bW9yZQ=="); // "more"
 
     const committed = try state.commit(alloc);
     defer committed.deinit(alloc);
-    try testing.expectEqualStrings("HelloWorld", committed.contents[0].data);
+    try testing.expectEqualStrings("goodmore", committed.contents[0].data);
+}
+
+test "write: data after padding within one chunk aborts" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    const begin_meta: Metadata = .{ .op = .write };
+    var state: WriteState = try .init(alloc, &begin_meta, .{});
+    defer state.deinit(alloc);
+
+    try testing.expectError(error.Invalid, state.data(
+        alloc,
+        &.{ .op = .wdata, .mime = "text/plain" },
+        "Z29vZA==bW9yZQ==",
+    ));
 }
 
 test "write: aliases resolve at commit" {
@@ -408,7 +544,7 @@ test "write: aliases resolve at commit" {
     const alloc = testing.allocator;
 
     const begin_meta: Metadata = .{ .op = .write };
-    var state: WriteState = try .init(alloc, &begin_meta);
+    var state: WriteState = try .init(alloc, &begin_meta, .{});
     defer state.deinit(alloc);
 
     try state.data(alloc, &.{ .op = .wdata, .mime = "text/plain" }, "R2hvc3R0eQ=="); // "Ghostty"
@@ -426,12 +562,131 @@ test "write: aliases resolve at commit" {
     try testing.expectEqualStrings("Ghostty", committed.contents[2].data);
 }
 
+test "write: alias payload must be valid utf8" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    const begin_meta: Metadata = .{ .op = .write };
+    var state: WriteState = try .init(alloc, &begin_meta, .{});
+    defer state.deinit(alloc);
+
+    const alias_meta: Metadata = .{ .op = .walias, .mime = "text/plain" };
+    // Valid base64 encoding of a single 0xff byte.
+    try testing.expectError(
+        error.Invalid,
+        state.alias(alloc, &alias_meta, "/w=="),
+    );
+}
+
+test "write: default limit when unset" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    const begin_meta: Metadata = .{ .op = .write };
+    var state: WriteState = try .init(alloc, &begin_meta, .{});
+    defer state.deinit(alloc);
+    try testing.expectEqual(@as(usize, max_write_size), state.max_size);
+}
+
+test "write: text over limit rejects transaction" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    const begin_meta: Metadata = .{ .op = .write };
+    var state: WriteState = try .init(alloc, &begin_meta, .{ .max_size = 8 });
+    defer state.deinit(alloc);
+
+    try testing.expectError(error.TooLarge, state.data(
+        alloc,
+        &.{ .op = .wdata, .mime = "text/plain" },
+        "SGVsbG9Xb3JsZA==", // "HelloWorld"
+    ));
+}
+
+test "write: text crossing limit across chunks rejects transaction" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    const begin_meta: Metadata = .{ .op = .write };
+    var state: WriteState = try .init(alloc, &begin_meta, .{ .max_size = 8 });
+    defer state.deinit(alloc);
+
+    try state.data(alloc, &.{ .op = .wdata, .mime = "text/plain" }, "SGVsbG8="); // "Hello"
+    try testing.expectError(error.TooLarge, state.data(
+        alloc,
+        &.{ .op = .wdata, .mime = "text/plain" },
+        "V29ybGQ=", // "World"
+    ));
+}
+
+test "write: data exactly at limit is accepted" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    const begin_meta: Metadata = .{ .op = .write };
+    var state: WriteState = try .init(alloc, &begin_meta, .{ .max_size = 5 });
+    defer state.deinit(alloc);
+
+    try state.data(alloc, &.{ .op = .wdata, .mime = "text/plain" }, "SGVsbG8="); // "Hello"
+
+    const committed = try state.commit(alloc);
+    defer committed.deinit(alloc);
+    try testing.expectEqualStrings("Hello", committed.contents[0].data);
+}
+
+test "write: non-text under limit is unaffected" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    const begin_meta: Metadata = .{ .op = .write };
+    var state: WriteState = try .init(alloc, &begin_meta, .{ .max_size = 8 });
+    defer state.deinit(alloc);
+
+    try state.data(alloc, &.{ .op = .wdata, .mime = "image/png" }, "iVBORw=="); // "\x89PNG"
+
+    const committed = try state.commit(alloc);
+    defer committed.deinit(alloc);
+    try testing.expectEqualStrings("\x89PNG", committed.contents[0].data);
+}
+
+test "write: non-text over limit rejects transaction" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    const begin_meta: Metadata = .{ .op = .write };
+    var state: WriteState = try .init(alloc, &begin_meta, .{ .max_size = 8 });
+    defer state.deinit(alloc);
+
+    try testing.expectError(error.TooLarge, state.data(
+        alloc,
+        &.{ .op = .wdata, .mime = "image/png" },
+        "SGVsbG9Xb3JsZA==", // "HelloWorld"
+    ));
+}
+
+test "write: total data across MIME types is limited" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    const begin_meta: Metadata = .{ .op = .write };
+    var state: WriteState = try .init(alloc, &begin_meta, .{ .max_size = 8 });
+    defer state.deinit(alloc);
+
+    try state.data(alloc, &.{ .op = .wdata, .mime = "text/plain" }, "SGVsbG8="); // "Hello"
+
+    try testing.expectError(error.TooLarge, state.data(
+        alloc,
+        &.{ .op = .wdata, .mime = "image/png" },
+        "V29ybGQ=", // "World"
+    ));
+}
+
 test "write: alias without data target is dropped" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
     const begin_meta: Metadata = .{ .op = .write };
-    var state: WriteState = try .init(alloc, &begin_meta);
+    var state: WriteState = try .init(alloc, &begin_meta, .{});
     defer state.deinit(alloc);
 
     const alias_meta: Metadata = .{ .op = .walias, .mime = "text/plain" };
