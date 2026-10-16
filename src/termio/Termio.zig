@@ -42,6 +42,9 @@ backend: termio.Backend,
 /// The derived configuration for this termio implementation.
 config: DerivedConfig,
 
+/// The system color scheme used for mode 2031 reports.
+system_color_scheme: *const std.atomic.Value(apprt.ColorScheme),
+
 /// The terminal emulator internal state. This is the abstract "terminal"
 /// that manages input, grid updating, etc. and is renderer-agnostic. It
 /// just stores internal state about a grid.
@@ -367,11 +370,9 @@ pub fn init(self: *Termio, alloc: Allocator, opts: termio.Options) !void {
         .clipboard_write = opts.config.clipboard_write,
         .tmux_control_mode = opts.config.tmux_control_mode, // ROOTSHELL-TMUX (id=termio-stream-config)
         .enquiry_response = opts.config.enquiry_response,
-        // Seed from config so the CSI ?996n reply is correct before the first
-        // changeConfig (id=streamhandler-inline-reports).
-        .color_scheme_is_dark = opts.config.conditional_state.theme == .dark,
         .clipboard_write_limit = opts.config.clipboard_write_limit,
         .xt_checksum_report = opts.config.xt_checksum_report,
+        .system_color_scheme = opts.system_color_scheme,
     };
 
     const thread_enter_state = try ThreadEnterState.create(
@@ -383,6 +384,7 @@ pub fn init(self: *Termio, alloc: Allocator, opts: termio.Options) !void {
         .alloc = alloc,
         .terminal = term,
         .config = opts.config,
+        .system_color_scheme = opts.system_color_scheme,
         .renderer_state = opts.renderer_state,
         .renderer_wakeup = opts.renderer_wakeup,
         .renderer_mailbox = opts.renderer_mailbox,
@@ -515,7 +517,8 @@ pub fn changeConfig(self: *Termio, td: *ThreadData, config: *DerivedConfig) !voi
     // the read thread data, all of which requires holding the renderer
     // state lock.
     self.renderer_state.mutex.lockUncancelable(global.io());
-    defer self.renderer_state.mutex.unlock(global.io());
+    var renderer_locked = true;
+    defer if (renderer_locked) self.renderer_state.mutex.unlock(global.io());
 
     // Deinit our old config. We do this in the lock because the
     // stream handler may be referencing the old config (i.e. enquiry resp)
@@ -592,6 +595,24 @@ pub fn changeConfig(self: *Termio, td: *ThreadData, config: *DerivedConfig) !voi
     // Set the image limits
     self.terminal.setKittyGraphicsSizeLimit(self.alloc, config.image_storage_limit);
     self.terminal.setKittyGraphicsLoadingLimits(.allWithTempDir(global.tmpDirPath()));
+
+    // SurfaceRelayWriter uses a blocking app-mailbox push. Release the renderer
+    // mutex before reporting colors so a full queue cannot deadlock against the
+    // app thread while it waits for this same renderer. ROOTSHELL-TMUX
+    // (id=tmux-theme-report-lock-order)
+    self.renderer_state.mutex.unlock(global.io());
+    renderer_locked = false;
+    if (self.backend == .tmux) {
+        // tmux 3.6+ is the sole responder to a pane application's CSI ?996n.
+        // Keep its per-pane control colors aligned with this child surface's
+        // effective config; the tmux backend relays these reports through the
+        // tracked control channel. The explicit mode-2031 report remains
+        // necessary on tmux 3.7c, which does not notify on control_bg changes.
+        self.backend.tmux.reportColors(
+            config.foreground.toTerminalRGB(),
+            config.background.toTerminalRGB(),
+        );
+    }
 }
 
 /// Resize the terminal.
@@ -1036,7 +1057,6 @@ fn processOutputLocked(self: *Termio, buf: []const u8) void {
     }
 }
 
-/// Sends a DSR response for the current color scheme to the pty.
 /// Record a Kitty clipboard protocol session grant so future requests
 /// carrying the password skip the permission prompt.
 pub fn kittyClipboardGrant(
@@ -1050,22 +1070,50 @@ pub fn kittyClipboardGrant(
     try self.terminal_stream.handler.kittyClipboardGrant(pw, dir);
 }
 
-pub fn colorSchemeReport(self: *Termio, td: *ThreadData, force: bool) !void {
+/// Sends a DSR response for the current color scheme to the pty.
+pub fn colorSchemeReport(
+    self: *Termio,
+    td: *ThreadData,
+    force: bool,
+    explicit_same_scheme: bool,
+) !void {
+    const scheme: terminalpkg.device_status.ColorScheme =
+        switch (self.system_color_scheme.load(.monotonic)) {
+            .light => .light,
+            .dark => .dark,
+        };
+
+    // A tmux child queueWrite crosses SurfaceRelayWriter's blocking app
+    // mailbox. Never make that hop while holding the renderer mutex: the app
+    // thread can be waiting for this mutex while it is the only consumer able
+    // to drain a full relay queue. Take the mutex only long enough to read the
+    // subscription bit for unforced updates. A forced report answers an
+    // explicit one-shot query, so no mode read is needed. Normal PTY writes
+    // retain the established under-lock behavior.
+    if (self.backend == .tmux) {
+        if (!force) {
+            self.renderer_state.mutex.lockUncancelable(global.io());
+            const subscribed = self.renderer_state.terminal.modes.get(.report_color_scheme);
+            self.renderer_state.mutex.unlock(global.io());
+            if (!subscribed) return;
+        }
+        self.backend.tmux.reportColorScheme(scheme, explicit_same_scheme);
+        return;
+    }
+
     self.renderer_state.mutex.lockUncancelable(global.io());
     defer self.renderer_state.mutex.unlock(global.io());
-
-    try self.colorSchemeReportLocked(td, force);
-}
-
-pub fn colorSchemeReportLocked(self: *Termio, td: *ThreadData, force: bool) !void {
     if (!force and !self.renderer_state.terminal.modes.get(.report_color_scheme)) {
         return;
     }
-    const scheme: terminalpkg.device_status.ColorScheme = switch (self.config.conditional_state.theme) {
-        .light => .light,
-        .dark => .dark,
-    };
+    try self.queueColorSchemeReport(td, scheme);
+}
 
+fn queueColorSchemeReport(
+    self: *Termio,
+    td: *ThreadData,
+    scheme: terminalpkg.device_status.ColorScheme,
+) !void {
     var buf: [terminalpkg.device_status.max_color_scheme_report_encode_size]u8 = undefined;
     var writer: std.Io.Writer = .fixed(&buf);
     try terminalpkg.device_status.encodeColorSchemeReport(&writer, scheme);
@@ -1131,4 +1179,48 @@ pub const ThreadData = struct {
 /// not available on a particular platform.
 pub fn getProcessInfo(self: *Termio, comptime info: ProcessInfo) ?ProcessInfo.Type(info) {
     return self.backend.getProcessInfo(info);
+}
+
+test "color scheme report reaches native tmux backend" {
+    const CaptureWriter = struct {
+        buffer: [128]u8 = undefined,
+        len: usize = 0,
+
+        fn controlWriter(self: *@This()) termio.Tmux.ControlWriter {
+            return .{
+                .context = @ptrCast(self),
+                .writeFn = &writeFn,
+            };
+        }
+
+        fn writeFn(
+            context: *anyopaque,
+            data: []const u8,
+        ) termio.Tmux.ControlWriter.WriteError!void {
+            const self: *@This() = @ptrCast(@alignCast(context));
+            if (data.len > self.buffer.len) return error.WriteFailed;
+            @memcpy(self.buffer[0..data.len], data);
+            self.len = data.len;
+        }
+    };
+
+    var capture: CaptureWriter = .{};
+    var scheme: std.atomic.Value(apprt.ColorScheme) = .init(.dark);
+    var io: Termio = undefined;
+    io.alloc = std.testing.allocator;
+    io.backend = .{ .tmux = termio.Tmux.init(.{
+        .pane_id = 7,
+        .window_id = 0,
+        .control_writer = capture.controlWriter(),
+    }) };
+    io.system_color_scheme = &scheme;
+
+    var td: ThreadData = undefined;
+    td.backend = .{ .tmux = .{} };
+
+    try io.colorSchemeReport(&td, true, false);
+    try std.testing.expectEqualStrings(
+        "rootshell-report-color-scheme -t %7 dark transition\n",
+        capture.buffer[0..capture.len],
+    );
 }
