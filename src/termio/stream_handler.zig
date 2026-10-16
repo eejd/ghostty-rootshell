@@ -260,15 +260,14 @@ pub const StreamHandler = struct {
     /// Whether tmux control mode is enabled at runtime.
     tmux_control_mode: bool = true,
 
-    /// Cached OS color scheme (true = dark), refreshed in changeConfig from
-    /// config.conditional_state.theme. Lets `sendColorSchemeReport` answer the
+    /// Effective surface color scheme. Lets `sendColorSchemeReport` answer the
     /// CSI ?996n / mode-2031 theme query INLINE on the read thread — under the
     /// renderer lock we already hold while parsing — instead of deferring a
     /// `color_scheme_report` message that the IO thread's drainMailbox must
     /// re-acquire renderer_state.mutex to handle. That cross-thread re-lock
     /// gets starved under a heavy-output flood (zellij), stalling the drain for
     /// seconds and dropping write_small. (id=streamhandler-inline-reports)
-    color_scheme_is_dark: bool = true,
+    system_color_scheme: *const std.atomic.Value(apprt.ColorScheme),
     /// Maximum total decoded bytes per Kitty clipboard protocol
     /// (OSC 5522) write transaction; exceeding it aborts with EFBIG.
     clipboard_write_limit: usize,
@@ -446,10 +445,6 @@ pub const StreamHandler = struct {
         self.clipboard_write = config.clipboard_write;
         self.clipboard_write_limit = config.clipboard_write_limit;
         self.enquiry_response = config.enquiry_response;
-        // Cache the resolved theme so we can answer the color-scheme query
-        // inline (id=streamhandler-inline-reports). Must run before the
-        // color-scheme report emitted at the end of this function.
-        self.color_scheme_is_dark = config.conditional_state.theme == .dark;
         // If tmux control mode was just disabled and a viewer is active,
         // proactively tear down the viewer and close child surfaces so
         // they don't leak until the tmux server sends an exit.
@@ -2007,6 +2002,11 @@ pub const StreamHandler = struct {
     pub fn tmuxQueuePaneCommand(self: *StreamHandler, cmd: []const u8) void { // ROOTSHELL-TMUX (id=streamhandler-pane-command)
         if (comptime !tmux_enabled) return;
         const viewer = self.tmux_viewer orelse {
+            // The appearance relay is an internal message for Viewer, not tmux
+            // syntax. A child update may race viewer teardown; drop it here
+            // rather than writing an invalid command whose untracked %error
+            // would corrupt control-response accounting.
+            if (isPaneColorSchemeRelay(cmd)) return;
             // No viewer (should not happen for a pane relay): write directly so
             // the command still reaches tmux rather than being silently lost.
             self.messageWriter(termio.Message.writeReq(self.alloc, cmd) catch return);
@@ -2025,6 +2025,14 @@ pub const StreamHandler = struct {
         // Flush now in case the queue was idle, so a pane resize/select takes
         // effect without waiting for the next inbound notification.
         self.pumpTmuxCommandQueue(viewer);
+    }
+
+    fn isPaneColorSchemeRelay(cmd: []const u8) bool {
+        return std.mem.startsWith(
+            u8,
+            std.mem.trimStart(u8, cmd, " \t\r\n"),
+            "rootshell-report-color-scheme ",
+        );
     }
 
     /// Route an app-issued query command (session dashboard: list-sessions,
@@ -4024,11 +4032,17 @@ pub const StreamHandler = struct {
         // ROOTSHELL-TMUX (id=streamhandler-suppress-gateway-reports): drop report-generating replies on the tmux gateway.
         if (self.suppressPtyReportForTmuxGateway("color scheme")) return;
         if (!force and !self.terminal.modes.get(.report_color_scheme)) return;
-        const output: []const u8 = if (self.color_scheme_is_dark)
-            "\x1B[?997;1n"
-        else
-            "\x1B[?997;2n";
+        const output = colorSchemeReportBytes(
+            self.system_color_scheme.load(.monotonic),
+        );
         self.messageWriter(.{ .write_stable = output });
+    }
+
+    fn colorSchemeReportBytes(scheme: apprt.ColorScheme) []const u8 {
+        return switch (scheme) {
+            .dark => "\x1B[?997;1n",
+            .light => "\x1B[?997;2n",
+        };
     }
 
     /// Encode a size report INLINE (self.size is consistent under the renderer
@@ -4293,6 +4307,36 @@ pub const StreamHandler = struct {
             .content = .{ .horizontal = &children },
         };
         logPaneIds(layout);
+    }
+
+    test "color scheme report follows runtime surface state" {
+        var scheme: std.atomic.Value(apprt.ColorScheme) = .init(.light);
+        try std.testing.expectEqualStrings(
+            "\x1B[?997;2n",
+            colorSchemeReportBytes(scheme.load(.monotonic)),
+        );
+
+        scheme.store(.dark, .monotonic);
+        try std.testing.expectEqualStrings(
+            "\x1B[?997;1n",
+            colorSchemeReportBytes(scheme.load(.monotonic)),
+        );
+    }
+
+    test "pane color scheme relay is dropped after viewer teardown" {
+        if (comptime !tmux_enabled) return;
+        try std.testing.expect(isPaneColorSchemeRelay(
+            "rootshell-report-color-scheme -t %7 dark transition\n",
+        ));
+
+        // Only tmux_viewer is initialized deliberately. The teardown branch
+        // must return before touching a mailbox or allocator; attempting the
+        // old direct-write fallback would trip on the undefined fields.
+        var handler: StreamHandler = undefined;
+        handler.tmux_viewer = null;
+        handler.tmuxQueuePaneCommand(
+            "rootshell-report-color-scheme -t %7 dark transition\n",
+        );
     }
 };
 
